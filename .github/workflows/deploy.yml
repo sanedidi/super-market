@@ -20,6 +20,7 @@ jobs:
     environment: production
     env:
       APP_DIR: /opt/super-market
+      HTTP_PORT: "8090"
     steps:
       - uses: actions/checkout@v4
 
@@ -58,11 +59,11 @@ jobs:
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER || 'root' }}
-        run: ssh "$SSH_USER@$SSH_HOST" "APP_DIR=$APP_DIR bash $APP_DIR/deploy/remote-deploy.sh"
+        run: ssh "$SSH_USER@$SSH_HOST" "APP_DIR=$APP_DIR HTTP_PORT=$HTTP_PORT bash $APP_DIR/deploy/remote-deploy.sh"
 
       - name: Smoke test from outside
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
         run: |
-          curl -fsS "http://$SSH_HOST/healthz"
-          curl -fsS "http://$SSH_HOST/readyz"
+          curl -fsS "http://$SSH_HOST:$HTTP_PORT/healthz"
+          curl -fsS "http://$SSH_HOST:$HTTP_PORT/readyz"
