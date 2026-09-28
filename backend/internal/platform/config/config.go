@@ -30,7 +30,24 @@ type Config struct {
 	LogLevel        string
 	ShutdownTimeout time.Duration
 	WorkerInterval  time.Duration
+
+	// Авторизация.
+	JWTSecret  string
+	AccessTTL  time.Duration
+	RefreshTTL time.Duration
+	OTPTTL     time.Duration
+	// DevOTPCode — фиксированный код входа без Telegram. Только в dev.
+	DevOTPCode string
+	// SuperAdminPhones — номера, которые при старте получают роль супер-админа.
+	SuperAdminPhones []string
+
+	// Telegram-бот для кодов входа.
+	TelegramBotToken    string
+	TelegramBotUsername string
+	TelegramAPIURL      string
 }
+
+const devJWTSecret = "dev-secret-do-not-use-in-production"
 
 // Load собирает Config из окружения. getenv передаётся параметром,
 // чтобы конфиг можно было тестировать без изменения реального окружения.
@@ -44,6 +61,13 @@ func Load(getenv func(string) string) (Config, error) {
 		HTTPAddr:    valueOr(getenv("HTTP_ADDR"), ":8080"),
 		DatabaseURL: getenv("DATABASE_URL"),
 		LogLevel:    strings.ToLower(valueOr(getenv("LOG_LEVEL"), "info")),
+
+		JWTSecret:           getenv("JWT_SECRET"),
+		DevOTPCode:          getenv("DEV_OTP_CODE"),
+		SuperAdminPhones:    splitList(getenv("SUPER_ADMIN_PHONES")),
+		TelegramBotToken:    getenv("TELEGRAM_BOT_TOKEN"),
+		TelegramBotUsername: strings.TrimPrefix(getenv("TELEGRAM_BOT_USERNAME"), "@"),
+		TelegramAPIURL:      getenv("TELEGRAM_API_URL"),
 	}
 
 	var errs []error
@@ -67,11 +91,44 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.WorkerInterval, err = durationOr(getenv("WORKER_INTERVAL"), time.Minute); err != nil {
 		errs = append(errs, fmt.Errorf("WORKER_INTERVAL: %w", err))
 	}
+	if cfg.AccessTTL, err = durationOr(getenv("ACCESS_TTL"), 15*time.Minute); err != nil {
+		errs = append(errs, fmt.Errorf("ACCESS_TTL: %w", err))
+	}
+	if cfg.RefreshTTL, err = durationOr(getenv("REFRESH_TTL"), 30*24*time.Hour); err != nil {
+		errs = append(errs, fmt.Errorf("REFRESH_TTL: %w", err))
+	}
+	if cfg.OTPTTL, err = durationOr(getenv("OTP_TTL"), 5*time.Minute); err != nil {
+		errs = append(errs, fmt.Errorf("OTP_TTL: %w", err))
+	}
+
+	switch {
+	case cfg.JWTSecret == "" && cfg.Env == EnvDev:
+		cfg.JWTSecret = devJWTSecret
+	case len(cfg.JWTSecret) < 32:
+		errs = append(errs, errors.New("JWT_SECRET: нужно не меньше 32 символов (в prod обязательно)"))
+	}
+	if cfg.DevOTPCode != "" {
+		if cfg.Env == EnvProd {
+			errs = append(errs, errors.New("DEV_OTP_CODE: запрещён в prod"))
+		} else if len(cfg.DevOTPCode) != 6 || strings.Trim(cfg.DevOTPCode, "0123456789") != "" {
+			errs = append(errs, errors.New("DEV_OTP_CODE: нужно 6 цифр"))
+		}
+	}
 
 	if len(errs) > 0 {
 		return Config{}, errors.Join(errs...)
 	}
 	return cfg, nil
+}
+
+func splitList(v string) []string {
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func valueOr(v, def string) string {

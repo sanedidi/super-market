@@ -12,9 +12,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/config"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/logger"
+	"github.com/sanedidi/super-market/backend/internal/platform/telegram"
 )
 
 // Job — одна периодическая задача. Ошибка задачи логируется и не
@@ -46,6 +48,21 @@ func run() error {
 		return err
 	}
 	defer pool.Close()
+
+	// Telegram-бот: принимает номера телефонов для кодов входа.
+	botDone := make(chan struct{})
+	if cfg.TelegramBotToken != "" {
+		api := telegram.New(cfg.TelegramBotToken, cfg.TelegramAPIURL)
+		svc := identity.NewService(pool, api, identity.Config{Secret: cfg.JWTSecret}, log)
+		go func() {
+			defer close(botDone)
+			identity.NewBot(svc, api, log).Run(ctx)
+		}()
+	} else {
+		close(botDone)
+		log.Warn("TELEGRAM_BOT_TOKEN не задан: бот не запущен")
+	}
+	defer func() { <-botDone }()
 
 	jobs := []Job{
 		{Name: "db_ping", Run: pool.Ping},

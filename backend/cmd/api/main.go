@@ -13,8 +13,8 @@ import (
 
 	"github.com/sanedidi/super-market/backend/internal/platform/config"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
-	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/platform/logger"
+	"github.com/sanedidi/super-market/backend/internal/server"
 )
 
 func main() {
@@ -40,9 +40,17 @@ func run() error {
 	}
 	defer pool.Close()
 
+	if cfg.DevOTPCode != "" {
+		log.Warn("DEV_OTP_CODE включён: коды входа не отправляются, подходит фиксированный код")
+	}
+	handler, err := server.New(ctx, cfg, pool, nil, log)
+	if err != nil {
+		return err
+	}
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpx.NewRouter(log, pool),
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,

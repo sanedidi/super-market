@@ -6,6 +6,11 @@ x-backend-env: &backend-env
   APP_ENV: ${APP_ENV:-dev}
   LOG_LEVEL: ${LOG_LEVEL:-info}
   DATABASE_URL: postgres://${POSTGRES_USER:-market}:${POSTGRES_PASSWORD:-market}@db:5432/${POSTGRES_DB:-market}?sslmode=disable
+  JWT_SECRET: ${JWT_SECRET:-}
+  DEV_OTP_CODE: ${DEV_OTP_CODE:-}
+  SUPER_ADMIN_PHONES: ${SUPER_ADMIN_PHONES:-}
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+  TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
 
 services:
   db:

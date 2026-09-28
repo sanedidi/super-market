@@ -4,6 +4,7 @@
 
 - Концепция и MVP: https://claude.ai/code/artifact/ed1758d3-5505-49e8-87e0-7c6bf1ac431f
 - Архитектура и схема данных: https://claude.ai/code/artifact/5354efa4-3e4f-41a9-bfb1-9254a483052d
+- API: [docs/api.md](docs/api.md)
 
 ## Структура
 
@@ -12,7 +13,10 @@ backend/               Go, модульный монолит
   cmd/api              HTTP API
   cmd/worker           фоновые задачи
   cmd/migrate          миграции базы
-  internal/platform    config, db, httpx, logger, migrate
+  internal/identity    вход через Telegram, сессии, роли, сотрудники
+  internal/tenant      сети, магазины, склады
+  internal/server      сборка API из модулей
+  internal/platform    config, db, httpx, logger, migrate, telegram, token
   db/migrations        SQL-миграции (встраиваются в бинарник)
 apps/                  (следующие этапы)
   client               Flutter, покупатель
@@ -44,6 +48,14 @@ make test-db     # тесты с интеграционными на локал�
 ```
 
 `make help` — все команды.
+
+## Первый вход
+
+1. Скопируй `.env.example` в `.env`, впиши `TELEGRAM_BOT_TOKEN` и свой номер в `SUPER_ADMIN_PHONES`.
+2. `make up`, открой бота в Telegram и нажми «Поделиться номером».
+3. `POST /api/v1/auth/otp/request` → код придёт в бот → `POST /api/v1/auth/otp/verify` с `"app": "admin"`.
+
+Без Telegram: `DEV_OTP_CODE=111111` в `.env` — код не отправляется, подходит `111111` (только dev).
 
 ## Соглашения
 
