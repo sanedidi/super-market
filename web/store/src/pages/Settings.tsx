@@ -1,0 +1,293 @@
+// Настройки: магазины, роли, сотрудники.
+import { useState } from 'react'
+import { Alert, Button, Card, Checkbox, Col, Form, Input, InputNumber, Modal, Radio, Row, Select, Switch, Table, Tag, Typography } from 'antd'
+import { PlusOutlined } from '@ant-design/icons'
+import { CrudPage, PageTitle, RemoteSelect, StatusTag, api, useAction, useList } from '@sm/shared'
+import { useStore } from '../ctx'
+import type { Employee, Permission, PriceType, Role, Store, Warehouse } from '../types'
+
+const required = [{ required: true, whitespace: true, message: 'Обязательное поле' }]
+
+// ---------------------------------------------------------------- магазины
+
+export function StoresPage() {
+  const { me } = useStore()
+  const single = me?.network.kind === 'single'
+  return (
+    <>
+      {single && (
+        <Alert type="info" showIcon style={{ marginBottom: 16 }} message="Сеть с одним магазином: создать второй магазин нельзя." />
+      )}
+      <CrudPage<Store>
+        title="Магазины"
+        path="/store/stores"
+        createLabel="Новый магазин"
+        columns={[
+          { title: 'Название', dataIndex: 'name' },
+          { title: 'Адрес', dataIndex: 'address' },
+          { title: 'Телефон', dataIndex: 'phone' },
+          {
+            title: 'Координаты',
+            key: 'geo',
+            render: (_, r) => (r.lat !== null && r.lng !== null ? `${r.lat.toFixed(5)}, ${r.lng.toFixed(5)}` : <Tag color="orange">Не заданы</Tag>),
+          },
+          { title: 'Статус', dataIndex: 'status', render: (v: string) => (v === 'active' ? <StatusTag status="active" /> : <Tag>Закрыт</Tag>) },
+        ]}
+        form={(editing) => (
+          <>
+            <Form.Item name="name" label="Название" rules={required}>
+              <Input />
+            </Form.Item>
+            <Form.Item name="address" label="Адрес">
+              <Input />
+            </Form.Item>
+            <Form.Item name="phone" label="Телефон">
+              <Input placeholder="+998 …" />
+            </Form.Item>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item
+                  name="lat"
+                  label="Широта (lat)"
+                  dependencies={['lng']}
+                  rules={[
+                    ({ getFieldValue }) => ({
+                      validator: (_, v) =>
+                        (v === null || v === undefined) !== (getFieldValue('lng') === null || getFieldValue('lng') === undefined)
+                          ? Promise.reject(new Error('Широта и долгота задаются вместе'))
+                          : Promise.resolve(),
+                    }),
+                  ]}
+                >
+                  <InputNumber min={-90} max={90} step={0.0001} style={{ width: '100%' }} placeholder="41.311" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="lng" label="Долгота (lng)">
+                  <InputNumber min={-180} max={180} step={0.0001} style={{ width: '100%' }} placeholder="69.279" />
+                </Form.Item>
+              </Col>
+            </Row>
+            {editing && (
+              <>
+                <Form.Item name="default_warehouse_id" label="Склад по умолчанию">
+                  <RemoteSelect<Warehouse> path="/store/warehouses" params={{ store_id: editing.id }} filter={(w) => w.is_active} />
+                </Form.Item>
+                <Form.Item name="online_price_type_id" label="Тип цены для приложения" extra="Если не выбран — тип цены сети по умолчанию">
+                  <RemoteSelect<PriceType> path="/store/price-types" filter={(t) => t.is_active} allowClear />
+                </Form.Item>
+                <Form.Item name="status" label="Статус">
+                  <Radio.Group
+                    options={[
+                      { value: 'active', label: 'Работает' },
+                      { value: 'inactive', label: 'Закрыт' },
+                    ]}
+                  />
+                </Form.Item>
+              </>
+            )}
+          </>
+        )}
+        toForm={(r) => ({
+          name: r.name,
+          address: r.address,
+          phone: r.phone,
+          lat: r.lat,
+          lng: r.lng,
+          status: r.status,
+          default_warehouse_id: r.default_warehouse_id ?? undefined,
+          online_price_type_id: r.online_price_type_id ?? undefined,
+        })}
+        toBody={(v, editing) => {
+          const geo = v.lat !== null && v.lat !== undefined ? { lat: v.lat, lng: v.lng } : {}
+          const base = { name: v.name, address: v.address ?? '', phone: v.phone ?? '', ...geo }
+          if (!editing) return base
+          return {
+            ...base,
+            status: v.status,
+            default_warehouse_id: v.default_warehouse_id || undefined,
+            // пустая строка сбрасывает тип цены
+            online_price_type_id: v.online_price_type_id ?? '',
+          }
+        }}
+      />
+    </>
+  )
+}
+
+// ------------------------------------------------------------------- роли
+
+export function RolesPage() {
+  const { data, isLoading } = useList<Role>('/store/roles')
+  const perms = useList<Permission>('/store/permissions')
+  const title = (code: string) => perms.data?.find((p) => p.code === code)?.title ?? code
+  const [editing, setEditing] = useState<Role | null>(null)
+  const [open, setOpen] = useState(false)
+  const [form] = Form.useForm<{ name: string; permissions: string[] }>()
+  const save = useAction(
+    (v: { name: string; permissions: string[] }) =>
+      editing ? api.patch(`/store/roles/${editing.id}`, v) : api.post('/store/roles', { ...v, permissions: v.permissions ?? [] }),
+    { success: 'Роль сохранена' },
+  )
+  const openForm = (r: Role | null) => {
+    setEditing(r)
+    form.resetFields()
+    if (r) form.setFieldsValue({ name: r.name, permissions: r.permissions ?? [] })
+    setOpen(true)
+  }
+  return (
+    <>
+      <PageTitle
+        title="Роли"
+        extra={
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => openForm(null)}>
+            Новая роль
+          </Button>
+        }
+      />
+      <Card styles={{ body: { padding: 0 } }}>
+        <Table<Role>
+          rowKey="id"
+          loading={isLoading}
+          dataSource={data}
+          scroll={{ x: true }}
+          pagination={false}
+          columns={[
+            { title: 'Роль', dataIndex: 'name', render: (v: string, r) => (r.is_owner ? <>{v} <Tag color="gold">Владелец</Tag></> : v) },
+            {
+              title: 'Права',
+              dataIndex: 'permissions',
+              render: (v: string[] | null, r) =>
+                r.is_owner ? (
+                  <Typography.Text type="secondary">Все права</Typography.Text>
+                ) : (
+                  (v ?? []).map((c) => (
+                    <Tag key={c} style={{ marginBottom: 4 }}>
+                      {title(c)}
+                    </Tag>
+                  ))
+                ),
+            },
+            {
+              key: 'e',
+              width: 90,
+              render: (_, r) =>
+                !r.is_owner && (
+                  <Button size="small" onClick={() => openForm(r)}>
+                    Изменить
+                  </Button>
+                ),
+            },
+          ]}
+        />
+      </Card>
+      <Modal
+        open={open}
+        title={editing ? 'Изменить роль' : 'Новая роль'}
+        okText="Сохранить"
+        onOk={() => form.submit()}
+        confirmLoading={save.isPending}
+        onCancel={() => setOpen(false)}
+        width={560}
+      >
+        <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v, { onSuccess: () => setOpen(false) })}>
+          <Form.Item name="name" label="Название" rules={required}>
+            <Input placeholder="Кассир, кладовщик…" />
+          </Form.Item>
+          <Form.Item name="permissions" label="Права">
+            <Checkbox.Group style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {(perms.data ?? []).map((p) => (
+                <Checkbox key={p.code} value={p.code}>
+                  {p.title}
+                </Checkbox>
+              ))}
+            </Checkbox.Group>
+          </Form.Item>
+        </Form>
+      </Modal>
+    </>
+  )
+}
+
+// -------------------------------------------------------------- сотрудники
+
+export function EmployeesPage() {
+  const { stores } = useStore()
+  const storeName = (id: string) => stores.find((s) => s.id === id)?.name ?? '—'
+  return (
+    <CrudPage<Employee>
+      title="Сотрудники"
+      path="/store/employees"
+      createLabel="Новый сотрудник"
+      columns={[
+        { title: 'Имя', dataIndex: 'full_name', render: (v: string, r) => (r.is_owner ? <>{v} <Tag color="gold">Владелец</Tag></> : v) },
+        { title: 'Телефон', dataIndex: 'phone' },
+        { title: 'Роль', dataIndex: 'role_name' },
+        {
+          title: 'Магазины',
+          key: 'stores',
+          render: (_, r) => (r.all_stores ? 'Все магазины' : (r.store_ids ?? []).map(storeName).join(', ') || '—'),
+        },
+        { title: 'Статус', dataIndex: 'status', render: (v: string) => (v === 'active' ? <StatusTag status="active" /> : <Tag>Отключён</Tag>) },
+      ]}
+      form={(editing) => <EmployeeFields editing={editing} />}
+      toForm={(r) => ({
+        full_name: r.full_name,
+        role_id: r.role_id,
+        all_stores: r.all_stores,
+        store_ids: r.store_ids ?? [],
+        status: r.status,
+      })}
+      toBody={(v, editing) => {
+        const body: Record<string, unknown> = {
+          full_name: v.full_name,
+          role_id: v.role_id,
+          all_stores: !!v.all_stores,
+          store_ids: v.all_stores ? [] : (v.store_ids ?? []),
+        }
+        if (editing) body.status = v.status
+        else body.phone = v.phone
+        return body
+      }}
+    />
+  )
+}
+
+function EmployeeFields({ editing }: { editing: Employee | null }) {
+  const { stores } = useStore()
+  const form = Form.useFormInstance()
+  const all = Form.useWatch('all_stores', form)
+  return (
+    <>
+      {!editing && (
+        <Form.Item name="phone" label="Телефон" rules={required} extra="Сотрудник войдёт по этому номеру через Telegram-бот">
+          <Input placeholder="+998 90 123 45 67" inputMode="tel" />
+        </Form.Item>
+      )}
+      <Form.Item name="full_name" label="Имя" rules={required}>
+        <Input />
+      </Form.Item>
+      <Form.Item name="role_id" label="Роль" rules={[{ required: true, message: 'Выберите роль' }]}>
+        <RemoteSelect<Role> path="/store/roles" disabled={editing?.is_owner} filter={(r) => !r.is_owner || !!editing?.is_owner} />
+      </Form.Item>
+      <Form.Item name="all_stores" label="Доступ ко всем магазинам" valuePropName="checked" initialValue={false}>
+        <Switch disabled={editing?.is_owner} />
+      </Form.Item>
+      {!all && (
+        <Form.Item name="store_ids" label="Магазины" rules={[{ required: true, message: 'Выберите магазины' }]}>
+          <Select mode="multiple" options={stores.map((s) => ({ value: s.id, label: s.name }))} />
+        </Form.Item>
+      )}
+      {editing && !editing.is_owner && (
+        <Form.Item name="status" label="Статус">
+          <Radio.Group
+            options={[
+              { value: 'active', label: 'Активен' },
+              { value: 'inactive', label: 'Отключён' },
+            ]}
+          />
+        </Form.Item>
+      )}
+    </>
+  )
+}

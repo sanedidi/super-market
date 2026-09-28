@@ -1,6 +1,6 @@
 # Продакшен на сервере. Запускается из GitHub Actions (deploy.yml):
 #   docker compose -f deploy/docker-compose.prod.yml --env-file .env up -d --build
-# Наружу открыт только nginx (порт HTTP_PORT, по умолчанию 8090 —
+# Наружу открыт только nginx (панели и API; порт HTTP_PORT, по умолчанию 8090 —
 # порт 80 на сервере занят другим приложением). База, Redis и MinIO доступны
 # только внутри docker-сети.
 name: super-market
@@ -102,7 +102,7 @@ services:
     logging: *logging
 
   nginx:
-    image: nginx:1.27-alpine
+    build: ../web
     ports:
       - "${HTTP_PORT:-8090}:80"
     volumes:

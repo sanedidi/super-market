@@ -85,7 +85,7 @@ type Document struct {
 
 const docSelect = `
 	SELECT d.id, d.type, d.number, d.status, d.warehouse_id, w.name, w.store_id, d.to_warehouse_id, tw.name,
-	       d.counterparty_id, c.name, d.currency, d.rate::text, d.reason, d.note, d.total::text,
+	       d.counterparty_id, c.name, d.currency, d.rate::text, d.reason, d.note, CASE WHEN d.status = 'draft' THEN COALESCE((SELECT sum(i.qty * i.price) FROM stock_document_items i WHERE i.document_id = d.id), 0)::numeric(18,2) ELSE d.total END::text,
 	       e.full_name, d.posted_at, d.created_at,
 	       (SELECT count(*) FROM stock_document_items i WHERE i.document_id = d.id)::int
 	FROM stock_documents d
@@ -163,9 +163,9 @@ func (s *Service) get(ctx context.Context, q db.Querier, p *identity.Principal, 
 }
 
 type ItemInput struct {
-	ProductID string        `json:"product_id"`
-	Qty       money.Qty     `json:"qty"`
-	Price     *money.Amount `json:"price"`
+	ProductID string       `json:"product_id"`
+	Qty       money.Qty    `json:"qty"`
+	Price     *money.Price `json:"price"` // до 4 знаков: себестоимость и цены в USD
 }
 
 type Input struct {
@@ -666,23 +666,37 @@ func (s *Service) Stock(ctx context.Context, p *identity.Principal, f StockFilte
 }
 
 type Movement struct {
-	Qty       string    `json:"qty"`
-	UnitCost  string    `json:"unit_cost"`
-	DocType   string    `json:"doc_type"`
+	ProductID   string `json:"product_id"`
+	ProductName string `json:"product_name"`
+	Qty         string `json:"qty"`
+	UnitCost    string `json:"unit_cost"`
+	DocType     string `json:"doc_type"`
+	// Вид складского документа (income, write_off…), для продаж и заказов пусто.
+	DocKind   string    `json:"doc_kind"`
 	DocID     string    `json:"doc_id"`
+	DocNumber *int64    `json:"doc_number"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Movements — история движения товара по складу.
+// Movements — история движения товара по складу (product_id необязателен).
 func (s *Service) Movements(ctx context.Context, p *identity.Principal, warehouseID, productID string, page httpx.Page) ([]Movement, error) {
-	if !httpx.IsUUID(warehouseID) || !httpx.IsUUID(productID) {
-		return nil, apperr.Validation("укажите warehouse_id и product_id")
+	if !httpx.IsUUID(warehouseID) || (productID != "" && !httpx.IsUUID(productID)) {
+		return nil, apperr.Validation("укажите warehouse_id (и при необходимости product_id)")
 	}
 	if err := s.checkWarehouse(ctx, s.pool, p, warehouseID, true); err != nil {
 		return nil, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT qty::text, unit_cost::text, doc_type, doc_id, created_at FROM stock_movements
-		WHERE warehouse_id = $1 AND product_id = $2 ORDER BY created_at DESC, id DESC LIMIT $3 OFFSET $4`,
+	rows, err := s.pool.Query(ctx, `
+		SELECT m.product_id, pr.name, m.qty::text, m.unit_cost::text, m.doc_type, COALESCE(d.type, ''), m.doc_id,
+		       COALESCE(d.number, sa.number, cr.number, o.number), m.created_at
+		FROM stock_movements m
+		JOIN products pr ON pr.id = m.product_id
+		LEFT JOIN stock_documents d ON m.doc_type = 'stock_document' AND d.id = m.doc_id
+		LEFT JOIN sales sa ON m.doc_type = 'sale' AND sa.id = m.doc_id
+		LEFT JOIN customer_returns cr ON m.doc_type = 'customer_return' AND cr.id = m.doc_id
+		LEFT JOIN orders o ON m.doc_type = 'order' AND o.id = m.doc_id
+		WHERE m.warehouse_id = $1 AND ($2 = '' OR m.product_id::text = $2)
+		ORDER BY m.created_at DESC, m.id DESC LIMIT $3 OFFSET $4`,
 		warehouseID, productID, page.Limit, page.Offset)
 	if err != nil {
 		return nil, err

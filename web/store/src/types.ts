@@ -1,0 +1,417 @@
+// Типы ответов API (поля — json-теги структур Go). Деньги и количество — строки.
+// Объявлены через type, чтобы подходить под RemoteSelect (Record<string, unknown>).
+
+export type Network = { id: string; name: string; kind: 'chain' | 'single'; status: string }
+
+export type Me = {
+  user_id: string
+  employee_id: string
+  network: Network
+  is_owner: boolean
+  permissions: string[]
+  all_stores: boolean
+  store_ids: string[] | null
+}
+
+export type Store = {
+  id: string
+  name: string
+  address: string
+  phone: string
+  lat: number | null
+  lng: number | null
+  status: string
+  default_warehouse_id: string | null
+  online_price_type_id: string | null
+  created_at: string
+}
+
+export type Warehouse = { id: string; store_id: string; name: string; is_active: boolean; is_default: boolean }
+
+export type Product = {
+  id: string
+  network_id: string | null
+  name: string
+  description: string
+  brand_id: string | null
+  brand_name: string | null
+  category_id: string
+  category_name: string
+  unit_id: string
+  unit_short: string
+  is_fractional: boolean
+  color_id: string | null
+  base_price: string
+  images: string[] | null
+  barcodes: string[] | null
+  moderation_status: string
+  rejection_reason: string
+  is_active: boolean
+  price?: string
+  price_source?: string
+  price_type_id?: string
+}
+
+export type DictItem = {
+  id: string
+  name: string
+  is_active: boolean
+  parent_id?: string | null
+  sort?: number
+  hex?: string
+  short_name?: string
+  is_fractional?: boolean
+}
+
+export type PriceType = { id: string; name: string; is_default: boolean; is_active: boolean }
+
+export type PriceDocItem = { product_id: string; product_name: string; new_price: string; previous_price: string | null }
+
+export type PriceDocument = {
+  id: string
+  number: number
+  price_type_id: string
+  price_type_name: string
+  store_id: string | null
+  store_name: string | null
+  status: string
+  note: string
+  created_by: string
+  posted_at: string | null
+  created_at: string
+  items_count: number
+  items?: PriceDocItem[]
+}
+
+export type StockDocType = 'income' | 'supplier_return' | 'transfer' | 'write_off' | 'posting' | 'inventory'
+
+export type StockDocItem = {
+  line: number
+  product_id: string
+  product_name: string
+  unit_short: string
+  qty: string
+  price: string | null
+  expected_qty: string | null
+}
+
+export type StockDocument = {
+  id: string
+  type: StockDocType
+  type_title: string
+  number: number
+  status: string
+  warehouse_id: string
+  warehouse_name: string
+  store_id: string
+  to_warehouse_id: string | null
+  to_warehouse_name: string | null
+  counterparty_id: string | null
+  counterparty_name: string | null
+  currency: string
+  rate: string | null
+  reason: string
+  note: string
+  total: string
+  created_by: string
+  posted_at: string | null
+  created_at: string
+  items_count: number
+  items?: StockDocItem[]
+}
+
+export type StockRow = {
+  warehouse_id: string
+  warehouse_name: string
+  store_id: string
+  product_id: string
+  product_name: string
+  unit_short: string
+  qty: string
+  avg_cost: string
+  total_cost: string
+  avg_cost_usd: string
+}
+
+export type Movement = { qty: string; unit_cost: string; doc_type: string; doc_id: string; created_at: string }
+
+export type CounterpartyType = { id: string; name: string; is_active: boolean }
+
+export type Counterparty = {
+  id: string
+  type_id: string | null
+  type_name: string | null
+  name: string
+  phone: string
+  inn: string
+  note: string
+  is_active: boolean
+  balance: string
+}
+
+export type Reason = { id: string; name: string; kind: 'income' | 'expense'; is_active: boolean }
+
+export type Cashbox = {
+  id: string
+  store_id: string | null
+  store_name: string | null
+  name: string
+  currency: string
+  is_main: boolean
+  is_active: boolean
+  balance: string
+}
+
+export type PaymentMethod = {
+  id: string
+  name: string
+  cashbox_id: string
+  cashbox_name: string
+  store_id: string | null
+  is_active: boolean
+}
+
+export type CashOperation = {
+  id: string
+  number: number
+  kind: 'income' | 'expense'
+  cashbox_id: string
+  cashbox_name: string
+  currency: string
+  amount: string
+  amount_uzs: string
+  rate: string | null
+  counterparty_id: string | null
+  counterparty_name: string | null
+  reason_id: string | null
+  reason_name: string | null
+  note: string
+  created_by: string
+  created_at: string
+}
+
+export type CashTransfer = {
+  id: string
+  number: number
+  kind: string
+  from_id: string
+  from_name: string
+  from_currency: string
+  to_id: string
+  to_name: string
+  to_currency: string
+  amount_from: string
+  amount_to: string
+  rate: string | null
+  note: string
+  created_by: string
+  created_at: string
+}
+
+export type Entry = { amount: string; doc_type: string; doc_id: string; created_at: string }
+
+export type Rate = { rate: string; created_at: string }
+
+export type SaleItem = {
+  line: number
+  product_id: string
+  product_name: string
+  qty: string
+  price: string
+  discount: string
+  total: string
+  returned_qty: string
+}
+
+export type Sale = {
+  id: string
+  number: number
+  store_id: string
+  store_name: string
+  warehouse_id: string
+  subtotal: string
+  discount: string
+  total: string
+  customer_phone: string
+  note: string
+  cashier: string
+  sold_at: string
+  fiscal_status: string
+  fiscal_number: string
+  fiscal_sign: string
+  created_at: string
+  items?: SaleItem[]
+  payments?: { payment_method_id: string; name: string; amount: string }[]
+}
+
+export type CustomerReturn = {
+  id: string
+  number: number
+  sale_id: string
+  sale_number: number
+  store_id: string
+  total: string
+  payment_method: string
+  reason: string
+  created_by: string
+  fiscal_status: string
+  created_at: string
+  items?: { sale_line: number; product_name: string; qty: string; total: string }[]
+}
+
+export type FiscalSummary = { pending_sales: number; pending_returns: number; oldest_pending_at: string | null }
+
+export type OrderItem = {
+  line: number
+  product_id: string
+  product_name: string
+  unit_short: string
+  qty: string
+  price: string
+  total: string
+  picked_warehouse_id: string | null
+  from_other_warehouse: boolean
+}
+
+export type Order = {
+  id: string
+  number: number
+  store_id: string
+  store_name: string
+  warehouse_id: string
+  status: string
+  status_title: string
+  subtotal: string
+  delivery_fee: string
+  total: string
+  address: string
+  entrance: string
+  floor: string
+  apartment: string
+  address_comment: string
+  lat: number
+  lng: number
+  distance_m: number
+  customer_phone: string
+  comment: string
+  payment_provider: string
+  payment_status: string | null
+  paid_at: string | null
+  accepted_at: string | null
+  delivered_at: string | null
+  cancel_reason: string
+  fiscal_status: string
+  created_at: string
+  items?: OrderItem[]
+  history?: { status: string; actor: string; note: string; created_at: string }[]
+}
+
+export type WorkingHours = { weekday: number; opens: string; closes: string }
+export type DeliveryRule = { type: 'fixed' | 'distance' | 'zone' | 'free_from'; params: Record<string, string | number>; sort: number }
+export type DeliverySettings = {
+  accepts_online: boolean
+  min_order_amount: string
+  delivery_radius_m: number
+  working_hours: WorkingHours[] | null
+  rules: DeliveryRule[] | null
+}
+export type Zone = { id: string; name: string; price: string; is_active: boolean; polygon: [number, number][] }
+
+export type Role = { id: string; name: string; permissions: string[] | null; is_owner: boolean }
+export type Permission = { code: string; title: string }
+export type Employee = {
+  id: string
+  phone: string
+  full_name: string
+  role_id: string
+  role_name: string
+  is_owner: boolean
+  status: string
+  all_stores: boolean
+  store_ids: string[] | null
+}
+
+export type Balance = { available: string; pending: string; next_payout_at: string | null }
+export type BalanceEntry = {
+  id: number
+  kind: string
+  status: string
+  amount: string
+  store_id: string | null
+  order_id: string | null
+  order_number: number | null
+  note: string
+  created_at: string
+}
+export type Payout = {
+  id: string
+  number: number
+  amount: string
+  status: string
+  requisites: string
+  note: string
+  admin_note: string
+  processed_at: string | null
+  created_at: string
+}
+export type Billing = {
+  network_id: string
+  network_name: string
+  stores_count: number
+  custom_price_per_store: string | null
+  price_per_store: string
+  monthly_usd: string
+  billing_from: string
+  balance_available: string
+  balance_pending: string
+  unpaid_uzs: string
+  overdue: boolean
+}
+export type Invoice = {
+  id: string
+  period: string
+  stores_count: number
+  price_per_store: string
+  amount_usd: string
+  rate: string
+  amount_uzs: string
+  status: string
+  due_date: string
+  overdue: boolean
+  paid_via: string | null
+  paid_at: string | null
+  note: string
+  created_at: string
+}
+
+export type CashboxFlow = {
+  id: string
+  name: string
+  currency: string
+  store_id: string | null
+  opening: string
+  income: string
+  expense: string
+  closing: string
+}
+export type CashFlow = {
+  from: string
+  to: string
+  cashboxes: CashboxFlow[]
+  lines: { currency: string; category: string; title: string; income: string; expense: string }[]
+}
+export type ReasonAmount = { reason_id: string; name: string; amount: string }
+export type ProfitLoss = {
+  from: string
+  to: string
+  revenue: { pos_sales: string; customer_returns: string; online_orders: string; delivery_fees: string; total: string }
+  cost_of_goods: { pos: string; returns: string; online: string; total: string }
+  gross_profit: string
+  stock_adjustments: { write_offs: string; inventory_shortage: string; inventory_surplus: string; total: string }
+  other_income: ReasonAmount[] | null
+  expenses: ReasonAmount[] | null
+  platform_subscription: string
+  net_profit: string
+  sales_count: number
+  orders_count: number
+}

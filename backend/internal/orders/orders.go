@@ -136,7 +136,18 @@ func (s *Service) getOrder(ctx context.Context, q db.Querier, id string) (Order,
 	if o.Items, err = pgx.CollectRows(rows, pgx.RowToStructByPos[OrderItem]); err != nil {
 		return Order{}, err
 	}
-	rows, err = q.Query(ctx, `SELECT status, actor, note, created_at FROM order_status_history WHERE order_id = $1 ORDER BY id`, id)
+	rows, err = q.Query(ctx, `
+		SELECT h.status,
+		       CASE WHEN h.actor = 'client' THEN 'Покупатель'
+		            WHEN h.actor = 'payment' THEN 'Оплата'
+		            WHEN h.actor = 'system' THEN 'Система'
+		            WHEN h.actor = 'admin' THEN 'Супер-админ'
+		            WHEN h.actor LIKE 'store:%' THEN COALESCE(e.full_name, 'Магазин')
+		            ELSE h.actor END,
+		       h.note, h.created_at
+		FROM order_status_history h
+		LEFT JOIN employees e ON h.actor LIKE 'store:%' AND e.id::text = substr(h.actor, 7)
+		WHERE h.order_id = $1 ORDER BY h.id`, id)
 	if err != nil {
 		return Order{}, err
 	}

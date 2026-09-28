@@ -41,7 +41,7 @@ func pr(r *http.Request) *identity.Principal { return identity.FromContext(r.Con
 func filterFrom(r *http.Request) (SaleFilter, error) {
 	from, to, err := finance.ParsePeriod(r)
 	return SaleFilter{
-		StoreID: r.URL.Query().Get("store_id"), FiscalPending: r.URL.Query().Get("fiscal") == "pending",
+		StoreID: r.URL.Query().Get("store_id"), SaleID: r.URL.Query().Get("sale_id"), FiscalPending: r.URL.Query().Get("fiscal") == "pending",
 		From: from, To: to, Page: httpx.PageFrom(r),
 	}, err
 }

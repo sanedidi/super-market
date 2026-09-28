@@ -1,6 +1,6 @@
 name: deploy
 
-# Каждый пуш в main: тесты → копирование кода на сервер → docker compose up.
+# Каждый пуш в main: тесты и сборка панелей → копирование кода на сервер → docker compose up.
 on:
   push:
     branches: [main]
@@ -14,8 +14,11 @@ jobs:
   test:
     uses: ./.github/workflows/backend.yml
 
+  web:
+    uses: ./.github/workflows/web.yml
+
   deploy:
-    needs: test
+    needs: [test, web]
     runs-on: ubuntu-latest
     environment: production
     env:
@@ -43,7 +46,7 @@ jobs:
         run: |
           ssh "$SSH_USER@$SSH_HOST" "mkdir -p $APP_DIR"
           rsync -az --delete \
-            --exclude .git --exclude .env --exclude 'backend/bin' \
+            --exclude .git --exclude .env --exclude 'backend/bin' --exclude node_modules --exclude 'web/*/dist' \
             ./ "$SSH_USER@$SSH_HOST:$APP_DIR/"
 
       - name: Write .env

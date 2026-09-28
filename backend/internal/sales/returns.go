@@ -82,8 +82,9 @@ func (s *Service) ListReturns(ctx context.Context, p *identity.Principal, f Sale
 		WHERE r.network_id = $1 AND ($2 OR r.store_id = ANY($3::uuid[]))
 		  AND ($4 = '' OR r.store_id::text = $4) AND (NOT $5 OR r.fiscal_status = 'pending')
 		  AND ($6::timestamptz IS NULL OR r.created_at >= $6) AND ($7::timestamptz IS NULL OR r.created_at < $7)
+		  AND ($10 = '' OR r.sale_id::text = $10)
 		ORDER BY r.created_at DESC LIMIT $8 OFFSET $9`,
-		p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.StoreID, f.FiscalPending, f.From, f.To, f.Page.Limit, f.Page.Offset)
+		p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.StoreID, f.FiscalPending, f.From, f.To, f.Page.Limit, f.Page.Offset, f.SaleID)
 	if err != nil {
 		return nil, err
 	}

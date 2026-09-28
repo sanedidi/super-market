@@ -125,6 +125,7 @@ func (s *Service) GetSale(ctx context.Context, p *identity.Principal, id string)
 
 type SaleFilter struct {
 	StoreID       string
+	SaleID        string // только для возвратов: возвраты по чеку
 	FiscalPending bool
 	From, To      *time.Time
 	Page          httpx.Page

@@ -15,14 +15,26 @@ backend/               Go, модульный монолит
   cmd/migrate          миграции базы
   internal/identity    вход через Telegram, сессии, роли, сотрудники
   internal/tenant      сети, магазины, склады
+  internal/catalog     справочники, товары, модерация, цены
+  internal/inventory   партии FIFO, складские документы, резервы
+  internal/finance     кассы, контрагенты, курс, кассовые операции
+  internal/sales       POS-продажи, возвраты, фискальные чеки
+  internal/delivery    доставка: часы, зоны, правила, магазины рядом
+  internal/orders      онлайн-заказы
+  internal/payments    Payme, Click, возвраты
+  internal/billing     подписка, баланс платформы, вывод денег
+  internal/reports     денежный поток, прибыль и убыток
+  internal/notify      уведомления в Telegram
   internal/server      сборка API из модулей
-  internal/platform    config, db, httpx, logger, migrate, telegram, token
+  internal/platform    config, db, httpx, logger, migrate, money, telegram, token
   db/migrations        SQL-миграции (встраиваются в бинарник)
-apps/                  (следующие этапы)
-  client               Flutter, покупатель
-  pos                  Flutter, POS
-  store-panel          Next.js, панель магазина
-  admin                Next.js, супер-админ
+web/                   React + Ant Design
+  shared               API-клиент, вход, общие компоненты
+  store                панель магазина  (/)
+  admin                панель супер-админа  (/admin/)
+apps/                  Flutter
+  client               приложение покупателя
+  pos                  POS для планшета, телефона, десктопа
 deploy/                docker-compose
 ```
 
@@ -48,6 +60,14 @@ make test-db     # тесты с интеграционными на локал�
 ```
 
 `make help` — все команды.
+
+Панели (нужен Node.js 22, API на :8080):
+
+```sh
+cd web && npm install
+npm run dev:store   # http://localhost:5173
+npm run dev:admin   # http://localhost:5174/admin/
+```
 
 ## Первый вход
 

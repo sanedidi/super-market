@@ -76,3 +76,26 @@ func (r *Rate) UnmarshalJSON(b []byte) error {
 	*r = Rate(s)
 	return nil
 }
+
+// Price — цена или себестоимость за единицу: неотрицательная, до 4 знаков
+// (себестоимость хранится с точностью 4 знака, цены в USD бывают дробными).
+type Price string
+
+var priceRe = regexp.MustCompile(`^\d{1,12}(\.\d{1,4})?$`)
+
+func (p *Price) UnmarshalJSON(b []byte) error {
+	s := strings.TrimSpace(string(b))
+	if strings.HasPrefix(s, `"`) {
+		if err := json.Unmarshal(b, &s); err != nil {
+			return ErrInvalid
+		}
+	}
+	if !priceRe.MatchString(s) {
+		return errors.New("ожидается неотрицательная цена, до 4 знаков после точки")
+	}
+	*p = Price(s)
+	return nil
+}
+
+// Valid — цена задана и корректна.
+func (p Price) Valid() bool { return priceRe.MatchString(string(p)) }

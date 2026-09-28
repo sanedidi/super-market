@@ -188,7 +188,7 @@ export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
           onOk={() => form.submit()}
           okText="Сохранить"
           confirmLoading={save.isPending}
-          destroyOnClose
+          forceRender
         >
           <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v, { onSuccess: () => setOpen(false) })}>
             {cfg.form(editing)}

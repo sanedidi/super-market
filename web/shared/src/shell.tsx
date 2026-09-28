@@ -61,12 +61,15 @@ export function Shell({ title, menu, header }: { title: string; menu: MenuItem[]
   const [drawer, setDrawer] = useState(false)
   const selected = '/' + (loc.pathname.split('/')[1] ?? '')
   const full = loc.pathname.replace(/\/$/, '') || '/'
+  const parent = menu.find(
+    (m) => m && 'children' in m && (m.children ?? []).some((c) => c && String(c.key) === full),
+  )
 
   const menuEl = (
     <Menu
       mode="inline"
       selectedKeys={[full, selected]}
-      defaultOpenKeys={[]}
+      defaultOpenKeys={parent ? [String(parent.key)] : []}
       items={menu}
       onClick={(e) => {
         nav(e.key)
