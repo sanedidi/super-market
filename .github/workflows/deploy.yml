@@ -1,0 +1,68 @@
+name: deploy
+
+# Каждый пуш в main: тесты → копирование кода на сервер → docker compose up.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  test:
+    uses: ./.github/workflows/backend.yml
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      APP_DIR: /opt/super-market
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SSH key
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          test -n "$SSH_KEY" || { echo "Нет секрета SSH_KEY"; exit 1; }
+          test -n "$SSH_HOST" || { echo "Нет секрета SSH_HOST"; exit 1; }
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Copy code
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER || 'root' }}
+        run: |
+          ssh "$SSH_USER@$SSH_HOST" "mkdir -p $APP_DIR"
+          rsync -az --delete \
+            --exclude .git --exclude .env --exclude 'backend/bin' \
+            ./ "$SSH_USER@$SSH_HOST:$APP_DIR/"
+
+      - name: Write .env
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER || 'root' }}
+          PROD_ENV: ${{ secrets.PROD_ENV }}
+        run: |
+          test -n "$PROD_ENV" || { echo "Нет секрета PROD_ENV"; exit 1; }
+          printf '%s\n' "$PROD_ENV" | ssh "$SSH_USER@$SSH_HOST" "umask 077 && cat > $APP_DIR/.env"
+
+      - name: Deploy
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER || 'root' }}
+        run: ssh "$SSH_USER@$SSH_HOST" "APP_DIR=$APP_DIR bash $APP_DIR/deploy/remote-deploy.sh"
+
+      - name: Smoke test from outside
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          curl -fsS "http://$SSH_HOST/healthz"
+          curl -fsS "http://$SSH_HOST/readyz"
