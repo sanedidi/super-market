@@ -1,5 +1,6 @@
 // Команда worker — фоновые задачи: Telegram-бот, истечение неоплаченных
-// заказов, уведомление супер-админа о непринятых заказах.
+// заказов, уведомление супер-админа о непринятых заказах, счета за подписку
+// и автосписание их с баланса платформы.
 package main
 
 import (
@@ -11,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sanedidi/super-market/backend/internal/billing"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/notify"
 	"github.com/sanedidi/super-market/backend/internal/platform/config"
@@ -72,6 +74,7 @@ func run() error {
 		{Name: "db_ping", Run: pool.Ping},
 		{Name: "orders_expire", Run: ord.ExpireUnpaid},
 		{Name: "orders_alert", Run: ord.AlertUnaccepted},
+		{Name: "billing", Run: billing.NewService(pool, notify.New(pool, sender, log), log).Tick},
 	}
 
 	log.Info("worker запущен", "interval", cfg.WorkerInterval, "jobs", len(jobs))

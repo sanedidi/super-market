@@ -79,3 +79,16 @@ func (n *Notifier) StoreStaff(ctx context.Context, storeID, permission, text str
 		       SELECT 1 FROM employee_stores es WHERE es.employee_id = e.id AND es.store_id = s.id))`,
 		[]any{storeID, permission}, text)
 }
+
+// NetworkOwners — владельцам сети и сотрудникам с правом permission (все магазины).
+func (n *Notifier) NetworkOwners(ctx context.Context, networkID, permission, text string) int {
+	return n.send(ctx, `
+		SELECT DISTINCT tl.chat_id
+		FROM employees e
+		JOIN roles r ON r.id = e.role_id
+		JOIN users u ON u.id = e.user_id
+		JOIN telegram_links tl ON tl.phone = u.phone
+		WHERE e.network_id = $1 AND e.status = 'active'
+		  AND (r.is_owner OR ($2 = ANY(r.permissions) AND e.all_stores))`,
+		[]any{networkID, permission}, text)
+}

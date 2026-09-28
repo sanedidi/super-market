@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/sanedidi/super-market/backend/internal/billing"
 	"github.com/sanedidi/super-market/backend/internal/catalog"
 	"github.com/sanedidi/super-market/backend/internal/delivery"
 	"github.com/sanedidi/super-market/backend/internal/finance"
@@ -21,6 +22,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/config"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/platform/telegram"
+	"github.com/sanedidi/super-market/backend/internal/reports"
 	"github.com/sanedidi/super-market/backend/internal/sales"
 	"github.com/sanedidi/super-market/backend/internal/tenant"
 )
@@ -31,6 +33,7 @@ type App struct {
 	Handler  http.Handler
 	Orders   *orders.Service
 	Payments *payments.Service
+	Billing  *billing.Service
 }
 
 // New создаёт обработчик API. tg — отправитель кодов; nil — взять из
@@ -68,6 +71,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 	auth := identity.NewAuthenticator(idSvc, log)
 
 	dlv, pay, ord := OrderServices(cfg, pool, tg, log)
+	bill := billing.NewService(pool, notify.New(pool, tg, log), log)
 
 	h := httpx.NewRouter(log, pool,
 		identity.NewModule(idSvc, auth, log),
@@ -77,8 +81,10 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		inventory.NewModule(inventory.NewService(pool), auth, log),
 		sales.NewModule(sales.NewService(pool), auth, log),
 		orders.NewModule(ord, dlv, pay, auth, log),
+		billing.NewModule(bill, auth, log),
+		reports.NewModule(reports.NewService(pool), auth, log),
 	)
-	return &App{Handler: h, Orders: ord, Payments: pay}, nil
+	return &App{Handler: h, Orders: ord, Payments: pay, Billing: bill}, nil
 }
 
 // OrderServices создаёт доставку, платежи и заказы (общие для API и worker).

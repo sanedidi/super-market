@@ -554,6 +554,8 @@ func (s *Service) Nearby(ctx context.Context, lat, lng float64) ([]NearbyStore, 
 	return out, nil
 }
 
-// ActiveSubscriptionSQL — условие «у сети магазина оплачена подписка».
-// Использует алиас s (stores). Правило задаёт модуль billing; здесь — в одном месте для SQL.
-var ActiveSubscriptionSQL = `true`
+// ActiveSubscriptionSQL — условие «у сети магазина нет просроченного счёта
+// за подписку» (модуль billing). Магазины должников не показываются в
+// приложении. Использует алиас s (stores).
+const ActiveSubscriptionSQL = `NOT EXISTS (SELECT 1 FROM subscription_invoices si
+	WHERE si.network_id = s.network_id AND si.status = 'unpaid' AND si.due_date < (now() AT TIME ZONE 'Asia/Tashkent')::date)`

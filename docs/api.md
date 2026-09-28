@@ -252,3 +252,42 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 | --- | --- |
 | POST `/payments/payme` | Payme Merchant API (JSON-RPC, Basic `Paycom:PAYME_KEY`), `account.order_id` |
 | POST `/payments/click/prepare`, `/payments/click/complete` | Click SHOP API, `merchant_trans_id` = id заказа |
+
+## Баланс, вывод, подписка (этап 6)
+
+### Панель магазина (право `payouts.manage`)
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET | `/store/balance` | `available` (к выводу), `pending` (оплачено, ещё не доставлено), `next_payout_at` |
+| GET | `/store/balance/entries?from=&to=` | движения баланса: `order`, `payout`, `subscription`, `adjustment` |
+| GET | `/store/payouts?status=` | заявки на вывод |
+| POST | `/store/payouts` | `{"amount","requisites","note"}` — раз в 7 дней, не больше доступного |
+| GET | `/store/billing` | тариф сети: число магазинов, цена за магазин, сумма в месяц, долг, `overdue` |
+| GET | `/store/billing/invoices?status=unpaid\|paid\|cancelled\|overdue` | счета |
+| POST | `/store/billing/invoices/{id}/pay` | оплатить счёт с баланса |
+
+### Супер-админ
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET/PUT | `/admin/billing/settings` | `usd_rate` (курс для счетов), `grace_days` (дней на оплату), `auto_charge_balance` |
+| GET/POST | `/admin/billing/tariffs` | `{"name","min_stores","price_per_store"}` — цена за магазин в месяц, USD |
+| PATCH | `/admin/billing/tariffs/{id}` | в т.ч. `is_active` |
+| GET | `/admin/billing/networks?overdue=true` | сети: магазины, цена, баланс, долг |
+| GET/PATCH | `/admin/billing/networks/{id}` | `{"custom_price_per_store"}`, `{"clear_custom_price":true}`, `{"billing_from":"YYYY-MM-01"}` |
+| GET | `/admin/billing/invoices?network_id=&status=` | счета |
+| POST | `/admin/billing/invoices/generate` | выставить счета за текущий месяц сейчас (обычно делает worker) |
+| POST | `/admin/billing/invoices/{id}/paid` · `/cancel` | `{"note"}` — оплачено вручную / списать |
+| GET | `/admin/payouts?status=requested&network_id=` | заявки на вывод |
+| POST | `/admin/payouts/{id}/paid` | `{"note"}` — деньги переведены |
+| POST | `/admin/payouts/{id}/reject` | `{"note"}` обязательно — сумма возвращается на баланс |
+
+## Отчёты (этап 6)
+
+Право `reports.view`. Параметры: `from`, `to` (по умолчанию — с начала месяца по сейчас, `to` не включается), `store_id`.
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET | `/store/reports/cash-flow?cashbox_id=` | по кассам: остаток на начало, приход, расход, на конец; строки по статьям (продажи, возвраты, финансовые причины, расчёты с контрагентами, сдача кассы, из кассы в кассу) |
+| GET | `/store/reports/profit-loss` | выручка (POS − возвраты + онлайн + доставка), себестоимость FIFO, валовая прибыль, списания и инвентаризация, прочие доходы и расходы по причинам, подписка платформы, чистая прибыль |
