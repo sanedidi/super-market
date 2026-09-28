@@ -12,3 +12,5 @@ node_modules/
 .next/
 build/
 .dart_tool/
+node_modules/
+web/*/dist/

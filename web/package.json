@@ -1,0 +1,11 @@
+{
+  "name": "super-market-web",
+  "private": true,
+  "workspaces": ["shared", "admin", "store"],
+  "scripts": {
+    "dev:admin": "npm run dev -w admin",
+    "dev:store": "npm run dev -w store",
+    "typecheck": "npm run typecheck -w admin && npm run typecheck -w store",
+    "build": "npm run build -w admin && npm run build -w store"
+  }
+}
