@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sanedidi/super-market/backend/internal/catalog"
+	"github.com/sanedidi/super-market/backend/internal/finance"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
@@ -75,6 +76,9 @@ func (s *Service) CreateNetwork(ctx context.Context, in CreateNetworkInput) (Net
 			return err
 		}
 		if err := catalog.CreateDefaultPriceType(ctx, tx, id); err != nil {
+			return err
+		}
+		if err := finance.CreateMainCashbox(ctx, tx, id); err != nil {
 			return err
 		}
 		var err error
@@ -273,6 +277,9 @@ func (s *Service) CreateStore(ctx context.Context, p *identity.Principal, in Sto
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE stores SET default_warehouse_id = $2 WHERE id = $1`, id, whID); err != nil {
+			return err
+		}
+		if err := finance.CreateStoreCashbox(ctx, tx, p.NetworkID, id, strings.TrimSpace(*in.Name)); err != nil {
 			return err
 		}
 		var err error

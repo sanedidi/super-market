@@ -11,7 +11,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sanedidi/super-market/backend/internal/catalog"
+	"github.com/sanedidi/super-market/backend/internal/finance"
 	"github.com/sanedidi/super-market/backend/internal/identity"
+	"github.com/sanedidi/super-market/backend/internal/inventory"
 	"github.com/sanedidi/super-market/backend/internal/platform/config"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/platform/telegram"
@@ -47,6 +49,8 @@ func New(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identity
 		identity.NewModule(idSvc, auth, log),
 		tenant.NewModule(tenant.NewService(pool), auth, log),
 		catalog.NewModule(catalog.NewService(pool), auth, log),
+		finance.NewModule(finance.NewService(pool), auth, log),
+		inventory.NewModule(inventory.NewService(pool), auth, log),
 	), nil
 }
 

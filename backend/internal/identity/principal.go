@@ -18,10 +18,13 @@ const (
 
 // Права сотрудников. Роль — это набор прав; у владельца есть все.
 const (
-	PermStoresManage  = "stores.manage"  // магазины и склады
-	PermStaffManage   = "staff.manage"   // роли и сотрудники
-	PermCatalogManage = "catalog.manage" // свои товары, типы цен
-	PermPricesManage  = "prices.manage"  // установка цен
+	PermStoresManage         = "stores.manage"         // магазины и склады
+	PermStaffManage          = "staff.manage"          // роли и сотрудники
+	PermCatalogManage        = "catalog.manage"        // свои товары, типы цен
+	PermPricesManage         = "prices.manage"         // установка цен
+	PermCounterpartiesManage = "counterparties.manage" // контрагенты
+	PermFinanceManage        = "finance.manage"        // кассы, операции, курс, сдача кассы
+	PermInventoryManage      = "inventory.manage"      // складские документы
 )
 
 // PermissionInfo — право с понятным названием для экрана ролей.
@@ -36,6 +39,9 @@ var Permissions = []PermissionInfo{
 	{PermStaffManage, "Роли и сотрудники"},
 	{PermCatalogManage, "Товары и типы цен"},
 	{PermPricesManage, "Установка цен"},
+	{PermCounterpartiesManage, "Контрагенты"},
+	{PermFinanceManage, "Финансы: кассы, операции, курс"},
+	{PermInventoryManage, "Склад: приход, перемещения, списания, инвентаризация"},
 }
 
 func knownPermission(code string) bool {

@@ -59,3 +59,20 @@ func IsCheckViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23514"
 }
+
+// NextNumber выдаёт следующий номер документа в сети. Строка сети
+// блокируется до конца транзакции, поэтому номера не повторяются.
+// table и extraWhere — только константы из кода.
+func NextNumber(ctx context.Context, tx pgx.Tx, table, networkID, extraWhere string, args ...any) (int64, error) {
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM networks WHERE id = $1 FOR UPDATE`, networkID); err != nil {
+		return 0, err
+	}
+	where := "network_id = $1"
+	if extraWhere != "" {
+		where += " AND " + extraWhere
+	}
+	var n int64
+	err := tx.QueryRow(ctx, "SELECT COALESCE(max(number), 0) + 1 FROM "+table+" WHERE "+where,
+		append([]any{networkID}, args...)...).Scan(&n)
+	return n, err
+}

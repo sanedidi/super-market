@@ -33,3 +33,46 @@ func (a *Amount) UnmarshalJSON(b []byte) error {
 
 // Valid — сумма задана и корректна.
 func (a Amount) Valid() bool { return re.MatchString(string(a)) }
+
+var qtyRe = regexp.MustCompile(`^\d{1,11}(\.\d{1,3})?$`)
+
+// ErrInvalidQty — неверное количество.
+var ErrInvalidQty = errors.New("ожидается неотрицательное количество, до 3 знаков после точки")
+
+// Qty — количество товара (шт, кг, л). В JSON — число или строка.
+type Qty string
+
+func (q *Qty) UnmarshalJSON(b []byte) error {
+	s := strings.TrimSpace(string(b))
+	if strings.HasPrefix(s, `"`) {
+		if err := json.Unmarshal(b, &s); err != nil {
+			return ErrInvalidQty
+		}
+	}
+	if !qtyRe.MatchString(s) {
+		return ErrInvalidQty
+	}
+	*q = Qty(s)
+	return nil
+}
+
+func (q Qty) Valid() bool { return qtyRe.MatchString(string(q)) }
+
+// Rate — курс (сумов за 1 USD), до 4 знаков.
+type Rate string
+
+var rateRe = regexp.MustCompile(`^\d{1,10}(\.\d{1,4})?$`)
+
+func (r *Rate) UnmarshalJSON(b []byte) error {
+	s := strings.TrimSpace(string(b))
+	if strings.HasPrefix(s, `"`) {
+		if err := json.Unmarshal(b, &s); err != nil {
+			return errors.New("неверный курс")
+		}
+	}
+	if !rateRe.MatchString(s) || strings.Trim(s, "0.") == "" {
+		return errors.New("курс должен быть положительным числом")
+	}
+	*r = Rate(s)
+	return nil
+}

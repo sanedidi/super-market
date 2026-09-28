@@ -108,3 +108,57 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 | POST | `/store/price-documents/{id}/post` | `prices.manage` | провести: записать цены, запомнить прежние |
 
 Документ на всю сеть может создать только сотрудник с доступом ко всем магазинам.
+
+## Склад (этап 3)
+
+Все пути под `/store/inventory`, право на изменения — `inventory.manage`. Количество — строка/число до 3 знаков (`"2.5"`);
+у штучных товаров только целое.
+
+Складской документ один на все виды, различается полем `type`:
+
+| type | Что делает | Обязательные поля |
+| --- | --- | --- |
+| `income` | приход от поставщика: новая партия, долг поставщику + | `warehouse_id`, `counterparty_id`, `currency` (UZS/USD), в строках `price` |
+| `supplier_return` | возврат поставщику: списание FIFO, долг − | `warehouse_id`, `counterparty_id`; `price` необязательна — тогда по себестоимости |
+| `transfer` | между складами (и между магазинами сети): партии переезжают со своей себестоимостью | `warehouse_id`, `to_warehouse_id` |
+| `write_off` | списание FIFO | `warehouse_id`, `reason` |
+| `posting` | оприходование (начальные остатки, находки) | `warehouse_id`, в строках `price` — себестоимость |
+| `inventory` | инвентаризация: `qty` в строках — факт; при проведении излишек приходуется по последней себестоимости, недостача списывается FIFO | `warehouse_id` |
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET | `/documents?type=&status=&warehouse_id=&from=&to=` | список |
+| POST | `/documents` | черновик `{"type", "warehouse_id", ..., "items": [{"product_id", "qty", "price"?}]}` |
+| GET | `/documents/{id}` | со строками; у инвентаризации после проведения `expected_qty` |
+| PATCH | `/documents/{id}` | черновик: `counterparty_id`, `currency`, `reason`, `note`, `items` (целиком) |
+| DELETE | `/documents/{id}` | удалить черновик |
+| POST | `/documents/{id}/post` | провести; 409 `insufficient_stock` с `details.product_id/available/required`, если товара не хватает — тогда ничего не меняется |
+| GET | `/stock?warehouse_id=&store_id=&product_id=&q=` | остатки с `avg_cost`, `total_cost`, `avg_cost_usd` |
+| GET | `/movements?warehouse_id=&product_id=` | история движения товара |
+
+Себестоимость партии хранится в UZS и USD по курсу на момент проведения. Приход в USD без установленного курса не проводится.
+Номера документов — свои для каждого вида в сети.
+
+## Финансы (этап 3)
+
+Все пути под `/store/finance`. Права: `finance.manage` (кассы, операции, курс, перемещения), `counterparties.manage`.
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET/POST | `/rates` | курс: `{"rate": 12700}` — сумов за 1 USD; действует последний |
+| GET/POST/PATCH | `/counterparty-types`, `/counterparty-types/{id}` | `{"name", "is_active"?}` |
+| GET/POST | `/counterparties?q=` | `{"name", "type_id"?, "phone"?, "inn"?, "note"?}`; в ответе `balance` (UZS): плюс — мы должны, минус — нам |
+| GET/PATCH | `/counterparties/{id}` | |
+| GET | `/counterparties/{id}/entries` | акт сверки |
+| GET/POST/PATCH | `/reasons`, `/reasons/{id}` | финансовые причины `{"name", "kind": "income"\|"expense"}` |
+| GET | `/cashboxes` | кассы с `balance`; главная видна только при доступе ко всем магазинам |
+| POST | `/cashboxes` | `{"name", "currency"?, "store_id"?}` — без `store_id` главная касса (например, USD) |
+| PATCH | `/cashboxes/{id}` | `{"name"?, "is_active"?}` |
+| GET | `/cashboxes/{id}/entries` | выписка |
+| GET/POST/PATCH | `/payment-methods?store_id=` | способ оплаты → касса, куда идут деньги |
+| GET | `/operations?cashbox_id=&from=&to=` | кассовые операции (включая главную кассу) |
+| POST | `/operations` | `{"kind": "income"\|"expense", "cashbox_id", "amount", "counterparty_id"? или "reason_id"?, "note"?}`; расход сверх остатка — 409 `insufficient_cash` |
+| GET/POST | `/transfers` | из кассы в кассу `{"from_id", "to_id", "amount"}`; между валютами — по курсу |
+| GET/POST | `/handovers` | сдача кассы `{"from_id", "amount"}` — в главную кассу той же валюты |
+
+Каждый новый магазин получает кассу и способы оплаты «Наличные» и «Терминал», каждая сеть — «Главную кассу».
