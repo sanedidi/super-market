@@ -523,7 +523,7 @@ func (s *Service) Post(ctx context.Context, p *identity.Principal, id string) (D
 					}
 					lineTotal = mul(ctx, tx, diff, cost)
 				case -1: // недостача — списываем по FIFO
-					taken, err := TakeFIFO(ctx, tx, p.NetworkID, d.WarehouseID, it.ProductID, diff, DocStock, d.ID)
+					taken, err := TakeFIFOPhysical(ctx, tx, p.NetworkID, d.WarehouseID, it.ProductID, diff, DocStock, d.ID)
 					if err != nil {
 						return err
 					}

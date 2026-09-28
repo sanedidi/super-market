@@ -1,6 +1,5 @@
-// Команда worker — фоновые задачи: таймер непринятых заказов,
-// рассылка уведомлений, подписки, балансы. Задачи добавляются
-// на следующих этапах, пока worker только проверяет базу по расписанию.
+// Команда worker — фоновые задачи: Telegram-бот, истечение неоплаченных
+// заказов, уведомление супер-админа о непринятых заказах.
 package main
 
 import (
@@ -13,10 +12,12 @@ import (
 	"time"
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
+	"github.com/sanedidi/super-market/backend/internal/notify"
 	"github.com/sanedidi/super-market/backend/internal/platform/config"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/logger"
 	"github.com/sanedidi/super-market/backend/internal/platform/telegram"
+	"github.com/sanedidi/super-market/backend/internal/server"
 )
 
 // Job — одна периодическая задача. Ошибка задачи логируется и не
@@ -51,8 +52,10 @@ func run() error {
 
 	// Telegram-бот: принимает номера телефонов для кодов входа.
 	botDone := make(chan struct{})
+	var sender notify.Sender
 	if cfg.TelegramBotToken != "" {
 		api := telegram.New(cfg.TelegramBotToken, cfg.TelegramAPIURL)
+		sender = api
 		svc := identity.NewService(pool, api, identity.Config{Secret: cfg.JWTSecret}, log)
 		go func() {
 			defer close(botDone)
@@ -64,8 +67,11 @@ func run() error {
 	}
 	defer func() { <-botDone }()
 
+	_, _, ord := server.OrderServices(cfg, pool, sender, log)
 	jobs := []Job{
 		{Name: "db_ping", Run: pool.Ping},
+		{Name: "orders_expire", Run: ord.ExpireUnpaid},
+		{Name: "orders_alert", Run: ord.AlertUnaccepted},
 	}
 
 	log.Info("worker запущен", "interval", cfg.WorkerInterval, "jobs", len(jobs))

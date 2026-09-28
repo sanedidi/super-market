@@ -45,6 +45,19 @@ type Config struct {
 	TelegramBotToken    string
 	TelegramBotUsername string
 	TelegramAPIURL      string
+
+	// Онлайн-оплата.
+	PaymeMerchantID  string
+	PaymeKey         string
+	PaymeTest        bool
+	ClickServiceID   string
+	ClickMerchantID  string
+	ClickSecretKey   string
+	PaymentReturnURL string
+	// Время на оплату заказа, потом он истекает и резерв снимается.
+	PaymentTimeout time.Duration
+	// Сколько ждать, пока магазин примет оплаченный заказ, до уведомления супер-админа.
+	AcceptTimeout time.Duration
 }
 
 const devJWTSecret = "dev-secret-do-not-use-in-production"
@@ -68,6 +81,14 @@ func Load(getenv func(string) string) (Config, error) {
 		TelegramBotToken:    getenv("TELEGRAM_BOT_TOKEN"),
 		TelegramBotUsername: strings.TrimPrefix(getenv("TELEGRAM_BOT_USERNAME"), "@"),
 		TelegramAPIURL:      getenv("TELEGRAM_API_URL"),
+
+		PaymeMerchantID:  getenv("PAYME_MERCHANT_ID"),
+		PaymeKey:         getenv("PAYME_KEY"),
+		PaymeTest:        getenv("PAYME_TEST") == "true",
+		ClickServiceID:   getenv("CLICK_SERVICE_ID"),
+		ClickMerchantID:  getenv("CLICK_MERCHANT_ID"),
+		ClickSecretKey:   getenv("CLICK_SECRET_KEY"),
+		PaymentReturnURL: getenv("PAYMENT_RETURN_URL"),
 	}
 
 	var errs []error
@@ -99,6 +120,12 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if cfg.OTPTTL, err = durationOr(getenv("OTP_TTL"), 5*time.Minute); err != nil {
 		errs = append(errs, fmt.Errorf("OTP_TTL: %w", err))
+	}
+	if cfg.PaymentTimeout, err = durationOr(getenv("PAYMENT_TIMEOUT"), 15*time.Minute); err != nil {
+		errs = append(errs, fmt.Errorf("PAYMENT_TIMEOUT: %w", err))
+	}
+	if cfg.AcceptTimeout, err = durationOr(getenv("ACCEPT_TIMEOUT"), 10*time.Minute); err != nil {
+		errs = append(errs, fmt.Errorf("ACCEPT_TIMEOUT: %w", err))
 	}
 
 	switch {

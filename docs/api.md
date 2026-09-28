@@ -197,3 +197,58 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 Цена берётся с сервера (магазин → сеть → базовая), клиент передаёт только количество и скидку на строку.
 Сумма оплат должна точно совпадать с итогом (сдачу считает касса). Товар списывается по FIFO; если не хватает — 409 `insufficient_stock`.
 Возврат: сумма пропорциональна оплаченной сумме строки (со скидкой), товар возвращается в те же партии по той же себестоимости.
+
+## Онлайн-заказы (этап 5)
+
+### Приложение покупателя (`app=client`)
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET | `/client/stores/nearby?lat=&lng=` | магазины, которые доставляют в точку, ближайшие первыми; `recommended` у трёх ближайших открытых; `delivery` — стоимость, минимальная сумма, `is_open`. Без входа |
+| GET | `/client/stores/{id}/categories` | категории, где у магазина есть товар. Без входа |
+| GET | `/client/stores/{id}/products?q=&category_id=` | товары с ценой приложения и остатком (за вычетом резервов). Без входа |
+| GET/POST | `/client/addresses` | адреса: `{"label","address","entrance","floor","apartment","comment","lat","lng"}` |
+| PUT/DELETE | `/client/addresses/{id}` | |
+| POST | `/client/checkout/preview` | расчёт корзины: строки с `problem` (`out_of_stock`, `not_enough`, `fractional`, `unavailable`), доставка, `can_order`, `problems` (`items`, `store_closed`, `min_order_amount`, `not_deliverable`, `store_not_accepting`) |
+| POST | `/client/orders` | оформить: `{"store_id","address_id","items":[{"product_id","qty"}],"payment_provider":"payme"\|"click","comment"}` → `{order, payment_url}`. Товар резервируется |
+| GET | `/client/orders`, `/client/orders/{id}` | заказы с историей статусов |
+| POST | `/client/orders/{id}/cancel` | отмена до принятия магазином; оплаченный — деньги к возврату |
+| GET | `/client/orders/{id}/payment-url` | ссылка на оплату ещё раз |
+
+Статусы: `awaiting_payment` → `paid` → `accepted` → `picking` → `picked` → `delivering` → `delivered`;
+`cancelled`, `expired` (не оплачен за `PAYMENT_TIMEOUT`, 15 мин).
+
+### Панель магазина
+
+| Метод | Путь | Право | Описание |
+| --- | --- | --- | --- |
+| GET/PUT | `/store/stores/{id}/delivery` | `stores.manage` | `accepts_online`, `min_order_amount`, `delivery_radius_m`, `working_hours` [{weekday 0–6, opens, closes}], `rules` |
+| GET/POST | `/store/stores/{id}/zones` | `stores.manage` | зоны доставки `{"name","price","polygon":[[lng,lat],...]}` |
+| PATCH/DELETE | `/store/stores/{id}/zones/{zone}` | | |
+| GET | `/store/orders?store_id=&status=&from=&to=` | | заказы (без неоплаченных) |
+| GET | `/store/orders/{id}` | | |
+| POST | `/store/orders/{id}/accept` · `/start-picking` · `/start-delivery` · `/delivered` | `orders.manage` | смена статуса |
+| POST | `/store/orders/{id}/picked` | `orders.manage` | собран: `{"items":[{"line":1,"warehouse_id":"..."}]}` — строки с другого склада (отметка `from_other_warehouse`) |
+| POST | `/store/orders/{id}/cancel` | `orders.manage` | `{"reason"}`, до сборки |
+| POST | `/store/orders/{id}/fiscal` | `orders.manage` | чек после сборки |
+
+Правила доставки (`rules`, по порядку `sort`, первое подходящее задаёт цену):
+`fixed {price}`, `distance {base, per_km}` (км округляются вверх), `zone {}` (цена зоны), `free_from {amount}` (бесплатно от суммы).
+Если у магазина есть активные зоны — доставка только в зоны, иначе — в радиусе.
+
+### Супер-админ
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET | `/admin/orders?status=&stale=true` | заказы; `stale` — оплачены, но не приняты за `ACCEPT_TIMEOUT` |
+| GET | `/admin/orders/{id}` | |
+| POST | `/admin/orders/{id}/cancel` | `{"reason"}` |
+| GET | `/admin/payments?status=refund_pending` | очередь возвратов |
+| POST | `/admin/payments/{id}/refunded` | деньги возвращены в кабинете Click (Payme сообщает сам) |
+
+### Платёжные системы
+
+| Путь | Кто вызывает |
+| --- | --- |
+| POST `/payments/payme` | Payme Merchant API (JSON-RPC, Basic `Paycom:PAYME_KEY`), `account.order_id` |
+| POST `/payments/click/prepare`, `/payments/click/complete` | Click SHOP API, `merchant_trans_id` = id заказа |

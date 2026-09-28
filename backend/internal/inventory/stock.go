@@ -57,8 +57,35 @@ func errInsufficient(productID, available, need string) error {
 
 // TakeFIFO списывает qty товара со склада, начиная с самых старых партий.
 // Партии блокируются (FOR UPDATE), поэтому параллельные продажи одного
-// товара не уведут остаток в минус. Возвращает, из каких партий списано.
+// товара не уведут остаток в минус. Товар, зарезервированный под онлайн-заказы,
+// списать нельзя: доступно «остаток − резервы». Возвращает, из каких партий списано.
 func TakeFIFO(ctx context.Context, tx pgx.Tx, networkID, warehouseID, productID, qty, docType, docID string) ([]Taken, error) {
+	if err := LockProduct(ctx, tx, warehouseID, productID); err != nil {
+		return nil, err
+	}
+	var enough bool
+	var available string
+	if err := tx.QueryRow(ctx, `
+		WITH a AS (
+			SELECT COALESCE((SELECT sum(qty_remaining) FROM batches WHERE warehouse_id = $1 AND product_id = $2), 0)
+			     - COALESCE((SELECT sum(qty) FROM stock_reservations WHERE warehouse_id = $1 AND product_id = $2), 0) AS v)
+		SELECT v >= $3::numeric, GREATEST(v, 0)::text FROM a`, warehouseID, productID, qty).Scan(&enough, &available); err != nil {
+		return nil, err
+	}
+	if !enough {
+		return nil, errInsufficient(productID, available, qty)
+	}
+	return takeFIFO(ctx, tx, networkID, warehouseID, productID, qty, docType, docID)
+}
+
+// TakeFIFOPhysical списывает без учёта резервов — для недостачи при
+// инвентаризации: фактический остаток важнее резервов (заказ потом соберут
+// с другого склада).
+func TakeFIFOPhysical(ctx context.Context, tx pgx.Tx, networkID, warehouseID, productID, qty, docType, docID string) ([]Taken, error) {
+	return takeFIFO(ctx, tx, networkID, warehouseID, productID, qty, docType, docID)
+}
+
+func takeFIFO(ctx context.Context, tx pgx.Tx, networkID, warehouseID, productID, qty, docType, docID string) ([]Taken, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT id, qty_remaining::text, unit_cost::text, unit_cost_usd::text
 		FROM batches
@@ -167,4 +194,21 @@ func StockQty(ctx context.Context, q db.Querier, warehouseID, productID string) 
 	err := q.QueryRow(ctx, `SELECT COALESCE(sum(qty_remaining), 0)::text FROM batches
 		WHERE warehouse_id = $1 AND product_id = $2`, warehouseID, productID).Scan(&qty)
 	return qty, err
+}
+
+// Available — остаток за вычетом резервов под онлайн-заказы.
+func Available(ctx context.Context, q db.Querier, warehouseID, productID string) (string, error) {
+	var qty string
+	err := q.QueryRow(ctx, `
+		SELECT (COALESCE((SELECT sum(qty_remaining) FROM batches WHERE warehouse_id = $1 AND product_id = $2), 0)
+		      - COALESCE((SELECT sum(qty) FROM stock_reservations WHERE warehouse_id = $1 AND product_id = $2), 0))::text`,
+		warehouseID, productID).Scan(&qty)
+	return qty, err
+}
+
+// LockProduct блокирует партии товара на складе до конца транзакции, чтобы
+// параллельные заказы не зарезервировали один и тот же остаток.
+func LockProduct(ctx context.Context, tx pgx.Tx, warehouseID, productID string) error {
+	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1 || ':' || $2))`, warehouseID, productID)
+	return err
 }
