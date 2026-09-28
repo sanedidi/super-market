@@ -1,0 +1,82 @@
+# Локальное окружение разработки: make up
+# Значения по умолчанию подходят для dev; для сервера задаются в .env.
+name: super-market
+
+x-backend-env: &backend-env
+  APP_ENV: ${APP_ENV:-dev}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DATABASE_URL: postgres://${POSTGRES_USER:-market}:${POSTGRES_PASSWORD:-market}@db:5432/${POSTGRES_DB:-market}?sslmode=disable
+
+services:
+  db:
+    # У образа postgis нет сборки под arm64 — на Mac с Apple Silicon
+    # он работает через эмуляцию amd64. Для разработки этого хватает.
+    image: postgis/postgis:16-3.4
+    platform: linux/amd64
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-market}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-market}
+      POSTGRES_DB: ${POSTGRES_DB:-market}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-market}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-market-secret}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+
+  migrate:
+    build: ../backend
+    command: ["migrate"]
+    environment: *backend-env
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build: ../backend
+    command: ["api"]
+    environment:
+      <<: *backend-env
+      HTTP_ADDR: ":8080"
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker:
+    build: ../backend
+    command: ["worker"]
+    environment: *backend-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  redis-data:
+  minio-data:
