@@ -1,0 +1,26 @@
+name: sm_client
+description: Приложение покупателя — заказ продуктов из магазинов рядом с доставкой.
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  sm_core:
+    path: ../core
+  provider: ^6.1.2
+  url_launcher: ^6.3.0
+  geolocator: ^13.0.1
+  yandex_mapkit: ^4.1.0
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

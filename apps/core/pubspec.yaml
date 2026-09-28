@@ -1,0 +1,18 @@
+name: sm_core
+description: Общий код приложений покупателя и POS — API-клиент, вход, форматирование.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.2
+  shared_preferences: ^2.3.2
+  intl: any # версию задаёт flutter_localizations
+
+dev_dependencies:
+  flutter_lints: ^4.0.0

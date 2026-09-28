@@ -14,3 +14,8 @@ build/
 .dart_tool/
 node_modules/
 web/*/dist/
+# Flutter
+apps/*/.dart_tool/
+apps/*/build/
+apps/*/.flutter-plugins
+apps/*/.flutter-plugins-dependencies
