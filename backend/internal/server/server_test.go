@@ -31,7 +31,13 @@ import (
 
 // ------------------------------------------------------------ окружение
 
-func quietLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
+// quietLog глушит логи; TEST_LOG=1 выводит их (для разбора 500 в тестах).
+func quietLog() *slog.Logger {
+	if os.Getenv("TEST_LOG") != "" {
+		return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	}
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
 
 // freshDB создаёт отдельную базу на тест, применяет миграции и удаляет её в конце.
 func freshDB(t *testing.T) *pgxpool.Pool {

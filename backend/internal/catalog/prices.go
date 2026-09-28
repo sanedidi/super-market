@@ -439,3 +439,47 @@ func (s *Service) PostPriceDoc(ctx context.Context, pr *identity.Principal, id s
 	})
 	return out, err
 }
+
+// DefaultPriceType — тип цены по умолчанию в сети.
+func DefaultPriceType(ctx context.Context, q db.Querier, networkID string) (string, error) {
+	var id string
+	err := q.QueryRow(ctx, `SELECT id FROM price_types WHERE network_id = $1 AND is_default`, networkID).Scan(&id)
+	return id, err
+}
+
+// CheckPriceType — тип цены есть в сети и активен.
+func CheckPriceType(ctx context.Context, q db.Querier, networkID, id string) error {
+	var active bool
+	err := q.QueryRow(ctx, `SELECT is_active FROM price_types WHERE id = $1 AND network_id = $2`, id, networkID).Scan(&active)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !active) {
+		return apperr.Validation("price_type_id: тип цены не найден или отключён")
+	}
+	return err
+}
+
+// ProductForSale — товар, доступный сети, с действующей ценой в магазине.
+type ProductForSale struct {
+	ID           string
+	Name         string
+	IsFractional bool
+	IsActive     bool
+	Price        string
+}
+
+// EffectivePrice: цена магазина → цена сети → базовая цена товара.
+func EffectivePrice(ctx context.Context, q db.Querier, networkID, storeID, priceTypeID, productID string) (ProductForSale, error) {
+	var p ProductForSale
+	err := q.QueryRow(ctx, `
+		SELECT p.id, p.name, u.is_fractional, p.is_active,
+		       COALESCE(sp.price, np.price, p.base_price)::text
+		FROM products p
+		JOIN units u ON u.id = p.unit_id
+		LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = $3 AND sp.store_id = $2
+		LEFT JOIN prices np ON np.product_id = p.id AND np.price_type_id = $3 AND np.store_id IS NULL
+		WHERE p.id = $4 AND (p.network_id IS NULL OR p.network_id = $1)`,
+		networkID, storeID, priceTypeID, productID).Scan(&p.ID, &p.Name, &p.IsFractional, &p.IsActive, &p.Price)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return p, apperr.Validation("товар не найден")
+	}
+	return p, err
+}

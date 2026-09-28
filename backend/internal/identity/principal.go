@@ -25,6 +25,10 @@ const (
 	PermCounterpartiesManage = "counterparties.manage" // контрагенты
 	PermFinanceManage        = "finance.manage"        // кассы, операции, курс, сдача кассы
 	PermInventoryManage      = "inventory.manage"      // складские документы
+	PermSalesPOS             = "sales.pos"             // продажа на кассе
+	PermSalesDiscount        = "sales.discount"        // скидки на кассе
+	PermSalesReturn          = "sales.return"          // возврат от клиента
+	PermReportsView          = "reports.view"          // отчёты
 )
 
 // PermissionInfo — право с понятным названием для экрана ролей.
@@ -42,6 +46,10 @@ var Permissions = []PermissionInfo{
 	{PermCounterpartiesManage, "Контрагенты"},
 	{PermFinanceManage, "Финансы: кассы, операции, курс"},
 	{PermInventoryManage, "Склад: приход, перемещения, списания, инвентаризация"},
+	{PermSalesPOS, "Продажа на кассе (POS)"},
+	{PermSalesDiscount, "Скидки на кассе"},
+	{PermSalesReturn, "Возврат от клиента"},
+	{PermReportsView, "Отчёты"},
 }
 
 func knownPermission(code string) bool {
