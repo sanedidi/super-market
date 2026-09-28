@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/sanedidi/super-market/backend/internal/catalog"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/config"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
@@ -45,6 +46,7 @@ func New(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identity
 	return httpx.NewRouter(log, pool,
 		identity.NewModule(idSvc, auth, log),
 		tenant.NewModule(tenant.NewService(pool), auth, log),
+		catalog.NewModule(catalog.NewService(pool), auth, log),
 	), nil
 }
 

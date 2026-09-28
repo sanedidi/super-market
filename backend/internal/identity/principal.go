@@ -18,8 +18,10 @@ const (
 
 // Права сотрудников. Роль — это набор прав; у владельца есть все.
 const (
-	PermStoresManage = "stores.manage" // магазины и склады
-	PermStaffManage  = "staff.manage"  // роли и сотрудники
+	PermStoresManage  = "stores.manage"  // магазины и склады
+	PermStaffManage   = "staff.manage"   // роли и сотрудники
+	PermCatalogManage = "catalog.manage" // свои товары, типы цен
+	PermPricesManage  = "prices.manage"  // установка цен
 )
 
 // PermissionInfo — право с понятным названием для экрана ролей.
@@ -32,6 +34,8 @@ type PermissionInfo struct {
 var Permissions = []PermissionInfo{
 	{PermStoresManage, "Магазины и склады"},
 	{PermStaffManage, "Роли и сотрудники"},
+	{PermCatalogManage, "Товары и типы цен"},
+	{PermPricesManage, "Установка цен"},
 }
 
 func knownPermission(code string) bool {

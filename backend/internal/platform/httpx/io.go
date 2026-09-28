@@ -73,3 +73,49 @@ func PageFrom(r *http.Request) Page {
 	}
 	return p
 }
+
+// List — стандартная обёртка списка в ответе.
+type List[T any] struct {
+	Items []T `json:"items"`
+}
+
+// Respond вызывает fn и отвечает её результатом со статусом status или ошибкой.
+func Respond[T any](w http.ResponseWriter, r *http.Request, log *slog.Logger, status int, fn func() (T, error)) {
+	v, err := fn()
+	if err != nil {
+		Fail(w, r, log, err)
+		return
+	}
+	WriteJSON(w, status, v)
+}
+
+// RespondBody читает JSON-тело (и id из пути, если idParam не пуст) и
+// вызывает fn с ними.
+func RespondBody[In any, T any](w http.ResponseWriter, r *http.Request, log *slog.Logger, status int, idParam string,
+	fn func(id string, in In) (T, error)) {
+	var id string
+	if idParam != "" {
+		var err error
+		if id, err = PathID(r, idParam); err != nil {
+			Fail(w, r, log, err)
+			return
+		}
+	}
+	var in In
+	if err := Decode(r, &in); err != nil {
+		Fail(w, r, log, err)
+		return
+	}
+	Respond(w, r, log, status, func() (T, error) { return fn(id, in) })
+}
+
+// RespondID достаёт id из пути и вызывает fn.
+func RespondID[T any](w http.ResponseWriter, r *http.Request, log *slog.Logger, status int, idParam string,
+	fn func(id string) (T, error)) {
+	id, err := PathID(r, idParam)
+	if err != nil {
+		Fail(w, r, log, err)
+		return
+	}
+	Respond(w, r, log, status, func() (T, error) { return fn(id) })
+}

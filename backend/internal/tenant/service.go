@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/sanedidi/super-market/backend/internal/catalog"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
@@ -71,6 +72,9 @@ func (s *Service) CreateNetwork(ctx context.Context, in CreateNetworkInput) (Net
 			return err
 		}
 		if _, err := identity.CreateOwner(ctx, tx, id, in.OwnerPhone, in.OwnerName); err != nil {
+			return err
+		}
+		if err := catalog.CreateDefaultPriceType(ctx, tx, id); err != nil {
 			return err
 		}
 		var err error
@@ -147,13 +151,14 @@ type Store struct {
 	Lng                *float64  `json:"lng"`
 	Status             string    `json:"status"`
 	DefaultWarehouseID *string   `json:"default_warehouse_id"`
+	OnlinePriceTypeID  *string   `json:"online_price_type_id"`
 	CreatedAt          time.Time `json:"created_at"`
 }
 
 const storeSelect = `
 	SELECT id, name, address, phone,
 	       ST_Y(location::geometry), ST_X(location::geometry),
-	       status, default_warehouse_id, created_at
+	       status, default_warehouse_id, online_price_type_id, created_at
 	FROM stores`
 
 type StoreInput struct {
@@ -164,6 +169,7 @@ type StoreInput struct {
 	Lng                *float64 `json:"lng"`
 	Status             *string  `json:"status"`
 	DefaultWarehouseID *string  `json:"default_warehouse_id"`
+	OnlinePriceTypeID  *string  `json:"online_price_type_id"`
 }
 
 func (in StoreInput) validate() error {
@@ -181,6 +187,9 @@ func (in StoreInput) validate() error {
 	}
 	if in.DefaultWarehouseID != nil && !httpx.IsUUID(*in.DefaultWarehouseID) {
 		return apperr.Validation("default_warehouse_id: склад не найден")
+	}
+	if in.OnlinePriceTypeID != nil && *in.OnlinePriceTypeID != "" && !httpx.IsUUID(*in.OnlinePriceTypeID) {
+		return apperr.Validation("online_price_type_id: тип цены не найден")
 	}
 	return nil
 }
@@ -222,8 +231,8 @@ func (s *Service) CreateStore(ctx context.Context, p *identity.Principal, in Sto
 	if in.Name == nil {
 		return Store{}, apperr.Validation("name: обязательное поле")
 	}
-	if in.DefaultWarehouseID != nil || in.Status != nil {
-		return Store{}, apperr.Validation("status и default_warehouse_id задаются после создания")
+	if in.DefaultWarehouseID != nil || in.Status != nil || in.OnlinePriceTypeID != nil {
+		return Store{}, apperr.Validation("status, default_warehouse_id и online_price_type_id задаются после создания")
 	}
 	if err := in.validate(); err != nil {
 		return Store{}, err
@@ -300,6 +309,22 @@ func (s *Service) UpdateStore(ctx context.Context, p *identity.Principal, id str
 				return apperr.Validation("default_warehouse_id: склад отключён")
 			}
 		}
+		if in.OnlinePriceTypeID != nil && *in.OnlinePriceTypeID != "" {
+			var active bool
+			err := tx.QueryRow(ctx, `SELECT is_active FROM price_types WHERE id = $1 AND network_id = $2`,
+				*in.OnlinePriceTypeID, p.NetworkID).Scan(&active)
+			if errors.Is(err, pgx.ErrNoRows) || (err == nil && !active) {
+				return apperr.Validation("online_price_type_id: тип цены не найден или отключён")
+			}
+			if err != nil {
+				return err
+			}
+		}
+		setOnline := in.OnlinePriceTypeID != nil
+		var online *string
+		if setOnline && *in.OnlinePriceTypeID != "" {
+			online = in.OnlinePriceTypeID
+		}
 		tag, err := tx.Exec(ctx, `
 			UPDATE stores SET
 				name     = COALESCE($3, name),
@@ -308,10 +333,11 @@ func (s *Service) UpdateStore(ctx context.Context, p *identity.Principal, id str
 				location = CASE WHEN $6::float8 IS NULL THEN location
 				                ELSE ST_SetSRID(ST_MakePoint($7::float8, $6::float8), 4326)::geography END,
 				status   = COALESCE($8, status),
-				default_warehouse_id = COALESCE($9, default_warehouse_id)
+				default_warehouse_id = COALESCE($9, default_warehouse_id),
+				online_price_type_id = CASE WHEN $10 THEN $11::uuid ELSE online_price_type_id END
 			WHERE id = $1 AND network_id = $2`,
 			id, p.NetworkID, trimPtr(in.Name), trimPtr(in.Address), trimPtr(in.Phone),
-			in.Lat, in.Lng, in.Status, in.DefaultWarehouseID)
+			in.Lat, in.Lng, in.Status, in.DefaultWarehouseID, setOnline, online)
 		if err != nil {
 			return err
 		}
