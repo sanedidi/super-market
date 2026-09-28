@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.idea/
+.vscode/
+bin/
+tmp/
+coverage.out
+node_modules/
+.next/
+build/
+.dart_tool/
