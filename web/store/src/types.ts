@@ -24,6 +24,7 @@ export type Store = {
   default_warehouse_id: string | null
   online_price_type_id: string | null
   created_at: string
+  logo_url: string
 }
 
 export type Warehouse = { id: string; store_id: string; name: string; is_active: boolean; is_default: boolean }
@@ -314,6 +315,22 @@ export type DeliverySettings = {
   delivery_radius_m: number
   working_hours: WorkingHours[] | null
   rules: DeliveryRule[] | null
+  eta_min: number | null
+  eta_max: number | null
+}
+
+export type PromotionItem = { product_id: string; product_name: string; price: string; regular_price: string }
+export type Promotion = {
+  id: string
+  name: string
+  starts_at: string
+  ends_at: string
+  store_ids: string[] | null
+  is_active: boolean
+  status: 'scheduled' | 'running' | 'ended' | 'disabled'
+  item_count: number
+  created_at: string
+  items?: PromotionItem[]
 }
 export type Zone = { id: string; name: string; price: string; is_active: boolean; polygon: [number, number][] }
 

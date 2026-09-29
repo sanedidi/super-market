@@ -85,6 +85,8 @@ function DeliveryInner() {
   const [accepts, setAccepts] = useState(false)
   const [minOrder, setMinOrder] = useState<string | null>('0')
   const [radius, setRadius] = useState<number | null>(0)
+  const [etaMin, setEtaMin] = useState<number | null>(null)
+  const [etaMax, setEtaMax] = useState<number | null>(null)
   const [days, setDays] = useState<DayRow[]>([])
   const [rules, setRules] = useState<RuleRow[]>([])
 
@@ -93,6 +95,8 @@ function DeliveryInner() {
     setAccepts(data.accepts_online)
     setMinOrder(data.min_order_amount)
     setRadius(data.delivery_radius_m)
+    setEtaMin(data.eta_min)
+    setEtaMax(data.eta_max)
     setDays(
       DAYS.map(([wd]) => {
         const h = (data.working_hours ?? []).find((x) => x.weekday === wd)
@@ -119,6 +123,8 @@ function DeliveryInner() {
         accepts_online: accepts,
         min_order_amount: minOrder || '0',
         delivery_radius_m: radius ?? 0,
+        ...(etaMin ? { eta_min: etaMin } : {}),
+        ...(etaMax ? { eta_max: etaMax } : {}),
         working_hours: days
           .filter((d) => d.on && d.opens && d.closes)
           .map((d) => ({ weekday: d.weekday, opens: d.opens!.format('HH:mm'), closes: d.closes!.format('HH:mm') })),
@@ -183,6 +189,13 @@ function DeliveryInner() {
                   </Form.Item>
                 </Col>
               </Row>
+              <Form.Item label="Время доставки в приложении, минут" extra="Покупатель увидит «25–35 мин»">
+                <Space>
+                  <InputNumber value={etaMin} onChange={setEtaMin} min={5} max={600} placeholder="от" />
+                  —
+                  <InputNumber value={etaMax} onChange={setEtaMax} min={5} max={600} placeholder="до" />
+                </Space>
+              </Form.Item>
             </Form>
           </Card>
           <Card title="Часы работы" loading={isLoading}>

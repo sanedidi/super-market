@@ -44,6 +44,11 @@ export function StoresPage() {
             <Form.Item name="phone" label="Телефон">
               <Input placeholder="+998 …" />
             </Form.Item>
+            {editing && (
+              <Form.Item name="logo_url" label="Логотип для приложения" extra="Ссылка на квадратную картинку (https://…)">
+                <Input placeholder="https://…" />
+              </Form.Item>
+            )}
             <Row gutter={16}>
               <Col span={12}>
                 <Form.Item
@@ -95,6 +100,7 @@ export function StoresPage() {
           lat: r.lat,
           lng: r.lng,
           status: r.status,
+          logo_url: r.logo_url,
           default_warehouse_id: r.default_warehouse_id ?? undefined,
           online_price_type_id: r.online_price_type_id ?? undefined,
         })}
@@ -105,6 +111,7 @@ export function StoresPage() {
           return {
             ...base,
             status: v.status,
+            logo_url: v.logo_url ?? '',
             default_warehouse_id: v.default_warehouse_id || undefined,
             // пустая строка сбрасывает тип цены
             online_price_type_id: v.online_price_type_id ?? '',

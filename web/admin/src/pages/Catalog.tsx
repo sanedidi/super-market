@@ -119,6 +119,47 @@ interface Product {
   moderation_status: string
   rejection_reason: string
   is_active: boolean
+  attributes: Record<string, unknown> | null
+}
+
+// Характеристики для карточки товара в приложении.
+const TEXT_ATTRS: [string, string, string?][] = [
+  ['composition', 'Состав'],
+  ['shelf_life', 'Срок хранения', '10 суток'],
+  ['storage', 'Условия хранения', 'от +2 до +6 °C'],
+  ['country', 'Страна', 'Узбекистан'],
+  ['manufacturer', 'Производитель'],
+  ['volume', 'Объём / вес', '900 мл'],
+]
+const NUTRITION: [string, string][] = [
+  ['kcal', 'ккал'],
+  ['protein', 'белки, г'],
+  ['fat', 'жиры, г'],
+  ['carbs', 'углеводы, г'],
+]
+
+function attrsToForm(a: Record<string, unknown> | null) {
+  const out: Record<string, unknown> = {}
+  for (const [k] of TEXT_ATTRS) out[`attr_${k}`] = a?.[k] ?? ''
+  const n = (a?.nutrition ?? {}) as Record<string, number>
+  for (const [k] of NUTRITION) out[`nut_${k}`] = n[k] ?? null
+  return out
+}
+
+function formToAttrs(v: Record<string, unknown>) {
+  const attrs: Record<string, unknown> = {}
+  for (const [k] of TEXT_ATTRS) {
+    const val = String(v[`attr_${k}`] ?? '').trim()
+    if (val) attrs[k] = val
+  }
+  const nutrition: Record<string, number> = {}
+  for (const [k] of NUTRITION) {
+    const val = v[`nut_${k}`]
+    if (val !== null && val !== undefined && val !== '') nutrition[k] = Number(val)
+  }
+  if (Object.keys(nutrition).length) attrs.nutrition = nutrition
+  const rest = Object.fromEntries(Object.entries(v).filter(([k]) => !k.startsWith('attr_') && !k.startsWith('nut_')))
+  return { rest, attrs }
 }
 
 /** Общий каталог товаров; moderation — очередь товаров от сетей. */
@@ -196,9 +237,12 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
               ]
             : []),
         ]}
-        toForm={(p) => ({ ...p, images: p.images?.join('\n'), barcodes: p.barcodes?.join('\n') })}
-        toBody={(v) => ({
+        toForm={(p) => ({ ...p, ...attrsToForm(p.attributes), images: p.images?.join('\n'), barcodes: p.barcodes?.join('\n') })}
+        toBody={(raw) => {
+          const { rest: v, attrs } = formToAttrs(raw)
+          return {
           ...v,
+          attributes: attrs,
           brand_id: v.brand_id ?? null,
           color_id: v.color_id ?? null,
           images: String(v.images ?? '')
@@ -209,7 +253,8 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
             .split(/[\n,]/)
             .map((s) => s.trim())
             .filter(Boolean),
-        })}
+          }
+        }}
         form={(editing) => (
           <>
             <Form.Item name="name" label="Название" rules={[{ required: true }]}>
@@ -243,6 +288,21 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
             <Form.Item name="images" label="Фото (ссылки)" extra="По одной ссылке в строке">
               <Input.TextArea rows={2} />
             </Form.Item>
+            <Typography.Title level={5}>Для карточки в приложении</Typography.Title>
+            <Form.Item label="Пищевая ценность на 100 г" style={{ marginBottom: 0 }}>
+              <Space wrap>
+                {NUTRITION.map(([k, label]) => (
+                  <Form.Item key={k} name={`nut_${k}`} extra={label}>
+                    <InputNumber min={0} max={10000} style={{ width: 100 }} />
+                  </Form.Item>
+                ))}
+              </Space>
+            </Form.Item>
+            {TEXT_ATTRS.map(([k, label, ph]) => (
+              <Form.Item key={k} name={`attr_${k}`} label={label}>
+                <Input placeholder={ph} maxLength={500} />
+              </Form.Item>
+            ))}
             {editing && (
               <Form.Item name="is_active" label="Активен" valuePropName="checked">
                 <Switch />

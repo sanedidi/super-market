@@ -19,6 +19,7 @@ import { DashboardPage } from './pages/Dashboard'
 import { OrdersPage } from './pages/Orders'
 import { ReturnsPage, SalesPage } from './pages/Sales'
 import { PriceDocEditor, PriceDocsPage } from './pages/Prices'
+import { PromotionEditor, PromotionsPage } from './pages/Promotions'
 import { StockDocEditor, StockDocsPage, docPaths } from './pages/StockDocs'
 import { MovementsPage, StockPage } from './pages/Stock'
 import { CashboxesPage, OperationsPage, RatesPage, TransfersPage } from './pages/Finance'
@@ -53,6 +54,7 @@ const MENU: Item[] = [
       { key: '/sales/pos', label: 'Продажи POS', perm: ['sales.pos', 'sales.return', 'reports.view'] },
       { key: '/sales/returns', label: 'Возвраты', perm: ['sales.return', 'sales.pos'] },
       { key: '/sales/prices', label: 'Установка цен', perm: 'prices.manage' },
+      { key: '/sales/promotions', label: 'Акции в приложении', perm: 'prices.manage' },
     ],
   },
   {
@@ -178,6 +180,8 @@ export function StoreRoutes() {
         <Route path="sales/returns" element={<ReturnsPage />} />
         <Route path="sales/prices" element={<PriceDocsPage />} />
         <Route path="sales/prices/:id" element={<PriceDocEditor />} />
+        <Route path="sales/promotions" element={<PromotionsPage />} />
+        <Route path="sales/promotions/:id" element={<PromotionEditor />} />
 
         {(Object.keys(docPaths) as (keyof typeof docPaths)[]).map((t) => [
           <Route key={t} path={docPaths[t].slice(1)} element={<StockDocsPage type={t} />} />,
