@@ -415,3 +415,24 @@ func TestTelegramLoginFlow(t *testing.T) {
 		"phone": "+998901112233", "code": code, "app": "client",
 	}), 400, "code reuse")
 }
+
+// TestReviewLogin — демо-аккаунт для проверки в магазинах приложений:
+// фиксированный код без Telegram, только приложение покупателя.
+func TestReviewLogin(t *testing.T) {
+	pool := freshDB(t)
+	cfg := testConfig()
+	cfg.ReviewLogin = "+998900000077:482915"
+	tg := &fakeTelegram{}
+	a := newAPI(t, cfg, pool, tg)
+
+	a.expect(a.do("POST", "/auth/otp/request", "", map[string]string{"phone": "+998 90 000 00 77"}), 200, "review request")
+	a.expect(a.do("POST", "/auth/otp/verify", "", map[string]string{"phone": "+998900000077", "code": "111111", "app": "client"}), 400, "wrong code")
+	r := a.expect(a.do("POST", "/auth/otp/verify", "", map[string]string{"phone": "+998900000077", "code": "482915", "app": "client"}), 200, "review verify")
+	if r.str("access_token") == "" || len(tg.sent) != 0 {
+		t.Fatalf("verify = %v, telegram = %v", r.Body, tg.sent)
+	}
+	a.expect(a.do("POST", "/auth/otp/request", "", map[string]string{"phone": "+998900000077"}), 200, "again")
+	a.expect(a.do("POST", "/auth/otp/verify", "", map[string]string{"phone": "+998900000077", "code": "482915", "app": "store"}), 400, "store app")
+	// Другие номера по-прежнему требуют Telegram.
+	a.expect(a.do("POST", "/auth/otp/request", "", map[string]string{"phone": "+998900000078"}), 409, "not linked")
+}

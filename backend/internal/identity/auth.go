@@ -41,6 +41,9 @@ type Config struct {
 	OTPTTL      time.Duration
 	DevOTPCode  string
 	BotUsername string
+	// ReviewPhone/ReviewCode — демо-аккаунт для проверки в магазинах приложений.
+	ReviewPhone string
+	ReviewCode  string
 }
 
 // Service — вход, сессии, роли и сотрудники.
@@ -107,6 +110,10 @@ func (s *Service) RequestCode(ctx context.Context, rawPhone string) (int, error)
 	}
 
 	code := s.cfg.DevOTPCode
+	review := s.cfg.ReviewPhone != "" && ph == s.cfg.ReviewPhone
+	if review {
+		code = s.cfg.ReviewCode
+	}
 	var chatID int64
 	if code == "" {
 		err := s.pool.QueryRow(ctx, `SELECT chat_id FROM telegram_links WHERE phone = $1`, ph).Scan(&chatID)
@@ -136,7 +143,7 @@ func (s *Service) RequestCode(ctx context.Context, rawPhone string) (int, error)
 		return 0, err
 	}
 
-	if s.cfg.DevOTPCode == "" {
+	if s.cfg.DevOTPCode == "" && !review {
 		text := fmt.Sprintf("Код для входа: %s\n\nНикому не сообщайте этот код.", code)
 		if err := s.tg.SendMessage(ctx, chatID, text, nil); err != nil {
 			_, _ = s.pool.Exec(ctx, `DELETE FROM auth_codes WHERE phone = $1`, ph)
@@ -155,6 +162,9 @@ func (s *Service) VerifyCode(ctx context.Context, rawPhone, code, app, userAgent
 	ph, err := phone.Normalize(rawPhone)
 	if err != nil {
 		return Tokens{}, apperr.Validation("неверный номер телефона")
+	}
+	if s.cfg.ReviewPhone != "" && ph == s.cfg.ReviewPhone && app != AppClient {
+		return Tokens{}, errCodeInvalid
 	}
 
 	// Шаг 1: проверить код. Отдельная транзакция, чтобы счётчик попыток

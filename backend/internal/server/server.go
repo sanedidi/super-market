@@ -142,7 +142,10 @@ func PaymentsConfig(cfg config.Config) payments.Config {
 
 // IdentityConfig переводит общий конфиг в настройки входа.
 func IdentityConfig(cfg config.Config) identity.Config {
+	reviewPhone, reviewCode, _ := cfg.Review()
 	return identity.Config{
+		ReviewPhone: reviewPhone,
+		ReviewCode:  reviewCode,
 		Secret:      cfg.JWTSecret,
 		AccessTTL:   cfg.AccessTTL,
 		RefreshTTL:  cfg.RefreshTTL,

@@ -8,6 +8,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"github.com/sanedidi/super-market/backend/internal/platform/phone"
 	"os"
 	"strconv"
 	"strings"
@@ -65,6 +66,11 @@ type Config struct {
 	// Ссылки в профиле приложения: поддержка (по умолчанию — бот) и политика конфиденциальности.
 	SupportURL string
 	PrivacyURL string
+
+	// ReviewLogin — «+998XXXXXXXXX:123456»: демо-аккаунт покупателя для
+	// проверки приложения в App Store / Google Play. Для этого номера код не
+	// отправляется в Telegram, а всегда равен указанному. Только приложение покупателя.
+	ReviewLogin string
 }
 
 const devJWTSecret = "dev-secret-do-not-use-in-production"
@@ -98,6 +104,7 @@ func Load(getenv func(string) string) (Config, error) {
 		PaymentReturnURL: getenv("PAYMENT_RETURN_URL"),
 
 		FCMCredentials: getenv("FCM_CREDENTIALS"),
+		ReviewLogin:    strings.TrimSpace(getenv("REVIEW_LOGIN")),
 		SupportURL:     getenv("SUPPORT_URL"),
 		PrivacyURL:     getenv("PRIVACY_URL"),
 	}
@@ -153,6 +160,12 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
+	if cfg.ReviewLogin != "" {
+		if _, _, err := cfg.Review(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
 	if len(errs) > 0 {
 		return Config{}, errors.Join(errs...)
 	}
@@ -193,4 +206,20 @@ func durationOr(v string, def time.Duration) (time.Duration, error) {
 		return 0, fmt.Errorf("должно быть больше нуля, получено %s", d)
 	}
 	return d, nil
+}
+
+// Review разбирает REVIEW_LOGIN на номер и код.
+func (c Config) Review() (phoneNumber, code string, err error) {
+	if c.ReviewLogin == "" {
+		return "", "", nil
+	}
+	ph, code, ok := strings.Cut(c.ReviewLogin, ":")
+	if !ok || len(code) != 6 || strings.Trim(code, "0123456789") != "" {
+		return "", "", errors.New("REVIEW_LOGIN: ожидается «номер:6 цифр»")
+	}
+	ph, err = phone.Normalize(ph)
+	if err != nil {
+		return "", "", errors.New("REVIEW_LOGIN: неверный номер")
+	}
+	return ph, code, nil
 }

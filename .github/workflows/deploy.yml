@@ -56,11 +56,14 @@ jobs:
           PROD_ENV: ${{ secrets.PROD_ENV }}
           # Ключ Firebase для push — отдельный секрет (base64 JSON сервисного аккаунта).
           FCM_CREDENTIALS: ${{ secrets.FCM_CREDENTIALS }}
+          # Демо-аккаунт покупателя для проверки Apple / Google (номер:код), только приложение покупателя.
+          REVIEW_LOGIN: ${{ secrets.REVIEW_LOGIN || '+998900000077:343549' }}
         run: |
           test -n "$PROD_ENV" || { echo "Нет секрета PROD_ENV"; exit 1; }
           {
             printf '%s\n' "$PROD_ENV"
             if [ -n "$FCM_CREDENTIALS" ]; then printf 'FCM_CREDENTIALS=%s\n' "$(printf '%s' "$FCM_CREDENTIALS" | tr -d '\n\r ')"; fi
+            printf 'REVIEW_LOGIN=%s\n' "$REVIEW_LOGIN"
           } | ssh "$SSH_USER@$SSH_HOST" "umask 077 && cat > $APP_DIR/.env"
 
       - name: Deploy
