@@ -123,13 +123,35 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   SliverToBoxAdapter(child: _StoreSelector(store: store)),
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
                       child: AppSearchField(
                         hint: 'Искать в ${store.name}',
                         onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CategoryScreen(store: store, search: true))),
                       ),
                     ),
                   ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: 44,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        children: [
+                          for (final (key, label) in const [('discount', 'Скидки'), ('new', 'Новинки'), ('hits', 'Хиты')])
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: AppChip(
+                                label: label,
+                                onTap: () => Navigator.of(context).push(
+                                  MaterialPageRoute(builder: (_) => CategoryScreen(store: store, filter: key, title: label)),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SliverToBoxAdapter(child: SizedBox(height: 12)),
                   FutureBuilder<List<CatalogCategory>>(
                     future: _categories,
                     builder: (context, snap) {
@@ -219,7 +241,7 @@ class _StoreSelector extends StatelessWidget {
         color: AppColors.primarySoft,
         padding: const EdgeInsets.all(12),
         child: Row(children: [
-          StoreLogo(name: store.name, size: 44),
+          StoreLogo(name: store.name, url: store.logoUrl, size: 44),
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -228,6 +250,7 @@ class _StoreSelector extends StatelessWidget {
               Text(
                 [
                   store.isOpen ? 'Открыт' : 'Закрыт',
+                  if (store.etaText != null) store.etaText!,
                   store.freeDelivery ? 'доставка бесплатно' : 'доставка ${money(store.deliveryFee)}',
                 ].join(' · '),
                 maxLines: 1,
@@ -261,7 +284,8 @@ class _StoreSelector extends StatelessWidget {
             for (final s in state.stores) ...[
               StoreCard(
                 name: s.name,
-                subtitle: [s.networkName, s.address].where((x) => x.isNotEmpty).join(' · '),
+                subtitle: storeSubtitle(s),
+                    logoUrl: s.logoUrl,
                 recommended: s.recommended,
                 closed: !s.isOpen,
                 meta: storeMeta(s),

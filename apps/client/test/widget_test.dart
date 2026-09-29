@@ -1,11 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sm_client/screens/catalog_screen.dart';
+import 'package:sm_client/product_tile.dart';
 import 'package:sm_client/screens/root_shell.dart';
+import 'package:sm_client/state.dart';
 import 'package:sm_client/ui/theme.dart';
 import 'package:sm_client/ui/widgets.dart';
 
 void main() {
+  test('store eta and product discount', () {
+    expect(Store({'eta_min': 25, 'eta_max': 35}).etaText, '25–35 мин');
+    expect(Store({'eta_max': 40}).etaText, '40 мин');
+    expect(Store(<String, dynamic>{}).etaText, isNull);
+    expect(discountLabel(Product({'discount_percent': 20})), '−20%');
+    expect(discountLabel(Product(<String, dynamic>{})), isNull);
+  });
+
   test('склонение «товар»', () {
     expect(itemsWord(1), '1 товар');
     expect(itemsWord(3), '3 товара');

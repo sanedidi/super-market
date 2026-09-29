@@ -96,7 +96,8 @@ class _MapScreenState extends State<MapScreen> {
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
                   StoreCard(
                     name: selected.name,
-                    subtitle: [selected.networkName, selected.address].where((x) => x.isNotEmpty).join(' · '),
+                    subtitle: storeSubtitle(selected),
+                    logoUrl: selected.logoUrl,
                     recommended: selected.recommended,
                     closed: !selected.isOpen,
                     meta: storeMeta(selected),

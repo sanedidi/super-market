@@ -4,8 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
-import '../cart_actions.dart';
-import '../main.dart';
+import '../product_tile.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -14,9 +13,15 @@ import 'root_shell.dart';
 
 /// Товары категории (или поиск по магазину): подкатегории, сетка карточек, корзина внизу.
 class CategoryScreen extends StatefulWidget {
-  const CategoryScreen({super.key, required this.store, this.category, this.search = false});
+  const CategoryScreen({super.key, required this.store, this.category, this.search = false, this.filter, this.title});
   final Store store;
   final CatalogCategory? category;
+
+  /// Сразу включённый фильтр: discount, new или hits.
+  final String? filter;
+
+  /// Заголовок вместо названия категории («Скидки»).
+  final String? title;
 
   /// Открыть сразу с полем поиска.
   final bool search;
@@ -30,6 +35,8 @@ class _CategoryScreenState extends State<CategoryScreen> {
   late String? _categoryId = widget.category?.id;
   String _query = '';
   late bool _searching = widget.search;
+  String _sort = 'popular';
+  late final Set<String> _filters = {if (widget.filter != null) widget.filter!};
   bool _loading = false;
   bool _hasMore = true;
   Object? _error;
@@ -41,7 +48,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
   @override
   void initState() {
     super.initState();
-    if (!widget.search) WidgetsBinding.instance.addPostFrameCallback((_) => _load(reset: true));
+    if (!widget.search || widget.filter != null) WidgetsBinding.instance.addPostFrameCallback((_) => _load(reset: true));
     _scroll.addListener(() {
       if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 600) _load();
     });
@@ -72,6 +79,8 @@ class _CategoryScreenState extends State<CategoryScreen> {
       final items = await context.read<Api>().list('/client/stores/${_store.id}/products', {
         'q': _query,
         'category_id': _categoryId,
+        'sort': _sort,
+        for (final f in _filters) f: 1,
         'limit': limit,
         'offset': _products.length,
       });
@@ -91,7 +100,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 400), () {
       _query = q.trim();
-      if (_query.isEmpty && widget.category == null) {
+      if (_query.isEmpty && widget.category == null && _filters.isEmpty) {
         setState(_products.clear);
         return;
       }
@@ -102,7 +111,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
   @override
   Widget build(BuildContext context) {
     final cat = widget.category;
-    final title = cat?.name ?? 'Поиск';
+    final title = widget.title ?? cat?.name ?? 'Поиск';
     final subs = cat?.children ?? const <CatalogCategory>[];
     return Scaffold(
       body: SafeArea(
@@ -118,7 +127,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
                     ? AppSearchField(hint: cat == null ? 'Искать в ${_store.name}' : 'Искать в «${cat.name}»', autofocus: true, onChanged: _onSearch)
                     : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.title.copyWith(fontSize: 19, fontWeight: FontWeight.w700)),
-                        Text('${_store.name} · ${cat?.count ?? 0} ${_goods(cat?.count ?? 0)}', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.small),
+                        Text(cat == null ? _store.name : '${_store.name} · ${cat.count} ${_goods(cat.count)}', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.small),
                       ]),
               ),
               if (!_searching) ...[
@@ -139,6 +148,28 @@ class _CategoryScreenState extends State<CategoryScreen> {
                 ],
               ),
             ),
+          SizedBox(
+            height: 48,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              children: [
+                _SortButton(label: _sortTitles[_sort]!, onTap: _pickSort),
+                for (final (key, label) in const [('discount', 'Скидки'), ('new', 'Новинки'), ('hits', 'Хиты')])
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: AppChip(
+                      label: label,
+                      selected: _filters.contains(key),
+                      onTap: () {
+                        setState(() => _filters.contains(key) ? _filters.remove(key) : _filters.add(key));
+                        _load(reset: true);
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
           Expanded(child: _body()),
         ]),
       ),
@@ -146,6 +177,33 @@ class _CategoryScreenState extends State<CategoryScreen> {
           ? Padding(padding: EdgeInsets.fromLTRB(16, 8, 16, 12 + MediaQuery.paddingOf(context).bottom), child: const CartBar())
           : null,
     );
+  }
+
+  Future<void> _pickSort() async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: AppColors.white,
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Padding(padding: EdgeInsets.fromLTRB(20, 0, 20, 8), child: Text('Сортировка', style: AppText.h3)),
+          for (final e in _sortTitles.entries)
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+              title: Text(e.value, style: AppText.bodyMedium),
+              trailing: Icon(
+                e.key == _sort ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
+                color: e.key == _sort ? AppColors.primary : AppColors.muted,
+              ),
+              onTap: () => Navigator.pop(ctx, e.key),
+            ),
+          const SizedBox(height: 8),
+        ]),
+      ),
+    );
+    if (picked == null || picked == _sort) return;
+    setState(() => _sort = picked);
+    _load(reset: true);
   }
 
   Widget _chip(String id, String label) => Padding(
@@ -166,7 +224,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
       if (_error != null) {
         return EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: _error.toString(), action: 'Повторить', onAction: () => _load(reset: true));
       }
-      if (_searching && _query.isEmpty && widget.category == null) {
+      if (_searching && _query.isEmpty && widget.category == null && _filters.isEmpty) {
         return const EmptyState(icon: Icons.search_rounded, title: 'Что ищем?', text: 'Введите название товара — например, «молоко» или «хлеб».');
       }
       return const EmptyState(icon: Icons.search_off_rounded, title: 'Ничего не нашли', text: 'Попробуйте другое название или категорию.');
@@ -183,7 +241,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
           mainAxisExtent: cardW + 150,
         ),
         itemCount: _products.length,
-        itemBuilder: (_, i) => _ProductItem(product: _products[i], store: _store),
+        itemBuilder: (_, i) => ProductTile(product: _products[i], store: storeRef(_store)),
       );
     });
   }
@@ -196,31 +254,39 @@ String _goods(int n) {
   return 'товаров';
 }
 
-class _ProductItem extends StatelessWidget {
-  const _ProductItem({required this.product, required this.store});
-  final Product product;
-  final Store store;
+const _sortTitles = {
+  'popular': 'Популярные',
+  'discount': 'Сначала со скидкой',
+  'price_asc': 'Сначала дешевле',
+  'price_desc': 'Сначала дороже',
+  'new': 'Новинки',
+  'name': 'По названию',
+};
+
+/// Кнопка «Популярные ▾» перед фильтрами.
+class _SortButton extends StatelessWidget {
+  const _SortButton({required this.label, required this.onTap});
+  final String label;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final inCart = context.select<AppState, num>((s) => s.cartStoreId == store.id ? s.qtyOf(product.id) : 0);
-    Future<void> change(num q) async {
-      try {
-        await changeQty(context, storeId: store.id, storeName: store.name, product: product, qty: q);
-      } catch (e) {
-        if (context.mounted) showError(context, e);
-      }
-    }
-
-    return ProductCard(
-      name: product.name,
-      price: money(product.price),
-      unit: 'за 1 ${product.unit}',
-      image: product.image,
-      qtyLabel: inCart == 0 ? null : qtyLabel(inCart, product.unit),
-      onAdd: () => change(product.step),
-      onMinus: () => change(inCart - product.step),
-      onPlus: () => change(inCart + product.step),
+    return Material(
+      color: AppColors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100), side: const BorderSide(color: AppColors.line)),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.swap_vert_rounded, size: 18, color: AppColors.ink),
+            const SizedBox(width: 6),
+            Text(label, style: AppText.smallStrong),
+            const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: AppColors.text2),
+          ]),
+        ),
+      ),
     );
   }
 }

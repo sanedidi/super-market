@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../main.dart';
+import '../product_tile.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -40,10 +41,39 @@ class _CartScreenState extends State<CartScreen> {
   String _provider = 'payme';
   final _comment = TextEditingController();
 
+  /// «Не забудьте»: что покупают вместе с товарами корзины.
+  List<Product> _suggest = const [];
+
+  /// Состав корзины при последнем пересчёте — пересчитываем, когда он меняется.
+  String? _sig;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refresh();
+      _loadSuggest();
+    });
+  }
+
+  Future<void> _loadSuggest() async {
+    final s = context.read<AppState>();
+    final api = context.read<Api>();
+    final storeId = s.cartStoreId;
+    if (storeId == null) return;
+    final seen = <String>{};
+    final out = <Product>[];
+    for (final id in s.cart.keys.take(3).toList()) {
+      try {
+        for (final j in await api.list('/client/stores/$storeId/products/$id/related')) {
+          final p = Product(j);
+          if (seen.add(p.id)) out.add(p);
+        }
+      } catch (_) {
+        // Подсказки не обязательны.
+      }
+    }
+    if (mounted) setState(() => _suggest = out);
   }
 
   @override
@@ -113,6 +143,16 @@ class _CartScreenState extends State<CartScreen> {
     final delivery = p?['delivery'] as Map<String, dynamic>?;
     final fee = num.tryParse('${delivery?['delivery_fee']}') ?? 0;
     final freeLeft = num.tryParse('${delivery?['free_from'] ?? ''}') ?? 0;
+    final discount = num.tryParse('${p?['discount'] ?? ''}') ?? 0;
+    final suggest = _suggest.where((x) => !s.cart.containsKey(x.id)).take(10).toList();
+    final cartStore = s.stores.where((x) => x.id == s.cartStoreId).firstOrNull;
+    final sig = s.cartItems.toString();
+    if (_sig != null && sig != _sig && s.cartCount > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _refresh();
+      });
+    }
+    _sig = sig;
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -164,7 +204,7 @@ class _CartScreenState extends State<CartScreen> {
                           padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
                           child: Column(children: [
                             Row(children: [
-                              StoreLogo(name: s.cartStoreName ?? '', size: 36),
+                              StoreLogo(name: s.cartStoreName ?? '', url: cartStore?.logoUrl, size: 36),
                               const SizedBox(width: 12),
                               Expanded(child: Text(s.cartStoreName ?? '', style: AppText.bodyStrong)),
                             ]),
@@ -177,13 +217,16 @@ class _CartScreenState extends State<CartScreen> {
                               _LineTile(
                                 line: line,
                                 server: lines[line.product.id] as Map<String, dynamic>?,
-                                onChanged: (q) {
-                                  s.setQty(s.cartStoreId!, s.cartStoreName!, line.product, q);
-                                  if (s.cartCount > 0) _refresh();
-                                },
+                                onChanged: (q) => s.setQty(s.cartStoreId!, s.cartStoreName!, line.product, q),
                               ),
                           ]),
                         ),
+                        if (suggest.isNotEmpty && s.cartStoreId != null) ...[
+                          const SizedBox(height: 24),
+                          const SectionHeader(title: 'Не забудьте', padding: EdgeInsets.zero),
+                          const SizedBox(height: 12),
+                          ProductCarousel(products: suggest, store: (id: s.cartStoreId!, name: s.cartStoreName ?? ''), padding: EdgeInsets.zero),
+                        ],
                         const SizedBox(height: 16),
                         // Доставка.
                         AppCard(
@@ -223,7 +266,8 @@ class _CartScreenState extends State<CartScreen> {
                         if (p != null)
                           AppCard(
                             child: Column(children: [
-                              _row('Товары (${s.cartCount})', money(p['subtotal'])),
+                              _row('Товары (${s.cartCount})', money(discount > 0 ? addMoney(['${p['subtotal']}', '${p['discount']}']) : p['subtotal'])),
+                              if (discount > 0) _row('Скидка', '−${money(discount)}', valueColor: AppColors.accent),
                               _row('Доставка', fee == 0 ? 'Бесплатно' : money(fee), valueColor: fee == 0 ? AppColors.success : null),
                               const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Divider()),
                               _row('Итого', money(p['total']), bold: true),
@@ -357,6 +401,9 @@ class _LineTile extends StatelessWidget {
               problem != null ? (_problemText[problem] ?? problem) : '${money(p.price)} за 1 ${p.unit}',
               style: AppText.small.copyWith(color: problem != null ? AppColors.error : null),
             ),
+            if (problem == null && server?['old_price'] != null)
+              Text('было ${money(server!['old_price'])}',
+                  style: AppText.caption.copyWith(color: AppColors.muted, decoration: TextDecoration.lineThrough, decorationColor: AppColors.muted)),
             const SizedBox(height: 4),
             Text(money(mulMoney(p.price, '${line.qty}')), style: AppText.price),
           ]),

@@ -7,6 +7,7 @@ import '../ui/brand.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'addresses_screen.dart';
+import 'favorites_screen.dart';
 import 'orders_screen.dart';
 
 /// Профиль (этап 0): заказы, адреса, выход. Имя, настройки и «Моя семья» — следующие этапы.
@@ -58,6 +59,12 @@ class ProfileScreen extends StatelessWidget {
                 icon: Icons.receipt_long_outlined,
                 title: 'Мои заказы',
                 onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OrdersScreen())),
+              ),
+              AppListRow(
+                icon: Icons.favorite_border_rounded,
+                title: 'Избранное',
+                trailing: state.favorites.isEmpty ? null : Text('${state.favorites.length}', style: AppText.small),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const FavoritesScreen())),
               ),
               AppListRow(
                 icon: Icons.location_on_outlined,

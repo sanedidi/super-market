@@ -155,14 +155,28 @@ class _OrderScreenState extends State<OrderScreen> {
                                 Expanded(
                                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                     Text(i['product_name'] as String, style: AppText.bodyMedium),
-                                    Text('${money(i['price'])} × ${qty(i['qty'], i['unit_short'] as String? ?? '')}', style: AppText.small),
+                                    Text.rich(
+                                      TextSpan(children: [
+                                        if (i['old_price'] != null)
+                                          TextSpan(
+                                            text: '${money(i['old_price'], suffix: false)} ',
+                                            style: const TextStyle(decoration: TextDecoration.lineThrough, decorationColor: AppColors.muted, color: AppColors.muted),
+                                          ),
+                                        TextSpan(text: '${money(i['price'])} × ${qty(i['qty'], i['unit_short'] as String? ?? '')}'),
+                                      ]),
+                                      style: AppText.small,
+                                    ),
                                   ]),
                                 ),
                                 Text(money(i['total']), style: AppText.bodyStrong),
                               ]),
                             ),
                           const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Divider()),
-                          _row('Товары', money(o['subtotal'])),
+                          if ((num.tryParse('${o['discount']}') ?? 0) > 0) ...[
+                            _row('Товары', money(addMoney(['${o['subtotal']}', '${o['discount']}']))),
+                            _row('Скидка', '−${money(o['discount'])}', color: AppColors.accent),
+                          ] else
+                            _row('Товары', money(o['subtotal'])),
                           _row('Доставка', (num.tryParse('${o['delivery_fee']}') ?? 0) == 0 ? 'Бесплатно' : money(o['delivery_fee'])),
                           _row('Итого', money(o['total']), bold: true),
                         ]),
@@ -207,12 +221,12 @@ class _OrderScreenState extends State<OrderScreen> {
     );
   }
 
-  Widget _row(String label, String value, {bool bold = false}) {
+  Widget _row(String label, String value, {bool bold = false, Color? color}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(children: [
         Expanded(child: Text(label, style: bold ? AppText.title : AppText.body.copyWith(color: AppColors.text2))),
-        Text(value, style: bold ? AppText.title : AppText.bodyMedium),
+        Text(value, style: bold ? AppText.title : AppText.bodyMedium.copyWith(color: color)),
       ]),
     );
   }

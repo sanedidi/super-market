@@ -28,8 +28,10 @@ class _RootShellState extends State<RootShell> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final state = context.read<AppState>();
+      state.loadFavorites();
       try {
-        await context.read<AppState>().loadAddresses();
+        await state.loadAddresses();
       } catch (e) {
         if (mounted) showError(context, e);
       }
