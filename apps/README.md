@@ -5,6 +5,7 @@ apps/
   core/     общий пакет: API-клиент с токенами, вход по коду из Telegram, форматирование
   client/   приложение покупателя (Android, iOS)
   pos/      POS для кассы (Android-планшет, телефон, Windows, macOS)
+  courier/  приложение курьера магазина (Android, iOS)
 ```
 
 ## Приложение покупателя (apps/client)
@@ -54,6 +55,47 @@ flutter run --dart-define=API_URL=http://169.58.31.233:8090/api/v1
 
 Локальный backend: `--dart-define=API_URL=http://10.0.2.2:8080/api/v1` (эмулятор Android) или
 `http://localhost:8080/api/v1` (iOS-симулятор, десктоп).
+
+## Курьер (apps/courier)
+
+Вход — как сотрудник магазина (номер и код из Telegram). Работать курьером может сотрудник, у роли
+которого есть право «Курьер: доставка заказов». Курьер выходит на смену, видит назначенные магазином
+заказы, звонит магазину и покупателю, строит маршрут в Яндекс Картах, отмечает «Забрал» и «Доставил».
+Пока он на смене, приложение раз в 10 секунд отправляет его точку — покупатель видит курьера на карте.
+
+Платформенные папки создаются так же, как у POS:
+
+```sh
+cd apps/courier
+flutter create --org uz.supermarket --project-name sm_courier --platforms android,ios .
+flutter pub get
+flutter run --dart-define=API_URL=http://169.58.31.233:8090/api/v1
+```
+
+После `flutter create` добавьте разрешения на геопозицию в фоне:
+
+- iOS — `ios/Runner/Info.plist`:
+  ```xml
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>Покупатель видит, где его заказ, пока вы везёте</string>
+  <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+  <string>Покупатель видит, где его заказ, даже когда приложение свёрнуто</string>
+  <key>UIBackgroundModes</key>
+  <array><string>location</string></array>
+  ```
+- Android — `android/app/src/main/AndroidManifest.xml`, перед `<application>`:
+  ```xml
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+  ```
+  Пока курьер на смене, Android показывает уведомление «Вы на смене» — так точка отправляется и со
+  свёрнутым приложением.
+
+Плюс исключения для HTTP из раздела ниже.
 
 ## Настройки платформ
 

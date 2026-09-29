@@ -24,7 +24,7 @@ import { ReloadOutlined } from '@ant-design/icons'
 import { PageTitle, StatusTag, api, dateTime, money, qty, useAction, useList, type List } from '@sm/shared'
 import { useStore } from '../ctx'
 import { NeedStore } from '../ui'
-import type { Order, OrderItem, Warehouse } from '../types'
+import type { Courier, Order, OrderItem, Warehouse } from '../types'
 
 const statusFilters = [
   { value: '', label: 'Все' },
@@ -108,6 +108,7 @@ export function OrdersPage() {
             { title: 'Статус', dataIndex: 'status', render: (s: string, r) => <StatusTag status={s} title={r.status_title || undefined} /> },
             { title: 'Покупатель', dataIndex: 'customer_phone' },
             { title: 'Адрес', dataIndex: 'address', ellipsis: true },
+            { title: 'Курьер', dataIndex: 'courier_name', render: (v: string | null) => v ?? <Typography.Text type="secondary">—</Typography.Text> },
             { title: 'Сумма', dataIndex: 'total', align: 'right', render: (v: string) => money(v) },
             { title: 'Оплата', dataIndex: 'payment_provider', render: (v: string) => providers[v] ?? v },
             {
@@ -202,6 +203,9 @@ function OrderDrawer({ id, onClose }: { id: string | null; onClose: () => void }
             <Descriptions.Item label="Создан">{dateTime(o.created_at)}</Descriptions.Item>
             <Descriptions.Item label="Доставка">
               <DeliveryWindow order={o} />
+            </Descriptions.Item>
+            <Descriptions.Item label="Курьер" span="filled">
+              <CourierPicker order={o} editable={manage} />
             </Descriptions.Item>
             <Descriptions.Item label="Адрес" span="filled">
               {o.address}
@@ -427,5 +431,37 @@ export function DeliveryWindow({ order }: { order: Pick<Order, 'delivery_from' |
     <Tag color="blue">
       {label}, {hm(from)}–{hm(to)}
     </Tag>
+  )
+}
+
+const vehicles: Record<Courier['vehicle'], string> = { foot: 'пешком', bike: 'велосипед', scooter: 'скутер', car: 'машина' }
+
+/** Курьер заказа: выбор из курьеров магазина (сначала на смене). */
+function CourierPicker({ order, editable }: { order: Order; editable: boolean }) {
+  const couriers = useList<Courier>(editable ? '/store/couriers' : null, { store_id: order.store_id })
+  const assign = useAction((courier_id: string | null) => api.post(`/store/orders/${order.id}/assign-courier`, { courier_id }), {
+    success: 'Курьер назначен',
+    invalidate: [['/store/orders']],
+  })
+  const canChange = editable && ['accepted', 'picking', 'picked', 'delivering'].includes(order.status)
+  const eta = order.eta_at && order.status === 'delivering' ? ` · прибудет к ${dateTime(order.eta_at).slice(-5)}` : ''
+  if (!canChange) return <>{order.courier_name ? order.courier_name + eta : <Typography.Text type="secondary">Не назначен</Typography.Text>}</>
+  return (
+    <Space wrap>
+      <Select
+        style={{ minWidth: 260 }}
+        placeholder="Назначить курьера"
+        allowClear
+        loading={couriers.isLoading || assign.isPending}
+        value={order.courier_id ?? undefined}
+        onChange={(v) => assign.mutate((v as string | undefined) ?? null)}
+        notFoundContent="Нет курьеров: дайте сотруднику право «Курьер: доставка заказов»"
+        options={(couriers.data ?? []).map((c) => ({
+          value: c.employee_id,
+          label: `${c.on_shift ? '🟢' : '⚪️'} ${c.full_name} · ${vehicles[c.vehicle]}${c.active_orders ? ` · заказов: ${c.active_orders}` : ''}`,
+        }))}
+      />
+      {eta && <Typography.Text type="secondary">{eta.slice(3)}</Typography.Text>}
+    </Space>
   )
 }

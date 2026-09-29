@@ -302,6 +302,9 @@ export type Order = {
   delivered_at: string | null
   delivery_from: string | null
   delivery_to: string | null
+  courier_id: string | null
+  courier_name: string | null
+  eta_at: string | null
   cancel_reason: string
   fiscal_status: string
   created_at: string
@@ -442,4 +445,16 @@ export type ProfitLoss = {
   net_profit: string
   sales_count: number
   orders_count: number
+}
+
+export type Courier = {
+  employee_id: string
+  full_name: string
+  phone: string
+  vehicle: 'foot' | 'bike' | 'scooter' | 'car'
+  on_shift: boolean
+  lat: number | null
+  lng: number | null
+  located_at: string | null
+  active_orders: number
 }

@@ -6,6 +6,7 @@ import 'package:sm_core/sm_core.dart';
 
 import '../delivery_time.dart';
 import '../main.dart';
+import '../map_view.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 
@@ -43,6 +44,12 @@ class OrderScreen extends StatefulWidget {
 
 class _OrderScreenState extends State<OrderScreen> {
   Map<String, dynamic>? _order;
+
+  /// Курьер, его точка и время прибытия (GET /client/orders/{id}/tracking).
+  Map<String, dynamic>? _tracking;
+
+  /// Открыли подробности заказа из карты.
+  bool _details = false;
   Timer? _timer;
   bool _busy = false;
 
@@ -50,7 +57,7 @@ class _OrderScreenState extends State<OrderScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
-    _timer = Timer.periodic(const Duration(seconds: 8), (_) {
+    _timer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (_order == null || _active.contains(_order!['status'])) _load();
     });
   }
@@ -63,8 +70,22 @@ class _OrderScreenState extends State<OrderScreen> {
 
   Future<void> _load() async {
     try {
-      final o = await context.read<Api>().get('/client/orders/${widget.id}') as Map<String, dynamic>;
-      if (mounted) setState(() => _order = o);
+      final api = context.read<Api>();
+      final o = await api.get('/client/orders/${widget.id}') as Map<String, dynamic>;
+      Map<String, dynamic>? tr;
+      if (o['courier_name'] != null && {'accepted', 'picking', 'picked', 'delivering'}.contains(o['status'])) {
+        try {
+          tr = await api.get('/client/orders/${widget.id}/tracking') as Map<String, dynamic>;
+        } catch (_) {
+          tr = _tracking;
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _order = o;
+          _tracking = tr;
+        });
+      }
     } catch (e) {
       if (mounted && _order == null) showError(context, e);
     }
@@ -111,6 +132,8 @@ class _OrderScreenState extends State<OrderScreen> {
   Widget build(BuildContext context) {
     final o = _order;
     final status = o?['status'] as String?;
+    final tr = _tracking;
+    if (o != null && status == 'delivering' && tr != null && !_details) return _trackingView(o, tr);
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: SafeArea(
@@ -131,6 +154,10 @@ class _OrderScreenState extends State<OrderScreen> {
                     onRefresh: _load,
                     child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
                       _StatusCard(order: o),
+                      if (tr?['courier'] != null) ...[
+                        const SizedBox(height: 12),
+                        CourierCard(courier: tr!['courier'] as Map<String, dynamic>),
+                      ],
                       const SizedBox(height: 16),
                       AppCard(
                         padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
@@ -224,6 +251,83 @@ class _OrderScreenState extends State<OrderScreen> {
                 ],
               ]),
             ),
+    );
+  }
+
+  /// Заказ в пути — по макету: карта с курьером сверху, статус и курьер в листе.
+  Widget _trackingView(Map<String, dynamic> o, Map<String, dynamic> tr) {
+    ({double lat, double lng}) pt(Object? p) {
+      final m = p as Map<String, dynamic>;
+      return (lat: (m['lat'] as num).toDouble(), lng: (m['lng'] as num).toDouble());
+    }
+
+    final courier = tr['courier'] as Map<String, dynamic>?;
+    final loc = courier?['location'];
+    final eta = tr['eta_minutes'] as num?;
+    final etaAt = tr['eta_at'] == null ? null : hhmm(DateTime.parse('${tr['eta_at']}'));
+    final size = MediaQuery.sizeOf(context);
+    final items = (o['items'] as List? ?? const []).length;
+    return Scaffold(
+      backgroundColor: AppColors.white,
+      body: Stack(children: [
+        Positioned(
+          left: 0,
+          right: 0,
+          top: 0,
+          height: size.height * 0.5,
+          child: TrackingMap(
+            key: ValueKey('track-${loc != null}'),
+            store: pt(tr['store']),
+            destination: pt(tr['destination']),
+            courier: loc == null ? null : pt(loc),
+          ),
+        ),
+        Positioned(
+          left: 16,
+          top: MediaQuery.paddingOf(context).top + 8,
+          child: RoundIconButton(icon: Icons.arrow_back_rounded, bg: AppColors.white, shadow: true, onTap: () => Navigator.of(context).pop()),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          top: size.height * 0.5 - 24,
+          child: Container(
+            decoration: const BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
+              boxShadow: [BoxShadow(color: Color(0x14000000), blurRadius: 16, offset: Offset(0, -4))],
+            ),
+            child: RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(padding: EdgeInsets.fromLTRB(16, 10, 16, 16 + MediaQuery.paddingOf(context).bottom), children: [
+                Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.line, borderRadius: BorderRadius.circular(2)))),
+                const SizedBox(height: 16),
+                const Text('Курьер в пути', style: AppText.h2),
+                const SizedBox(height: 4),
+                Text(
+                  eta == null ? 'Скоро будет у вас' : 'Будет через ${eta.toInt()} мин${etaAt == null ? '' : ' — примерно к $etaAt'}',
+                  style: AppText.body.copyWith(color: AppColors.text2),
+                ),
+                const SizedBox(height: 20),
+                const _Steps(done: 2, current: 2),
+                if (courier != null) ...[
+                  const SizedBox(height: 20),
+                  CourierCard(courier: courier),
+                ],
+                const SizedBox(height: 12),
+                AppListRow(
+                  icon: Icons.receipt_long_outlined,
+                  title: 'Заказ № ${o['number']} · $items ${items == 1 ? 'товар' : (items >= 2 && items <= 4 ? 'товара' : 'товаров')}',
+                  subtitle: '${o['store_name']} · ${money(o['total'])}',
+                  divider: false,
+                  onTap: () => setState(() => _details = true),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      ]),
     );
   }
 
@@ -356,3 +460,58 @@ const statusTitles = {
   'cancelled': 'Отменён',
   'expired': 'Не оплачен вовремя',
 };
+
+const _vehicleNames = {'foot': 'пешком', 'bike': 'на велосипеде', 'scooter': 'на скутере', 'car': 'на машине'};
+
+/// Карточка курьера: имя, транспорт, сообщение и звонок (телефон — только пока заказ в пути).
+class CourierCard extends StatelessWidget {
+  const CourierCard({super.key, required this.courier});
+  final Map<String, dynamic> courier;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = '${courier['name']}';
+    final phone = courier['phone'] as String?;
+    Future<void> open(String url) async {
+      try {
+        await openUrl(url);
+      } catch (e) {
+        if (context.mounted) showError(context, e);
+      }
+    }
+
+    return AppCard(
+      color: AppColors.bg,
+      padding: const EdgeInsets.all(12),
+      child: Row(children: [
+        Container(
+          width: 48,
+          height: 48,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(color: AppColors.accentSoft, shape: BoxShape.circle),
+          child: Text(name.isEmpty ? '?' : name[0].toUpperCase(), style: AppText.title.copyWith(color: AppColors.accent)),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(name, style: AppText.bodyStrong),
+            Text('Курьер · ${_vehicleNames[courier['vehicle']] ?? ''}', style: AppText.small),
+          ]),
+        ),
+        if (phone != null) ...[
+          RoundIconButton(icon: Icons.send_rounded, bg: AppColors.white, onTap: () => open('sms:$phone')),
+          const SizedBox(width: 8),
+          Material(
+            color: AppColors.primary,
+            shape: const CircleBorder(),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: () => open('tel:$phone'),
+              child: const SizedBox(width: 44, height: 44, child: Icon(Icons.call_rounded, color: AppColors.white, size: 22)),
+            ),
+          ),
+        ],
+      ]),
+    );
+  }
+}

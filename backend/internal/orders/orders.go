@@ -92,6 +92,10 @@ type Order struct {
 	// Окно доставки; null — как можно скорее.
 	DeliveryFrom *time.Time `json:"delivery_from"`
 	DeliveryTo   *time.Time `json:"delivery_to"`
+	// Курьер и ожидаемое время прибытия.
+	CourierID   *string    `json:"courier_id"`
+	CourierName *string    `json:"courier_name"`
+	EtaAt       *time.Time `json:"eta_at"`
 	// До какого момента нужно оплатить (только для «ожидает оплаты»).
 	PaymentDeadline *time.Time     `json:"payment_deadline,omitempty"`
 	CancelReason    string         `json:"cancel_reason"`
@@ -107,15 +111,18 @@ const orderSelect = `
 	       ST_Y(o.location::geometry), ST_X(o.location::geometry), o.distance_m, o.customer_phone, o.comment,
 	       o.payment_provider,
 	       (SELECT p.status FROM payments p WHERE p.order_id = o.id ORDER BY (p.status IN ('paid', 'refund_pending', 'refunded')) DESC, p.created_at DESC LIMIT 1),
-	       o.paid_at, o.accepted_at, o.delivered_at, o.delivery_from, o.delivery_to, o.cancel_reason, o.fiscal_status, o.created_at
-	FROM orders o JOIN stores s ON s.id = o.store_id`
+	       o.paid_at, o.accepted_at, o.delivered_at, o.delivery_from, o.delivery_to,
+	       o.courier_id, ce.full_name, o.eta_at, o.cancel_reason, o.fiscal_status, o.created_at
+	FROM orders o JOIN stores s ON s.id = o.store_id
+	LEFT JOIN employees ce ON ce.id = o.courier_id`
 
 func scanOrder(row pgx.CollectableRow) (Order, error) {
 	var o Order
 	err := row.Scan(&o.ID, &o.Number, &o.NetworkID, &o.StoreID, &o.StoreName, &o.WarehouseID, &o.Status, &o.Subtotal, &o.Discount,
 		&o.DeliveryFee, &o.Total, &o.Address, &o.Entrance, &o.Floor, &o.Apartment, &o.AddressComment,
 		&o.Lat, &o.Lng, &o.DistanceM, &o.CustomerPhone, &o.Comment, &o.PaymentProvider, &o.PaymentStatus,
-		&o.PaidAt, &o.AcceptedAt, &o.DeliveredAt, &o.DeliveryFrom, &o.DeliveryTo, &o.CancelReason, &o.FiscalStatus, &o.CreatedAt)
+		&o.PaidAt, &o.AcceptedAt, &o.DeliveredAt, &o.DeliveryFrom, &o.DeliveryTo,
+		&o.CourierID, &o.CourierName, &o.EtaAt, &o.CancelReason, &o.FiscalStatus, &o.CreatedAt)
 	o.StatusTitle = statusTitles[o.Status]
 	return o, err
 }
@@ -323,22 +330,26 @@ func (s *Service) Delivered(ctx context.Context, p *identity.Principal, id strin
 	if _, err := s.StoreGet(ctx, p, id); err != nil {
 		return Order{}, err
 	}
-	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		if _, err := lockOrder(ctx, tx, id, StatusDelivering, StatusPicked); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE orders SET status = 'delivered', delivered_at = now() WHERE id = $1`, id); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE balance_entries SET status = 'available' WHERE order_id = $1 AND kind = 'order'`, id); err != nil {
-			return err
-		}
-		return addHistory(ctx, tx, id, StatusDelivered, "store:"+p.EmployeeID, "")
-	})
-	if err != nil {
+	if err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		return markDelivered(ctx, tx, id, "store:"+p.EmployeeID, StatusDelivering, StatusPicked)
+	}); err != nil {
 		return Order{}, err
 	}
 	return s.StoreGet(ctx, p, id)
+}
+
+// markDelivered закрывает заказ: деньги в балансе становятся доступными.
+func markDelivered(ctx context.Context, tx pgx.Tx, id, actor string, from ...string) error {
+	if _, err := lockOrder(ctx, tx, id, from...); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE orders SET status = 'delivered', delivered_at = now(), eta_at = NULL WHERE id = $1`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE balance_entries SET status = 'available' WHERE order_id = $1 AND kind = 'order'`, id); err != nil {
+		return err
+	}
+	return addHistory(ctx, tx, id, StatusDelivered, actor, "")
 }
 
 type PickLine struct {

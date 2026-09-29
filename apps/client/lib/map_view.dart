@@ -5,6 +5,8 @@
 //   Android — MainApplication: MapKitFactory.setApiKey("...")
 //   iOS     — AppDelegate:     YMKMapKit.setApiKey("...")
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:yandex_mapkit/yandex_mapkit.dart';
@@ -107,6 +109,83 @@ class _StoresMapState extends State<StoresMap> {
             consumeTapEvents: true,
             onTap: (_, __) => m.onTap?.call(),
           ),
+      ],
+    );
+  }
+}
+
+/// Карта отслеживания: магазин, курьер, дом покупателя и пунктир от курьера
+/// (или магазина) до дома. Камера один раз охватывает все точки.
+class TrackingMap extends StatelessWidget {
+  const TrackingMap({super.key, required this.store, required this.destination, this.courier, this.bottomInset = 0});
+
+  final ({double lat, double lng}) store;
+  final ({double lat, double lng}) destination;
+  final ({double lat, double lng})? courier;
+
+  /// Высота листа снизу — камера смещается, чтобы точки не прятались под ним.
+  final double bottomInset;
+
+  static const _courierColor = Color(0xFFFF6A1A);
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.primary;
+    final from = courier ?? store;
+    Point pt(({double lat, double lng}) p) => Point(latitude: p.lat, longitude: p.lng);
+    return YandexMap(
+      onMapCreated: (controller) {
+        final pts = [store, destination, if (courier != null) courier!];
+        final minLat = pts.map((p) => p.lat).reduce(math.min), maxLat = pts.map((p) => p.lat).reduce(math.max);
+        final minLng = pts.map((p) => p.lng).reduce(math.min), maxLng = pts.map((p) => p.lng).reduce(math.max);
+        final span = math.max(maxLat - minLat, (maxLng - minLng) * math.cos(minLat * math.pi / 180));
+        final zoom = span <= 0 ? 15.0 : (math.log(360 / (span * 2.4)) / math.ln2).clamp(11.0, 16.5).toDouble();
+        // Центр чуть ниже середины: снизу лист со статусом.
+        final shift = (maxLat - minLat + 0.004) * (bottomInset > 0 ? 0.35 : 0);
+        controller.moveCamera(CameraUpdate.newCameraPosition(CameraPosition(
+          target: Point(latitude: (minLat + maxLat) / 2 - shift, longitude: (minLng + maxLng) / 2),
+          zoom: zoom,
+        )));
+      },
+      mapObjects: [
+        PolylineMapObject(
+          mapId: const MapObjectId('route'),
+          polyline: Polyline(points: [pt(from), pt(destination)]),
+          strokeColor: color,
+          strokeWidth: 4,
+          dashLength: 6,
+          gapLength: 6,
+        ),
+        CircleMapObject(
+          mapId: const MapObjectId('store'),
+          circle: Circle(center: pt(store), radius: 40),
+          fillColor: color,
+          strokeColor: Colors.white,
+          strokeWidth: 3,
+        ),
+        CircleMapObject(
+          mapId: const MapObjectId('home'),
+          circle: Circle(center: pt(destination), radius: 40),
+          fillColor: const Color(0xFF101828),
+          strokeColor: Colors.white,
+          strokeWidth: 3,
+        ),
+        if (courier != null) ...[
+          CircleMapObject(
+            mapId: const MapObjectId('courier_halo'),
+            circle: Circle(center: pt(courier!), radius: 110),
+            fillColor: _courierColor.withOpacity(0.2),
+            strokeWidth: 0,
+          ),
+          CircleMapObject(
+            mapId: const MapObjectId('courier'),
+            circle: Circle(center: pt(courier!), radius: 50),
+            fillColor: _courierColor,
+            strokeColor: Colors.white,
+            strokeWidth: 3,
+            zIndex: 3,
+          ),
+        ],
       ],
     );
   }

@@ -58,6 +58,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/client/orders/{id}", m.clientOrder)
 		r.Post("/client/orders/{id}/cancel", m.clientCancel)
 		r.Get("/client/orders/{id}/payment-url", m.paymentURL)
+		r.Get("/client/orders/{id}/tracking", m.tracking)
 	})
 
 	// Панель магазина.
@@ -79,6 +80,20 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/store/orders/{id}/delivered", m.act(m.svc.Delivered))
 		r.Post("/store/orders/{id}/cancel", m.storeCancel)
 		r.Post("/store/orders/{id}/fiscal", m.fiscal)
+		r.Post("/store/orders/{id}/assign-courier", m.assignCourier)
+		r.Get("/store/couriers", m.storeCouriers)
+	})
+
+	// Курьер (приложение курьера, вход как сотрудник магазина).
+	r.Group(func(r chi.Router) {
+		r.Use(m.auth.Require(identity.AppStore))
+		r.Get("/courier/me", m.courierMe)
+		r.Post("/courier/shift", m.courierShift)
+		r.Post("/courier/location", m.courierLocation)
+		r.Get("/courier/orders", m.courierOrders)
+		r.Get("/courier/orders/{id}", m.courierOrder)
+		r.Post("/courier/orders/{id}/picked-up", m.courierAct(m.svc.PickUp))
+		r.Post("/courier/orders/{id}/delivered", m.courierAct(m.svc.CourierDelivered))
 	})
 
 	// Супер-админ.
@@ -417,5 +432,70 @@ func (m *Module) adminPayments(w http.ResponseWriter, r *http.Request) {
 func (m *Module) adminRefunded(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (map[string]bool, error) {
 		return map[string]bool{"refunded": true}, m.payments.MarkRefunded(r.Context(), id)
+	})
+}
+
+// ------------------------------------------------------------ курьеры
+
+func (m *Module) storeCouriers(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Courier], error) {
+		items, err := m.svc.StoreCouriers(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+		return httpx.List[Courier]{Items: items}, err
+	})
+}
+
+func (m *Module) assignCourier(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in AssignInput) (Order, error) {
+		return m.svc.AssignCourier(r.Context(), pr(r), id, in)
+	})
+}
+
+func (m *Module) courierMe(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (CourierMe, error) { return m.svc.CourierMe(r.Context(), pr(r)) })
+}
+
+func (m *Module) courierShift(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in ShiftInput) (CourierMe, error) {
+		return m.svc.SetShift(r.Context(), pr(r), in)
+	})
+}
+
+func (m *Module) courierLocation(w http.ResponseWriter, r *http.Request) {
+	var in LocationInput
+	if err := httpx.Decode(r, &in); err != nil {
+		httpx.Fail(w, r, m.log, err)
+		return
+	}
+	if err := m.svc.Location(r.Context(), pr(r), in); err != nil {
+		httpx.Fail(w, r, m.log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (m *Module) courierOrders(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[CourierOrder], error) {
+		items, err := m.svc.CourierOrders(r.Context(), pr(r))
+		return httpx.List[CourierOrder]{Items: items}, err
+	})
+}
+
+func (m *Module) courierOrder(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (CourierOrder, error) {
+		return m.svc.CourierOrder(r.Context(), pr(r), id)
+	})
+}
+
+func (m *Module) courierAct(fn func(context.Context, *identity.Principal, string) (CourierOrder, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (CourierOrder, error) {
+			return fn(r.Context(), pr(r), id)
+		})
+	}
+}
+
+func (m *Module) tracking(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (Tracking, error) {
+		return m.svc.ClientTracking(r.Context(), pr(r), id)
 	})
 }

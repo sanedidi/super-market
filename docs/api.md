@@ -390,3 +390,38 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 Места в окне считаются под блокировкой: последнее место займёт только один заказ.
 
 В заказе, который ждёт оплаты, есть `payment_deadline` — до какого момента нужно оплатить.
+
+## Курьеры и отслеживание (этап приложения 4)
+
+Курьер — сотрудник магазина с правом `orders.deliver` («Курьер: доставка заказов»). Входит в
+приложение курьера как сотрудник (`app: store`).
+
+### Панель магазина (право `orders.manage`)
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/store/couriers?store_id=` | Курьеры магазина: `employee_id, full_name, phone, vehicle, on_shift, lat, lng, located_at, active_orders`; сначала на смене |
+| POST | `/store/orders/{id}/assign-courier` | `{courier_id}` или `{courier_id: null}` — назначить или снять. Статусы: принят, сборка, собран, в пути. Курьеру уходит сообщение в Telegram |
+
+В заказе: `courier_id`, `courier_name`, `eta_at`.
+
+### Курьер (право `orders.deliver`)
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/courier/me` | `employee_id, full_name, network_name, vehicle, on_shift` |
+| POST | `/courier/shift` | `{on_shift?, vehicle?: foot|bike|scooter|car}`. Уход со смены стирает точку |
+| POST | `/courier/location` | `{lat, lng, accuracy?, heading?}` раз в 10–15 с → 204. Пересчитывает время прибытия заказов в пути |
+| GET | `/courier/orders` | `[{order, store: {name, address, phone, lat, lng}}]` — активные и доставленные за 12 часов |
+| GET | `/courier/orders/{id}` | Один заказ курьера |
+| POST | `/courier/orders/{id}/picked-up` | Забрал собранный заказ → «в пути», считается `eta_at` |
+| POST | `/courier/orders/{id}/delivered` | Вручил → «доставлен», деньги в балансе становятся доступны |
+
+Время прибытия: расстояние по прямой × 1,35 при средней скорости транспорта (пешком 5, велосипед 14,
+скутер 22, машина 25 км/ч) + 2 минуты. Считается от свежей (не старше 10 минут) точки курьера, иначе от магазина.
+
+### Приложение покупателя
+
+`GET /client/orders/{id}/tracking` → `{status, status_title, eta_at, eta_minutes, courier: {name, vehicle,
+phone, location: {lat, lng}, located_at} | null, store: {lat, lng}, store_name, destination: {lat, lng}}`.
+Телефон и точка курьера — только пока заказ в пути; после доставки курьер не показывается.

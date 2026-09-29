@@ -92,3 +92,12 @@ func (n *Notifier) NetworkOwners(ctx context.Context, networkID, permission, tex
 		  AND (r.is_owner OR ($2 = ANY(r.permissions) AND e.all_stores))`,
 		[]any{networkID, permission}, text)
 }
+
+// Employee — одному сотруднику (например, курьеру о назначенном заказе).
+func (n *Notifier) Employee(ctx context.Context, employeeID, text string) int {
+	return n.send(ctx, `
+		SELECT tl.chat_id FROM employees e
+		JOIN users u ON u.id = e.user_id
+		JOIN telegram_links tl ON tl.phone = u.phone
+		WHERE e.id = $1 AND e.status = 'active'`, []any{employeeID}, text)
+}
