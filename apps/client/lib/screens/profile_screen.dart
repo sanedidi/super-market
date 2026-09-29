@@ -13,7 +13,7 @@ import 'order_screen.dart';
 import 'orders_screen.dart';
 
 /// Версия приложения (совпадает с pubspec.yaml).
-const appVersion = '0.3.0';
+const appVersion = '0.4.0';
 
 const _languages = {'ru': 'Русский', 'uz': 'O‘zbekcha'};
 const _cities = ['Ташкент', 'Самарканд', 'Бухара', 'Андижан', 'Наманган', 'Фергана', 'Нукус', 'Карши', 'Навои', 'Ургенч', 'Джизак', 'Термез'];

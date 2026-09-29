@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../main.dart';
+import '../push.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -30,6 +31,7 @@ class _RootShellState extends State<RootShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final state = context.read<AppState>();
       state.loadFavorites();
+      Push.register(context.read<Api>());
       try {
         await state.loadAddresses();
       } catch (e) {

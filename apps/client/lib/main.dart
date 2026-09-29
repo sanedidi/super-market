@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sm_core/sm_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'push.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/root_shell.dart';
 import 'state.dart';
@@ -18,6 +19,7 @@ const _onboardingKey = 'sm_client_onboarding_done';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Push.init();
   final api = Api(baseUrl: apiUrl, app: 'client');
   await api.init();
   final prefs = await SharedPreferences.getInstance();
@@ -42,6 +44,7 @@ class ClientApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Super Market',
+      navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
       locale: const Locale('ru'),

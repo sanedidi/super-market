@@ -42,6 +42,18 @@ flutter run --dart-define=API_URL=http://169.58.31.233:8090/api/v1
 общие компоненты (кнопки, чипы, карточки товара и магазина, плитки категорий, нижнее меню);
 `screens/` — экраны; `state.dart` — адреса, магазины рядом, корзина.
 
+### Push-уведомления (Firebase)
+
+Проект Firebase — `super-market-c7b84`. Настройки для приложения уже в коде: `lib/firebase_options.dart`
+(файлы `google-services.json` и `GoogleService-Info.plist` лежат рядом для справки). Логика — в `lib/push.dart`:
+после входа приложение спрашивает разрешение, отправляет токен на сервер (`POST /client/devices`),
+нажатие на уведомление о заказе открывает экран заказа.
+
+- iOS: включены `aps-environment` (`ios/Runner/Runner.entitlements`) и фоновый режим `remote-notification`.
+  Чтобы push доходили на iPhone, в Firebase → Project settings → Cloud Messaging загрузите APNs-ключ (.p8)
+  из Apple Developer. Для выпуска в App Store поменяйте `aps-environment` на `production`.
+- Сервер: ключ сервисного аккаунта в `FCM_CREDENTIALS` (base64) в секрете `PROD_ENV`.
+
 ## POS (apps/pos)
 
 Платформенные папки POS пока не созданы:

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "707728920683",
+    "project_id": "super-market-c7b84",
+    "storage_bucket": "super-market-c7b84.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:707728920683:android:3f0e4f4454ce9ee32fa12e",
+        "android_client_info": {
+          "package_name": "uz.supermarket.sm_client"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA0B1SkpzE6i27bgy3QgpWQxzVP70V0X6I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
