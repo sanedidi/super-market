@@ -1,11 +1,11 @@
 name: sm_client
-description: Приложение покупателя — заказ продуктов из магазинов рядом с доставкой.
+description: Приложение покупателя Super Market — заказ продуктов из магазинов рядом с доставкой.
 publish_to: none
-version: 0.1.0+1
+version: 0.2.0+2
 
 environment:
-  sdk: ">=3.4.0 <4.0.0"
-  flutter: ">=3.22.0"
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.27.0"
 
 dependencies:
   flutter:
@@ -18,9 +18,45 @@ dependencies:
   url_launcher: ^6.3.0
   geolocator: ^13.0.1
   yandex_mapkit: ^4.1.0
+  flutter_svg: ^2.0.10
+  shared_preferences: ^2.3.2
 
 dev_dependencies:
+  flutter_test:
+    sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.1
+  flutter_native_splash: ^2.4.1
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/images/
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
+
+# Иконка приложения: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/branding/app_icon.png
+  remove_alpha_ios: true
+  adaptive_icon_background: "#155EEF"
+  adaptive_icon_foreground: assets/branding/app_icon_foreground.png
+
+# Нативный splash (пока грузится Flutter): dart run flutter_native_splash:create
+flutter_native_splash:
+  color: "#FFFFFF"
+  image: assets/branding/splash_logo.png
+  android_12:
+    color: "#FFFFFF"
+    image: assets/branding/splash_logo.png

@@ -4,7 +4,7 @@ import 'api.dart';
 
 /// Вход по номеру телефона и коду из Telegram-бота.
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, required this.api, required this.title, this.subtitle, this.onOpenUrl});
+  const LoginScreen({super.key, required this.api, required this.title, this.subtitle, this.onOpenUrl, this.logo});
 
   final Api api;
   final String title;
@@ -12,6 +12,9 @@ class LoginScreen extends StatefulWidget {
 
   /// Открыть ссылку на бота (url_launcher в приложении).
   final void Function(String url)? onOpenUrl;
+
+  /// Логотип над заголовком.
+  final Widget? logo;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -79,6 +82,7 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (widget.logo != null) ...[Center(child: widget.logo!), const SizedBox(height: 24)],
                   Text(widget.title, style: theme.textTheme.headlineMedium, textAlign: TextAlign.center),
                   if (widget.subtitle != null) ...[
                     const SizedBox(height: 8),

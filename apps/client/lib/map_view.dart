@@ -12,14 +12,18 @@ import 'package:yandex_mapkit/yandex_mapkit.dart';
 /// Центр Ташкента — точка по умолчанию.
 const tashkent = (lat: 41.2995, lng: 69.2401);
 
-/// Текущее местоположение или null, если нет разрешения.
+/// Текущее местоположение или null, если нет разрешения или GPS молчит.
+/// Не дольше 6 секунд: на симуляторе без заданной точки getCurrentPosition
+/// может не ответить никогда.
 Future<({double lat, double lng})?> currentLocation() async {
   try {
     if (!await Geolocator.isLocationServiceEnabled()) return null;
     var perm = await Geolocator.checkPermission();
     if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
     if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) return null;
-    final pos = await Geolocator.getCurrentPosition();
+    final last = await Geolocator.getLastKnownPosition();
+    if (last != null) return (lat: last.latitude, lng: last.longitude);
+    final pos = await Geolocator.getCurrentPosition().timeout(const Duration(seconds: 6));
     return (lat: pos.latitude, lng: pos.longitude);
   } catch (_) {
     return null;
@@ -116,7 +120,7 @@ class _PointPickerState extends State<PointPicker> {
         IgnorePointer(
           child: Padding(
             padding: const EdgeInsets.only(bottom: 40),
-            child: Icon(Icons.location_on, size: 48, color: Theme.of(context).colorScheme.error),
+            child: Icon(Icons.location_on, size: 48, color: Theme.of(context).colorScheme.primary),
           ),
         ),
         Positioned(

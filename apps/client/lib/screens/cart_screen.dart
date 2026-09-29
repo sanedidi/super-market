@@ -4,7 +4,11 @@ import 'package:sm_core/sm_core.dart';
 
 import '../main.dart';
 import '../state.dart';
+import '../ui/theme.dart';
+import '../ui/widgets.dart';
+import 'addresses_screen.dart';
 import 'order_screen.dart';
+import 'root_shell.dart';
 
 const _problemText = {
   'out_of_stock': 'Закончился',
@@ -21,7 +25,7 @@ const _orderProblemText = {
   'store_not_accepting': 'Магазин сейчас не принимает заказы',
 };
 
-/// Корзина: пересчёт на сервере, доставка, оплата.
+/// Корзина на весь экран: товары, доставка, оплата, итог. Пересчёт — на сервере.
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
 
@@ -74,124 +78,257 @@ class _CartScreenState extends State<CartScreen> {
     try {
       final res = await context.read<Api>().post('/client/orders', _body(s)) as Map<String, dynamic>;
       final order = res['order'] as Map<String, dynamic>;
+      final url = res['payment_url'] as String?;
       s.clearCart();
-      await openUrl(res['payment_url'] as String);
-      if (mounted) {
-        Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => OrderScreen(id: order['id'] as String)));
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => OrderScreen(id: order['id'] as String, justCreated: true)));
+      if (url != null) {
+        try {
+          await openUrl(url);
+        } catch (_) {
+          // Страница оплаты откроется кнопкой «Оплатить» на экране заказа.
+        }
       }
     } on ApiError catch (e) {
       if (mounted) showError(context, e);
       await _refresh();
+    } catch (e) {
+      if (mounted) showError(context, e);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
+  Future<void> _changeAddress() async {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AddressesScreen()));
+    if (mounted) _refresh();
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AppState>();
-    final theme = Theme.of(context);
     final p = _preview;
     final lines = {for (final l in (p?['lines'] as List? ?? const [])) (l as Map<String, dynamic>)['product_id']: l};
     final problems = ((p?['problems'] as List?) ?? const []).cast<String>();
     final delivery = p?['delivery'] as Map<String, dynamic>?;
+    final fee = num.tryParse('${delivery?['delivery_fee']}') ?? 0;
+    final freeLeft = num.tryParse('${delivery?['free_from'] ?? ''}') ?? 0;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(s.cartStoreName ?? 'Корзина'),
-        actions: [
-          if (s.cartCount > 0)
-            TextButton(
-              onPressed: () {
-                s.clearCart();
-                Navigator.of(context).pop();
-              },
-              child: const Text('Очистить'),
-            ),
-        ],
-      ),
-      body: s.cartCount == 0
-          ? const Center(child: Text('Корзина пуста'))
-          : ListView(
-              padding: const EdgeInsets.all(12),
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.location_on_outlined),
-                  title: Text(s.address?.title ?? 'Адрес не выбран'),
-                  subtitle: s.address?.label.isNotEmpty == true ? Text(s.address!.address) : null,
+      backgroundColor: AppColors.bg,
+      body: SafeArea(
+        bottom: false,
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+            child: Row(children: [
+              RoundIconButton(icon: Icons.close_rounded, bg: AppColors.white, onTap: () => Navigator.of(context).pop()),
+              const SizedBox(width: 12),
+              const Text('Корзина', style: AppText.h2),
+              const SizedBox(width: 8),
+              Expanded(
+                child: s.cartCount > 0
+                    ? Text(itemsWord(s.cartCount), maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.small.copyWith(fontSize: 15))
+                    : const SizedBox(),
+              ),
+              if (s.cartCount > 0)
+                TextButton(
+                  style: TextButton.styleFrom(foregroundColor: AppColors.text2),
+                  onPressed: () {
+                    s.clearCart();
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Очистить'),
                 ),
-                const Divider(),
-                for (final line in s.cart.values)
-                  _LineTile(
-                    line: line,
-                    server: lines[line.product.id] as Map<String, dynamic>?,
-                    onChanged: (q) {
-                      s.setQty(s.cartStoreId!, s.cartStoreName!, line.product, q);
-                      if (s.cartCount == 0) {
-                        Navigator.of(context).pop();
-                      } else {
-                        _refresh();
-                      }
+            ]),
+          ),
+          Expanded(
+            child: s.cartCount == 0
+                ? EmptyState(
+                    icon: Icons.shopping_cart_outlined,
+                    title: 'В корзине пусто',
+                    text: 'Добавьте товары из каталога магазина рядом.',
+                    action: 'В каталог',
+                    onAction: () {
+                      s.setTab(1);
+                      Navigator.of(context).pop();
                     },
-                  ),
-                const Divider(),
-                if (_error != null) Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
-                if (p != null) ...[
-                  _row('Товары', money(p['subtotal'])),
-                  if (delivery != null) ...[
-                    _row('Доставка', (num.tryParse('${delivery['delivery_fee']}') ?? 0) == 0 ? 'бесплатно' : money(delivery['delivery_fee'])),
-                    if (delivery['free_from'] != null && (num.tryParse('${delivery['free_from']}') ?? 0) > 0)
-                      Text('Ещё ${money(delivery['free_from'])} до бесплатной доставки', style: theme.textTheme.bodySmall),
-                  ],
-                  _row('Итого', money(p['total']), bold: true),
-                  for (final pr in problems)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        pr == 'min_order_amount' && delivery != null
-                            ? 'Минимальный заказ — ${money(delivery['min_order_amount'])}'
-                            : (_orderProblemText[pr] ?? pr),
-                        style: TextStyle(color: theme.colorScheme.error),
-                      ),
+                  )
+                : RefreshIndicator(
+                    onRefresh: _refresh,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      children: [
+                        // Магазин и товары.
+                        AppCard(
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                          child: Column(children: [
+                            Row(children: [
+                              StoreLogo(name: s.cartStoreName ?? '', size: 36),
+                              const SizedBox(width: 12),
+                              Expanded(child: Text(s.cartStoreName ?? '', style: AppText.bodyStrong)),
+                            ]),
+                            if (delivery != null) ...[
+                              const SizedBox(height: 12),
+                              _DeliveryHint(fee: fee, freeLeft: freeLeft),
+                            ],
+                            const SizedBox(height: 4),
+                            for (final line in s.cart.values)
+                              _LineTile(
+                                line: line,
+                                server: lines[line.product.id] as Map<String, dynamic>?,
+                                onChanged: (q) {
+                                  s.setQty(s.cartStoreId!, s.cartStoreName!, line.product, q);
+                                  if (s.cartCount > 0) _refresh();
+                                },
+                              ),
+                          ]),
+                        ),
+                        const SizedBox(height: 16),
+                        // Доставка.
+                        AppCard(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                          child: Column(children: [
+                            AppListRow(
+                              icon: Icons.location_on_outlined,
+                              title: s.address?.title ?? 'Выберите адрес',
+                              subtitle: s.address?.label.isNotEmpty == true ? s.address!.address : null,
+                              onTap: _changeAddress,
+                            ),
+                            const AppListRow(icon: Icons.schedule_rounded, title: 'Как можно скорее', subtitle: 'Магазин соберёт и привезёт заказ'),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              child: TextField(
+                                controller: _comment,
+                                maxLines: null,
+                                decoration: const InputDecoration(
+                                  hintText: 'Комментарий курьеру: например, позвоните за 5 минут',
+                                  prefixIcon: Icon(Icons.chat_bubble_outline_rounded, color: AppColors.text2),
+                                ),
+                              ),
+                            ),
+                          ]),
+                        ),
+                        const SizedBox(height: 24),
+                        const Text('Способ оплаты', style: AppText.title),
+                        const SizedBox(height: 12),
+                        Row(children: [
+                          Expanded(child: _PayOption(title: 'Payme', color: const Color(0xFF33CCCC), selected: _provider == 'payme', onTap: () => setState(() => _provider = 'payme'))),
+                          const SizedBox(width: 12),
+                          Expanded(child: _PayOption(title: 'Click', color: const Color(0xFF0073E6), selected: _provider == 'click', onTap: () => setState(() => _provider = 'click'))),
+                        ]),
+                        const SizedBox(height: 24),
+                        if (_error != null)
+                          Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(_error!, style: AppText.small.copyWith(color: AppColors.error))),
+                        if (p != null)
+                          AppCard(
+                            child: Column(children: [
+                              _row('Товары (${s.cartCount})', money(p['subtotal'])),
+                              _row('Доставка', fee == 0 ? 'Бесплатно' : money(fee), valueColor: fee == 0 ? AppColors.success : null),
+                              const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Divider()),
+                              _row('Итого', money(p['total']), bold: true),
+                              for (final pr in problems)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 12),
+                                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                    const Icon(Icons.error_outline_rounded, size: 18, color: AppColors.error),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        pr == 'min_order_amount' && delivery != null
+                                            ? 'Минимальный заказ — ${money(delivery['min_order_amount'])}'
+                                            : (_orderProblemText[pr] ?? pr),
+                                        style: AppText.small.copyWith(color: AppColors.error),
+                                      ),
+                                    ),
+                                  ]),
+                                ),
+                            ]),
+                          ),
+                      ],
                     ),
-                ],
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _comment,
-                  decoration: const InputDecoration(labelText: 'Комментарий к заказу', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 16),
-                Text('Оплата картой', style: theme.textTheme.titleSmall),
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(value: 'payme', label: Text('Payme')),
-                    ButtonSegment(value: 'click', label: Text('Click')),
-                  ],
-                  selected: {_provider},
-                  onSelectionChanged: (v) => setState(() => _provider = v.first),
-                ),
-              ],
-            ),
+                  ),
+          ),
+        ]),
+      ),
       bottomNavigationBar: s.cartCount == 0
           ? null
-          : SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: FilledButton(
-                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
-                  onPressed: _busy || p == null || p['can_order'] != true ? null : _order,
-                  child: Text(_busy ? 'Оформляем…' : 'Оформить и оплатить ${p == null ? '' : money(p['total'])}'),
-                ),
+          : BottomActionBar(
+              child: AppButton(
+                label: p == null ? 'Считаем…' : 'Оформить заказ · ${money(p['total'])}',
+                loading: _busy,
+                onPressed: p == null || p['can_order'] != true ? null : _order,
               ),
             ),
     );
   }
 
-  Widget _row(String label, String value, {bool bold = false}) {
-    final style = bold ? const TextStyle(fontWeight: FontWeight.bold, fontSize: 18) : null;
+  Widget _row(String label, String value, {bool bold = false, Color? valueColor}) {
+    final l = bold ? AppText.title : AppText.body.copyWith(color: AppColors.text2);
+    final v = bold ? AppText.title : AppText.bodyMedium.copyWith(color: valueColor);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(children: [Expanded(child: Text(label, style: style)), Text(value, style: style)]),
+      child: Row(children: [Expanded(child: Text(label, style: l)), Text(value, style: v)]),
+    );
+  }
+}
+
+/// «Доставка бесплатная» или «Ещё N сум до бесплатной доставки».
+class _DeliveryHint extends StatelessWidget {
+  const _DeliveryHint({required this.fee, required this.freeLeft});
+  final num fee;
+  final num freeLeft;
+
+  @override
+  Widget build(BuildContext context) {
+    final free = fee == 0;
+    if (!free && freeLeft <= 0) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(color: free ? AppColors.successSoft : AppColors.accentSoft, borderRadius: BorderRadius.circular(AppRadius.md)),
+      child: Row(children: [
+        Icon(free ? Icons.check_circle_outline_rounded : Icons.local_shipping_outlined, size: 18, color: free ? AppColors.successInk : AppColors.warningInk),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            free ? 'Доставка бесплатная' : 'Ещё ${money(freeLeft)} до бесплатной доставки',
+            style: AppText.small.copyWith(color: free ? AppColors.successInk : AppColors.warningInk, fontWeight: FontWeight.w500),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _PayOption extends StatelessWidget {
+  const _PayOption({required this.title, required this.color, required this.selected, required this.onTap});
+  final String title;
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        side: BorderSide(color: selected ? AppColors.primary : AppColors.line, width: selected ? 2 : 1),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(children: [
+            IconBox(Icons.credit_card_rounded, size: 32, bg: color, fg: AppColors.white, radius: 8),
+            const SizedBox(width: 10),
+            Expanded(child: Text(title, style: AppText.bodyStrong)),
+            Icon(selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, color: selected ? AppColors.primary : AppColors.muted),
+          ]),
+        ),
+      ),
     );
   }
 }
@@ -206,17 +343,31 @@ class _LineTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = line.product;
     final problem = server?['problem'] as String?;
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(p.name),
-      subtitle: Text(
-        problem != null ? (_problemText[problem] ?? problem) : '${money(p.price)} × ${qty(line.qty, p.unit)}',
-        style: problem != null ? TextStyle(color: Theme.of(context).colorScheme.error) : null,
-      ),
-      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-        IconButton(onPressed: () => onChanged(line.qty - p.step), icon: const Icon(Icons.remove_circle_outline)),
-        Text(qty(line.qty)),
-        IconButton(onPressed: () => onChanged(line.qty + p.step), icon: const Icon(Icons.add_circle_outline)),
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppColors.line))),
+      child: Row(children: [
+        SizedBox(width: 64, height: 64, child: ProductImage(url: p.image, radius: AppRadius.md, iconSize: 28)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(p.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.bodyMedium),
+            const SizedBox(height: 2),
+            Text(
+              problem != null ? (_problemText[problem] ?? problem) : '${money(p.price)} за 1 ${p.unit}',
+              style: AppText.small.copyWith(color: problem != null ? AppColors.error : null),
+            ),
+            const SizedBox(height: 4),
+            Text(money(mulMoney(p.price, '${line.qty}')), style: AppText.price),
+          ]),
+        ),
+        const SizedBox(width: 8),
+        QtyStepper(
+          label: qty(line.qty),
+          height: 36,
+          onMinus: () => onChanged(line.qty - p.step),
+          onPlus: () => onChanged(line.qty + p.step),
+        ),
       ]),
     );
   }

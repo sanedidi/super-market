@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import '../ui/theme.dart';
+import '../ui/widgets.dart';
 import 'order_screen.dart';
 
 /// История заказов покупателя.
@@ -29,34 +31,71 @@ class _OrdersScreenState extends State<OrdersScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Мои заказы')),
-      body: FutureBuilder<List<Map<String, dynamic>>>(
-        future: _orders,
-        builder: (context, snap) {
-          if (snap.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
-          if (snap.hasError) return Center(child: Text(snap.error.toString()));
-          final orders = snap.data!;
-          if (orders.isEmpty) return const Center(child: Text('Заказов пока нет'));
-          return RefreshIndicator(
-            onRefresh: _reload,
-            child: ListView.separated(
-              itemCount: orders.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (_, i) {
-                final o = orders[i];
-                return ListTile(
-                  title: Text('№${o['number']} · ${o['store_name']}'),
-                  subtitle: Text('${dateTime(o['created_at'])} · ${money(o['total'])}'),
-                  trailing: StatusChip(status: o['status'] as String, title: o['status_title'] as String),
-                  onTap: () async {
-                    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => OrderScreen(id: o['id'] as String)));
-                    if (mounted) _reload();
-                  },
+      backgroundColor: AppColors.bg,
+      body: SafeArea(
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: Row(children: [
+              RoundIconButton(icon: Icons.arrow_back_rounded, bg: AppColors.white, onTap: () => Navigator.of(context).pop()),
+              const SizedBox(width: 12),
+              const Text('Мои заказы', style: AppText.title),
+            ]),
+          ),
+          Expanded(
+            child: FutureBuilder<List<Map<String, dynamic>>>(
+              future: _orders,
+              builder: (context, snap) {
+                if (snap.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
+                if (snap.hasError) {
+                  return EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: snap.error.toString(), action: 'Повторить', onAction: _reload);
+                }
+                final orders = snap.data!;
+                if (orders.isEmpty) {
+                  return const EmptyState(icon: Icons.receipt_long_outlined, title: 'Заказов пока нет', text: 'Здесь появятся ваши заказы и их статусы.');
+                }
+                return RefreshIndicator(
+                  onRefresh: _reload,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                    itemCount: orders.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (_, i) {
+                      final o = orders[i];
+                      return Material(
+                        color: AppColors.white,
+                        borderRadius: BorderRadius.circular(AppRadius.lg),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(AppRadius.lg),
+                          onTap: () async {
+                            await Navigator.of(context).push(MaterialPageRoute(builder: (_) => OrderScreen(id: o['id'] as String)));
+                            if (mounted) _reload();
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Row(children: [
+                              const IconBox(Icons.receipt_long_outlined, size: 44),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  Text('№ ${o['number']} · ${o['store_name']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong),
+                                  const SizedBox(height: 2),
+                                  Text('${dateTime(o['created_at'])} · ${money(o['total'])}', style: AppText.small),
+                                ]),
+                              ),
+                              const SizedBox(width: 8),
+                              StatusChip(status: o['status'] as String, title: o['status_title'] as String? ?? statusTitles[o['status']] ?? ''),
+                            ]),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 );
               },
             ),
-          );
-        },
+          ),
+        ]),
       ),
     );
   }

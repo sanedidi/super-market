@@ -7,20 +7,46 @@ apps/
   pos/      POS для кассы (Android-планшет, телефон, Windows, macOS)
 ```
 
-> Код написан без запуска Flutter (в среде сборки не было Flutter SDK). Перед первым запуском
-> выполните шаги ниже; если анализатор найдёт ошибки — они будут мелкими (имена параметров плагинов).
+## Приложение покупателя (apps/client)
 
-## Первый запуск
+Код один для iOS и Android — в `lib/`. Папки `android/` и `ios/` — настройки платформ
+(разрешения, ключ карт, иконка), они хранятся в репозитории.
 
-Платформенные папки (`android/`, `ios/`, `windows/`, `macos/`) не хранятся в репозитории — их создаёт Flutter:
+Требуется Flutter 3.27 или новее.
+
+### Ключ Яндекс MapKit (не хранится в git)
+
+- iOS — создайте `apps/client/ios/Flutter/Secrets.xcconfig`:
+  ```
+  YANDEX_MAPKIT_API_KEY = ваш-ключ
+  ```
+- Android — добавьте строку в `apps/client/android/local.properties`:
+  ```
+  yandex.mapkit.key=ваш-ключ
+  ```
+
+### Запуск
 
 ```sh
 cd apps/client
-flutter create --org uz.supermarket --project-name sm_client --platforms android,ios .
 flutter pub get
+dart run flutter_launcher_icons          # иконка приложения из assets/branding
+dart run flutter_native_splash:create    # белый экран с логотипом при запуске
 flutter run --dart-define=API_URL=http://169.58.31.233:8090/api/v1
+```
 
-cd ../pos
+Иконку и splash нужно пересоздавать только после смены картинок в `assets/branding/`.
+
+Структура `lib/`: `ui/theme.dart` — цвета, шрифт Inter, типографика из Figma; `ui/widgets.dart` —
+общие компоненты (кнопки, чипы, карточки товара и магазина, плитки категорий, нижнее меню);
+`screens/` — экраны; `state.dart` — адреса, магазины рядом, корзина.
+
+## POS (apps/pos)
+
+Платформенные папки POS пока не созданы:
+
+```sh
+cd apps/pos
 flutter create --org uz.supermarket --project-name sm_pos --platforms android,ios,windows,macos .
 flutter pub get
 flutter run --dart-define=API_URL=http://169.58.31.233:8090/api/v1
@@ -49,39 +75,9 @@ flutter run --dart-define=API_URL=http://169.58.31.233:8090/api/v1
 
 ### Приложение покупателя: Яндекс Карты и геолокация
 
-1. Получите ключ MapKit Mobile SDK в кабинете разработчика Яндекса.
-2. Android — `android/app/src/main/kotlin/.../MainActivity.kt`:
-   ```kotlin
-   import com.yandex.mapkit.MapKitFactory
-   import io.flutter.embedding.android.FlutterActivity
-   import io.flutter.embedding.engine.FlutterEngine
-
-   class MainActivity : FlutterActivity() {
-       override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-           MapKitFactory.setLocale("ru_RU")
-           MapKitFactory.setApiKey("ВАШ_КЛЮЧ")
-           super.configureFlutterEngine(flutterEngine)
-       }
-   }
-   ```
-   В манифесте — разрешения:
-   ```xml
-   <uses-permission android:name="android.permission.INTERNET"/>
-   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-   ```
-   `minSdkVersion` — не ниже 26 (требование yandex_mapkit).
-3. iOS — `ios/Runner/AppDelegate.swift`:
-   ```swift
-   import YandexMapsMobile
-   // в application(_:didFinishLaunchingWithOptions:) до GeneratedPluginRegistrant:
-   YMKMapKit.setLocale("ru_RU")
-   YMKMapKit.setApiKey("ВАШ_КЛЮЧ")
-   ```
-   В `Info.plist`: `NSLocationWhenInUseUsageDescription` — «Чтобы показать магазины рядом».
-   Platform в `ios/Podfile` — не ниже 13.0.
-
-Вся работа с картой — в `client/lib/map_view.dart`.
+Уже настроено в `android/` и `ios/`: ключ MapKit читается из секретов выше (iOS — `AppDelegate.swift`
+через `Info.plist`, Android — `MainActivity.kt` через `BuildConfig`) и задаётся до регистрации
+плагинов; разрешения на геолокацию, `minSdk = 26`. Вся работа с картой — в `client/lib/map_view.dart`.
 
 ## Что умеют приложения
 
