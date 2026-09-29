@@ -37,6 +37,8 @@ run_demo_request() {
 
 echo ">> Сборка и запуск"
 $COMPOSE up -d --build --remove-orphans
+# nginx мог запомнить старый адрес api — перезапускаем с актуальным конфигом.
+$COMPOSE restart nginx
 
 echo ">> Ждём готовности API"
 for i in $(seq 1 30); do
