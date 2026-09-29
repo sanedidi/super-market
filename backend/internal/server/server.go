@@ -23,6 +23,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/platform/telegram"
 	"github.com/sanedidi/super-market/backend/internal/profile"
+	"github.com/sanedidi/super-market/backend/internal/push"
 	"github.com/sanedidi/super-market/backend/internal/reports"
 	"github.com/sanedidi/super-market/backend/internal/sales"
 	"github.com/sanedidi/super-market/backend/internal/tenant"
@@ -84,9 +85,22 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		orders.NewModule(ord, dlv, pay, auth, log),
 		billing.NewModule(bill, auth, log),
 		reports.NewModule(reports.NewService(pool), auth, log),
-		profile.NewModule(profile.NewService(pool, supportURL(cfg), cfg.PrivacyURL), auth, log),
+		profile.NewModule(profile.NewService(pool, supportURL(cfg), cfg.PrivacyURL, pushConfigured(cfg, log)), auth, log),
 	)
 	return &App{Handler: h, Orders: ord, Payments: pay, Billing: bill}, nil
+}
+
+// pushConfigured — ключ Firebase задан и читается (отправляет push воркер).
+func pushConfigured(cfg config.Config, log *slog.Logger) bool {
+	creds, err := push.LoadCredentials(cfg.FCMCredentials)
+	if err == nil && creds != nil {
+		_, err = push.NewFCM(creds)
+	}
+	if err != nil {
+		log.Error("FCM_CREDENTIALS не читается", "err", err)
+		return false
+	}
+	return creds != nil
 }
 
 // supportURL — поддержка в Telegram: SUPPORT_URL или сам бот.

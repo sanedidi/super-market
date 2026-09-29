@@ -62,6 +62,10 @@ func TestProfileAndPush(t *testing.T) {
 		"rules": []map[string]any{{"type": "fixed", "params": map[string]any{"price": 5000}}},
 	}), 200, "delivery")
 
+	if c := a.expect(a.do("GET", "/client/config", "", nil), 200, "config"); c.Body["push_enabled"] != false || c.str("support_url") != "https://t.me/sm_support" {
+		t.Fatalf("config = %v", c.Body)
+	}
+
 	// Профиль.
 	const phone = "+998900000050"
 	client, _ := a.login(phone, identity.AppClient)

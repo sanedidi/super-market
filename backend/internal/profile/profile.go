@@ -18,13 +18,25 @@ import (
 )
 
 type Service struct {
-	pool       *pgxpool.Pool
-	supportURL string
-	privacyURL string
+	pool        *pgxpool.Pool
+	supportURL  string
+	privacyURL  string
+	pushEnabled bool
 }
 
-func NewService(pool *pgxpool.Pool, supportURL, privacyURL string) *Service {
-	return &Service{pool: pool, supportURL: supportURL, privacyURL: privacyURL}
+func NewService(pool *pgxpool.Pool, supportURL, privacyURL string, pushEnabled bool) *Service {
+	return &Service{pool: pool, supportURL: supportURL, privacyURL: privacyURL, pushEnabled: pushEnabled}
+}
+
+// AppConfig — настройки для приложения до входа.
+type AppConfig struct {
+	PushEnabled bool   `json:"push_enabled"`
+	SupportURL  string `json:"support_url"`
+	PrivacyURL  string `json:"privacy_url"`
+}
+
+func (s *Service) Config() AppConfig {
+	return AppConfig{PushEnabled: s.pushEnabled, SupportURL: s.supportURL, PrivacyURL: s.privacyURL}
 }
 
 type Notifications struct {

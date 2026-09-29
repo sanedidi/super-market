@@ -351,6 +351,7 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 | GET | `/client/me/stats` | `orders_count`, `saved` (сумма скидок доставленных заказов), `addresses_count`, `favorites_count`, `active_order {id, number, status, store_name}` или `null` |
 | DELETE | `/client/me` | Удаление аккаунта → 204. 409 `active_order`, пока есть незавершённый заказ. Сессии закрываются, имя, адреса, избранное и устройства удаляются, в заказах стираются телефон и адрес. Новый вход с тем же номером создаёт новый аккаунт |
 | POST | `/client/devices` | `{token, platform: ios|android, language?}` — токен FCM для текущей сессии → 204. Вызывать после входа и при обновлении токена |
+| GET | `/client/config` | Без входа: `push_enabled`, `support_url`, `privacy_url` |
 | DELETE | `/client/devices/{token}` | Забыть устройство → 204. При выходе (`/auth/client/logout`) устройство сессии удаляется само |
 
 ### Уведомления о заказе

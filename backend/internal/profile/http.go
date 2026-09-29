@@ -21,6 +21,9 @@ func NewModule(svc *Service, auth *identity.Authenticator, log *slog.Logger) *Mo
 }
 
 func (m *Module) Routes(r chi.Router) {
+	r.Get("/client/config", func(w http.ResponseWriter, r *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, m.svc.Config())
+	})
 	r.Group(func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppClient))
 		r.Get("/client/me", m.get)
