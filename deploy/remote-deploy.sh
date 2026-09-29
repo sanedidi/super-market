@@ -48,6 +48,15 @@ server_snapshot() {
     echo "== caddy"; grep -rhn "super-market" /etc/caddy 2>/dev/null | head || true
     echo "== letsencrypt"; ls /etc/letsencrypt/live 2>/dev/null || true
     echo "== certbot"; which certbot || true
+    echo "== kids-shop.conf -> $(readlink -f /etc/nginx/sites-enabled/kids-shop.conf)"
+    grep -nE 'server_name|listen|ssl_certificate|proxy_pass|location|root |include|return' /etc/nginx/sites-enabled/kids-shop.conf 2>/dev/null | head -80 || true
+    echo "== 00-default.conf"; grep -nE 'server_name|listen|return|root ' /etc/nginx/sites-enabled/00-default.conf 2>/dev/null | head -20 || true
+    echo "== renewal"; grep -H -E 'authenticator|webroot_path|installer' /etc/letsencrypt/renewal/*super-market*.conf 2>/dev/null || true
+    for d in super-market.uz api.super-market.uz admin.super-market.uz tg.super-market.uz; do
+      echo "== cert $d"; openssl x509 -in /etc/letsencrypt/live/$d/cert.pem -noout -ext subjectAltName -enddate 2>/dev/null | tr '\n' ' '; echo
+    done
+    echo "== certbot nginx plugin"; dpkg -l | grep -E 'python3-certbot-(nginx|webroot)' | awk '{print $2}' || true
+    echo "== kids deploy refs to nginx"; grep -rln "nginx" /home/deploy/kids-shop --include=*.sh --include=*.yml 2>/dev/null | head || true
     echo "== os"; . /etc/os-release && echo "$PRETTY_NAME"; df -h / | tail -1; free -m | head -2
   } > "$f" 2>&1
   $COMPOSE cp "$f" nginx:/usr/share/nginx/html/diag-6000df0a6602e1f552649d9e.txt || true
