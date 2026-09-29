@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import '../delivery_time.dart';
 import '../main.dart';
 import '../product_tile.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
-import 'addresses_screen.dart';
-import 'order_screen.dart';
+import 'checkout_sheets.dart';
+import 'payment_screen.dart';
 import 'root_shell.dart';
 
 const _problemText = {
@@ -24,6 +25,8 @@ const _orderProblemText = {
   'min_order_amount': 'Сумма меньше минимального заказа',
   'not_deliverable': 'Магазин не доставляет по этому адресу',
   'store_not_accepting': 'Магазин сейчас не принимает заказы',
+  'slot_full': 'На выбранное время заказов больше нет — выберите другое',
+  'slot_unavailable': 'Выбранное время уже недоступно — выберите другое',
 };
 
 /// Корзина на весь экран: товары, доставка, оплата, итог. Пересчёт — на сервере.
@@ -39,6 +42,9 @@ class _CartScreenState extends State<CartScreen> {
   String? _error;
   bool _busy = false;
   String _provider = 'payme';
+
+  /// Окно доставки; null — как можно скорее.
+  Slot? _slot;
   final _comment = TextEditingController();
 
   /// «Не забудьте»: что покупают вместе с товарами корзины.
@@ -88,6 +94,7 @@ class _CartScreenState extends State<CartScreen> {
         'items': s.cartItems,
         'payment_provider': _provider,
         'comment': _comment.text.trim(),
+        'delivery_from': _slot?.fromRaw,
       };
 
   Future<void> _refresh() async {
@@ -111,12 +118,12 @@ class _CartScreenState extends State<CartScreen> {
       final url = res['payment_url'] as String?;
       s.clearCart();
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => OrderScreen(id: order['id'] as String, justCreated: true)));
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => PaymentScreen(order: order)));
       if (url != null) {
         try {
           await openUrl(url);
         } catch (_) {
-          // Страница оплаты откроется кнопкой «Оплатить» на экране заказа.
+          // Страница оплаты откроется кнопкой на экране оплаты.
         }
       }
     } on ApiError catch (e) {
@@ -130,8 +137,19 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   Future<void> _changeAddress() async {
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AddressesScreen()));
+    final s = context.read<AppState>();
+    if (s.cartStoreId == null) return;
+    await pickDeliveryAddress(context, storeId: s.cartStoreId!, storeName: s.cartStoreName ?? 'Магазин');
     if (mounted) _refresh();
+  }
+
+  Future<void> _changeTime(String? eta) async {
+    final s = context.read<AppState>();
+    if (s.cartStoreId == null) return;
+    final choice = await pickDeliveryTime(context, storeId: s.cartStoreId!, eta: eta, current: _slot);
+    if (choice == null || !mounted) return;
+    setState(() => _slot = choice.slot);
+    _refresh();
   }
 
   @override
@@ -238,7 +256,14 @@ class _CartScreenState extends State<CartScreen> {
                               subtitle: s.address?.label.isNotEmpty == true ? s.address!.address : null,
                               onTap: _changeAddress,
                             ),
-                            const AppListRow(icon: Icons.schedule_rounded, title: 'Как можно скорее', subtitle: 'Магазин соберёт и привезёт заказ'),
+                            AppListRow(
+                              icon: Icons.schedule_rounded,
+                              title: _slot == null ? 'Как можно скорее' : '${dayLabel(_slot!.from).split(',').first}, ${_slot!.range}',
+                              subtitle: _slot == null
+                                  ? (cartStore?.etaText == null ? 'Магазин соберёт и привезёт заказ' : 'Привезём за ${cartStore!.etaText}')
+                                  : 'Доставка ко времени',
+                              onTap: () => _changeTime(cartStore?.etaText),
+                            ),
                             Padding(
                               padding: const EdgeInsets.symmetric(vertical: 12),
                               child: TextField(

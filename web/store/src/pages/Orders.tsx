@@ -49,7 +49,8 @@ export function OrdersPage() {
   const { storeId } = useStore()
   const [status, setStatus] = useState('paid')
   const [openId, setOpenId] = useState<string | null>(null)
-  const params = { store_id: storeId, status, limit: 200 }
+  const [sort, setSort] = useState<'' | 'delivery'>('')
+  const params = { store_id: storeId, status, limit: 200, sort: sort || undefined }
   const { data, isLoading, isFetching, refetch, dataUpdatedAt } = useQuery({
     queryKey: ['/store/orders', params],
     queryFn: () => api.get<List<Order>>('/store/orders', params).then((r) => r.items ?? []),
@@ -79,7 +80,18 @@ export function OrdersPage() {
           </Button>
         }
       >
-        <Segmented value={status} onChange={(v) => setStatus(String(v))} options={statusFilters} />
+        <Space wrap>
+          <Segmented value={status} onChange={(v) => setStatus(String(v))} options={statusFilters} />
+          <Select
+            value={sort}
+            onChange={setSort}
+            style={{ width: 200 }}
+            options={[
+              { value: '', label: 'Сначала новые' },
+              { value: 'delivery', label: 'По времени доставки' },
+            ]}
+          />
+        </Space>
       </PageTitle>
       <Card styles={{ body: { padding: 0 } }}>
         <Table<Order>
@@ -92,6 +104,7 @@ export function OrdersPage() {
           columns={[
             { title: '№', dataIndex: 'number', width: 70 },
             { title: 'Создан', dataIndex: 'created_at', render: dateTime },
+            { title: 'К времени', key: 'slot', render: (_, r) => <DeliveryWindow order={r} /> },
             { title: 'Статус', dataIndex: 'status', render: (s: string, r) => <StatusTag status={s} title={r.status_title || undefined} /> },
             { title: 'Покупатель', dataIndex: 'customer_phone' },
             { title: 'Адрес', dataIndex: 'address', ellipsis: true },
@@ -187,6 +200,9 @@ function OrderDrawer({ id, onClose }: { id: string | null; onClose: () => void }
               <a href={`tel:${o.customer_phone}`}>{o.customer_phone}</a>
             </Descriptions.Item>
             <Descriptions.Item label="Создан">{dateTime(o.created_at)}</Descriptions.Item>
+            <Descriptions.Item label="Доставка">
+              <DeliveryWindow order={o} />
+            </Descriptions.Item>
             <Descriptions.Item label="Адрес" span="filled">
               {o.address}
               {o.entrance && `, подъезд ${o.entrance}`}
@@ -394,5 +410,22 @@ export function FiscalModal({ path, open, onClose }: { path: string; open: boole
         </Form.Item>
       </Form>
     </Modal>
+  )
+}
+
+/** «Сегодня, 14:00–15:00» или «Как можно скорее». */
+export function DeliveryWindow({ order }: { order: Pick<Order, 'delivery_from' | 'delivery_to'> }) {
+  if (!order.delivery_from || !order.delivery_to) return <Typography.Text type="secondary">Как можно скорее</Typography.Text>
+  const from = new Date(order.delivery_from)
+  const to = new Date(order.delivery_to)
+  const hm = (d: Date) => d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' })
+  const day = (d: Date) => d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', timeZone: 'Asia/Tashkent' })
+  const today = day(new Date())
+  const tomorrow = day(new Date(Date.now() + 86_400_000))
+  const label = day(from) === today ? 'Сегодня' : day(from) === tomorrow ? 'Завтра' : day(from)
+  return (
+    <Tag color="blue">
+      {label}, {hm(from)}–{hm(to)}
+    </Tag>
   )
 }

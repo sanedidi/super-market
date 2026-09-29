@@ -55,16 +55,19 @@ type Settings struct {
 	// Обещанное время доставки в минутах («25–35 мин»); null — не показывать.
 	EtaMin *int `json:"eta_min"`
 	EtaMax *int `json:"eta_max"`
+	// Доставка ко времени.
+	Slots SlotSettings `json:"slots"`
 }
 
 type SettingsInput struct {
-	AcceptsOnline   *bool           `json:"accepts_online"`
-	MinOrderAmount  *money.Amount   `json:"min_order_amount"`
-	DeliveryRadiusM *int            `json:"delivery_radius_m"`
-	WorkingHours    *[]WorkingHours `json:"working_hours"`
-	Rules           *[]Rule         `json:"rules"`
-	EtaMin          *int            `json:"eta_min"`
-	EtaMax          *int            `json:"eta_max"`
+	AcceptsOnline   *bool              `json:"accepts_online"`
+	MinOrderAmount  *money.Amount      `json:"min_order_amount"`
+	DeliveryRadiusM *int               `json:"delivery_radius_m"`
+	WorkingHours    *[]WorkingHours    `json:"working_hours"`
+	Rules           *[]Rule            `json:"rules"`
+	EtaMin          *int               `json:"eta_min"`
+	EtaMax          *int               `json:"eta_max"`
+	Slots           *SlotSettingsInput `json:"slots"`
 }
 
 func checkStore(p *identity.Principal, storeID string) error {
@@ -103,7 +106,10 @@ func getSettings(ctx context.Context, q db.Querier, networkID, storeID string) (
 	if err != nil {
 		return st, err
 	}
-	st.Rules, err = pgx.CollectRows(rows, pgx.RowToStructByPos[Rule])
+	if st.Rules, err = pgx.CollectRows(rows, pgx.RowToStructByPos[Rule]); err != nil {
+		return st, err
+	}
+	st.Slots, err = getSlotSettings(ctx, q, storeID, false)
 	return st, err
 }
 
@@ -185,6 +191,11 @@ func (s *Service) SaveSettings(ctx context.Context, p *identity.Principal, store
 			}
 		}
 	}
+	if in.Slots != nil {
+		if err := in.Slots.validate(); err != nil {
+			return Settings{}, err
+		}
+	}
 	if in.Rules != nil {
 		for _, r := range *in.Rules {
 			if _, err := parseRule(r); err != nil {
@@ -245,6 +256,11 @@ func (s *Service) SaveSettings(ctx context.Context, p *identity.Principal, store
 					p.NetworkID, storeID, r.Type, params, r.Sort); err != nil {
 					return err
 				}
+			}
+		}
+		if in.Slots != nil {
+			if err := saveSlotSettings(ctx, tx, storeID, *in.Slots); err != nil {
+				return err
 			}
 		}
 		var err error

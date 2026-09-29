@@ -300,6 +300,8 @@ export type Order = {
   paid_at: string | null
   accepted_at: string | null
   delivered_at: string | null
+  delivery_from: string | null
+  delivery_to: string | null
   cancel_reason: string
   fiscal_status: string
   created_at: string
@@ -317,6 +319,15 @@ export type DeliverySettings = {
   rules: DeliveryRule[] | null
   eta_min: number | null
   eta_max: number | null
+  slots: SlotSettings
+}
+
+export type SlotSettings = {
+  enabled: boolean
+  slot_minutes: number
+  days_ahead: number
+  lead_minutes: number
+  capacity: number
 }
 
 export type PromotionItem = { product_id: string; product_name: string; price: string; regular_price: string }

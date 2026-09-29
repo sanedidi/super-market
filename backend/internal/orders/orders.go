@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/sanedidi/super-market/backend/internal/delivery"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/inventory"
 	"github.com/sanedidi/super-market/backend/internal/payments"
@@ -61,33 +62,38 @@ type HistoryEntry struct {
 }
 
 type Order struct {
-	ID              string         `json:"id"`
-	Number          int64          `json:"number"`
-	NetworkID       string         `json:"network_id"`
-	StoreID         string         `json:"store_id"`
-	StoreName       string         `json:"store_name"`
-	WarehouseID     string         `json:"warehouse_id"`
-	Status          string         `json:"status"`
-	StatusTitle     string         `json:"status_title"`
-	Subtotal        string         `json:"subtotal"`
-	Discount        string         `json:"discount"`
-	DeliveryFee     string         `json:"delivery_fee"`
-	Total           string         `json:"total"`
-	Address         string         `json:"address"`
-	Entrance        string         `json:"entrance"`
-	Floor           string         `json:"floor"`
-	Apartment       string         `json:"apartment"`
-	AddressComment  string         `json:"address_comment"`
-	Lat             float64        `json:"lat"`
-	Lng             float64        `json:"lng"`
-	DistanceM       int            `json:"distance_m"`
-	CustomerPhone   string         `json:"customer_phone"`
-	Comment         string         `json:"comment"`
-	PaymentProvider string         `json:"payment_provider"`
-	PaymentStatus   *string        `json:"payment_status"`
-	PaidAt          *time.Time     `json:"paid_at"`
-	AcceptedAt      *time.Time     `json:"accepted_at"`
-	DeliveredAt     *time.Time     `json:"delivered_at"`
+	ID              string     `json:"id"`
+	Number          int64      `json:"number"`
+	NetworkID       string     `json:"network_id"`
+	StoreID         string     `json:"store_id"`
+	StoreName       string     `json:"store_name"`
+	WarehouseID     string     `json:"warehouse_id"`
+	Status          string     `json:"status"`
+	StatusTitle     string     `json:"status_title"`
+	Subtotal        string     `json:"subtotal"`
+	Discount        string     `json:"discount"`
+	DeliveryFee     string     `json:"delivery_fee"`
+	Total           string     `json:"total"`
+	Address         string     `json:"address"`
+	Entrance        string     `json:"entrance"`
+	Floor           string     `json:"floor"`
+	Apartment       string     `json:"apartment"`
+	AddressComment  string     `json:"address_comment"`
+	Lat             float64    `json:"lat"`
+	Lng             float64    `json:"lng"`
+	DistanceM       int        `json:"distance_m"`
+	CustomerPhone   string     `json:"customer_phone"`
+	Comment         string     `json:"comment"`
+	PaymentProvider string     `json:"payment_provider"`
+	PaymentStatus   *string    `json:"payment_status"`
+	PaidAt          *time.Time `json:"paid_at"`
+	AcceptedAt      *time.Time `json:"accepted_at"`
+	DeliveredAt     *time.Time `json:"delivered_at"`
+	// Окно доставки; null — как можно скорее.
+	DeliveryFrom *time.Time `json:"delivery_from"`
+	DeliveryTo   *time.Time `json:"delivery_to"`
+	// До какого момента нужно оплатить (только для «ожидает оплаты»).
+	PaymentDeadline *time.Time     `json:"payment_deadline,omitempty"`
 	CancelReason    string         `json:"cancel_reason"`
 	FiscalStatus    string         `json:"fiscal_status"`
 	CreatedAt       time.Time      `json:"created_at"`
@@ -101,7 +107,7 @@ const orderSelect = `
 	       ST_Y(o.location::geometry), ST_X(o.location::geometry), o.distance_m, o.customer_phone, o.comment,
 	       o.payment_provider,
 	       (SELECT p.status FROM payments p WHERE p.order_id = o.id ORDER BY (p.status IN ('paid', 'refund_pending', 'refunded')) DESC, p.created_at DESC LIMIT 1),
-	       o.paid_at, o.accepted_at, o.delivered_at, o.cancel_reason, o.fiscal_status, o.created_at
+	       o.paid_at, o.accepted_at, o.delivered_at, o.delivery_from, o.delivery_to, o.cancel_reason, o.fiscal_status, o.created_at
 	FROM orders o JOIN stores s ON s.id = o.store_id`
 
 func scanOrder(row pgx.CollectableRow) (Order, error) {
@@ -109,7 +115,7 @@ func scanOrder(row pgx.CollectableRow) (Order, error) {
 	err := row.Scan(&o.ID, &o.Number, &o.NetworkID, &o.StoreID, &o.StoreName, &o.WarehouseID, &o.Status, &o.Subtotal, &o.Discount,
 		&o.DeliveryFee, &o.Total, &o.Address, &o.Entrance, &o.Floor, &o.Apartment, &o.AddressComment,
 		&o.Lat, &o.Lng, &o.DistanceM, &o.CustomerPhone, &o.Comment, &o.PaymentProvider, &o.PaymentStatus,
-		&o.PaidAt, &o.AcceptedAt, &o.DeliveredAt, &o.CancelReason, &o.FiscalStatus, &o.CreatedAt)
+		&o.PaidAt, &o.AcceptedAt, &o.DeliveredAt, &o.DeliveryFrom, &o.DeliveryTo, &o.CancelReason, &o.FiscalStatus, &o.CreatedAt)
 	o.StatusTitle = statusTitles[o.Status]
 	return o, err
 }
@@ -128,6 +134,10 @@ func (s *Service) getOrder(ctx context.Context, q db.Querier, id string) (Order,
 	}
 	if err != nil {
 		return Order{}, err
+	}
+	if o.Status == StatusAwaitingPayment && s.cfg.PaymentTimeout > 0 {
+		d := o.CreatedAt.Add(s.cfg.PaymentTimeout)
+		o.PaymentDeadline = &d
 	}
 	rows, err = q.Query(ctx, `
 		SELECT i.line, i.product_id, p.name, u.short_name, i.qty::text, i.price::text, i.total::text,
@@ -177,7 +187,9 @@ type ListFilter struct {
 	Status  string
 	From    *time.Time
 	To      *time.Time
-	Page    httpx.Page
+	// Sort: пусто — новые сверху, delivery — по времени доставки (ко времени — по окну).
+	Sort string
+	Page httpx.Page
 }
 
 func (s *Service) ClientListOrders(ctx context.Context, p *identity.Principal, page httpx.Page) ([]Order, error) {
@@ -215,13 +227,18 @@ func (s *Service) StoreList(ctx context.Context, p *identity.Principal, f ListFi
 	if f.Status != "" && statusTitles[f.Status] == "" {
 		return nil, apperr.Validation("status: неизвестный статус")
 	}
+	if f.Sort != "" && f.Sort != "delivery" {
+		return nil, apperr.Validation("sort: пусто или delivery")
+	}
 	rows, err := s.pool.Query(ctx, orderSelect+`
 		WHERE o.network_id = $1 AND ($2 OR o.store_id = ANY($3::uuid[]))
 		  AND ($4 = '' OR o.store_id::text = $4)
 		  AND (CASE WHEN $5 = '' THEN o.status NOT IN ('awaiting_payment', 'expired') ELSE o.status = $5 END)
 		  AND ($6::timestamptz IS NULL OR o.created_at >= $6) AND ($7::timestamptz IS NULL OR o.created_at < $7)
-		ORDER BY o.created_at DESC LIMIT $8 OFFSET $9`,
-		p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.StoreID, f.Status, f.From, f.To, f.Page.Limit, f.Page.Offset)
+		ORDER BY CASE WHEN $10 = 'delivery' THEN COALESCE(o.delivery_from, o.paid_at, o.created_at) END,
+		         o.created_at DESC
+		LIMIT $8 OFFSET $9`,
+		p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.StoreID, f.Status, f.From, f.To, f.Page.Limit, f.Page.Offset, f.Sort)
 	if err != nil {
 		return nil, err
 	}
@@ -566,9 +583,15 @@ func (s *Service) MarkPaid(ctx context.Context, tx pgx.Tx, orderID string) error
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		var number int64
-		_ = s.pool.QueryRow(ctx, `SELECT number FROM orders WHERE id = $1`, orderID).Scan(&number)
-		s.notify.StoreStaff(ctx, storeID, identity.PermOrdersManage,
-			fmt.Sprintf("Новый заказ №%d на %s сум. Примите его в течение %d минут.", number, total, int(s.cfg.AcceptTimeout.Minutes())))
+		var from, to *time.Time
+		_ = s.pool.QueryRow(ctx, `SELECT number, delivery_from, delivery_to FROM orders WHERE id = $1`, orderID).Scan(&number, &from, &to)
+		text := fmt.Sprintf("Новый заказ №%d на %s сум. Примите его в течение %d минут.", number, total, int(s.cfg.AcceptTimeout.Minutes()))
+		if from != nil && to != nil {
+			f, t := from.In(delivery.Tashkent), to.In(delivery.Tashkent)
+			text = fmt.Sprintf("Новый заказ №%d на %s сум ко времени: %s, %s–%s. Примите его не позже чем за час до начала.",
+				number, total, f.Format("02.01"), f.Format("15:04"), t.Format("15:04"))
+		}
+		s.notify.StoreStaff(ctx, storeID, identity.PermOrdersManage, text)
 	}()
 	return nil
 }
@@ -631,7 +654,9 @@ func (s *Service) AlertUnaccepted(ctx context.Context) error {
 	rows, err := s.pool.Query(ctx, `
 		UPDATE orders o SET alerted_at = now()
 		FROM stores s, networks n
-		WHERE o.status = 'paid' AND o.alerted_at IS NULL AND o.paid_at < now() - make_interval(secs => $1)
+		WHERE o.status = 'paid' AND o.alerted_at IS NULL
+		  -- Заказ ко времени магазин должен принять не позже чем за час до окна.
+		  AND GREATEST(o.paid_at, COALESCE(o.delivery_from - interval '1 hour', o.paid_at)) < now() - make_interval(secs => $1)
 		  AND s.id = o.store_id AND n.id = o.network_id
 		RETURNING o.id, o.number, n.name, s.name, s.phone, o.total::text, o.paid_at`, s.cfg.AcceptTimeout.Seconds())
 	if err != nil {

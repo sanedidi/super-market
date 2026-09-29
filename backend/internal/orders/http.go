@@ -42,6 +42,7 @@ func (m *Module) Routes(r chi.Router) {
 	r.Get("/client/stores/{id}/products/{pid}", m.product)
 	r.Get("/client/stores/{id}/products/{pid}/related", m.related)
 	r.Get("/client/home", m.home)
+	r.Get("/client/stores/{id}/slots", m.slots)
 	r.Group(func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppClient))
 		r.Get("/client/favorites", m.favorites)
@@ -319,6 +320,13 @@ func (m *Module) deleteZone(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// slots — окна доставки ко времени на сегодня и ближайшие дни.
+func (m *Module) slots(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (delivery.SlotsView, error) {
+		return m.delivery.Slots(r.Context(), id)
+	})
+}
+
 func (m *Module) storeList(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Order], error) {
@@ -327,7 +335,7 @@ func (m *Module) storeList(w http.ResponseWriter, r *http.Request) {
 			return httpx.List[Order]{}, err
 		}
 		items, err := m.svc.StoreList(r.Context(), pr(r), ListFilter{
-			StoreID: q.Get("store_id"), Status: q.Get("status"), From: from, To: to, Page: httpx.PageFrom(r),
+			StoreID: q.Get("store_id"), Status: q.Get("status"), From: from, To: to, Sort: q.Get("sort"), Page: httpx.PageFrom(r),
 		})
 		return httpx.List[Order]{Items: items}, err
 	})

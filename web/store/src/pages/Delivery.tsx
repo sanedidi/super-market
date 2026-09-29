@@ -26,7 +26,7 @@ import dayjs, { type Dayjs } from 'dayjs'
 import { ActiveTag, PageTitle, api, money, useAction, useItem, useList } from '@sm/shared'
 import { useStore } from '../ctx'
 import { NeedStore, Num } from '../ui'
-import type { DeliveryRule, DeliverySettings, Zone } from '../types'
+import type { DeliveryRule, DeliverySettings, SlotSettings, Zone } from '../types'
 
 // Порядок дней как в жизни: пн … вс (в API 0 — воскресенье).
 const DAYS: [number, string][] = [
@@ -89,6 +89,7 @@ function DeliveryInner() {
   const [etaMax, setEtaMax] = useState<number | null>(null)
   const [days, setDays] = useState<DayRow[]>([])
   const [rules, setRules] = useState<RuleRow[]>([])
+  const [slots, setSlots] = useState<SlotSettings>({ enabled: false, slot_minutes: 60, days_ahead: 1, lead_minutes: 60, capacity: 5 })
 
   useEffect(() => {
     if (!data) return
@@ -97,6 +98,7 @@ function DeliveryInner() {
     setRadius(data.delivery_radius_m)
     setEtaMin(data.eta_min)
     setEtaMax(data.eta_max)
+    if (data.slots) setSlots(data.slots)
     setDays(
       DAYS.map(([wd]) => {
         const h = (data.working_hours ?? []).find((x) => x.weekday === wd)
@@ -125,6 +127,7 @@ function DeliveryInner() {
         delivery_radius_m: radius ?? 0,
         ...(etaMin ? { eta_min: etaMin } : {}),
         ...(etaMax ? { eta_max: etaMax } : {}),
+        slots,
         working_hours: days
           .filter((d) => d.on && d.opens && d.closes)
           .map((d) => ({ weekday: d.weekday, opens: d.opens!.format('HH:mm'), closes: d.closes!.format('HH:mm') })),
@@ -196,6 +199,42 @@ function DeliveryInner() {
                   <InputNumber value={etaMax} onChange={setEtaMax} min={5} max={600} placeholder="до" />
                 </Space>
               </Form.Item>
+            </Form>
+          </Card>
+          <Card title="Доставка ко времени" loading={isLoading} style={{ marginBottom: 16 }}>
+            <Form layout="vertical">
+              <Form.Item label="Покупатель может выбрать время" extra="Иначе — только «как можно скорее»">
+                <Switch checked={slots.enabled} onChange={(v) => setSlots((s) => ({ ...s, enabled: v }))} />
+              </Form.Item>
+              {slots.enabled && (
+                <Row gutter={16}>
+                  <Col xs={12} md={6}>
+                    <Form.Item label="Окно, минут">
+                      <Select
+                        value={slots.slot_minutes}
+                        onChange={(v) => setSlots((s) => ({ ...s, slot_minutes: v }))}
+                        options={[30, 60, 90, 120, 180, 240].map((v) => ({ value: v, label: v }))}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Form.Item label="Дней вперёд" extra="0 — только сегодня">
+                      <InputNumber value={slots.days_ahead} min={0} max={6} onChange={(v) => setSlots((s) => ({ ...s, days_ahead: v ?? 0 }))} style={{ width: '100%' }} />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Form.Item label="Запас, минут" extra="Не раньше чем через">
+                      <InputNumber value={slots.lead_minutes} min={0} max={720} step={15} onChange={(v) => setSlots((s) => ({ ...s, lead_minutes: v ?? 0 }))} style={{ width: '100%' }} />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Form.Item label="Заказов в окно">
+                      <InputNumber value={slots.capacity} min={1} max={500} onChange={(v) => setSlots((s) => ({ ...s, capacity: v ?? 1 }))} style={{ width: '100%' }} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              )}
+              <Typography.Text type="secondary">Окна строятся по часам работы магазина. Заказ ко времени нужно принять не позже чем за час до окна.</Typography.Text>
             </Form>
           </Card>
           <Card title="Часы работы" loading={isLoading}>

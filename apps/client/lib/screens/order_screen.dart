@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import '../delivery_time.dart';
 import '../main.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -135,6 +136,11 @@ class _OrderScreenState extends State<OrderScreen> {
                         padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
                         child: Column(children: [
                           AppListRow(icon: Icons.storefront_outlined, title: o['store_name'] as String, subtitle: 'Магазин'),
+                          AppListRow(
+                            icon: Icons.schedule_rounded,
+                            title: windowLabel(o['delivery_from'], o['delivery_to']) ?? 'Как можно скорее',
+                            subtitle: 'Время доставки',
+                          ),
                           AppListRow(
                             icon: Icons.location_on_outlined,
                             title: '${o['address']}${(o['apartment'] as String? ?? '').isNotEmpty ? ', кв. ${o['apartment']}' : ''}',

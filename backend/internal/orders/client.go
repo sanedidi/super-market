@@ -192,6 +192,8 @@ type CheckoutInput struct {
 	Items           []CartItem `json:"items"`
 	PaymentProvider string     `json:"payment_provider"`
 	Comment         string     `json:"comment"`
+	// Начало окна доставки из GET /client/stores/{id}/slots; пусто — как можно скорее.
+	DeliveryFrom *time.Time `json:"delivery_from"`
 }
 
 type PreviewLine struct {
@@ -212,14 +214,17 @@ type Preview struct {
 	Lines    []PreviewLine `json:"lines"`
 	Subtotal string        `json:"subtotal"`
 	// Скидка по акциям: насколько subtotal меньше суммы по обычным ценам.
-	Discount    string         `json:"discount"`
-	Delivery    delivery.Quote `json:"delivery"`
-	Total       string         `json:"total"`
-	CanOrder    bool           `json:"can_order"`
-	Problems    []string       `json:"problems"`
-	warehouseID string
-	priceTypeID string
-	networkID   string
+	Discount string         `json:"discount"`
+	Delivery delivery.Quote `json:"delivery"`
+	Total    string         `json:"total"`
+	CanOrder bool           `json:"can_order"`
+	Problems []string       `json:"problems"`
+	// Выбранное окно доставки (null — как можно скорее).
+	DeliveryFrom *time.Time `json:"delivery_from"`
+	DeliveryTo   *time.Time `json:"delivery_to"`
+	warehouseID  string
+	priceTypeID  string
+	networkID    string
 }
 
 // Preview считает корзину: цены, наличие, доставку, минимальную сумму.
@@ -315,7 +320,21 @@ func (s *Service) preview(ctx context.Context, q db.Querier, p *identity.Princip
 			break
 		}
 	}
-	if !quote.IsOpen {
+	if in.DeliveryFrom != nil {
+		// Ко времени: магазин может быть закрыт сейчас, важно окно.
+		to, err := s.delivery.CheckSlot(ctx, q, in.StoreID, *in.DeliveryFrom, false)
+		var ae *apperr.Error
+		switch {
+		case errors.As(err, &ae):
+			out.Problems = append(out.Problems, ae.Code)
+		case err != nil:
+			return out, err
+		default:
+			from := in.DeliveryFrom.In(delivery.Tashkent)
+			to = to.In(delivery.Tashkent)
+			out.DeliveryFrom, out.DeliveryTo = &from, &to
+		}
+	} else if !quote.IsOpen {
 		out.Problems = append(out.Problems, "store_closed")
 	}
 	if subtotal.Cmp(money.D(quote.MinOrderAmount)) < 0 {
@@ -338,6 +357,8 @@ var problemMessages = map[string]string{
 	"min_order_amount":    "сумма меньше минимального заказа",
 	"not_deliverable":     "магазин не доставляет по этому адресу",
 	"store_not_accepting": "магазин не принимает онлайн-заказы",
+	"slot_full":           "на выбранное время заказов больше не принимаем",
+	"slot_unavailable":    "выбранное время доставки недоступно",
 }
 
 // CreateOrder оформляет заказ: пересчитывает корзину, резервирует товар,
@@ -373,6 +394,15 @@ func (s *Service) CreateOrder(ctx context.Context, p *identity.Principal, in Che
 				return err
 			}
 		}
+		if in.DeliveryFrom != nil {
+			// Окна магазина — под блокировку: последнее место в окне займёт один заказ.
+			if _, err := s.delivery.CheckSlot(ctx, tx, in.StoreID, *in.DeliveryFrom, true); err != nil {
+				var ae *apperr.Error
+				if !errors.As(err, &ae) {
+					return err
+				}
+			}
+		}
 		pv, err := s.preview(ctx, tx, p, in)
 		if err != nil {
 			return err
@@ -397,14 +427,16 @@ func (s *Service) CreateOrder(ctx context.Context, p *identity.Principal, in Che
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO orders (network_id, store_id, warehouse_id, number, customer_id, status, price_type_id,
 			                    subtotal, delivery_fee, total, address, entrance, floor, apartment, address_comment,
-			                    location, distance_m, customer_phone, comment, payment_provider, discount)
+			                    location, distance_m, customer_phone, comment, payment_provider, discount, delivery_from, delivery_to)
 			VALUES ($1, $2, $3, $4, $5, 'awaiting_payment', $6, $7::numeric, $8::numeric, $9::numeric,
-			        $10, $11, $12, $13, $14, ST_SetSRID(ST_MakePoint($16, $15), 4326)::geography, $17, $18, $19, $20, $21::numeric)
+			        $10, $11, $12, $13, $14, ST_SetSRID(ST_MakePoint($16, $15), 4326)::geography, $17, $18, $19, $20, $21::numeric,
+			        $22, $23)
 			RETURNING id`,
 			pv.networkID, in.StoreID, pv.warehouseID, n, p.UserID, pv.priceTypeID,
 			pv.Subtotal, pv.Delivery.DeliveryFee, pv.Total,
 			addr.Address, addr.Entrance, addr.Floor, addr.Apartment, addr.Comment, addr.Lat, addr.Lng,
-			pv.Delivery.DistanceM, phone, strings.TrimSpace(in.Comment), in.PaymentProvider, pv.Discount).Scan(&id); err != nil {
+			pv.Delivery.DistanceM, phone, strings.TrimSpace(in.Comment), in.PaymentProvider, pv.Discount,
+			pv.DeliveryFrom, pv.DeliveryTo).Scan(&id); err != nil {
 			return err
 		}
 		for i, l := range pv.Lines {
