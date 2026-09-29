@@ -58,6 +58,13 @@ type Config struct {
 	PaymentTimeout time.Duration
 	// Сколько ждать, пока магазин примет оплаченный заказ, до уведомления супер-админа.
 	AcceptTimeout time.Duration
+
+	// Push: ключ сервисного аккаунта Firebase (JSON, путь к файлу или base64).
+	// Пусто — push выключен, уведомления уходят в Telegram.
+	FCMCredentials string
+	// Ссылки в профиле приложения: поддержка (по умолчанию — бот) и политика конфиденциальности.
+	SupportURL string
+	PrivacyURL string
 }
 
 const devJWTSecret = "dev-secret-do-not-use-in-production"
@@ -89,6 +96,10 @@ func Load(getenv func(string) string) (Config, error) {
 		ClickMerchantID:  getenv("CLICK_MERCHANT_ID"),
 		ClickSecretKey:   getenv("CLICK_SECRET_KEY"),
 		PaymentReturnURL: getenv("PAYMENT_RETURN_URL"),
+
+		FCMCredentials: getenv("FCM_CREDENTIALS"),
+		SupportURL:     getenv("SUPPORT_URL"),
+		PrivacyURL:     getenv("PRIVACY_URL"),
 	}
 
 	var errs []error

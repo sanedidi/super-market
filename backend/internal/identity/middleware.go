@@ -67,7 +67,7 @@ func (s *Service) loadPrincipal(ctx context.Context, c token.Claims) (*Principal
 	switch c.App {
 	case AppClient:
 		err = s.pool.QueryRow(ctx, `
-			SELECT 1 FROM sessions s JOIN customers c ON c.user_id = s.user_id
+			SELECT 1 FROM sessions s JOIN customers c ON c.user_id = s.user_id AND c.deleted_at IS NULL
 			WHERE `+live, c.SessionID, c.UserID).Scan(new(int))
 	case AppAdmin:
 		err = s.pool.QueryRow(ctx, `

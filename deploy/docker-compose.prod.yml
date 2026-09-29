@@ -22,6 +22,9 @@ x-backend-env: &backend-env
   PAYMENT_RETURN_URL: ${PAYMENT_RETURN_URL:-}
   PAYMENT_TIMEOUT: ${PAYMENT_TIMEOUT:-15m}
   ACCEPT_TIMEOUT: ${ACCEPT_TIMEOUT:-10m}
+  FCM_CREDENTIALS: ${FCM_CREDENTIALS:-}
+  SUPPORT_URL: ${SUPPORT_URL:-}
+  PRIVACY_URL: ${PRIVACY_URL:-}
 
 x-logging: &logging
   driver: json-file

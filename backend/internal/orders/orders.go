@@ -17,6 +17,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
+	"github.com/sanedidi/super-market/backend/internal/push"
 )
 
 // Статусы заказа.
@@ -159,10 +160,14 @@ func (s *Service) getOrder(ctx context.Context, q db.Querier, id string) (Order,
 	return o, err
 }
 
+// addHistory записывает смену статуса и ставит в очередь уведомление покупателю
+// (в той же транзакции — уйдёт только если смена статуса сохранится).
 func addHistory(ctx context.Context, q db.Querier, orderID, status, actor, note string) error {
-	_, err := q.Exec(ctx, `INSERT INTO order_status_history (order_id, status, actor, note) VALUES ($1, $2, $3, $4)`,
-		orderID, status, actor, note)
-	return err
+	if _, err := q.Exec(ctx, `INSERT INTO order_status_history (order_id, status, actor, note) VALUES ($1, $2, $3, $4)`,
+		orderID, status, actor, note); err != nil {
+		return err
+	}
+	return push.EnqueueOrderStatus(ctx, q, orderID, status)
 }
 
 // ------------------------------------------------------------ покупатель
@@ -650,7 +655,9 @@ func (s *Service) AlertUnaccepted(ctx context.Context) error {
 		text := fmt.Sprintf("⚠️ Заказ №%d не принят уже %d мин.\nСеть: %s\nМагазин: %s %s\nСумма: %s сум\nID: %s",
 			x.number, mins, x.network, x.store, x.phone, x.total, x.id)
 		s.notify.SuperAdmins(ctx, text)
-		if err := addHistory(ctx, s.pool, x.id, StatusPaid, "system", "супер-админ уведомлён: заказ не принят вовремя"); err != nil {
+		// Статус не меняется — только отметка в истории, без уведомления покупателю.
+		if _, err := s.pool.Exec(ctx, `INSERT INTO order_status_history (order_id, status, actor, note) VALUES ($1, $2, 'system', $3)`,
+			x.id, StatusPaid, "супер-админ уведомлён: заказ не принят вовремя"); err != nil {
 			s.log.Warn("история заказа", "err", err)
 		}
 	}

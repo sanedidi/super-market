@@ -227,7 +227,11 @@ func (s *Service) userForApp(ctx context.Context, tx pgx.Tx, ph, app string) (st
 			RETURNING id`, ph).Scan(&userID); err != nil {
 			return "", err
 		}
-		_, err := tx.Exec(ctx, `INSERT INTO customers (user_id) VALUES ($1) ON CONFLICT DO NOTHING`, userID)
+		// Удалённый аккаунт сотрудника (номер у него не обезличивается)
+		// при новом входе в приложение становится снова активным.
+		_, err := tx.Exec(ctx, `
+			INSERT INTO customers (user_id) VALUES ($1)
+			ON CONFLICT (user_id) DO UPDATE SET deleted_at = NULL WHERE customers.deleted_at IS NOT NULL`, userID)
 		return userID, err
 	}
 
@@ -289,8 +293,12 @@ func (s *Service) Refresh(ctx context.Context, refresh string) (Tokens, error) {
 }
 
 // Logout закрывает сессию.
+// Устройство этой сессии больше не получает push.
 func (s *Service) Logout(ctx context.Context, sessionID string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL`, sessionID)
+	if _, err := s.pool.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL`, sessionID); err != nil {
+		return err
+	}
+	_, err := s.pool.Exec(ctx, `DELETE FROM devices WHERE session_id = $1`, sessionID)
 	return err
 }
 

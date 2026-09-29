@@ -19,6 +19,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/logger"
 	"github.com/sanedidi/super-market/backend/internal/platform/telegram"
+	"github.com/sanedidi/super-market/backend/internal/push"
 	"github.com/sanedidi/super-market/backend/internal/server"
 )
 
@@ -68,6 +69,31 @@ func run() error {
 		log.Warn("TELEGRAM_BOT_TOKEN не задан: бот не запущен")
 	}
 	defer func() { <-botDone }()
+
+	// Push покупателям: очередь отправляется каждые 3 секунды, отдельно от
+	// минутных задач, чтобы статус заказа приходил сразу.
+	var fcm push.Sender
+	if creds, err := push.LoadCredentials(cfg.FCMCredentials); err != nil {
+		return err
+	} else if creds != nil {
+		f, err := push.NewFCM(creds)
+		if err != nil {
+			return err
+		}
+		fcm = f
+	} else {
+		log.Warn("FCM_CREDENTIALS не задан: push выключен, уведомления уходят в Telegram")
+	}
+	var tgPush push.TelegramSender
+	if sender != nil {
+		tgPush = sender
+	}
+	pushDone := make(chan struct{})
+	go func() {
+		defer close(pushDone)
+		push.NewDispatcher(pool, fcm, tgPush, log).Run(ctx, 3*time.Second)
+	}()
+	defer func() { <-pushDone }()
 
 	_, _, ord := server.OrderServices(cfg, pool, sender, log)
 	jobs := []Job{

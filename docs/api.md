@@ -339,3 +339,29 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 
 Воркер раз в час пересчитывает популярность товаров (`product_popularity`) по кассовым продажам и онлайн-заказам
 за 30 дней.
+
+## Профиль и уведомления (этап приложения 2)
+
+### Приложение покупателя
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/client/me` | `phone`, `full_name`, `language` (`ru`/`uz`), `city`, `notifications {orders, promos, telegram}`, `telegram_linked`, `support_url`, `privacy_url` |
+| PATCH | `/client/me` | Любые из: `full_name`, `language`, `city`, `notifications {orders?, promos?, telegram?}`. Ответ — профиль |
+| GET | `/client/me/stats` | `orders_count`, `saved` (сумма скидок доставленных заказов), `addresses_count`, `favorites_count`, `active_order {id, number, status, store_name}` или `null` |
+| DELETE | `/client/me` | Удаление аккаунта → 204. 409 `active_order`, пока есть незавершённый заказ. Сессии закрываются, имя, адреса, избранное и устройства удаляются, в заказах стираются телефон и адрес. Новый вход с тем же номером создаёт новый аккаунт |
+| POST | `/client/devices` | `{token, platform: ios|android, language?}` — токен FCM для текущей сессии → 204. Вызывать после входа и при обновлении токена |
+| DELETE | `/client/devices/{token}` | Забыть устройство → 204. При выходе (`/auth/client/logout`) устройство сессии удаляется само |
+
+### Уведомления о заказе
+
+При смене статуса заказа (`paid`, `accepted`, `picked`, `delivering`, `delivered`, `cancelled`, `expired`)
+в той же транзакции создаётся запись в `notifications_outbox` — на языке покупателя, если он не выключил
+`notifications.orders`. Воркер каждые 3 секунды отправляет очередь: push через FCM на все устройства,
+если ни одно не приняло — сообщение в Telegram-бот (если номер привязан и `notifications.telegram`).
+При временной ошибке — до 6 попыток с паузой от 30 секунд. Недействительные токены удаляются.
+
+Данные push: `{"type": "order", "order_id": "…", "status": "…"}` — приложение открывает экран заказа.
+
+Настройка: `FCM_CREDENTIALS` — ключ сервисного аккаунта Firebase (JSON, путь к файлу или base64).
+Без него push выключен и работает только Telegram.

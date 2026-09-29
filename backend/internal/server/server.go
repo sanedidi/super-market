@@ -22,6 +22,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/config"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/platform/telegram"
+	"github.com/sanedidi/super-market/backend/internal/profile"
 	"github.com/sanedidi/super-market/backend/internal/reports"
 	"github.com/sanedidi/super-market/backend/internal/sales"
 	"github.com/sanedidi/super-market/backend/internal/tenant"
@@ -83,8 +84,20 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		orders.NewModule(ord, dlv, pay, auth, log),
 		billing.NewModule(bill, auth, log),
 		reports.NewModule(reports.NewService(pool), auth, log),
+		profile.NewModule(profile.NewService(pool, supportURL(cfg), cfg.PrivacyURL), auth, log),
 	)
 	return &App{Handler: h, Orders: ord, Payments: pay, Billing: bill}, nil
+}
+
+// supportURL — поддержка в Telegram: SUPPORT_URL или сам бот.
+func supportURL(cfg config.Config) string {
+	if cfg.SupportURL != "" {
+		return cfg.SupportURL
+	}
+	if cfg.TelegramBotUsername != "" {
+		return "https://t.me/" + cfg.TelegramBotUsername
+	}
+	return ""
 }
 
 // OrderServices создаёт доставку, платежи и заказы (общие для API и worker).
