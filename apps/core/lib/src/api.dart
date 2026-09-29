@@ -74,6 +74,9 @@ class Api extends ChangeNotifier {
     await _save(tokens as Map<String, dynamic>);
   }
 
+  /// Забыть токены без запроса к серверу (например, после удаления аккаунта).
+  Future<void> forget() => _save(null);
+
   Future<void> logout() async {
     try {
       await post('/auth/$app/logout');

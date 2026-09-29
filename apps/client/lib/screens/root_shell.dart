@@ -43,7 +43,10 @@ class _RootShellState extends State<RootShell> {
       openCart(context);
       return;
     }
-    context.read<AppState>().setTab(i);
+    final state = context.read<AppState>();
+    state.setTab(i);
+    // Профиль уже открывали — обновим активный заказ и статистику.
+    if (i == 4 && state.profile != null) state.loadProfile().catchError((_) {});
   }
 
   @override

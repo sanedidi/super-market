@@ -102,6 +102,8 @@ class AppState extends ChangeNotifier {
         banners = [];
         deals = null;
         favorites = {};
+        profile = null;
+        stats = null;
       }
     });
   }
@@ -246,6 +248,23 @@ class AppState extends ChangeNotifier {
 
   List<Map<String, dynamic>> get cartItems =>
       cart.values.map((l) => {'product_id': l.product.id, 'qty': l.qty.toString()}).toList();
+
+  /// Профиль покупателя (/client/me) и статистика (/client/me/stats).
+  Map<String, dynamic>? profile;
+  Map<String, dynamic>? stats;
+
+  Future<void> loadProfile() async {
+    final results = await Future.wait([api.get('/client/me'), api.get('/client/me/stats')]);
+    profile = results[0] as Map<String, dynamic>;
+    stats = results[1] as Map<String, dynamic>;
+    notifyListeners();
+  }
+
+  /// Изменить профиль: имя, язык, город, настройки уведомлений.
+  Future<void> updateProfile(Map<String, dynamic> patch) async {
+    profile = await api.patch('/client/me', patch) as Map<String, dynamic>;
+    notifyListeners();
+  }
 
   bool isFavorite(String productId) => favorites.contains(productId);
 
