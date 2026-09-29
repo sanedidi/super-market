@@ -104,6 +104,8 @@ class AppState extends ChangeNotifier {
         favorites = {};
         profile = null;
         stats = null;
+        family = null;
+        familyRequestId = null;
       }
     });
   }
@@ -222,6 +224,7 @@ class AppState extends ChangeNotifier {
   void setQty(String storeId, String storeName, Product p, num qty) {
     if (cartStoreId != null && cartStoreId != storeId) {
       cart.clear();
+      familyRequestId = null;
     }
     cartStoreId = storeId;
     cartStoreName = storeName;
@@ -241,6 +244,7 @@ class AppState extends ChangeNotifier {
 
   void clearCart() {
     cart.clear();
+    familyRequestId = null;
     cartStoreId = null;
     cartStoreName = null;
     notifyListeners();
@@ -296,5 +300,41 @@ class AppState extends ChangeNotifier {
     } finally {
       notifyListeners();
     }
+  }
+
+  /// Семья (/client/family) или null, если пользователь ещё не в семье.
+  Map<String, dynamic>? family;
+  bool familyLoaded = false;
+
+  /// Просьбы «для меня» — бейдж в профиле.
+  int get familyForMe => (family?['requests_for_me'] as num?)?.toInt() ?? 0;
+
+  Future<void> loadFamily() async {
+    final r = await api.get('/client/family') as Map<String, dynamic>;
+    family = r['family'] as Map<String, dynamic>?;
+    familyLoaded = true;
+    notifyListeners();
+  }
+
+  /// Просьба семьи, товары которой сейчас в корзине: после оформления заказа
+  /// она отмечается «заказана».
+  String? familyRequestId;
+
+  /// «Заказать домой»: корзина заполняется найденными товарами просьбы.
+  void fillCartFromRequest(String requestId, Store store, List<(Product, num)> lines) {
+    cart.clear();
+    cartStoreId = store.id;
+    cartStoreName = store.name;
+    for (final (p, q) in lines) {
+      final max = num.tryParse(p.available) ?? 0;
+      final qty = q > max ? max : q;
+      if (qty > 0) cart[p.id] = CartLine(p, qty);
+    }
+    if (cart.isEmpty) {
+      cartStoreId = null;
+      cartStoreName = null;
+    }
+    familyRequestId = cart.isEmpty ? null : requestId;
+    notifyListeners();
   }
 }

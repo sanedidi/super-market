@@ -111,12 +111,18 @@ class _CartScreenState extends State<CartScreen> {
 
   Future<void> _order() async {
     final s = context.read<AppState>();
+    final api = context.read<Api>();
     setState(() => _busy = true);
     try {
-      final res = await context.read<Api>().post('/client/orders', _body(s)) as Map<String, dynamic>;
+      final res = await api.post('/client/orders', _body(s)) as Map<String, dynamic>;
       final order = res['order'] as Map<String, dynamic>;
       final url = res['payment_url'] as String?;
+      final requestId = s.familyRequestId;
       s.clearCart();
+      if (requestId != null) {
+        // Просьба семьи выполнена заказом — автору уйдёт уведомление.
+        api.post('/client/family/requests/$requestId/ordered', {'order_id': order['id']}).catchError((_) => null);
+      }
       if (!mounted) return;
       Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => PaymentScreen(order: order)));
       if (url != null) {

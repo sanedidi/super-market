@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:sm_core/sm_core.dart';
 
 import 'firebase_options.dart';
+import 'screens/family_request_screen.dart';
 import 'screens/order_screen.dart';
 
 /// Навигатор приложения — чтобы открыть заказ из уведомления.
@@ -77,7 +78,9 @@ class Push {
         if (ctx == null || n == null) return;
         ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
           content: Text([n.title, n.body].whereType<String>().join('\n')),
-          action: m.data['order_id'] == null ? null : SnackBarAction(label: 'Открыть', onPressed: () => _open(m)),
+          action: m.data['order_id'] == null && m.data['request_id'] == null
+              ? null
+              : SnackBarAction(label: 'Открыть', onPressed: () => _open(m)),
         ));
       });
     } catch (e) {
@@ -86,8 +89,14 @@ class Push {
   }
 
   static void _open(RemoteMessage m) {
-    final id = m.data['order_id'];
-    if (m.data['type'] != 'order' || id is! String) return;
-    navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => OrderScreen(id: id)));
+    final nav = navigatorKey.currentState;
+    switch (m.data['type']) {
+      case 'order':
+        final id = m.data['order_id'];
+        if (id is String) nav?.push(MaterialPageRoute(builder: (_) => OrderScreen(id: id)));
+      case 'family_request':
+        final id = m.data['request_id'];
+        if (id is String) nav?.push(MaterialPageRoute(builder: (_) => FamilyRequestScreen(id: id)));
+    }
   }
 }

@@ -8,12 +8,13 @@ import '../ui/brand.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'addresses_screen.dart';
+import 'family_screen.dart';
 import 'favorites_screen.dart';
 import 'order_screen.dart';
 import 'orders_screen.dart';
 
 /// Версия приложения (совпадает с pubspec.yaml).
-const appVersion = '0.4.0';
+const appVersion = '0.5.0';
 
 const _languages = {'ru': 'Русский', 'uz': 'O‘zbekcha'};
 const _cities = ['Ташкент', 'Самарканд', 'Бухара', 'Андижан', 'Наманган', 'Фергана', 'Нукус', 'Карши', 'Навои', 'Ургенч', 'Джизак', 'Термез'];
@@ -38,7 +39,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _load() async {
     try {
-      await context.read<AppState>().loadProfile();
+      final state = context.read<AppState>();
+      state.loadFamily().catchError((_) {});
+      await state.loadProfile();
       if (mounted) setState(() => _error = null);
     } catch (e) {
       if (mounted) setState(() => _error = e);
@@ -122,8 +125,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 icon: Icons.favorite_border_rounded,
                 title: 'Избранное',
                 trailing: _count(state.favorites.length),
-                divider: false,
                 onTap: () => _push(const FavoritesScreen()),
+              ),
+              AppListRow(
+                icon: Icons.family_restroom_rounded,
+                title: 'Моя семья',
+                subtitle: state.family == null ? 'Общий список покупок' : '${state.family!['name']}',
+                trailing: state.familyForMe > 0 ? AppBadge(label: '${state.familyForMe}', kind: BadgeKind.discount) : null,
+                divider: false,
+                onTap: () => _push(const FamilyScreen()),
               ),
             ]),
             const SizedBox(height: 24),
