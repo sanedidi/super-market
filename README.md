@@ -83,6 +83,8 @@ npm run dev:admin   # http://localhost:5174/admin/
 94 товара с характеристиками, остатки, цены сетей, кассовые продажи, акции и баннеры.
 
 - На сервере: GitHub → Actions → **demo-data** → Run workflow → `seed` (или `clean`, чтобы удалить).
+  Или без Actions: запишите в `deploy/demo-request` строку `seed <метка>` / `clean <метка>` и запушьте —
+  деплой выполнит запрос один раз (новая метка — новый запуск).
   Владельцем сети Baraka Market станет указанный телефон (по умолчанию — первый из `SUPER_ADMIN_PHONES`),
   так что в панели магазина будут видны её данные.
 - Локально: `cd backend && go run ./cmd/demo seed` / `go run ./cmd/demo clean`.
