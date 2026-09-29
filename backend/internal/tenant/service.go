@@ -157,12 +157,13 @@ type Store struct {
 	DefaultWarehouseID *string   `json:"default_warehouse_id"`
 	OnlinePriceTypeID  *string   `json:"online_price_type_id"`
 	CreatedAt          time.Time `json:"created_at"`
+	LogoURL            string    `json:"logo_url"`
 }
 
 const storeSelect = `
 	SELECT id, name, address, phone,
 	       ST_Y(location::geometry), ST_X(location::geometry),
-	       status, default_warehouse_id, online_price_type_id, created_at
+	       status, default_warehouse_id, online_price_type_id, created_at, logo_url
 	FROM stores`
 
 type StoreInput struct {
@@ -174,6 +175,7 @@ type StoreInput struct {
 	Status             *string  `json:"status"`
 	DefaultWarehouseID *string  `json:"default_warehouse_id"`
 	OnlinePriceTypeID  *string  `json:"online_price_type_id"`
+	LogoURL            *string  `json:"logo_url"`
 }
 
 func (in StoreInput) validate() error {
@@ -191,6 +193,9 @@ func (in StoreInput) validate() error {
 	}
 	if in.DefaultWarehouseID != nil && !httpx.IsUUID(*in.DefaultWarehouseID) {
 		return apperr.Validation("default_warehouse_id: склад не найден")
+	}
+	if in.LogoURL != nil && *in.LogoURL != "" && !strings.HasPrefix(*in.LogoURL, "https://") && !strings.HasPrefix(*in.LogoURL, "http://") {
+		return apperr.Validation("logo_url: ожидается ссылка http(s)")
 	}
 	if in.OnlinePriceTypeID != nil && *in.OnlinePriceTypeID != "" && !httpx.IsUUID(*in.OnlinePriceTypeID) {
 		return apperr.Validation("online_price_type_id: тип цены не найден")
@@ -341,10 +346,11 @@ func (s *Service) UpdateStore(ctx context.Context, p *identity.Principal, id str
 				                ELSE ST_SetSRID(ST_MakePoint($7::float8, $6::float8), 4326)::geography END,
 				status   = COALESCE($8, status),
 				default_warehouse_id = COALESCE($9, default_warehouse_id),
-				online_price_type_id = CASE WHEN $10 THEN $11::uuid ELSE online_price_type_id END
+				online_price_type_id = CASE WHEN $10 THEN $11::uuid ELSE online_price_type_id END,
+				logo_url = COALESCE($12, logo_url)
 			WHERE id = $1 AND network_id = $2`,
 			id, p.NetworkID, trimPtr(in.Name), trimPtr(in.Address), trimPtr(in.Phone),
-			in.Lat, in.Lng, in.Status, in.DefaultWarehouseID, setOnline, online)
+			in.Lat, in.Lng, in.Status, in.DefaultWarehouseID, setOnline, online, trimPtr(in.LogoURL))
 		if err != nil {
 			return err
 		}

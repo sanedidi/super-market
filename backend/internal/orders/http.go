@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -38,8 +39,14 @@ func (m *Module) Routes(r chi.Router) {
 	r.Get("/client/stores/nearby", m.nearby)
 	r.Get("/client/stores/{id}/categories", m.categories)
 	r.Get("/client/stores/{id}/products", m.products)
+	r.Get("/client/stores/{id}/products/{pid}", m.product)
+	r.Get("/client/stores/{id}/products/{pid}/related", m.related)
+	r.Get("/client/home", m.home)
 	r.Group(func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppClient))
+		r.Get("/client/favorites", m.favorites)
+		r.Post("/client/favorites", m.addFavorite)
+		r.Delete("/client/favorites/{pid}", m.removeFavorite)
 		r.Get("/client/addresses", m.listAddresses)
 		r.Post("/client/addresses", m.createAddress)
 		r.Put("/client/addresses/{id}", m.updateAddress)
@@ -120,9 +127,81 @@ func (m *Module) categories(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) products(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	flag := func(name string) bool { v := q.Get(name); return v == "1" || v == "true" }
+	var ids []string
+	if v := strings.TrimSpace(q.Get("ids")); v != "" {
+		ids = strings.Split(v, ",")
+	}
+	f := CatalogFilter{
+		Query: q.Get("q"), CategoryID: q.Get("category_id"), BrandID: q.Get("brand_id"), IDs: ids,
+		Discount: flag("discount"), New: flag("new"), Hits: flag("hits"), Sort: q.Get("sort"),
+	}
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[CatalogProduct], error) {
-		items, err := m.svc.StoreCatalog(r.Context(), chi.URLParam(r, "id"), q.Get("q"), q.Get("category_id"), httpx.PageFrom(r))
+		if len(ids) > 200 {
+			return httpx.List[CatalogProduct]{}, apperr.Validation("ids: не больше 200")
+		}
+		items, err := m.svc.StoreCatalog(r.Context(), chi.URLParam(r, "id"), f, httpx.PageFrom(r))
 		return httpx.List[CatalogProduct]{Items: items}, err
+	})
+}
+
+func (m *Module) product(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (ProductDetail, error) {
+		return m.svc.StoreProduct(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "pid"))
+	})
+}
+
+func (m *Module) related(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[CatalogProduct], error) {
+		items, err := m.svc.RelatedProducts(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "pid"), httpx.PageFrom(r).Limit)
+		return httpx.List[CatalogProduct]{Items: items}, err
+	})
+}
+
+func (m *Module) home(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (Home, error) {
+		lat, err := floatParam(r, "lat")
+		if err != nil {
+			return Home{}, err
+		}
+		lng, err := floatParam(r, "lng")
+		if err != nil {
+			return Home{}, err
+		}
+		return m.svc.Home(r.Context(), lat, lng)
+	})
+}
+
+type favoriteIDs struct {
+	ProductIDs []string `json:"product_ids"`
+}
+
+func (m *Module) favorites(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (favoriteIDs, error) {
+		ids, err := m.svc.FavoriteIDs(r.Context(), pr(r))
+		return favoriteIDs{ProductIDs: ids}, err
+	})
+}
+
+func (m *Module) addFavorite(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in struct {
+		ProductID string `json:"product_id"`
+	}) (favoriteIDs, error) {
+		if err := m.svc.AddFavorite(r.Context(), pr(r), in.ProductID); err != nil {
+			return favoriteIDs{}, err
+		}
+		ids, err := m.svc.FavoriteIDs(r.Context(), pr(r))
+		return favoriteIDs{ProductIDs: ids}, err
+	})
+}
+
+func (m *Module) removeFavorite(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (favoriteIDs, error) {
+		if err := m.svc.RemoveFavorite(r.Context(), pr(r), chi.URLParam(r, "pid")); err != nil {
+			return favoriteIDs{}, err
+		}
+		ids, err := m.svc.FavoriteIDs(r.Context(), pr(r))
+		return favoriteIDs{ProductIDs: ids}, err
 	})
 }
 

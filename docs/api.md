@@ -291,3 +291,51 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 | --- | --- | --- |
 | GET | `/store/reports/cash-flow?cashbox_id=` | по кассам: остаток на начало, приход, расход, на конец; строки по статьям (продажи, возвраты, финансовые причины, расчёты с контрагентами, сдача кассы, из кассы в кассу) |
 | GET | `/store/reports/profit-loss` | выручка (POS − возвраты + онлайн + доставка), себестоимость FIFO, валовая прибыль, списания и инвентаризация, прочие доходы и расходы по причинам, подписка платформы, чистая прибыль |
+
+## Витрина приложения (этап приложения 1)
+
+### Приложение покупателя
+
+| Метод | Путь | Что делает |
+| --- | --- | --- |
+| GET | `/client/home?lat=&lng=` | Главная: `banners`, `stores` (как `/nearby`), `deals` — товары со скидкой ближайшего открытого магазина или `null` |
+| GET | `/client/stores/{id}/products` | Каталог. Параметры: `q`, `category_id`, `brand_id`, `ids=a,b` (до 200), `discount=1`, `new=1` (меньше 30 дней), `hits=1` (от 3 покупок за 30 дней), `sort=popular` (по умолчанию) `\| price_asc \| price_desc \| new \| name \| discount`, `limit`, `offset` |
+| GET | `/client/stores/{id}/products/{pid}` | Карточка товара: поля каталога + `category_name`, `attributes`, `store_id`, `store_name`. Нет в наличии — 404 |
+| GET | `/client/stores/{id}/products/{pid}/related?limit=10` | «С этим покупают»: чаще всего покупают вместе в этом магазине за 90 дней, иначе популярное из той же категории |
+| GET | `/client/favorites` | `{"product_ids": [...]}` (нужен вход) |
+| POST | `/client/favorites` | `{"product_id"}` → список id |
+| DELETE | `/client/favorites/{pid}` | → список id |
+
+Товар в каталоге теперь содержит `old_price` (цена до скидки или `null`), `discount_percent`, `is_new`.
+`/client/stores/nearby` — ещё `logo_url`, `eta_min`, `eta_max` (минуты, могут быть `null`).
+`/client/checkout/preview` — поле `discount` (скидка по акциям) и `old_price` в строках; заказ — `discount`
+и `old_price` в позициях.
+
+Цена в приложении = обычная цена магазина (цена магазина → цена сети → базовая), а если действует акция и её
+цена ниже — акционная. Кассовые цены акции не меняют.
+
+### Панель магазина (право `prices.manage`)
+
+| Метод | Путь | Что делает |
+| --- | --- | --- |
+| GET | `/store/promotions?status=running\|scheduled\|ended` | Акции сети; `status` у каждой: `scheduled`, `running`, `ended`, `disabled` |
+| POST | `/store/promotions` | `{name, starts_at, ends_at, store_ids?, is_active?, items: [{product_id, price}]}`; `store_ids` пустой — все магазины (только сотруднику всех магазинов) |
+| GET | `/store/promotions/{id}` | Акция с товарами |
+| PATCH | `/store/promotions/{id}` | Любые поля; `items` заменяет список целиком; `is_active: false` — выключить |
+
+`PATCH /store/stores/{id}` — поле `logo_url`. `PUT /store/stores/{id}/delivery` — `eta_min`, `eta_max`
+(5–600 минут, `eta_min ≤ eta_max`).
+
+### Супер-админ
+
+| Метод | Путь | Что делает |
+| --- | --- | --- |
+| GET | `/admin/banners` | Все баннеры |
+| POST | `/admin/banners` | `{title, subtitle?, image_url?, color? (#RRGGBB), link_type: none\|promotion\|category\|product\|store, link_id?, network_id? (пусто — баннер платформы), starts_at?, ends_at?, sort?, is_active?}` |
+| PATCH | `/admin/banners/{id}` | Любые поля |
+
+Товар (`/admin/products`, `/store/products`) — поле `attributes`: `nutrition` (`{kcal, protein, fat, carbs}` на
+100 г, числа), строки `composition`, `shelf_life`, `storage`, `country`, `volume`, `manufacturer`.
+
+Воркер раз в час пересчитывает популярность товаров (`product_popularity`) по кассовым продажам и онлайн-заказам
+за 30 дней.

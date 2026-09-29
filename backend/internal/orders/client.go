@@ -179,88 +179,6 @@ func (s *Service) storeForClient(ctx context.Context, q db.Querier, storeID stri
 	return st, err
 }
 
-type CatalogProduct struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Description  string   `json:"description"`
-	BrandName    *string  `json:"brand_name"`
-	CategoryID   string   `json:"category_id"`
-	UnitShort    string   `json:"unit_short"`
-	IsFractional bool     `json:"is_fractional"`
-	Images       []string `json:"images"`
-	Price        string   `json:"price"`
-	Available    string   `json:"available"`
-}
-
-// Товары приложения: общий каталог (одобренные), активные, с остатком на
-// складе магазина по умолчанию (за вычетом резервов), по цене приложения.
-const catalogSQL = `
-	WITH stock AS (
-		SELECT b.product_id, sum(b.qty_remaining) AS qty FROM batches b
-		WHERE b.warehouse_id = $2 AND b.qty_remaining > 0 GROUP BY b.product_id
-	), reserved AS (
-		SELECT product_id, sum(qty) AS qty FROM stock_reservations WHERE warehouse_id = $2 GROUP BY product_id
-	)
-	SELECT p.id, p.name, p.description, br.name, p.category_id, u.short_name, u.is_fractional, p.images,
-	       COALESCE(sp.price, np.price, p.base_price)::text,
-	       (st.qty - COALESCE(r.qty, 0))::text
-	FROM products p
-	JOIN stock st ON st.product_id = p.id
-	LEFT JOIN reserved r ON r.product_id = p.id
-	JOIN units u ON u.id = p.unit_id
-	LEFT JOIN brands br ON br.id = p.brand_id
-	LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = $3 AND sp.store_id = $1
-	LEFT JOIN prices np ON np.product_id = p.id AND np.price_type_id = $3 AND np.store_id IS NULL
-	WHERE p.network_id IS NULL AND p.is_active AND st.qty - COALESCE(r.qty, 0) > 0`
-
-func (s *Service) StoreCatalog(ctx context.Context, storeID, query, categoryID string, page httpx.Page) ([]CatalogProduct, error) {
-	st, err := s.storeForClient(ctx, s.pool, storeID)
-	if err != nil {
-		return nil, err
-	}
-	if categoryID != "" && !httpx.IsUUID(categoryID) {
-		return nil, apperr.Validation("category_id: неверный id")
-	}
-	rows, err := s.pool.Query(ctx, catalogSQL+`
-		AND ($4 = '' OR lower(p.name) LIKE '%' || lower($4) || '%')
-		AND ($5 = '' OR p.category_id IN (
-			WITH RECURSIVE sub AS (SELECT id FROM categories WHERE id::text = $5
-			                       UNION ALL SELECT c.id FROM categories c JOIN sub ON c.parent_id = sub.id)
-			SELECT id FROM sub))
-		ORDER BY p.name LIMIT $6 OFFSET $7`,
-		storeID, st.WarehouseID, st.PriceTypeID, strings.TrimSpace(query), categoryID, page.Limit, page.Offset)
-	if err != nil {
-		return nil, err
-	}
-	return pgx.CollectRows(rows, pgx.RowToStructByPos[CatalogProduct])
-}
-
-type CatalogCategory struct {
-	ID       string  `json:"id"`
-	ParentID *string `json:"parent_id"`
-	Name     string  `json:"name"`
-	Count    int     `json:"products_count"`
-}
-
-// StoreCategories — категории, в которых у магазина есть товары в наличии.
-func (s *Service) StoreCategories(ctx context.Context, storeID string) ([]CatalogCategory, error) {
-	st, err := s.storeForClient(ctx, s.pool, storeID)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := s.pool.Query(ctx, `
-		WITH items AS (`+catalogSQL+`)
-		SELECT c.id, c.parent_id, c.name, count(*)::int
-		FROM items i JOIN categories c ON c.id = i.category_id
-		WHERE c.is_active
-		GROUP BY c.id, c.parent_id, c.name, c.sort ORDER BY c.sort, c.name`,
-		storeID, st.WarehouseID, st.PriceTypeID)
-	if err != nil {
-		return nil, err
-	}
-	return pgx.CollectRows(rows, pgx.RowToStructByPos[CatalogCategory])
-}
-
 // ------------------------------------------------------------- корзина
 
 type CartItem struct {
@@ -283,14 +201,18 @@ type PreviewLine struct {
 	Price     string `json:"price"`
 	Total     string `json:"total"`
 	Available string `json:"available"`
+	// Цена до скидки, если на товар действует акция.
+	OldPrice *string `json:"old_price,omitempty"`
 	// Проблема со строкой: out_of_stock, not_enough, fractional, unavailable.
 	Problem string `json:"problem,omitempty"`
 }
 
 type Preview struct {
-	StoreID     string         `json:"store_id"`
-	Lines       []PreviewLine  `json:"lines"`
-	Subtotal    string         `json:"subtotal"`
+	StoreID  string        `json:"store_id"`
+	Lines    []PreviewLine `json:"lines"`
+	Subtotal string        `json:"subtotal"`
+	// Скидка по акциям: насколько subtotal меньше суммы по обычным ценам.
+	Discount    string         `json:"discount"`
 	Delivery    delivery.Quote `json:"delivery"`
 	Total       string         `json:"total"`
 	CanOrder    bool           `json:"can_order"`
@@ -321,6 +243,7 @@ func (s *Service) preview(ctx context.Context, q db.Querier, p *identity.Princip
 	}
 
 	subtotal := money.D("0")
+	discount := money.D("0")
 	seen := map[string]bool{}
 	for i, it := range in.Items {
 		ls := strconv.Itoa(i + 1)
@@ -333,7 +256,7 @@ func (s *Service) preview(ctx context.Context, q db.Querier, p *identity.Princip
 		}
 		qty := money.D(string(it.Qty))
 		line := PreviewLine{ProductID: it.ProductID, Qty: qty.Fixed(3)}
-		prod, err := catalog.EffectivePrice(ctx, q, st.NetworkID, in.StoreID, st.PriceTypeID, it.ProductID)
+		prod, err := catalog.OnlinePrice(ctx, q, st.NetworkID, in.StoreID, st.PriceTypeID, it.ProductID)
 		var global bool
 		if err == nil {
 			_ = q.QueryRow(ctx, `SELECT network_id IS NULL FROM products WHERE id = $1`, it.ProductID).Scan(&global)
@@ -344,6 +267,10 @@ func (s *Service) preview(ctx context.Context, q db.Querier, p *identity.Princip
 			continue
 		}
 		line.Name, line.Price = prod.Name, prod.Price
+		if prod.Discounted {
+			old := prod.RegularPrice
+			line.OldPrice = &old
+		}
 		avail, err := inventory.Available(ctx, q, st.WarehouseID, it.ProductID)
 		if err != nil {
 			return out, err
@@ -361,10 +288,14 @@ func (s *Service) preview(ctx context.Context, q db.Querier, p *identity.Princip
 		line.Total = total.Money()
 		if line.Problem == "" {
 			subtotal = subtotal.Add(total)
+			if prod.Discounted {
+				discount = discount.Add(money.D(prod.RegularPrice).Mul(qty).Round2().Sub(total))
+			}
 		}
 		out.Lines = append(out.Lines, line)
 	}
 	out.Subtotal = subtotal.Money()
+	out.Discount = discount.Money()
 
 	quote, err := s.delivery.QuoteFor(ctx, q, in.StoreID, addr.Lat, addr.Lng, out.Subtotal)
 	if err != nil {
@@ -466,21 +397,21 @@ func (s *Service) CreateOrder(ctx context.Context, p *identity.Principal, in Che
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO orders (network_id, store_id, warehouse_id, number, customer_id, status, price_type_id,
 			                    subtotal, delivery_fee, total, address, entrance, floor, apartment, address_comment,
-			                    location, distance_m, customer_phone, comment, payment_provider)
+			                    location, distance_m, customer_phone, comment, payment_provider, discount)
 			VALUES ($1, $2, $3, $4, $5, 'awaiting_payment', $6, $7::numeric, $8::numeric, $9::numeric,
-			        $10, $11, $12, $13, $14, ST_SetSRID(ST_MakePoint($16, $15), 4326)::geography, $17, $18, $19, $20)
+			        $10, $11, $12, $13, $14, ST_SetSRID(ST_MakePoint($16, $15), 4326)::geography, $17, $18, $19, $20, $21::numeric)
 			RETURNING id`,
 			pv.networkID, in.StoreID, pv.warehouseID, n, p.UserID, pv.priceTypeID,
 			pv.Subtotal, pv.Delivery.DeliveryFee, pv.Total,
 			addr.Address, addr.Entrance, addr.Floor, addr.Apartment, addr.Comment, addr.Lat, addr.Lng,
-			pv.Delivery.DistanceM, phone, strings.TrimSpace(in.Comment), in.PaymentProvider).Scan(&id); err != nil {
+			pv.Delivery.DistanceM, phone, strings.TrimSpace(in.Comment), in.PaymentProvider, pv.Discount).Scan(&id); err != nil {
 			return err
 		}
 		for i, l := range pv.Lines {
 			if _, err := tx.Exec(ctx, `
-				INSERT INTO order_items (order_id, line, product_id, qty, price, total)
-				VALUES ($1, $2, $3, $4::numeric, $5::numeric, $6::numeric)`,
-				id, i+1, l.ProductID, l.Qty, l.Price, l.Total); err != nil {
+				INSERT INTO order_items (order_id, line, product_id, qty, price, total, regular_price)
+				VALUES ($1, $2, $3, $4::numeric, $5::numeric, $6::numeric, COALESCE($7::numeric, $5::numeric))`,
+				id, i+1, l.ProductID, l.Qty, l.Price, l.Total, l.OldPrice); err != nil {
 				return err
 			}
 			if _, err := tx.Exec(ctx, `

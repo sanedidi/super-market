@@ -38,6 +38,9 @@ type Product struct {
 	RejectionReason  string    `json:"rejection_reason"`
 	IsActive         bool      `json:"is_active"`
 	CreatedAt        time.Time `json:"created_at"`
+	// Характеристики для карточки в приложении: nutrition, composition,
+	// shelf_life, storage, country, volume и любые другие строки.
+	Attributes map[string]any `json:"attributes"`
 	// Заполняется, когда в запросе указан магазин.
 	Price       *string `json:"price,omitempty"`
 	PriceSource *string `json:"price_source,omitempty"` // store | network | base
@@ -49,7 +52,7 @@ const productCols = `
 	p.brand_id, b.name, p.category_id, c.name, p.unit_id, u.short_name, u.is_fractional,
 	p.color_id, p.base_price::text, p.images,
 	COALESCE((SELECT array_agg(pb.barcode ORDER BY pb.barcode) FROM product_barcodes pb WHERE pb.product_id = p.id), '{}'),
-	p.moderation_status, p.rejection_reason, p.is_active, p.created_at`
+	p.moderation_status, p.rejection_reason, p.is_active, p.created_at, p.attributes`
 
 const productFrom = `
 	FROM products p
@@ -62,7 +65,7 @@ func scanProduct(row pgx.CollectableRow) (Product, error) {
 	err := row.Scan(&p.ID, &p.NetworkID, &p.ProposedBy, &p.Name, &p.Description,
 		&p.BrandID, &p.BrandName, &p.CategoryID, &p.CategoryName, &p.UnitID, &p.UnitShort, &p.IsFractional,
 		&p.ColorID, &p.BasePrice, &p.Images, &p.Barcodes,
-		&p.ModerationStatus, &p.RejectionReason, &p.IsActive, &p.CreatedAt)
+		&p.ModerationStatus, &p.RejectionReason, &p.IsActive, &p.CreatedAt, &p.Attributes)
 	return p, err
 }
 
@@ -71,23 +74,24 @@ func scanProductWithPrice(row pgx.CollectableRow) (Product, error) {
 	err := row.Scan(&p.ID, &p.NetworkID, &p.ProposedBy, &p.Name, &p.Description,
 		&p.BrandID, &p.BrandName, &p.CategoryID, &p.CategoryName, &p.UnitID, &p.UnitShort, &p.IsFractional,
 		&p.ColorID, &p.BasePrice, &p.Images, &p.Barcodes,
-		&p.ModerationStatus, &p.RejectionReason, &p.IsActive, &p.CreatedAt,
+		&p.ModerationStatus, &p.RejectionReason, &p.IsActive, &p.CreatedAt, &p.Attributes,
 		&p.Price, &p.PriceSource, &p.PriceTypeID)
 	return p, err
 }
 
 // ProductInput — поля товара; nil — не менять.
 type ProductInput struct {
-	Name        *string       `json:"name"`
-	Description *string       `json:"description"`
-	BrandID     *string       `json:"brand_id"`
-	CategoryID  *string       `json:"category_id"`
-	UnitID      *string       `json:"unit_id"`
-	ColorID     *string       `json:"color_id"`
-	BasePrice   *money.Amount `json:"base_price"`
-	Images      *[]string     `json:"images"`
-	Barcodes    *[]string     `json:"barcodes"`
-	IsActive    *bool         `json:"is_active"`
+	Name        *string         `json:"name"`
+	Description *string         `json:"description"`
+	BrandID     *string         `json:"brand_id"`
+	CategoryID  *string         `json:"category_id"`
+	UnitID      *string         `json:"unit_id"`
+	ColorID     *string         `json:"color_id"`
+	BasePrice   *money.Amount   `json:"base_price"`
+	Images      *[]string       `json:"images"`
+	Barcodes    *[]string       `json:"barcodes"`
+	IsActive    *bool           `json:"is_active"`
+	Attributes  *map[string]any `json:"attributes"`
 }
 
 func (in ProductInput) validate(create bool) error {
@@ -108,6 +112,11 @@ func (in ProductInput) validate(create bool) error {
 	for name, id := range map[string]*string{"brand_id": in.BrandID, "category_id": in.CategoryID, "unit_id": in.UnitID, "color_id": in.ColorID} {
 		if id != nil && *id != "" && !httpx.IsUUID(*id) {
 			return apperr.Validation(name + ": запись не найдена")
+		}
+	}
+	if in.Attributes != nil {
+		if err := validateAttributes(*in.Attributes); err != nil {
+			return err
 		}
 	}
 	if in.Images != nil {
@@ -159,6 +168,10 @@ func (s *Service) createProduct(ctx context.Context, networkID *string, in Produ
 	if in.Description != nil {
 		desc = strings.TrimSpace(*in.Description)
 	}
+	attrs := map[string]any{}
+	if in.Attributes != nil {
+		attrs = *in.Attributes
+	}
 
 	var out Product
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -168,10 +181,10 @@ func (s *Service) createProduct(ctx context.Context, networkID *string, in Produ
 		var id string
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO products (network_id, proposed_by, name, description, brand_id, category_id,
-			                      unit_id, color_id, base_price, images, moderation_status)
-			VALUES ($1, $1, $2, $3, $4, $5, $6, $7, $8::numeric, $9, $10) RETURNING id`,
+			                      unit_id, color_id, base_price, images, moderation_status, attributes)
+			VALUES ($1, $1, $2, $3, $4, $5, $6, $7, $8::numeric, $9, $10, $11) RETURNING id`,
 			networkID, strings.TrimSpace(*in.Name), desc, brand, *in.CategoryID, *in.UnitID, color,
-			string(price), images, status).Scan(&id); err != nil {
+			string(price), images, status, attrs).Scan(&id); err != nil {
 			return err
 		}
 		if in.Barcodes != nil {
@@ -223,11 +236,12 @@ func (s *Service) updateProduct(ctx context.Context, id string, in ProductInput,
 				base_price  = COALESCE($10::numeric, base_price),
 				images      = COALESCE($11, images),
 				is_active   = COALESCE($12, is_active),
+				attributes  = COALESCE($14, attributes),
 				moderation_status = CASE WHEN $13 THEN 'pending' ELSE moderation_status END,
 				rejection_reason  = CASE WHEN $13 THEN '' ELSE rejection_reason END
 			WHERE id = $1`,
 			id, name, desc, setBrand, brand, in.CategoryID, in.UnitID, setColor, color,
-			price, in.Images, in.IsActive, resubmit)
+			price, in.Images, in.IsActive, resubmit, in.Attributes)
 		if err != nil {
 			return err
 		}
@@ -476,4 +490,44 @@ func (s *Service) StoreUpdateProduct(ctx context.Context, pr *identity.Principal
 		return Product{}, apperr.Forbidden("товар общего каталога меняет только супер-админ")
 	}
 	return s.updateProduct(ctx, id, in, p.ModerationStatus == "rejected")
+}
+
+// Известные характеристики и допустимые ключи пищевой ценности.
+var (
+	attributeKeys = map[string]bool{
+		"nutrition": true, "composition": true, "shelf_life": true, "storage": true,
+		"country": true, "volume": true, "manufacturer": true,
+	}
+	nutritionKeys = map[string]bool{"kcal": true, "protein": true, "fat": true, "carbs": true}
+)
+
+// validateAttributes: известные ключи; строки до 500 символов; nutrition —
+// объект с числами на 100 г (kcal, protein, fat, carbs).
+func validateAttributes(a map[string]any) error {
+	if len(a) > 20 {
+		return apperr.Validation("attributes: слишком много характеристик")
+	}
+	for k, v := range a {
+		if !attributeKeys[k] {
+			return apperr.Validation("attributes: неизвестная характеристика " + k)
+		}
+		if k == "nutrition" {
+			m, ok := v.(map[string]any)
+			if !ok {
+				return apperr.Validation("attributes.nutrition: ожидается объект {kcal, protein, fat, carbs}")
+			}
+			for nk, nv := range m {
+				f, ok := nv.(float64)
+				if !nutritionKeys[nk] || !ok || f < 0 || f > 10000 {
+					return apperr.Validation("attributes.nutrition: числа kcal, protein, fat, carbs на 100 г")
+				}
+			}
+			continue
+		}
+		str, ok := v.(string)
+		if !ok || len([]rune(str)) > 500 {
+			return apperr.Validation("attributes." + k + ": строка до 500 символов")
+		}
+	}
+	return nil
 }

@@ -36,6 +36,10 @@ func (m *Module) Routes(r chi.Router) {
 		r.Patch("/admin/products/{id}", m.adminUpdateProduct)
 		r.Post("/admin/products/{id}/approve", m.approve)
 		r.Post("/admin/products/{id}/reject", m.reject)
+
+		r.Get("/admin/banners", m.listBanners)
+		r.Post("/admin/banners", m.createBanner)
+		r.Patch("/admin/banners/{id}", m.updateBanner)
 	})
 
 	r.Group(func(r chi.Router) {
@@ -56,6 +60,11 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/store/price-documents/{id}", m.getPriceDoc)
 		r.Patch("/store/price-documents/{id}", m.updatePriceDoc)
 		r.Post("/store/price-documents/{id}/post", m.postPriceDoc)
+
+		r.Get("/store/promotions", m.listPromotions)
+		r.Post("/store/promotions", m.createPromotion)
+		r.Get("/store/promotions/{id}", m.getPromotion)
+		r.Patch("/store/promotions/{id}", m.updatePromotion)
 	})
 }
 
@@ -214,5 +223,53 @@ func (m *Module) updatePriceDoc(w http.ResponseWriter, r *http.Request) {
 func (m *Module) postPriceDoc(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (PriceDocument, error) {
 		return m.svc.PostPriceDoc(r.Context(), pr(r), id)
+	})
+}
+
+// ---------------------------------------------------------------- акции
+
+func (m *Module) listPromotions(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Promotion], error) {
+		items, err := m.svc.ListPromotions(r.Context(), pr(r), r.URL.Query().Get("status"), httpx.PageFrom(r))
+		return httpx.List[Promotion]{Items: items}, err
+	})
+}
+
+func (m *Module) createPromotion(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusCreated, "", func(_ string, in PromotionInput) (Promotion, error) {
+		return m.svc.CreatePromotion(r.Context(), pr(r), in)
+	})
+}
+
+func (m *Module) getPromotion(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (Promotion, error) {
+		return m.svc.GetPromotion(r.Context(), pr(r), id)
+	})
+}
+
+func (m *Module) updatePromotion(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in PromotionInput) (Promotion, error) {
+		return m.svc.UpdatePromotion(r.Context(), pr(r), id, in)
+	})
+}
+
+// ---------------------------------------------------------------- баннеры
+
+func (m *Module) listBanners(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Banner], error) {
+		items, err := m.svc.ListBanners(r.Context())
+		return httpx.List[Banner]{Items: items}, err
+	})
+}
+
+func (m *Module) createBanner(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusCreated, "", func(_ string, in BannerInput) (Banner, error) {
+		return m.svc.CreateBanner(r.Context(), in)
+	})
+}
+
+func (m *Module) updateBanner(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in BannerInput) (Banner, error) {
+		return m.svc.UpdateBanner(r.Context(), id, in)
 	})
 }

@@ -52,6 +52,9 @@ type Settings struct {
 	DeliveryRadiusM int            `json:"delivery_radius_m"`
 	WorkingHours    []WorkingHours `json:"working_hours"`
 	Rules           []Rule         `json:"rules"`
+	// Обещанное время доставки в минутах («25–35 мин»); null — не показывать.
+	EtaMin *int `json:"eta_min"`
+	EtaMax *int `json:"eta_max"`
 }
 
 type SettingsInput struct {
@@ -60,6 +63,8 @@ type SettingsInput struct {
 	DeliveryRadiusM *int            `json:"delivery_radius_m"`
 	WorkingHours    *[]WorkingHours `json:"working_hours"`
 	Rules           *[]Rule         `json:"rules"`
+	EtaMin          *int            `json:"eta_min"`
+	EtaMax          *int            `json:"eta_max"`
 }
 
 func checkStore(p *identity.Principal, storeID string) error {
@@ -78,8 +83,8 @@ func (s *Service) GetSettings(ctx context.Context, p *identity.Principal, storeI
 
 func getSettings(ctx context.Context, q db.Querier, networkID, storeID string) (Settings, error) {
 	var st Settings
-	err := q.QueryRow(ctx, `SELECT accepts_online, min_order_amount::text, delivery_radius_m FROM stores
-		WHERE id = $1 AND network_id = $2`, storeID, networkID).Scan(&st.AcceptsOnline, &st.MinOrderAmount, &st.DeliveryRadiusM)
+	err := q.QueryRow(ctx, `SELECT accepts_online, min_order_amount::text, delivery_radius_m, eta_min, eta_max FROM stores
+		WHERE id = $1 AND network_id = $2`, storeID, networkID).Scan(&st.AcceptsOnline, &st.MinOrderAmount, &st.DeliveryRadiusM, &st.EtaMin, &st.EtaMax)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return st, apperr.NotFound("магазин не найден")
 	}
@@ -158,6 +163,14 @@ func (s *Service) SaveSettings(ctx context.Context, p *identity.Principal, store
 	if in.DeliveryRadiusM != nil && (*in.DeliveryRadiusM < 0 || *in.DeliveryRadiusM > 100_000) {
 		return Settings{}, apperr.Validation("delivery_radius_m: от 0 до 100 000 метров")
 	}
+	for _, v := range []*int{in.EtaMin, in.EtaMax} {
+		if v != nil && (*v < 5 || *v > 600) {
+			return Settings{}, apperr.Validation("eta_min/eta_max: от 5 до 600 минут")
+		}
+	}
+	if in.EtaMin != nil && in.EtaMax != nil && *in.EtaMin > *in.EtaMax {
+		return Settings{}, apperr.Validation("eta_min: не больше eta_max")
+	}
 	if in.WorkingHours != nil {
 		days := map[int]bool{}
 		for _, h := range *in.WorkingHours {
@@ -199,8 +212,13 @@ func (s *Service) SaveSettings(ctx context.Context, p *identity.Principal, store
 		if _, err := tx.Exec(ctx, `
 			UPDATE stores SET accepts_online = COALESCE($3, accepts_online),
 			       min_order_amount = COALESCE($4::numeric, min_order_amount),
-			       delivery_radius_m = COALESCE($5, delivery_radius_m)
-			WHERE id = $1 AND network_id = $2`, storeID, p.NetworkID, in.AcceptsOnline, minOrder, in.DeliveryRadiusM); err != nil {
+			       delivery_radius_m = COALESCE($5, delivery_radius_m),
+			       eta_min = COALESCE($6, eta_min),
+			       eta_max = COALESCE($7, eta_max)
+			WHERE id = $1 AND network_id = $2`, storeID, p.NetworkID, in.AcceptsOnline, minOrder, in.DeliveryRadiusM, in.EtaMin, in.EtaMax); err != nil {
+			if db.IsCheckViolation(err) {
+				return apperr.Validation("eta_min: не больше eta_max")
+			}
 			return err
 		}
 		if in.WorkingHours != nil {
@@ -507,6 +525,9 @@ type NearbyStore struct {
 	Quote       Quote    `json:"delivery"`
 	Recommended bool     `json:"recommended"`
 	Tags        []string `json:"tags,omitempty"`
+	LogoURL     string   `json:"logo_url"`
+	EtaMin      *int     `json:"eta_min"`
+	EtaMax      *int     `json:"eta_max"`
 }
 
 // Nearby — магазины, которые доставляют в точку, ближайшие первыми.
@@ -517,7 +538,8 @@ func (s *Service) Nearby(ctx context.Context, lat, lng float64) ([]NearbyStore, 
 	}
 	rows, err := s.pool.Query(ctx, `
 		WITH pt AS (SELECT ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography AS g)
-		SELECT s.id, s.network_id, n.name, s.name, s.address, ST_Y(s.location::geometry), ST_X(s.location::geometry)
+		SELECT s.id, s.network_id, n.name, s.name, s.address, ST_Y(s.location::geometry), ST_X(s.location::geometry),
+		       s.logo_url, s.eta_min, s.eta_max
 		FROM stores s JOIN networks n ON n.id = s.network_id, pt
 		WHERE s.accepts_online AND s.status = 'active' AND n.status = 'active' AND s.location IS NOT NULL
 		  AND `+ActiveSubscriptionSQL+`
@@ -531,7 +553,8 @@ func (s *Service) Nearby(ctx context.Context, lat, lng float64) ([]NearbyStore, 
 	}
 	stores, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (NearbyStore, error) {
 		var st NearbyStore
-		err := r.Scan(&st.ID, &st.NetworkID, &st.NetworkName, &st.Name, &st.Address, &st.Lat, &st.Lng)
+		err := r.Scan(&st.ID, &st.NetworkID, &st.NetworkName, &st.Name, &st.Address, &st.Lat, &st.Lng,
+			&st.LogoURL, &st.EtaMin, &st.EtaMax)
 		return st, err
 	})
 	if err != nil {

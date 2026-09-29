@@ -48,6 +48,8 @@ type OrderItem struct {
 	Total              string  `json:"total"`
 	PickedWarehouseID  *string `json:"picked_warehouse_id"`
 	FromOtherWarehouse bool    `json:"from_other_warehouse"`
+	// Цена до скидки по акции (null — скидки не было).
+	OldPrice *string `json:"old_price"`
 }
 
 type HistoryEntry struct {
@@ -67,6 +69,7 @@ type Order struct {
 	Status          string         `json:"status"`
 	StatusTitle     string         `json:"status_title"`
 	Subtotal        string         `json:"subtotal"`
+	Discount        string         `json:"discount"`
 	DeliveryFee     string         `json:"delivery_fee"`
 	Total           string         `json:"total"`
 	Address         string         `json:"address"`
@@ -92,7 +95,7 @@ type Order struct {
 }
 
 const orderSelect = `
-	SELECT o.id, o.number, o.network_id, o.store_id, s.name, o.warehouse_id, o.status, o.subtotal::text,
+	SELECT o.id, o.number, o.network_id, o.store_id, s.name, o.warehouse_id, o.status, o.subtotal::text, o.discount::text,
 	       o.delivery_fee::text, o.total::text, o.address, o.entrance, o.floor, o.apartment, o.address_comment,
 	       ST_Y(o.location::geometry), ST_X(o.location::geometry), o.distance_m, o.customer_phone, o.comment,
 	       o.payment_provider,
@@ -102,7 +105,7 @@ const orderSelect = `
 
 func scanOrder(row pgx.CollectableRow) (Order, error) {
 	var o Order
-	err := row.Scan(&o.ID, &o.Number, &o.NetworkID, &o.StoreID, &o.StoreName, &o.WarehouseID, &o.Status, &o.Subtotal,
+	err := row.Scan(&o.ID, &o.Number, &o.NetworkID, &o.StoreID, &o.StoreName, &o.WarehouseID, &o.Status, &o.Subtotal, &o.Discount,
 		&o.DeliveryFee, &o.Total, &o.Address, &o.Entrance, &o.Floor, &o.Apartment, &o.AddressComment,
 		&o.Lat, &o.Lng, &o.DistanceM, &o.CustomerPhone, &o.Comment, &o.PaymentProvider, &o.PaymentStatus,
 		&o.PaidAt, &o.AcceptedAt, &o.DeliveredAt, &o.CancelReason, &o.FiscalStatus, &o.CreatedAt)
@@ -127,7 +130,8 @@ func (s *Service) getOrder(ctx context.Context, q db.Querier, id string) (Order,
 	}
 	rows, err = q.Query(ctx, `
 		SELECT i.line, i.product_id, p.name, u.short_name, i.qty::text, i.price::text, i.total::text,
-		       i.picked_warehouse_id, i.from_other_warehouse
+		       i.picked_warehouse_id, i.from_other_warehouse,
+		       CASE WHEN i.regular_price > i.price THEN i.regular_price::text END
 		FROM order_items i JOIN products p ON p.id = i.product_id JOIN units u ON u.id = p.unit_id
 		WHERE i.order_id = $1 ORDER BY i.line`, id)
 	if err != nil {

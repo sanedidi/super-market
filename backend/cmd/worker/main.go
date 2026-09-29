@@ -74,6 +74,7 @@ func run() error {
 		{Name: "db_ping", Run: pool.Ping},
 		{Name: "orders_expire", Run: ord.ExpireUnpaid},
 		{Name: "orders_alert", Run: ord.AlertUnaccepted},
+		{Name: "popularity", Run: ord.RefreshPopularity},
 		{Name: "billing", Run: billing.NewService(pool, notify.New(pool, sender, log), log).Tick},
 	}
 
