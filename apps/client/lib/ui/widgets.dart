@@ -588,7 +588,8 @@ class RoundIconButton extends StatelessWidget {
   }
 }
 
-/// Нижнее меню: 4 вкладки и круглая кнопка карты по центру, как у Korzinka.
+/// Нижнее меню по компоненту Figma «TabBar»: 4 вкладки и синий круг карты 76 px,
+/// который выступает над панелью на 14 px.
 class AppTabBar extends StatelessWidget {
   const AppTabBar({super.key, required this.index, required this.onTap, this.cartCount = 0});
   final int index;
@@ -596,47 +597,53 @@ class AppTabBar extends StatelessWidget {
   final int cartCount;
 
   static const items = [
-    (Icons.home_outlined, Icons.home_rounded, 'Главная'),
-    (Icons.grid_view_outlined, Icons.grid_view_rounded, 'Каталог'),
-    (Icons.map_outlined, Icons.map_rounded, 'Карта'),
-    (Icons.shopping_cart_outlined, Icons.shopping_cart_rounded, 'Корзина'),
-    (Icons.person_outline_rounded, Icons.person_rounded, 'Профиль'),
+    (Icons.home_outlined, 'Главная'),
+    (Icons.grid_view_outlined, 'Каталог'),
+    (Icons.map_outlined, 'Карта'),
+    (Icons.shopping_cart_outlined, 'Корзина'),
+    (Icons.person_outline_rounded, 'Профиль'),
   ];
+
+  static const _lift = 14.0; // насколько круг выше панели
+  static const _circle = 76.0;
 
   @override
   Widget build(BuildContext context) {
-    final bottom = MediaQuery.paddingOf(context).bottom;
+    final inset = MediaQuery.paddingOf(context).bottom;
+    final bottomPad = inset > 0 ? inset : 12.0;
+    const content = 10.0 + 41.0; // отступ сверху + иконка, подпись
     return SizedBox(
-      height: 64 + bottom + 12,
-      child: Stack(clipBehavior: Clip.none, alignment: Alignment.bottomCenter, children: [
+      height: _lift + content + bottomPad,
+      child: Stack(clipBehavior: Clip.none, alignment: Alignment.topCenter, children: [
         Positioned.fill(
-          top: 12,
+          top: _lift,
           child: Container(
-            padding: EdgeInsets.only(bottom: bottom),
+            padding: EdgeInsets.fromLTRB(8, 10, 8, bottomPad),
             decoration: const BoxDecoration(
               color: AppColors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              boxShadow: [BoxShadow(color: Color(0x0F101828), blurRadius: 16, offset: Offset(0, -4))],
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              boxShadow: [BoxShadow(color: Color(0x14101828), blurRadius: 16, offset: Offset(0, -4))],
             ),
-            child: Row(children: [
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               for (var i = 0; i < items.length; i++)
                 Expanded(
                   child: i == 2
                       ? const SizedBox()
-                      : InkWell(
+                      : GestureDetector(
+                          behavior: HitTestBehavior.opaque,
                           onTap: () => onTap(i),
-                          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          child: Column(mainAxisSize: MainAxisSize.min, children: [
                             Badge(
                               isLabelVisible: i == 3 && cartCount > 0,
                               backgroundColor: AppColors.accent,
                               label: Text('$cartCount'),
-                              child: Icon(index == i ? items[i].$2 : items[i].$1,
-                                  size: 24, color: index == i ? AppColors.primary : AppColors.text2),
+                              child: Icon(items[i].$1, size: 24, color: index == i ? AppColors.primary : AppColors.text2),
                             ),
                             const SizedBox(height: 4),
-                            Text(items[i].$3,
+                            Text(items[i].$2,
                                 style: AppText.caption.copyWith(
                                     fontSize: 11,
+                                    height: 13 / 11,
                                     color: index == i ? AppColors.primary : AppColors.text2,
                                     fontWeight: index == i ? FontWeight.w600 : FontWeight.w500)),
                           ]),
@@ -645,21 +652,16 @@ class AppTabBar extends StatelessWidget {
             ]),
           ),
         ),
-        // Центральная кнопка карты выступает над панелью.
+        // Центральная кнопка карты.
         Positioned(
           top: 0,
           child: GestureDetector(
             onTap: () => onTap(2),
             child: Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                shape: BoxShape.circle,
-                border: Border.all(color: AppColors.white, width: 4),
-                boxShadow: const [BoxShadow(color: Color(0x40155EEF), blurRadius: 16, offset: Offset(0, 6))],
-              ),
-              child: Icon(index == 2 ? Icons.map_rounded : Icons.map_outlined, color: AppColors.white, size: 28),
+              width: _circle,
+              height: _circle,
+              decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+              child: const Icon(Icons.map_outlined, color: AppColors.white, size: 34),
             ),
           ),
         ),
