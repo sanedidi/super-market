@@ -35,31 +35,39 @@ run_demo_request() {
   echo "$req" > "$applied"
 }
 
-# Временно: снимок сервера (порты, контейнеры, веб-серверы) для настройки домена.
-# Файл доступен по неугадываемому адресу и удаляется следующим деплоем.
-server_snapshot() {
-  local f=/tmp/sm-diag.txt
-  {
-    echo "== ports"; ss -ltnp 2>/dev/null | grep -E ':(80|443|8090|8080|3000|5000|8000) ' || true
-    echo "== docker"; docker ps --format '{{.Names}}\t{{.Image}}\t{{.Ports}}\t{{.Label "com.docker.compose.project.working_dir"}}' || true
-    echo "== services"; for s in nginx caddy apache2 httpd traefik; do echo "$s: $(systemctl is-active $s 2>/dev/null)"; done
-    echo "== nginx sites"; ls /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null || true
-    echo "== server_name"; grep -rhn "server_name" /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null | head -40 || true
-    echo "== caddy"; grep -rhn "super-market" /etc/caddy 2>/dev/null | head || true
-    echo "== letsencrypt"; ls /etc/letsencrypt/live 2>/dev/null || true
-    echo "== certbot"; which certbot || true
-    echo "== kids-shop.conf -> $(readlink -f /etc/nginx/sites-enabled/kids-shop.conf)"
-    grep -nE 'server_name|listen|ssl_certificate|proxy_pass|location|root |include|return' /etc/nginx/sites-enabled/kids-shop.conf 2>/dev/null | head -80 || true
-    echo "== 00-default.conf"; grep -nE 'server_name|listen|return|root ' /etc/nginx/sites-enabled/00-default.conf 2>/dev/null | head -20 || true
-    echo "== renewal"; grep -H -E 'authenticator|webroot_path|installer' /etc/letsencrypt/renewal/*super-market*.conf 2>/dev/null || true
-    for d in super-market.uz api.super-market.uz admin.super-market.uz tg.super-market.uz; do
-      echo "== cert $d"; openssl x509 -in /etc/letsencrypt/live/$d/cert.pem -noout -ext subjectAltName -enddate 2>/dev/null | tr '\n' ' '; echo
-    done
-    echo "== certbot nginx plugin"; dpkg -l | grep -E 'python3-certbot-(nginx|webroot)' | awk '{print $2}' || true
-    echo "== kids deploy refs to nginx"; grep -rln "nginx" /home/deploy/kids-shop --include=*.sh --include=*.yml 2>/dev/null | head || true
-    echo "== os"; . /etc/os-release && echo "$PRETTY_NAME"; df -h / | tail -1; free -m | head -2
-  } > "$f" 2>&1
-  $COMPOSE cp "$f" nginx:/usr/share/nginx/html/diag-6000df0a6602e1f552649d9e.txt || true
+# Домены super-market.uz: наш конфиг host-nginx вместо прежнего проекта
+# (kids-shop.conf отключается, копия — в /root/nginx-backup). Если nginx -t
+# не проходит — всё возвращается как было.
+host_nginx() {
+  command -v nginx >/dev/null 2>&1 || return 0
+  local avail=/etc/nginx/sites-available/super-market.conf
+  local snip=/etc/nginx/snippets/super-market-proxy.conf
+  local kids=/etc/nginx/sites-enabled/kids-shop.conf
+  if cmp -s deploy/host-nginx.conf "$avail" && cmp -s deploy/host-nginx-proxy.conf "$snip" && [ ! -e "$kids" ] \
+     && [ -L /etc/nginx/sites-enabled/super-market.conf ]; then
+    return 0
+  fi
+  echo ">> Nginx: домены super-market.uz"
+  mkdir -p /root/nginx-backup /etc/nginx/snippets
+  local ts; ts=$(date +%Y%m%d-%H%M%S)
+  [ -f /etc/nginx/sites-available/kids-shop.conf ] && cp -a /etc/nginx/sites-available/kids-shop.conf "/root/nginx-backup/kids-shop.conf.$ts"
+  [ -f "$avail" ] && cp -a "$avail" "/root/nginx-backup/super-market.conf.$ts"
+  local kids_was_enabled=0
+  [ -e "$kids" ] && kids_was_enabled=1
+  install -m 644 deploy/host-nginx.conf "$avail"
+  install -m 644 deploy/host-nginx-proxy.conf "$snip"
+  ln -sfn "$avail" /etc/nginx/sites-enabled/super-market.conf
+  rm -f "$kids"
+  if nginx -t 2>&1; then
+    systemctl reload nginx
+    echo ">> Nginx: super-market.uz → наш стек"
+  else
+    echo "!! nginx -t не прошёл — возвращаю как было"
+    rm -f /etc/nginx/sites-enabled/super-market.conf
+    [ "$kids_was_enabled" = 1 ] && ln -sfn /etc/nginx/sites-available/kids-shop.conf "$kids"
+    nginx -t && systemctl reload nginx
+    return 1
+  fi
 }
 
 echo ">> Сборка и запуск"
@@ -73,7 +81,8 @@ for i in $(seq 1 30); do
     echo ">> API готов"
     $COMPOSE ps
     run_demo_request
-    server_snapshot
+    $COMPOSE exec -T nginx sh -c 'rm -f /usr/share/nginx/html/diag-*.txt' >/dev/null 2>&1 || true
+    host_nginx
     docker image prune -f >/dev/null
     exit 0
   fi

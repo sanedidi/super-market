@@ -13,7 +13,7 @@ import 'ui/brand.dart';
 import 'ui/theme.dart';
 
 /// Адрес API задаётся при сборке: flutter run --dart-define=API_URL=http://10.0.2.2:8080/api/v1
-const apiUrl = String.fromEnvironment('API_URL', defaultValue: 'http://169.58.31.233:8090/api/v1');
+const apiUrl = String.fromEnvironment('API_URL', defaultValue: 'https://api.super-market.uz/api/v1');
 
 const _onboardingKey = 'sm_client_onboarding_done';
 

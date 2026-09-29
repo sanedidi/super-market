@@ -26,7 +26,7 @@ class ApiError implements Exception {
 class Api extends ChangeNotifier {
   Api({required this.baseUrl, required this.app, http.Client? client}) : _http = client ?? http.Client();
 
-  /// Например, `http://169.58.31.233:8090/api/v1`.
+  /// Например, `https://api.super-market.uz/api/v1`.
   final String baseUrl;
   final String app;
   final http.Client _http;

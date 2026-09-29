@@ -33,7 +33,7 @@ cd apps/client
 flutter pub get
 dart run flutter_launcher_icons          # иконка приложения из assets/branding
 dart run flutter_native_splash:create    # белый экран с логотипом при запуске
-flutter run --dart-define=API_URL=http://169.58.31.233:8090/api/v1
+flutter run 
 ```
 
 Иконку и splash нужно пересоздавать только после смены картинок в `assets/branding/`.
@@ -62,7 +62,7 @@ flutter run --dart-define=API_URL=http://169.58.31.233:8090/api/v1
 cd apps/pos
 flutter create --org uz.supermarket --project-name sm_pos --platforms android,ios,windows,macos .
 flutter pub get
-flutter run --dart-define=API_URL=http://169.58.31.233:8090/api/v1
+flutter run 
 ```
 
 Локальный backend: `--dart-define=API_URL=http://10.0.2.2:8080/api/v1` (эмулятор Android) или
@@ -81,7 +81,7 @@ flutter run --dart-define=API_URL=http://169.58.31.233:8090/api/v1
 cd apps/courier
 flutter create --org uz.supermarket --project-name sm_courier --platforms android,ios .
 flutter pub get
-flutter run --dart-define=API_URL=http://169.58.31.233:8090/api/v1
+flutter run 
 ```
 
 После `flutter create` добавьте разрешения на геопозицию в фоне:

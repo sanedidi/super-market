@@ -7,7 +7,7 @@ import 'pos_state.dart';
 import 'screens/sale_screen.dart';
 
 /// Адрес API задаётся при сборке: flutter run --dart-define=API_URL=http://localhost:8080/api/v1
-const apiUrl = String.fromEnvironment('API_URL', defaultValue: 'http://169.58.31.233:8090/api/v1');
+const apiUrl = String.fromEnvironment('API_URL', defaultValue: 'https://api.super-market.uz/api/v1');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
