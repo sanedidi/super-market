@@ -7,6 +7,7 @@ package push
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -89,5 +90,22 @@ func EnqueueOrderStatus(ctx context.Context, q db.Querier, orderID, status strin
 		INSERT INTO notifications_outbox (user_id, kind, title, body, data)
 		VALUES ($1, 'order_status', $2, $3, jsonb_build_object('type', 'order', 'order_id', $4::text, 'status', $5::text))`,
 		userID, fmt.Sprintf(t.title, number), format(t.body, store), orderID, status)
+	return err
+}
+
+// Enqueue ставит в очередь произвольное уведомление покупателю (семья и
+// др.). Удалённым аккаунтам не отправляется.
+func Enqueue(ctx context.Context, q db.Querier, userID, kind, title, body string, data map[string]string) error {
+	if data == nil {
+		data = map[string]string{}
+	}
+	js, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	_, err = q.Exec(ctx, `
+		INSERT INTO notifications_outbox (user_id, kind, title, body, data)
+		SELECT c.user_id, $2, $3, $4, $5::jsonb FROM customers c WHERE c.user_id = $1::uuid AND c.deleted_at IS NULL`,
+		userID, kind, title, body, string(js))
 	return err
 }

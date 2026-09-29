@@ -2,10 +2,14 @@ package identity
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
+	"sync"
 	"time"
 
+	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/phone"
 	"github.com/sanedidi/super-market/backend/internal/platform/telegram"
 )
@@ -22,10 +26,20 @@ type Bot struct {
 	svc *Service
 	api BotAPI
 	log *slog.Logger
+
+	// Deeplinks — обработчики ссылок вида t.me/<bot>?start=<prefix>_<code>
+	// по префиксу. Получают номер пользователя и код, возвращают текст ответа.
+	Deeplinks map[string]DeeplinkFunc
+
+	mu      sync.Mutex
+	pending map[int64]string // tg user → payload, пока номер не привязан
 }
 
+// DeeplinkFunc обрабатывает /start с параметром для пользователя с номером phone.
+type DeeplinkFunc func(ctx context.Context, phone, code string) (string, error)
+
 func NewBot(svc *Service, api BotAPI, log *slog.Logger) *Bot {
-	return &Bot{svc: svc, api: api, log: log.With("component", "telegram_bot")}
+	return &Bot{svc: svc, api: api, log: log.With("component", "telegram_bot"), pending: map[int64]string{}}
 }
 
 var shareContactKeyboard = &telegram.ReplyMarkup{
@@ -70,6 +84,11 @@ func (b *Bot) Handle(ctx context.Context, u telegram.Update) error {
 	}
 
 	if m.Contact == nil {
+		if payload, ok := strings.CutPrefix(m.Text, "/start "); ok {
+			if handled, err := b.deeplink(ctx, m.Chat.ID, m.From.ID, strings.TrimSpace(payload)); handled || err != nil {
+				return err
+			}
+		}
 		return b.api.SendMessage(ctx, m.Chat.ID,
 			"Здравствуйте! Чтобы получать коды для входа, нажмите кнопку «Поделиться номером» ниже.",
 			shareContactKeyboard)
@@ -90,9 +109,56 @@ func (b *Bot) Handle(ctx context.Context, u telegram.Update) error {
 		return err
 	}
 	b.log.Info("номер привязан", "tg_user_id", m.From.ID)
-	return b.api.SendMessage(ctx, m.Chat.ID,
+	if err := b.api.SendMessage(ctx, m.Chat.ID,
 		fmt.Sprintf("Готово! Номер %s привязан. Теперь коды для входа будут приходить сюда.", ph),
-		&telegram.ReplyMarkup{RemoveKeyboard: true})
+		&telegram.ReplyMarkup{RemoveKeyboard: true}); err != nil {
+		return err
+	}
+	b.mu.Lock()
+	payload, ok := b.pending[m.From.ID]
+	delete(b.pending, m.From.ID)
+	b.mu.Unlock()
+	if ok {
+		_, err := b.runDeeplink(ctx, m.Chat.ID, ph, payload)
+		return err
+	}
+	return nil
+}
+
+// deeplink обрабатывает /start <payload>. Если номер ещё не привязан —
+// запоминает payload и просит поделиться номером.
+func (b *Bot) deeplink(ctx context.Context, chatID, tgUserID int64, payload string) (bool, error) {
+	prefix, _, ok := strings.Cut(payload, "_")
+	if !ok || b.Deeplinks[prefix] == nil {
+		return false, nil
+	}
+	var ph string
+	err := b.svc.pool.QueryRow(ctx, `SELECT phone FROM telegram_links WHERE tg_user_id = $1 ORDER BY linked_at DESC LIMIT 1`, tgUserID).Scan(&ph)
+	if err != nil {
+		b.mu.Lock()
+		if len(b.pending) > 10000 {
+			b.pending = map[int64]string{}
+		}
+		b.pending[tgUserID] = payload
+		b.mu.Unlock()
+		return true, b.api.SendMessage(ctx, chatID,
+			"Здравствуйте! Чтобы продолжить, нажмите кнопку «Поделиться номером» ниже.", shareContactKeyboard)
+	}
+	return b.runDeeplink(ctx, chatID, ph, payload)
+}
+
+func (b *Bot) runDeeplink(ctx context.Context, chatID int64, ph, payload string) (bool, error) {
+	prefix, code, _ := strings.Cut(payload, "_")
+	h := b.Deeplinks[prefix]
+	if h == nil {
+		return false, nil
+	}
+	text, err := h(ctx, ph, code)
+	if err != nil {
+		b.log.Info("deeplink отклонён", "prefix", prefix, "err", err)
+		text = "Не получилось: " + errText(err)
+	}
+	return true, b.api.SendMessage(ctx, chatID, text, nil)
 }
 
 // LinkTelegram запоминает, в какой чат отправлять коды для номера.
@@ -103,4 +169,12 @@ func (s *Service) LinkTelegram(ctx context.Context, ph string, chatID, tgUserID 
 		SET chat_id = EXCLUDED.chat_id, tg_user_id = EXCLUDED.tg_user_id, linked_at = now()`,
 		ph, chatID, tgUserID)
 	return err
+}
+
+func errText(err error) string {
+	var ae *apperr.Error
+	if errors.As(err, &ae) {
+		return ae.Message
+	}
+	return "попробуйте позже"
 }

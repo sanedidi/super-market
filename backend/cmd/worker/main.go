@@ -12,7 +12,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sanedidi/super-market/backend/internal/billing"
+	"github.com/sanedidi/super-market/backend/internal/family"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/notify"
 	"github.com/sanedidi/super-market/backend/internal/platform/config"
@@ -62,7 +64,9 @@ func run() error {
 		svc := identity.NewService(pool, api, identity.Config{Secret: cfg.JWTSecret}, log)
 		go func() {
 			defer close(botDone)
-			identity.NewBot(svc, api, log).Run(ctx)
+			bot := identity.NewBot(svc, api, log)
+			bot.Deeplinks = map[string]identity.DeeplinkFunc{"fam": familyDeeplink(pool, cfg, api, log)}
+			bot.Run(ctx)
 		}()
 	} else {
 		close(botDone)
@@ -95,12 +99,13 @@ func run() error {
 	}()
 	defer func() { <-pushDone }()
 
-	_, _, ord := server.OrderServices(cfg, pool, sender, log)
+	dlv, _, ord := server.OrderServices(cfg, pool, sender, log)
 	jobs := []Job{
 		{Name: "db_ping", Run: pool.Ping},
 		{Name: "orders_expire", Run: ord.ExpireUnpaid},
 		{Name: "orders_alert", Run: ord.AlertUnaccepted},
 		{Name: "popularity", Run: ord.RefreshPopularity},
+		{Name: "family_reminders", Run: family.NewService(pool, ord, dlv, cfg.TelegramBotUsername).Remind},
 		{Name: "billing", Run: billing.NewService(pool, notify.New(pool, sender, log), log).Tick},
 	}
 
@@ -127,5 +132,18 @@ func runAll(ctx context.Context, log *slog.Logger, jobs []Job) {
 			continue
 		}
 		log.Debug("задача выполнена", "job", j.Name, "duration_ms", time.Since(start).Milliseconds())
+	}
+}
+
+// familyDeeplink — вступление в семью по ссылке t.me/<bot>?start=fam_<код>.
+func familyDeeplink(pool *pgxpool.Pool, cfg config.Config, api notify.Sender, log *slog.Logger) identity.DeeplinkFunc {
+	dlv, _, ord := server.OrderServices(cfg, pool, api, log)
+	svc := family.NewService(pool, ord, dlv, cfg.TelegramBotUsername)
+	return func(ctx context.Context, phone, code string) (string, error) {
+		name, err := svc.JoinByPhone(ctx, phone, code)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Вы в семье «%s»! Откройте приложение Super Market — там общие списки покупок.", name), nil
 	}
 }

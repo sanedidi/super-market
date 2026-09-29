@@ -13,6 +13,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/billing"
 	"github.com/sanedidi/super-market/backend/internal/catalog"
 	"github.com/sanedidi/super-market/backend/internal/delivery"
+	"github.com/sanedidi/super-market/backend/internal/family"
 	"github.com/sanedidi/super-market/backend/internal/finance"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/inventory"
@@ -86,6 +87,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		billing.NewModule(bill, auth, log),
 		reports.NewModule(reports.NewService(pool), auth, log),
 		profile.NewModule(profile.NewService(pool, supportURL(cfg), cfg.PrivacyURL, pushConfigured(cfg, log)), auth, log),
+		family.NewModule(family.NewService(pool, ord, dlv, cfg.TelegramBotUsername), auth, log),
 	)
 	return &App{Handler: h, Orders: ord, Payments: pay, Billing: bill}, nil
 }

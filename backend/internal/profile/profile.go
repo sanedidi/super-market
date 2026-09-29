@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/sanedidi/super-market/backend/internal/family"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 )
@@ -227,6 +228,9 @@ func (s *Service) Delete(ctx context.Context, userID string) error {
 			return apperr.Conflict("active_order", fmt.Sprintf("Дождитесь завершения заказа №%d — потом аккаунт можно удалить", active))
 		}
 		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		if err := family.RemoveUser(ctx, tx, userID); err != nil {
 			return err
 		}
 		for _, q := range []string{

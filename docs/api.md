@@ -426,3 +426,34 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 `GET /client/orders/{id}/tracking` → `{status, status_title, eta_at, eta_minutes, courier: {name, vehicle,
 phone, location: {lat, lng}, located_at} | null, store: {lat, lng}, store_name, destination: {lat, lng}}`.
 Телефон и точка курьера — только пока заказ в пути; после доставки курьер не показывается.
+
+## Моя семья (этап приложения 5)
+
+Семья — до 10 человек; один человек — в одной семье. Создатель — владелец (`owner`), остальные — `member`.
+Все пути — приложение покупателя (`app: client`).
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/client/family` | `{family: null}` или `{family: {id, name, my_role, members: [{user_id, name, label, phone, role, is_me}], active_requests, requests_for_me}}` |
+| POST | `/client/family` | `{name}` — создать (201). Уже в семье → 409 |
+| POST | `/client/family/invites` | Код на 7 дней: `{code, url, expires_at}`; `url` — `t.me/<бот>?start=fam_<код>` |
+| POST | `/client/family/join` | `{code, label?}` — вступить. Код одноразовый; неверный или устаревший → 400 |
+| POST | `/client/family/leave` | Выйти → 204. Владелец передаёт семью самому давнему участнику; последний — семья удаляется |
+| PATCH | `/client/family/members/{user_id}` | `{label}` — подпись («Мама», «Муж») |
+| DELETE | `/client/family/members/{user_id}` | Исключить (только владелец) → 204 |
+| GET | `/client/family/suggestions` | Частые покупки за 90 дней: `[{product_id, name, times}]` |
+| GET | `/client/family/requests` | Активные просьбы; `?status=history` — выполненные и отменённые |
+| POST | `/client/family/requests` | `{title?, assignee_id?, comment?, remind_at?, remind_at_store?, deliver_offer_at?, items: [{product_id? , text?, qty?}]}` (201). Без `assignee_id` — всей семье |
+| GET | `/client/family/requests/{id}` | Просьба с `items: [{id, line, product_id, product_name, unit_short, image, text, qty, bought, bought_by_name}]` |
+| POST | `/client/family/requests/{id}/items/{item}/bought` | `{bought}` — отметить. Статус: `pending` → `partial` → `bought` (автору push) |
+| POST | `/client/family/requests/{id}/snooze` | `{minutes?}` (по умолчанию 60) — напомнить позже |
+| POST | `/client/family/requests/{id}/cancel` | Отменить (автор или владелец) |
+| GET | `/client/family/requests/{id}/to-cart?lat=&lng=` | «Заказать домой»: `{store, lines: [{item_id, qty, product}], found, total, message?}` — ближайший из 5 магазинов, где есть больше всего некупленных товаров |
+| POST | `/client/family/requests/{id}/ordered` | `{order_id}` — заказ оформлен → `ordered`, автору push |
+
+Просьба в ответах: `id, title, comment, status, author_id, author_name, assignee_id, assignee_name, remind_at,
+remind_at_store, deliver_offer_at, order_id, items_total, items_bought, summary, created_at, for_me`.
+
+Push (`data.type = family_request`, `data.request_id`): новая просьба — сразу; напоминание в `remind_at`
+(если оно позже чем через 5 минут); предложение заказать домой в `deliver_offer_at`. Приглашение также
+работает через бота: `/start fam_<код>` — бот просит номер (если ещё не привязан) и добавляет в семью.
