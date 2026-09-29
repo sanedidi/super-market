@@ -18,6 +18,26 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   String? _selected;
+  final _pager = PageController(viewportFraction: 0.9);
+
+  /// Высота карточки магазина внизу.
+  static const _cardHeight = 212.0;
+
+  @override
+  void dispose() {
+    _pager.dispose();
+    super.dispose();
+  }
+
+  /// Нажали на точку — листаем карточки к этому магазину.
+  void _onMarker(List<Store> stores, String id) {
+    final i = stores.indexWhere((s) => s.id == id);
+    if (i < 0) return;
+    setState(() => _selected = id);
+    if (_pager.hasClients && (_pager.page?.round() ?? 0) != i) {
+      _pager.animateToPage(i, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,22 +56,26 @@ class _MapScreenState extends State<MapScreen> {
         ),
       );
     }
-    final selected = state.stores.where((s) => s.id == _selected).firstOrNull;
-    final bottom = MediaQuery.paddingOf(context).bottom + 88;
+    final stores = state.stores;
+    final selected = stores.where((s) => s.id == _selected).firstOrNull ?? stores.firstOrNull;
+    // Нижнее меню прозрачное поверх карты (extendBody): его высота уже в padding.bottom.
+    final bottom = MediaQuery.paddingOf(context).bottom + 12;
     return Scaffold(
       body: Stack(children: [
         Positioned.fill(
           child: StoresMap(
-            key: ValueKey('map-${address.id}-${state.stores.length}'),
+            key: ValueKey('map-${address.id}-${stores.length}'),
             center: (lat: address.lat, lng: address.lng),
+            focus: selected == null ? null : (lat: selected.lat, lng: selected.lng),
+            focusOffset: 0.006,
             markers: [
-              for (final s in state.stores)
+              for (final s in stores)
                 MapMarker(
                   id: s.id,
                   lat: s.lat,
                   lng: s.lng,
-                  highlight: s.id == _selected || (_selected == null && s.recommended),
-                  onTap: () => setState(() => _selected = s.id),
+                  highlight: s.id == selected?.id,
+                  onTap: () => _onMarker(stores, s.id),
                 ),
             ],
           ),
@@ -81,31 +105,44 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ),
         ),
-        if (selected != null)
+        if (stores.isNotEmpty)
           Positioned(
-            left: 16,
-            right: 16,
+            left: 0,
+            right: 0,
             bottom: bottom,
-            child: Material(
-              color: AppColors.white,
-              elevation: 6,
-              shadowColor: const Color(0x22000000),
-              borderRadius: BorderRadius.circular(AppRadius.xl),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  StoreCard(
-                    name: selected.name,
-                    subtitle: storeSubtitle(selected),
-                    logoUrl: selected.logoUrl,
-                    recommended: selected.recommended,
-                    closed: !selected.isOpen,
-                    meta: storeMeta(selected),
+            height: _cardHeight,
+            child: PageView.builder(
+              controller: _pager,
+              itemCount: stores.length,
+              onPageChanged: (i) => setState(() => _selected = stores[i].id),
+              itemBuilder: (_, i) {
+                final s = stores[i];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Material(
+                    color: AppColors.white,
+                    elevation: 6,
+                    shadowColor: const Color(0x22000000),
+                    borderRadius: BorderRadius.circular(AppRadius.xl),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(children: [
+                        StoreCard(
+                          name: s.name,
+                          subtitle: storeSubtitle(s),
+                          logoUrl: s.logoUrl,
+                          recommended: s.recommended,
+                          closed: !s.isOpen,
+                          meta: storeMeta(s),
+                          onTap: () => state.openCatalog(s),
+                        ),
+                        const Spacer(),
+                        AppButton(label: 'Смотреть товары', onPressed: () => state.openCatalog(s)),
+                      ]),
+                    ),
                   ),
-                  const SizedBox(height: 10),
-                  AppButton(label: 'Смотреть товары', onPressed: () => state.openCatalog(selected)),
-                ]),
-              ),
+                );
+              },
             ),
           ),
       ]),

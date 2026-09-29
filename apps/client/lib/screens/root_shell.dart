@@ -100,7 +100,7 @@ class CartBar extends StatelessWidget {
             const IconBox(Icons.shopping_cart_outlined, bg: Color(0x2EFFFFFF), fg: AppColors.white, size: 40),
             const SizedBox(width: 12),
             Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('Корзина', style: AppText.bodyStrong.copyWith(color: AppColors.white)),
                 Text('${_items(state.cartCount)} · ${state.cartStoreName ?? ''}',
                     maxLines: 1,

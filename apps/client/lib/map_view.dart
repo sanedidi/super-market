@@ -40,20 +40,53 @@ class MapMarker {
 }
 
 /// Карта с метками (магазины). Метки — круги, без картинок-ассетов.
-class StoresMap extends StatelessWidget {
-  const StoresMap({super.key, required this.center, required this.markers});
+/// При смене [focus] камера плавно переезжает к этой точке.
+class StoresMap extends StatefulWidget {
+  const StoresMap({super.key, required this.center, required this.markers, this.focus, this.focusOffset = 0});
 
   final ({double lat, double lng}) center;
   final List<MapMarker> markers;
+  final ({double lat, double lng})? focus;
+
+  /// Сдвиг цели вниз по широте, чтобы точка не пряталась под карточкой снизу.
+  final double focusOffset;
+
+  @override
+  State<StoresMap> createState() => _StoresMapState();
+}
+
+class _StoresMapState extends State<StoresMap> {
+  YandexMapController? _controller;
+
+  @override
+  void didUpdateWidget(StoresMap old) {
+    super.didUpdateWidget(old);
+    final f = widget.focus;
+    if (f != null && f != old.focus) _moveTo(f, animate: true);
+  }
+
+  void _moveTo(({double lat, double lng}) p, {bool animate = false, double zoom = 14}) {
+    _controller?.moveCamera(
+      CameraUpdate.newCameraPosition(CameraPosition(target: Point(latitude: p.lat - widget.focusOffset, longitude: p.lng), zoom: zoom)),
+      animation: animate ? const MapAnimation(duration: 0.4) : null,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final color = Theme.of(context).colorScheme.primary;
+    final center = widget.center;
     return YandexMap(
       onMapCreated: (controller) {
-        controller.moveCamera(CameraUpdate.newCameraPosition(
-          CameraPosition(target: Point(latitude: center.lat, longitude: center.lng), zoom: 13),
-        ));
+        _controller = controller;
+        final f = widget.focus;
+        if (f != null) {
+          _moveTo(f);
+        } else {
+          controller.moveCamera(CameraUpdate.newCameraPosition(
+            CameraPosition(target: Point(latitude: center.lat, longitude: center.lng), zoom: 13),
+          ));
+        }
       },
       mapObjects: [
         CircleMapObject(
@@ -63,13 +96,14 @@ class StoresMap extends StatelessWidget {
           strokeColor: Colors.white,
           strokeWidth: 2,
         ),
-        for (final m in markers)
+        for (final m in widget.markers)
           CircleMapObject(
             mapId: MapObjectId('store_${m.id}'),
-            circle: Circle(center: Point(latitude: m.lat, longitude: m.lng), radius: m.highlight ? 90 : 70),
-            fillColor: m.highlight ? color : color.withOpacity(0.5),
+            circle: Circle(center: Point(latitude: m.lat, longitude: m.lng), radius: m.highlight ? 110 : 70),
+            fillColor: m.highlight ? color : color.withOpacity(0.45),
             strokeColor: Colors.white,
-            strokeWidth: 2,
+            strokeWidth: m.highlight ? 3 : 2,
+            zIndex: m.highlight ? 2 : 1,
             consumeTapEvents: true,
             onTap: (_, __) => m.onTap?.call(),
           ),
