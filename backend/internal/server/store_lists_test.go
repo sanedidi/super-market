@@ -167,3 +167,40 @@ func TestSalesAndStockSummary(t *testing.T) {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+// TestDeliveryEtaClear — обещанное время доставки: не передано — не меняется,
+// null — сбрасывается.
+func TestDeliveryEtaClear(t *testing.T) {
+	pool := freshDB(t)
+	cfg := testConfig()
+	cfg.DevOTPCode = "111111"
+	a := newAPI(t, cfg, pool, nil)
+	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
+	tok, store := setupNetwork(t, a, adminTok, "+998900000002")
+	path := "/store/stores/" + store + "/delivery"
+
+	eta := func(r resp) (any, any) { return r.Body["eta_min"], r.Body["eta_max"] }
+	r := a.expect(a.do("PUT", path, tok, map[string]any{"eta_min": 25, "eta_max": 35}), 200, "set eta")
+	if lo, hi := eta(r); lo != 25.0 || hi != 35.0 {
+		t.Fatalf("eta = %v–%v", lo, hi)
+	}
+	r = a.expect(a.do("PUT", path, tok, map[string]any{"delivery_radius_m": 3000}), 200, "without eta")
+	if lo, hi := eta(r); lo != 25.0 || hi != 35.0 {
+		t.Fatalf("eta changed without fields: %v–%v", lo, hi)
+	}
+	r = a.expect(a.do("PUT", path, tok, map[string]any{"eta_min": nil}), 200, "clear min")
+	if lo, hi := eta(r); lo != nil || hi != 35.0 {
+		t.Fatalf("after clearing min: %v–%v", lo, hi)
+	}
+	r = a.expect(a.do("PUT", path, tok, map[string]any{"eta_min": nil, "eta_max": nil}), 200, "clear both")
+	if lo, hi := eta(r); lo != nil || hi != nil {
+		t.Fatalf("after clearing: %v–%v", lo, hi)
+	}
+	r = a.expect(a.do("GET", path, tok, nil), 200, "get")
+	if lo, hi := eta(r); lo != nil || hi != nil {
+		t.Fatalf("stored: %v–%v", lo, hi)
+	}
+	a.expect(a.do("PUT", path, tok, map[string]any{"eta_min": "soon"}), 400, "not a number")
+	a.expect(a.do("PUT", path, tok, map[string]any{"eta_min": 1}), 400, "too small")
+	a.expect(a.do("PUT", path, tok, map[string]any{"eta_min": 40, "eta_max": 30}), 400, "min > max")
+}

@@ -355,7 +355,7 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 | PATCH | `/store/promotions/{id}` | Любые поля; `items` заменяет список целиком; `is_active: false` — выключить |
 
 `PATCH /store/stores/{id}` — поле `logo_url`. `PUT /store/stores/{id}/delivery` — `eta_min`, `eta_max`
-(5–600 минут, `eta_min ≤ eta_max`).
+(5–600 минут, `eta_min ≤ eta_max`). Поле не передано — не меняется, `null` — время сбрасывается и не показывается.
 
 ### Супер-админ
 
