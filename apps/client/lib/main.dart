@@ -60,7 +60,8 @@ class ClientApp extends StatelessWidget {
   }
 }
 
-/// Заставка → онбординг (один раз) → вход → приложение.
+/// Онбординг (один раз) → вход → приложение. Заставку показывает система
+/// (flutter_native_splash), пока Flutter запускается.
 class _Gate extends StatefulWidget {
   const _Gate({required this.onboardingDone});
   final bool onboardingDone;
@@ -70,16 +71,7 @@ class _Gate extends StatefulWidget {
 }
 
 class _GateState extends State<_Gate> {
-  bool _splash = true;
   late bool _onboardingDone = widget.onboardingDone;
-
-  @override
-  void initState() {
-    super.initState();
-    Future.delayed(const Duration(milliseconds: 1200), () {
-      if (mounted) setState(() => _splash = false);
-    });
-  }
 
   Future<void> _finishOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
@@ -91,9 +83,7 @@ class _GateState extends State<_Gate> {
   Widget build(BuildContext context) {
     final api = context.watch<Api>();
     final Widget child;
-    if (_splash) {
-      child = const BrandSplash();
-    } else if (!_onboardingDone) {
+    if (!_onboardingDone) {
       child = OnboardingScreen(onDone: _finishOnboarding);
     } else if (!api.loggedIn) {
       child = const AuthScreen();
@@ -137,7 +127,8 @@ class _ProfileGateState extends State<_ProfileGate> {
   @override
   Widget build(BuildContext context) {
     final need = _needName;
-    if (need == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    // Пока грузится профиль — та же картинка, что у нативной заставки.
+    if (need == null) return const BrandSplash();
     if (need) return NameStepScreen(onDone: () => setState(() => _needName = false));
     return const RootShell();
   }
