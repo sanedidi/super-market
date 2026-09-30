@@ -19,7 +19,7 @@ export function useList<T>(path: string | null, params?: Params) {
  * узнать, есть ли следующая страница (сервер не отдаёт общее число).
  * При смене параметров возвращается на первую страницу.
  */
-export function usePaged<T>(path: string | null, params?: Params, pageSize = 50) {
+export function usePaged<T>(path: string | null, params?: Params, pageSize = 50, opts: { refetchInterval?: number } = {}) {
   const [page, setPage] = useState(1)
   const key = JSON.stringify(params ?? {})
   useEffect(() => setPage(1), [key, path])
@@ -29,6 +29,7 @@ export function usePaged<T>(path: string | null, params?: Params, pageSize = 50)
       api.get<List<T>>(path!, { ...params, limit: pageSize + 1, offset: (page - 1) * pageSize }).then((r) => r.items ?? []),
     enabled: path !== null,
     placeholderData: keepPreviousData,
+    refetchInterval: opts.refetchInterval,
   })
   const raw = q.data ?? []
   const hasMore = raw.length > pageSize

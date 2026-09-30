@@ -77,7 +77,9 @@ func (m *Module) listDict(onlyActive bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[map[string]any], error) {
 			f := DictFilter{Query: r.URL.Query().Get("q"), ExcludeTree: r.URL.Query().Get("exclude_tree")}
-			if !onlyActive {
+			// Магазину справочник отдаётся целиком (для выпадающих списков),
+			// а постранично — только если явно передан limit.
+			if !onlyActive || r.URL.Query().Has("limit") {
 				page := httpx.PageFrom(r)
 				f.Page = &page
 			}

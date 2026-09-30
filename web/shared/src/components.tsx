@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { Alert, Button, Card, Flex, Form, Modal, Select, Space, Table, Tag, Typography, type SelectProps, type TableColumnsType, type TableProps } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
 import { api } from './api'
@@ -64,9 +64,12 @@ export function RemoteSelect<T extends Record<string, unknown>>({
   const options = (data ?? [])
     .filter((x) => (filter ? filter(x) : true))
     .map((x) => ({ value: String(x.id), label: label(x) }))
+  // Подписи уже виденных вариантов: выбранное значение не превращается в id после нового поиска.
+  const seen = useRef(new Map<string, ReactNode>())
+  options.forEach((o) => seen.current.set(o.value, o.label))
   const v = props.value
   if (search && typeof v === 'string' && v && !options.some((o) => o.value === v)) {
-    options.unshift({ value: v, label: selectedLabel ?? v })
+    options.unshift({ value: v, label: seen.current.get(v) ?? selectedLabel ?? v })
   }
   return (
     <Select
@@ -86,9 +89,10 @@ export function PagedTable<T extends object>({
   path,
   params,
   pageSize = 50,
+  refetchInterval,
   ...table
-}: { path: string | null; params?: Params; pageSize?: number } & Omit<TableProps<T>, 'dataSource' | 'loading' | 'pagination'>) {
-  const list = usePaged<T>(path, params, pageSize)
+}: { path: string | null; params?: Params; pageSize?: number; refetchInterval?: number } & Omit<TableProps<T>, 'dataSource' | 'loading' | 'pagination'>) {
+  const list = usePaged<T>(path, params, pageSize, { refetchInterval })
   return (
     <>
       <LoadError error={list.error} retry={() => list.refetch()} />
