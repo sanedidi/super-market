@@ -32,6 +32,7 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 | GET | `/admin/networks?q=&limit=&offset=` | сети, поиск по названию и телефону владельца |
 | POST | `/admin/networks` | `{"name", "kind": "chain"\|"single", "owner_phone", "owner_name"}` — сеть + роль «Владелец» + сотрудник-владелец |
 | GET | `/admin/networks/{id}` | сеть |
+| GET | `/admin/networks/{id}/stores` | магазины сети (все, включая выключенные) |
 | PATCH | `/admin/networks/{id}` | `{"name"?, "status"?: "active"\|"blocked"}` — блокировка сразу закрывает доступ сотрудникам |
 
 Списки супер-админа отдаются страницами: `limit` (по умолчанию 50, максимум 200) и `offset`; общего числа

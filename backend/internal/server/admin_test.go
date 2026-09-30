@@ -145,7 +145,10 @@ func newAdminShop(t *testing.T, a api, adminTok, ownerPhone, clientPhone string)
 		"label": "Дом", "address": "Чиланзар 5", "lat": 41.3030, "lng": lng,
 	}), 201, "address").str("id")
 	me := a.expect(a.do("GET", "/store/me", tok, nil), 200, "me")
-	return adminShop{a: a, store: store, network: me.str("network_id"), client: client, addr: addr, cola: cola}
+	if me.str("network", "id") == "" {
+		t.Fatalf("me = %v", me.Body)
+	}
+	return adminShop{a: a, store: store, network: me.str("network", "id"), client: client, addr: addr, cola: cola}
 }
 
 func (s adminShop) order(t *testing.T) (id string, number float64) {
@@ -202,6 +205,9 @@ func TestAdminOrdersAndStats(t *testing.T) {
 		t.Fatalf("by other phone = %v", got)
 	}
 	a.expect(a.do("GET", "/admin/orders?q=ab", adminTok, nil), 400, "bad q")
+	if got := ids("/admin/orders?network_id=00000000-0000-0000-0000-000000000000"); len(got) != 0 {
+		t.Fatalf("by other network = %v", got)
+	}
 	if got := ids("/admin/orders?network_id=" + shop.network + "&store_id=" + shop.store + "&payment_provider=payme"); len(got) != 3 {
 		t.Fatalf("by network/store/provider = %v", got)
 	}
@@ -216,6 +222,11 @@ func TestAdminOrdersAndStats(t *testing.T) {
 	if got := ids("/admin/orders?from=" + today.Format("2006-01-02") + "&to=" + today.AddDate(0, 0, 1).Format("2006-01-02")); len(got) != 3 {
 		t.Fatalf("today = %v", got)
 	}
+	stores := a.expect(a.do("GET", "/admin/networks/"+shop.network+"/stores", adminTok, nil), 200, "network stores").items()
+	if len(stores) != 1 || stores[0]["id"] != shop.store {
+		t.Fatalf("network stores = %v", stores)
+	}
+	a.expect(a.do("GET", "/admin/networks/00000000-0000-0000-0000-000000000000/stores", adminTok, nil), 404, "unknown network stores")
 	stale := a.expect(a.do("GET", "/admin/orders?stale=true", adminTok, nil), 200, "stale").items()
 	if len(stale) != 1 || stale[0]["id"] != o1 || stale[0]["accept_overdue"] != true {
 		t.Fatalf("stale = %v", stale)

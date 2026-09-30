@@ -27,6 +27,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/admin/networks", m.createNetwork)
 		r.Get("/admin/networks/{id}", m.getNetwork)
 		r.Patch("/admin/networks/{id}", m.updateNetwork)
+		r.Get("/admin/networks/{id}/stores", m.adminStores)
 	})
 
 	r.Group(func(r chi.Router) {
@@ -82,6 +83,18 @@ func (m *Module) listNetworks(w http.ResponseWriter, r *http.Request) {
 	handle(m, w, r, http.StatusOK, func() (list[Network], error) {
 		items, err := m.svc.ListNetworks(r.Context(), r.URL.Query().Get("q"), httpx.PageFrom(r))
 		return list[Network]{items}, err
+	})
+}
+
+func (m *Module) adminStores(w http.ResponseWriter, r *http.Request) {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		httpx.Fail(w, r, m.log, err)
+		return
+	}
+	handle(m, w, r, http.StatusOK, func() (list[Store], error) {
+		items, err := m.svc.AdminListStores(r.Context(), id)
+		return list[Store]{items}, err
 	})
 }
 

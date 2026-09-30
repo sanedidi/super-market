@@ -213,6 +213,18 @@ func (s *Service) ListStores(ctx context.Context, p *identity.Principal) ([]Stor
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[Store])
 }
 
+// AdminListStores — магазины сети для супер-админа (карточка сети, фильтр заказов).
+func (s *Service) AdminListStores(ctx context.Context, networkID string) ([]Store, error) {
+	if _, err := s.GetNetwork(ctx, networkID); err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, storeSelect+` WHERE network_id = $1 ORDER BY name, id`, networkID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[Store])
+}
+
 func (s *Service) GetStore(ctx context.Context, p *identity.Principal, id string) (Store, error) {
 	if !p.CanAccessStore(id) {
 		return Store{}, apperr.NotFound("магазин не найден")
