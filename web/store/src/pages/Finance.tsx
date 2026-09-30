@@ -227,7 +227,8 @@ function OperationModal({ open, onClose }: { open: boolean; onClose: () => void 
           <Form.Item name="counterparty_id" label="Контрагент" rules={[{ required: true, message: 'Выберите контрагента' }]}>
             <RemoteSelect<Counterparty>
               path="/store/finance/counterparties"
-              params={{ limit: 200 }}
+              search
+              placeholder="Поиск по названию или телефону"
               filter={(c) => c.is_active}
               label={(c) => `${c.name} · сальдо ${money(c.balance)}`}
             />

@@ -111,21 +111,27 @@ type Filter struct {
 	Type        string
 	Status      string
 	WarehouseID string
-	From, To    *time.Time
-	Page        httpx.Page
+	// StoreID — документы складов магазина; перемещения — и входящие на них.
+	StoreID  string
+	From, To *time.Time
+	Page     httpx.Page
 }
 
 func (s *Service) List(ctx context.Context, p *identity.Principal, f Filter) ([]Document, error) {
 	if f.Type != "" && typeTitles[f.Type] == "" {
 		return nil, apperr.Validation("type: неизвестный вид документа")
 	}
+	if f.StoreID != "" && !httpx.IsUUID(f.StoreID) {
+		return nil, apperr.Validation("store_id: неверный id")
+	}
 	rows, err := s.pool.Query(ctx, docSelect+`
 		WHERE d.network_id = $1 AND `+docVisible+`
 		  AND ($4 = '' OR d.type = $4) AND ($5 = '' OR d.status = $5)
 		  AND ($6 = '' OR d.warehouse_id::text = $6 OR d.to_warehouse_id::text = $6)
 		  AND ($7::timestamptz IS NULL OR d.created_at >= $7) AND ($8::timestamptz IS NULL OR d.created_at < $8)
-		ORDER BY d.created_at DESC LIMIT $9 OFFSET $10`,
-		p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.Type, f.Status, f.WarehouseID, f.From, f.To, f.Page.Limit, f.Page.Offset)
+		  AND ($11 = '' OR w.store_id::text = $11 OR tw.store_id::text = $11)
+		ORDER BY d.created_at DESC, d.number DESC LIMIT $9 OFFSET $10`,
+		p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.Type, f.Status, f.WarehouseID, f.From, f.To, f.Page.Limit, f.Page.Offset, f.StoreID)
 	if err != nil {
 		return nil, err
 	}

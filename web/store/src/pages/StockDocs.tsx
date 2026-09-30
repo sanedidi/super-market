@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Alert, App, Button, Card, Col, Form, Input, Popconfirm, Row, Segmented, Select, Space, Table, Typography } from 'antd'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import {
+  LoadError,
   PageTitle,
   RemoteSelect,
   StatusTag,
@@ -15,10 +16,11 @@ import {
   useAction,
   useItem,
   useList,
+  usePaged,
 } from '@sm/shared'
 import { useStore } from '../ctx'
-import { NeedStore, Num, ProductSelect, trimNum } from '../ui'
-import type { StockDocType, StockDocument, Warehouse } from '../types'
+import { NeedStore, Num, ProductSelect, trimNum, unitPrice } from '../ui'
+import type { Counterparty, StockDocType, StockDocument, Warehouse } from '../types'
 
 export const docPaths: Record<StockDocType, string> = {
   income: '/purchases/income',
@@ -91,18 +93,14 @@ export function StockDocsPage({ type }: { type: StockDocType }) {
   const { storeId, can } = useStore()
   const [status, setStatus] = useState<string>('')
   const [warehouseId, setWarehouseId] = useState<string>()
-  const { data, isLoading } = useList<StockDocument>('/store/inventory/documents', {
+  // Документы выбранного магазина; перемещения — и входящие на его склады (фильтрует сервер).
+  const list = usePaged<StockDocument>(storeId ? '/store/inventory/documents' : null, {
     type,
     status,
+    store_id: storeId,
     warehouse_id: warehouseId,
-    limit: 200,
   })
-  const own = useList<Warehouse>('/store/warehouses', { store_id: storeId })
-  const ownIds = new Set((own.data ?? []).map((w) => w.id))
-  // Документы выбранного магазина; перемещения — и входящие на его склады.
-  const rows = (data ?? []).filter(
-    (d) => d.store_id === storeId || (type === 'transfer' && !warehouseId && d.to_warehouse_id && ownIds.has(d.to_warehouse_id)),
-  )
+  useEffect(() => setWarehouseId(undefined), [storeId])
 
   return (
     <NeedStore>
@@ -134,13 +132,14 @@ export function StockDocsPage({ type }: { type: StockDocType }) {
           placeholder="Все склады"
         />
       </PageTitle>
+      <LoadError error={list.error} retry={() => list.refetch()} />
       <Card styles={{ body: { padding: 0 } }}>
         <Table<StockDocument>
           rowKey="id"
-          loading={isLoading}
-          dataSource={rows}
+          loading={list.isLoading || list.isFetching}
+          dataSource={list.items}
           scroll={{ x: true }}
-          pagination={{ pageSize: 50, hideOnSinglePage: true }}
+          pagination={list.pagination}
           onRow={(r) => ({ onClick: () => nav(`${docPaths[type]}/${r.id}`), style: { cursor: 'pointer' } })}
           columns={[
             { title: '№', dataIndex: 'number', width: 70 },
@@ -229,7 +228,7 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
       product_name: i.product_name,
       unit_short: i.unit_short,
       qty: trimNum(i.qty, 3),
-      price: trimNum(i.price),
+      price: trimNum(i.price, 4),
       expected_qty: i.expected_qty,
     }))
     setLines(ls.length || d.status !== 'draft' ? ls : [newLine()])
@@ -267,7 +266,7 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
       items: items.map((l) => ({
         product_id: l.product_id,
         qty: trimNum(l.qty, 3),
-        ...(spec.price && l.price !== null && l.price !== '' ? { price: trimNum(l.price) } : {}),
+        ...(spec.price && l.price !== null && l.price !== '' ? { price: trimNum(l.price, 4) } : {}),
       })),
     }
   }
@@ -381,7 +380,13 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
             {spec.counterparty && (
               <Col xs={24} md={12} lg={8}>
                 <Form.Item name="counterparty_id" label="Поставщик" rules={[{ required: true, message: 'Выберите поставщика' }]}>
-                  <RemoteSelect path="/store/finance/counterparties" params={{ limit: 200 }} placeholder="Контрагент" />
+                  <RemoteSelect<Counterparty>
+                    path="/store/finance/counterparties"
+                    search
+                    filter={(c) => c.is_active || c.id === d?.counterparty_id}
+                    selectedLabel={d?.counterparty_name ?? undefined}
+                    placeholder="Поиск по названию или телефону"
+                  />
                 </Form.Item>
               </Col>
             )}
@@ -479,7 +484,7 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
                     width: 170,
                     render: (_: unknown, l: Line) =>
                       readOnly ? (
-                        money(l.price, priceSuffix)
+                        unitPrice(l.price, priceSuffix)
                       ) : (
                         <Num value={l.price} onChange={(v) => update(l.key, { price: v })} placeholder={spec.price === 'optional' ? 'себестоимость' : ''} />
                       ),

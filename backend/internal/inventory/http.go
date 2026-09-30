@@ -64,7 +64,7 @@ func (m *Module) list(w http.ResponseWriter, r *http.Request) {
 			return httpx.List[Document]{}, err
 		}
 		items, err := m.svc.List(r.Context(), pr(r), Filter{
-			Type: q.Get("type"), Status: q.Get("status"), WarehouseID: q.Get("warehouse_id"),
+			Type: q.Get("type"), Status: q.Get("status"), WarehouseID: q.Get("warehouse_id"), StoreID: q.Get("store_id"),
 			From: from, To: to, Page: httpx.PageFrom(r),
 		})
 		return httpx.List[Document]{Items: items}, err

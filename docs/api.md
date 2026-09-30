@@ -127,7 +127,7 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 
 | Метод | Путь | Описание |
 | --- | --- | --- |
-| GET | `/documents?type=&status=&warehouse_id=&from=&to=` | список |
+| GET | `/documents?type=&status=&store_id=&warehouse_id=&from=&to=&limit=&offset=` | список, новые сверху; `store_id` — документы складов магазина, перемещения — и входящие на его склады |
 | POST | `/documents` | черновик `{"type", "warehouse_id", ..., "items": [{"product_id", "qty", "price"?}]}` |
 | GET | `/documents/{id}` | со строками; у инвентаризации после проведения `expected_qty` |
 | PATCH | `/documents/{id}` | черновик: `counterparty_id`, `currency`, `reason`, `note`, `items` (целиком) |
@@ -136,6 +136,7 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 | GET | `/stock?warehouse_id=&store_id=&product_id=&q=` | остатки с `avg_cost`, `total_cost`, `avg_cost_usd` |
 | GET | `/movements?warehouse_id=&product_id=` | история движения товара |
 
+Цена в строке (`price`) — до 4 знаков после точки (`"1234.5678"`), так же и в ответе.
 Себестоимость партии хранится в UZS и USD по курсу на момент проведения. Приход в USD без установленного курса не проводится.
 Номера документов — свои для каждого вида в сети.
 
