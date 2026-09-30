@@ -65,9 +65,30 @@ type SettingsInput struct {
 	DeliveryRadiusM *int               `json:"delivery_radius_m"`
 	WorkingHours    *[]WorkingHours    `json:"working_hours"`
 	Rules           *[]Rule            `json:"rules"`
-	EtaMin          *int               `json:"eta_min"`
-	EtaMax          *int               `json:"eta_max"`
+	EtaMin          OptInt             `json:"eta_min"` // null — убрать обещанное время
+	EtaMax          OptInt             `json:"eta_max"`
 	Slots           *SlotSettingsInput `json:"slots"`
+}
+
+// OptInt — число, которое можно явно сбросить: поле не передано — не
+// менять, null — очистить, число — записать.
+type OptInt struct {
+	Set   bool
+	Value *int
+}
+
+func (o *OptInt) UnmarshalJSON(b []byte) error {
+	o.Set = true
+	if string(b) == "null" {
+		o.Value = nil
+		return nil
+	}
+	var v int
+	if err := json.Unmarshal(b, &v); err != nil {
+		return errors.New("ожидается целое число или null")
+	}
+	o.Value = &v
+	return nil
 }
 
 func checkStore(p *identity.Principal, storeID string) error {
@@ -169,12 +190,12 @@ func (s *Service) SaveSettings(ctx context.Context, p *identity.Principal, store
 	if in.DeliveryRadiusM != nil && (*in.DeliveryRadiusM < 0 || *in.DeliveryRadiusM > 100_000) {
 		return Settings{}, apperr.Validation("delivery_radius_m: от 0 до 100 000 метров")
 	}
-	for _, v := range []*int{in.EtaMin, in.EtaMax} {
+	for _, v := range []*int{in.EtaMin.Value, in.EtaMax.Value} {
 		if v != nil && (*v < 5 || *v > 600) {
 			return Settings{}, apperr.Validation("eta_min/eta_max: от 5 до 600 минут")
 		}
 	}
-	if in.EtaMin != nil && in.EtaMax != nil && *in.EtaMin > *in.EtaMax {
+	if in.EtaMin.Value != nil && in.EtaMax.Value != nil && *in.EtaMin.Value > *in.EtaMax.Value {
 		return Settings{}, apperr.Validation("eta_min: не больше eta_max")
 	}
 	if in.WorkingHours != nil {
@@ -224,9 +245,10 @@ func (s *Service) SaveSettings(ctx context.Context, p *identity.Principal, store
 			UPDATE stores SET accepts_online = COALESCE($3, accepts_online),
 			       min_order_amount = COALESCE($4::numeric, min_order_amount),
 			       delivery_radius_m = COALESCE($5, delivery_radius_m),
-			       eta_min = COALESCE($6, eta_min),
-			       eta_max = COALESCE($7, eta_max)
-			WHERE id = $1 AND network_id = $2`, storeID, p.NetworkID, in.AcceptsOnline, minOrder, in.DeliveryRadiusM, in.EtaMin, in.EtaMax); err != nil {
+			       eta_min = CASE WHEN $6 THEN $7::int ELSE eta_min END,
+			       eta_max = CASE WHEN $8 THEN $9::int ELSE eta_max END
+			WHERE id = $1 AND network_id = $2`, storeID, p.NetworkID, in.AcceptsOnline, minOrder, in.DeliveryRadiusM,
+			in.EtaMin.Set, in.EtaMin.Value, in.EtaMax.Set, in.EtaMax.Value); err != nil {
 			if db.IsCheckViolation(err) {
 				return apperr.Validation("eta_min: не больше eta_max")
 			}

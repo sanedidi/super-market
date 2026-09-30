@@ -55,15 +55,16 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/store/price-types", m.createPriceType)
 		r.Patch("/store/price-types/{id}", m.updatePriceType)
 
-		r.Get("/store/price-documents", m.listPriceDocs)
+		prices := m.auth.Allow(identity.PermPricesManage)
+		r.With(prices).Get("/store/price-documents", m.listPriceDocs)
 		r.Post("/store/price-documents", m.createPriceDoc)
-		r.Get("/store/price-documents/{id}", m.getPriceDoc)
+		r.With(prices).Get("/store/price-documents/{id}", m.getPriceDoc)
 		r.Patch("/store/price-documents/{id}", m.updatePriceDoc)
 		r.Post("/store/price-documents/{id}/post", m.postPriceDoc)
 
-		r.Get("/store/promotions", m.listPromotions)
+		r.With(prices).Get("/store/promotions", m.listPromotions)
 		r.Post("/store/promotions", m.createPromotion)
-		r.Get("/store/promotions/{id}", m.getPromotion)
+		r.With(prices).Get("/store/promotions/{id}", m.getPromotion)
 		r.Patch("/store/promotions/{id}", m.updatePromotion)
 	})
 }
@@ -184,7 +185,7 @@ func (m *Module) storeUpdateProduct(w http.ResponseWriter, r *http.Request) {
 func (m *Module) listPriceTypes(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[PriceType], error) {
 		items, err := m.svc.ListPriceTypes(r.Context(), pr(r))
-		return httpx.List[PriceType]{Items: items}, err
+		return httpx.List[PriceType]{Items: httpx.PageSlice(r, items)}, err
 	})
 }
 

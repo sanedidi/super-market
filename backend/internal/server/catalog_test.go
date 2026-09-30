@@ -136,6 +136,11 @@ func TestCatalogFlow(t *testing.T) {
 	if p, _ := priceOf(""); p != "15000.00" {
 		t.Fatalf("draft must not change price, got %s", p)
 	}
+	// Черновик показывает действующую цену строки.
+	draft := a.expect(a.do("GET", "/store/price-documents/"+doc.str("id"), ownerTok, nil), 200, "draft doc")
+	if cur := draft.Body["items"].([]any)[0].(map[string]any)["current_price"]; cur != "15000.00" {
+		t.Fatalf("draft current_price = %v", cur)
+	}
 	a.expect(a.do("POST", "/store/price-documents/"+doc.str("id")+"/post", ownerTok, nil), 200, "post network doc")
 	a.expect(a.do("POST", "/store/price-documents/"+doc.str("id")+"/post", ownerTok, nil), 409, "post twice")
 	a.expect(a.do("PATCH", "/store/price-documents/"+doc.str("id"), ownerTok, map[string]any{"note": "x"}), 409, "edit posted")
@@ -163,6 +168,9 @@ func TestCatalogFlow(t *testing.T) {
 	posted = a.expect(a.do("POST", "/store/price-documents/"+sdoc2.str("id")+"/post", ownerTok, nil), 200, "post store doc 2")
 	if prev := posted.Body["items"].([]any)[0].(map[string]any)["previous_price"]; prev != "16000.00" {
 		t.Fatalf("previous_price = %v", prev)
+	}
+	if cur := posted.Body["items"].([]any)[0].(map[string]any)["current_price"]; cur != "16500.00" {
+		t.Fatalf("store doc current_price = %v", cur)
 	}
 
 	// Магазин переключает приложение на тип «Онлайн»: там цены ещё нет — базовая.

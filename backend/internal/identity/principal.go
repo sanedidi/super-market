@@ -91,6 +91,19 @@ func (p *Principal) Require(perm string) error {
 	return nil
 }
 
+// CanAny — есть ли у сотрудника хотя бы одно из прав.
+func (p *Principal) CanAny(perms ...string) bool {
+	return slices.ContainsFunc(perms, p.Can)
+}
+
+// RequireAny возвращает 403, если нет ни одного из прав.
+func (p *Principal) RequireAny(perms ...string) error {
+	if !p.CanAny(perms...) {
+		return apperr.Forbidden("недостаточно прав").WithDetails(map[string]any{"permission": perms[0], "any_of": perms})
+	}
+	return nil
+}
+
 // SeesAllStores — сотрудник видит все магазины сети.
 func (p *Principal) SeesAllStores() bool { return p.IsOwner || p.AllStores }
 

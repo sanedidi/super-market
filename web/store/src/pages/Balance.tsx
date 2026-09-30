@@ -1,12 +1,13 @@
 // Баланс сети на платформе, вывод денег и подписка.
 import { useState } from 'react'
 import { Alert, Button, Card, Col, Descriptions, Form, Input, Modal, Popconfirm, Row, Statistic, Table, Tabs, Tag } from 'antd'
-import { PageTitle, StatusTag, api, date, dateTime, money, periodParams, useAction, useItem, useList } from '@sm/shared'
+import { LoadError, PageTitle, PagedTable, StatusTag, api, date, dateTime, money, periodParams, useAction, useItem, usePaged } from '@sm/shared'
 import { RangeFilter, Num, Signed, thisMonth, type Range } from '../ui'
 import type { Balance, BalanceEntry, Billing, Invoice, Payout } from '../types'
 
 const entryKinds: Record<string, string> = {
   order: 'Онлайн-заказ',
+  refund: 'Возврат покупателю',
   payout: 'Вывод',
   subscription: 'Подписка',
   adjustment: 'Корректировка',
@@ -69,19 +70,20 @@ export function BalancePage() {
 
 function Entries() {
   const [range, setRange] = useState<Range | null>(thisMonth)
-  const { data, isLoading } = useList<BalanceEntry>('/store/balance/entries', { ...periodParams(range), limit: 200 })
+  const list = usePaged<BalanceEntry>('/store/balance/entries', periodParams(range))
   return (
     <>
       <div style={{ marginBottom: 12 }}>
         <RangeFilter value={range} onChange={setRange} allowClear />
       </div>
+      <LoadError error={list.error} retry={() => list.refetch()} />
       <Table<BalanceEntry>
         rowKey="id"
         size="small"
-        loading={isLoading}
-        dataSource={data}
+        loading={list.isLoading || list.isFetching}
+        dataSource={list.items}
         scroll={{ x: true }}
-        pagination={{ pageSize: 50, hideOnSinglePage: true }}
+        pagination={list.pagination}
         columns={[
           { title: 'Дата', dataIndex: 'created_at', render: dateTime },
           { title: 'Вид', dataIndex: 'kind', render: (v: string) => entryKinds[v] ?? v },
@@ -98,15 +100,10 @@ function Entries() {
 const payoutTitles: Record<string, string> = { requested: 'Запрошен', paid: 'Выплачен', rejected: 'Отклонён' }
 
 function Payouts() {
-  const { data, isLoading } = useList<Payout>('/store/payouts', { limit: 200 })
   return (
-    <Table<Payout>
-      rowKey="id"
+    <PagedTable<Payout>
+      path="/store/payouts"
       size="small"
-      loading={isLoading}
-      dataSource={data}
-      scroll={{ x: true }}
-      pagination={{ pageSize: 50, hideOnSinglePage: true }}
       columns={[
         { title: '№', dataIndex: 'number' },
         { title: 'Дата', dataIndex: 'created_at', render: dateTime },
@@ -144,7 +141,7 @@ function PayoutModal({ open, onClose, available }: { open: boolean; onClose: () 
 }
 
 function Subscription({ billing }: { billing?: Billing }) {
-  const { data, isLoading } = useList<Invoice>('/store/billing/invoices')
+
   const pay = useAction((id: string) => api.post(`/store/billing/invoices/${id}/pay`), { success: 'Счёт оплачен с баланса' })
   return (
     <>
@@ -160,13 +157,10 @@ function Subscription({ billing }: { billing?: Billing }) {
           <Descriptions.Item label="Просрочка">{billing.overdue ? <Tag color="red">Да</Tag> : 'Нет'}</Descriptions.Item>
         </Descriptions>
       )}
-      <Table<Invoice>
-        rowKey="id"
+      <PagedTable<Invoice>
+        path="/store/billing/invoices"
+        pageSize={24}
         size="small"
-        loading={isLoading}
-        dataSource={data}
-        scroll={{ x: true }}
-        pagination={{ pageSize: 24, hideOnSinglePage: true }}
         locale={{ emptyText: 'Счетов пока нет' }}
         columns={[
           { title: 'Период', dataIndex: 'period' },

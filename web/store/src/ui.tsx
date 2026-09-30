@@ -138,6 +138,16 @@ export function sum(values: (string | number | null | undefined)[]) {
   return values.reduce<number>((s, v) => s + (Number(v) || 0), 0)
 }
 
+const nf4 = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 4 })
+
+/** Цена за единицу: до 4 знаков (себестоимость, цены в USD). */
+export function unitPrice(v: string | number | null | undefined, suffix = ''): string {
+  if (v === null || v === undefined || v === '') return '—'
+  const n = Number(v)
+  if (Number.isNaN(n)) return String(v)
+  return nf4.format(n) + (suffix ? ' ' + suffix : '')
+}
+
 /** "5000.0000" → "5000", "12.50" → "12.5": API отдаёт лишние знаки, а принимает сумму максимум с 2 знаками. */
 export function trimNum(v: string | null | undefined, digits = 2): string | null {
   if (v === null || v === undefined || v === '') return null

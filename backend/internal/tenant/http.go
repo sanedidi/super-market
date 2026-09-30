@@ -152,7 +152,7 @@ func (m *Module) me(w http.ResponseWriter, r *http.Request) {
 func (m *Module) listStores(w http.ResponseWriter, r *http.Request) {
 	handle(m, w, r, http.StatusOK, func() (list[Store], error) {
 		items, err := m.svc.ListStores(r.Context(), identity.FromContext(r.Context()))
-		return list[Store]{items}, err
+		return list[Store]{httpx.PageSlice(r, items)}, err
 	})
 }
 
@@ -182,7 +182,7 @@ func (m *Module) updateStore(w http.ResponseWriter, r *http.Request) {
 func (m *Module) listWarehouses(w http.ResponseWriter, r *http.Request) {
 	handle(m, w, r, http.StatusOK, func() (list[Warehouse], error) {
 		items, err := m.svc.ListWarehouses(r.Context(), identity.FromContext(r.Context()), r.URL.Query().Get("store_id"))
-		return list[Warehouse]{items}, err
+		return list[Warehouse]{httpx.PageSlice(r, items)}, err
 	})
 }
 

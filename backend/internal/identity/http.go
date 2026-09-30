@@ -30,11 +30,12 @@ func (m *Module) Routes(r chi.Router) {
 
 	r.Group(func(r chi.Router) {
 		r.Use(m.auth.Require(AppStore))
-		r.Get("/store/permissions", m.listPermissions)
-		r.Get("/store/roles", m.listRoles)
+		staff := m.auth.Allow(PermStaffManage)
+		r.With(staff).Get("/store/permissions", m.listPermissions)
+		r.With(staff).Get("/store/roles", m.listRoles)
 		r.Post("/store/roles", m.createRole)
 		r.Patch("/store/roles/{id}", m.updateRole)
-		r.Get("/store/employees", m.listEmployees)
+		r.With(staff).Get("/store/employees", m.listEmployees)
 		r.Post("/store/employees", m.createEmployee)
 		r.Patch("/store/employees/{id}", m.updateEmployee)
 	})
@@ -116,7 +117,7 @@ func (m *Module) listRoles(w http.ResponseWriter, r *http.Request) {
 		m.fail(w, r, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": roles})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": httpx.PageSlice(r, roles)})
 }
 
 func (m *Module) createRole(w http.ResponseWriter, r *http.Request) {

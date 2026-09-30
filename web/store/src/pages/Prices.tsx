@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Alert, App, Button, Card, Col, Form, Input, Popconfirm, Row, Select, Space, Table, Typography } from 'antd'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
-import { PageTitle, RemoteSelect, StatusTag, api, dateTime, errorText, money, useItem, useList } from '@sm/shared'
+import { LoadError, PageTitle, RemoteSelect, StatusTag, api, dateTime, errorText, money, useItem, useList, usePaged } from '@sm/shared'
 import { useStore } from '../ctx'
 import { Num, ProductSelect, trimNum } from '../ui'
 import type { PriceDocument, PriceType } from '../types'
@@ -13,7 +13,7 @@ const BASE = '/sales/prices'
 export function PriceDocsPage() {
   const nav = useNavigate()
   const { can } = useStore()
-  const { data, isLoading } = useList<PriceDocument>('/store/price-documents', { limit: 200 })
+  const list = usePaged<PriceDocument>('/store/price-documents')
   return (
     <>
       <PageTitle
@@ -26,13 +26,14 @@ export function PriceDocsPage() {
           )
         }
       />
+      <LoadError error={list.error} retry={() => list.refetch()} />
       <Card styles={{ body: { padding: 0 } }}>
         <Table<PriceDocument>
           rowKey="id"
-          loading={isLoading}
-          dataSource={data}
+          loading={list.isLoading || list.isFetching}
+          dataSource={list.items}
           scroll={{ x: true }}
-          pagination={{ pageSize: 50, hideOnSinglePage: true }}
+          pagination={list.pagination}
           onRow={(r) => ({ onClick: () => nav(`${BASE}/${r.id}`), style: { cursor: 'pointer' } })}
           columns={[
             { title: '№', dataIndex: 'number', width: 70 },
@@ -92,6 +93,7 @@ export function PriceDocEditor() {
       product_name: i.product_name,
       new_price: trimNum(i.new_price),
       previous_price: i.previous_price,
+      current: i.current_price,
     }))
     setLines(d.status === 'draft' ? [...ls, blank()] : ls)
   }, [d, isNew, types.data, storeId, form])
@@ -232,7 +234,8 @@ export function PriceDocEditor() {
                   />
                 ),
             },
-            readOnly
+            // Проведённый документ — цена до него; черновик — действующая сейчас.
+            d && d.status !== 'draft'
               ? { title: 'Прежняя цена', key: 'prev', align: 'right', render: (_, l) => money(l.previous_price) }
               : { title: 'Текущая цена', key: 'cur', align: 'right', render: (_, l) => money(l.current) },
             {

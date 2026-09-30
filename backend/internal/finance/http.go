@@ -26,39 +26,42 @@ func NewModule(svc *Service, auth *identity.Authenticator, log *slog.Logger) *Mo
 func (m *Module) Routes(r chi.Router) {
 	r.Route("/store/finance", func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppStore))
+		// Чтение разделов: способы оплаты нужны кассе, остальное — по правам.
+		fin := m.auth.Allow(identity.PermFinanceManage)
+		cps := m.auth.Allow(identity.PermCounterpartiesManage, identity.PermInventoryManage, identity.PermFinanceManage)
 
-		r.Get("/rates", m.listRates)
+		r.With(m.auth.Allow(identity.PermFinanceManage, identity.PermInventoryManage)).Get("/rates", m.listRates)
 		r.Post("/rates", m.setRate)
 
-		r.Get("/counterparty-types", m.listCounterpartyTypes)
+		r.With(cps).Get("/counterparty-types", m.listCounterpartyTypes)
 		r.Post("/counterparty-types", m.createCounterpartyType)
 		r.Patch("/counterparty-types/{id}", m.updateCounterpartyType)
 
-		r.Get("/counterparties", m.listCounterparties)
+		r.With(cps).Get("/counterparties", m.listCounterparties)
 		r.Post("/counterparties", m.createCounterparty)
-		r.Get("/counterparties/{id}", m.getCounterparty)
+		r.With(cps).Get("/counterparties/{id}", m.getCounterparty)
 		r.Patch("/counterparties/{id}", m.updateCounterparty)
-		r.Get("/counterparties/{id}/entries", m.counterpartyEntries)
+		r.With(cps).Get("/counterparties/{id}/entries", m.counterpartyEntries)
 
-		r.Get("/reasons", m.listReasons)
+		r.With(fin).Get("/reasons", m.listReasons)
 		r.Post("/reasons", m.createReason)
 		r.Patch("/reasons/{id}", m.updateReason)
 
-		r.Get("/cashboxes", m.listCashboxes)
+		r.With(fin).Get("/cashboxes", m.listCashboxes)
 		r.Post("/cashboxes", m.createCashbox)
 		r.Patch("/cashboxes/{id}", m.updateCashbox)
-		r.Get("/cashboxes/{id}/entries", m.cashboxEntries)
+		r.With(fin).Get("/cashboxes/{id}/entries", m.cashboxEntries)
 
 		r.Get("/payment-methods", m.listPaymentMethods)
 		r.Post("/payment-methods", m.createPaymentMethod)
 		r.Patch("/payment-methods/{id}", m.updatePaymentMethod)
 
-		r.Get("/operations", m.listOperations)
+		r.With(fin).Get("/operations", m.listOperations)
 		r.Post("/operations", m.createOperation)
 
-		r.Get("/transfers", m.listTransfers("transfer"))
+		r.With(fin).Get("/transfers", m.listTransfers("transfer"))
 		r.Post("/transfers", m.createTransfer("transfer"))
-		r.Get("/handovers", m.listTransfers("handover"))
+		r.With(fin).Get("/handovers", m.listTransfers("handover"))
 		r.Post("/handovers", m.createTransfer("handover"))
 	})
 }
@@ -86,7 +89,8 @@ func (m *Module) setRate(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) listCounterpartyTypes(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[CounterpartyType], error) {
-		return list(m.svc.ListCounterpartyTypes(r.Context(), pr(r)))
+		items, err := m.svc.ListCounterpartyTypes(r.Context(), pr(r))
+		return list(httpx.PageSlice(r, items), err)
 	})
 }
 
@@ -134,7 +138,8 @@ func (m *Module) counterpartyEntries(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) listReasons(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Reason], error) {
-		return list(m.svc.ListReasons(r.Context(), pr(r)))
+		items, err := m.svc.ListReasons(r.Context(), pr(r))
+		return list(httpx.PageSlice(r, items), err)
 	})
 }
 
@@ -152,7 +157,8 @@ func (m *Module) updateReason(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) listCashboxes(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Cashbox], error) {
-		return list(m.svc.ListCashboxes(r.Context(), pr(r)))
+		items, err := m.svc.ListCashboxes(r.Context(), pr(r))
+		return list(httpx.PageSlice(r, items), err)
 	})
 }
 
@@ -176,7 +182,8 @@ func (m *Module) cashboxEntries(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) listPaymentMethods(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[PaymentMethod], error) {
-		return list(m.svc.ListPaymentMethods(r.Context(), pr(r), r.URL.Query().Get("store_id")))
+		items, err := m.svc.ListPaymentMethods(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+		return list(httpx.PageSlice(r, items), err)
 	})
 }
 

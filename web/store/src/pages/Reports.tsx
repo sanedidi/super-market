@@ -11,7 +11,12 @@ import type { CashFlow, CashboxFlow, ProfitLoss, ReasonAmount } from '../types'
 function useReportFilters() {
   const { storeId, stores, me } = useStore()
   const [range, setRange] = useState<Range | null>(thisMonth)
-  const [store, setStore] = useState<string>(me?.all_stores ? '' : storeId)
+  const seesAll = !!me && (me.is_owner || me.all_stores)
+  // Пока пользователь сам не выбрал — вся сеть (если доступна) или текущий магазин;
+  // значение вычисляется, поэтому подхватывает /store/me и магазины после загрузки.
+  const [picked, setPicked] = useState<string | null>(null)
+  const store = picked ?? (seesAll ? '' : storeId)
+  const setStore = setPicked
   const params = { ...periodParams(range), store_id: store || undefined }
   const filters = (
     <>
@@ -21,7 +26,7 @@ function useReportFilters() {
         onChange={setStore}
         style={{ minWidth: 200 }}
         options={[
-          ...(me?.all_stores ? [{ value: '', label: 'Вся сеть' }] : []),
+          ...(seesAll ? [{ value: '', label: 'Вся сеть' }] : []),
           ...stores.map((s) => ({ value: s.id, label: s.name })),
         ]}
       />

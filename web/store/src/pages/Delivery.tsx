@@ -23,7 +23,7 @@ import {
 } from 'antd'
 import { ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
-import { ActiveTag, PageTitle, api, money, useAction, useItem, useList } from '@sm/shared'
+import { ActiveTag, LoadError, PageTitle, api, money, useAction, useItem, useList } from '@sm/shared'
 import { useStore } from '../ctx'
 import { NeedStore, Num } from '../ui'
 import type { DeliveryRule, DeliverySettings, SlotSettings, Zone } from '../types'
@@ -72,16 +72,18 @@ interface RuleRow {
 let seq = 0
 
 export function DeliveryPage() {
+  const { storeId } = useStore()
+  // key: при смене магазина форма создаётся заново и не несёт настройки прежнего.
   return (
     <NeedStore>
-      <DeliveryInner />
+      <DeliveryInner key={storeId} />
     </NeedStore>
   )
 }
 
 function DeliveryInner() {
   const { storeId, store } = useStore()
-  const { data, isLoading } = useItem<DeliverySettings>(`/store/stores/${storeId}/delivery`)
+  const { data, isLoading, error, refetch } = useItem<DeliverySettings>(`/store/stores/${storeId}/delivery`)
   const [accepts, setAccepts] = useState(false)
   const [minOrder, setMinOrder] = useState<string | null>('0')
   const [radius, setRadius] = useState<number | null>(0)
@@ -125,8 +127,9 @@ function DeliveryInner() {
         accepts_online: accepts,
         min_order_amount: minOrder || '0',
         delivery_radius_m: radius ?? 0,
-        ...(etaMin ? { eta_min: etaMin } : {}),
-        ...(etaMax ? { eta_max: etaMax } : {}),
+        // null очищает обещанное время доставки
+        eta_min: etaMin ?? null,
+        eta_max: etaMax ?? null,
         slots,
         working_hours: days
           .filter((d) => d.on && d.opens && d.closes)
@@ -156,11 +159,12 @@ function DeliveryInner() {
       <PageTitle
         title={`Доставка${store ? ' — ' + store.name : ''}`}
         extra={
-          <Button type="primary" loading={save.isPending} onClick={() => save.mutate(undefined)}>
+          <Button type="primary" loading={save.isPending} disabled={isLoading || !data} onClick={() => save.mutate(undefined)}>
             Сохранить
           </Button>
         }
       />
+      <LoadError error={error} retry={() => refetch()} />
       {noGeo && (
         <Alert
           type="warning"
@@ -192,11 +196,22 @@ function DeliveryInner() {
                   </Form.Item>
                 </Col>
               </Row>
-              <Form.Item label="Время доставки в приложении, минут" extra="Покупатель увидит «25–35 мин»">
+              <Form.Item label="Время доставки в приложении, минут" extra="Покупатель увидит «25–35 мин». Пустые поля — время не показывается">
                 <Space>
                   <InputNumber value={etaMin} onChange={setEtaMin} min={5} max={600} placeholder="от" />
                   —
                   <InputNumber value={etaMax} onChange={setEtaMax} min={5} max={600} placeholder="до" />
+                  {(etaMin !== null || etaMax !== null) && (
+                    <Button
+                      type="link"
+                      onClick={() => {
+                        setEtaMin(null)
+                        setEtaMax(null)
+                      }}
+                    >
+                      Не показывать
+                    </Button>
+                  )}
                 </Space>
               </Form.Item>
             </Form>

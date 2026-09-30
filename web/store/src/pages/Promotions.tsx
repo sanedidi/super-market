@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Alert, App, Button, Card, Col, DatePicker, Form, Input, Row, Segmented, Select, Space, Switch, Table, Tag, Typography } from 'antd'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
-import { PageTitle, api, dateTime, errorText, money, useItem, useList } from '@sm/shared'
+import { LoadError, PageTitle, api, dateTime, errorText, money, useItem, usePaged } from '@sm/shared'
 import { useStore } from '../ctx'
 import { Num, ProductSelect, trimNum } from '../ui'
 import type { Promotion } from '../types'
@@ -27,7 +27,7 @@ export function PromotionsPage() {
   const nav = useNavigate()
   const { can, stores } = useStore()
   const [status, setStatus] = useState<string>('')
-  const { data, isLoading } = useList<Promotion>('/store/promotions', { status: status || undefined, limit: 200 })
+  const list = usePaged<Promotion>('/store/promotions', { status: status || undefined })
   const storeName = (ids: string[] | null) =>
     !ids || ids.length === 0 ? 'Все магазины' : ids.map((id) => stores.find((s) => s.id === id)?.name ?? '—').join(', ')
   return (
@@ -53,13 +53,14 @@ export function PromotionsPage() {
           ]}
         />
       </PageTitle>
+      <LoadError error={list.error} retry={() => list.refetch()} />
       <Card styles={{ body: { padding: 0 } }}>
         <Table<Promotion>
           rowKey="id"
-          loading={isLoading}
-          dataSource={data}
+          loading={list.isLoading || list.isFetching}
+          dataSource={list.items}
           scroll={{ x: true }}
-          pagination={{ pageSize: 50, hideOnSinglePage: true }}
+          pagination={list.pagination}
           onRow={(r) => ({ onClick: () => nav(`${BASE}/${r.id}`), style: { cursor: 'pointer' } })}
           columns={[
             { title: 'Название', dataIndex: 'name' },

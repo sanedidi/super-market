@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { Alert, Button, Card, Col, Form, Input, Modal, Radio, Row, Select, Table, Tag, Tooltip, Typography } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
-import { PageTitle, RemoteSelect, api, money, useAction, useList } from '@sm/shared'
+import { LoadError, PageTitle, RemoteSelect, api, money, useAction, usePaged } from '@sm/shared'
 import { useStore } from '../ctx'
 import { Num } from '../ui'
 import type { DictItem, Product } from '../types'
@@ -27,11 +27,10 @@ export function ProductsPage() {
   const [categoryId, setCategoryId] = useState<string>()
   const [editing, setEditing] = useState<Product | null>(null)
   const [open, setOpen] = useState(false)
-  const { data, isLoading } = useList<Product>('/store/products', {
-    q,
+  const list = usePaged<Product>('/store/products', {
+    q: q || undefined,
     category_id: categoryId,
     store_id: storeId || undefined,
-    limit: 200,
   })
   const manage = can('catalog.manage')
 
@@ -57,13 +56,14 @@ export function ProductsPage() {
         <Input.Search placeholder="Название или штрихкод" allowClear onSearch={setQ} style={{ width: 240 }} />
         <RemoteSelect<DictItem> path="/store/catalog/categories" value={categoryId} onChange={setCategoryId} allowClear placeholder="Все категории" />
       </PageTitle>
+      <LoadError error={list.error} retry={() => list.refetch()} />
       <Card styles={{ body: { padding: 0 } }}>
         <Table<Product>
           rowKey="id"
-          loading={isLoading}
-          dataSource={data}
+          loading={list.isLoading || list.isFetching}
+          dataSource={list.items}
           scroll={{ x: true }}
-          pagination={{ pageSize: 50, hideOnSinglePage: true }}
+          pagination={list.pagination}
           columns={[
             {
               title: 'Товар',
@@ -126,8 +126,9 @@ function ProductModal({ open, editing, onClose }: { open: boolean; editing: Prod
       const body = {
         ...v,
         description: v.description ?? '',
-        brand_id: v.brand_id ?? undefined,
-        color_id: v.color_id ?? undefined,
+        // Пустая строка убирает бренд или цвет у существующего товара.
+        brand_id: v.brand_id ?? (editing ? '' : undefined),
+        color_id: v.color_id ?? (editing ? '' : undefined),
         barcodes: v.barcodes ?? [],
         images: v.images ?? [],
       }

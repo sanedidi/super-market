@@ -64,15 +64,18 @@ func (m *Module) Routes(r chi.Router) {
 	// Панель магазина.
 	r.Group(func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppStore))
-		r.Get("/store/stores/{id}/delivery", m.getDelivery)
+		// Курьеры (orders.deliver) работают через /courier/*.
+		manage := m.auth.Allow(identity.PermOrdersManage)
+		dlv := m.auth.Allow(identity.PermStoresManage, identity.PermOrdersManage)
+		r.With(dlv).Get("/store/stores/{id}/delivery", m.getDelivery)
 		r.Put("/store/stores/{id}/delivery", m.saveDelivery)
-		r.Get("/store/stores/{id}/zones", m.listZones)
+		r.With(dlv).Get("/store/stores/{id}/zones", m.listZones)
 		r.Post("/store/stores/{id}/zones", m.createZone)
 		r.Patch("/store/stores/{id}/zones/{zone}", m.updateZone)
 		r.Delete("/store/stores/{id}/zones/{zone}", m.deleteZone)
 
-		r.Get("/store/orders", m.storeList)
-		r.Get("/store/orders/{id}", m.storeGet)
+		r.With(manage).Get("/store/orders", m.storeList)
+		r.With(manage).Get("/store/orders/{id}", m.storeGet)
 		r.Post("/store/orders/{id}/accept", m.act(m.svc.Accept))
 		r.Post("/store/orders/{id}/start-picking", m.act(m.svc.StartPicking))
 		r.Post("/store/orders/{id}/picked", m.picked)
@@ -350,7 +353,8 @@ func (m *Module) storeList(w http.ResponseWriter, r *http.Request) {
 			return httpx.List[Order]{}, err
 		}
 		items, err := m.svc.StoreList(r.Context(), pr(r), ListFilter{
-			StoreID: q.Get("store_id"), Status: q.Get("status"), From: from, To: to, Sort: q.Get("sort"), Page: httpx.PageFrom(r),
+			StoreID: q.Get("store_id"), Status: q.Get("status"), From: from, To: to, Sort: q.Get("sort"), Query: q.Get("q"),
+			Page: httpx.PageFrom(r),
 		})
 		return httpx.List[Order]{Items: items}, err
 	})

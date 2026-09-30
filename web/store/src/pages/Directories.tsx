@@ -25,7 +25,7 @@ export function CounterpartiesPage() {
     <CrudPage<Counterparty>
       title="Контрагенты"
       path="/store/finance/counterparties"
-      params={{ q, limit: 200 }}
+      params={{ q: q || undefined }}
       createLabel="Новый контрагент"
       canCreate={manage}
       canEdit={manage}
@@ -79,7 +79,8 @@ export function CounterpartiesPage() {
           {editing && activeField}
         </>
       )}
-      toBody={(v) => ({ ...v, type_id: v.type_id ?? undefined })}
+      // Пустая строка снимает тип (очищенное поле формы — undefined).
+      toBody={(v) => ({ ...v, type_id: v.type_id ?? '' })}
     />
   )
 }

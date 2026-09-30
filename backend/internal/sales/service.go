@@ -127,8 +127,10 @@ type SaleFilter struct {
 	StoreID       string
 	SaleID        string // только для возвратов: возвраты по чеку
 	FiscalPending bool
-	From, To      *time.Time
-	Page          httpx.Page
+	// Query — номер чека (точно) или часть телефона покупателя.
+	Query    string
+	From, To *time.Time
+	Page     httpx.Page
 }
 
 func (s *Service) ListSales(ctx context.Context, p *identity.Principal, f SaleFilter) ([]Sale, error) {
@@ -136,12 +138,28 @@ func (s *Service) ListSales(ctx context.Context, p *identity.Principal, f SaleFi
 		WHERE s.network_id = $1 AND ($2 OR s.store_id = ANY($3::uuid[]))
 		  AND ($4 = '' OR s.store_id::text = $4) AND (NOT $5 OR s.fiscal_status = 'pending')
 		  AND ($6::timestamptz IS NULL OR s.sold_at >= $6) AND ($7::timestamptz IS NULL OR s.sold_at < $7)
+		  AND ($10 = '' OR s.number::text = $10 OR ($11 <> '' AND regexp_replace(s.customer_phone, '\D', '', 'g') LIKE '%' || $11 || '%'))
 		ORDER BY s.sold_at DESC LIMIT $8 OFFSET $9`,
-		p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.StoreID, f.FiscalPending, f.From, f.To, f.Page.Limit, f.Page.Offset)
+		p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.StoreID, f.FiscalPending, f.From, f.To, f.Page.Limit, f.Page.Offset,
+		f.Query, phoneDigits(f.Query))
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, scanSale)
+}
+
+// phoneDigits — цифры из поиска для сравнения с телефоном (от 3 цифр).
+func phoneDigits(q string) string {
+	d := strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, q)
+	if len(d) < 3 {
+		return ""
+	}
+	return d
 }
 
 // ---------------------------------------------------------------- продажа
@@ -419,6 +437,47 @@ func (s *Service) RegisterFiscal(ctx context.Context, p *identity.Principal, tab
 	_, err = s.pool.Exec(ctx, `UPDATE `+table+` SET fiscal_status = 'registered', fiscal_number = $2, fiscal_sign = $3, fiscal_at = now()
 		WHERE id = $1`, id, in.FiscalNumber, in.FiscalSign)
 	return err
+}
+
+// Summary — итоги продаж за период по всем чекам (не по странице списка).
+type Summary struct {
+	SalesCount   int    `json:"sales_count"`
+	Subtotal     string `json:"subtotal"` // до скидок
+	Discount     string `json:"discount"` // скидки
+	Revenue      string `json:"revenue"`  // выручка по чекам (со скидками)
+	ReturnsCount int    `json:"returns_count"`
+	Returns      string `json:"returns"` // возвращено покупателям
+	Net          string `json:"net"`     // выручка минус возвраты
+}
+
+// Summary считает итоги продаж и возвратов с теми же фильтрами, что и
+// списки (магазин, период, только непробитые). Возвраты — по дате возврата.
+func (s *Service) Summary(ctx context.Context, p *identity.Principal, f SaleFilter) (Summary, error) {
+	if f.StoreID != "" && !httpx.IsUUID(f.StoreID) {
+		return Summary{}, apperr.Validation("store_id: неверный id")
+	}
+	var out Summary
+	err := s.pool.QueryRow(ctx, `
+		WITH sl AS (
+			SELECT count(*)::int AS n, COALESCE(sum(subtotal), 0) AS subtotal, COALESCE(sum(discount), 0) AS discount,
+			       COALESCE(sum(total), 0) AS total
+			FROM sales
+			WHERE network_id = $1 AND ($2 OR store_id = ANY($3::uuid[])) AND ($4 = '' OR store_id::text = $4)
+			  AND (NOT $5 OR fiscal_status = 'pending')
+			  AND ($6::timestamptz IS NULL OR sold_at >= $6) AND ($7::timestamptz IS NULL OR sold_at < $7)
+		), rt AS (
+			SELECT count(*)::int AS n, COALESCE(sum(total), 0) AS total
+			FROM customer_returns
+			WHERE network_id = $1 AND ($2 OR store_id = ANY($3::uuid[])) AND ($4 = '' OR store_id::text = $4)
+			  AND (NOT $5 OR fiscal_status = 'pending')
+			  AND ($6::timestamptz IS NULL OR created_at >= $6) AND ($7::timestamptz IS NULL OR created_at < $7)
+		)
+		SELECT sl.n, sl.subtotal::numeric(18,2)::text, sl.discount::numeric(18,2)::text, sl.total::numeric(18,2)::text,
+		       rt.n, rt.total::numeric(18,2)::text, (sl.total - rt.total)::numeric(18,2)::text
+		FROM sl, rt`,
+		p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.StoreID, f.FiscalPending, f.From, f.To).Scan(
+		&out.SalesCount, &out.Subtotal, &out.Discount, &out.Revenue, &out.ReturnsCount, &out.Returns, &out.Net)
+	return out, err
 }
 
 type FiscalSummary struct {

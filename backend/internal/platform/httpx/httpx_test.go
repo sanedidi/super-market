@@ -95,3 +95,26 @@ func TestOptional(t *testing.T) {
 		t.Error("bad value accepted")
 	}
 }
+
+func TestPageSlice(t *testing.T) {
+	items := []int{1, 2, 3, 4, 5}
+	cases := map[string][]int{
+		"/x":                  {1, 2, 3, 4, 5}, // без limit — весь список
+		"/x?limit=2":          {1, 2},
+		"/x?limit=2&offset=2": {3, 4},
+		"/x?limit=2&offset=4": {5},
+		"/x?limit=2&offset=9": {},
+		"/x?limit=0":          {1, 2, 3, 4, 5}, // limit по умолчанию — 50
+	}
+	for url, want := range cases {
+		got := PageSlice(httptest.NewRequest(http.MethodGet, url, nil), items)
+		if len(got) != len(want) {
+			t.Fatalf("%s: got %v, want %v", url, got, want)
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				t.Fatalf("%s: got %v, want %v", url, got, want)
+			}
+		}
+	}
+}
