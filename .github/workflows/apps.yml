@@ -1,0 +1,47 @@
+name: apps
+
+# Проверка Flutter-приложений: анализатор и тесты. Скриншоты экранов
+# приложения покупателя (golden) — в артефакте client-screens.
+on:
+  push:
+    branches: [main, "client-*"]
+    paths: ["apps/**", ".github/workflows/apps.yml"]
+  pull_request:
+    paths: ["apps/**", ".github/workflows/apps.yml"]
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Versions
+        run: flutter --version
+      - name: Client
+        working-directory: apps/client
+        run: |
+          flutter pub get
+          flutter analyze --no-fatal-infos
+      - name: Client tests and screens
+        working-directory: apps/client
+        run: flutter test --update-goldens
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: client-screens
+          path: apps/client/test/screens/*.png
+          if-no-files-found: ignore
+      - name: Courier
+        working-directory: apps/courier
+        run: |
+          flutter pub get
+          flutter analyze --no-fatal-infos
+      - name: POS
+        working-directory: apps/pos
+        run: |
+          flutter pub get
+          flutter analyze --no-fatal-infos

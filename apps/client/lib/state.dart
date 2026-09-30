@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:sm_core/sm_core.dart';
 
+import 'catalog.dart';
+
 /// Адрес доставки покупателя.
 class Address {
   Address(this.json);
@@ -98,6 +100,7 @@ class AppState extends ChangeNotifier {
         stores = [];
         _storesFor = null;
         catalogStoreId = null;
+        _categories.clear();
         tab = 0;
         banners = [];
         deals = null;
@@ -106,6 +109,7 @@ class AppState extends ChangeNotifier {
         stats = null;
         family = null;
         familyRequestId = null;
+        unread = 0;
       }
     });
   }
@@ -116,6 +120,26 @@ class AppState extends ChangeNotifier {
 
   /// Адреса загружены хотя бы раз (до этого не показываем «добавьте адрес»).
   bool addressesLoaded = false;
+
+  /// Непрочитанные уведомления — точка на колокольчике.
+  int unread = 0;
+
+  Future<void> loadUnread() async {
+    try {
+      final r = await api.get('/client/notifications/unread') as Map<String, dynamic>;
+      unread = (r['count'] as num?)?.toInt() ?? 0;
+      notifyListeners();
+    } catch (_) {
+      // Колокольчик не критичен.
+    }
+  }
+
+  /// Отметить все уведомления прочитанными.
+  Future<void> markAllRead() async {
+    unread = 0;
+    notifyListeners();
+    await api.post('/client/notifications/read', {'all': true});
+  }
 
   /// Вкладка нижнего меню: 0 главная, 1 каталог, 2 карта, 4 профиль (корзина открывается поверх).
   int tab = 0;
@@ -150,10 +174,25 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Выбрать магазин витрины на главной.
   void openCatalog(Store s) {
     catalogStoreId = s.id;
-    tab = 1;
     notifyListeners();
+  }
+
+  final Map<String, Future<List<CatalogCategory>>> _categories = {};
+
+  /// Категории магазина (кэш на время сессии; [force] — перезагрузить).
+  Future<List<CatalogCategory>> categoriesOf(Store s, {bool force = false}) {
+    if (force) _categories.remove(s.id);
+    return _categories.putIfAbsent(s.id, () {
+      final f = api.list('/client/stores/${s.id}/categories').then(buildCategoryTree);
+      f.catchError((_) {
+        _categories.remove(s.id);
+        return <CatalogCategory>[];
+      });
+      return f;
+    });
   }
 
   Future<void> loadStores({bool force = false}) async {

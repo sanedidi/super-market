@@ -14,10 +14,22 @@ typedef StoreRef = ({String id, String name});
 
 StoreRef storeRef(Store s) => (id: s.id, name: s.name);
 
-/// Открыть карточку товара.
+/// Открыть карточку товара — шторкой снизу почти на весь экран.
 Future<void> openProduct(BuildContext context, StoreRef store, Product product) {
-  return Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProductScreen(store: store, product: product)));
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    showDragHandle: false,
+    backgroundColor: AppColors.white,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.sheet))),
+    clipBehavior: Clip.antiAlias,
+    builder: (_) => FractionallySizedBox(heightFactor: 0.96, child: ProductScreen(store: store, product: product)),
+  );
 }
+
+/// Высота карточки товара при ширине [w]: фото w×w + цена, название, единица.
+double productCardHeight(double w) => w + 122;
 
 /// «−20%» или null.
 String? discountLabel(Product p) => p.discountPercent == null || p.discountPercent == 0 ? null : '−${p.discountPercent}%';
@@ -44,9 +56,9 @@ class ProductTile extends StatelessWidget {
       price: money(product.price),
       oldPrice: product.oldPrice == null ? null : money(product.oldPrice, suffix: false),
       discount: discountLabel(product),
-      unit: 'за 1 ${product.unit}',
+      unit: '1 ${product.unit}',
       image: product.image,
-      qtyLabel: inCart == 0 ? null : qtyLabel(inCart, product.unit),
+      qtyLabel: inCart == 0 ? null : qty(inCart),
       onTap: () => openProduct(context, store, product),
       onAdd: () => change(product.step),
       onMinus: () => change(inCart - product.step),
@@ -62,12 +74,12 @@ class ProductCarousel extends StatelessWidget {
   final StoreRef store;
   final EdgeInsets padding;
 
-  static const cardWidth = 160.0;
+  static const cardWidth = 124.0;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: cardWidth + 150,
+      height: productCardHeight(cardWidth),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: padding,
@@ -79,7 +91,7 @@ class ProductCarousel extends StatelessWidget {
   }
 }
 
-/// Сетка карточек в 2 колонки внутри CustomScrollView.
+/// Сетка карточек в 3 колонки внутри CustomScrollView.
 class ProductGridSliver extends StatelessWidget {
   const ProductGridSliver({super.key, required this.products, required this.store});
   final List<Product> products;
@@ -87,15 +99,15 @@ class ProductGridSliver extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cardW = (MediaQuery.sizeOf(context).width - AppSpace.page * 2 - 16) / 2;
+    final cardW = (MediaQuery.sizeOf(context).width - AppSpace.page * 2 - 10 * 2) / 3;
     return SliverPadding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpace.page),
       sliver: SliverGrid.builder(
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 20,
-          mainAxisExtent: cardW + 150,
+          crossAxisCount: 3,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 16,
+          mainAxisExtent: productCardHeight(cardW),
         ),
         itemCount: products.length,
         itemBuilder: (_, i) => ProductTile(product: products[i], store: store),

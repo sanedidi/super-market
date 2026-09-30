@@ -13,7 +13,8 @@ import 'home_screen.dart';
 import 'map_screen.dart';
 import 'profile_screen.dart';
 
-/// Пять вкладок. «Корзина» открывается поверх, без нижнего меню, с крестиком.
+/// Приложение после входа: вкладки главная, каталог, карта, корзина, профиль.
+/// Корзина открывается на весь экран поверх вкладок.
 class RootShell extends StatefulWidget {
   const RootShell({super.key});
 
@@ -22,7 +23,7 @@ class RootShell extends StatefulWidget {
 }
 
 class _RootShellState extends State<RootShell> {
-  /// Вкладки строятся при первом открытии (карта тяжёлая).
+  /// Вкладки создаются при первом открытии и дальше живут в IndexedStack.
   final _visited = <int>{0};
 
   @override
@@ -31,6 +32,8 @@ class _RootShellState extends State<RootShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final state = context.read<AppState>();
       state.loadFavorites();
+      state.loadProfile().catchError((_) {});
+      state.loadUnread();
       Push.register(context.read<Api>());
       try {
         await state.loadAddresses();
@@ -41,49 +44,102 @@ class _RootShellState extends State<RootShell> {
   }
 
   void _onTab(int i) {
+    final state = context.read<AppState>();
     if (i == 3) {
       openCart(context);
       return;
     }
-    final state = context.read<AppState>();
     state.setTab(i);
-    // Профиль уже открывали — обновим активный заказ и статистику.
-    if (i == 4 && state.profile != null) state.loadProfile().catchError((_) {});
   }
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final showCartBar = state.cartCount > 0 && (state.tab == 0 || state.tab == 1);
-    _visited.add(state.tab);
-    Widget lazy(int i, Widget w) => _visited.contains(i) ? w : const SizedBox.shrink();
-    return Scaffold(
-      extendBody: true,
-      body: IndexedStack(
-        index: state.tab == 3 ? 0 : state.tab,
-        children: [
-          lazy(0, const HomeScreen()),
-          lazy(1, const CatalogScreen()),
-          lazy(2, const MapScreen()),
-          const SizedBox.shrink(),
-          lazy(4, const ProfileScreen()),
-        ],
+    final tab = state.tab == 3 ? 0 : state.tab;
+    _visited.add(tab);
+    const pages = [HomeScreen(), CatalogScreen(), MapScreen(), SizedBox.shrink(), ProfileScreen()];
+    return PopScope(
+      canPop: tab == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) state.setTab(0);
+      },
+      child: Scaffold(
+        extendBody: true,
+        body: IndexedStack(
+          index: tab,
+          children: [for (var i = 0; i < pages.length; i++) _visited.contains(i) ? pages[i] : const SizedBox.shrink()],
+        ),
+        bottomNavigationBar: Column(mainAxisSize: MainAxisSize.min, children: [
+          if (state.cartCount > 0 && (tab == 0 || tab == 1))
+            const Padding(padding: EdgeInsets.fromLTRB(12, 0, 12, 0), child: CartBar()),
+          AppTabBar(index: tab, cartCount: state.cartCount, onTap: _onTab),
+        ]),
       ),
-      bottomNavigationBar: Column(mainAxisSize: MainAxisSize.min, children: [
-        if (showCartBar) const Padding(padding: EdgeInsets.fromLTRB(16, 0, 16, 8), child: CartBar()),
-        AppTabBar(index: state.tab, onTap: _onTab, cartCount: state.cartCount),
-      ]),
     );
   }
 }
 
 /// Открыть корзину на весь экран.
-Future<void> openCart(BuildContext context) {
-  return Navigator.of(context, rootNavigator: true)
-      .push(MaterialPageRoute(fullscreenDialog: true, builder: (_) => const CartScreen()));
+Future<void> openCart(BuildContext context) => pushCart(Navigator.of(context, rootNavigator: true));
+
+Future<void> pushCart(NavigatorState nav) =>
+    nav.push(MaterialPageRoute(fullscreenDialog: true, builder: (_) => const CartScreen()));
+
+/// Отступ снизу у прокручиваемых вкладок. Меню и корзина лежат поверх
+/// контента (extendBody), их высота уже входит в padding.bottom.
+double tabBottomInset(BuildContext context) => MediaQuery.paddingOf(context).bottom + 16;
+
+/// «Условия доставки»: минимальный заказ и цена доставки выбранного магазина.
+Future<void> showDeliveryTerms(BuildContext context, Store s) {
+  Widget card(IconData icon, String title, String value, String text) => Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(AppRadius.xl), border: Border.all(color: AppColors.line, width: 1.5)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(icon, color: AppColors.dark, size: 22),
+            const SizedBox(width: 10),
+            Expanded(child: Text(title, style: AppText.title)),
+            Text(value, style: AppText.title),
+          ]),
+          const SizedBox(height: 8),
+          Text(text, style: AppText.body.copyWith(color: AppColors.text2)),
+        ]),
+      );
+  final min = num.tryParse(s.minOrder) ?? 0;
+  final deliveryText = [if (s.etaText != null) 'Привезём за ${s.etaText}.', if (s.freeFrom != null) 'Бесплатно от ${money(s.freeFrom)}.'].join(' ');
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: false,
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const Text('Условия доставки', style: AppText.h2),
+          const SizedBox(height: 4),
+          Text(s.name, style: AppText.body.copyWith(color: AppColors.text2)),
+          const Divider(height: 28),
+          if (min > 0)
+            card(Icons.shopping_bag_rounded, 'Минимальный заказ', money(s.minOrder),
+                'Когда сумма товаров в корзине достигнет минимальной, можно будет оформить заказ.'),
+          card(Icons.directions_car_filled_rounded, 'Доставка', s.freeDelivery ? '0 сум' : money(s.deliveryFee), deliveryText.isEmpty ? 'Цена зависит от вашего адреса.' : deliveryText),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 56,
+            child: FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.dark),
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Закрыть'),
+            ),
+          ),
+        ]),
+      ),
+    ),
+  );
 }
 
-/// Синяя плашка корзины над нижним меню.
+/// Красная кнопка корзины: сумма справа.
 class CartBar extends StatelessWidget {
   const CartBar({super.key});
 
@@ -91,30 +147,35 @@ class CartBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     if (state.cartCount == 0) return const SizedBox.shrink();
-    return Material(
-      color: AppColors.primary,
-      borderRadius: BorderRadius.circular(AppRadius.lg),
-      elevation: 6,
-      shadowColor: const Color(0x55155EEF),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        onTap: () => openCart(context),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(children: [
-            const IconBox(Icons.shopping_cart_outlined, bg: Color(0x2EFFFFFF), fg: AppColors.white, size: 40),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Корзина', style: AppText.bodyStrong.copyWith(color: AppColors.white)),
-                Text('${_items(state.cartCount)} · ${state.cartStoreName ?? ''}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppText.caption.copyWith(color: const Color(0xCCFFFFFF))),
+    return DecoratedBox(
+      decoration: const ShapeDecoration(
+        gradient: AppColors.primaryGradient,
+        shape: StadiumBorder(),
+        shadows: [BoxShadow(color: Color(0x40E11D2A), blurRadius: 14, offset: Offset(0, 6))],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        shape: const StadiumBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => openCart(context),
+          child: SizedBox(
+            height: 60,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(children: [
+                const Icon(Icons.shopping_bag_rounded, color: AppColors.white, size: 26),
+                const SizedBox(width: 14),
+                Text('Корзина', style: AppText.bodyStrong.copyWith(color: AppColors.white, fontSize: 19)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(itemsWord(state.cartCount),
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.small.copyWith(color: const Color(0xCCFFFFFF))),
+                ),
+                Text(money(state.cartTotal), style: AppText.bodyStrong.copyWith(color: AppColors.white, fontSize: 19)),
               ]),
             ),
-            Text(money(state.cartTotal), style: AppText.price.copyWith(color: AppColors.white)),
-          ]),
+          ),
         ),
       ),
     );
@@ -122,7 +183,7 @@ class CartBar extends StatelessWidget {
 }
 
 /// «1 товар», «2 товара», «5 товаров».
-String _items(int n) {
+String itemsWord(int n) {
   final m10 = n % 10, m100 = n % 100;
   final w = m10 == 1 && m100 != 11
       ? 'товар'
@@ -131,5 +192,3 @@ String _items(int n) {
           : 'товаров';
   return '$n $w';
 }
-
-String itemsWord(int n) => _items(n);

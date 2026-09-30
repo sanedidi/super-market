@@ -6,6 +6,7 @@ import 'package:sm_core/sm_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'push.dart';
+import 'screens/auth_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/root_shell.dart';
 import 'state.dart';
@@ -95,17 +96,50 @@ class _GateState extends State<_Gate> {
     } else if (!_onboardingDone) {
       child = OnboardingScreen(onDone: _finishOnboarding);
     } else if (!api.loggedIn) {
-      child = LoginScreen(
-        api: api,
-        title: 'Вход',
-        subtitle: 'Продукты из магазинов рядом с вами',
-        onOpenUrl: openUrl,
-        logo: const BrandMark(size: 88),
-      );
+      child = const AuthScreen();
     } else {
-      child = const RootShell();
+      child = const _ProfileGate();
     }
     return AnimatedSwitcher(duration: const Duration(milliseconds: 250), child: child);
+  }
+}
+
+/// После входа: если имя ещё не указано — шаг 3 «Как вас зовут?», иначе приложение.
+class _ProfileGate extends StatefulWidget {
+  const _ProfileGate();
+
+  @override
+  State<_ProfileGate> createState() => _ProfileGateState();
+}
+
+class _ProfileGateState extends State<_ProfileGate> {
+  /// null — ещё проверяем профиль.
+  bool? _needName;
+
+  @override
+  void initState() {
+    super.initState();
+    _check();
+  }
+
+  Future<void> _check() async {
+    final state = context.read<AppState>();
+    var need = false;
+    try {
+      await state.loadProfile();
+      need = '${state.profile?['first_name'] ?? ''}'.trim().isEmpty;
+    } catch (_) {
+      // Нет сети — пускаем в приложение, имя можно указать в профиле.
+    }
+    if (mounted) setState(() => _needName = need);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final need = _needName;
+    if (need == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (need) return NameStepScreen(onDone: () => setState(() => _needName = false));
+    return const RootShell();
   }
 }
 

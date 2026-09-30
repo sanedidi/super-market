@@ -298,7 +298,7 @@ class _CartScreenState extends State<CartScreen> {
                           AppCard(
                             child: Column(children: [
                               _row('Товары (${s.cartCount})', money(discount > 0 ? addMoney(['${p['subtotal']}', '${p['discount']}']) : p['subtotal'])),
-                              if (discount > 0) _row('Скидка', '−${money(discount)}', valueColor: AppColors.accent),
+                              if (discount > 0) _row('Скидка', '−${money(discount)}', valueColor: AppColors.primary),
                               _row('Доставка', fee == 0 ? 'Бесплатно' : money(fee), valueColor: fee == 0 ? AppColors.success : null),
                               const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Divider()),
                               _row('Итого', money(p['total']), bold: true),

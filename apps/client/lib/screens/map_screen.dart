@@ -39,6 +39,12 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  /// Открыть витрину магазина на главной.
+  void _open(AppState state, Store s) {
+    state.openCatalog(s);
+    state.setTab(0);
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
@@ -134,10 +140,10 @@ class _MapScreenState extends State<MapScreen> {
                           recommended: s.recommended,
                           closed: !s.isOpen,
                           meta: storeMeta(s),
-                          onTap: () => state.openCatalog(s),
+                          onTap: () => _open(state, s),
                         ),
                         const Spacer(),
-                        AppButton(label: 'Смотреть товары', onPressed: () => state.openCatalog(s)),
+                        AppButton(label: 'Смотреть товары', onPressed: () => _open(state, s)),
                       ]),
                     ),
                   ),

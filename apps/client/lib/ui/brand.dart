@@ -20,22 +20,16 @@ class BrandMark extends StatelessWidget {
   }
 }
 
-/// Экран-заставка из Figma: знак, название, подпись. Показывается при запуске.
+/// Заставка при запуске: красный фон и белый логотип, как нативный splash.
 class BrandSplash extends StatelessWidget {
   const BrandSplash({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: AppColors.white,
+    return Scaffold(
+      backgroundColor: AppColors.primary,
       body: Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          BrandMark(size: 132),
-          SizedBox(height: 20),
-          Text('Super Market', style: TextStyle(fontFamily: 'Inter', fontSize: 34, fontWeight: FontWeight.w700, letterSpacing: -1, color: AppColors.ink)),
-          SizedBox(height: 8),
-          Text('Продукты из магазинов рядом', style: TextStyle(fontFamily: 'Inter', fontSize: 16, fontWeight: FontWeight.w500, color: AppColors.text2)),
-        ]),
+        child: SvgPicture.asset('assets/images/logo_words_white.svg', width: 200, semanticsLabel: 'Super Market'),
       ),
     );
   }

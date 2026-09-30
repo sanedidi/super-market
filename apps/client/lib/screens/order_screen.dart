@@ -207,7 +207,7 @@ class _OrderScreenState extends State<OrderScreen> {
                           const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Divider()),
                           if ((num.tryParse('${o['discount']}') ?? 0) > 0) ...[
                             _row('Товары', money(addMoney(['${o['subtotal']}', '${o['discount']}']))),
-                            _row('Скидка', '−${money(o['discount'])}', color: AppColors.accent),
+                            _row('Скидка', '−${money(o['discount'])}', color: AppColors.primary),
                           ] else
                             _row('Товары', money(o['subtotal'])),
                           _row('Доставка', (num.tryParse('${o['delivery_fee']}') ?? 0) == 0 ? 'Бесплатно' : money(o['delivery_fee'])),
@@ -489,7 +489,7 @@ class CourierCard extends StatelessWidget {
           height: 48,
           alignment: Alignment.center,
           decoration: const BoxDecoration(color: AppColors.accentSoft, shape: BoxShape.circle),
-          child: Text(name.isEmpty ? '?' : name[0].toUpperCase(), style: AppText.title.copyWith(color: AppColors.accent)),
+          child: Text(name.isEmpty ? '?' : name[0].toUpperCase(), style: AppText.title.copyWith(color: AppColors.warningInk)),
         ),
         const SizedBox(width: 12),
         Expanded(

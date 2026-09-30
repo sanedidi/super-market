@@ -99,7 +99,7 @@ class _ProductScreenState extends State<ProductScreen> {
     final available = num.tryParse(_p.available) ?? 0;
 
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: AppColors.white,
       body: CustomScrollView(slivers: [
         SliverToBoxAdapter(child: _gallery(fav)),
         SliverToBoxAdapter(
@@ -107,31 +107,32 @@ class _ProductScreenState extends State<ProductScreen> {
             decoration: const BoxDecoration(
               color: AppColors.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
+              boxShadow: [BoxShadow(color: Color(0x10000000), blurRadius: 16, offset: Offset(0, -4))],
             ),
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Center(
+                child: Container(width: 40, height: 5, decoration: BoxDecoration(color: AppColors.line, borderRadius: BorderRadius.circular(3))),
+              ),
+              const SizedBox(height: 20),
+              Text.rich(
+                TextSpan(children: [
+                  TextSpan(text: _p.name, style: AppText.h2.copyWith(fontSize: 26, height: 1.25)),
+                  TextSpan(text: '  1 ${_p.unit}', style: AppText.h2.copyWith(fontSize: 26, height: 1.25, color: AppColors.muted)),
+                ]),
+              ),
+              if (subtitle.isNotEmpty) ...[const SizedBox(height: 6), Text(subtitle, style: AppText.body.copyWith(color: AppColors.text2))],
+              if (_p.description.trim().isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(_p.description, style: AppText.body.copyWith(fontSize: 17, color: AppColors.text2)),
+              ],
+              const SizedBox(height: 12),
               Wrap(spacing: 8, runSpacing: 8, children: [
-                if (discountLabel(_p) != null) AppBadge(label: discountLabel(_p)!, kind: BadgeKind.discount),
                 if (_p.isNew) const AppBadge(label: 'Новинка', kind: BadgeKind.isNew),
                 available > 0
                     ? const AppBadge(label: 'В наличии', kind: BadgeKind.success)
                     : const AppBadge(label: 'Нет в наличии', kind: BadgeKind.error),
               ]),
-              const SizedBox(height: 12),
-              Text(_p.name, style: AppText.h2),
-              if (subtitle.isNotEmpty) ...[const SizedBox(height: 4), Text(subtitle, style: AppText.small.copyWith(fontSize: 15))],
-              const SizedBox(height: 12),
-              Wrap(crossAxisAlignment: WrapCrossAlignment.end, spacing: 10, children: [
-                Text(money(_p.price), style: AppText.h2.copyWith(fontSize: 26)),
-                if (_p.oldPrice != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 3),
-                    child: Text(money(_p.oldPrice),
-                        style: AppText.body.copyWith(color: AppColors.muted, decoration: TextDecoration.lineThrough, decorationColor: AppColors.muted)),
-                  ),
-              ]),
-              const SizedBox(height: 4),
-              Text('за 1 ${_p.unit}', style: AppText.caption),
               const SizedBox(height: 20),
               _StoreRow(name: _store.name, logoUrl: store?.logoUrl, eta: store?.etaText, onTap: store == null ? null : () {
                 state.openCatalog(store);
@@ -147,12 +148,6 @@ class _ProductScreenState extends State<ProductScreen> {
                     Expanded(child: _Nutrient(value: nutrition[k] == null ? '—' : '${qty(nutrition[k])}$unit', label: label)),
                   ],
                 ]),
-              ],
-              if (_p.description.trim().isNotEmpty) ...[
-                const SizedBox(height: 24),
-                const Text('Описание', style: AppText.title),
-                const SizedBox(height: 8),
-                Text(_p.description, style: AppText.body.copyWith(color: AppColors.text2)),
               ],
               if (details.isNotEmpty) ...[
                 const SizedBox(height: 16),
@@ -172,17 +167,16 @@ class _ProductScreenState extends State<ProductScreen> {
         ),
         if (_related.isNotEmpty)
           SliverToBoxAdapter(
-            child: Container(
-              color: AppColors.white,
+            child: Padding(
               padding: const EdgeInsets.only(bottom: 24),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const SectionHeader(title: 'С этим покупают'),
+                const SectionHeader(title: 'Может что-то ещё?'),
                 const SizedBox(height: 12),
                 ProductCarousel(products: _related, store: _store),
               ]),
             ),
           ),
-        const SliverFillRemaining(hasScrollBody: false, child: ColoredBox(color: AppColors.white)),
+        const SliverToBoxAdapter(child: SizedBox(height: 24)),
       ]),
       bottomNavigationBar: BottomActionBar(child: _actions(state, available)),
     );
@@ -190,54 +184,86 @@ class _ProductScreenState extends State<ProductScreen> {
 
   Widget _gallery(bool fav) {
     final images = _p.images;
-    final top = MediaQuery.paddingOf(context).top;
+    final discount = discountLabel(_p);
     return SizedBox(
-      height: top + 320,
+      height: 330,
       child: Stack(children: [
         Positioned.fill(
-          top: top + 56,
-          bottom: 28,
+          top: 16,
+          bottom: 36,
+          right: discount != null ? MediaQuery.sizeOf(context).width * 0.42 : 0,
           child: images.isEmpty
-              ? const ProductImage(radius: 0, iconSize: 72)
+              ? const Padding(padding: EdgeInsets.symmetric(horizontal: 48), child: ProductImage(iconSize: 72))
               : PageView.builder(
                   controller: _page,
                   itemCount: images.length,
                   onPageChanged: (i) => setState(() => _photo = i),
                   itemBuilder: (_, i) => Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 48),
-                    child: ProductImage(url: images[i], radius: AppRadius.lg, iconSize: 72),
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: ProductImage(url: images[i], radius: 0, iconSize: 72),
                   ),
                 ),
         ),
         if (images.length > 1)
           Positioned(
             left: 0,
-            right: 0,
-            bottom: 10,
-            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              for (var i = 0; i < images.length; i++)
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  margin: const EdgeInsets.symmetric(horizontal: 3),
-                  width: i == _photo ? 18 : 6,
-                  height: 6,
-                  decoration: BoxDecoration(color: i == _photo ? AppColors.primary : AppColors.line, borderRadius: BorderRadius.circular(3)),
+            right: discount != null ? MediaQuery.sizeOf(context).width * 0.42 : 0,
+            bottom: 8,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(color: AppColors.soft, borderRadius: BorderRadius.circular(12)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  for (var i = 0; i < images.length; i++)
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(color: i == _photo ? AppColors.ink : AppColors.muted, shape: BoxShape.circle),
+                    ),
+                ]),
+              ),
+            ),
+          ),
+        if (discount != null)
+          Positioned(
+            right: 20,
+            top: 64,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(8)),
+                child: Text('АКЦИЯ', style: AppText.title.copyWith(color: AppColors.white, fontWeight: FontWeight.w800)),
+              ),
+              const SizedBox(height: 10),
+              Transform.rotate(
+                angle: -0.05,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(color: AppColors.accent, borderRadius: BorderRadius.circular(10)),
+                  child: Text(discount, style: AppText.h2.copyWith(fontSize: 26)),
                 ),
+              ),
+              const SizedBox(height: 10),
+              if (_p.oldPrice != null)
+                Text(money(_p.oldPrice, suffix: false),
+                    style: AppText.h3.copyWith(fontSize: 22, decoration: TextDecoration.lineThrough, decorationThickness: 2)),
+              Text(money(_p.price, suffix: false), style: AppText.h1.copyWith(fontSize: 44, color: AppColors.primary, fontWeight: FontWeight.w800)),
             ]),
           ),
         Positioned(
-          top: top + 8,
-          left: 16,
+          top: 12,
           right: 16,
           child: Row(children: [
-            RoundIconButton(icon: Icons.arrow_back_rounded, bg: AppColors.white, shadow: true, onTap: () => Navigator.of(context).pop()),
-            const Spacer(),
             RoundIconButton(
               icon: fav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+              iconColor: fav ? AppColors.primary : AppColors.ink,
               bg: AppColors.white,
               shadow: true,
               onTap: _favorite,
             ),
+            const SizedBox(width: 10),
+            RoundIconButton(icon: Icons.close_rounded, bg: AppColors.white, shadow: true, onTap: () => Navigator.of(context).pop()),
           ]),
         ),
       ]),
@@ -248,12 +274,26 @@ class _ProductScreenState extends State<ProductScreen> {
     final inCart = state.cartStoreId == _store.id ? state.qtyOf(_p.id) : 0;
     if (available <= 0 && inCart == 0) return const AppButton(label: 'Нет в наличии', onPressed: null);
     if (inCart == 0) {
-      return AppButton(label: 'В корзину · ${money(_p.price)}', icon: Icons.add_rounded, onPressed: () => _change(_p.step));
+      return AppButton(
+        label: money(_p.price),
+        subtitle: '${money(_p.price, suffix: false)} / ${_p.unit}',
+        onPressed: () => _change(_p.step),
+      );
     }
     return Row(children: [
-      QtyStepper(label: qty(inCart), height: 52, onMinus: () => _change(inCart - _p.step), onPlus: () => _change(inCart + _p.step)),
+      QtyStepper(label: qty(inCart, _p.unit), height: 56, filled: false, onMinus: () => _change(inCart - _p.step), onPlus: () => _change(inCart + _p.step)),
       const SizedBox(width: 12),
-      Expanded(child: AppButton(label: 'В корзине · ${money(mulMoney(_p.price, '$inCart'))}', onPressed: () => openCart(context))),
+      Expanded(
+        child: AppButton(
+          label: 'Корзина',
+          subtitle: money(state.cartTotal),
+          onPressed: () {
+            final nav = Navigator.of(context, rootNavigator: true);
+            nav.pop();
+            pushCart(nav);
+          },
+        ),
+      ),
     ]);
   }
 }
@@ -268,8 +308,8 @@ class _StoreRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.primarySoft,
-      borderRadius: BorderRadius.circular(AppRadius.lg),
+      color: AppColors.soft,
+      borderRadius: BorderRadius.circular(AppRadius.xl),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppRadius.lg),
         onTap: onTap,
