@@ -451,30 +451,57 @@ class _InviteSheet extends StatelessWidget {
 
 /// Нижний лист с одним полем ввода.
 Future<String?> _askText(BuildContext context,
-    {required String title, required String hint, required String action, String initial = '', bool caps = false, int maxLength = 60}) async {
-  final ctrl = TextEditingController(text: initial);
-  final v = await showModalBottomSheet<String>(
+    {required String title, required String hint, required String action, String initial = '', bool caps = false, int maxLength = 60}) {
+  return showModalBottomSheet<String>(
     context: context,
     isScrollControlled: true,
     backgroundColor: AppColors.white,
-    builder: (ctx) => Padding(
-      padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.viewInsetsOf(ctx).bottom),
+    builder: (ctx) => _AskTextSheet(title: title, hint: hint, action: action, initial: initial, caps: caps, maxLength: maxLength),
+  );
+}
+
+/// Поле живёт вместе с листом: контроллер освобождается, когда лист
+/// закрылся полностью (а не сразу после ответа, пока идёт анимация).
+class _AskTextSheet extends StatefulWidget {
+  const _AskTextSheet({required this.title, required this.hint, required this.action, required this.initial, required this.caps, required this.maxLength});
+  final String title;
+  final String hint;
+  final String action;
+  final String initial;
+  final bool caps;
+  final int maxLength;
+
+  @override
+  State<_AskTextSheet> createState() => _AskTextSheetState();
+}
+
+class _AskTextSheetState extends State<_AskTextSheet> {
+  late final _ctrl = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.viewInsetsOf(context).bottom),
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Text(title, style: AppText.h3),
+        Text(widget.title, style: AppText.h3),
         const SizedBox(height: 16),
         TextField(
-          controller: ctrl,
+          controller: _ctrl,
           autofocus: true,
-          maxLength: maxLength,
-          textCapitalization: caps ? TextCapitalization.characters : TextCapitalization.sentences,
-          decoration: InputDecoration(hintText: hint, counterText: ''),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+          maxLength: widget.maxLength,
+          textCapitalization: widget.caps ? TextCapitalization.characters : TextCapitalization.sentences,
+          decoration: InputDecoration(hintText: widget.hint, counterText: ''),
+          onSubmitted: (v) => Navigator.pop(context, v.trim()),
         ),
         const SizedBox(height: 16),
-        AppButton(label: action, onPressed: () => Navigator.pop(ctx, ctrl.text.trim())),
+        AppButton(label: widget.action, onPressed: () => Navigator.pop(context, _ctrl.text.trim())),
       ]),
-    ),
-  );
-  ctrl.dispose();
-  return v;
+    );
+  }
 }
