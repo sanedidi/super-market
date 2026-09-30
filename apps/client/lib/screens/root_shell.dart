@@ -83,7 +83,7 @@ class _RootShellState extends State<RootShell> {
 Future<void> openCart(BuildContext context) => pushCart(Navigator.of(context, rootNavigator: true));
 
 Future<void> pushCart(NavigatorState nav) =>
-    nav.push(MaterialPageRoute(fullscreenDialog: true, builder: (_) => const CartScreen()));
+    nav.push(MaterialPageRoute(builder: (_) => const CartScreen()));
 
 /// Отступ снизу у прокручиваемых вкладок. Меню и корзина лежат поверх
 /// контента (extendBody), их высота уже входит в padding.bottom.

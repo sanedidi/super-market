@@ -207,11 +207,14 @@ class IconBox extends StatelessWidget {
 /// Счётчик «− 2 +». Белая «пилюля» с тенью (поверх фото товара) или
 /// красная [filled] (внизу карточки товара).
 class QtyStepper extends StatelessWidget {
-  const QtyStepper({super.key, required this.label, required this.onMinus, required this.onPlus, this.filled = false, this.height = 40});
+  const QtyStepper({super.key, required this.label, required this.onMinus, required this.onPlus, this.filled = false, this.soft = false, this.height = 40});
   final String label;
   final VoidCallback? onMinus;
   final VoidCallback? onPlus;
   final bool filled;
+
+  /// Серый без тени (строки корзины).
+  final bool soft;
   final double height;
 
   @override
@@ -230,10 +233,10 @@ class QtyStepper extends StatelessWidget {
     return Container(
       height: height,
       decoration: ShapeDecoration(
-        color: filled ? null : AppColors.white,
+        color: filled ? null : (soft ? AppColors.soft : AppColors.white),
         gradient: filled ? AppColors.primaryGradient : null,
         shape: const StadiumBorder(),
-        shadows: filled ? null : const [BoxShadow(color: Color(0x22000000), blurRadius: 10, offset: Offset(0, 2))],
+        shadows: filled || soft ? null : const [BoxShadow(color: Color(0x22000000), blurRadius: 10, offset: Offset(0, 2))],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
