@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Alert, App, Button, Card, Col, Form, Input, Popconfirm, Row, Segmented, Select, Space, Table, Typography } from 'antd'
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
+import { CheckOutlined, CloseOutlined, DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 import {
   LoadError,
   PageTitle,
@@ -326,7 +326,6 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
         }
         extra={
           <Space wrap>
-            <Button onClick={() => nav(docPaths[type])}>К списку</Button>
             {!readOnly && (
               <>
                 {!isNew && (
@@ -336,11 +335,11 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
                     </Button>
                   </Popconfirm>
                 )}
-                <Button loading={busy} onClick={() => run(false)}>
+                <Button type="primary" icon={<SaveOutlined />} loading={busy} onClick={() => run(false)}>
                   Сохранить черновик
                 </Button>
                 <Popconfirm title="Провести документ? После проведения изменить его нельзя." onConfirm={() => run(true)}>
-                  <Button type="primary" loading={busy}>
+                  <Button className="sm-btn-blue" icon={<CheckOutlined />} loading={busy}>
                     Провести
                   </Button>
                 </Popconfirm>
@@ -348,7 +347,9 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
             )}
           </Space>
         }
-      />
+      >
+        <Button type="text" icon={<CloseOutlined />} onClick={() => nav(docPaths[type])} title="Закрыть" aria-label="Закрыть" />
+      </PageTitle>
       {spec.hint && !readOnly && <Alert type="info" showIcon message={spec.hint} style={{ marginBottom: 16 }} />}
       <Card style={{ marginBottom: 16 }} loading={!isNew && doc.isLoading}>
         <Form form={form} layout="vertical" disabled={readOnly}>

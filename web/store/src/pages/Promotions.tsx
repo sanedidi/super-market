@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Alert, App, Button, Card, Col, DatePicker, Form, Input, Row, Segmented, Select, Space, Switch, Table, Tag, Typography } from 'antd'
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
+import { CloseOutlined, DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import { LoadError, PageTitle, api, dateTime, errorText, money, useItem, usePaged } from '@sm/shared'
 import { useStore } from '../ctx'
@@ -178,15 +178,16 @@ export function PromotionEditor() {
         }
         extra={
           <Space wrap>
-            <Button onClick={() => nav(BASE)}>К списку</Button>
             {!readOnly && (
-              <Button type="primary" loading={busy} onClick={save}>
+              <Button type="primary" icon={<SaveOutlined />} loading={busy} onClick={save}>
                 Сохранить
               </Button>
             )}
           </Space>
         }
-      />
+      >
+        <Button type="text" icon={<CloseOutlined />} onClick={() => nav(BASE)} title="Закрыть" aria-label="Закрыть" />
+      </PageTitle>
       <Alert
         type="info"
         showIcon

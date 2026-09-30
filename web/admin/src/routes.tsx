@@ -65,7 +65,7 @@ const menu: MenuItem[] = [
 export function AdminRoutes() {
   return (
     <Routes>
-      <Route element={<Shell title="Супер-админ" menu={menu} />}>
+      <Route element={<Shell title="Супер-админ" menu={menu} user={{ name: 'Супер-админ', subtitle: 'Платформа Super Market' }} />}>
         <Route index element={<Dashboard />} />
         <Route path="networks" element={<Networks />} />
         <Route path="products" element={<Products key="products" />} />

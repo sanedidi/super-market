@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
-import { Flex, Result, Select, Spin, Typography } from 'antd'
+import { Flex, Result, Select, Spin } from 'antd'
 import {
   AppstoreOutlined,
   BarChartOutlined,
@@ -179,12 +179,9 @@ function Guard() {
 }
 
 function Header() {
-  const { me, stores, storeId, setStoreId } = useStore()
+  const { stores, storeId, setStoreId } = useStore()
   return (
     <Flex align="center" gap={12} wrap={false} style={{ minWidth: 0 }}>
-      <Typography.Text strong ellipsis style={{ maxWidth: 220 }}>
-        {me?.network.name ?? ''}
-      </Typography.Text>
       <OrderAlerts />
       {stores.length > 0 && (
         <Select
@@ -204,7 +201,12 @@ export function StoreRoutes() {
   const menu = me ? filterMenu(MENU, can) : []
   return (
     <Routes>
-      <Route element={<Shell title={TITLE} menu={menu} header={<Header />} />}>
+      <Route element={<Shell
+          title={TITLE}
+          menu={menu}
+          header={<Header />}
+          user={me ? { name: me.network.name, subtitle: me.is_owner ? 'Владелец сети' : 'Сотрудник' } : undefined}
+        />}>
        <Route element={<Guard />}>
         <Route index element={<DashboardPage />} />
         <Route path="orders" element={<OrdersPage />} />

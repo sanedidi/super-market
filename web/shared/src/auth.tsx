@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { Alert, Button, Card, Form, Input, Typography } from 'antd'
+import { Alert, Button, Form, Input, Typography } from 'antd'
+import { Brand } from './shell'
 import { api, ApiError, getTokens, onLogout, setTokens, type AppName, type Tokens } from './api'
 
 interface AuthState {
@@ -89,36 +90,79 @@ export function LoginPage({ app, title }: { app: AppName; title: string }) {
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#f5f5f5', padding: 16 }}>
-      <Card style={{ width: '100%', maxWidth: 380 }}>
-        <Typography.Title level={3} style={{ marginTop: 0 }}>
-          {title}
-        </Typography.Title>
-        {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
-        {step === 'phone' ? (
-          <Form layout="vertical" onFinish={requestCode} initialValues={{ phone }}>
-            <Form.Item name="phone" label="Номер телефона" rules={[{ required: true, message: 'Введите номер' }]}>
-              <Input size="large" placeholder="+998 90 123 45 67" autoFocus inputMode="tel" />
-            </Form.Item>
-            <Button type="primary" htmlType="submit" size="large" block loading={busy}>
-              Получить код в Telegram
-            </Button>
-          </Form>
-        ) : (
-          <Form layout="vertical" onFinish={verify}>
-            <Typography.Paragraph type="secondary">Код отправлен в Telegram-бот на номер {phone}.</Typography.Paragraph>
-            <Form.Item name="code" label="Код" rules={[{ required: true, message: 'Введите код' }]}>
-              <Input size="large" autoFocus inputMode="numeric" maxLength={6} />
-            </Form.Item>
-            <Button type="primary" htmlType="submit" size="large" block loading={busy}>
-              Войти
-            </Button>
-            <Button type="link" block onClick={() => setStep('phone')}>
-              Другой номер
-            </Button>
-          </Form>
-        )}
-      </Card>
+    <div className="sm-login">
+      <div className="sm-login-left">
+        <div className="sm-login-top">
+          <Brand title="Super Market" subtitle={title} />
+        </div>
+        <div className="sm-login-body">
+          <div className="sm-login-card">
+            <h1>Вход</h1>
+            {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
+            {step === 'phone' ? (
+              <Form layout="vertical" onFinish={requestCode} initialValues={{ phone }} requiredMark={false}>
+                <Form.Item name="phone" label="Номер телефона" rules={[{ required: true, message: 'Введите номер' }]}>
+                  <Input placeholder="+998 90 123 45 67" autoFocus inputMode="tel" />
+                </Form.Item>
+                <Button type="primary" htmlType="submit" block loading={busy} style={{ marginTop: 8 }}>
+                  Получить код в Telegram
+                </Button>
+              </Form>
+            ) : (
+              <Form layout="vertical" onFinish={verify} requiredMark={false}>
+                <Typography.Paragraph type="secondary">Код отправлен в Telegram-бот на номер {phone}.</Typography.Paragraph>
+                <Form.Item name="code" label="Код из Telegram" rules={[{ required: true, message: 'Введите код' }]}>
+                  <Input autoFocus inputMode="numeric" maxLength={6} />
+                </Form.Item>
+                <Button type="primary" htmlType="submit" block loading={busy} style={{ marginTop: 8 }}>
+                  Войти
+                </Button>
+                <Button type="link" block onClick={() => setStep('phone')} style={{ marginTop: 8 }}>
+                  Другой номер
+                </Button>
+              </Form>
+            )}
+          </div>
+        </div>
+        <div className="sm-login-foot">SUPER MARKET © {new Date().getFullYear()}</div>
+      </div>
+      <div className="sm-login-art">
+        <h2>
+          Магазины, заказы
+          <br />и деньги — в одном месте
+        </h2>
+        <p>Онлайн-заказы из приложения, касса, склад, курьеры и выплаты. Всё видно сразу — без таблиц и звонков.</p>
+        <div className="sm-login-mock">
+          <div className="sm-login-mock-grid">
+            <div className="sm-login-mock-card">
+              <span>Продажи сегодня</span>
+              <b>12 540 000</b>
+              <i>+12,5%</i>
+            </div>
+            <div className="sm-login-mock-card">
+              <span>Онлайн-заказы</span>
+              <b>148</b>
+              <i>+8,3%</i>
+            </div>
+            <div className="sm-login-mock-card">
+              <span>Курьеры на смене</span>
+              <b>24</b>
+              <i>в пути: 9</i>
+            </div>
+          </div>
+          <div className="sm-login-mock-bars">
+            {[40, 62, 48, 75, 58, 86, 70, 94].map((h, i) => (
+              <div key={i} style={{ height: `${h}%` }} />
+            ))}
+          </div>
+        </div>
+        <div className="sm-login-points">
+          <span>Склад</span>
+          <span>Касса</span>
+          <span>Доставка</span>
+          <span>Финансы</span>
+        </div>
+      </div>
     </div>
   )
 }

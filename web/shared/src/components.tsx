@@ -1,24 +1,42 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { Alert, Button, Card, Flex, Form, Modal, Select, Space, Table, Tag, Typography, type SelectProps, type TableColumnsType, type TableProps } from 'antd'
-import { PlusOutlined } from '@ant-design/icons'
+import { Alert, Button, Card, Form, Modal, Select, Table, Tag, type SelectProps, type PaginationProps, type TableColumnsType, type TableProps } from 'antd'
+import { LeftOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons'
+import { useShell } from './shell'
 import { api } from './api'
 import { errorText, useAction, useDebounced, useList, usePaged } from './hooks'
 
 type Params = Record<string, string | number | boolean | undefined | null>
 
-/** Заголовок страницы с кнопками справа. */
-export function PageTitle({ title, extra, children }: { title: ReactNode; extra?: ReactNode; children?: ReactNode }) {
+/**
+ * Шапка страницы в стиле Hamroh: белая полоса с названием (справа — общие
+ * элементы оболочки: выбор магазина и т.п.), под ней панель инструментов:
+ * кнопки действий слева (extra), фильтры и поиск справа (children).
+ * tabs — вкладки страницы прямо под шапкой.
+ */
+export function PageTitle({ title, extra, children, tabs }: { title: ReactNode; extra?: ReactNode; children?: ReactNode; tabs?: ReactNode }) {
+  const { headerExtra } = useShell()
   return (
-    <Flex justify="space-between" align="center" wrap gap={12} style={{ marginBottom: 16 }}>
-      <Typography.Title level={3} style={{ margin: 0 }}>
-        {title}
-      </Typography.Title>
-      <Space wrap>
-        {children}
-        {extra}
-      </Space>
-    </Flex>
+    <div className="sm-page-head">
+      <div className="sm-head">
+        <h1 className="sm-head-title">{title}</h1>
+        {headerExtra && <div className="sm-head-actions">{headerExtra}</div>}
+      </div>
+      {tabs}
+      {(extra || children) && (
+        <div className="sm-toolbar">
+          {extra && <div className="sm-toolbar-left">{extra}</div>}
+          {children && <div className="sm-toolbar-right">{children}</div>}
+        </div>
+      )}
+    </div>
   )
+}
+
+/** Кнопки «Назад / Далее» в пагинации таблиц. */
+export const pageItemRender: PaginationProps['itemRender'] = (_page, type, el) => {
+  if (type === 'prev') return <span className="sm-page-nav"><LeftOutlined style={{ fontSize: 11 }} /> Назад</span>
+  if (type === 'next') return <span className="sm-page-nav">Далее <RightOutlined style={{ fontSize: 11 }} /></span>
+  return el
 }
 
 /** Ошибка загрузки с кнопкой «Повторить». */
@@ -102,7 +120,7 @@ export function PagedTable<T extends object>({
         {...table}
         loading={list.isLoading || list.isFetching}
         dataSource={list.items}
-        pagination={list.pagination}
+        pagination={{ ...list.pagination, itemRender: pageItemRender }}
       />
     </>
   )
@@ -240,7 +258,7 @@ export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
           loading={list.isLoading || list.isFetching}
           dataSource={list.items}
           columns={columns}
-          pagination={list.pagination}
+          pagination={{ ...list.pagination, itemRender: pageItemRender }}
           scroll={{ x: true }}
           expandable={cfg.expandable}
         />

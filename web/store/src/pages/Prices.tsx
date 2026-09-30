@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Alert, App, Button, Card, Col, Form, Input, Popconfirm, Row, Select, Space, Table, Typography } from 'antd'
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
+import { CheckOutlined, CloseOutlined, DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 import { LoadError, PageTitle, RemoteSelect, StatusTag, api, dateTime, errorText, money, useItem, useList, usePaged } from '@sm/shared'
 import { useStore } from '../ctx'
 import { Num, ProductSelect, trimNum } from '../ui'
@@ -155,14 +155,13 @@ export function PriceDocEditor() {
         }
         extra={
           <Space wrap>
-            <Button onClick={() => nav(BASE)}>К списку</Button>
             {!readOnly && (
               <>
-                <Button loading={busy} onClick={() => run(false)}>
+                <Button type="primary" icon={<SaveOutlined />} loading={busy} onClick={() => run(false)}>
                   Сохранить черновик
                 </Button>
                 <Popconfirm title="Провести документ и установить цены?" onConfirm={() => run(true)}>
-                  <Button type="primary" loading={busy}>
+                  <Button className="sm-btn-blue" icon={<CheckOutlined />} loading={busy}>
                     Провести
                   </Button>
                 </Popconfirm>
@@ -170,7 +169,9 @@ export function PriceDocEditor() {
             )}
           </Space>
         }
-      />
+      >
+        <Button type="text" icon={<CloseOutlined />} onClick={() => nav(BASE)} title="Закрыть" aria-label="Закрыть" />
+      </PageTitle>
       <Card style={{ marginBottom: 16 }} loading={!isNew && doc.isLoading}>
         <Form form={form} layout="vertical" disabled={readOnly}>
           <Row gutter={16}>
