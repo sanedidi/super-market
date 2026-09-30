@@ -361,7 +361,7 @@ func (s *Service) AdminListProducts(ctx context.Context, f ProductFilter) ([]Pro
 	}
 	rows, err := s.pool.Query(ctx, `SELECT `+productCols+productFrom+`
 		WHERE ($4 = '' OR p.moderation_status = $4)`+filterWhere+`
-		ORDER BY p.created_at DESC LIMIT $5 OFFSET $6`,
+		ORDER BY p.created_at DESC, p.id LIMIT $5 OFFSET $6`,
 		strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, f.Status, f.Page.Limit, f.Page.Offset)
 	if err != nil {
 		return nil, err

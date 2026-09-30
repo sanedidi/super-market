@@ -72,3 +72,26 @@ func TestModuleRoutesAndNotFound(t *testing.T) {
 		t.Errorf("404 content-type %q", ct)
 	}
 }
+
+func TestOptional(t *testing.T) {
+	var in struct {
+		A Optional[int] `json:"a"`
+		B Optional[int] `json:"b"`
+		C Optional[int] `json:"c"`
+	}
+	if err := json.Unmarshal([]byte(`{"a": 5, "b": null}`), &in); err != nil {
+		t.Fatal(err)
+	}
+	if !in.A.Set || in.A.Value == nil || *in.A.Value != 5 || *in.A.Or() != 5 {
+		t.Errorf("a = %+v", in.A)
+	}
+	if !in.B.Set || in.B.Value != nil || in.B.Or() != nil {
+		t.Errorf("b = %+v", in.B)
+	}
+	if in.C.Set || in.C.Or() != nil {
+		t.Errorf("c = %+v", in.C)
+	}
+	if err := json.Unmarshal([]byte(`{"a": "x"}`), &in); err == nil {
+		t.Error("bad value accepted")
+	}
+}

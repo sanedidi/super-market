@@ -189,7 +189,7 @@ func (s *Service) listPayouts(ctx context.Context, networkID, status string, pag
 	}
 	rows, err := s.pool.Query(ctx, payoutSelect+`
 		WHERE ($1 = '' OR p.network_id::text = $1) AND ($2 = '' OR p.status = $2)
-		ORDER BY p.created_at DESC LIMIT $3 OFFSET $4`, networkID, status, page.Limit, page.Offset)
+		ORDER BY p.created_at DESC, p.id LIMIT $3 OFFSET $4`, networkID, status, page.Limit, page.Offset)
 	if err != nil {
 		return nil, err
 	}

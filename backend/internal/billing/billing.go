@@ -104,8 +104,8 @@ type TariffInput struct {
 
 const tariffSelect = `SELECT id, name, min_stores, price_per_store::text, is_active, created_at FROM tariffs`
 
-func (s *Service) ListTariffs(ctx context.Context) ([]Tariff, error) {
-	rows, err := s.pool.Query(ctx, tariffSelect+` ORDER BY is_active DESC, min_stores`)
+func (s *Service) ListTariffs(ctx context.Context, page httpx.Page) ([]Tariff, error) {
+	rows, err := s.pool.Query(ctx, tariffSelect+` ORDER BY is_active DESC, min_stores, id LIMIT $1 OFFSET $2`, page.Limit, page.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +215,7 @@ func scanNetworkBilling(row pgx.CollectableRow) (NetworkBilling, error) {
 
 func (s *Service) ListNetworks(ctx context.Context, overdueOnly bool, page httpx.Page) ([]NetworkBilling, error) {
 	rows, err := s.pool.Query(ctx, `SELECT * FROM (`+networkBillingSQL+`) x
-		WHERE NOT $1 OR x.overdue ORDER BY x.name LIMIT $2 OFFSET $3`, overdueOnly, page.Limit, page.Offset)
+		WHERE NOT $1 OR x.overdue ORDER BY x.name, x.id LIMIT $2 OFFSET $3`, overdueOnly, page.Limit, page.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -305,7 +305,7 @@ func (s *Service) ListInvoices(ctx context.Context, networkID, status string, pa
 		WHERE ($1 = '' OR i.network_id::text = $1)
 		  AND (CASE WHEN $2 = 'overdue' THEN i.status = 'unpaid' AND i.due_date < `+todaySQL+`
 		            ELSE $2 = '' OR i.status = $2 END)
-		ORDER BY i.period DESC, n.name LIMIT $3 OFFSET $4`, networkID, status, page.Limit, page.Offset)
+		ORDER BY i.period DESC, n.name, i.id LIMIT $3 OFFSET $4`, networkID, status, page.Limit, page.Offset)
 	if err != nil {
 		return nil, err
 	}

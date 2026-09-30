@@ -165,7 +165,7 @@ func (s *Service) List(ctx context.Context, status string, limit, offset int) ([
 		       p.paid_at, p.refunded_at, p.created_at
 		FROM payments p JOIN orders o ON o.id = p.order_id JOIN networks n ON n.id = o.network_id
 		WHERE $1 = '' OR p.status = $1
-		ORDER BY p.created_at DESC LIMIT $2 OFFSET $3`, status, limit, offset)
+		ORDER BY p.created_at DESC, p.id LIMIT $2 OFFSET $3`, status, limit, offset)
 	if err != nil {
 		return nil, err
 	}

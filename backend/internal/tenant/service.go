@@ -107,7 +107,7 @@ func (s *Service) GetNetwork(ctx context.Context, id string) (Network, error) {
 func (s *Service) ListNetworks(ctx context.Context, search string, page httpx.Page) ([]Network, error) {
 	rows, err := s.pool.Query(ctx, networkSelect+`
 		WHERE $1 = '' OR n.name ILIKE '%' || $1 || '%' OR u.phone LIKE '%' || $1 || '%'
-		ORDER BY n.created_at DESC LIMIT $2 OFFSET $3`,
+		ORDER BY n.created_at DESC, n.id LIMIT $2 OFFSET $3`,
 		strings.TrimSpace(search), page.Limit, page.Offset)
 	if err != nil {
 		return nil, err

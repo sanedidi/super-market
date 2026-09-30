@@ -136,7 +136,7 @@ func (m *Module) saveSettings(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) listTariffs(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Tariff], error) {
-		items, err := m.svc.ListTariffs(r.Context())
+		items, err := m.svc.ListTariffs(r.Context(), httpx.PageFrom(r))
 		return httpx.List[Tariff]{Items: items}, err
 	})
 }
