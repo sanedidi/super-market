@@ -11,17 +11,21 @@ const required = [{ required: true, whitespace: true, message: 'Обязател
 // ---------------------------------------------------------------- магазины
 
 export function StoresPage() {
-  const { me } = useStore()
+  const { me, stores, storesLoading, can } = useStore()
   const single = me?.network.kind === 'single'
+  // У одиночной сети магазин только один; новый магазин увидит лишь тот, кто видит все магазины.
+  const seesAll = !!me && (me.is_owner || me.all_stores)
+  const canCreate = can('stores.manage') && seesAll && !storesLoading && !(single && stores.length > 0)
   return (
     <>
-      {single && (
+      {single && stores.length > 0 && (
         <Alert type="info" showIcon style={{ marginBottom: 16 }} message="Сеть с одним магазином: создать второй магазин нельзя." />
       )}
       <CrudPage<Store>
         title="Магазины"
         path="/store/stores"
         createLabel="Новый магазин"
+        canCreate={canCreate}
         columns={[
           { title: 'Название', dataIndex: 'name' },
           { title: 'Адрес', dataIndex: 'address' },

@@ -5,6 +5,7 @@ import { PlusOutlined } from '@ant-design/icons'
 import {
   ActiveTag,
   CrudPage,
+  LoadError,
   PageTitle,
   RemoteSelect,
   api,
@@ -13,6 +14,7 @@ import {
   periodParams,
   useAction,
   useList,
+  usePaged,
 } from '@sm/shared'
 import { useStore } from '../ctx'
 import { Num, RangeFilter, Signed, docTypeTitles, kindTitles, thisMonth, type Range } from '../ui'
@@ -22,21 +24,24 @@ const cashboxLabel = (c: Cashbox) => `${c.name} (${c.currency})${c.store_name ? 
 
 /** Выписка по кассе или акт сверки: движения со знаком. */
 export function EntriesTable({ path }: { path: string }) {
-  const { data, isLoading } = useList<Entry>(path, { limit: 200 })
+  const list = usePaged<Entry>(path, undefined, 20)
   return (
-    <Table<Entry>
-      rowKey={(r) => r.doc_id + r.created_at + r.amount}
-      size="small"
-      loading={isLoading}
-      dataSource={data}
-      pagination={{ pageSize: 20, hideOnSinglePage: true }}
-      locale={{ emptyText: 'Движений нет' }}
-      columns={[
-        { title: 'Дата', dataIndex: 'created_at', render: dateTime },
-        { title: 'Документ', dataIndex: 'doc_type', render: (v: string) => docTypeTitles[v] ?? v },
-        { title: 'Сумма', dataIndex: 'amount', align: 'right', render: (v: string) => <Signed v={v} /> },
-      ]}
-    />
+    <>
+      <LoadError error={list.error} retry={() => list.refetch()} />
+      <Table<Entry>
+        rowKey={(r) => r.doc_id + r.created_at + r.amount}
+        size="small"
+        loading={list.isLoading || list.isFetching}
+        dataSource={list.items}
+        pagination={list.pagination}
+        locale={{ emptyText: 'Движений нет' }}
+        columns={[
+          { title: 'Дата', dataIndex: 'created_at', render: dateTime },
+          { title: 'Документ', dataIndex: 'doc_type', render: (v: string) => docTypeTitles[v] ?? v },
+          { title: 'Сумма', dataIndex: 'amount', align: 'right', render: (v: string) => <Signed v={v} /> },
+        ]}
+      />
+    </>
   )
 }
 
@@ -93,10 +98,9 @@ export function OperationsPage() {
   const [range, setRange] = useState<Range | null>(thisMonth)
   const [cashboxId, setCashboxId] = useState<string>()
   const [open, setOpen] = useState(false)
-  const { data, isLoading } = useList<CashOperation>('/store/finance/operations', {
+  const list = usePaged<CashOperation>('/store/finance/operations', {
     cashbox_id: cashboxId,
     ...periodParams(range),
-    limit: 200,
   })
   return (
     <>
@@ -111,13 +115,14 @@ export function OperationsPage() {
         <RangeFilter value={range} onChange={setRange} allowClear />
         <RemoteSelect<Cashbox> path="/store/finance/cashboxes" label={cashboxLabel} value={cashboxId} onChange={setCashboxId} allowClear placeholder="Все кассы" />
       </PageTitle>
+      <LoadError error={list.error} retry={() => list.refetch()} />
       <Card styles={{ body: { padding: 0 } }}>
         <Table<CashOperation>
           rowKey="id"
-          loading={isLoading}
-          dataSource={data}
+          loading={list.isLoading || list.isFetching}
+          dataSource={list.items}
           scroll={{ x: true }}
-          pagination={{ pageSize: 50, hideOnSinglePage: true }}
+          pagination={list.pagination}
           columns={[
             { title: '№', dataIndex: 'number', width: 70 },
             { title: 'Дата', dataIndex: 'created_at', render: dateTime },
@@ -248,7 +253,7 @@ export function TransfersPage({ kind }: { kind: 'handover' | 'transfer' }) {
   const path = kind === 'handover' ? '/store/finance/handovers' : '/store/finance/transfers'
   const title = kind === 'handover' ? 'Сдача кассы' : 'Из кассы в кассу'
   const [open, setOpen] = useState(false)
-  const { data, isLoading } = useList<CashTransfer>(path, { limit: 200 })
+  const list = usePaged<CashTransfer>(path)
   const [form] = Form.useForm()
   const save = useAction((v: Record<string, unknown>) => api.post(path, { ...v, note: v.note ?? '' }), { success: 'Проведено' })
   const cashboxes = useList<Cashbox>('/store/finance/cashboxes')
@@ -267,13 +272,14 @@ export function TransfersPage({ kind }: { kind: 'handover' | 'transfer' }) {
           </Button>
         }
       />
+      <LoadError error={list.error} retry={() => list.refetch()} />
       <Card styles={{ body: { padding: 0 } }}>
         <Table<CashTransfer>
           rowKey="id"
-          loading={isLoading}
-          dataSource={data}
+          loading={list.isLoading || list.isFetching}
+          dataSource={list.items}
           scroll={{ x: true }}
-          pagination={{ pageSize: 50, hideOnSinglePage: true }}
+          pagination={list.pagination}
           columns={[
             { title: '№', dataIndex: 'number', width: 70 },
             { title: 'Дата', dataIndex: 'created_at', render: dateTime },
@@ -328,10 +334,11 @@ export function TransfersPage({ kind }: { kind: 'handover' | 'transfer' }) {
 // ------------------------------------------------------------------- курс
 
 export function RatesPage() {
-  const { data, isLoading } = useList<Rate>('/store/finance/rates', { limit: 100 })
+  const list = usePaged<Rate>('/store/finance/rates', undefined, 20)
+  const latest = useList<Rate>('/store/finance/rates', { limit: 1 })
   const [form] = Form.useForm<{ rate: string }>()
   const save = useAction((v: { rate: string }) => api.post('/store/finance/rates', v), { success: 'Курс установлен' })
-  const current = data?.[0]
+  const current = latest.data?.[0]
   return (
     <>
       <PageTitle title="Курс валюты" />
@@ -348,12 +355,13 @@ export function RatesPage() {
           </Form>
         </Space>
       </Card>
+      <LoadError error={list.error ?? latest.error} retry={() => void list.refetch()} />
       <Card title="История" styles={{ body: { padding: 0 } }}>
         <Table<Rate>
           rowKey={(r) => r.created_at}
-          loading={isLoading}
-          dataSource={data}
-          pagination={{ pageSize: 20, hideOnSinglePage: true }}
+          loading={list.isLoading || list.isFetching}
+          dataSource={list.items}
+          pagination={list.pagination}
           columns={[
             { title: 'Дата', dataIndex: 'created_at', render: dateTime },
             { title: 'Курс', dataIndex: 'rate', align: 'right', render: (v: string) => money(v) },
