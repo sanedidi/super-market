@@ -18,6 +18,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/finance"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/inventory"
+	"github.com/sanedidi/super-market/backend/internal/media"
 	"github.com/sanedidi/super-market/backend/internal/notify"
 	"github.com/sanedidi/super-market/backend/internal/orders"
 	"github.com/sanedidi/super-market/backend/internal/payments"
@@ -90,8 +91,24 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		profile.NewModule(profile.NewService(pool, supportURL(cfg), cfg.PrivacyURL, pushConfigured(cfg, log)), auth, log),
 		family.NewModule(family.NewService(pool, ord, dlv, cfg.TelegramBotUsername), auth, log),
 		admin.NewModule(admin.NewService(pool, cfg.AcceptTimeout), auth, log),
+		media.NewModule(MediaService(cfg), auth, log),
 	)
 	return &App{Handler: h, Orders: ord, Payments: pay, Billing: bill}, nil
+}
+
+// MediaService — фото в MinIO; без S3_ENDPOINT загрузка выключена.
+func MediaService(cfg config.Config) *media.Service {
+	var store *media.S3
+	if cfg.S3Endpoint != "" {
+		store = &media.S3{
+			Endpoint:  cfg.S3Endpoint,
+			AccessKey: cfg.S3AccessKey,
+			SecretKey: cfg.S3SecretKey,
+			Bucket:    cfg.S3Bucket,
+			HTTP:      &http.Client{Timeout: 60 * time.Second},
+		}
+	}
+	return media.NewService(store, cfg.MediaBaseURL)
 }
 
 // pushConfigured — ключ Firebase задан и читается (отправляет push воркер).

@@ -26,6 +26,12 @@ x-backend-env: &backend-env
   REVIEW_LOGIN: ${REVIEW_LOGIN:-}
   SUPPORT_URL: ${SUPPORT_URL:-}
   PRIVACY_URL: ${PRIVACY_URL:-}
+  # Фото товаров, логотипы, баннеры — в MinIO (бакет создаётся сам).
+  S3_ENDPOINT: http://minio:9000
+  S3_ACCESS_KEY: ${MINIO_ROOT_USER}
+  S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+  S3_BUCKET: ${S3_BUCKET:-media}
+  MEDIA_BASE_URL: ${MEDIA_BASE_URL:-https://api.super-market.uz}
 
 x-logging: &logging
   driver: json-file
@@ -87,6 +93,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      minio:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz >/dev/null || exit 1"]
       interval: 10s

@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { Alert, Button, Card, Checkbox, Form, Input, Modal, Radio, Select, Switch, Table, Tag, Typography } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
-import { CrudPage, MapPointPicker, PageTitle, RemoteSelect, StatusTag, api, useAction, useList, type LatLng } from '@sm/shared'
+import { CrudPage, ImageUpload, MapPointPicker, PageTitle, RemoteSelect, StatusTag, api, useAction, useList, type LatLng } from '@sm/shared'
 import { useStore } from '../ctx'
 import type { Employee, Permission, PriceType, Role, Store, Warehouse } from '../types'
 
@@ -64,8 +64,8 @@ export function StoresPage() {
               <Input placeholder="+998 …" />
             </Form.Item>
             {editing && (
-              <Form.Item name="logo_url" label="Логотип для приложения" extra="Ссылка на квадратную картинку (https://…)">
-                <Input placeholder="https://…" />
+              <Form.Item name="logo_url" label="Логотип для приложения" extra="Квадратная картинка, JPG или PNG">
+                <ImageUpload hint="Логотип" />
               </Form.Item>
             )}
             <Form.Item name="geo" label="Точка магазина на карте" extra="Нажмите на карту, найдите адрес через поиск или перетащите метку. Нужна для онлайн-заказов">

@@ -1,7 +1,7 @@
 // Баннеры на главной приложения покупателя.
 import { DatePicker, Form, Input, InputNumber, Select, Space, Switch, Tag, Typography } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
-import { ActiveTag, CrudPage, RemoteSelect, dateTime } from '@sm/shared'
+import { ActiveTag, CrudPage, ImageUpload, RemoteSelect, dateTime } from '@sm/shared'
 import { SearchSelect } from '../components'
 
 interface Banner {
@@ -90,8 +90,8 @@ export function Banners() {
           <Form.Item name="subtitle" label="Подзаголовок">
             <Input placeholder="Только до воскресенья" />
           </Form.Item>
-          <Form.Item name="image_url" label="Картинка (ссылка)" extra="Необязательно; без картинки баннер — цветная плашка">
-            <Input placeholder="https://…" />
+          <Form.Item name="image_url" label="Картинка" extra="Необязательно; без картинки баннер — цветная плашка">
+            <ImageUpload hint="Картинка" />
           </Form.Item>
           <Form.Item name="color" label="Цвет фона" initialValue="#155EEF" rules={[{ pattern: /^#[0-9A-Fa-f]{6}$/, message: 'Формат #RRGGBB' }]}>
             <Input style={{ width: 140 }} />

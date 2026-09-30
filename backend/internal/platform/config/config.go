@@ -71,6 +71,14 @@ type Config struct {
 	// проверки приложения в App Store / Google Play. Для этого номера код не
 	// отправляется в Telegram, а всегда равен указанному. Только приложение покупателя.
 	ReviewLogin string
+
+	// Хранилище фото (MinIO / S3). Пустой S3Endpoint — загрузка фото выключена.
+	S3Endpoint  string
+	S3AccessKey string
+	S3SecretKey string
+	S3Bucket    string
+	// MediaBaseURL — начало ссылок на фото (https://super-market.uz). Пусто — из адреса запроса.
+	MediaBaseURL string
 }
 
 const devJWTSecret = "dev-secret-do-not-use-in-production"
@@ -107,6 +115,12 @@ func Load(getenv func(string) string) (Config, error) {
 		ReviewLogin:    strings.TrimSpace(getenv("REVIEW_LOGIN")),
 		SupportURL:     getenv("SUPPORT_URL"),
 		PrivacyURL:     getenv("PRIVACY_URL"),
+
+		S3Endpoint:   strings.TrimRight(getenv("S3_ENDPOINT"), "/"),
+		S3AccessKey:  getenv("S3_ACCESS_KEY"),
+		S3SecretKey:  getenv("S3_SECRET_KEY"),
+		S3Bucket:     valueOr(getenv("S3_BUCKET"), "media"),
+		MediaBaseURL: strings.TrimRight(getenv("MEDIA_BASE_URL"), "/"),
 	}
 
 	var errs []error

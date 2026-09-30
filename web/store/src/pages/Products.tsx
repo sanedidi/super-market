@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { Alert, Button, Card, Col, Form, Input, Modal, Radio, Row, Select, Table, Tag, Tooltip, Typography } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
-import { LoadError, PageTitle, RemoteSelect, api, money, useAction, usePaged } from '@sm/shared'
+import { ImageUpload, LoadError, PageTitle, RemoteSelect, api, money, useAction, usePaged } from '@sm/shared'
 import { useStore } from '../ctx'
 import { Num } from '../ui'
 import type { DictItem, Product } from '../types'
@@ -219,8 +219,8 @@ function ProductModal({ open, editing, onClose }: { open: boolean; editing: Prod
             </Form.Item>
           </Col>
           <Col span={24}>
-            <Form.Item name="images" label="Ссылки на фото">
-              <Select mode="tags" tokenSeparators={[' ']} open={false} placeholder="https://…" />
+            <Form.Item name="images" label="Фото" extra="До 10 фото, первое — главное. JPG, PNG, WEBP до 8 МБ">
+              <ImageUpload multiple max={10} />
             </Form.Item>
           </Col>
           <Col span={24}>

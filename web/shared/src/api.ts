@@ -98,10 +98,11 @@ async function request<T>(method: string, path: string, body?: unknown, retry = 
   const headers: Record<string, string> = {}
   const t = getTokens()
   if (t) headers.Authorization = `Bearer ${t.access_token}`
-  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  const form = body instanceof FormData
+  if (body !== undefined && !form) headers['Content-Type'] = 'application/json'
   let res: Response
   try {
-    res = await fetch(BASE + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
+    res = await fetch(BASE + path, { method, headers, body: body === undefined ? undefined : form ? body : JSON.stringify(body) })
   } catch {
     throw new ApiError(0, 'network', 'Нет связи с сервером')
   }
@@ -132,4 +133,10 @@ export const api = {
   put: <T>(path: string, body: unknown) => request<T>('PUT', path, body),
   patch: <T>(path: string, body: unknown) => request<T>('PATCH', path, body),
   del: (path: string) => request<void>('DELETE', path),
+  /** Фото в хранилище (MinIO) — возвращает публичную ссылку. */
+  upload: (file: Blob, name = 'photo') => {
+    const fd = new FormData()
+    fd.append('file', file, name)
+    return request<{ url: string }>('POST', `/${app}/uploads`, fd).then((r) => r.url)
+  },
 }

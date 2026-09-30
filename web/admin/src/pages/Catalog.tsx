@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Button, ColorPicker, Form, Image, Input, InputNumber, Modal, Segmented, Space, Switch, Tag, Typography } from 'antd'
-import { ActiveTag, CrudPage, RemoteSelect, StatusTag, api, money, useAction } from '@sm/shared'
+import { ActiveTag, CrudPage, ImageUpload, RemoteSelect, StatusTag, api, money, useAction } from '@sm/shared'
 import { SearchSelect } from '../components'
 
 interface Dict {
@@ -275,7 +275,7 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
               ]
             : []),
         ]}
-        toForm={(p) => ({ ...p, ...attrsToForm(p.attributes), images: p.images?.join('\n'), barcodes: p.barcodes?.join('\n') })}
+        toForm={(p) => ({ ...p, ...attrsToForm(p.attributes), images: p.images ?? [], barcodes: p.barcodes?.join('\n') })}
         toBody={(raw) => {
           const { rest: v, attrs } = formToAttrs(raw)
           return {
@@ -284,10 +284,7 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
           // Пустая строка — убрать бренд/цвет; null сервер понимает как «не менять».
           brand_id: v.brand_id ?? '',
           color_id: v.color_id ?? '',
-          images: String(v.images ?? '')
-            .split('\n')
-            .map((s) => s.trim())
-            .filter(Boolean),
+          images: (v.images as string[] | undefined) ?? [],
           barcodes: String(v.barcodes ?? '')
             .split(/[\n,]/)
             .map((s) => s.trim())
@@ -329,8 +326,8 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
             <Form.Item name="barcodes" label="Штрихкоды" extra="По одному в строке">
               <Input.TextArea rows={2} />
             </Form.Item>
-            <Form.Item name="images" label="Фото (ссылки)" extra="По одной ссылке в строке">
-              <Input.TextArea rows={2} />
+            <Form.Item name="images" label="Фото" extra="До 10 фото, первое — главное. JPG, PNG, WEBP до 8 МБ">
+              <ImageUpload multiple max={10} />
             </Form.Item>
             <Typography.Title level={5}>Для карточки в приложении</Typography.Title>
             <Form.Item label="Пищевая ценность на 100 г" style={{ marginBottom: 0 }}>
