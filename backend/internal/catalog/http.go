@@ -180,7 +180,7 @@ func (m *Module) storeUpdateProduct(w http.ResponseWriter, r *http.Request) {
 func (m *Module) listPriceTypes(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[PriceType], error) {
 		items, err := m.svc.ListPriceTypes(r.Context(), pr(r))
-		return httpx.List[PriceType]{Items: items}, err
+		return httpx.List[PriceType]{Items: httpx.PageSlice(r, items)}, err
 	})
 }
 

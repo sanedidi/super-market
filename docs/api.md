@@ -58,6 +58,9 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 `store_ids` из запроса заменяют лишь видимые ему магазины, остальные магазины сотрудника сохраняются.
 Назначить магазин, к которому нет доступа, или изменить `all_stores` он не может — 403.
 
+Небольшие справочники (`/store/stores`, `/store/warehouses`, `/store/roles`, `/store/price-types`, `/store/finance/cashboxes`,
+`/payment-methods`, `/reasons`, `/counterparty-types`) без `limit` отдаются целиком, с `limit`/`offset` — страницей.
+
 ### Права на чтение
 
 Списки и карточки разделов читаются только с правом на раздел, иначе 403 `forbidden`

@@ -74,6 +74,21 @@ func PageFrom(r *http.Request) Page {
 	return p
 }
 
+// PageSlice отдаёт страницу небольшого справочника, который читается из
+// базы целиком: только если клиент передал limit (без него — весь список,
+// как раньше). Так постраничные таблицы панели не показывают одни и те же
+// записи на каждой странице.
+func PageSlice[T any](r *http.Request, items []T) []T {
+	if !r.URL.Query().Has("limit") {
+		return items
+	}
+	p := PageFrom(r)
+	if p.Offset >= len(items) {
+		return items[:0]
+	}
+	return items[p.Offset:min(len(items), p.Offset+p.Limit)]
+}
+
 // List — стандартная обёртка списка в ответе.
 type List[T any] struct {
 	Items []T `json:"items"`

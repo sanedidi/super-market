@@ -62,6 +62,19 @@ func TestStockDocumentsStoreFilter(t *testing.T) {
 	}
 	a.expect(a.do("GET", "/store/inventory/documents?store_id=nope", tok, nil), 400, "bad store_id")
 
+	// Небольшие справочники читаются целиком, но с limit отдаются страницей.
+	if all := a.expect(a.do("GET", "/store/stores", tok, nil), 200, "stores").items(); len(all) != 2 {
+		t.Fatalf("stores = %v", all)
+	}
+	sp1 := a.expect(a.do("GET", "/store/stores?limit=1", tok, nil), 200, "stores p1").items()
+	sp2 := a.expect(a.do("GET", "/store/stores?limit=1&offset=1", tok, nil), 200, "stores p2").items()
+	if len(sp1) != 1 || len(sp2) != 1 || sp1[0]["id"] == sp2[0]["id"] {
+		t.Fatalf("store pages = %v / %v", sp1, sp2)
+	}
+	if n := len(a.expect(a.do("GET", "/store/finance/cashboxes?limit=1&offset=5", tok, nil), 200, "cashboxes past end").items()); n != 0 {
+		t.Fatalf("cashboxes past end = %d", n)
+	}
+
 	// Страницы не пересекаются.
 	page1 := a.expect(a.do("GET", "/store/inventory/documents?limit=2", tok, nil), 200, "page 1").items()
 	page2 := a.expect(a.do("GET", "/store/inventory/documents?limit=2&offset=2", tok, nil), 200, "page 2").items()

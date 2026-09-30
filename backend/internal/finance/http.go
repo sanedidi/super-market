@@ -89,7 +89,8 @@ func (m *Module) setRate(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) listCounterpartyTypes(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[CounterpartyType], error) {
-		return list(m.svc.ListCounterpartyTypes(r.Context(), pr(r)))
+		items, err := m.svc.ListCounterpartyTypes(r.Context(), pr(r))
+		return list(httpx.PageSlice(r, items), err)
 	})
 }
 
@@ -137,7 +138,8 @@ func (m *Module) counterpartyEntries(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) listReasons(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Reason], error) {
-		return list(m.svc.ListReasons(r.Context(), pr(r)))
+		items, err := m.svc.ListReasons(r.Context(), pr(r))
+		return list(httpx.PageSlice(r, items), err)
 	})
 }
 
@@ -155,7 +157,8 @@ func (m *Module) updateReason(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) listCashboxes(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Cashbox], error) {
-		return list(m.svc.ListCashboxes(r.Context(), pr(r)))
+		items, err := m.svc.ListCashboxes(r.Context(), pr(r))
+		return list(httpx.PageSlice(r, items), err)
 	})
 }
 
@@ -179,7 +182,8 @@ func (m *Module) cashboxEntries(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) listPaymentMethods(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[PaymentMethod], error) {
-		return list(m.svc.ListPaymentMethods(r.Context(), pr(r), r.URL.Query().Get("store_id")))
+		items, err := m.svc.ListPaymentMethods(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+		return list(httpx.PageSlice(r, items), err)
 	})
 }
 

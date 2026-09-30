@@ -117,7 +117,7 @@ func (m *Module) listRoles(w http.ResponseWriter, r *http.Request) {
 		m.fail(w, r, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": roles})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": httpx.PageSlice(r, roles)})
 }
 
 func (m *Module) createRole(w http.ResponseWriter, r *http.Request) {
