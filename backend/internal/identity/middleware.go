@@ -40,6 +40,27 @@ func (a *Authenticator) Require(app string) func(http.Handler) http.Handler {
 	}
 }
 
+// Allow пускает сотрудника, у которого есть хотя бы одно из прав perms.
+// Ставится на маршруты чтения после Require(AppStore): права на запись
+// проверяют сервисы, а это — чтобы список или карточку раздела не видел
+// тот, кому раздел не положен.
+func (a *Authenticator) Allow(perms ...string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			p := FromContext(r.Context())
+			if p == nil {
+				httpx.Fail(w, r, a.log, apperr.Unauthorized("нужен токен авторизации"))
+				return
+			}
+			if err := p.RequireAny(perms...); err != nil {
+				httpx.Fail(w, r, a.log, err)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func (a *Authenticator) authenticate(r *http.Request, app string) (*Principal, error) {
 	raw, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok || raw == "" {

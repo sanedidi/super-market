@@ -240,6 +240,16 @@ func (s *Service) CreateEmployee(ctx context.Context, p *Principal, in EmployeeI
 	}
 	fullName := strings.TrimSpace(*in.FullName)
 	allStores := in.AllStores != nil && *in.AllStores
+	if err := checkStoreGrant(p, allStores, false); err != nil {
+		return Employee{}, err
+	}
+	if in.StoreIDs != nil {
+		ids, err := mergeStoreIDs(p, nil, *in.StoreIDs)
+		if err != nil {
+			return Employee{}, err
+		}
+		in.StoreIDs = &ids
+	}
 
 	var out Employee
 	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -305,6 +315,18 @@ func (s *Service) UpdateEmployee(ctx context.Context, p *Principal, id string, i
 				return err
 			}
 		}
+		if in.AllStores != nil && *in.AllStores != cur.AllStores {
+			if err := checkStoreGrant(p, *in.AllStores, cur.AllStores); err != nil {
+				return err
+			}
+		}
+		if in.StoreIDs != nil {
+			ids, err := mergeStoreIDs(p, cur.StoreIDs, *in.StoreIDs)
+			if err != nil {
+				return err
+			}
+			in.StoreIDs = &ids
+		}
 		if _, err := tx.Exec(ctx, `
 			UPDATE employees SET
 				full_name  = COALESCE($3, full_name),
@@ -332,6 +354,38 @@ func (s *Service) UpdateEmployee(ctx context.Context, p *Principal, id string, i
 		return err
 	})
 	return out, err
+}
+
+// checkStoreGrant: менять доступ «ко всем магазинам» может только тот,
+// кто сам видит все магазины.
+func checkStoreGrant(p *Principal, allStores, was bool) error {
+	if allStores != was && !p.SeesAllStores() {
+		return apperr.Forbidden("доступ ко всем магазинам меняет только сотрудник, который сам видит все магазины")
+	}
+	return nil
+}
+
+// mergeStoreIDs — магазины сотрудника после правки. Кто видит не все
+// магазины, меняет только свои: чужие магазины сотрудника (которых нет в
+// форме редактора) сохраняются, а назначить магазин, к которому сам не
+// имеешь доступа, нельзя.
+func mergeStoreIDs(p *Principal, current, requested []string) ([]string, error) {
+	if p.SeesAllStores() {
+		return requested, nil
+	}
+	out := make([]string, 0, len(requested)+len(current))
+	for _, id := range uniq(requested) {
+		if !p.CanAccessStore(id) && !slices.Contains(current, id) {
+			return nil, apperr.Forbidden("store_ids: нет доступа к магазину").WithDetails(map[string]any{"store_id": id})
+		}
+		out = append(out, id)
+	}
+	for _, id := range current {
+		if !p.CanAccessStore(id) && !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	return out, nil
 }
 
 func (s *Service) checkAssignableRole(ctx context.Context, q db.Querier, networkID, roleID string) error {

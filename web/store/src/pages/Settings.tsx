@@ -220,7 +220,13 @@ export function RolesPage() {
 
 export function EmployeesPage() {
   const { stores } = useStore()
-  const storeName = (id: string) => stores.find((s) => s.id === id)?.name ?? '—'
+  const visible = (id: string) => stores.some((s) => s.id === id)
+  const storeName = (id: string) => stores.find((s) => s.id === id)?.name
+  const storesText = (ids: string[]) => {
+    const names = ids.map(storeName).filter(Boolean)
+    const hidden = ids.length - names.length
+    return [...names, ...(hidden ? [`ещё ${hidden} (нет доступа)`] : [])].join(', ') || '—'
+  }
   return (
     <CrudPage<Employee>
       title="Сотрудники"
@@ -233,7 +239,7 @@ export function EmployeesPage() {
         {
           title: 'Магазины',
           key: 'stores',
-          render: (_, r) => (r.all_stores ? 'Все магазины' : (r.store_ids ?? []).map(storeName).join(', ') || '—'),
+          render: (_, r) => (r.all_stores ? 'Все магазины' : storesText(r.store_ids ?? [])),
         },
         { title: 'Статус', dataIndex: 'status', render: (v: string) => (v === 'active' ? <StatusTag status="active" /> : <Tag>Отключён</Tag>) },
       ]}
@@ -242,10 +248,13 @@ export function EmployeesPage() {
         full_name: r.full_name,
         role_id: r.role_id,
         all_stores: r.all_stores,
-        store_ids: r.store_ids ?? [],
+        // В форме — только видимые магазины; остальные сервер сохранит сам.
+        store_ids: (r.store_ids ?? []).filter(visible),
         status: r.status,
       })}
       toBody={(v, editing) => {
+        // У владельца сервер разрешает менять только имя.
+        if (editing?.is_owner) return { full_name: v.full_name }
         const body: Record<string, unknown> = {
           full_name: v.full_name,
           role_id: v.role_id,
@@ -261,9 +270,12 @@ export function EmployeesPage() {
 }
 
 function EmployeeFields({ editing }: { editing: Employee | null }) {
-  const { stores } = useStore()
+  const { stores, me } = useStore()
   const form = Form.useFormInstance()
   const all = Form.useWatch('all_stores', form)
+  // Доступ ко всем магазинам выдаёт только тот, кто сам их видит.
+  const seesAll = !!me && (me.is_owner || me.all_stores)
+  const hidden = editing && !editing.all_stores ? (editing.store_ids ?? []).filter((id) => !stores.some((s) => s.id === id)).length : 0
   return (
     <>
       {!editing && (
@@ -278,10 +290,15 @@ function EmployeeFields({ editing }: { editing: Employee | null }) {
         <RemoteSelect<Role> path="/store/roles" disabled={editing?.is_owner} filter={(r) => !r.is_owner || !!editing?.is_owner} />
       </Form.Item>
       <Form.Item name="all_stores" label="Доступ ко всем магазинам" valuePropName="checked" initialValue={false}>
-        <Switch disabled={editing?.is_owner} />
+        <Switch disabled={editing?.is_owner || !seesAll} />
       </Form.Item>
-      {!all && (
-        <Form.Item name="store_ids" label="Магазины" rules={[{ required: true, message: 'Выберите магазины' }]}>
+      {!all && !editing?.is_owner && (
+        <Form.Item
+          name="store_ids"
+          label="Магазины"
+          rules={[{ required: !hidden, message: 'Выберите магазины' }]}
+          extra={hidden ? `Ещё магазинов, к которым у вас нет доступа: ${hidden}. Они сохранятся.` : undefined}
+        >
           <Select mode="multiple" options={stores.map((s) => ({ value: s.id, label: s.name }))} />
         </Form.Item>
       )}
