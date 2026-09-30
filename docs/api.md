@@ -131,7 +131,7 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 | PATCH | `/store/price-types/{id}` | `catalog.manage` | `{"name"?, "is_active"?, "is_default": true}` |
 | GET | `/store/price-documents` | `prices.manage` | документы «Установка цен» |
 | POST | `/store/price-documents` | `prices.manage` | `{"price_type_id", "store_id"?: null — вся сеть, "note"?, "items": [{"product_id", "new_price"}]}` — черновик |
-| GET | `/store/price-documents/{id}` | `prices.manage` | со строками и `previous_price` |
+| GET | `/store/price-documents/{id}` | `prices.manage` | со строками: `previous_price` (после проведения), `current_price` — действующая сейчас цена на уровне документа |
 | PATCH | `/store/price-documents/{id}` | `prices.manage` | `{"note"?, "items"?}` — только черновик, `items` заменяются целиком |
 | POST | `/store/price-documents/{id}/post` | `prices.manage` | провести: записать цены, запомнить прежние |
 
@@ -256,8 +256,8 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 | GET/PUT | `/store/stores/{id}/delivery` | `stores.manage` | `accepts_online`, `min_order_amount`, `delivery_radius_m`, `working_hours` [{weekday 0–6, opens, closes}], `rules` |
 | GET/POST | `/store/stores/{id}/zones` | `stores.manage` | зоны доставки `{"name","price","polygon":[[lng,lat],...]}` |
 | PATCH/DELETE | `/store/stores/{id}/zones/{zone}` | | |
-| GET | `/store/orders?store_id=&status=&from=&to=` | | заказы (без неоплаченных) |
-| GET | `/store/orders/{id}` | | |
+| GET | `/store/orders?store_id=&status=&from=&to=&q=&limit=&offset=` | `orders.manage` | заказы (без неоплаченных); `q` — номер заказа (можно с «№») или от 3 цифр телефона покупателя |
+| GET | `/store/orders/{id}` | `orders.manage` | строки с `price`, `old_price` (цена до акции или `null`), заказ с `discount` |
 | POST | `/store/orders/{id}/accept` · `/start-picking` · `/start-delivery` · `/delivered` | `orders.manage` | смена статуса |
 | POST | `/store/orders/{id}/picked` | `orders.manage` | собран: `{"items":[{"line":1,"warehouse_id":"..."}]}` — строки с другого склада (отметка `from_other_warehouse`) |
 | POST | `/store/orders/{id}/cancel` | `orders.manage` | `{"reason"}`, до сборки |

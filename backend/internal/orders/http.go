@@ -353,7 +353,8 @@ func (m *Module) storeList(w http.ResponseWriter, r *http.Request) {
 			return httpx.List[Order]{}, err
 		}
 		items, err := m.svc.StoreList(r.Context(), pr(r), ListFilter{
-			StoreID: q.Get("store_id"), Status: q.Get("status"), From: from, To: to, Sort: q.Get("sort"), Page: httpx.PageFrom(r),
+			StoreID: q.Get("store_id"), Status: q.Get("status"), From: from, To: to, Sort: q.Get("sort"), Query: q.Get("q"),
+			Page: httpx.PageFrom(r),
 		})
 		return httpx.List[Order]{Items: items}, err
 	})

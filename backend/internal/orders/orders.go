@@ -196,7 +196,24 @@ type ListFilter struct {
 	To      *time.Time
 	// Sort: пусто — новые сверху, delivery — по времени доставки (ко времени — по окну).
 	Sort string
-	Page httpx.Page
+	// Query — номер заказа (точно, можно с «№») или от 3 цифр телефона покупателя.
+	Query string
+	Page  httpx.Page
+}
+
+// searchTerms — номер заказа и цифры телефона из строки поиска.
+func searchTerms(q string) (number, phone string) {
+	q = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(q), "№"))
+	digits := strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, q)
+	if len(digits) >= 3 {
+		phone = digits
+	}
+	return q, phone
 }
 
 func (s *Service) ClientListOrders(ctx context.Context, p *identity.Principal, page httpx.Page) ([]Order, error) {
@@ -237,15 +254,18 @@ func (s *Service) StoreList(ctx context.Context, p *identity.Principal, f ListFi
 	if f.Sort != "" && f.Sort != "delivery" {
 		return nil, apperr.Validation("sort: пусто или delivery")
 	}
+	number, phone := searchTerms(f.Query)
 	rows, err := s.pool.Query(ctx, orderSelect+`
 		WHERE o.network_id = $1 AND ($2 OR o.store_id = ANY($3::uuid[]))
 		  AND ($4 = '' OR o.store_id::text = $4)
 		  AND (CASE WHEN $5 = '' THEN o.status NOT IN ('awaiting_payment', 'expired') ELSE o.status = $5 END)
 		  AND ($6::timestamptz IS NULL OR o.created_at >= $6) AND ($7::timestamptz IS NULL OR o.created_at < $7)
+		  AND ($11 = '' OR o.number::text = $11 OR ($12 <> '' AND regexp_replace(o.customer_phone, '\D', '', 'g') LIKE '%' || $12 || '%'))
 		ORDER BY CASE WHEN $10 = 'delivery' THEN COALESCE(o.delivery_from, o.paid_at, o.created_at) END,
 		         o.created_at DESC
 		LIMIT $8 OFFSET $9`,
-		p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.StoreID, f.Status, f.From, f.To, f.Page.Limit, f.Page.Offset, f.Sort)
+		p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.StoreID, f.Status, f.From, f.To, f.Page.Limit, f.Page.Offset, f.Sort,
+		number, phone)
 	if err != nil {
 		return nil, err
 	}

@@ -161,6 +161,8 @@ type PriceDocItem struct {
 	ProductName   string  `json:"product_name"`
 	NewPrice      string  `json:"new_price"`
 	PreviousPrice *string `json:"previous_price"`
+	// Действующая сейчас цена на уровне документа (магазин → сеть → базовая).
+	CurrentPrice string `json:"current_price"`
 }
 
 type PriceDocument struct {
@@ -241,8 +243,14 @@ func (s *Service) getPriceDoc(ctx context.Context, q db.Querier, pr *identity.Pr
 		return PriceDocument{}, err
 	}
 	rows, err = q.Query(ctx, `
-		SELECT i.product_id, p.name, i.new_price::text, i.previous_price::text
-		FROM price_document_items i JOIN products p ON p.id = i.product_id
+		SELECT i.product_id, p.name, i.new_price::text, i.previous_price::text,
+		       COALESCE(sp.price, np.price, p.base_price)::text
+		FROM price_document_items i
+		JOIN products p ON p.id = i.product_id
+		JOIN price_documents d ON d.id = i.document_id
+		LEFT JOIN prices sp ON d.store_id IS NOT NULL AND sp.product_id = i.product_id
+		                   AND sp.price_type_id = d.price_type_id AND sp.store_id = d.store_id
+		LEFT JOIN prices np ON np.product_id = i.product_id AND np.price_type_id = d.price_type_id AND np.store_id IS NULL
 		WHERE i.document_id = $1 ORDER BY p.name`, id)
 	if err != nil {
 		return PriceDocument{}, err

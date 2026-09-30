@@ -263,6 +263,16 @@ func TestOnlineOrdersFlow(t *testing.T) {
 	if len(list) != 1 || list[0]["status"] != "paid" {
 		t.Fatalf("store orders = %v", list)
 	}
+	// Поиск по номеру заказа (можно с «№») и по цифрам телефона покупателя.
+	num := itoa(int(list[0]["number"].(float64)))
+	for _, q := range []string{num, "%E2%84%96" + num, "90000-0050"} {
+		if found := a.expect(a.do("GET", "/store/orders?q="+q, tok, nil), 200, "search "+q).items(); len(found) != 1 {
+			t.Fatalf("search %q = %v", q, found)
+		}
+	}
+	if found := a.expect(a.do("GET", "/store/orders?q=99999", tok, nil), 200, "search miss").items(); len(found) != 0 {
+		t.Fatalf("search miss = %v", found)
+	}
 	a.expect(a.do("POST", "/store/orders/"+order1+"/start-picking", tok, nil), 409, "picking before accept")
 	a.expect(a.do("POST", "/store/orders/"+order1+"/accept", tok, nil), 200, "accept")
 	a.expect(a.do("POST", "/store/orders/"+order1+"/start-picking", tok, nil), 200, "start picking")
