@@ -126,7 +126,7 @@ export function OrderAlerts() {
       <Button
         type="text"
         aria-label="Уведомления о новых заказах"
-        icon={enabled ? <BellFilled style={{ color: '#16a34a' }} /> : <BellOutlined />}
+        icon={enabled ? <BellFilled style={{ color: '#17b26a' }} /> : <BellOutlined />}
         onClick={() => void toggle()}
       />
     </Tooltip>

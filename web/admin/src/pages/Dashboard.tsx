@@ -41,7 +41,7 @@ function Tile({
           value={value}
           suffix={suffix}
           loading={loading}
-          valueStyle={danger && Number(value) > 0 ? { color: '#cf1322' } : undefined}
+          valueStyle={danger && Number(value) > 0 ? { color: '#b3261e' } : undefined}
         />
       </Card>
     </Col>

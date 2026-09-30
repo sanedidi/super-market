@@ -35,7 +35,7 @@ export function BalancePage() {
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={12} md={6}>
           <Card loading={balance.isLoading}>
-            <Statistic title="Доступно к выводу, сум" value={money(b?.available)} valueStyle={{ color: '#16a34a' }} />
+            <Statistic title="Доступно к выводу, сум" value={money(b?.available)} valueStyle={{ color: '#17b26a' }} />
           </Card>
         </Col>
         <Col xs={12} md={6}>
@@ -50,7 +50,7 @@ export function BalancePage() {
         </Col>
         <Col xs={12} md={6}>
           <Card loading={billing.isLoading}>
-            <Statistic title="Долг по подписке, сум" value={money(billing.data?.unpaid_uzs)} valueStyle={{ color: Number(billing.data?.unpaid_uzs) > 0 ? '#dc2626' : undefined }} />
+            <Statistic title="Долг по подписке, сум" value={money(billing.data?.unpaid_uzs)} valueStyle={{ color: Number(billing.data?.unpaid_uzs) > 0 ? '#b3261e' : undefined }} />
           </Card>
         </Col>
       </Row>

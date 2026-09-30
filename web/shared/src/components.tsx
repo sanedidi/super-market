@@ -127,27 +127,29 @@ export function PagedTable<T extends object>({
 }
 
 const statusColors: Record<string, string> = {
-  draft: 'default',
-  posted: 'green',
-  active: 'green',
-  blocked: 'red',
-  pending: 'orange',
-  approved: 'green',
-  rejected: 'red',
-  registered: 'green',
-  paid: 'green',
-  unpaid: 'orange',
-  cancelled: 'default',
-  expired: 'default',
-  requested: 'blue',
-  refund_pending: 'orange',
+  draft: 'overdue',
+  posted: 'completed',
+  active: 'completed',
+  blocked: 'cancelled',
+  pending: 'pending',
+  approved: 'completed',
+  rejected: 'cancelled',
+  registered: 'completed',
+  paid: 'completed',
+  unpaid: 'pending',
+  cancelled: 'overdue',
+  expired: 'overdue',
+  requested: 'info',
+  refund_pending: 'pending',
   refunded: 'purple',
-  awaiting_payment: 'default',
-  accepted: 'blue',
-  picking: 'blue',
-  picked: 'cyan',
-  delivering: 'geekblue',
-  delivered: 'green',
+  awaiting_payment: 'overdue',
+  accepted: 'info',
+  picking: 'info',
+  picked: 'info',
+  delivering: 'pending',
+  delivered: 'completed',
+  available: 'completed',
+  created: 'info',
 }
 
 const statusTitles: Record<string, string> = {
@@ -177,7 +179,7 @@ const statusTitles: Record<string, string> = {
 }
 
 export function StatusTag({ status, title }: { status: string; title?: string }) {
-  return <Tag color={statusColors[status] ?? 'default'}>{title ?? statusTitles[status] ?? status}</Tag>
+  return <Tag bordered className={`sm-status sm-status-${statusColors[status] ?? 'overdue'}`}>{title ?? statusTitles[status] ?? status}</Tag>
 }
 
 export function ActiveTag({ active }: { active: boolean }) {

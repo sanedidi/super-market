@@ -16,7 +16,14 @@
   --sm-input: #cbd5e1;
   --sm-bg: #f2f4f7;
   --sm-dark: #0f1729;
-  --sm-accent: #155eef;
+  --sm-accent: #0040c1;
+  --sm-page: #155eef;
+  --sm-sell: #2d3e50;
+  --sm-success: #17b26a;
+  --sm-danger: #b3261e;
+  --sm-payment: #900b09;
+  --sm-primary: #1f2937;
+  --sm-blue: #1746a2;
   --sm-radius: 16px;
   --sm-font: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
@@ -128,8 +135,8 @@ body {
   border-radius: 8px;
   display: grid;
   place-items: center;
-  background: linear-gradient(145deg, #3b82f6, #155eef);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 4px 10px rgba(21, 94, 239, 0.35);
+  background: #155eef;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 4px 10px rgba(21, 94, 239, 0.35);
 }
 
 .sm-brand-text small {
@@ -322,7 +329,7 @@ body {
   font-size: 12px;
   font-weight: 800;
   color: #fff;
-  background: linear-gradient(145deg, #6366f1, #7c3aed);
+  background: linear-gradient(135deg, #7c3aed, #4f46e5);
 }
 
 .sm-user-text {
@@ -373,7 +380,7 @@ body {
   font: inherit;
   font-size: 14px;
   font-weight: 600;
-  color: #fecaca;
+  color: #f87171;
   background: none;
   border: 0;
   border-radius: 8px;
@@ -782,7 +789,7 @@ body {
 }
 
 .ant-pagination .ant-pagination-item-active a {
-  color: var(--sm-accent) !important;
+  color: var(--sm-page) !important;
   font-weight: 700;
 }
 
@@ -952,7 +959,7 @@ body {
 }
 
 .ant-tabs .ant-tabs-ink-bar {
-  background: var(--sm-accent);
+  background: #3761e9;
   height: 2px !important;
 }
 
@@ -1178,7 +1185,7 @@ body {
   margin-top: 2px;
   font-size: 11px;
   font-style: normal;
-  color: #16a34a;
+  color: #17b26a;
 }
 
 .sm-login-mock-bars {
@@ -1224,3 +1231,32 @@ body {
   overflow-x: auto;
   scrollbar-width: none;
 }
+
+/* ─── Статусы (палитра Hamroh .status) ───────────────────────────────────── */
+
+.ant-tag.sm-status {
+  margin-inline-end: 0;
+  padding: 1px 10px;
+  border-radius: 999px;
+  border: 1px solid;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+}
+.ant-tag:not(.ant-tag-has-color),
+.ant-tag.sm-status-overdue { background: #f3f4f6; border-color: #d1d5db; color: #374151; }
+.ant-tag.ant-tag-orange, .ant-tag.ant-tag-gold, .ant-tag.ant-tag-warning,
+.ant-tag.sm-status-pending { background: #fef3c7; border-color: #d97706; color: #92400e; }
+.ant-tag.ant-tag-green, .ant-tag.ant-tag-success,
+.ant-tag.sm-status-completed { background: #d1fae5; border-color: #10b981; color: #065f46; }
+.ant-tag.ant-tag-red, .ant-tag.ant-tag-error,
+.ant-tag.sm-status-cancelled { background: #fee2e2; border-color: #ef4444; color: #991b1b; }
+
+.ant-tag.ant-tag-blue, .ant-tag.ant-tag-geekblue, .ant-tag.ant-tag-cyan, .ant-tag.ant-tag-processing,
+.ant-tag.sm-status-info { background: #eef2ff; border-color: #3761e9; color: #1746a2; }
+.ant-tag.ant-tag-purple,
+.ant-tag.sm-status-purple { background: #f3e8ff; border-color: #a78bfa; color: #5b21b6; }
+
+.text-red { color: #ff383c; }
+.text-green { color: #16a34a; }
+.text-blue { color: #0088ff; }

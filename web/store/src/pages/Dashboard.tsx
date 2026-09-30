@@ -59,7 +59,7 @@ function Widgets() {
               <Statistic
                 title="Новые онлайн-заказы"
                 value={orders.data?.length ?? 0}
-                valueStyle={{ color: (orders.data?.length ?? 0) > 0 ? '#ea580c' : undefined }}
+                valueStyle={{ color: (orders.data?.length ?? 0) > 0 ? '#d97706' : undefined }}
               />
             </Card>
           </Col>

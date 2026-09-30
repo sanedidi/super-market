@@ -69,10 +69,10 @@ export function CashFlowPage() {
                 <Statistic title="На начало" value={money(t('opening'))} />
               </Col>
               <Col xs={12} md={6}>
-                <Statistic title="Приход" value={money(t('income'))} valueStyle={{ color: '#16a34a' }} />
+                <Statistic title="Приход" value={money(t('income'))} valueStyle={{ color: '#17b26a' }} />
               </Col>
               <Col xs={12} md={6}>
-                <Statistic title="Расход" value={money(t('expense'))} valueStyle={{ color: '#dc2626' }} />
+                <Statistic title="Расход" value={money(t('expense'))} valueStyle={{ color: '#b3261e' }} />
               </Col>
               <Col xs={12} md={6}>
                 <Statistic title="На конец" value={money(t('closing'))} />
@@ -149,7 +149,7 @@ export function ProfitLossPage() {
       <Amount v={v} {...opts} />
     </Descriptions.Item>
   )
-  const color = (v: string | undefined) => (Number(v) < 0 ? '#dc2626' : '#16a34a')
+  const color = (v: string | undefined) => (Number(v) < 0 ? '#b3261e' : '#17b26a')
   const otherIncome = (d?.other_income ?? []).reduce((s, r) => s + Number(r.amount), 0)
   const expenses = (d?.expenses ?? []).reduce((s, r) => s + Number(r.amount), 0)
 

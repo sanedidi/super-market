@@ -25,13 +25,21 @@ const queryClient = new QueryClient({
 /** Тема antd под дизайн Hamroh: тёмные основные кнопки, шрифт Nunito Sans, скругления. */
 const theme = {
   token: {
-    colorPrimary: '#1e293b',
-    colorLink: '#155eef',
-    colorInfo: '#155eef',
-    colorSuccess: '#16a34a',
-    colorError: '#d92d20',
+    colorPrimary: '#1f2937',
+    colorLink: '#0040c1',
+    colorInfo: '#0040c1',
+    colorSuccess: '#17b26a',
+    colorError: '#b3261e',
+    colorWarning: '#d97706',
+    colorErrorText: '#b3261e',
+    colorTextTertiary: '#667085',
+    colorTextQuaternary: '#98a2b3',
+    colorFillAlter: '#f9fafb',
+    colorPrimaryHover: '#111827',
+    colorPrimaryActive: '#111827',
+    colorLinkHover: '#1746a2',
     colorText: '#101828',
-    colorTextSecondary: '#667085',
+    colorTextSecondary: '#475467',
     colorBorder: '#cbd5e1',
     colorBorderSecondary: '#eaecf0',
     colorBgLayout: '#f2f4f7',
@@ -45,7 +53,7 @@ const theme = {
     Button: { fontWeight: 600, primaryShadow: 'none', defaultShadow: 'none', dangerShadow: 'none' },
     Table: { headerBg: '#f9fafb', headerColor: '#475467', rowHoverBg: '#f2f4f7', borderColor: '#eaecf0' },
     Card: { headerFontSize: 16 },
-    Tabs: { itemColor: '#516075', itemSelectedColor: '#0f172a', inkBarColor: '#155eef', itemHoverColor: '#0f172a' },
+    Tabs: { itemColor: '#516075', itemSelectedColor: '#0f172a', inkBarColor: '#3761e9', itemHoverColor: '#0f172a' },
     Segmented: { itemSelectedBg: '#0f172a', itemSelectedColor: '#fff' },
     Modal: { titleFontSize: 18 },
     Checkbox: { colorPrimary: '#2d3e50', colorPrimaryHover: '#1e293b' },
@@ -56,7 +64,7 @@ const theme = {
 export function AppRoot({ app, basename, title, children }: { app: AppName; basename: string; title: string; children: ReactNode }) {
   configureApi(app)
   return (
-    <ConfigProvider locale={ruRU} theme={theme} renderEmpty={() => <div style={{ padding: 24, color: '#64748b', textAlign: 'center' }}>Пока пусто</div>}>
+    <ConfigProvider locale={ruRU} theme={theme} renderEmpty={() => <div style={{ padding: 24, color: '#667085', textAlign: 'center' }}>Пока пусто</div>}>
       <AntApp>
         <QueryClientProvider client={queryClient}>
           <AuthProvider app={app}>
