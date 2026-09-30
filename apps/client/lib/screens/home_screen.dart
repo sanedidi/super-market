@@ -18,8 +18,34 @@ import 'root_shell.dart';
 
 /// Главная — витрина выбранного магазина: адрес и поиск в шапке, быстрые
 /// разделы, специальные предложения и категории плитками.
-class HomeScreen extends StatelessWidget {
+///
+/// Адрес, колокольчик и поиск закреплены сверху; плитки «Скидки / Мои заказы /
+/// Избранное» уезжают вместе с лентой и прячутся под шапку.
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final _scroll = ScrollController();
+  bool _scrolled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(() {
+      final v = _scroll.hasClients && _scroll.offset > 0;
+      if (v != _scrolled) setState(() => _scrolled = v);
+    });
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,15 +54,16 @@ class HomeScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.white,
       body: Column(children: [
-        HomeHeader(address: state.address, store: store, quick: state.address != null),
+        HomeHeader(address: state.address, store: store),
         Expanded(
-          child: RefreshIndicator(
+          child: Stack(children: [
+            RefreshIndicator(
             onRefresh: () async {
               await state.loadStores(force: true);
               final s = state.catalogStore;
               if (s != null) await state.categoriesOf(s, force: true);
             },
-            child: CustomScrollView(slivers: [
+            child: CustomScrollView(controller: _scroll, slivers: [
               if (!state.addressesLoaded)
                 const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator()))
               else if (state.address == null)
@@ -51,6 +78,17 @@ class HomeScreen extends StatelessWidget {
                   ),
                 )
               else ...[
+                SliverToBoxAdapter(
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    decoration: const BoxDecoration(
+                      color: AppColors.white,
+                      borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
+                      boxShadow: [BoxShadow(color: Color(0x14000000), blurRadius: 16, offset: Offset(0, 6))],
+                    ),
+                    child: _QuickActions(store: store),
+                  ),
+                ),
                 const SliverToBoxAdapter(child: SizedBox(height: 16)),
                 if (state.stats?['active_order'] is Map<String, dynamic>)
                   SliverToBoxAdapter(child: _ActiveOrderCard(order: state.stats!['active_order'] as Map<String, dynamic>)),
@@ -59,6 +97,26 @@ class HomeScreen extends StatelessWidget {
               SliverToBoxAdapter(child: SizedBox(height: tabBottomInset(context))),
             ]),
           ),
+            // Лента ушла под шапку — тень под поиском.
+            if (_scrolled)
+              const Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 14,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0x1F000000), Color(0x00000000)],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ]),
         ),
       ]),
     );
@@ -124,14 +182,11 @@ Store? _promoStore(AppState state) {
   return state.stores.where((s) => s.id == id).firstOrNull ?? state.catalogStore;
 }
 
-/// Шапка: метка, адрес доставки и магазин, колокольчик, поиск и быстрые разделы.
+/// Шапка (закреплена): метка, адрес доставки и магазин, колокольчик, поиск.
 class HomeHeader extends StatelessWidget {
-  const HomeHeader({super.key, required this.address, this.store, this.quick = true});
+  const HomeHeader({super.key, required this.address, this.store});
   final Address? address;
   final Store? store;
-
-  /// Показывать плитки «Скидки», «Мои заказы», «Избранное».
-  final bool quick;
 
   @override
   Widget build(BuildContext context) {
@@ -139,12 +194,8 @@ class HomeHeader extends StatelessWidget {
         ? 'Чтобы увидеть магазины рядом'
         : [store!.name, if (store!.etaText != null) store!.etaText!].join(' · ');
     return Container(
-      padding: EdgeInsets.fromLTRB(16, MediaQuery.paddingOf(context).top + 8, 16, 16),
-      decoration: const BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
-        boxShadow: [BoxShadow(color: Color(0x14000000), blurRadius: 16, offset: Offset(0, 6))],
-      ),
+      padding: EdgeInsets.fromLTRB(16, MediaQuery.paddingOf(context).top + 8, 16, 12),
+      color: AppColors.white,
       child: Column(children: [
         Row(children: [
           Expanded(
@@ -182,7 +233,6 @@ class HomeHeader extends StatelessWidget {
               ? () {}
               : () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CategoryScreen(store: store!, search: true))),
         ),
-        if (quick) _QuickActions(store: store),
       ]),
     );
   }
@@ -242,7 +292,7 @@ class _QuickActions extends StatelessWidget {
         );
     final s = store;
     return Padding(
-      padding: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.only(top: 4),
       child: Row(children: [
         item(Icons.percent_rounded, const Color(0xFFD99A4E), const Color(0xFFFFF4E0), 'Скидки', s == null ? null : () => openDeals(context, s)),
         item(Icons.history_rounded, const Color(0xFF4F8EF7), const Color(0xFFFDEBF5), 'Мои заказы', () => push(const OrdersScreen())),
