@@ -44,12 +44,13 @@ List<CatalogCategory> buildCategoryTree(List<Map<String, dynamic>> raw) {
 }
 
 /// Разделы для витрины: раздел с подкатегориями — заголовок и плитки
-/// подкатегорий; разделы без подкатегорий собираются в общий блок «Каталог».
+/// подкатегорий (идут первыми); разделы без подкатегорий собираются в общий
+/// блок «Каталог» в конце.
 List<({String? id, String title, List<CatalogCategory> tiles})> catalogSections(List<CatalogCategory> roots) {
   final leaves = roots.where((c) => c.children.isEmpty).toList();
   return [
-    if (leaves.isNotEmpty) (id: null, title: 'Каталог', tiles: leaves),
     for (final c in roots.where((c) => c.children.isNotEmpty)) (id: c.id, title: c.name, tiles: c.children),
+    if (leaves.isNotEmpty) (id: null, title: 'Каталог', tiles: leaves),
   ];
 }
 

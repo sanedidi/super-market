@@ -43,6 +43,7 @@ void main() {
     ]);
     expect(tree.map((c) => c.name), ['Молочные', 'Хлеб']);
     expect(tree.first.count, 5);
+    expect(catalogSections(tree).map((s) => s.title), ['Молочные', 'Каталог']);
   });
 
   testWidgets('карточка товара и счётчик не ломают раскладку', (tester) async {
