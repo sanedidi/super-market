@@ -60,7 +60,7 @@ void main() {
         ]),
       ),
     ));
-    await tester.tap(find.text('В корзину'));
+    await tester.tap(find.byKey(const ValueKey('add')));
     expect(added, 1);
     expect(tester.takeException(), isNull);
   });

@@ -10,8 +10,10 @@ import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sm_client/screens/auth_screen.dart';
+import 'package:sm_client/screens/cart_screen.dart';
 import 'package:sm_client/screens/notifications_screen.dart';
 import 'package:sm_client/screens/profile_screen.dart';
+import 'package:sm_client/screens/root_shell.dart';
 import 'package:sm_client/state.dart';
 import 'package:sm_client/ui/theme.dart';
 import 'package:sm_client/ui/widgets.dart';
@@ -33,17 +35,82 @@ final _profile = {
   'support_url': 'https://t.me/super_market_bot',
 };
 
+final _address = {'id': 'a1', 'label': '', 'address': 'ул. Амира Темура, 12', 'lat': 41.311, 'lng': 69.279};
+
+final _store = {
+  'id': 's1',
+  'name': 'Baraka Market',
+  'network_name': 'Baraka',
+  'address': 'ул. Бунёдкор, 5',
+  'lat': 41.31,
+  'lng': 69.28,
+  'recommended': true,
+  'eta_min': 25,
+  'eta_max': 35,
+  'delivery': {'is_open': true, 'distance_m': 800, 'delivery_fee': '7000', 'min_order_amount': '50000'},
+};
+
+final _categories = [
+  {'id': 'c1', 'parent_id': null, 'name': 'Молочные продукты', 'products_count': 0},
+  {'id': 'c2', 'parent_id': 'c1', 'name': 'Молоко', 'products_count': 5},
+  {'id': 'c3', 'parent_id': 'c1', 'name': 'Сыры', 'products_count': 3},
+  {'id': 'c4', 'parent_id': 'c1', 'name': 'Йогурты', 'products_count': 2},
+  {'id': 'c5', 'parent_id': null, 'name': 'Хлеб', 'products_count': 4},
+];
+
+final _slots = {
+  'enabled': true,
+  'days': [
+    {
+      'date': '2026-09-30',
+      'slots': [
+        {'from': '2026-09-30T16:00:00+05:00', 'to': '2026-09-30T17:00:00+05:00', 'status': 'free'},
+        {'from': '2026-09-30T17:00:00+05:00', 'to': '2026-09-30T18:00:00+05:00', 'status': 'free'},
+      ],
+    },
+  ],
+};
+
+final _preview = {
+  'subtotal': '148500',
+  'discount': '0',
+  'total': '155500',
+  'can_order': true,
+  'lines': <Object>[],
+  'problems': <String>[],
+  'delivery': {'delivery_fee': '7000', 'min_order_amount': '50000'},
+};
+
+Product _product(String id, String name, String price) =>
+    Product({'id': id, 'name': name, 'price': price, 'available': '20', 'unit_short': 'шт', 'images': <String>[]});
+
+void _fillCart(AppState s) {
+  s.stores = [Store(_store)];
+  s.address = Address(_address);
+  s.addressesLoaded = true;
+  s.setQty('s1', 'Baraka Market', _product('p1', 'Молоко Nestle 3,2% 1 л', '14900'), 2);
+  s.setQty('s1', 'Baraka Market', _product('p2', 'Кефир 2,5% 900 мл', '11500'), 2);
+  s.setQty('s1', 'Baraka Market', _product('p3', 'Творог 9% весовой', '16000'), 2);
+}
+
 Api _api() => Api(
       baseUrl: 'http://test/api/v1',
       app: 'client',
       client: MockClient((req) async {
-        final body = switch (req.url.path) {
-          '/api/v1/client/config' => {'offer_url': 'https://super-market.uz/offer', 'bot_url': 'https://t.me/super_market_bot'},
-          '/api/v1/client/notifications' => {'items': <Object>[]},
-          '/api/v1/client/me' => _profile,
-          '/api/v1/client/me/stats' => {'orders_count': 3},
-          '/api/v1/client/family' => {'family': null},
-          _ => <String, Object>{},
+        final body = switch (req.url.path.replaceFirst('/api/v1', '')) {
+          '/client/config' => {'offer_url': 'https://super-market.uz/offer', 'bot_url': 'https://t.me/super_market_bot'},
+          '/client/notifications' => {'items': <Object>[]},
+          '/client/notifications/unread' => {'count': 2},
+          '/client/me' => _profile,
+          '/client/me/stats' => {'orders_count': 3},
+          '/client/family' => {'family': null},
+          '/client/favorites' => {'product_ids': <String>[]},
+          '/client/addresses' => {'items': [_address]},
+          '/client/home' => {'stores': [_store], 'banners': <Object>[]},
+          '/client/stores/s1/categories' => {'items': _categories},
+          '/client/stores/s1/slots' => _slots,
+          '/client/checkout/preview' => _preview,
+          _ => {'items': <Object>[]},
         };
         return http.Response(jsonEncode(body), 200, headers: {'content-type': 'application/json'});
       }),
@@ -113,6 +180,12 @@ void main() {
   });
 
   testWidgets('03 как вас зовут', (t) => _shot(t, NameStepScreen(onDone: () {}), '03_name'));
+
+  testWidgets('04 главная с меню', (t) => _shot(t, const RootShell(), '04_home'));
+
+  testWidgets('08 корзина', (t) => _shot(t, const CartScreen(), '08_cart', setup: _fillCart));
+
+  testWidgets('09 оформление', (t) => _shot(t, const CheckoutScreen(), '09_checkout', setup: _fillCart));
 
   testWidgets('10 профиль с меню', (t) async {
     await _shot(
