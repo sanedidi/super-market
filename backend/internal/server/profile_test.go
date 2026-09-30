@@ -38,6 +38,8 @@ func TestProfileAndPush(t *testing.T) {
 	cfg.DevOTPCode = "111111"
 	cfg.PaymeMerchantID, cfg.PaymeKey = "merchant-1", paymeKey
 	cfg.SupportURL = "https://t.me/sm_support"
+	cfg.OfferURL = "https://super-market.uz/offer"
+	cfg.TelegramBotUsername = "sm_test_bot"
 	tg := &fakeTelegram{}
 	app, err := server.Build(ctx, cfg, pool, tg, quietLog())
 	if err != nil {
@@ -62,8 +64,14 @@ func TestProfileAndPush(t *testing.T) {
 		"rules": []map[string]any{{"type": "fixed", "params": map[string]any{"price": 5000}}},
 	}), 200, "delivery")
 
-	if c := a.expect(a.do("GET", "/client/config", "", nil), 200, "config"); c.Body["push_enabled"] != false || c.str("support_url") != "https://t.me/sm_support" {
+	if c := a.expect(a.do("GET", "/client/config", "", nil), 200, "config"); c.Body["push_enabled"] != false || c.str("support_url") != "https://t.me/sm_support" ||
+		c.str("offer_url") != "https://super-market.uz/offer" || c.str("bot_url") != "https://t.me/sm_test_bot" {
 		t.Fatalf("config = %v", c.Body)
+	}
+	// Запрос кода: через сколько можно запросить снова и ссылка на бота.
+	if rc := a.expect(a.do("POST", "/auth/otp/request", "", map[string]any{"phone": "+998900000099"}), 200, "request code"); rc.Body["resend_in"].(float64) != 60 ||
+		rc.str("bot_url") != "https://t.me/sm_test_bot" {
+		t.Fatalf("request code = %v", rc.Body)
 	}
 
 	// Профиль.
@@ -78,8 +86,37 @@ func TestProfileAndPush(t *testing.T) {
 	me = a.expect(a.do("PATCH", "/client/me", client, map[string]any{
 		"full_name": "  Азиз   Каримов ", "language": "uz", "city": "Ташкент",
 	}), 200, "update me")
-	if me.str("full_name") != "Азиз Каримов" || me.str("language") != "uz" || me.str("city") != "Ташкент" {
+	if me.str("full_name") != "Азиз Каримов" || me.str("first_name") != "Азиз" || me.str("last_name") != "Каримов" ||
+		me.str("language") != "uz" || me.str("city") != "Ташкент" || me.Body["terms_accepted_at"] != nil {
 		t.Fatalf("updated me = %v", me.Body)
+	}
+	// Новые версии: имя и фамилия отдельно, согласие с офертой.
+	me = a.expect(a.do("PATCH", "/client/me", client, map[string]any{"first_name": " Shaxzod ", "last_name": "Anvarov", "accept_terms": true}), 200, "names")
+	accepted := me.str("terms_accepted_at")
+	if me.str("full_name") != "Shaxzod Anvarov" || me.str("first_name") != "Shaxzod" || accepted == "" {
+		t.Fatalf("names = %v", me.Body)
+	}
+	a.expect(a.do("PATCH", "/client/me", client, map[string]any{"first_name": ""}), 400, "empty first name")
+	me = a.expect(a.do("PATCH", "/client/me", client, map[string]any{"last_name": "", "accept_terms": true}), 200, "no last name")
+	if me.str("full_name") != "Shaxzod" || me.str("terms_accepted_at") != accepted {
+		t.Fatalf("no last name = %v", me.Body)
+	}
+	me = a.expect(a.do("PATCH", "/client/me", client, map[string]any{"full_name": "Азиз Каримов"}), 200, "full name again")
+	if me.str("first_name") != "Азиз" || me.str("last_name") != "Каримов" {
+		t.Fatalf("full name again = %v", me.Body)
+	}
+	if me.Body["birth_date"] != nil || me.str("gender") != "" {
+		t.Fatalf("empty birth/gender = %v", me.Body)
+	}
+	me = a.expect(a.do("PATCH", "/client/me", client, map[string]any{"birth_date": "2004-07-01", "gender": "male"}), 200, "birth")
+	if me.str("birth_date") != "2004-07-01" || me.str("gender") != "male" || me.str("full_name") != "Азиз Каримов" {
+		t.Fatalf("birth me = %v", me.Body)
+	}
+	a.expect(a.do("PATCH", "/client/me", client, map[string]any{"birth_date": "2999-01-01"}), 400, "future birth")
+	a.expect(a.do("PATCH", "/client/me", client, map[string]any{"gender": "x"}), 400, "bad gender")
+	me = a.expect(a.do("PATCH", "/client/me", client, map[string]any{"birth_date": ""}), 200, "clear birth")
+	if me.Body["birth_date"] != nil || me.str("gender") != "male" {
+		t.Fatalf("cleared birth = %v", me.Body)
 	}
 
 	// Устройство.
@@ -167,6 +204,31 @@ func TestProfileAndPush(t *testing.T) {
 	if s := sqlStr(t, pool, `SELECT status || ':' || attempts::text || ':' || (send_after > now())::text FROM notifications_outbox WHERE kind = 'test'`); s != "pending:1:true" {
 		t.Fatalf("retry = %s", s)
 	}
+
+	// Колокольчик: история уведомлений, непрочитанные, отметка «прочитано».
+	// Запланированное на будущее (напоминание) не показывается.
+	if _, err := pool.Exec(ctx, `INSERT INTO notifications_outbox (user_id, kind, title, body, send_after)
+		SELECT customer_id, 'later', 'l', 'b', now() + interval '1 hour' FROM orders WHERE id = $1`, orderID); err != nil {
+		t.Fatal(err)
+	}
+	list := a.expect(a.do("GET", "/client/notifications", client, nil), 200, "notifications").items()
+	if len(list) != 4 || list[0]["kind"] != "test" || list[3]["title"] != "Buyurtma №1 to‘landi" || list[3]["read"] != false {
+		t.Fatalf("notifications = %v", list)
+	}
+	if u := a.expect(a.do("GET", "/client/notifications/unread", client, nil), 200, "unread"); u.Body["count"].(float64) != 4 {
+		t.Fatalf("unread = %v", u.Body)
+	}
+	a.expect(a.do("POST", "/client/notifications/read", client, map[string]any{}), 400, "read nothing")
+	if r := a.expect(a.do("POST", "/client/notifications/read", client, map[string]any{"ids": []any{list[3]["id"]}}), 200, "read one"); r.Body["count"].(float64) != 3 {
+		t.Fatalf("read one = %v", r.Body)
+	}
+	if r := a.expect(a.do("POST", "/client/notifications/read", client, map[string]any{"all": true}), 200, "read all"); r.Body["count"].(float64) != 0 {
+		t.Fatalf("read all = %v", r.Body)
+	}
+	if n := sqlStr(t, pool, `SELECT count(*)::text FROM notifications_outbox WHERE kind = 'later' AND read_at IS NULL`); n != "1" {
+		t.Fatalf("future notification marked read: %s", n)
+	}
+	a.expect(a.do("GET", "/client/notifications", tok, nil), 403, "store token")
 
 	// Выключенные уведомления о заказах — в очередь ничего не попадает.
 	a.expect(a.do("PATCH", "/client/me", client, map[string]any{"notifications": map[string]any{"orders": false}}), 200, "mute")

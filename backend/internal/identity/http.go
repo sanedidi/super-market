@@ -60,7 +60,10 @@ func (m *Module) requestCode(w http.ResponseWriter, r *http.Request) {
 		m.fail(w, r, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"sent": true, "expires_in": expiresIn})
+	// resend_in — через сколько секунд можно запросить код снова (таймер на экране).
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"sent": true, "expires_in": expiresIn, "resend_in": int(resendCooldown.Seconds()), "bot_url": m.svc.botURL(),
+	})
 }
 
 func (m *Module) verifyCode(w http.ResponseWriter, r *http.Request) {

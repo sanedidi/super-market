@@ -142,6 +142,7 @@ type CatalogCategory struct {
 	ParentID *string `json:"parent_id"`
 	Name     string  `json:"name"`
 	Count    int     `json:"products_count"`
+	ImageURL string  `json:"image_url"`
 }
 
 // StoreCategories — категории, в которых у магазина есть товары в наличии.
@@ -150,11 +151,20 @@ func (s *Service) StoreCategories(ctx context.Context, storeID string) ([]Catalo
 	if err != nil {
 		return nil, err
 	}
+	// Категории с товарами и все их родители (разделы каталога), count —
+	// товары прямо в категории.
 	rows, err := s.pool.Query(ctx, `
-		SELECT cat.id, cat.parent_id, cat.name, count(*)::int
-		FROM (`+catalogBase+`) i JOIN categories cat ON cat.id = i.category_id
-		WHERE cat.is_active
-		GROUP BY cat.id, cat.parent_id, cat.name, cat.sort ORDER BY cat.sort, cat.name`,
+		WITH RECURSIVE direct AS (
+			SELECT i.category_id AS id, count(*)::int AS n FROM (`+catalogBase+`) i GROUP BY i.category_id
+		), tree AS (
+			SELECT c.id FROM categories c JOIN direct d ON d.id = c.id WHERE c.is_active
+			UNION SELECT p.id FROM categories p JOIN categories ch ON ch.parent_id = p.id JOIN tree t ON t.id = ch.id
+			WHERE p.is_active
+		)
+		SELECT cat.id, cat.parent_id, cat.name, COALESCE(d.n, 0), cat.image_url
+		FROM categories cat JOIN (SELECT DISTINCT id FROM tree) t ON t.id = cat.id
+		LEFT JOIN direct d ON d.id = cat.id
+		ORDER BY cat.sort, cat.name`,
 		storeID, st.WarehouseID, st.PriceTypeID)
 	if err != nil {
 		return nil, err

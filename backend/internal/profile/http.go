@@ -31,6 +31,9 @@ func (m *Module) Routes(r chi.Router) {
 		r.Delete("/client/me", m.delete)
 		r.Get("/client/me/stats", m.stats)
 		r.Post("/client/devices", m.registerDevice)
+		r.Get("/client/notifications", m.notifications)
+		r.Get("/client/notifications/unread", m.unread)
+		r.Post("/client/notifications/read", m.markRead)
 		r.Delete("/client/devices/{token}", m.removeDevice)
 	})
 }
@@ -82,4 +85,32 @@ func (m *Module) removeDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type unreadCount struct {
+	Count int `json:"count"`
+}
+
+func (m *Module) notifications(w http.ResponseWriter, r *http.Request) {
+	p := identity.FromContext(r.Context())
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Notification], error) {
+		items, err := m.svc.Notifications(r.Context(), p.UserID, httpx.PageFrom(r))
+		return httpx.List[Notification]{Items: items}, err
+	})
+}
+
+func (m *Module) unread(w http.ResponseWriter, r *http.Request) {
+	p := identity.FromContext(r.Context())
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (unreadCount, error) {
+		n, err := m.svc.UnreadCount(r.Context(), p.UserID)
+		return unreadCount{Count: n}, err
+	})
+}
+
+func (m *Module) markRead(w http.ResponseWriter, r *http.Request) {
+	p := identity.FromContext(r.Context())
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in ReadInput) (unreadCount, error) {
+		n, err := m.svc.MarkRead(r.Context(), p.UserID, in)
+		return unreadCount{Count: n}, err
+	})
 }

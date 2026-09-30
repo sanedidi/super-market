@@ -66,6 +66,8 @@ type Config struct {
 	// Ссылки в профиле приложения: поддержка (по умолчанию — бот) и политика конфиденциальности.
 	SupportURL string
 	PrivacyURL string
+	// OfferURL — публичная оферта (ссылка на экране входа).
+	OfferURL string
 
 	// ReviewLogin — «+998XXXXXXXXX:123456»: демо-аккаунт покупателя для
 	// проверки приложения в App Store / Google Play. Для этого номера код не
@@ -115,6 +117,7 @@ func Load(getenv func(string) string) (Config, error) {
 		ReviewLogin:    strings.TrimSpace(getenv("REVIEW_LOGIN")),
 		SupportURL:     getenv("SUPPORT_URL"),
 		PrivacyURL:     getenv("PRIVACY_URL"),
+		OfferURL:       getenv("OFFER_URL"),
 
 		S3Endpoint:   strings.TrimRight(getenv("S3_ENDPOINT"), "/"),
 		S3AccessKey:  getenv("S3_ACCESS_KEY"),

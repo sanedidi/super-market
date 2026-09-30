@@ -33,6 +33,16 @@ function DictionaryPage({ kind }: { kind: string }) {
   const path = `/admin/catalog/${kind}`
   const [q, setQ] = useState('')
   const columns = [
+    ...(kind === 'categories'
+      ? [
+          {
+            title: '',
+            dataIndex: 'image_url',
+            width: 56,
+            render: (u: string | null) => (u ? <Image src={u} width={40} height={40} style={{ objectFit: 'cover', borderRadius: 8 }} /> : null),
+          },
+        ]
+      : []),
     { title: 'Название', dataIndex: 'name' },
     ...(kind === 'categories'
       ? [
@@ -64,6 +74,7 @@ function DictionaryPage({ kind }: { kind: string }) {
           body.hex = (v.hex as { toHexString: () => string }).toHexString().slice(0, 7).toUpperCase()
         }
         if (kind === 'categories' && body.parent_id === undefined) body.parent_id = null
+        if (kind === 'categories') body.image_url = (v.image_url as string | undefined) ?? ''
         return body
       }}
       form={(editing) => (
@@ -84,6 +95,9 @@ function DictionaryPage({ kind }: { kind: string }) {
               </Form.Item>
               <Form.Item name="sort" label="Порядок">
                 <InputNumber precision={0} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item name="image_url" label="Картинка" extra="Плитка категории в приложении. Лучше квадратная, на светлом фоне">
+                <ImageUpload hint="Картинка" />
               </Form.Item>
             </>
           )}

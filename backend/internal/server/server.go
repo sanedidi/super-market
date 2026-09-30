@@ -88,7 +88,9 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		orders.NewModule(ord, dlv, pay, auth, log),
 		billing.NewModule(bill, auth, log),
 		reports.NewModule(reports.NewService(pool), auth, log),
-		profile.NewModule(profile.NewService(pool, supportURL(cfg), cfg.PrivacyURL, pushConfigured(cfg, log)), auth, log),
+		profile.NewModule(profile.NewService(pool, profile.Links{
+			Support: supportURL(cfg), Privacy: cfg.PrivacyURL, Offer: cfg.OfferURL, Bot: botURL(cfg),
+		}, pushConfigured(cfg, log)), auth, log),
 		family.NewModule(family.NewService(pool, ord, dlv, cfg.TelegramBotUsername), auth, log),
 		admin.NewModule(admin.NewService(pool, cfg.AcceptTimeout), auth, log),
 		media.NewModule(MediaService(cfg), auth, log),
@@ -122,6 +124,14 @@ func pushConfigured(cfg config.Config, log *slog.Logger) bool {
 		return false
 	}
 	return creds != nil
+}
+
+// botURL — бот, который присылает коды входа.
+func botURL(cfg config.Config) string {
+	if cfg.TelegramBotUsername == "" {
+		return ""
+	}
+	return "https://t.me/" + cfg.TelegramBotUsername
 }
 
 // supportURL — поддержка в Telegram: SUPPORT_URL или сам бот.

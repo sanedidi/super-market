@@ -60,6 +60,12 @@ var dicts = map[string]dictSpec{
 			{name: "name", kind: kindText, required: true},
 			{name: "parent_id", kind: kindUUID},
 			{name: "sort", kind: kindInt},
+			{name: "image_url", kind: kindText, check: func(v any) error {
+				if s := v.(string); s != "" && !strings.HasPrefix(s, "https://") && !strings.HasPrefix(s, "http://") {
+					return errors.New("ожидается ссылка http(s)")
+				}
+				return nil
+			}},
 		},
 	},
 	"colors": {
