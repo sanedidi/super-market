@@ -1,5 +1,5 @@
 // Онлайн-заказы: список с автообновлением и карточка заказа с действиями.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Alert,
@@ -20,10 +20,11 @@ import {
   Timeline,
   Typography,
 } from 'antd'
-import { ReloadOutlined } from '@ant-design/icons'
-import { PageTitle, StatusTag, api, dateTime, money, qty, useAction, useList, type List } from '@sm/shared'
+import { PrinterOutlined, ReloadOutlined } from '@ant-design/icons'
+import { LoadError, PageTitle, StatusTag, api, dateTime, money, periodParams, qty, useAction, useList, usePaged } from '@sm/shared'
 import { useStore } from '../ctx'
-import { NeedStore } from '../ui'
+import { usePaidOrders } from '../notify'
+import { NeedStore, RangeFilter, type Range } from '../ui'
 import type { Courier, Order, OrderItem, Warehouse } from '../types'
 
 const statusFilters = [
@@ -50,20 +51,23 @@ export function OrdersPage() {
   const [status, setStatus] = useState('paid')
   const [openId, setOpenId] = useState<string | null>(null)
   const [sort, setSort] = useState<'' | 'delivery'>('')
-  const params = { store_id: storeId, status, limit: 200, sort: sort || undefined }
-  const { data, isLoading, isFetching, refetch, dataUpdatedAt } = useQuery({
-    queryKey: ['/store/orders', params],
-    queryFn: () => api.get<List<Order>>('/store/orders', params).then((r) => r.items ?? []),
-    enabled: !!storeId,
-    refetchInterval: 15_000,
+  const [q, setQ] = useState('')
+  const [range, setRange] = useState<Range | null>(null)
+  const list = usePaged<Order>(storeId ? '/store/orders' : null, {
+    store_id: storeId,
+    status,
+    sort: sort || undefined,
+    q: q || undefined,
+    ...periodParams(range),
   })
-  const fresh = useQuery({
-    queryKey: ['/store/orders', { store_id: storeId, status: 'paid', limit: 200 }],
-    queryFn: () => api.get<List<Order>>('/store/orders', { store_id: storeId, status: 'paid', limit: 200 }).then((r) => r.items ?? []),
-    enabled: !!storeId && status !== 'paid',
-    refetchInterval: 15_000,
-  })
-  const newCount = status === 'paid' ? (data?.length ?? 0) : (fresh.data?.length ?? 0)
+  const { refetch, isFetching, dataUpdatedAt } = list
+  // Автообновление текущей страницы.
+  useEffect(() => {
+    const t = setInterval(() => void refetch(), 15_000)
+    return () => clearInterval(t)
+  }, [refetch])
+  const fresh = usePaidOrders()
+  const newCount = fresh.data?.length ?? 0
 
   return (
     <NeedStore>
@@ -82,6 +86,8 @@ export function OrdersPage() {
       >
         <Space wrap>
           <Segmented value={status} onChange={(v) => setStatus(String(v))} options={statusFilters} />
+          <Input.Search placeholder="№ заказа или телефон" allowClear onSearch={(v) => setQ(v.trim())} style={{ width: 220 }} />
+          <RangeFilter value={range} onChange={setRange} allowClear />
           <Select
             value={sort}
             onChange={setSort}
@@ -93,13 +99,15 @@ export function OrdersPage() {
           />
         </Space>
       </PageTitle>
+      <LoadError error={list.error} retry={() => refetch()} />
       <Card styles={{ body: { padding: 0 } }}>
         <Table<Order>
           rowKey="id"
-          loading={isLoading}
-          dataSource={data}
+          loading={list.isLoading}
+          dataSource={list.items}
           scroll={{ x: true }}
-          pagination={{ pageSize: 50, hideOnSinglePage: true }}
+          pagination={list.pagination}
+          locale={{ emptyText: q ? 'Ничего не найдено' : 'Заказов нет' }}
           onRow={(r) => ({ onClick: () => setOpenId(r.id), style: { cursor: 'pointer' } })}
           columns={[
             { title: '№', dataIndex: 'number', width: 70 },
@@ -145,6 +153,9 @@ function OrderDrawer({ id, onClose }: { id: string | null; onClose: () => void }
 
   const actions = o && manage && (
     <Space wrap>
+      <Button icon={<PrinterOutlined />} onClick={() => printPickingList(o, whName(o.warehouse_id))}>
+        Лист сборки
+      </Button>
       {s === 'paid' && (
         <Button type="primary" loading={act.isPending} onClick={() => act.mutate('accept')}>
           Принять
@@ -255,7 +266,22 @@ function OrderDrawer({ id, onClose }: { id: string | null; onClose: () => void }
                 ),
               },
               { title: 'Кол-во', dataIndex: 'qty', align: 'right', render: (v: string, r) => qty(v, r.unit_short) },
-              { title: 'Цена', dataIndex: 'price', align: 'right', render: (v: string) => money(v) },
+              {
+                title: 'Цена',
+                dataIndex: 'price',
+                align: 'right',
+                render: (v: string, r) =>
+                  r.old_price ? (
+                    <Space direction="vertical" size={0} style={{ alignItems: 'flex-end' }}>
+                      <Typography.Text delete type="secondary" style={{ fontSize: 12 }}>
+                        {money(r.old_price)}
+                      </Typography.Text>
+                      <Typography.Text type="danger">{money(v)}</Typography.Text>
+                    </Space>
+                  ) : (
+                    money(v)
+                  ),
+              },
               { title: 'Сумма', dataIndex: 'total', align: 'right', render: (v: string) => money(v) },
             ]}
             summary={() => (
@@ -268,6 +294,16 @@ function OrderDrawer({ id, onClose }: { id: string | null; onClose: () => void }
                     {money(o.subtotal)}
                   </Table.Summary.Cell>
                 </Table.Summary.Row>
+                {Number(o.discount) > 0 && (
+                  <Table.Summary.Row>
+                    <Table.Summary.Cell index={0} colSpan={3}>
+                      Скидка
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={1} align="right">
+                      <Typography.Text type="danger">−{money(o.discount)}</Typography.Text>
+                    </Table.Summary.Cell>
+                  </Table.Summary.Row>
+                )}
                 <Table.Summary.Row>
                   <Table.Summary.Cell index={0} colSpan={3}>
                     Доставка
@@ -464,4 +500,71 @@ function CourierPicker({ order, editable }: { order: Order; editable: boolean })
       {eta && <Typography.Text type="secondary">{eta.slice(3)}</Typography.Text>}
     </Space>
   )
+}
+
+const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
+
+/** Время доставки для печати: окно или «как можно скорее». */
+function windowText(o: Order) {
+  if (!o.delivery_from || !o.delivery_to) return 'Как можно скорее'
+  const f = (v: string) => new Date(v).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' })
+  return `${f(o.delivery_from)} – ${f(o.delivery_to).slice(-5)}`
+}
+
+/** Лист сборки заказа: печать из скрытого iframe, без всплывающих окон. */
+function printPickingList(o: Order, warehouse: string) {
+  const address = [
+    o.address,
+    o.entrance && `подъезд ${o.entrance}`,
+    o.floor && `этаж ${o.floor}`,
+    o.apartment && `кв. ${o.apartment}`,
+  ]
+    .filter(Boolean)
+    .join(', ')
+  const rows = (o.items ?? [])
+    .map(
+      (i, n) =>
+        `<tr><td>${n + 1}</td><td>${esc(i.product_name)}</td><td class="r"><b>${esc(qty(i.qty, i.unit_short))}</b></td><td class="c">☐</td></tr>`,
+    )
+    .join('')
+  const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Заказ № ${o.number}</title>
+<style>
+  body { font: 14px/1.4 -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; color: #000; }
+  h1 { font-size: 22px; margin: 0 0 12px; }
+  dl { display: grid; grid-template-columns: 140px 1fr; gap: 4px 12px; margin: 0 0 16px; }
+  dt { color: #555; } dd { margin: 0; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #999; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #eee; } .r { text-align: right; white-space: nowrap; } .c { text-align: center; width: 40px; font-size: 18px; }
+  .note { margin-top: 16px; padding: 8px; border: 1px dashed #999; }
+</style></head><body>
+<h1>Лист сборки — заказ № ${o.number}</h1>
+<dl>
+  <dt>Создан</dt><dd>${esc(dateTime(o.created_at))}</dd>
+  <dt>Доставка</dt><dd>${esc(windowText(o))}</dd>
+  <dt>Магазин</dt><dd>${esc(o.store_name)}${warehouse ? ` · склад «${esc(warehouse)}»` : ''}</dd>
+  <dt>Адрес</dt><dd>${esc(address)}${o.address_comment ? `<br>${esc(o.address_comment)}` : ''}</dd>
+  <dt>Покупатель</dt><dd>${esc(o.customer_phone)}</dd>
+  <dt>Курьер</dt><dd>${esc(o.courier_name ?? '—')}</dd>
+</dl>
+<table><thead><tr><th>№</th><th>Товар</th><th class="r">Кол-во</th><th class="c">✓</th></tr></thead><tbody>${rows}</tbody></table>
+${o.comment ? `<div class="note"><b>Комментарий покупателя:</b> ${esc(o.comment)}</div>` : ''}
+</body></html>`
+  const frame = document.createElement('iframe')
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0'
+  document.body.appendChild(frame)
+  const doc = frame.contentDocument
+  const win = frame.contentWindow
+  if (!doc || !win) {
+    frame.remove()
+    return
+  }
+  doc.open()
+  doc.write(html)
+  doc.close()
+  setTimeout(() => {
+    win.focus()
+    win.print()
+    setTimeout(() => frame.remove(), 1000)
+  }, 100)
 }

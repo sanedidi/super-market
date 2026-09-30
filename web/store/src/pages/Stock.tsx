@@ -1,25 +1,35 @@
 // Остатки и история движения товара.
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Alert, Button, Card, Input, Space, Statistic, Table, Typography } from 'antd'
 import { HistoryOutlined } from '@ant-design/icons'
-import { PageTitle, RemoteSelect, dateTime, errorText, money, qty, useList } from '@sm/shared'
+import { LoadError, PageTitle, RemoteSelect, dateTime, money, qty, useItem, usePaged } from '@sm/shared'
 import { useStore } from '../ctx'
-import { NeedStore, ProductSelect, docTypeTitles, sum } from '../ui'
-import type { Movement, StockRow, Warehouse } from '../types'
+import { NeedStore, ProductSelect, docTypeTitles, unitPrice } from '../ui'
+import type { Movement, StockRow, StockSummary, Warehouse } from '../types'
+
+/** Виды складских документов в истории движения. */
+const stockDocTitles: Record<string, string> = {
+  income: 'Приход',
+  supplier_return: 'Возврат поставщику',
+  transfer: 'Перемещение',
+  write_off: 'Списание',
+  posting: 'Оприходование',
+  inventory: 'Инвентаризация',
+}
 
 export function StockPage() {
-  const { storeId } = useStore()
+  const { storeId, can } = useStore()
   const nav = useNavigate()
   const [warehouseId, setWarehouseId] = useState<string>()
   const [q, setQ] = useState('')
-  const { data, isLoading, error } = useList<StockRow>('/store/inventory/stock', {
-    store_id: storeId,
-    warehouse_id: warehouseId,
-    q,
-    limit: 200,
-  })
-  const total = sum((data ?? []).map((r) => r.total_cost))
+  useEffect(() => setWarehouseId(undefined), [storeId])
+  const filters = { store_id: storeId, warehouse_id: warehouseId, q: q || undefined }
+  const list = usePaged<StockRow>(storeId ? '/store/inventory/stock' : null, filters)
+  // Итоги — по всем остаткам на сервере, не по странице.
+  const summary = useItem<StockSummary>(storeId ? '/store/inventory/stock/summary' : null, filters)
+  // Себестоимость сервер отдаёт только с этими правами.
+  const seesCost = can('inventory.manage') || can('reports.view')
 
   return (
     <NeedStore>
@@ -34,39 +44,38 @@ export function StockPage() {
         />
         <Input.Search placeholder="Товар или штрихкод" allowClear onSearch={setQ} style={{ width: 240 }} />
       </PageTitle>
-      {error && <Alert type="error" showIcon message={errorText(error)} style={{ marginBottom: 16 }} />}
-      <Card style={{ marginBottom: 16 }}>
+      <LoadError error={summary.error} retry={() => summary.refetch()} />
+      <Card style={{ marginBottom: 16 }} loading={summary.isLoading}>
         <Space size={48} wrap>
-          <Statistic title="Позиций" value={data?.length ?? 0} />
-          <Statistic title="Себестоимость остатков, сум" value={money(total)} />
+          <Statistic title="Позиций" value={summary.data?.positions ?? 0} />
+          <Statistic title="Товаров" value={summary.data?.products ?? 0} />
+          {seesCost && <Statistic title="Себестоимость остатков, сум" value={money(summary.data?.cost_value)} />}
         </Space>
       </Card>
+      <LoadError error={list.error} retry={() => list.refetch()} />
       <Card styles={{ body: { padding: 0 } }}>
         <Table<StockRow>
           rowKey={(r) => r.warehouse_id + r.product_id}
-          loading={isLoading}
-          dataSource={data}
+          loading={list.isLoading || list.isFetching}
+          dataSource={list.items}
           scroll={{ x: true }}
-          pagination={{ pageSize: 50, hideOnSinglePage: true }}
+          pagination={list.pagination}
           columns={[
-            { title: 'Товар', dataIndex: 'product_name', sorter: (a, b) => a.product_name.localeCompare(b.product_name) },
+            { title: 'Товар', dataIndex: 'product_name' },
             { title: 'Склад', dataIndex: 'warehouse_name' },
             {
               title: 'Остаток',
               dataIndex: 'qty',
               align: 'right',
-              sorter: (a, b) => Number(a.qty) - Number(b.qty),
               render: (v, r) => <Typography.Text type={Number(v) <= 0 ? 'danger' : undefined}>{qty(v, r.unit_short)}</Typography.Text>,
             },
-            { title: 'Ср. себестоимость', dataIndex: 'avg_cost', align: 'right', render: (v) => money(v) },
-            { title: 'Ср. себест., $', dataIndex: 'avg_cost_usd', align: 'right', render: (v) => money(v) },
-            {
-              title: 'Сумма',
-              dataIndex: 'total_cost',
-              align: 'right',
-              sorter: (a, b) => Number(a.total_cost) - Number(b.total_cost),
-              render: (v) => money(v),
-            },
+            ...(seesCost
+              ? [
+                  { title: 'Ср. себестоимость', dataIndex: 'avg_cost', align: 'right' as const, render: (v: string) => money(v) },
+                  { title: 'Ср. себест., $', dataIndex: 'avg_cost_usd', align: 'right' as const, render: (v: string) => unitPrice(v) },
+                  { title: 'Сумма', dataIndex: 'total_cost', align: 'right' as const, render: (v: string) => money(v) },
+                ]
+              : []),
             {
               key: 'h',
               width: 50,
@@ -89,11 +98,19 @@ export function StockPage() {
 }
 
 export function MovementsPage() {
-  const { storeId, store } = useStore()
+  const { storeId, store, can } = useStore()
   const [sp, setSp] = useSearchParams()
   const [warehouseId, setWarehouseId] = useState<string | undefined>(sp.get('warehouse_id') ?? undefined)
   const [productId, setProductId] = useState<string | undefined>(sp.get('product_id') ?? undefined)
   const [productName, setProductName] = useState(sp.get('name') ?? '')
+  const seesCost = can('inventory.manage') || can('reports.view')
+
+  // Сменили магазин — склад прежнего магазина больше не подходит.
+  const prevStore = useRef(storeId)
+  useEffect(() => {
+    if (prevStore.current && prevStore.current !== storeId) setWarehouseId(undefined)
+    prevStore.current = storeId
+  }, [storeId])
 
   useEffect(() => {
     if (!warehouseId && store?.default_warehouse_id) setWarehouseId(store.default_warehouse_id)
@@ -108,20 +125,10 @@ export function MovementsPage() {
   }, [warehouseId, productId, productName, setSp])
 
   const ready = !!warehouseId && !!productId
-  const { data, isLoading, error } = useList<Movement>(ready ? '/store/inventory/movements' : null, {
+  // Остаток после операции (balance_after) считает сервер — верен на любой странице.
+  const list = usePaged<Movement>(ready ? '/store/inventory/movements' : null, {
     warehouse_id: warehouseId,
     product_id: productId,
-    limit: 200,
-  })
-
-  // Остаток после каждой операции: список от новых к старым.
-  const rows = data ?? []
-  const totalNow = sum(rows.map((m) => m.qty))
-  let running = totalNow
-  const withBalance = rows.map((m) => {
-    const after = running
-    running -= Number(m.qty)
-    return { ...m, after }
   })
 
   return (
@@ -146,18 +153,27 @@ export function MovementsPage() {
         </div>
       </PageTitle>
       {!ready && <Alert type="info" showIcon message="Выберите склад и товар" />}
-      {error && <Alert type="error" showIcon message={errorText(error)} />}
+      <LoadError error={list.error} retry={() => list.refetch()} />
       {ready && (
         <Card styles={{ body: { padding: 0 } }}>
-          <Table
-            rowKey={(r) => r.doc_id + r.created_at + r.qty + r.unit_cost}
-            loading={isLoading}
-            dataSource={withBalance}
+          <Table<Movement>
+            rowKey={(r) => r.doc_id + r.created_at + r.qty + (r.balance_after ?? '')}
+            loading={list.isLoading || list.isFetching}
+            dataSource={list.items}
             scroll={{ x: true }}
-            pagination={{ pageSize: 50, hideOnSinglePage: true }}
+            pagination={list.pagination}
             columns={[
               { title: 'Дата', dataIndex: 'created_at', render: dateTime },
-              { title: 'Документ', dataIndex: 'doc_type', render: (v: string) => docTypeTitles[v] ?? v },
+              {
+                title: 'Документ',
+                dataIndex: 'doc_type',
+                render: (v: string, r) => (
+                  <>
+                    {(v === 'stock_document' && stockDocTitles[r.doc_kind]) || docTypeTitles[v] || v}
+                    {r.doc_number !== null && ` № ${r.doc_number}`}
+                  </>
+                ),
+              },
               {
                 title: 'Количество',
                 dataIndex: 'qty',
@@ -166,9 +182,10 @@ export function MovementsPage() {
                   <Typography.Text type={Number(v) < 0 ? 'danger' : 'success'}>{(Number(v) > 0 ? '+' : '') + qty(v)}</Typography.Text>
                 ),
               },
-              { title: 'Себестоимость', dataIndex: 'unit_cost', align: 'right', render: (v: string) => money(v) },
-              // Остаток после операции считаем, только если видна вся история.
-              ...(rows.length < 200 ? [{ title: 'Остаток после', dataIndex: 'after', align: 'right' as const, render: (v: number) => qty(v) }] : []),
+              ...(seesCost
+                ? [{ title: 'Себестоимость', dataIndex: 'unit_cost', align: 'right' as const, render: (v: string) => unitPrice(v) }]
+                : []),
+              { title: 'Остаток после', dataIndex: 'balance_after', align: 'right', render: (v: string | null) => qty(v) },
             ]}
           />
         </Card>

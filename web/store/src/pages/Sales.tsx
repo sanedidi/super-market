@@ -10,7 +10,6 @@ import {
   Grid,
   Input,
   Modal,
-  Select,
   Space,
   Statistic,
   Switch,
@@ -19,11 +18,11 @@ import {
   Typography,
 } from 'antd'
 import { PlusOutlined, RollbackOutlined } from '@ant-design/icons'
-import { PageTitle, RemoteSelect, api, dateTime, money, periodParams, qty, useAction, useItem, useList } from '@sm/shared'
+import { LoadError, PageTitle, RemoteSelect, api, dateTime, money, periodParams, qty, useAction, useItem, useList, usePaged } from '@sm/shared'
 import { useStore } from '../ctx'
-import { NeedStore, Num, RangeFilter, sum, today, type Range } from '../ui'
+import { NeedStore, Num, RangeFilter, today, type Range } from '../ui'
 import { FiscalModal } from './Orders'
-import type { CustomerReturn, PaymentMethod, Sale, SaleItem } from '../types'
+import type { CustomerReturn, PaymentMethod, Sale, SaleItem, SalesSummary } from '../types'
 
 function FiscalTag({ status }: { status: string }) {
   return status === 'registered' ? <Tag color="green">Пробит</Tag> : <Tag color="orange">Не пробит</Tag>
@@ -33,39 +32,43 @@ export function SalesPage() {
   const { storeId } = useStore()
   const [range, setRange] = useState<Range | null>(today)
   const [pending, setPending] = useState(false)
+  const [q, setQ] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
-  const { data, isLoading } = useList<Sale>('/store/sales', {
-    store_id: storeId,
-    fiscal: pending ? 'pending' : undefined,
-    ...periodParams(range),
-    limit: 200,
-  })
-  const rows = data ?? []
+  const filters = { store_id: storeId, fiscal: pending ? 'pending' : undefined, ...periodParams(range) }
+  const list = usePaged<Sale>(storeId ? '/store/sales' : null, { ...filters, q: q || undefined })
+  // Итоги считает сервер по всем чекам периода, а не по странице.
+  const summary = useItem<SalesSummary>(storeId ? '/store/sales/summary' : null, filters)
+  const t = summary.data
 
   return (
     <NeedStore>
       <PageTitle title="Продажи POS">
         <RangeFilter value={range} onChange={setRange} allowClear />
+        <Input.Search placeholder="№ чека или телефон" allowClear onSearch={(v) => setQ(v.trim())} style={{ width: 220 }} />
         <Space>
           <Switch checked={pending} onChange={setPending} />
           Только непробитые
         </Space>
       </PageTitle>
-      <Card style={{ marginBottom: 16 }}>
+      <LoadError error={summary.error} retry={() => summary.refetch()} />
+      <Card style={{ marginBottom: 16 }} loading={summary.isLoading}>
         <Space size={48} wrap>
-          <Statistic title="Чеков" value={rows.length} />
-          <Statistic title="Выручка, сум" value={money(sum(rows.map((s) => s.total)))} />
-          <Statistic title="Скидки, сум" value={money(sum(rows.map((s) => s.discount)))} />
+          <Statistic title="Чеков" value={t?.sales_count ?? 0} />
+          <Statistic title="Выручка, сум" value={money(t?.revenue)} />
+          <Statistic title="Скидки, сум" value={money(t?.discount)} />
+          <Statistic title={`Возвраты (${t?.returns_count ?? 0}), сум`} value={money(t?.returns)} />
+          <Statistic title="За вычетом возвратов, сум" value={money(t?.net)} />
         </Space>
-        {rows.length >= 200 && <Typography.Paragraph type="secondary">Показаны последние 200 чеков — сузьте период.</Typography.Paragraph>}
+        {q && <Typography.Paragraph type="secondary" style={{ margin: '12px 0 0' }}>Итоги — за весь период, без учёта поиска.</Typography.Paragraph>}
       </Card>
+      <LoadError error={list.error} retry={() => list.refetch()} />
       <Card styles={{ body: { padding: 0 } }}>
         <Table<Sale>
           rowKey="id"
-          loading={isLoading}
-          dataSource={rows}
+          loading={list.isLoading || list.isFetching}
+          dataSource={list.items}
           scroll={{ x: true }}
-          pagination={{ pageSize: 50, hideOnSinglePage: true }}
+          pagination={list.pagination}
           onRow={(r) => ({ onClick: () => setOpenId(r.id), style: { cursor: 'pointer' } })}
           columns={[
             { title: '№', dataIndex: 'number', width: 70 },
@@ -87,8 +90,8 @@ function SaleDrawer({ id, onClose }: { id: string | null; onClose: () => void })
   const screens = Grid.useBreakpoint()
   const { can } = useStore()
   const { data: s, isLoading } = useItem<Sale>(id ? `/store/sales/${id}` : null)
-  const returns = useList<CustomerReturn>(s ? '/store/sales/returns' : null, { store_id: s?.store_id, limit: 200 })
-  const saleReturns = (returns.data ?? []).filter((r) => r.sale_id === id)
+  const returns = useList<CustomerReturn>(s ? '/store/sales/returns' : null, { sale_id: s?.id, limit: 200 })
+  const saleReturns = returns.data ?? []
   const [fiscal, setFiscal] = useState(false)
   const [ret, setRet] = useState(false)
   const canReturn = s && can('sales.return') && (s.items ?? []).some((i) => Number(i.returned_qty) < Number(i.qty))
@@ -201,11 +204,10 @@ export function ReturnsPage() {
   const [pending, setPending] = useState(false)
   const [creating, setCreating] = useState(false)
   const [openId, setOpenId] = useState<string | null>(null)
-  const { data, isLoading } = useList<CustomerReturn>('/store/sales/returns', {
+  const list = usePaged<CustomerReturn>(storeId ? '/store/sales/returns' : null, {
     store_id: storeId,
     fiscal: pending ? 'pending' : undefined,
     ...periodParams(range),
-    limit: 200,
   })
   return (
     <NeedStore>
@@ -225,13 +227,14 @@ export function ReturnsPage() {
           Только непробитые
         </Space>
       </PageTitle>
+      <LoadError error={list.error} retry={() => list.refetch()} />
       <Card styles={{ body: { padding: 0 } }}>
         <Table<CustomerReturn>
           rowKey="id"
-          loading={isLoading}
-          dataSource={data}
+          loading={list.isLoading || list.isFetching}
+          dataSource={list.items}
           scroll={{ x: true }}
-          pagination={{ pageSize: 50, hideOnSinglePage: true }}
+          pagination={list.pagination}
           onRow={(r) => ({ onClick: () => setOpenId(r.id), style: { cursor: 'pointer' } })}
           columns={[
             { title: '№', dataIndex: 'number', width: 70 },
@@ -317,7 +320,6 @@ function ReturnModal({ open, onClose, saleId }: { open: boolean; onClose: () => 
       form.resetFields()
     }
   }, [open, saleId, form])
-  const recent = useList<Sale>(open && !saleId ? '/store/sales' : null, { store_id: storeId, limit: 200 })
   const detail = useItem<Sale>(open && sale ? `/store/sales/${sale}` : null)
   const s = detail.data
   const save = useAction(
@@ -353,22 +355,24 @@ function ReturnModal({ open, onClose, saleId }: { open: boolean; onClose: () => 
       {!saleId && (
         <div style={{ marginBottom: 16 }}>
           <Typography.Paragraph style={{ marginBottom: 8 }}>Чек продажи</Typography.Paragraph>
-          <Select
-            showSearch
-            optionFilterProp="label"
+          <RemoteSelect<Sale>
+            path="/store/sales"
+            params={{ store_id: storeId }}
+            search
             value={sale}
             onChange={(v: string) => {
               setSale(v)
               setAmounts({})
             }}
-            loading={recent.isLoading}
-            placeholder="Номер чека"
+            label={(x) => `№ ${x.number} — ${dateTime(x.sold_at)} — ${money(x.total)}`}
+            selectedLabel={s ? `№ ${s.number} — ${dateTime(s.sold_at)} — ${money(s.total)}` : undefined}
+            placeholder="Номер чека или телефон покупателя"
+            notFoundContent="Чек не найден"
             style={{ width: '100%' }}
-            options={(recent.data ?? []).map((x) => ({
-              value: x.id,
-              label: `№ ${x.number} — ${dateTime(x.sold_at)} — ${money(x.total)}`,
-            }))}
           />
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            Без поиска — последние чеки магазина
+          </Typography.Text>
         </div>
       )}
       {s && (
