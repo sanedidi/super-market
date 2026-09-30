@@ -71,7 +71,8 @@ class _RootShellState extends State<RootShell> {
         ),
         bottomNavigationBar: Column(mainAxisSize: MainAxisSize.min, children: [
           if (state.cartCount > 0 && (tab == 0 || tab == 1))
-            const Padding(padding: EdgeInsets.fromLTRB(12, 0, 12, 0), child: CartBar()),
+            // Отступ снизу — чтобы корзина не сливалась с кругом «Карта».
+            const Padding(padding: EdgeInsets.fromLTRB(12, 0, 12, 14), child: CartBar()),
           AppTabBar(index: tab, cartCount: state.cartCount, onTap: _onTab),
         ]),
       ),
