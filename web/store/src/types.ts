@@ -66,7 +66,13 @@ export type DictItem = {
 
 export type PriceType = { id: string; name: string; is_default: boolean; is_active: boolean }
 
-export type PriceDocItem = { product_id: string; product_name: string; new_price: string; previous_price: string | null }
+export type PriceDocItem = {
+  product_id: string
+  product_name: string
+  new_price: string
+  previous_price: string | null
+  current_price: string
+}
 
 export type PriceDocument = {
   id: string
@@ -129,12 +135,24 @@ export type StockRow = {
   product_name: string
   unit_short: string
   qty: string
-  avg_cost: string
-  total_cost: string
-  avg_cost_usd: string
+  // Себестоимость — только с правом inventory.manage или reports.view.
+  avg_cost?: string
+  total_cost?: string
+  avg_cost_usd?: string
 }
 
-export type Movement = { qty: string; unit_cost: string; doc_type: string; doc_id: string; created_at: string }
+export type Movement = {
+  product_id: string
+  product_name: string
+  qty: string
+  unit_cost?: string
+  doc_type: string
+  doc_kind: string
+  doc_id: string
+  doc_number: number | null
+  created_at: string
+  balance_after: string | null
+}
 
 export type CounterpartyType = { id: string; name: string; is_active: boolean }
 
@@ -260,6 +278,18 @@ export type CustomerReturn = {
   items?: { sale_line: number; product_name: string; qty: string; total: string }[]
 }
 
+export type SalesSummary = {
+  sales_count: number
+  subtotal: string
+  discount: string
+  revenue: string
+  returns_count: number
+  returns: string
+  net: string
+}
+
+export type StockSummary = { positions: number; products: number; cost_value?: string }
+
 export type FiscalSummary = { pending_sales: number; pending_returns: number; oldest_pending_at: string | null }
 
 export type OrderItem = {
@@ -272,6 +302,8 @@ export type OrderItem = {
   total: string
   picked_warehouse_id: string | null
   from_other_warehouse: boolean
+  /** Цена до скидки по акции; null — скидки не было. */
+  old_price: string | null
 }
 
 export type Order = {
@@ -283,6 +315,7 @@ export type Order = {
   status: string
   status_title: string
   subtotal: string
+  discount: string
   delivery_fee: string
   total: string
   address: string

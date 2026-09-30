@@ -5,6 +5,7 @@ import {
   AppstoreOutlined,
   BarChartOutlined,
   BookOutlined,
+  CarOutlined,
   DashboardOutlined,
   DollarOutlined,
   InboxOutlined,
@@ -37,22 +38,26 @@ import { ProductsPage } from './pages/Products'
 import { EmployeesPage, RolesPage, StoresPage } from './pages/Settings'
 import { DeliveryPage } from './pages/Delivery'
 import { BalancePage } from './pages/Balance'
+import { CouriersPage } from './pages/Couriers'
+import { OrderAlerts } from './notify'
 
 const TITLE = 'Панель магазина'
 
 type Item = { key: string; label: string; perm?: string | string[]; icon?: ReactNode; children?: Item[] }
 
 // Меню как в Dokondor: группы разделов; perm — какое право нужно, чтобы видеть пункт.
+// Права совпадают с правами сервера на чтение раздела (docs/api.md, «Права на чтение»).
 const MENU: Item[] = [
   { key: '/', label: 'Главная', icon: <DashboardOutlined /> },
   { key: '/orders', label: 'Онлайн-заказы', icon: <ShoppingCartOutlined />, perm: 'orders.manage' },
+  { key: '/couriers', label: 'Курьеры', icon: <CarOutlined />, perm: 'orders.manage' },
   {
     key: 'sales',
     label: 'Продажи',
     icon: <ShoppingOutlined />,
     children: [
       { key: '/sales/pos', label: 'Продажи POS', perm: ['sales.pos', 'sales.return', 'reports.view'] },
-      { key: '/sales/returns', label: 'Возвраты', perm: ['sales.return', 'sales.pos'] },
+      { key: '/sales/returns', label: 'Возвраты', perm: ['sales.pos', 'sales.return', 'reports.view'] },
       { key: '/sales/prices', label: 'Установка цен', perm: 'prices.manage' },
       { key: '/sales/promotions', label: 'Акции в приложении', perm: 'prices.manage' },
     ],
@@ -180,6 +185,7 @@ function Header() {
       <Typography.Text strong ellipsis style={{ maxWidth: 220 }}>
         {me?.network.name ?? ''}
       </Typography.Text>
+      <OrderAlerts />
       {stores.length > 0 && (
         <Select
           value={storeId || undefined}
@@ -202,6 +208,7 @@ export function StoreRoutes() {
        <Route element={<Guard />}>
         <Route index element={<DashboardPage />} />
         <Route path="orders" element={<OrdersPage />} />
+        <Route path="couriers" element={<CouriersPage />} />
 
         <Route path="sales/pos" element={<SalesPage />} />
         <Route path="sales/returns" element={<ReturnsPage />} />

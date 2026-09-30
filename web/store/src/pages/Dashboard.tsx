@@ -1,11 +1,11 @@
 // Главная: продажи за сегодня, новые заказы, баланс, контроль чеков.
 import { Link, useNavigate } from 'react-router-dom'
 import { Alert, Button, Card, Col, Row, Statistic, Table, Typography } from 'antd'
-import { useQuery } from '@tanstack/react-query'
-import { PageTitle, StatusTag, api, dateTime, money, periodParams, useItem, useList, type List } from '@sm/shared'
+import { PageTitle, StatusTag, dateTime, money, periodParams, useItem } from '@sm/shared'
 import { useStore } from '../ctx'
-import { NeedStore, sum, today } from '../ui'
-import type { Balance, FiscalSummary, Order, Sale } from '../types'
+import { usePaidOrders } from '../notify'
+import { NeedStore, today } from '../ui'
+import type { Balance, FiscalSummary, Order, SalesSummary } from '../types'
 
 export function DashboardPage() {
   return (
@@ -21,33 +21,39 @@ export function DashboardPage() {
 function Widgets() {
   const { storeId, can } = useStore()
   const nav = useNavigate()
-  const sales = useList<Sale>('/store/sales', { store_id: storeId, ...periodParams(today()), limit: 200 })
-  const ordersParams = { store_id: storeId, status: 'paid', limit: 200 }
-  const orders = useQuery({
-    queryKey: ['/store/orders', ordersParams],
-    queryFn: () => api.get<List<Order>>('/store/orders', ordersParams).then((r) => r.items ?? []),
-    enabled: can('orders.manage'),
-    refetchInterval: 15_000,
-  })
-  const balance = useItem<Balance>(can('payouts.manage') ? '/store/balance' : null)
-  const fiscal = useItem<FiscalSummary>('/store/sales/fiscal-control', { store_id: storeId })
-  const rows = sales.data ?? []
+  // Виджеты запрашиваются только при праве на раздел — иначе сервер ответит 403.
+  const seesSales = ['sales.pos', 'sales.return', 'reports.view'].some(can)
+  const seesOrders = can('orders.manage')
+  const seesBalance = can('payouts.manage')
+  const sales = useItem<SalesSummary>(seesSales ? '/store/sales/summary' : null, { store_id: storeId, ...periodParams(today()) })
+  const orders = usePaidOrders()
+  const balance = useItem<Balance>(seesBalance ? '/store/balance' : null)
+  const fiscal = useItem<FiscalSummary>(seesSales ? '/store/sales/fiscal-control' : null, { store_id: storeId })
   const pending = (fiscal.data?.pending_sales ?? 0) + (fiscal.data?.pending_returns ?? 0)
+
+  if (!seesSales && !seesOrders && !seesBalance) {
+    return <Alert type="info" showIcon message="Добро пожаловать" description="Доступные вам разделы — в меню слева." />
+  }
 
   return (
     <>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={12} lg={6}>
-          <Card loading={sales.isLoading} hoverable onClick={() => nav('/sales/pos')}>
-            <Statistic title="Продажи сегодня, сум" value={money(sum(rows.map((s) => s.total)))} />
-          </Card>
-        </Col>
-        <Col xs={12} lg={6}>
-          <Card loading={sales.isLoading} hoverable onClick={() => nav('/sales/pos')}>
-            <Statistic title="Чеков сегодня" value={rows.length} />
-          </Card>
-        </Col>
-        {can('orders.manage') && (
+        {seesSales && (
+          <>
+            <Col xs={12} lg={6}>
+              <Card loading={sales.isLoading} hoverable onClick={() => nav('/sales/pos')}>
+                <Statistic title="Продажи сегодня, сум" value={money(sales.data?.revenue)} />
+                {Number(sales.data?.returns) > 0 && <Typography.Text type="secondary">Возвраты: {money(sales.data?.returns)}</Typography.Text>}
+              </Card>
+            </Col>
+            <Col xs={12} lg={6}>
+              <Card loading={sales.isLoading} hoverable onClick={() => nav('/sales/pos')}>
+                <Statistic title="Чеков сегодня" value={sales.data?.sales_count ?? 0} />
+              </Card>
+            </Col>
+          </>
+        )}
+        {seesOrders && (
           <Col xs={12} lg={6}>
             <Card loading={orders.isLoading} hoverable onClick={() => nav('/orders')}>
               <Statistic
@@ -58,7 +64,7 @@ function Widgets() {
             </Card>
           </Col>
         )}
-        {can('payouts.manage') && (
+        {seesBalance && (
           <Col xs={12} lg={6}>
             <Card loading={balance.isLoading} hoverable onClick={() => nav('/balance')}>
               <Statistic title="Баланс к выводу, сум" value={money(balance.data?.available)} />
@@ -68,25 +74,27 @@ function Widgets() {
         )}
       </Row>
       <Row gutter={[16, 16]}>
-        <Col xs={24} lg={8}>
-          <Card title="Контроль чеков" loading={fiscal.isLoading}>
-            {pending === 0 ? (
-              <Alert type="success" showIcon message="Все чеки пробиты" />
-            ) : (
-              <>
-                <Alert
-                  type="warning"
-                  showIcon
-                  message={`Не пробито: продаж — ${fiscal.data?.pending_sales ?? 0}, возвратов — ${fiscal.data?.pending_returns ?? 0}`}
-                  description={fiscal.data?.oldest_pending_at && `Самый старый: ${dateTime(fiscal.data.oldest_pending_at)}`}
-                  style={{ marginBottom: 12 }}
-                />
-                <Link to="/sales/pos">К продажам</Link>
-              </>
-            )}
-          </Card>
-        </Col>
-        {can('orders.manage') && (
+        {seesSales && (
+          <Col xs={24} lg={8}>
+            <Card title="Контроль чеков" loading={fiscal.isLoading}>
+              {pending === 0 ? (
+                <Alert type="success" showIcon message="Все чеки пробиты" />
+              ) : (
+                <>
+                  <Alert
+                    type="warning"
+                    showIcon
+                    message={`Не пробито: продаж — ${fiscal.data?.pending_sales ?? 0}, возвратов — ${fiscal.data?.pending_returns ?? 0}`}
+                    description={fiscal.data?.oldest_pending_at && `Самый старый: ${dateTime(fiscal.data.oldest_pending_at)}`}
+                    style={{ marginBottom: 12 }}
+                  />
+                  <Link to="/sales/pos">К продажам</Link>
+                </>
+              )}
+            </Card>
+          </Col>
+        )}
+        {seesOrders && (
           <Col xs={24} lg={16}>
             <Card
               title="Новые заказы"
