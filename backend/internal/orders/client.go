@@ -371,8 +371,14 @@ func (s *Service) CreateOrder(ctx context.Context, p *identity.Principal, in Che
 		return Created{}, apperr.Validation("payment_provider: способ оплаты временно недоступен")
 	}
 	var phone string
-	if err := s.pool.QueryRow(ctx, `SELECT phone FROM users WHERE id = $1`, p.UserID).Scan(&phone); err != nil {
+	var blocked bool
+	if err := s.pool.QueryRow(ctx, `
+		SELECT u.phone, COALESCE(c.blocked_at IS NOT NULL, false)
+		FROM users u LEFT JOIN customers c ON c.user_id = u.id WHERE u.id = $1`, p.UserID).Scan(&phone, &blocked); err != nil {
 		return Created{}, err
+	}
+	if blocked {
+		return Created{}, identity.ErrCustomerBlocked
 	}
 
 	var id, total string

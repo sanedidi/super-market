@@ -1,10 +1,13 @@
 package server_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
+	"github.com/sanedidi/super-market/backend/internal/platform/config"
 )
 
 // TestAdminCategoryTree — категорию нельзя вложить в саму себя или в потомка;
@@ -110,4 +113,236 @@ func TestAdminClearFields(t *testing.T) {
 	if n := len(a.expect(a.do("GET", "/admin/banners?limit=1&offset=1", adminTok, nil), 200, "banner page").items()); n != 1 {
 		t.Fatalf("banner page 2 has %d items", n)
 	}
+}
+
+// adminShop — сеть с магазином, принимающим онлайн-заказы, и покупатель с
+// адресом. order создаёт заказ (ждёт оплаты) и возвращает его id и номер.
+type adminShop struct {
+	a        api
+	store    string
+	network  string
+	client   string
+	clientID string
+	addr     string
+	cola     string
+}
+
+func newAdminShop(t *testing.T, a api, adminTok, ownerPhone, clientPhone string) adminShop {
+	t.Helper()
+	cola, _ := catalogBasics(t, a, adminTok)
+	tok, store := setupNetwork(t, a, adminTok, ownerPhone)
+	const lat, lng = 41.2995, 69.2401
+	a.expect(a.do("PATCH", "/store/stores/"+store, tok, map[string]any{"lat": lat, "lng": lng, "address": "Центр"}), 200, "store location")
+	wh := a.expect(a.do("GET", "/store/warehouses?store_id="+store, tok, nil), 200, "wh").items()[0]["id"].(string)
+	d := a.expect(a.do("POST", "/store/inventory/documents", tok, map[string]any{"type": "posting", "warehouse_id": wh,
+		"items": []map[string]any{{"product_id": cola, "qty": 100, "price": 10000}}}), 201, "posting")
+	a.expect(a.do("POST", "/store/inventory/documents/"+d.str("id")+"/post", tok, nil), 200, "post")
+	a.expect(a.do("PUT", "/store/stores/"+store+"/delivery", tok, map[string]any{
+		"accepts_online": true, "min_order_amount": 0, "delivery_radius_m": 5000,
+	}), 200, "delivery")
+	client, _ := a.login(clientPhone, identity.AppClient)
+	addr := a.expect(a.do("POST", "/client/addresses", client, map[string]any{
+		"label": "Дом", "address": "Чиланзар 5", "lat": 41.3030, "lng": lng,
+	}), 201, "address").str("id")
+	me := a.expect(a.do("GET", "/store/me", tok, nil), 200, "me")
+	return adminShop{a: a, store: store, network: me.str("network_id"), client: client, addr: addr, cola: cola}
+}
+
+func (s adminShop) order(t *testing.T) (id string, number float64) {
+	t.Helper()
+	o := s.a.expect(s.a.do("POST", "/client/orders", s.client, map[string]any{
+		"store_id": s.store, "address_id": s.addr, "payment_provider": "payme",
+		"items": []map[string]any{{"product_id": s.cola, "qty": 1}},
+	}), 201, "order")
+	return o.str("order", "id"), o.Body["order"].(map[string]any)["number"].(float64)
+}
+
+func paymeConfig() config.Config {
+	cfg := testConfig()
+	cfg.DevOTPCode = "111111"
+	cfg.PaymeMerchantID, cfg.PaymeKey = "merchant-1", paymeKey
+	cfg.PaymentTimeout, cfg.AcceptTimeout = 15*time.Minute, 10*time.Minute
+	return cfg
+}
+
+// TestAdminOrdersAndStats — фильтры заказов супер-админа и сводка.
+func TestAdminOrdersAndStats(t *testing.T) {
+	pool := freshDB(t)
+	ctx := context.Background()
+	a := newAPI(t, paymeConfig(), pool, nil)
+	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
+	shop := newAdminShop(t, a, adminTok, "+998900000002", "+998901234567")
+
+	o1, n1 := shop.order(t)
+	o2, _ := shop.order(t)
+	o3, _ := shop.order(t)
+	// o1 оплачен давно (не принят вовремя), o2 — только что, o3 ждёт оплаты.
+	if _, err := pool.Exec(ctx, `UPDATE orders SET status = 'paid', paid_at = now() - interval '11 minutes' WHERE id = $1`, o1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE orders SET status = 'paid', paid_at = now() WHERE id = $1`, o2); err != nil {
+		t.Fatal(err)
+	}
+
+	ids := func(path string) []string {
+		t.Helper()
+		var out []string
+		for _, o := range a.expect(a.do("GET", path, adminTok, nil), 200, path).items() {
+			out = append(out, o["id"].(string))
+		}
+		return out
+	}
+	if got := ids(fmt.Sprintf("/admin/orders?q=%d", int64(n1))); len(got) != 1 || got[0] != o1 {
+		t.Fatalf("by number = %v", got)
+	}
+	if got := ids("/admin/orders?q=1234567"); len(got) != 3 {
+		t.Fatalf("by phone = %v", got)
+	}
+	if got := ids("/admin/orders?q=7654321"); len(got) != 0 {
+		t.Fatalf("by other phone = %v", got)
+	}
+	a.expect(a.do("GET", "/admin/orders?q=ab", adminTok, nil), 400, "bad q")
+	if got := ids("/admin/orders?network_id=" + shop.network + "&store_id=" + shop.store + "&payment_provider=payme"); len(got) != 3 {
+		t.Fatalf("by network/store/provider = %v", got)
+	}
+	if got := ids("/admin/orders?payment_provider=click"); len(got) != 0 {
+		t.Fatalf("by click = %v", got)
+	}
+	a.expect(a.do("GET", "/admin/orders?payment_provider=cash", adminTok, nil), 400, "bad provider")
+	today := time.Now().In(time.FixedZone("UZT", 5*3600))
+	if got := ids("/admin/orders?from=" + today.AddDate(0, 0, 1).Format("2006-01-02")); len(got) != 0 {
+		t.Fatalf("from tomorrow = %v", got)
+	}
+	if got := ids("/admin/orders?from=" + today.Format("2006-01-02") + "&to=" + today.AddDate(0, 0, 1).Format("2006-01-02")); len(got) != 3 {
+		t.Fatalf("today = %v", got)
+	}
+	stale := a.expect(a.do("GET", "/admin/orders?stale=true", adminTok, nil), 200, "stale").items()
+	if len(stale) != 1 || stale[0]["id"] != o1 || stale[0]["accept_overdue"] != true {
+		t.Fatalf("stale = %v", stale)
+	}
+	if got := ids("/admin/orders?status=paid&limit=1&offset=1"); len(got) != 1 {
+		t.Fatalf("paid page 2 = %v", got)
+	}
+	if o := a.expect(a.do("GET", "/admin/orders/"+o2, adminTok, nil), 200, "fresh order"); o.Body["accept_overdue"] != nil {
+		t.Fatalf("fresh order overdue: %v", o.Body)
+	}
+	_ = o3
+
+	st := a.expect(a.do("GET", "/admin/stats", adminTok, nil), 200, "stats").Body
+	// o1 оплачен 11 минут назад — сразу после полуночи по Ташкенту он «вчерашний».
+	if n := st["today_orders"].(float64); n < 1 || n > 2 {
+		t.Fatalf("today_orders = %v", n)
+	}
+	want := map[string]float64{"stale_orders": 1, "paid_waiting": 2, "accept_timeout_min": 10,
+		"refunds_pending": 0, "payouts_requested": 0, "products_pending": 0, "overdue_networks": 0}
+	for k, v := range want {
+		if st[k] != v {
+			t.Fatalf("stats[%s] = %v, want %v (%v)", k, st[k], v, st)
+		}
+	}
+	if st["today_gmv"] == "0.00" || st["today_gmv"] == nil {
+		t.Fatalf("today_gmv = %v", st["today_gmv"])
+	}
+}
+
+// TestAdminCustomers — поиск, карточка, блокировка покупателя.
+func TestAdminCustomers(t *testing.T) {
+	pool := freshDB(t)
+	a := newAPI(t, paymeConfig(), pool, nil)
+	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
+	shop := newAdminShop(t, a, adminTok, "+998900000002", "+998901234567")
+	a.login("+998907777777", identity.AppClient)
+	shop.order(t)
+
+	list := a.expect(a.do("GET", "/admin/customers?q=1234", adminTok, nil), 200, "search").items()
+	if len(list) != 1 || list[0]["phone"] != "+998901234567" || list[0]["orders_count"].(float64) != 0 || list[0]["last_order_at"] == nil {
+		t.Fatalf("customers = %v", list)
+	}
+	id := list[0]["id"].(string)
+	if all := a.expect(a.do("GET", "/admin/customers?limit=1&offset=1", adminTok, nil), 200, "page").items(); len(all) != 1 {
+		t.Fatalf("page 2 = %v", all)
+	}
+	d := a.expect(a.do("GET", "/admin/customers/"+id, adminTok, nil), 200, "detail")
+	if len(d.Body["addresses"].([]any)) != 1 || len(d.Body["recent_orders"].([]any)) != 1 || d.Body["blocked_at"] != nil {
+		t.Fatalf("detail = %v", d.Body)
+	}
+	a.expect(a.do("GET", "/admin/customers/00000000-0000-0000-0000-000000000000", adminTok, nil), 404, "unknown")
+
+	a.expect(a.do("POST", "/admin/customers/"+id+"/block", adminTok, map[string]any{"reason": " "}), 400, "block without reason")
+	b := a.expect(a.do("POST", "/admin/customers/"+id+"/block", adminTok, map[string]any{"reason": "мошенничество"}), 200, "block")
+	if b.Body["blocked_at"] == nil || b.str("blocked_reason") != "мошенничество" {
+		t.Fatalf("blocked = %v", b.Body)
+	}
+	a.expect(a.do("POST", "/admin/customers/"+id+"/block", adminTok, map[string]any{"reason": "ещё"}), 409, "block twice")
+	if bl := a.expect(a.do("GET", "/admin/customers?blocked=true", adminTok, nil), 200, "blocked list").items(); len(bl) != 1 {
+		t.Fatalf("blocked list = %v", bl)
+	}
+
+	// Заблокированный не оформляет заказ и не входит заново.
+	r := a.expect(a.do("POST", "/client/orders", shop.client, map[string]any{
+		"store_id": shop.store, "address_id": shop.addr, "payment_provider": "payme",
+		"items": []map[string]any{{"product_id": shop.cola, "qty": 1}},
+	}), 403, "blocked order")
+	if r.str("error", "code") != "customer_blocked" {
+		t.Fatalf("order error = %v", r.Body)
+	}
+	a.expect(a.do("POST", "/auth/otp/request", "", map[string]string{"phone": "+998901234567"}), 200, "request")
+	r = a.expect(a.do("POST", "/auth/otp/verify", "", map[string]string{"phone": "+998901234567", "code": "111111", "app": "client"}), 403, "blocked login")
+	if r.str("error", "code") != "customer_blocked" {
+		t.Fatalf("login error = %v", r.Body)
+	}
+	a.expect(a.do("GET", "/client/orders", shop.client, nil), 200, "blocked still sees orders")
+
+	a.expect(a.do("POST", "/admin/customers/"+id+"/unblock", adminTok, nil), 200, "unblock")
+	a.expect(a.do("POST", "/admin/customers/"+id+"/unblock", adminTok, nil), 409, "unblock twice")
+	a.login("+998901234567", identity.AppClient)
+	shop.order(t)
+}
+
+// TestAdminNotifications — очередь уведомлений и повтор неотправленных.
+func TestAdminNotifications(t *testing.T) {
+	pool := freshDB(t)
+	ctx := context.Background()
+	cfg := testConfig()
+	cfg.DevOTPCode = "111111"
+	a := newAPI(t, cfg, pool, nil)
+	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
+	a.login("+998901234567", identity.AppClient)
+	var failed, sent int64
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO notifications_outbox (user_id, kind, title, body, status, attempts, last_error)
+		SELECT id, 'order_status', 'Заказ №5 оплачен', 'текст', 'failed', 6, 'fcm: unregistered' FROM users WHERE phone = '+998901234567'
+		RETURNING id`).Scan(&failed); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO notifications_outbox (user_id, kind, title, body, status, channel, sent_at)
+		SELECT id, 'family', 'Просьба купить', 'текст', 'sent', 'push', now() FROM users WHERE phone = '+998901234567'
+		RETURNING id`).Scan(&sent); err != nil {
+		t.Fatal(err)
+	}
+
+	list := a.expect(a.do("GET", "/admin/notifications?status=failed", adminTok, nil), 200, "failed").items()
+	if len(list) != 1 || list[0]["id"].(float64) != float64(failed) || list[0]["phone"] != "+998901234567" || list[0]["last_error"] != "fcm: unregistered" {
+		t.Fatalf("failed = %v", list)
+	}
+	if l := a.expect(a.do("GET", "/admin/notifications?q=просьба", adminTok, nil), 200, "by title").items(); len(l) != 1 {
+		t.Fatalf("by title = %v", l)
+	}
+	if l := a.expect(a.do("GET", "/admin/notifications?q=901234", adminTok, nil), 200, "by phone").items(); len(l) != 2 {
+		t.Fatalf("by phone = %v", l)
+	}
+	a.expect(a.do("GET", "/admin/notifications?status=nope", adminTok, nil), 400, "bad status")
+	if st := a.expect(a.do("GET", "/admin/stats", adminTok, nil), 200, "stats"); st.Body["failed_notifications"] != 1.0 {
+		t.Fatalf("stats = %v", st.Body)
+	}
+
+	r := a.expect(a.do("POST", fmt.Sprintf("/admin/notifications/%d/retry", failed), adminTok, nil), 200, "retry")
+	if r.str("status") != "pending" || r.Body["attempts"].(float64) != 0 || r.str("last_error") != "" {
+		t.Fatalf("retried = %v", r.Body)
+	}
+	a.expect(a.do("POST", fmt.Sprintf("/admin/notifications/%d/retry", failed), adminTok, nil), 409, "retry pending")
+	a.expect(a.do("POST", fmt.Sprintf("/admin/notifications/%d/retry", sent), adminTok, nil), 409, "retry sent")
+	a.expect(a.do("POST", "/admin/notifications/999999/retry", adminTok, nil), 404, "retry unknown")
+	a.expect(a.do("POST", "/admin/notifications/abc/retry", adminTok, nil), 404, "retry bad id")
 }

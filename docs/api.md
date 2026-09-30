@@ -34,6 +34,35 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 | GET | `/admin/networks/{id}` | сеть |
 | PATCH | `/admin/networks/{id}` | `{"name"?, "status"?: "active"\|"blocked"}` — блокировка сразу закрывает доступ сотрудникам |
 
+Списки супер-админа отдаются страницами: `limit` (по умолчанию 50, максимум 200) и `offset`; общего числа
+записей нет — панель запрашивает `limit+1`, чтобы понять, есть ли следующая страница.
+
+### Сводка
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET | `/admin/stats` | `stale_orders` (оплачены, но не приняты вовремя), `paid_waiting` (оплачены, ждут принятия), `refunds_pending`, `payouts_requested`, `products_pending` (на модерации), `overdue_networks` (сети с просроченным счётом), `failed_notifications`, `today_orders` и `today_gmv` (оплаченные сегодня по Ташкенту заказы без отменённых, сумма `total`), `accept_timeout_min` |
+
+### Покупатели
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET | `/admin/customers?q=&blocked=true&limit=&offset=` | `q` — телефон (от 3 цифр) или имя. Поля: `id`, `phone`, `full_name`, `created_at`, `deleted_at`, `blocked_at`, `blocked_reason`, `orders_count` (без неоплаченных), `last_order_at`, `family_name`, `telegram_linked` |
+| GET | `/admin/customers/{id}` | то же + `language`, `city`, `devices_count`, `addresses`, `recent_orders` (20 последних) |
+| POST | `/admin/customers/{id}/block` | `{"reason"}` обязательно. 409 `already_blocked` |
+| POST | `/admin/customers/{id}/unblock` | 409 `not_blocked` |
+
+Заблокированный покупатель не входит в приложение заново (`/auth/otp/verify` с `app=client` → 403
+`customer_blocked`) и не оформляет заказы (`POST /client/orders` → 403 `customer_blocked`). Открытые сессии
+не закрываются: он по-прежнему видит свои заказы и возвраты.
+
+### Уведомления покупателям
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET | `/admin/notifications?status=&q=&limit=&offset=` | очередь `notifications_outbox`: `status` — `pending`, `sent`, `skipped`, `failed`; `q` — телефон (от 3 цифр) или текст заголовка. Поля: `id` (число), `user_id`, `phone`, `kind`, `title`, `body`, `status`, `channel`, `attempts`, `last_error`, `send_after`, `created_at`, `sent_at` |
+| POST | `/admin/notifications/{id}/retry` | вернуть `failed`/`skipped` в очередь (попытки с нуля). Иначе 409 `not_failed` |
+
 ## Панель магазина (`app=store`)
 
 | Метод | Путь | Право | Описание |
@@ -241,10 +270,10 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 
 | Метод | Путь | Описание |
 | --- | --- | --- |
-| GET | `/admin/orders?status=&stale=true` | заказы; `stale` — оплачены, но не приняты за `ACCEPT_TIMEOUT` |
-| GET | `/admin/orders/{id}` | |
+| GET | `/admin/orders?status=&stale=true&q=&network_id=&store_id=&payment_provider=&from=&to=&limit=&offset=` | заказы; `stale` — оплачены, но не приняты за `ACCEPT_TIMEOUT` (заказ ко времени — не позже чем за час до окна); `q` — номер заказа или телефон покупателя (от 3 цифр); `payment_provider` — `payme`/`click`; `from`/`to` — дата создания `YYYY-MM-DD` (`to` не включается). У просроченных `accept_overdue: true` |
+| GET | `/admin/orders/{id}` | с `items` (`old_price` — цена до скидки), `history`, `discount`, `delivery_from`/`delivery_to`, `courier_name`, `eta_at`, `payment_deadline` |
 | POST | `/admin/orders/{id}/cancel` | `{"reason"}` |
-| GET | `/admin/payments?status=refund_pending` | очередь возвратов |
+| GET | `/admin/payments?status=refund_pending&limit=&offset=` | очередь возвратов |
 | POST | `/admin/payments/{id}/refunded` | деньги возвращены в кабинете Click (Payme сообщает сам) |
 
 ### Платёжные системы
@@ -273,7 +302,7 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 | Метод | Путь | Описание |
 | --- | --- | --- |
 | GET/PUT | `/admin/billing/settings` | `usd_rate` (курс для счетов), `grace_days` (дней на оплату), `auto_charge_balance` |
-| GET/POST | `/admin/billing/tariffs` | `{"name","min_stores","price_per_store"}` — цена за магазин в месяц, USD |
+| GET/POST | `/admin/billing/tariffs?limit=&offset=` | `{"name","min_stores","price_per_store"}` — цена за магазин в месяц, USD |
 | PATCH | `/admin/billing/tariffs/{id}` | в т.ч. `is_active` |
 | GET | `/admin/billing/networks?overdue=true` | сети: магазины, цена, баланс, долг |
 | GET/PATCH | `/admin/billing/networks/{id}` | `{"custom_price_per_store"}`, `{"clear_custom_price":true}`, `{"billing_from":"YYYY-MM-01"}` |

@@ -78,7 +78,9 @@ type Tokens struct {
 var (
 	errCodeInvalid = apperr.Validation("код неверный или устарел")
 	errNoAccess    = apperr.Forbidden("нет доступа к этому приложению")
-	errRefresh     = apperr.Unauthorized("сессия недействительна, войдите заново")
+	// ErrCustomerBlocked — покупателя заблокировал супер-админ.
+	ErrCustomerBlocked = apperr.New(http.StatusForbidden, "customer_blocked", "аккаунт заблокирован, обратитесь в поддержку")
+	errRefresh         = apperr.Unauthorized("сессия недействительна, войдите заново")
 )
 
 func (s *Service) botURL() string {
@@ -239,10 +241,19 @@ func (s *Service) userForApp(ctx context.Context, tx pgx.Tx, ph, app string) (st
 		}
 		// Удалённый аккаунт сотрудника (номер у него не обезличивается)
 		// при новом входе в приложение становится снова активным.
-		_, err := tx.Exec(ctx, `
+		if _, err := tx.Exec(ctx, `
 			INSERT INTO customers (user_id) VALUES ($1)
-			ON CONFLICT (user_id) DO UPDATE SET deleted_at = NULL WHERE customers.deleted_at IS NOT NULL`, userID)
-		return userID, err
+			ON CONFLICT (user_id) DO UPDATE SET deleted_at = NULL WHERE customers.deleted_at IS NOT NULL`, userID); err != nil {
+			return "", err
+		}
+		var blocked bool
+		if err := tx.QueryRow(ctx, `SELECT blocked_at IS NOT NULL FROM customers WHERE user_id = $1`, userID).Scan(&blocked); err != nil {
+			return "", err
+		}
+		if blocked {
+			return "", ErrCustomerBlocked
+		}
+		return userID, nil
 	}
 
 	var query string

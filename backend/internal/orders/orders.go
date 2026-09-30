@@ -97,12 +97,14 @@ type Order struct {
 	CourierName *string    `json:"courier_name"`
 	EtaAt       *time.Time `json:"eta_at"`
 	// До какого момента нужно оплатить (только для «ожидает оплаты»).
-	PaymentDeadline *time.Time     `json:"payment_deadline,omitempty"`
-	CancelReason    string         `json:"cancel_reason"`
-	FiscalStatus    string         `json:"fiscal_status"`
-	CreatedAt       time.Time      `json:"created_at"`
-	Items           []OrderItem    `json:"items,omitempty"`
-	History         []HistoryEntry `json:"history,omitempty"`
+	PaymentDeadline *time.Time `json:"payment_deadline,omitempty"`
+	// Для супер-админа: оплачен, но магазин не принял вовремя.
+	AcceptOverdue bool           `json:"accept_overdue,omitempty"`
+	CancelReason  string         `json:"cancel_reason"`
+	FiscalStatus  string         `json:"fiscal_status"`
+	CreatedAt     time.Time      `json:"created_at"`
+	Items         []OrderItem    `json:"items,omitempty"`
+	History       []HistoryEntry `json:"history,omitempty"`
 }
 
 const orderSelect = `
@@ -540,20 +542,95 @@ func (s *Service) RegisterFiscal(ctx context.Context, p *identity.Principal, id,
 
 // ------------------------------------------------------------ супер-админ
 
-func (s *Service) AdminList(ctx context.Context, status string, stale bool, page httpx.Page) ([]Order, error) {
+// AdminFilter — отбор заказов для супер-админа.
+type AdminFilter struct {
+	Status string
+	// Stale — оплачены, но магазин не принял их вовремя.
+	Stale bool
+	// Query — номер заказа или часть телефона покупателя.
+	Query     string
+	NetworkID string
+	StoreID   string
+	Provider  string
+	From      *time.Time
+	To        *time.Time
+	Page      httpx.Page
+}
+
+// StaleSQL — заказ оплачен, но не принят за $N секунд; заказ ко времени
+// магазин должен принять не позже чем за час до окна.
+func StaleSQL(param string) string {
+	return `(o.status = 'paid' AND GREATEST(o.paid_at, COALESCE(o.delivery_from - interval '1 hour', o.paid_at)) < now() - make_interval(secs => ` + param + `))`
+}
+
+func (s *Service) AdminList(ctx context.Context, f AdminFilter) ([]Order, error) {
+	if f.Status != "" && statusTitles[f.Status] == "" {
+		return nil, apperr.Validation("status: неизвестный статус")
+	}
+	for name, id := range map[string]string{"network_id": f.NetworkID, "store_id": f.StoreID} {
+		if id != "" && !httpx.IsUUID(id) {
+			return nil, apperr.Validation(name + ": неверный id")
+		}
+	}
+	if f.Provider != "" && f.Provider != "payme" && f.Provider != "click" {
+		return nil, apperr.Validation("payment_provider: payme или click")
+	}
+	// Номер заказа — только цифры; телефон ищем по цифрам от трёх.
+	q := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(f.Query), "№"))
+	digits := strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, q)
+	var number *int64
+	if n, err := strconv.ParseInt(q, 10, 64); err == nil {
+		number = &n
+	}
+	phone := ""
+	if len(digits) >= 3 {
+		phone = digits
+	}
+	if q != "" && number == nil && phone == "" {
+		return nil, apperr.Validation("q: номер заказа или телефон покупателя")
+	}
 	rows, err := s.pool.Query(ctx, orderSelect+`
 		WHERE ($1 = '' OR o.status = $1)
-		  AND (NOT $2 OR (o.status = 'paid' AND o.paid_at < now() - make_interval(secs => $3)))
-		ORDER BY o.created_at DESC LIMIT $4 OFFSET $5`,
-		status, stale, s.cfg.AcceptTimeout.Seconds(), page.Limit, page.Offset)
+		  AND (NOT $2 OR `+StaleSQL("$3")+`)
+		  AND (($6::bigint IS NULL AND $7 = '') OR o.number = $6 OR ($7 <> '' AND o.customer_phone LIKE '%' || $7 || '%'))
+		  AND ($8 = '' OR o.network_id::text = $8)
+		  AND ($9 = '' OR o.store_id::text = $9)
+		  AND ($10 = '' OR o.payment_provider = $10)
+		  AND ($11::timestamptz IS NULL OR o.created_at >= $11) AND ($12::timestamptz IS NULL OR o.created_at < $12)
+		ORDER BY o.created_at DESC, o.id LIMIT $4 OFFSET $5`,
+		f.Status, f.Stale, s.cfg.AcceptTimeout.Seconds(), f.Page.Limit, f.Page.Offset,
+		number, phone, f.NetworkID, f.StoreID, f.Provider, f.From, f.To)
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, scanOrder)
+	list, err := pgx.CollectRows(rows, scanOrder)
+	for i := range list {
+		s.markOverdue(&list[i])
+	}
+	return list, err
+}
+
+// markOverdue — то же правило, что StaleSQL.
+func (s *Service) markOverdue(o *Order) {
+	if o.Status != StatusPaid || o.PaidAt == nil {
+		return
+	}
+	start := *o.PaidAt
+	if o.DeliveryFrom != nil && o.DeliveryFrom.Add(-time.Hour).After(start) {
+		start = o.DeliveryFrom.Add(-time.Hour)
+	}
+	o.AcceptOverdue = start.Before(s.now().Add(-s.cfg.AcceptTimeout))
 }
 
 func (s *Service) AdminGet(ctx context.Context, id string) (Order, error) {
-	return s.getOrder(ctx, s.pool, id)
+	o, err := s.getOrder(ctx, s.pool, id)
+	s.markOverdue(&o)
+	return o, err
 }
 
 // ------------------------------------------------ хуки для модуля payments
@@ -665,9 +742,7 @@ func (s *Service) AlertUnaccepted(ctx context.Context) error {
 	rows, err := s.pool.Query(ctx, `
 		UPDATE orders o SET alerted_at = now()
 		FROM stores s, networks n
-		WHERE o.status = 'paid' AND o.alerted_at IS NULL
-		  -- Заказ ко времени магазин должен принять не позже чем за час до окна.
-		  AND GREATEST(o.paid_at, COALESCE(o.delivery_from - interval '1 hour', o.paid_at)) < now() - make_interval(secs => $1)
+		WHERE o.alerted_at IS NULL AND `+StaleSQL("$1")+`
 		  AND s.id = o.store_id AND n.id = o.network_id
 		RETURNING o.id, o.number, n.name, s.name, s.phone, o.total::text, o.paid_at`, s.cfg.AcceptTimeout.Seconds())
 	if err != nil {

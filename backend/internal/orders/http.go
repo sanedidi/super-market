@@ -404,7 +404,15 @@ func (m *Module) fiscal(w http.ResponseWriter, r *http.Request) {
 func (m *Module) adminList(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Order], error) {
-		items, err := m.svc.AdminList(r.Context(), q.Get("status"), q.Get("stale") == "true", httpx.PageFrom(r))
+		from, to, err := finance.ParsePeriod(r)
+		if err != nil {
+			return httpx.List[Order]{}, err
+		}
+		items, err := m.svc.AdminList(r.Context(), AdminFilter{
+			Status: q.Get("status"), Stale: q.Get("stale") == "true", Query: q.Get("q"),
+			NetworkID: q.Get("network_id"), StoreID: q.Get("store_id"), Provider: q.Get("payment_provider"),
+			From: from, To: to, Page: httpx.PageFrom(r),
+		})
 		return httpx.List[Order]{Items: items}, err
 	})
 }

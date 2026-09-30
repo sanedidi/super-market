@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/sanedidi/super-market/backend/internal/admin"
 	"github.com/sanedidi/super-market/backend/internal/billing"
 	"github.com/sanedidi/super-market/backend/internal/catalog"
 	"github.com/sanedidi/super-market/backend/internal/delivery"
@@ -88,6 +89,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		reports.NewModule(reports.NewService(pool), auth, log),
 		profile.NewModule(profile.NewService(pool, supportURL(cfg), cfg.PrivacyURL, pushConfigured(cfg, log)), auth, log),
 		family.NewModule(family.NewService(pool, ord, dlv, cfg.TelegramBotUsername), auth, log),
+		admin.NewModule(admin.NewService(pool, cfg.AcceptTimeout), auth, log),
 	)
 	return &App{Handler: h, Orders: ord, Payments: pay, Billing: bill}, nil
 }
