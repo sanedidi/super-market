@@ -216,8 +216,16 @@ func TestInventoryAndFinanceFlow(t *testing.T) {
 		"type": "posting", "warehouse_id": wh1, "items": []map[string]any{{"product_id": cola, "qty": 1, "price": 1}},
 	}), 403, "seller creates doc")
 	a.expect(a.do("POST", "/store/finance/handovers", sellerTok, map[string]any{"from_id": storeBox, "amount": 1}), 403, "seller handover")
+	// Кассы без finance.manage не видны; остатки видны, но без себестоимости.
+	a.expect(a.do("GET", "/store/finance/cashboxes", sellerTok, nil), 403, "seller boxes")
+	stock := a.expect(a.do("GET", "/store/inventory/stock?store_id="+store1, sellerTok, nil), 200, "seller sees stock").items()
+	if len(stock) == 0 || stock[0]["qty"] == nil || stock[0]["avg_cost"] != nil || stock[0]["total_cost"] != nil {
+		t.Fatalf("seller stock must hide cost: %v", stock)
+	}
+
+	// Кассир с finance.manage и доступом к одному магазину видит только его кассу.
+	a.expect(a.do("PATCH", "/store/roles/"+role, tok, map[string]any{"permissions": []string{identity.PermFinanceManage}}), 200, "grant finance")
 	if boxes := a.expect(a.do("GET", "/store/finance/cashboxes", sellerTok, nil), 200, "seller boxes").items(); len(boxes) != 1 {
 		t.Fatalf("seller must see only store cashbox: %v", boxes)
 	}
-	a.expect(a.do("GET", "/store/inventory/stock?store_id="+store1, sellerTok, nil), 200, "seller sees stock")
 }

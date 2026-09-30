@@ -3,6 +3,7 @@ package sales
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -24,14 +25,17 @@ func NewModule(svc *Service, auth *identity.Authenticator, log *slog.Logger) *Mo
 func (m *Module) Routes(r chi.Router) {
 	r.Route("/store/sales", func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppStore))
-		r.Get("/", m.list)
+		// Чеки и возвраты видят кассиры, оформляющие возвраты, и те, кто смотрит отчёты.
+		view := m.auth.Allow(identity.PermSalesPOS, identity.PermSalesReturn, identity.PermReportsView)
+		r.With(view).Get("/", m.list)
 		r.Post("/", m.create)
-		r.Get("/fiscal-control", m.fiscalControl)
-		r.Get("/returns", m.listReturns)
+		r.With(view).Get("/fiscal-control", m.fiscalControl)
+		r.With(view).Get("/summary", m.summary)
+		r.With(view).Get("/returns", m.listReturns)
 		r.Post("/returns", m.createReturn)
-		r.Get("/returns/{id}", m.getReturn)
+		r.With(view).Get("/returns/{id}", m.getReturn)
 		r.Post("/returns/{id}/fiscal", m.fiscal("customer_returns"))
-		r.Get("/{id}", m.get)
+		r.With(view).Get("/{id}", m.get)
 		r.Post("/{id}/fiscal", m.fiscal("sales"))
 	})
 }
@@ -42,7 +46,8 @@ func filterFrom(r *http.Request) (SaleFilter, error) {
 	from, to, err := finance.ParsePeriod(r)
 	return SaleFilter{
 		StoreID: r.URL.Query().Get("store_id"), SaleID: r.URL.Query().Get("sale_id"), FiscalPending: r.URL.Query().Get("fiscal") == "pending",
-		From: from, To: to, Page: httpx.PageFrom(r),
+		Query: strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(r.URL.Query().Get("q")), "№")),
+		From:  from, To: to, Page: httpx.PageFrom(r),
 	}, err
 }
 
@@ -88,6 +93,16 @@ func (m *Module) fiscal(table string) http.HandlerFunc {
 			return map[string]bool{"registered": true}, m.svc.RegisterFiscal(r.Context(), pr(r), table, id, in)
 		})
 	}
+}
+
+func (m *Module) summary(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (Summary, error) {
+		f, err := filterFrom(r)
+		if err != nil {
+			return Summary{}, err
+		}
+		return m.svc.Summary(r.Context(), pr(r), f)
+	})
 }
 
 func (m *Module) fiscalControl(w http.ResponseWriter, r *http.Request) {

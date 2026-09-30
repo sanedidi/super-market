@@ -632,10 +632,16 @@ type StockRow struct {
 	ProductName   string `json:"product_name"`
 	UnitShort     string `json:"unit_short"`
 	Qty           string `json:"qty"`
-	// Средняя себестоимость единицы по оставшимся партиям (UZS).
-	AvgCost    string `json:"avg_cost"`
-	TotalCost  string `json:"total_cost"`
-	AvgCostUSD string `json:"avg_cost_usd"`
+	// Средняя себестоимость единицы по оставшимся партиям (UZS). Без прав
+	// inventory.manage или reports.view себестоимость не отдаётся.
+	AvgCost    string `json:"avg_cost,omitempty"`
+	TotalCost  string `json:"total_cost,omitempty"`
+	AvgCostUSD string `json:"avg_cost_usd,omitempty"`
+}
+
+// SeesCost — видит ли сотрудник себестоимость остатков и движений.
+func SeesCost(p *identity.Principal) bool {
+	return p.CanAny(identity.PermInventoryManage, identity.PermReportsView)
 }
 
 type StockFilter struct {
@@ -668,20 +674,57 @@ func (s *Service) Stock(ctx context.Context, p *identity.Principal, f StockFilte
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, pgx.RowToStructByPos[StockRow])
+	out, err := pgx.CollectRows(rows, pgx.RowToStructByPos[StockRow])
+	if err == nil && !SeesCost(p) {
+		for i := range out {
+			out[i].AvgCost, out[i].TotalCost, out[i].AvgCostUSD = "", "", ""
+		}
+	}
+	return out, err
+}
+
+// StockSummary — итоги остатков по фильтру (по всем строкам, не по странице).
+type StockSummary struct {
+	Positions int `json:"positions"` // строк «склад × товар»
+	Products  int `json:"products"`  // разных товаров
+	// Себестоимость остатков, UZS; только с правом inventory.manage или reports.view.
+	CostValue *string `json:"cost_value,omitempty"`
+}
+
+func (s *Service) StockSummary(ctx context.Context, p *identity.Principal, f StockFilter) (StockSummary, error) {
+	var out StockSummary
+	var cost string
+	err := s.pool.QueryRow(ctx, `
+		SELECT count(DISTINCT (b.warehouse_id, b.product_id))::int, count(DISTINCT b.product_id)::int,
+		       round(COALESCE(sum(b.qty_remaining * b.unit_cost), 0), 2)::text
+		FROM batches b
+		JOIN warehouses w ON w.id = b.warehouse_id
+		JOIN products pr  ON pr.id = b.product_id
+		WHERE b.network_id = $1 AND b.qty_remaining > 0
+		  AND ($2 OR w.store_id = ANY($3::uuid[]))
+		  AND ($4 = '' OR w.id::text = $4) AND ($5 = '' OR w.store_id::text = $5) AND ($6 = '' OR pr.id::text = $6)
+		  AND ($7 = '' OR lower(pr.name) LIKE '%' || lower($7) || '%')`,
+		p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.WarehouseID, f.StoreID, f.ProductID, strings.TrimSpace(f.Query)).
+		Scan(&out.Positions, &out.Products, &cost)
+	if err == nil && SeesCost(p) {
+		out.CostValue = &cost
+	}
+	return out, err
 }
 
 type Movement struct {
 	ProductID   string `json:"product_id"`
 	ProductName string `json:"product_name"`
 	Qty         string `json:"qty"`
-	UnitCost    string `json:"unit_cost"`
+	UnitCost    string `json:"unit_cost,omitempty"` // только с правом inventory.manage или reports.view
 	DocType     string `json:"doc_type"`
 	// Вид складского документа (income, write_off…), для продаж и заказов пусто.
 	DocKind   string    `json:"doc_kind"`
 	DocID     string    `json:"doc_id"`
 	DocNumber *int64    `json:"doc_number"`
 	CreatedAt time.Time `json:"created_at"`
+	// Остаток на складе после операции; только когда задан product_id.
+	BalanceAfter *string `json:"balance_after"`
 }
 
 // Movements — история движения товара по складу (product_id необязателен).
@@ -692,20 +735,34 @@ func (s *Service) Movements(ctx context.Context, p *identity.Principal, warehous
 	if err := s.checkWarehouse(ctx, s.pool, p, warehouseID, true); err != nil {
 		return nil, err
 	}
+	// Остаток после операции считается по всей истории товара (оконной
+	// суммой до LIMIT), поэтому он верен на любой странице.
 	rows, err := s.pool.Query(ctx, `
+		WITH mv AS (
+			SELECT m.id, m.product_id, m.qty, m.unit_cost, m.doc_type, m.doc_id, m.created_at,
+			       CASE WHEN $2 <> '' THEN sum(m.qty) OVER (ORDER BY m.created_at, m.id) END AS after
+			FROM stock_movements m
+			WHERE m.warehouse_id = $1 AND ($2 = '' OR m.product_id::text = $2)
+			ORDER BY m.created_at DESC, m.id DESC LIMIT $3 OFFSET $4
+		)
 		SELECT m.product_id, pr.name, m.qty::text, m.unit_cost::text, m.doc_type, COALESCE(d.type, ''), m.doc_id,
-		       COALESCE(d.number, sa.number, cr.number, o.number), m.created_at
-		FROM stock_movements m
+		       COALESCE(d.number, sa.number, cr.number, o.number), m.created_at, m.after::text
+		FROM mv m
 		JOIN products pr ON pr.id = m.product_id
 		LEFT JOIN stock_documents d ON m.doc_type = 'stock_document' AND d.id = m.doc_id
 		LEFT JOIN sales sa ON m.doc_type = 'sale' AND sa.id = m.doc_id
 		LEFT JOIN customer_returns cr ON m.doc_type = 'customer_return' AND cr.id = m.doc_id
 		LEFT JOIN orders o ON m.doc_type = 'order' AND o.id = m.doc_id
-		WHERE m.warehouse_id = $1 AND ($2 = '' OR m.product_id::text = $2)
-		ORDER BY m.created_at DESC, m.id DESC LIMIT $3 OFFSET $4`,
+		ORDER BY m.created_at DESC, m.id DESC`,
 		warehouseID, productID, page.Limit, page.Offset)
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, pgx.RowToStructByPos[Movement])
+	out, err := pgx.CollectRows(rows, pgx.RowToStructByPos[Movement])
+	if err == nil && !SeesCost(p) {
+		for i := range out {
+			out[i].UnitCost = ""
+		}
+	}
+	return out, err
 }

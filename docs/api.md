@@ -46,13 +46,41 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 | GET | `/store/warehouses?store_id=` | — | склады |
 | POST | `/store/warehouses` | `stores.manage` | `{"store_id", "name"}` |
 | PATCH | `/store/warehouses/{id}` | `stores.manage` | `{"name"?, "is_active"?}`; склад по умолчанию отключить нельзя |
-| GET | `/store/permissions` | — | список прав для экрана ролей |
-| GET/POST | `/store/roles` | `staff.manage` (POST) | `{"name", "permissions": [...]}` |
+| GET | `/store/permissions` | `staff.manage` | список прав для экрана ролей |
+| GET/POST | `/store/roles` | `staff.manage` | `{"name", "permissions": [...]}` |
 | PATCH | `/store/roles/{id}` | `staff.manage` | роль владельца не меняется |
-| GET/POST | `/store/employees` | `staff.manage` (POST) | `{"phone", "full_name", "role_id", "all_stores"?, "store_ids"?}` |
-| PATCH | `/store/employees/{id}` | `staff.manage` | `{"full_name"?, "role_id"?, "status"?, "all_stores"?, "store_ids"?}`; блокировка закрывает сессии |
+| GET/POST | `/store/employees` | `staff.manage` | `{"phone", "full_name", "role_id", "all_stores"?, "store_ids"?}` |
+| PATCH | `/store/employees/{id}` | `staff.manage` | `{"full_name"?, "role_id"?, "status"?, "all_stores"?, "store_ids"?}`; блокировка закрывает сессии; у владельца — только `full_name` |
 
 Права читаются из базы на каждый запрос: изменение роли или блокировка действуют сразу.
+
+Сотрудник без доступа ко всем магазинам правит магазины других сотрудников только в пределах своих:
+`store_ids` из запроса заменяют лишь видимые ему магазины, остальные магазины сотрудника сохраняются.
+Назначить магазин, к которому нет доступа, или изменить `all_stores` он не может — 403.
+
+### Права на чтение
+
+Списки и карточки разделов читаются только с правом на раздел, иначе 403 `forbidden`
+с `details.permission` (первое подходящее право) и `details.any_of` (любое из них):
+
+| Что | Право (любое из) |
+| --- | --- |
+| `/store/permissions`, `/store/roles`, `/store/employees` | `staff.manage` |
+| `/store/price-documents*`, `/store/promotions*` | `prices.manage` |
+| `/store/finance/counterparties*`, `/store/finance/counterparty-types` | `counterparties.manage`, `inventory.manage`, `finance.manage` |
+| `/store/finance/rates` | `finance.manage`, `inventory.manage` |
+| `/store/finance/cashboxes*`, `/reasons`, `/operations`, `/transfers`, `/handovers` | `finance.manage` |
+| `/store/inventory/documents*` | `inventory.manage` |
+| `/store/sales*` (чеки, возвраты, итоги, контроль чеков) | `sales.pos`, `sales.return`, `reports.view` |
+| `/store/orders*`, `/store/couriers` | `orders.manage` (курьеры работают через `/courier/*`) |
+| `/store/stores/{id}/delivery`, `/store/stores/{id}/zones` | `stores.manage`, `orders.manage` |
+| `/store/balance*`, `/store/payouts`, `/store/billing*` | `payouts.manage` |
+| `/store/reports/*` | `reports.view` |
+
+Всем сотрудникам доступны: `/store/me`, магазины, склады, товары, справочники каталога, типы цен,
+способы оплаты, остатки и история движения. Себестоимость в остатках и движениях
+(`avg_cost`, `total_cost`, `avg_cost_usd`, `unit_cost`, `cost_value`) отдаётся только с `inventory.manage` или `reports.view`,
+иначе этих полей нет в ответе.
 
 ## Каталог (этап 2)
 
@@ -101,9 +129,9 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 | GET | `/store/price-types` | — | |
 | POST | `/store/price-types` | `catalog.manage` | `{"name"}` |
 | PATCH | `/store/price-types/{id}` | `catalog.manage` | `{"name"?, "is_active"?, "is_default": true}` |
-| GET | `/store/price-documents` | — | документы «Установка цен» |
+| GET | `/store/price-documents` | `prices.manage` | документы «Установка цен» |
 | POST | `/store/price-documents` | `prices.manage` | `{"price_type_id", "store_id"?: null — вся сеть, "note"?, "items": [{"product_id", "new_price"}]}` — черновик |
-| GET | `/store/price-documents/{id}` | — | со строками и `previous_price` |
+| GET | `/store/price-documents/{id}` | `prices.manage` | со строками и `previous_price` |
 | PATCH | `/store/price-documents/{id}` | `prices.manage` | `{"note"?, "items"?}` — только черновик, `items` заменяются целиком |
 | POST | `/store/price-documents/{id}/post` | `prices.manage` | провести: записать цены, запомнить прежние |
 
@@ -133,8 +161,9 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 | PATCH | `/documents/{id}` | черновик: `counterparty_id`, `currency`, `reason`, `note`, `items` (целиком) |
 | DELETE | `/documents/{id}` | удалить черновик |
 | POST | `/documents/{id}/post` | провести; 409 `insufficient_stock` с `details.product_id/available/required`, если товара не хватает — тогда ничего не меняется |
-| GET | `/stock?warehouse_id=&store_id=&product_id=&q=` | остатки с `avg_cost`, `total_cost`, `avg_cost_usd` |
-| GET | `/movements?warehouse_id=&product_id=` | история движения товара |
+| GET | `/stock?warehouse_id=&store_id=&product_id=&q=&limit=&offset=` | остатки с `avg_cost`, `total_cost`, `avg_cost_usd` |
+| GET | `/stock/summary?warehouse_id=&store_id=&product_id=&q=` | итоги по всем строкам фильтра: `positions` (склад × товар), `products`, `cost_value` (себестоимость, UZS) |
+| GET | `/movements?warehouse_id=&product_id=&limit=&offset=` | история движения, новые сверху; с `product_id` — ещё `balance_after` (остаток после операции, верен на любой странице) |
 
 Цена в строке (`price`) — до 4 знаков после точки (`"1234.5678"`), так же и в ответе.
 Себестоимость партии хранится в UZS и USD по курсу на момент проведения. Приход в USD без установленного курса не проводится.
@@ -171,12 +200,13 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 | Метод | Путь | Описание |
 | --- | --- | --- |
 | POST | `/` | продажа (тело ниже). 201 — новая, 200 — повтор с тем же `client_uid` (офлайн-синхронизация) |
-| GET | `/?store_id=&fiscal=pending&from=&to=` | продажи |
+| GET | `/?store_id=&fiscal=pending&from=&to=&q=&limit=&offset=` | продажи; `q` — номер чека (можно с «№») или от 3 цифр телефона покупателя |
+| GET | `/summary?store_id=&fiscal=pending&from=&to=` | итоги по всем чекам фильтра: `sales_count`, `subtotal`, `discount`, `revenue`, `returns_count`, `returns` (по дате возврата), `net` = `revenue − returns` |
 | GET | `/{id}` | чек со строками (`returned_qty`) и оплатами |
 | POST | `/{id}/fiscal` | касса пробила чек: `{"fiscal_number", "fiscal_sign"}` |
 | GET | `/fiscal-control?store_id=` | `pending_sales`, `pending_returns`, `oldest_pending_at` — контроль непробитых чеков |
 | POST | `/returns` | возврат по чеку `{"sale_id", "payment_method_id", "reason"?, "items": [{"sale_line", "qty"}]}` |
-| GET | `/returns?store_id=&fiscal=pending` | возвраты |
+| GET | `/returns?store_id=&fiscal=pending&sale_id=&from=&to=` | возвраты; `sale_id` — возвраты по чеку |
 | GET | `/returns/{id}` | |
 | POST | `/returns/{id}/fiscal` | чек возврата |
 

@@ -102,3 +102,96 @@ func TestEmployeeStoresMerge(t *testing.T) {
 		t.Fatalf("owner edit store_ids = %v", got)
 	}
 }
+
+// TestStoreReadPermissions — разделы панели читаются только с правом на
+// раздел; общие справочники и остатки (без себестоимости) видны всем.
+func TestStoreReadPermissions(t *testing.T) {
+	pool := freshDB(t)
+	cfg := testConfig()
+	cfg.DevOTPCode = "111111"
+	a := newAPI(t, cfg, pool, nil)
+	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
+	owner, s1 := setupNetwork(t, a, adminTok, "+998900000002")
+	fake := "00000000-0000-0000-0000-000000000001"
+
+	nobody, _ := employee(t, a, owner, "+998900000020", "Без прав", nil, []string{s1})
+
+	open := []string{
+		"/store/me", "/store/stores", "/store/warehouses?store_id=" + s1, "/store/products?store_id=" + s1,
+		"/store/catalog/units", "/store/price-types", "/store/finance/payment-methods?store_id=" + s1,
+		"/store/inventory/stock?store_id=" + s1,
+	}
+	for _, p := range open {
+		a.expect(a.do("GET", p, nobody, nil), 200, "open "+p)
+	}
+
+	closed := map[string]string{
+		"/store/permissions":                                 identity.PermStaffManage,
+		"/store/roles":                                       identity.PermStaffManage,
+		"/store/employees":                                   identity.PermStaffManage,
+		"/store/price-documents":                             identity.PermPricesManage,
+		"/store/price-documents/" + fake:                     identity.PermPricesManage,
+		"/store/promotions":                                  identity.PermPricesManage,
+		"/store/promotions/" + fake:                          identity.PermPricesManage,
+		"/store/finance/rates":                               identity.PermFinanceManage,
+		"/store/finance/counterparty-types":                  identity.PermCounterpartiesManage,
+		"/store/finance/counterparties":                      identity.PermCounterpartiesManage,
+		"/store/finance/counterparties/" + fake:              identity.PermCounterpartiesManage,
+		"/store/finance/counterparties/" + fake + "/entries": identity.PermCounterpartiesManage,
+		"/store/finance/reasons":                             identity.PermFinanceManage,
+		"/store/finance/cashboxes":                           identity.PermFinanceManage,
+		"/store/finance/cashboxes/" + fake + "/entries":      identity.PermFinanceManage,
+		"/store/finance/operations":                          identity.PermFinanceManage,
+		"/store/finance/transfers":                           identity.PermFinanceManage,
+		"/store/finance/handovers":                           identity.PermFinanceManage,
+		"/store/inventory/documents":                         identity.PermInventoryManage,
+		"/store/inventory/documents/" + fake:                 identity.PermInventoryManage,
+		"/store/sales":                                       identity.PermSalesPOS,
+		"/store/sales/summary":                               identity.PermSalesPOS,
+		"/store/sales/fiscal-control":                        identity.PermSalesPOS,
+		"/store/sales/" + fake:                               identity.PermSalesPOS,
+		"/store/sales/returns":                               identity.PermSalesPOS,
+		"/store/sales/returns/" + fake:                       identity.PermSalesPOS,
+		"/store/orders":                                      identity.PermOrdersManage,
+		"/store/orders/" + fake:                              identity.PermOrdersManage,
+		"/store/couriers":                                    identity.PermOrdersManage,
+		"/store/stores/" + s1 + "/delivery":                  identity.PermStoresManage,
+		"/store/stores/" + s1 + "/zones":                     identity.PermStoresManage,
+		"/store/balance":                                     identity.PermPayoutsManage,
+		"/store/balance/entries":                             identity.PermPayoutsManage,
+		"/store/payouts":                                     identity.PermPayoutsManage,
+		"/store/billing":                                     identity.PermPayoutsManage,
+		"/store/billing/invoices":                            identity.PermPayoutsManage,
+		"/store/reports/cash-flow":                           identity.PermReportsView,
+		"/store/reports/profit-loss":                         identity.PermReportsView,
+	}
+	for p, perm := range closed {
+		r := a.expect(a.do("GET", p, nobody, nil), 403, "closed "+p)
+		if d, _ := r.Body["error"].(map[string]any)["details"].(map[string]any); d["permission"] != perm {
+			t.Fatalf("%s: details = %v, want permission %s", p, d, perm)
+		}
+	}
+
+	// Курьер работает через /courier/*, заказы магазина ему не видны.
+	courier, _ := employee(t, a, owner, "+998900000021", "Курьер", []string{identity.PermOrdersDeliver}, []string{s1})
+	a.expect(a.do("GET", "/store/orders?store_id="+s1, courier, nil), 403, "courier store orders")
+	a.expect(a.do("GET", "/courier/me", courier, nil), 200, "courier me")
+
+	// Кассир: продажи и возвраты — да, заказы и склад — нет.
+	cashier, _ := employee(t, a, owner, "+998900000022", "Кассир", []string{identity.PermSalesPOS}, []string{s1})
+	for _, p := range []string{"/store/sales?store_id=" + s1, "/store/sales/returns", "/store/sales/fiscal-control", "/store/sales/summary"} {
+		a.expect(a.do("GET", p, cashier, nil), 200, "cashier "+p)
+	}
+	a.expect(a.do("GET", "/store/inventory/documents", cashier, nil), 403, "cashier docs")
+
+	// Кладовщик видит контрагентов (поставщики в приходе) и курс, но не кассы.
+	keeper, _ := employee(t, a, owner, "+998900000023", "Кладовщик", []string{identity.PermInventoryManage}, []string{s1})
+	for _, p := range []string{"/store/finance/counterparties?q=x", "/store/finance/rates", "/store/inventory/documents", "/store/sales/summary"} {
+		want := 200
+		if p == "/store/sales/summary" {
+			want = 403
+		}
+		a.expect(a.do("GET", p, keeper, nil), want, "keeper "+p)
+	}
+	a.expect(a.do("GET", "/store/finance/cashboxes", keeper, nil), 403, "keeper cashboxes")
+}
