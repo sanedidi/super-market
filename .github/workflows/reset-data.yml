@@ -1,0 +1,49 @@
+name: reset-data
+
+# Полная очистка боевой базы: остаётся только супер-админ (SUPER_ADMIN_PHONES),
+# единицы измерения, тарифы и настройки биллинга по умолчанию.
+# Перед очисткой — резервная копия на сервере в /root/super-market-backups.
+# Запуск вручную: Actions → reset-data → Run workflow, в поле confirm ввести RESET.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Введите RESET, чтобы удалить все данные"
+        required: true
+        default: ""
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      APP_DIR: /opt/super-market
+    steps:
+      - name: Check confirm
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: '[ "$CONFIRM" = "RESET" ] || { echo "Нужно ввести RESET"; exit 1; }'
+
+      - uses: actions/checkout@v4
+
+      - name: SSH key
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Reset
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER || 'root' }}
+        run: |
+          scp deploy/reset-data.sh "$SSH_USER@$SSH_HOST:$APP_DIR/deploy/reset-data.sh"
+          ssh "$SSH_USER@$SSH_HOST" "APP_DIR=$APP_DIR bash $APP_DIR/deploy/reset-data.sh"
