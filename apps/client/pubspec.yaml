@@ -1,7 +1,7 @@
 name: sm_client
 description: Приложение покупателя Super Market — заказ продуктов из магазинов рядом с доставкой.
 publish_to: none
-version: 0.6.0+7
+version: 0.6.0+8
 
 environment:
   sdk: ">=3.6.0 <4.0.0"
