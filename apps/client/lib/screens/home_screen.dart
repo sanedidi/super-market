@@ -355,7 +355,7 @@ class StoreSwitcher extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadius.xl),
         child: InkWell(
           borderRadius: BorderRadius.circular(AppRadius.xl),
-          onTap: many ? () => pickStore(context, state) : () => showStoreTerms(context, store),
+          onTap: many ? () => pickStore(context, state) : () => showDeliveryTerms(context, store),
           child: Padding(
             padding: const EdgeInsets.all(10),
             child: Row(children: [
@@ -418,18 +418,6 @@ void pickStore(BuildContext context, AppState state) {
             const SizedBox(height: 10),
           ],
         ],
-      ),
-    ),
-  );
-}
-
-void showStoreTerms(BuildContext context, Store s) {
-  showModalBottomSheet<void>(
-    context: context,
-    builder: (ctx) => SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-        child: StoreCard(name: s.name, subtitle: storeSubtitle(s), logoUrl: s.logoUrl, closed: !s.isOpen, meta: storeMeta(s)),
       ),
     ),
   );

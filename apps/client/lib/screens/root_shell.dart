@@ -113,13 +113,24 @@ Future<void> showDeliveryTerms(BuildContext context, Store s) {
     context: context,
     isScrollControlled: true,
     showDragHandle: false,
+    backgroundColor: AppColors.white,
     builder: (ctx) => SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           const Text('Условия доставки', style: AppText.h2),
-          const SizedBox(height: 4),
-          Text(s.name, style: AppText.body.copyWith(color: AppColors.text2)),
+          const SizedBox(height: 16),
+          Row(children: [
+            StoreLogo(name: s.name, url: s.logoUrl, size: 48),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(s.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong),
+                Text([s.isOpen ? 'Открыт' : 'Закрыт', storeSubtitle(s)].join(' · '),
+                    maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.small.copyWith(color: s.isOpen ? AppColors.text2 : AppColors.error)),
+              ]),
+            ),
+          ]),
           const Divider(height: 28),
           if (min > 0)
             card(Icons.shopping_bag_rounded, 'Минимальный заказ', money(s.minOrder),
