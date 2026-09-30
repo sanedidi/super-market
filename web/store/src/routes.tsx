@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
-import { Flex, Select, Typography } from 'antd'
+import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { Flex, Result, Select, Spin, Typography } from 'antd'
 import {
   AppstoreOutlined,
   BarChartOutlined,
@@ -133,7 +133,7 @@ const MENU: Item[] = [
 ]
 
 function filterMenu(items: Item[], can: (p: string) => boolean): MenuItem[] {
-  const allowed = (i: Item) => !i.perm || (Array.isArray(i.perm) ? i.perm.some(can) : can(i.perm))
+  const allowed = (i: Item) => allowedBy(i.perm, can)
   const out: MenuItem[] = []
   for (const i of items) {
     if (!allowed(i)) continue
@@ -145,6 +145,32 @@ function filterMenu(items: Item[], can: (p: string) => boolean): MenuItem[] {
     }
   }
   return out
+}
+
+const allowedBy = (perm: Item['perm'], can: (p: string) => boolean) =>
+  !perm || (Array.isArray(perm) ? perm.some(can) : can(perm))
+
+/** Право на страницу — по пункту меню с самым длинным совпадающим путём. */
+function permFor(path: string): Item['perm'] {
+  let best: Item | undefined
+  const walk = (items: Item[]) =>
+    items.forEach((i) => {
+      if (i.children) walk(i.children)
+      else if (i.key !== '/' && (path === i.key || path.startsWith(i.key + '/')) && (!best || i.key.length > best.key.length)) best = i
+    })
+  walk(MENU)
+  return best?.perm
+}
+
+/** Не пускает на страницу без права, даже по прямой ссылке. */
+function Guard() {
+  const { can, me } = useStore()
+  const { pathname } = useLocation()
+  if (!me) return <Spin style={{ display: 'block', marginTop: 48 }} />
+  if (!allowedBy(permFor(pathname.replace(/\/$/, '') || '/'), can)) {
+    return <Result status="403" title="Нет доступа" subTitle="У вашей роли нет права на этот раздел. Обратитесь к владельцу сети." />
+  }
+  return <Outlet />
 }
 
 function Header() {
@@ -173,6 +199,7 @@ export function StoreRoutes() {
   return (
     <Routes>
       <Route element={<Shell title={TITLE} menu={menu} header={<Header />} />}>
+       <Route element={<Guard />}>
         <Route index element={<DashboardPage />} />
         <Route path="orders" element={<OrdersPage />} />
 
@@ -218,6 +245,7 @@ export function StoreRoutes() {
 
         <Route path="balance" element={<BalancePage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
+       </Route>
       </Route>
     </Routes>
   )

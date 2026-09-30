@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from 'react'
-import { Button, Card, Flex, Form, Modal, Select, Space, Table, Tag, Typography, type SelectProps, type TableColumnsType } from 'antd'
+import { Alert, Button, Card, Flex, Form, Modal, Select, Space, Table, Tag, Typography, type SelectProps, type TableColumnsType, type TableProps } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
 import { api } from './api'
-import { useAction, useList } from './hooks'
+import { errorText, useAction, useDebounced, useList, usePaged } from './hooks'
 
 type Params = Record<string, string | number | boolean | undefined | null>
 
@@ -21,27 +21,86 @@ export function PageTitle({ title, extra, children }: { title: ReactNode; extra?
   )
 }
 
-/** Выпадающий список из API ({items: [...]}) */
+/** Ошибка загрузки с кнопкой «Повторить». */
+export function LoadError({ error, retry }: { error: unknown; retry?: () => void }) {
+  if (!error) return null
+  return (
+    <Alert
+      type="error"
+      showIcon
+      style={{ marginBottom: 12 }}
+      message="Не удалось загрузить данные"
+      description={errorText(error)}
+      action={retry && <Button size="small" onClick={() => retry()}>Повторить</Button>}
+    />
+  )
+}
+
+/**
+ * Выпадающий список из API ({items: [...]}).
+ * search — искать на сервере по параметру q (для больших списков);
+ * без него грузится до 200 записей и фильтруется в браузере.
+ */
 export function RemoteSelect<T extends Record<string, unknown>>({
   path,
   params,
   label = (x: T) => String(x.name ?? x.id),
   filter,
+  search = false,
+  selectedLabel,
   ...props
-}: { path: string; params?: Params; label?: (x: T) => ReactNode; filter?: (x: T) => boolean } & Omit<SelectProps, 'options'>) {
-  const { data, isLoading } = useList<T>(path, params)
+}: {
+  path: string
+  params?: Params
+  label?: (x: T) => ReactNode
+  filter?: (x: T) => boolean
+  search?: boolean
+  /** Подпись выбранного значения, если его нет в текущей выдаче поиска. */
+  selectedLabel?: ReactNode
+} & Omit<SelectProps, 'options'>) {
+  const [q, setQ] = useState('')
+  const debounced = useDebounced(q.trim())
+  const { data, isLoading, isFetching } = useList<T>(path, search ? { ...params, q: debounced || undefined, limit: 50 } : { limit: 200, ...params })
   const options = (data ?? [])
     .filter((x) => (filter ? filter(x) : true))
     .map((x) => ({ value: String(x.id), label: label(x) }))
+  const v = props.value
+  if (search && typeof v === 'string' && v && !options.some((o) => o.value === v)) {
+    options.unshift({ value: v, label: selectedLabel ?? v })
+  }
   return (
     <Select
       showSearch
       optionFilterProp="label"
-      loading={isLoading}
+      loading={isLoading || (search && isFetching)}
       options={options as SelectProps['options']}
       style={{ minWidth: 200 }}
+      {...(search ? { filterOption: false, onSearch: setQ } : {})}
       {...props}
     />
+  )
+}
+
+/** Таблица со страницами с сервера, загрузкой и ошибкой. */
+export function PagedTable<T extends object>({
+  path,
+  params,
+  pageSize = 50,
+  ...table
+}: { path: string | null; params?: Params; pageSize?: number } & Omit<TableProps<T>, 'dataSource' | 'loading' | 'pagination'>) {
+  const list = usePaged<T>(path, params, pageSize)
+  return (
+    <>
+      <LoadError error={list.error} retry={() => list.refetch()} />
+      <Table<T>
+        rowKey="id"
+        scroll={{ x: true }}
+        {...table}
+        loading={list.isLoading || list.isFetching}
+        dataSource={list.items}
+        pagination={list.pagination}
+      />
+    </>
   )
 }
 
@@ -92,6 +151,7 @@ const statusTitles: Record<string, string> = {
   delivering: 'В пути',
   delivered: 'Доставлен',
   available: 'Доступно',
+  created: 'Создан',
 }
 
 export function StatusTag({ status, title }: { status: string; title?: string }) {
@@ -122,7 +182,7 @@ export interface CrudConfig<T> {
 
 /** Список + модальное окно создания/правки — для справочников. */
 export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
-  const { data, isLoading } = useList<T>(cfg.path, cfg.params)
+  const list = usePaged<T>(cfg.path, cfg.params)
   const [editing, setEditing] = useState<T | null>(null)
   const [open, setOpen] = useState(false)
   const [form] = Form.useForm()
@@ -169,13 +229,14 @@ export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
       >
         {cfg.toolbar}
       </PageTitle>
+      <LoadError error={list.error} retry={() => list.refetch()} />
       <Card styles={{ body: { padding: 0 } }}>
         <Table<T>
           rowKey={cfg.rowKey ?? 'id'}
-          loading={isLoading}
-          dataSource={data}
+          loading={list.isLoading || list.isFetching}
+          dataSource={list.items}
           columns={columns}
-          pagination={{ pageSize: 50, hideOnSinglePage: true }}
+          pagination={list.pagination}
           scroll={{ x: true }}
           expandable={cfg.expandable}
         />
