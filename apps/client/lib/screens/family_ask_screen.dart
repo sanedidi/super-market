@@ -13,12 +13,12 @@ import 'root_shell.dart' show itemsWord;
 
 /// Строка будущей просьбы: товар каталога или текст.
 class _Line {
-  _Line({this.productId, required this.name, this.unit = '', this.qty = 1, this.fractional = false});
+  _Line({this.productId, required this.name, this.unit = '', this.fractional = false});
   final String? productId;
   final String name;
   final String unit;
   final bool fractional;
-  num qty;
+  num qty = 1;
 
   Map<String, dynamic> toJson() => {
         if (productId != null) 'product_id': productId,

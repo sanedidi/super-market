@@ -236,7 +236,7 @@ class _CartScreenState extends State<CartScreen> {
                       for (final line in s.cart.values)
                         _LineTile(
                           line: line,
-                          server: lines[line.product.id] as Map<String, dynamic>?,
+                          server: lines[line.product.id],
                           onChanged: (q) => s.setQty(s.cartStoreId!, s.cartStoreName!, line.product, q),
                         ),
                       if (_error != null)

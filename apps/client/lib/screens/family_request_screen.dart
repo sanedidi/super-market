@@ -293,7 +293,7 @@ class _FamilyRequestScreenState extends State<FamilyRequestScreen> {
                   : null,
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 if (canOrder) ...[
-                  AppButton(label: 'Заказать домой · ${money(quote!['total'])}', onPressed: _busy ? null : _orderHome),
+                  AppButton(label: 'Заказать домой · ${money(quote['total'])}', onPressed: _busy ? null : _orderHome),
                   const SizedBox(height: 10),
                 ],
                 AppButton(
