@@ -202,6 +202,8 @@ export interface CrudConfig<T> {
   toolbar?: ReactNode
   rowKey?: string
   expandable?: Parameters<typeof Table<T>>[0]['expandable']
+  /** Ширина окна формы (по умолчанию 520). */
+  modalWidth?: number
 }
 
 /** Список + модальное окно создания/правки — для справочников. */
@@ -273,6 +275,7 @@ export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
           onOk={() => form.submit()}
           okText="Сохранить"
           confirmLoading={save.isPending}
+          width={cfg.modalWidth}
           forceRender
         >
           <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v, { onSuccess: () => setOpen(false) })}>

@@ -8,25 +8,21 @@ import {
   Checkbox,
   Col,
   Form,
-  Input,
   InputNumber,
-  Modal,
-  Popconfirm,
-  Radio,
   Row,
   Select,
   Space,
   Switch,
-  Table,
   TimePicker,
   Typography,
 } from 'antd'
 import { ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
-import { ActiveTag, LoadError, PageTitle, api, money, useAction, useItem, useList } from '@sm/shared'
+import { LoadError, PageTitle, api, useAction, useItem } from '@sm/shared'
 import { useStore } from '../ctx'
 import { NeedStore, Num } from '../ui'
-import type { DeliveryRule, DeliverySettings, SlotSettings, Zone } from '../types'
+import type { DeliveryRule, DeliverySettings, SlotSettings } from '../types'
+import { DeliveryZones } from './DeliveryZones'
 
 // Порядок дней как в жизни: пн … вс (в API 0 — воскресенье).
 const DAYS: [number, string][] = [
@@ -91,6 +87,7 @@ function DeliveryInner() {
   const [etaMax, setEtaMax] = useState<number | null>(null)
   const [days, setDays] = useState<DayRow[]>([])
   const [rules, setRules] = useState<RuleRow[]>([])
+  const [zoneCount, setZoneCount] = useState(0)
   const [slots, setSlots] = useState<SlotSettings>({ enabled: false, slot_minutes: 60, days_ahead: 1, lead_minutes: 60, capacity: 5 })
 
   useEffect(() => {
@@ -172,11 +169,19 @@ function DeliveryInner() {
           style={{ marginBottom: 16 }}
           message={
             <>
-              Чтобы принимать онлайн-заказы, укажите координаты магазина в разделе <Link to="/settings/stores">Магазины</Link>.
+              Чтобы принимать онлайн-заказы, поставьте точку магазина на карте в разделе <Link to="/settings/stores">Магазины</Link>.
             </>
           }
         />
       )}
+      <DeliveryZones
+        storeId={storeId}
+        storeName={store?.name}
+        lat={store?.lat ?? null}
+        lng={store?.lng ?? null}
+        radiusM={radius}
+        onZonesChange={setZoneCount}
+      />
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={12}>
           <Card title="Приём заказов" loading={isLoading} style={{ marginBottom: 16 }}>
@@ -191,7 +196,7 @@ function DeliveryInner() {
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  <Form.Item label="Радиус доставки, м" extra="Если есть активные зоны — доставка только в зоны">
+                  <Form.Item label="Радиус доставки, м" extra={zoneCount > 0 ? 'Не действует: есть зоны на карте, доставка только в них' : 'Действует, пока на карте нет зон'}>
                     <InputNumber value={radius} onChange={setRadius} min={0} max={100000} step={500} style={{ width: '100%' }} />
                   </Form.Item>
                 </Col>
@@ -287,7 +292,16 @@ function DeliveryInner() {
               </Button>
             }
           >
-            <Typography.Paragraph type="secondary">Правила проверяются сверху вниз, первое подходящее задаёт цену.</Typography.Paragraph>
+            {zoneCount > 0 ? (
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 8 }}
+                message="Цена доставки берётся из зоны на карте. Здесь действует только «Бесплатно от суммы»."
+              />
+            ) : (
+              <Typography.Paragraph type="secondary">Правила проверяются сверху вниз, первое подходящее задаёт цену.</Typography.Paragraph>
+            )}
             {rules.length === 0 && <Alert type="info" message="Правил нет — доставка бесплатная" style={{ marginBottom: 8 }} />}
             {rules.map((r, i) => (
               <Card key={r.key} size="small" style={{ marginBottom: 8 }}>
@@ -297,7 +311,9 @@ function DeliveryInner() {
                       value={r.type}
                       style={{ width: '100%' }}
                       onChange={(t: DeliveryRule['type']) => setRules((rs) => rs.map((x) => (x.key === r.key ? { ...x, type: t, params: {} } : x)))}
-                      options={(Object.keys(ruleTitles) as DeliveryRule['type'][]).map((t) => ({ value: t, label: ruleTitles[t] }))}
+                      options={(Object.keys(ruleTitles) as DeliveryRule['type'][])
+                        .filter((t) => t !== 'zone' || r.type === 'zone')
+                        .map((t) => ({ value: t, label: ruleTitles[t] }))}
                     />
                   </Col>
                   {ruleFields[r.type].map(([k, label]) => (
@@ -330,129 +346,8 @@ function DeliveryInner() {
               </Card>
             ))}
           </Card>
-          <Zones storeId={storeId} />
         </Col>
       </Row>
     </>
-  )
-}
-
-function parsePolygon(text: string): [number, number][] {
-  const v = JSON.parse(text) as unknown
-  if (!Array.isArray(v) || v.length < 3 || !v.every((p) => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === 'number')))
-    throw new Error('Ожидается массив точек [[lng, lat], …], минимум 3 точки')
-  return v as [number, number][]
-}
-
-function Zones({ storeId }: { storeId: string }) {
-  const path = `/store/stores/${storeId}/zones`
-  const { data, isLoading } = useList<Zone>(path)
-  const [editing, setEditing] = useState<Zone | null>(null)
-  const [open, setOpen] = useState(false)
-  const [form] = Form.useForm()
-  const save = useAction(
-    (v: Record<string, unknown>) => {
-      const body = { name: v.name, price: v.price, is_active: v.is_active, polygon: parsePolygon(String(v.polygon)) }
-      return editing ? api.patch(`${path}/${editing.id}`, body) : api.post(path, body)
-    },
-    { success: 'Зона сохранена' },
-  )
-  const remove = useAction((id: string) => api.del(`${path}/${id}`), { success: 'Зона удалена' })
-  const openForm = (z: Zone | null) => {
-    setEditing(z)
-    form.resetFields()
-    form.setFieldsValue(
-      z
-        ? { name: z.name, price: z.price, is_active: z.is_active, polygon: JSON.stringify(z.polygon) }
-        : { is_active: true, polygon: '' },
-    )
-    setOpen(true)
-  }
-  return (
-    <Card
-      title="Зоны доставки"
-      extra={
-        <Button icon={<PlusOutlined />} onClick={() => openForm(null)}>
-          Зона
-        </Button>
-      }
-      styles={{ body: { padding: 0 } }}
-    >
-      <Table<Zone>
-        rowKey="id"
-        size="small"
-        loading={isLoading}
-        dataSource={data}
-        pagination={false}
-        scroll={{ x: true }}
-        locale={{ emptyText: 'Зон нет — доставка в радиусе' }}
-        columns={[
-          { title: 'Название', dataIndex: 'name' },
-          { title: 'Цена', dataIndex: 'price', align: 'right', render: (v: string) => money(v) },
-          { title: 'Точек', dataIndex: 'polygon', render: (v: Zone['polygon']) => v?.length ?? 0 },
-          { title: 'Статус', dataIndex: 'is_active', render: (v: boolean) => <ActiveTag active={v} /> },
-          {
-            key: 'a',
-            width: 140,
-            render: (_, z) => (
-              <Space>
-                <Button size="small" onClick={() => openForm(z)}>
-                  Изменить
-                </Button>
-                <Popconfirm title="Удалить зону?" onConfirm={() => remove.mutate(z.id)}>
-                  <Button size="small" danger icon={<DeleteOutlined />} />
-                </Popconfirm>
-              </Space>
-            ),
-          },
-        ]}
-      />
-      <Modal
-        open={open}
-        title={editing ? 'Изменить зону' : 'Новая зона'}
-        okText="Сохранить"
-        onOk={() => form.submit()}
-        confirmLoading={save.isPending}
-        onCancel={() => setOpen(false)}
-        width={600}
-      >
-        <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v, { onSuccess: () => setOpen(false) })}>
-          <Row gutter={16}>
-            <Col span={14}>
-              <Form.Item name="name" label="Название" rules={[{ required: true, whitespace: true, message: 'Обязательное поле' }]}>
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={10}>
-              <Form.Item name="price" label="Цена доставки" rules={[{ required: true, message: 'Укажите цену' }]}>
-                <Num />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Form.Item
-            name="polygon"
-            label="Границы (JSON)"
-            extra="Массив точек [[долгота, широта], …], например [[69.20,41.28],[69.30,41.28],[69.30,41.35]]"
-            rules={[
-              {
-                validator: (_, v) => {
-                  try {
-                    parsePolygon(String(v ?? ''))
-                    return Promise.resolve()
-                  } catch (e) {
-                    return Promise.reject(new Error(e instanceof SyntaxError ? 'Неверный JSON' : (e as Error).message))
-                  }
-                },
-              },
-            ]}
-          >
-            <Input.TextArea rows={5} style={{ fontFamily: 'monospace' }} />
-          </Form.Item>
-          <Form.Item name="is_active" label="Статус">
-            <Radio.Group options={[{ value: true, label: 'Активна' }, { value: false, label: 'Отключена' }]} />
-          </Form.Item>
-        </Form>
-      </Modal>
-    </Card>
   )
 }

@@ -458,7 +458,7 @@ func (s *Service) QuoteFor(ctx context.Context, q db.Querier, storeID string, la
 		       EXISTS (SELECT 1 FROM delivery_zones z WHERE z.store_id = s.id AND z.is_active),
 		       COALESCE(ST_DWithin(s.location, pt.g, s.delivery_radius_m), false),
 		       (SELECT z.price::text FROM delivery_zones z
-		        WHERE z.store_id = s.id AND z.is_active AND ST_Covers(z.area, pt.g) ORDER BY z.price LIMIT 1)
+		        WHERE z.store_id = s.id AND z.is_active AND ST_Covers(z.area, pt.g) ORDER BY ST_Area(z.area), z.price LIMIT 1)
 		FROM stores s JOIN networks n ON n.id = s.network_id, pt
 		WHERE s.id = $1`, storeID, lat, lng).Scan(&accepts, &out.MinOrderAmount, &radius, &dist, &hasZones, &inRadius, &zonePrice)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -481,8 +481,13 @@ func (s *Service) QuoteFor(ctx context.Context, q db.Querier, storeID string, la
 	}
 	out.IsOpen = isOpen(settings.WorkingHours, s.now())
 
+	// Есть зоны — цена доставки берётся из зоны, в которую попал адрес.
+	// Зоны могут быть вложены: действует самая маленькая (внутренняя).
 	fee := money.D("0")
 	feeSet := false
+	if hasZones && zonePrice != nil {
+		fee, feeSet = money.D(*zonePrice), true
+	}
 	sub := money.D(subtotal)
 	for _, r := range settings.Rules {
 		p, err := parseRule(r)

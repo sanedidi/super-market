@@ -1,14 +1,28 @@
 // Настройки: магазины, роли, сотрудники.
 import { useState } from 'react'
-import { Alert, Button, Card, Checkbox, Col, Form, Input, InputNumber, Modal, Radio, Row, Select, Switch, Table, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Checkbox, Form, Input, Modal, Radio, Select, Switch, Table, Tag, Typography } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
-import { CrudPage, PageTitle, RemoteSelect, StatusTag, api, useAction, useList } from '@sm/shared'
+import { CrudPage, MapPointPicker, PageTitle, RemoteSelect, StatusTag, api, useAction, useList, type LatLng } from '@sm/shared'
 import { useStore } from '../ctx'
 import type { Employee, Permission, PriceType, Role, Store, Warehouse } from '../types'
 
 const required = [{ required: true, whitespace: true, message: 'Обязательное поле' }]
 
 // ---------------------------------------------------------------- магазины
+
+/** Точка магазина; пустой адрес заполняется адресом с карты. */
+function StorePoint({ value, onChange }: { value?: LatLng | null; onChange?: (v: LatLng | null) => void }) {
+  const form = Form.useFormInstance()
+  return (
+    <MapPointPicker
+      value={value}
+      onChange={onChange}
+      onAddress={(a) => {
+        if (!String(form.getFieldValue('address') ?? '').trim()) form.setFieldValue('address', a)
+      }}
+    />
+  )
+}
 
 export function StoresPage() {
   const { me, stores, storesLoading, can } = useStore()
@@ -24,6 +38,7 @@ export function StoresPage() {
       <CrudPage<Store>
         title="Магазины"
         path="/store/stores"
+        modalWidth={640}
         createLabel="Новый магазин"
         canCreate={canCreate}
         columns={[
@@ -31,9 +46,9 @@ export function StoresPage() {
           { title: 'Адрес', dataIndex: 'address' },
           { title: 'Телефон', dataIndex: 'phone' },
           {
-            title: 'Координаты',
+            title: 'Точка',
             key: 'geo',
-            render: (_, r) => (r.lat !== null && r.lng !== null ? `${r.lat.toFixed(5)}, ${r.lng.toFixed(5)}` : <Tag color="orange">Не заданы</Tag>),
+            render: (_, r) => (r.lat !== null && r.lng !== null ? <Tag color="green">На карте</Tag> : <Tag color="orange">Не указана</Tag>),
           },
           { title: 'Статус', dataIndex: 'status', render: (v: string) => (v === 'active' ? <StatusTag status="active" /> : <Tag>Закрыт</Tag>) },
         ]}
@@ -53,30 +68,9 @@ export function StoresPage() {
                 <Input placeholder="https://…" />
               </Form.Item>
             )}
-            <Row gutter={16}>
-              <Col span={12}>
-                <Form.Item
-                  name="lat"
-                  label="Широта (lat)"
-                  dependencies={['lng']}
-                  rules={[
-                    ({ getFieldValue }) => ({
-                      validator: (_, v) =>
-                        (v === null || v === undefined) !== (getFieldValue('lng') === null || getFieldValue('lng') === undefined)
-                          ? Promise.reject(new Error('Широта и долгота задаются вместе'))
-                          : Promise.resolve(),
-                    }),
-                  ]}
-                >
-                  <InputNumber min={-90} max={90} step={0.0001} style={{ width: '100%' }} placeholder="41.311" />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item name="lng" label="Долгота (lng)">
-                  <InputNumber min={-180} max={180} step={0.0001} style={{ width: '100%' }} placeholder="69.279" />
-                </Form.Item>
-              </Col>
-            </Row>
+            <Form.Item name="geo" label="Точка магазина на карте" extra="Нажмите на карту, найдите адрес через поиск или перетащите метку. Нужна для онлайн-заказов">
+              <StorePoint />
+            </Form.Item>
             {editing && (
               <>
                 <Form.Item name="default_warehouse_id" label="Склад по умолчанию">
@@ -101,15 +95,15 @@ export function StoresPage() {
           name: r.name,
           address: r.address,
           phone: r.phone,
-          lat: r.lat,
-          lng: r.lng,
+          geo: r.lat !== null && r.lng !== null ? { lat: r.lat, lng: r.lng } : null,
           status: r.status,
           logo_url: r.logo_url,
           default_warehouse_id: r.default_warehouse_id ?? undefined,
           online_price_type_id: r.online_price_type_id ?? undefined,
         })}
         toBody={(v, editing) => {
-          const geo = v.lat !== null && v.lat !== undefined ? { lat: v.lat, lng: v.lng } : {}
+          const p = v.geo as LatLng | null | undefined
+          const geo = p ? { lat: p.lat, lng: p.lng } : {}
           const base = { name: v.name, address: v.address ?? '', phone: v.phone ?? '', ...geo }
           if (!editing) return base
           return {
