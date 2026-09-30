@@ -3,10 +3,12 @@ import { Shell, type MenuItem } from '@sm/shared'
 import {
   AppstoreOutlined,
   BankOutlined,
+  BellOutlined,
   DashboardOutlined,
   DollarOutlined,
   ShopOutlined,
   ShoppingCartOutlined,
+  UserOutlined,
 } from '@ant-design/icons'
 import { Dashboard } from './pages/Dashboard'
 import { Networks } from './pages/Networks'
@@ -14,6 +16,8 @@ import { Products, Dictionary } from './pages/Catalog'
 import { Banners } from './pages/Banners'
 import { Orders, Payments } from './pages/Orders'
 import { Tariffs, BillingSettings, BillingNetworks, Invoices, Payouts } from './pages/Billing'
+import { Customers } from './pages/Customers'
+import { Notifications } from './pages/Notifications'
 
 const menu: MenuItem[] = [
   { key: '/', icon: <DashboardOutlined />, label: 'Главная' },
@@ -54,6 +58,8 @@ const menu: MenuItem[] = [
     ],
   },
   { key: '/payouts', icon: <BankOutlined />, label: 'Выводы денег' },
+  { key: '/customers', icon: <UserOutlined />, label: 'Покупатели' },
+  { key: '/notifications', icon: <BellOutlined />, label: 'Уведомления' },
 ]
 
 export function AdminRoutes() {
@@ -66,14 +72,16 @@ export function AdminRoutes() {
         <Route path="moderation" element={<Products key="moderation" moderation />} />
         <Route path="catalog/:kind" element={<Dictionary />} />
         <Route path="banners" element={<Banners />} />
-        <Route path="orders" element={<Orders />} />
-        <Route path="stale" element={<Orders stale />} />
+        <Route path="orders" element={<Orders key="orders" />} />
+        <Route path="stale" element={<Orders key="stale" stale />} />
         <Route path="payments" element={<Payments />} />
         <Route path="billing/networks" element={<BillingNetworks />} />
         <Route path="billing/invoices" element={<Invoices />} />
         <Route path="billing/tariffs" element={<Tariffs />} />
         <Route path="billing/settings" element={<BillingSettings />} />
         <Route path="payouts" element={<Payouts />} />
+        <Route path="customers" element={<Customers />} />
+        <Route path="notifications" element={<Notifications />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

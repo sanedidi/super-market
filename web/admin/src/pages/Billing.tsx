@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Alert, App, Button, Card, Checkbox, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag, Typography } from 'antd'
+import { Link } from 'react-router-dom'
+import { Alert, App, Button, Card, Checkbox, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Typography } from 'antd'
 import dayjs from 'dayjs'
-import { ActiveTag, CrudPage, PageTitle, RemoteSelect, StatusTag, api, date, dateTime, money, useAction, useItem, useList } from '@sm/shared'
+import { ActiveTag, CrudPage, LoadError, PageTitle, StatusTag, api, date, dateTime, money, useAction, useItem, usePaged } from '@sm/shared'
+import { SearchSelect } from '../components'
+import { useUrlState } from '../hooks'
 
 interface Tariff {
   id: string
@@ -30,10 +33,10 @@ export function Tariffs() {
               <Input />
             </Form.Item>
             <Form.Item name="min_stores" label="Действует от числа магазинов" rules={[{ required: true }]}>
-              <InputNumber min={1} style={{ width: '100%' }} />
+              <InputNumber min={1} precision={0} style={{ width: '100%' }} />
             </Form.Item>
             <Form.Item name="price_per_store" label="Цена за магазин в месяц, $" rules={[{ required: true }]}>
-              <InputNumber min={0} step={1} style={{ width: '100%' }} />
+              <InputNumber min={0} step={1} precision={2} style={{ width: '100%' }} />
             </Form.Item>
             {editing && (
               <Form.Item name="is_active" label="Активен" valuePropName="checked">
@@ -70,10 +73,10 @@ export function BillingSettings() {
       <Card style={{ maxWidth: 520 }}>
         <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v)}>
           <Form.Item name="usd_rate" label="Курс доллара для счетов, сум" rules={[{ required: true }]}>
-            <InputNumber min={1} style={{ width: '100%' }} />
+            <InputNumber min={1} precision={2} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item name="grace_days" label="Дней на оплату счёта" rules={[{ required: true }]} extra="После этого магазины сети скрываются из приложения.">
-            <InputNumber min={0} max={60} style={{ width: '100%' }} />
+            <InputNumber min={0} max={60} precision={0} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item name="auto_charge_balance" valuePropName="checked">
             <Checkbox>Оплачивать счета с баланса платформы автоматически</Checkbox>
@@ -104,8 +107,9 @@ interface NetworkBilling {
 }
 
 export function BillingNetworks() {
-  const [overdue, setOverdue] = useState(false)
-  const { data, isLoading } = useList<NetworkBilling>('/admin/billing/networks', { overdue: overdue || undefined, limit: 200 })
+  const [overdueParam, setOverdue] = useUrlState('overdue')
+  const overdue = overdueParam === 'true'
+  const list = usePaged<NetworkBilling>('/admin/billing/networks', { overdue: overdue || undefined })
   const [editing, setEditing] = useState<NetworkBilling | null>(null)
   const [form] = Form.useForm()
   const save = useAction(
@@ -128,22 +132,24 @@ export function BillingNetworks() {
   return (
     <>
       <PageTitle title="Сети и оплата">
-        <Checkbox checked={overdue} onChange={(e) => setOverdue(e.target.checked)}>
+        <Checkbox checked={overdue} onChange={(e) => setOverdue(e.target.checked ? 'true' : undefined)}>
           Только с просрочкой
         </Checkbox>
       </PageTitle>
+      <LoadError error={list.error} retry={() => list.refetch()} />
       <Card styles={{ body: { padding: 0 } }}>
         <Table<NetworkBilling>
           rowKey="network_id"
-          loading={isLoading}
-          dataSource={data}
+          loading={list.isLoading || list.isFetching}
+          dataSource={list.items}
+          pagination={list.pagination}
           scroll={{ x: true }}
           columns={[
             {
               title: 'Сеть',
               render: (_, n) => (
                 <>
-                  {n.network_name} {n.status !== 'active' && <StatusTag status={n.status} />}
+                  <Link to={`/networks?open=${n.network_id}`}>{n.network_name}</Link> {n.status !== 'active' && <StatusTag status={n.status} />}
                 </>
               ),
             },
@@ -159,7 +165,19 @@ export function BillingNetworks() {
             { title: 'В месяц', dataIndex: 'monthly_usd', render: (v) => `${money(v)} $` },
             { title: 'Платит с', dataIndex: 'billing_from', render: date },
             { title: 'Баланс', render: (_, n) => <>{money(n.balance_available)} <Typography.Text type="secondary">(+{money(n.balance_pending)} в пути)</Typography.Text></> },
-            { title: 'Долг', render: (_, n) => (Number(n.unpaid_uzs) > 0 ? <Typography.Text type={n.overdue ? 'danger' : undefined}>{money(n.unpaid_uzs)} сум{n.overdue && ' — просрочен'}</Typography.Text> : '—') },
+            {
+              title: 'Долг',
+              render: (_, n) =>
+                Number(n.unpaid_uzs) > 0 ? (
+                  <Link to={`/billing/invoices?network_id=${n.network_id}&status=unpaid`}>
+                    <Typography.Text type={n.overdue ? 'danger' : undefined}>
+                      {money(n.unpaid_uzs)} сум{n.overdue && ' — просрочен'}
+                    </Typography.Text>
+                  </Link>
+                ) : (
+                  '—'
+                ),
+            },
             {
               key: 'edit',
               render: (_, n) => (
@@ -171,14 +189,22 @@ export function BillingNetworks() {
           ]}
         />
       </Card>
-      <Modal open={editing !== null} title={`Условия: ${editing?.network_name}`} onCancel={() => setEditing(null)} onOk={() => form.submit()} okText="Сохранить" forceRender>
+      <Modal
+        open={editing !== null}
+        title={`Условия: ${editing?.network_name}`}
+        onCancel={() => setEditing(null)}
+        onOk={() => form.submit()}
+        okText="Сохранить"
+        confirmLoading={save.isPending}
+        forceRender
+      >
         <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v, { onSuccess: () => setEditing(null) })}>
           <Form.Item name="custom" valuePropName="checked">
             <Checkbox>Индивидуальная цена</Checkbox>
           </Form.Item>
           {custom && (
             <Form.Item name="price" label="Цена за магазин в месяц, $" rules={[{ required: true }]}>
-              <InputNumber min={0} style={{ width: '100%' }} />
+              <InputNumber min={0} precision={2} style={{ width: '100%' }} />
             </Form.Item>
           )}
           <Form.Item name="billing_from" label="Платит с месяца" extra="До этого месяца подписка бесплатна.">
@@ -209,11 +235,16 @@ interface Invoice {
 }
 
 export function Invoices() {
-  const [status, setStatus] = useState<string>()
-  const [network, setNetwork] = useState<string>()
-  const { data, isLoading } = useList<Invoice>('/admin/billing/invoices', { status, network_id: network, limit: 200 })
+  const [status, setStatus] = useUrlState('status')
+  const [network, setNetwork] = useUrlState('network_id')
+  const networkItem = useItem<{ name: string }>(network ? `/admin/networks/${network}` : null)
+  const list = usePaged<Invoice>('/admin/billing/invoices', { status, network_id: network })
   const [acting, setActing] = useState<{ inv: Invoice; action: 'paid' | 'cancel' } | null>(null)
   const [note, setNote] = useState('')
+  const closeActing = () => {
+    setActing(null)
+    setNote('')
+  }
   const act = useAction((v: { id: string; action: string; note: string }) => api.post(`/admin/billing/invoices/${v.id}/${v.action}`, { note: v.note }), {
     success: 'Готово',
   })
@@ -222,7 +253,14 @@ export function Invoices() {
   return (
     <>
       <PageTitle title="Счета за подписку">
-        <RemoteSelect path="/admin/networks" params={{ limit: 200 }} placeholder="Сеть" allowClear value={network} onChange={setNetwork} />
+        <SearchSelect
+          path="/admin/networks"
+          placeholder="Сеть"
+          allowClear
+          value={network}
+          known={{ id: network, label: networkItem.data?.name }}
+          onChange={(v) => setNetwork(v as string | undefined)}
+        />
         <Select
           placeholder="Статус"
           allowClear
@@ -236,15 +274,29 @@ export function Invoices() {
             { value: 'cancelled', label: 'Отменены' },
           ]}
         />
-        <Button onClick={() => generate.mutate(undefined, { onSuccess: (r) => modal.info({ title: `Новых счетов: ${r.created}` }) })} loading={generate.isPending}>
-          Выставить за текущий месяц
-        </Button>
+        <Popconfirm
+          title="Выставить счета за текущий месяц?"
+          description="Счета получат все сети, у которых их ещё нет за этот месяц."
+          okText="Выставить"
+          onConfirm={() =>
+            generate
+              .mutateAsync(undefined)
+              .then((r) => {
+                modal.info({ title: `Новых счетов: ${r.created}` })
+              })
+              .catch(() => undefined)
+          }
+        >
+          <Button loading={generate.isPending}>Выставить за текущий месяц</Button>
+        </Popconfirm>
       </PageTitle>
+      <LoadError error={list.error} retry={() => list.refetch()} />
       <Card styles={{ body: { padding: 0 } }}>
         <Table<Invoice>
           rowKey="id"
-          loading={isLoading}
-          dataSource={data}
+          loading={list.isLoading || list.isFetching}
+          dataSource={list.items}
+          pagination={list.pagination}
           scroll={{ x: true }}
           columns={[
             { title: 'Месяц', dataIndex: 'period', render: (p: string) => dayjs(p + '-01').format('MM.YYYY') },
@@ -282,8 +334,9 @@ export function Invoices() {
       <Modal
         open={acting !== null}
         title={acting?.action === 'paid' ? 'Отметить оплату' : 'Списать счёт'}
-        onCancel={() => setActing(null)}
-        onOk={() => act.mutate({ id: acting!.inv.id, action: acting!.action, note }, { onSuccess: () => (setActing(null), setNote('')) })}
+        confirmLoading={act.isPending}
+        onCancel={closeActing}
+        onOk={() => act.mutate({ id: acting!.inv.id, action: acting!.action, note }, { onSuccess: closeActing })}
       >
         <Typography.Paragraph>
           {acting?.inv.network_name}, {acting && money(acting.inv.amount_uzs)} сум
@@ -308,16 +361,30 @@ interface Payout {
 }
 
 export function Payouts() {
-  const [status, setStatus] = useState<string | undefined>('requested')
-  const { data, isLoading } = useList<Payout>('/admin/payouts', { status, limit: 200 })
+  const [status, setStatus] = useUrlState('status', 'requested')
+  const [network, setNetwork] = useUrlState('network_id')
+  const networkItem = useItem<{ name: string }>(network ? `/admin/networks/${network}` : null)
+  const list = usePaged<Payout>('/admin/payouts', { status, network_id: network })
   const [acting, setActing] = useState<{ p: Payout; action: 'paid' | 'reject' } | null>(null)
   const [note, setNote] = useState('')
+  const closeActing = () => {
+    setActing(null)
+    setNote('')
+  }
   const act = useAction((v: { id: string; action: string; note: string }) => api.post(`/admin/payouts/${v.id}/${v.action}`, { note: v.note }), {
     success: 'Готово',
   })
   return (
     <>
       <PageTitle title="Выводы денег">
+        <SearchSelect
+          path="/admin/networks"
+          placeholder="Сеть"
+          allowClear
+          value={network}
+          known={{ id: network, label: networkItem.data?.name }}
+          onChange={(v) => setNetwork(v as string | undefined)}
+        />
         <Select
           value={status}
           allowClear
@@ -332,11 +399,13 @@ export function Payouts() {
         />
       </PageTitle>
       {status === 'requested' && <Alert type="info" showIcon style={{ marginBottom: 16 }} message="Переведите деньги по реквизитам и нажмите «Выплачено». При отказе сумма вернётся на баланс сети." />}
+      <LoadError error={list.error} retry={() => list.refetch()} />
       <Card styles={{ body: { padding: 0 } }}>
         <Table<Payout>
           rowKey="id"
-          loading={isLoading}
-          dataSource={data}
+          loading={list.isLoading || list.isFetching}
+          dataSource={list.items}
+          pagination={list.pagination}
           scroll={{ x: true }}
           columns={[
             { title: 'Дата', dataIndex: 'created_at', render: dateTime },
@@ -366,8 +435,9 @@ export function Payouts() {
         open={acting !== null}
         title={acting?.action === 'paid' ? 'Подтвердить выплату' : 'Отказать в выводе'}
         okButtonProps={{ danger: acting?.action === 'reject', disabled: acting?.action === 'reject' && !note.trim() }}
-        onCancel={() => setActing(null)}
-        onOk={() => act.mutate({ id: acting!.p.id, action: acting!.action, note }, { onSuccess: () => (setActing(null), setNote('')) })}
+        confirmLoading={act.isPending}
+        onCancel={closeActing}
+        onOk={() => act.mutate({ id: acting!.p.id, action: acting!.action, note }, { onSuccess: closeActing })}
       >
         <Typography.Paragraph>
           {acting?.p.network_name}: {acting && money(acting.p.amount)} сум на {acting?.p.requisites}
