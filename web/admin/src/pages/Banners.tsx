@@ -2,6 +2,7 @@
 import { DatePicker, Form, Input, InputNumber, Select, Space, Switch, Tag, Typography } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
 import { ActiveTag, CrudPage, RemoteSelect, dateTime } from '@sm/shared'
+import { SearchSelect } from '../components'
 
 interface Banner {
   id: string
@@ -12,6 +13,7 @@ interface Banner {
   link_type: 'none' | 'promotion' | 'category' | 'product' | 'store'
   link_id: string | null
   network_id: string | null
+  network_name: string | null
   starts_at: string | null
   ends_at: string | null
   sort: number
@@ -48,10 +50,11 @@ export function Banners() {
           ),
         },
         { title: 'Ведёт', dataIndex: 'link_type', render: (v: string) => LINKS.find((l) => l.value === v)?.label },
-        { title: 'Для кого', dataIndex: 'network_id', render: (v: string | null) => (v ? <Tag>Сеть</Tag> : <Tag color="blue">Все</Tag>) },
+        { title: 'Для кого', dataIndex: 'network_id', render: (v: string | null, b) => (v ? <Tag>{b.network_name ?? 'Сеть'}</Tag> : <Tag color="blue">Все</Tag>) },
         {
           title: 'Показ',
-          render: (_, b) => (b.starts_at || b.ends_at ? `${dateTime(b.starts_at) || '…'} — ${dateTime(b.ends_at) || '…'}` : 'Всегда'),
+          render: (_, b) =>
+            b.starts_at || b.ends_at ? `${b.starts_at ? dateTime(b.starts_at) : '…'} — ${b.ends_at ? dateTime(b.ends_at) : '…'}` : 'Всегда',
         },
         { title: 'Порядок', dataIndex: 'sort', align: 'right' },
         { title: 'Статус', dataIndex: 'is_active', render: (v: boolean) => <ActiveTag active={v} /> },
@@ -72,13 +75,14 @@ export function Banners() {
           link_type: v.link_type ?? 'none',
           link_id: v.link_type && v.link_type !== 'none' ? v.link_id : '',
           network_id: v.network_id ?? '',
-          ...(period?.[0] ? { starts_at: period[0].toISOString() } : {}),
-          ...(period?.[1] ? { ends_at: period[1].toISOString() } : {}),
+          // null — снять ограничение (очищенное поле периода).
+          starts_at: period?.[0] ? period[0].toISOString() : null,
+          ends_at: period?.[1] ? period[1].toISOString() : null,
           sort: v.sort ?? 0,
           is_active: v.is_active ?? true,
         }
       }}
-      form={() => (
+      form={(editing) => (
         <>
           <Form.Item name="title" label="Заголовок" rules={[{ required: true, message: 'Введите заголовок' }]}>
             <Input placeholder="−20% на молочные продукты" />
@@ -113,14 +117,14 @@ export function Banners() {
             </Form.Item>
           </Space>
           <Form.Item name="network_id" label="Показывать" extra="Пусто — всем покупателям; сеть — только рядом с её магазинами">
-            <RemoteSelect path="/admin/networks" allowClear placeholder="Всем" />
+            <SearchSelect path="/admin/networks" known={{ id: editing?.network_id, label: editing?.network_name }} allowClear placeholder="Всем" />
           </Form.Item>
           <Form.Item name="period" label="Период показа" extra="Пусто — всегда">
             <DatePicker.RangePicker showTime={{ format: 'HH:mm' }} format="DD.MM.YYYY HH:mm" allowEmpty={[true, true]} />
           </Form.Item>
           <Space wrap>
             <Form.Item name="sort" label="Порядок" initialValue={0}>
-              <InputNumber style={{ width: 100 }} />
+              <InputNumber precision={0} style={{ width: 100 }} />
             </Form.Item>
             <Form.Item name="is_active" label="Показывать" valuePropName="checked" initialValue={true}>
               <Switch />

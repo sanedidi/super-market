@@ -121,7 +121,7 @@ func (s *Service) StoreCatalog(ctx context.Context, storeID string, f CatalogFil
 		WHERE ($4 = '' OR lower(c.name) LIKE '%' || lower($4) || '%')
 		  AND ($5 = '' OR c.category_id IN (
 			WITH RECURSIVE sub AS (SELECT id FROM categories WHERE id::text = $5
-			                       UNION ALL SELECT cc.id FROM categories cc JOIN sub ON cc.parent_id = sub.id)
+			                       UNION SELECT cc.id FROM categories cc JOIN sub ON cc.parent_id = sub.id)
 			SELECT id FROM sub))
 		  AND ($6 = '' OR c.brand_id::text = $6)
 		  AND (cardinality($7::uuid[]) = 0 OR c.id = ANY ($7::uuid[]))

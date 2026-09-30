@@ -75,7 +75,12 @@ func pr(r *http.Request) *identity.Principal { return identity.FromContext(r.Con
 func (m *Module) listDict(onlyActive bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[map[string]any], error) {
-			items, err := m.svc.ListDict(r.Context(), chi.URLParam(r, "kind"), onlyActive)
+			f := DictFilter{Query: r.URL.Query().Get("q"), ExcludeTree: r.URL.Query().Get("exclude_tree")}
+			if !onlyActive {
+				page := httpx.PageFrom(r)
+				f.Page = &page
+			}
+			items, err := m.svc.ListDict(r.Context(), chi.URLParam(r, "kind"), onlyActive, f)
 			return httpx.List[map[string]any]{Items: items}, err
 		})
 	}
@@ -257,7 +262,7 @@ func (m *Module) updatePromotion(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) listBanners(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Banner], error) {
-		items, err := m.svc.ListBanners(r.Context())
+		items, err := m.svc.ListBanners(r.Context(), httpx.PageFrom(r))
 		return httpx.List[Banner]{Items: items}, err
 	})
 }

@@ -65,9 +65,9 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 
 | Метод | Путь | Тело |
 | --- | --- | --- |
-| GET | `/admin/catalog/{kind}` | — все записи |
+| GET | `/admin/catalog/{kind}?q=&limit=&offset=` | записи по страницам (по умолчанию 50, максимум 200); `q` — поиск по названию. Для категорий: `exclude_tree={id}` — без этой категории и её потомков (варианты родителя), в ответе есть `parent_name` |
 | POST | `/admin/catalog/{kind}` | brands: `{"name"}` · categories: `{"name", "parent_id"?, "sort"?}` · colors: `{"name", "hex"?: "#FF0000"}` · units: `{"name", "short_name", "is_fractional"?}` |
-| PATCH | `/admin/catalog/{kind}/{id}` | любые поля + `is_active` |
+| PATCH | `/admin/catalog/{kind}/{id}` | любые поля + `is_active`. Категорию нельзя вложить в саму себя или в свою подкатегорию — 400 `validation` |
 | GET | `/store/catalog/{kind}` | только активные |
 
 Единицы «шт», «кг», «л», «уп» создаются миграцией.
@@ -76,10 +76,11 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 
 Товар: `name`, `description`, `brand_id`, `category_id`, `unit_id`, `color_id`, `base_price`, `images` (ссылки), `barcodes`, `is_active`.
 Штрихкод уникален на всю платформу — при совпадении ответ 409 `barcode_exists` с `details.product_id`.
+В PATCH `brand_id`/`color_id`: нет поля или `null` — не менять, `""` — убрать бренд/цвет.
 
 | Метод | Путь | Описание |
 | --- | --- | --- |
-| GET | `/admin/products?q=&category_id=&barcode=&status=` | все товары; `status=pending` — очередь модерации |
+| GET | `/admin/products?q=&category_id=&barcode=&status=&limit=&offset=` | все товары; `status=pending` — очередь модерации, `approved`, `rejected` |
 | POST | `/admin/products` | товар общего каталога (сразу одобрен) |
 | GET/PATCH | `/admin/products/{id}` | |
 | POST | `/admin/products/{id}/approve` | товар сети становится общим (`network_id` → null) |
@@ -330,9 +331,9 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 
 | Метод | Путь | Что делает |
 | --- | --- | --- |
-| GET | `/admin/banners` | Все баннеры |
+| GET | `/admin/banners?limit=&offset=` | Баннеры по страницам; `network_name` — сеть, если баннер только для неё |
 | POST | `/admin/banners` | `{title, subtitle?, image_url?, color? (#RRGGBB), link_type: none\|promotion\|category\|product\|store, link_id?, network_id? (пусто — баннер платформы), starts_at?, ends_at?, sort?, is_active?}` |
-| PATCH | `/admin/banners/{id}` | Любые поля |
+| PATCH | `/admin/banners/{id}` | Любые поля. `starts_at`/`ends_at`: нет поля — не менять, `null` — снять ограничение |
 
 Товар (`/admin/products`, `/store/products`) — поле `attributes`: `nutrition` (`{kcal, protein, fat, carbs}` на
 100 г, числа), строки `composition`, `shelf_life`, `storage`, `country`, `volume`, `manufacturer`.

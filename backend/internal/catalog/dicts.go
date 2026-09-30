@@ -112,14 +112,44 @@ func dictFor(kind string) (dictSpec, error) {
 	return d, nil
 }
 
+// DictFilter — поиск по справочнику. Page == nil — без ограничения
+// (панель магазина берёт справочник целиком).
+type DictFilter struct {
+	Query string
+	// ExcludeTree — только для категорий: исключить категорию и всех её
+	// потомков (варианты родителя при правке).
+	ExcludeTree string
+	Page        *httpx.Page
+}
+
 // ListDict возвращает записи справочника. onlyActive — для панели магазина.
-func (s *Service) ListDict(ctx context.Context, kind string, onlyActive bool) ([]map[string]any, error) {
+// У категорий в списке есть parent_name.
+func (s *Service) ListDict(ctx context.Context, kind string, onlyActive bool, f DictFilter) ([]map[string]any, error) {
 	d, err := dictFor(kind)
 	if err != nil {
 		return nil, err
 	}
+	if f.ExcludeTree != "" && (kind != "categories" || !httpx.IsUUID(f.ExcludeTree)) {
+		return nil, apperr.Validation("exclude_tree: ожидается id категории")
+	}
+	cols := d.columns()
+	where := `(t.is_active OR NOT $1) AND ($2 = '' OR t.name ILIKE '%' || $2 || '%')`
+	args := []any{onlyActive, strings.TrimSpace(f.Query)}
+	if kind == "categories" {
+		cols += `, (SELECT pc.name FROM categories pc WHERE pc.id = t.parent_id) AS parent_name`
+		where += ` AND ($3 = '' OR t.id NOT IN (
+			WITH RECURSIVE sub AS (
+				SELECT id FROM categories WHERE id::text = $3
+				UNION SELECT c.id FROM categories c JOIN sub ON c.parent_id = sub.id)
+			SELECT id FROM sub))`
+		args = append(args, f.ExcludeTree)
+	}
+	limit := ""
+	if f.Page != nil {
+		limit = fmt.Sprintf(" LIMIT %d OFFSET %d", f.Page.Limit, f.Page.Offset)
+	}
 	rows, err := s.pool.Query(ctx, fmt.Sprintf(
-		`SELECT %s FROM %s WHERE is_active OR NOT $1 ORDER BY %s`, d.columns(), d.table, d.order), onlyActive)
+		`SELECT %s FROM %s t WHERE %s ORDER BY %s, t.id%s`, cols, d.table, where, d.order, limit), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -237,19 +267,54 @@ func (s *Service) UpdateDict(ctx context.Context, kind, id string, raw map[strin
 		return nil, err
 	}
 	sets := make([]string, len(cols))
+	var parent any
 	for i, c := range cols {
 		sets[i] = fmt.Sprintf("%s = $%d", c, i+2)
+		if c == "parent_id" {
+			parent = vals[i]
+		}
 	}
-	rows, err := s.pool.Query(ctx, fmt.Sprintf(`UPDATE %s SET %s WHERE id = $1 RETURNING %s`,
-		d.table, strings.Join(sets, ", "), d.columns()), append([]any{id}, vals...)...)
+	var out map[string]any
+	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		if p, ok := parent.(string); ok {
+			if err := checkNoCycle(ctx, tx, id, p); err != nil {
+				return err
+			}
+		}
+		rows, err := tx.Query(ctx, fmt.Sprintf(`UPDATE %s SET %s WHERE id = $1 RETURNING %s`,
+			d.table, strings.Join(sets, ", "), d.columns()), append([]any{id}, vals...)...)
+		if err != nil {
+			return err
+		}
+		out, err = pgx.CollectExactlyOneRow(rows, pgx.RowToMap)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperr.NotFound(d.title + ": запись не найдена")
+		}
+		return d.mapErr(err)
+	})
+	return out, err
+}
+
+// checkNoCycle не даёт сделать родителем категории её саму или её потомка:
+// иначе дерево зациклится. Смены родителя идут по одной (advisory-lock),
+// чтобы две встречные правки не создали цикл вместе.
+func checkNoCycle(ctx context.Context, tx pgx.Tx, id, parent string) error {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('categories:tree'))`); err != nil {
+		return err
+	}
+	var cycle bool
+	err := tx.QueryRow(ctx, `
+		WITH RECURSIVE sub AS (
+			SELECT id FROM categories WHERE id = $1
+			UNION SELECT c.id FROM categories c JOIN sub ON c.parent_id = sub.id)
+		SELECT EXISTS (SELECT 1 FROM sub WHERE id = $2)`, id, parent).Scan(&cycle)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	out, err := pgx.CollectExactlyOneRow(rows, pgx.RowToMap)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, apperr.NotFound(d.title + ": запись не найдена")
+	if cycle {
+		return apperr.Validation("parent_id: нельзя вложить категорию в саму себя или в её подкатегорию")
 	}
-	return out, d.mapErr(err)
+	return nil
 }
 
 func (d dictSpec) mapErr(err error) error {

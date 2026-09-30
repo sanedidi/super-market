@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Button, ColorPicker, Form, Image, Input, InputNumber, Modal, Space, Switch, Tag, Typography } from 'antd'
-import { ActiveTag, CrudPage, RemoteSelect, StatusTag, api, money, useAction, useList } from '@sm/shared'
+import { Button, ColorPicker, Form, Image, Input, InputNumber, Modal, Segmented, Space, Switch, Tag, Typography } from 'antd'
+import { ActiveTag, CrudPage, RemoteSelect, StatusTag, api, money, useAction } from '@sm/shared'
+import { SearchSelect } from '../components'
 
 interface Dict {
   id: string
   name: string
   is_active: boolean
   parent_id?: string | null
+  parent_name?: string | null
   sort?: string | number
   hex?: string | null
   short_name?: string
@@ -24,14 +26,17 @@ const dictTitles: Record<string, string> = {
 /** Общие справочники платформы: категории, бренды, цвета, единицы. */
 export function Dictionary() {
   const { kind = 'brands' } = useParams()
+  return <DictionaryPage key={kind} kind={kind} />
+}
+
+function DictionaryPage({ kind }: { kind: string }) {
   const path = `/admin/catalog/${kind}`
-  const { data: all } = useList<Dict>(kind === 'categories' ? path : null)
-  const names = new Map((all ?? []).map((c) => [c.id, c.name]))
+  const [q, setQ] = useState('')
   const columns = [
     { title: 'Название', dataIndex: 'name' },
     ...(kind === 'categories'
       ? [
-          { title: 'Родитель', dataIndex: 'parent_id', render: (id: string | null) => (id ? names.get(id) ?? '—' : '—') },
+          { title: 'Родитель', dataIndex: 'parent_name', render: (n: string | null) => n || '—' },
           { title: 'Порядок', dataIndex: 'sort' },
         ]
       : []),
@@ -48,9 +53,10 @@ export function Dictionary() {
   ]
   return (
     <CrudPage<Dict>
-      key={kind}
       title={dictTitles[kind] ?? kind}
       path={path}
+      params={{ q: q || undefined }}
+      toolbar={<Input.Search placeholder="Поиск по названию" allowClear onSearch={setQ} style={{ width: 240 }} />}
       columns={columns}
       toBody={(v) => {
         const body: Record<string, unknown> = { ...v }
@@ -68,10 +74,16 @@ export function Dictionary() {
           {kind === 'categories' && (
             <>
               <Form.Item name="parent_id" label="Родительская категория">
-                <RemoteSelect path={path} allowClear filter={(c) => c.id !== editing?.id} />
+                <SearchSelect
+                  path={path}
+                  params={editing ? { exclude_tree: editing.id } : undefined}
+                  known={{ id: editing?.parent_id, label: editing?.parent_name }}
+                  allowClear
+                  placeholder="Без родителя"
+                />
               </Form.Item>
               <Form.Item name="sort" label="Порядок">
-                <InputNumber style={{ width: '100%' }} />
+                <InputNumber precision={0} style={{ width: '100%' }} />
               </Form.Item>
             </>
           )}
@@ -166,8 +178,13 @@ function formToAttrs(v: Record<string, unknown>) {
 export function Products({ moderation = false }: { moderation?: boolean }) {
   const [q, setQ] = useState('')
   const [category, setCategory] = useState<string>()
+  const [tab, setTab] = useState('all')
   const [rejecting, setRejecting] = useState<Product | null>(null)
   const [reason, setReason] = useState('')
+  const closeReject = () => {
+    setRejecting(null)
+    setReason('')
+  }
   const approve = useAction((id: string) => api.post(`/admin/products/${id}/approve`), { success: 'Товар одобрен и добавлен в общий каталог' })
   const reject = useAction((v: { id: string; reason: string }) => api.post(`/admin/products/${v.id}/reject`, { reason: v.reason }), {
     success: 'Товар отклонён',
@@ -176,16 +193,31 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
   return (
     <>
       <CrudPage<Product>
-        key={moderation ? 'moderation' : 'products'}
         title={moderation ? 'Модерация товаров' : 'Товары'}
         path="/admin/products"
-        params={{ q, category_id: category, status: moderation ? 'pending' : undefined, limit: 200 }}
+        params={{
+          q: q.trim() || undefined,
+          category_id: category,
+          status: moderation ? 'pending' : tab === 'all' ? undefined : tab,
+        }}
         canCreate={!moderation}
         createLabel="Новый товар"
         toolbar={
           <>
+            {!moderation && (
+              <Segmented
+                value={tab}
+                onChange={(v) => setTab(String(v))}
+                options={[
+                  { value: 'all', label: 'Все' },
+                  { value: 'approved', label: 'В каталоге' },
+                  { value: 'pending', label: 'На модерации' },
+                  { value: 'rejected', label: 'Отклонённые' },
+                ]}
+              />
+            )}
             <Input.Search placeholder="Название или штрихкод" allowClear onSearch={setQ} style={{ width: 240 }} />
-            <RemoteSelect path="/admin/catalog/categories" placeholder="Категория" allowClear value={category} onChange={setCategory} />
+            <SearchSelect path="/admin/catalog/categories" placeholder="Категория" allowClear value={category} onChange={(v) => setCategory(v as string | undefined)} />
           </>
         }
         columns={[
@@ -225,7 +257,13 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
                   key: 'mod',
                   render: (_: unknown, p: Product) => (
                     <Space>
-                      <Button size="small" type="primary" onClick={() => approve.mutate(p.id)}>
+                      <Button
+                        size="small"
+                        type="primary"
+                        loading={approve.isPending && approve.variables === p.id}
+                        disabled={approve.isPending && approve.variables !== p.id}
+                        onClick={() => approve.mutate(p.id)}
+                      >
                         Одобрить
                       </Button>
                       <Button size="small" danger onClick={() => setRejecting(p)}>
@@ -243,8 +281,9 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
           return {
           ...v,
           attributes: attrs,
-          brand_id: v.brand_id ?? null,
-          color_id: v.color_id ?? null,
+          // Пустая строка — убрать бренд/цвет; null сервер понимает как «не менять».
+          brand_id: v.brand_id ?? '',
+          color_id: v.color_id ?? '',
           images: String(v.images ?? '')
             .split('\n')
             .map((s) => s.trim())
@@ -261,19 +300,24 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
               <Input />
             </Form.Item>
             <Form.Item name="category_id" label="Категория" rules={[{ required: true }]}>
-              <RemoteSelect path="/admin/catalog/categories" />
+              <SearchSelect path="/admin/catalog/categories" known={{ id: editing?.category_id, label: editing?.category_name }} />
             </Form.Item>
             <Space wrap>
               <Form.Item name="unit_id" label="Единица" rules={[{ required: true }]}>
                 <RemoteSelect path="/admin/catalog/units" style={{ width: 150 }} />
               </Form.Item>
               <Form.Item name="base_price" label="Базовая цена, сум" rules={[{ required: true }]}>
-                <InputNumber min={0} style={{ width: 170 }} />
+                <InputNumber min={0} precision={2} style={{ width: 170 }} />
               </Form.Item>
             </Space>
             <Space wrap>
               <Form.Item name="brand_id" label="Бренд">
-                <RemoteSelect path="/admin/catalog/brands" allowClear style={{ width: 200 }} />
+                <SearchSelect
+                  path="/admin/catalog/brands"
+                  known={{ id: editing?.brand_id, label: editing?.brand_name }}
+                  allowClear
+                  style={{ width: 200 }}
+                />
               </Form.Item>
               <Form.Item name="color_id" label="Цвет">
                 <RemoteSelect path="/admin/catalog/colors" allowClear style={{ width: 200 }} />
@@ -316,8 +360,9 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
         title={`Отклонить «${rejecting?.name}»`}
         okText="Отклонить"
         okButtonProps={{ danger: true, disabled: !reason.trim() }}
-        onCancel={() => setRejecting(null)}
-        onOk={() => reject.mutate({ id: rejecting!.id, reason }, { onSuccess: () => (setRejecting(null), setReason('')) })}
+        confirmLoading={reject.isPending}
+        onCancel={closeReject}
+        onOk={() => reject.mutate({ id: rejecting!.id, reason }, { onSuccess: closeReject })}
       >
         <Input.TextArea rows={3} placeholder="Причина — её увидит магазин" value={reason} onChange={(e) => setReason(e.target.value)} />
       </Modal>

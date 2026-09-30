@@ -119,3 +119,33 @@ func RespondID[T any](w http.ResponseWriter, r *http.Request, log *slog.Logger, 
 	}
 	Respond(w, r, log, status, func() (T, error) { return fn(id) })
 }
+
+// Optional — поле PATCH-запроса, которое можно очистить:
+// ключа нет — не менять (Set == false), null — очистить (Set, Value == nil),
+// значение — установить.
+type Optional[T any] struct {
+	Set   bool
+	Value *T
+}
+
+func (o *Optional[T]) UnmarshalJSON(b []byte) error {
+	o.Set = true
+	if string(b) == "null" {
+		o.Value = nil
+		return nil
+	}
+	var v T
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	o.Value = &v
+	return nil
+}
+
+// Or — значение, если оно задано, иначе nil (для INSERT).
+func (o Optional[T]) Or() *T {
+	if !o.Set {
+		return nil
+	}
+	return o.Value
+}

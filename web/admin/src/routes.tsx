@@ -62,8 +62,8 @@ export function AdminRoutes() {
       <Route element={<Shell title="Супер-админ" menu={menu} />}>
         <Route index element={<Dashboard />} />
         <Route path="networks" element={<Networks />} />
-        <Route path="products" element={<Products />} />
-        <Route path="moderation" element={<Products moderation />} />
+        <Route path="products" element={<Products key="products" />} />
+        <Route path="moderation" element={<Products key="moderation" moderation />} />
         <Route path="catalog/:kind" element={<Dictionary />} />
         <Route path="banners" element={<Banners />} />
         <Route path="orders" element={<Orders />} />

@@ -17,37 +17,40 @@ import (
 // Баннеры на главной приложения. Ведёт супер-админ.
 
 type Banner struct {
-	ID        string     `json:"id"`
-	Title     string     `json:"title"`
-	Subtitle  string     `json:"subtitle"`
-	ImageURL  string     `json:"image_url"`
-	Color     string     `json:"color"`
-	LinkType  string     `json:"link_type"` // none | promotion | category | product | store
-	LinkID    *string    `json:"link_id"`
-	NetworkID *string    `json:"network_id"`
-	StartsAt  *time.Time `json:"starts_at"`
-	EndsAt    *time.Time `json:"ends_at"`
-	Sort      int        `json:"sort"`
-	IsActive  bool       `json:"is_active"`
-	CreatedAt time.Time  `json:"created_at"`
+	ID        string  `json:"id"`
+	Title     string  `json:"title"`
+	Subtitle  string  `json:"subtitle"`
+	ImageURL  string  `json:"image_url"`
+	Color     string  `json:"color"`
+	LinkType  string  `json:"link_type"` // none | promotion | category | product | store
+	LinkID    *string `json:"link_id"`
+	NetworkID *string `json:"network_id"`
+	// Название сети, если баннер только для неё.
+	NetworkName *string    `json:"network_name"`
+	StartsAt    *time.Time `json:"starts_at"`
+	EndsAt      *time.Time `json:"ends_at"`
+	Sort        int        `json:"sort"`
+	IsActive    bool       `json:"is_active"`
+	CreatedAt   time.Time  `json:"created_at"`
 }
 
 type BannerInput struct {
-	Title     *string    `json:"title"`
-	Subtitle  *string    `json:"subtitle"`
-	ImageURL  *string    `json:"image_url"`
-	Color     *string    `json:"color"`
-	LinkType  *string    `json:"link_type"`
-	LinkID    *string    `json:"link_id"`
-	NetworkID *string    `json:"network_id"`
-	StartsAt  *time.Time `json:"starts_at"`
-	EndsAt    *time.Time `json:"ends_at"`
-	Sort      *int       `json:"sort"`
-	IsActive  *bool      `json:"is_active"`
+	Title     *string `json:"title"`
+	Subtitle  *string `json:"subtitle"`
+	ImageURL  *string `json:"image_url"`
+	Color     *string `json:"color"`
+	LinkType  *string `json:"link_type"`
+	LinkID    *string `json:"link_id"`
+	NetworkID *string `json:"network_id"`
+	// Период показа: ключа нет — не менять, null — снять ограничение.
+	StartsAt httpx.Optional[time.Time] `json:"starts_at"`
+	EndsAt   httpx.Optional[time.Time] `json:"ends_at"`
+	Sort     *int                      `json:"sort"`
+	IsActive *bool                     `json:"is_active"`
 }
 
 const bannerSelect = `SELECT id, title, subtitle, image_url, color, link_type, link_id, network_id,
-	starts_at, ends_at, sort, is_active, created_at FROM banners`
+	(SELECT n.name FROM networks n WHERE n.id = banners.network_id), starts_at, ends_at, sort, is_active, created_at FROM banners`
 
 var colorRe = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 
@@ -80,8 +83,9 @@ func (in BannerInput) validate(create bool) error {
 	return nil
 }
 
-func (s *Service) ListBanners(ctx context.Context) ([]Banner, error) {
-	rows, err := s.pool.Query(ctx, bannerSelect+` ORDER BY is_active DESC, sort, created_at DESC`)
+func (s *Service) ListBanners(ctx context.Context, page httpx.Page) ([]Banner, error) {
+	rows, err := s.pool.Query(ctx, bannerSelect+` ORDER BY is_active DESC, sort, created_at DESC, id LIMIT $1 OFFSET $2`,
+		page.Limit, page.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +134,7 @@ func (s *Service) CreateBanner(ctx context.Context, in BannerInput) (Banner, err
 		INSERT INTO banners (title, subtitle, image_url, color, link_type, link_id, network_id, starts_at, ends_at, sort, is_active)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
 		str(in.Title, ""), str(in.Subtitle, ""), str(in.ImageURL, ""), str(in.Color, "#155EEF"), str(in.LinkType, "none"),
-		emptyToNil(in.LinkID), emptyToNil(in.NetworkID), in.StartsAt, in.EndsAt, sort, active).Scan(&id)
+		emptyToNil(in.LinkID), emptyToNil(in.NetworkID), in.StartsAt.Or(), in.EndsAt.Or(), sort, active).Scan(&id)
 	if db.IsCheckViolation(err) {
 		return Banner{}, apperr.Validation("баннер: проверьте даты и ссылку")
 	}
@@ -162,12 +166,13 @@ func (s *Service) UpdateBanner(ctx context.Context, id string, in BannerInput) (
 			color = COALESCE($5, color), link_type = COALESCE($6, link_type),
 			link_id = CASE WHEN $7 THEN $8::uuid ELSE link_id END,
 			network_id = CASE WHEN $9 THEN $10::uuid ELSE network_id END,
-			starts_at = COALESCE($11, starts_at), ends_at = COALESCE($12, ends_at),
-			sort = COALESCE($13, sort), is_active = COALESCE($14, is_active), updated_at = now()
+			starts_at = CASE WHEN $11 THEN $12::timestamptz ELSE starts_at END,
+			ends_at = CASE WHEN $13 THEN $14::timestamptz ELSE ends_at END,
+			sort = COALESCE($15, sort), is_active = COALESCE($16, is_active), updated_at = now()
 		WHERE id = $1`,
 		id, trim(in.Title), trim(in.Subtitle), trim(in.ImageURL), in.Color, in.LinkType,
 		setLink, emptyToNil(in.LinkID), setNetwork, emptyToNil(in.NetworkID),
-		in.StartsAt, in.EndsAt, in.Sort, in.IsActive)
+		in.StartsAt.Set, in.StartsAt.Value, in.EndsAt.Set, in.EndsAt.Value, in.Sort, in.IsActive)
 	if db.IsCheckViolation(err) {
 		return Banner{}, apperr.Validation("баннер: проверьте даты и ссылку")
 	}

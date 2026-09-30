@@ -349,7 +349,7 @@ const filterWhere = `
 	AND ($2 = '' OR p.category_id IN (
 	        WITH RECURSIVE sub AS (
 	            SELECT id FROM categories WHERE id::text = $2
-	            UNION ALL SELECT c.id FROM categories c JOIN sub ON c.parent_id = sub.id)
+	            UNION SELECT c.id FROM categories c JOIN sub ON c.parent_id = sub.id)
 	        SELECT id FROM sub))
 	AND ($3 = '' OR EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND pb.barcode = $3))`
 
