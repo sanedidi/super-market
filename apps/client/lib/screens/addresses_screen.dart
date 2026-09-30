@@ -117,6 +117,23 @@ class _AddressEditScreenState extends State<AddressEditScreen> {
   ({double lat, double lng})? _point;
   bool _busy = false;
 
+  /// Улицу вписали руками — перемещение карты её не перезаписывает
+  /// (кнопка «где я» перезаписывает всегда).
+  late bool _addressTyped = widget.address != null;
+  int _geoSeq = 0;
+
+  Future<void> _onPoint(double lat, double lng, {bool located = false}) async {
+    _point = (lat: lat, lng: lng);
+    if (_addressTyped && !located) return;
+    final seq = ++_geoSeq;
+    final a = await addressAt(lat, lng);
+    if (!mounted || seq != _geoSeq || a == null) return;
+    setState(() {
+      _f['address']!.text = a;
+      _addressTyped = false;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -181,6 +198,7 @@ class _AddressEditScreenState extends State<AddressEditScreen> {
           child: TextField(
             controller: _f[key],
             keyboardType: type,
+            onChanged: key == 'address' ? (_) => _addressTyped = true : null,
             decoration: InputDecoration(labelText: label, isDense: true),
           ),
         ),
@@ -202,7 +220,7 @@ class _AddressEditScreenState extends State<AddressEditScreen> {
                 Expanded(
                   child: PointPicker(
                     initial: _point!,
-                    onChanged: (lat, lng) => _point = (lat: lat, lng: lng),
+                    onChanged: _onPoint,
                   ),
                 ),
                 SafeArea(
@@ -211,7 +229,7 @@ class _AddressEditScreenState extends State<AddressEditScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Row(children: [_field('address', 'Улица, дом', flex: 3), _field('label', 'Название (Дом)')]),
+                        Row(children: [_field('address', 'Улица, дом', flex: 3), _field('label', 'Название')]),
                         Row(children: [
                           _field('apartment', 'Квартира', type: TextInputType.number),
                           _field('entrance', 'Подъезд', type: TextInputType.number),

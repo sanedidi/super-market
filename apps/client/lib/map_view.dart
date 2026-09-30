@@ -191,12 +191,39 @@ class TrackingMap extends StatelessWidget {
   }
 }
 
+/// Адрес точки для поля «Улица, дом»: «ул. Бунёдкор, 52А» (обратное
+/// геокодирование MapKit). null — не нашли или нет сети.
+Future<String?> addressAt(double lat, double lng) async {
+  SearchSession? session;
+  try {
+    final (s, result) = await YandexSearch.searchByPoint(
+      point: Point(latitude: lat, longitude: lng),
+      zoom: 17,
+      searchOptions: const SearchOptions(searchType: SearchType.geo, resultPageSize: 1),
+    );
+    session = s;
+    final r = await result.timeout(const Duration(seconds: 8));
+    final item = r.items?.firstOrNull;
+    if (item == null) return null;
+    final a = item.toponymMetadata?.address;
+    final street = a?.addressComponents[SearchComponentKind.street];
+    final house = a?.addressComponents[SearchComponentKind.house];
+    if (street != null) return house == null ? street : '$street, $house';
+    return item.name.isNotEmpty ? item.name : a?.formattedAddress;
+  } catch (_) {
+    return null;
+  } finally {
+    session?.close();
+  }
+}
+
 /// Выбор точки: метка в центре экрана, карта двигается под ней.
+/// [onChanged] — карта остановилась; [located] — её сдвинула кнопка «где я».
 class PointPicker extends StatefulWidget {
   const PointPicker({super.key, required this.initial, required this.onChanged});
 
   final ({double lat, double lng}) initial;
-  final void Function(double lat, double lng) onChanged;
+  final void Function(double lat, double lng, {bool located}) onChanged;
 
   @override
   State<PointPicker> createState() => _PointPickerState();
@@ -205,9 +232,13 @@ class PointPicker extends StatefulWidget {
 class _PointPickerState extends State<PointPicker> {
   YandexMapController? _controller;
 
+  /// Следующая остановка карты — после кнопки «где я».
+  bool _locating = false;
+
   Future<void> _toMyLocation() async {
     final loc = await currentLocation();
     if (loc == null || _controller == null) return;
+    _locating = true;
     await _controller!.moveCamera(
       CameraUpdate.newCameraPosition(CameraPosition(target: Point(latitude: loc.lat, longitude: loc.lng), zoom: 17)),
       animation: const MapAnimation(duration: 0.5),
@@ -227,7 +258,10 @@ class _PointPickerState extends State<PointPicker> {
             ));
           },
           onCameraPositionChanged: (position, reason, finished) {
-            if (finished) widget.onChanged(position.target.latitude, position.target.longitude);
+            if (!finished) return;
+            final located = _locating;
+            _locating = false;
+            widget.onChanged(position.target.latitude, position.target.longitude, located: located);
           },
         ),
         IgnorePointer(
