@@ -262,7 +262,7 @@ function ReturnDrawer({ id, onClose }: { id: string | null; onClose: () => void 
       width={560}
       title={r ? `Возврат № ${r.number}` : 'Возврат'}
       loading={isLoading}
-      extra={r && r.fiscal_status !== 'registered' && can('sales.return') && <Button onClick={() => setFiscal(true)}>Пробить чек</Button>}
+      extra={r && r.fiscal_status !== 'registered' && can('sales.pos') && <Button onClick={() => setFiscal(true)}>Пробить чек</Button>}
     >
       {r && (
         <>
