@@ -152,7 +152,7 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
                       ),
                     ],
                     const SizedBox(height: 10),
-                    KeyCard(keyLabel: '3', title: 'Печать X-отчёта', subtitle: 'после подключения принтера', style: KeyCardStyle.dim),
+                    const KeyCard(keyLabel: '3', title: 'Печать X-отчёта', subtitle: 'после подключения принтера', style: KeyCardStyle.dim),
                     const SizedBox(height: 10),
                     KeyCard(keyLabel: '4', title: 'Сменить кассира', subtitle: 'вход по ПИНу', onTap: _changeCashier),
                     const SizedBox(height: 10),

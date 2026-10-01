@@ -59,7 +59,7 @@ class FakeServer {
         closes.add(body);
         return _json(200, {'id': 'srv-shift'});
     }
-    return _json(404, {'error': {'code': 'not_found', 'message': '$path'}});
+    return _json(404, {'error': {'code': 'not_found', 'message': path}});
   });
 
   static http.Response _json(int status, Object body) =>

@@ -193,20 +193,20 @@ class PosController extends ChangeNotifier {
     }
   }
 
-  void _shiftOpened(String uid, String id, int number) {
+  Future<void> _shiftOpened(String uid, String id, int number) async {
     if (shift?.uid == uid) {
       shift!
         ..serverId = id
         ..number = number;
-      unawaited(_saveState());
+      await _saveState();
     }
   }
 
-  void _saleSent(String uid, String id, int number) {
+  Future<void> _saleSent(String uid, String id, int number) async {
     serverNumbers[uid] = number;
     // Храним номера только последних чеков.
     if (serverNumbers.length > 500) serverNumbers.remove(serverNumbers.keys.first);
-    unawaited(_saveState());
+    await _saveState();
   }
 
   // ------------------------------------------------------------- кассир

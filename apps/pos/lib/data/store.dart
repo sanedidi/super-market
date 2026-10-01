@@ -23,7 +23,19 @@ class FileStore {
     }
   }
 
-  Future<void> writeJson(String name, Object data) => writeAtomic(file(name), jsonEncode(data));
+  /// Записи в один файл идут строго по очереди: два одновременных сохранения
+  /// (например, состояние кассы из разных событий) не мешают друг другу.
+  final Map<String, Future<void>> _writes = {};
+
+  Future<void> writeJson(String name, Object data) {
+    final content = jsonEncode(data);
+    final prev = _writes[name] ?? Future<void>.value();
+    final next = prev.catchError((Object _) {}).then((_) => writeAtomic(file(name), content));
+    _writes[name] = next;
+    return next.whenComplete(() {
+      if (identical(_writes[name], next)) _writes.remove(name);
+    });
+  }
 
   Future<void> delete(String name) async {
     final f = file(name);
@@ -56,7 +68,7 @@ class FileStore {
 
 Future<void> writeAtomic(File f, String content) async {
   await f.parent.create(recursive: true);
-  final tmp = File('${f.path}.tmp');
+  final tmp = File('${f.path}.${DateTime.now().microsecondsSinceEpoch}.tmp');
   await tmp.writeAsString(content, flush: true);
   try {
     await tmp.rename(f.path);

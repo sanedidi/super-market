@@ -59,10 +59,10 @@ class Outbox {
   bool _flushing = false;
 
   /// Сервер ответил на открытие смены — касса запоминает id и номер.
-  void Function(String uid, String id, int number)? onShiftOpened;
+  Future<void> Function(String uid, String id, int number)? onShiftOpened;
 
   /// Продажа дошла до сервера: номер чека на сервере.
-  void Function(String uid, String id, int number)? onSaleSent;
+  Future<void> Function(String uid, String id, int number)? onSaleSent;
 
   int get pending => _pending.length;
   List<OutboxItem> get failed => List.unmodifiable(_failed);
@@ -165,7 +165,7 @@ class Outbox {
         final res = await api.post('/pos/shifts', b, cashier: item.cashier) as Map<String, dynamic>;
         final uid = b['client_uid'] as String;
         await knowShift(uid, res['id'] as String);
-        onShiftOpened?.call(uid, res['id'] as String, (res['number'] as num).toInt());
+        await onShiftOpened?.call(uid, res['id'] as String, (res['number'] as num).toInt());
       }
       case 'cash_move': {
         final id = _shiftId(b['shift_uid'] as String);
@@ -181,7 +181,7 @@ class Outbox {
         final sale = SaleRecord.fromJson(b);
         final id = _shiftId(sale.shiftUid);
         final res = await api.post('/pos/sales', sale.apiBody(id), cashier: item.cashier) as Map<String, dynamic>;
-        onSaleSent?.call(sale.uid, res['id'] as String, (res['number'] as num).toInt());
+        await onSaleSent?.call(sale.uid, res['id'] as String, (res['number'] as num).toInt());
       }
       case 'shift_close': {
         final id = _shiftId(b['shift_uid'] as String);
