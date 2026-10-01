@@ -20,6 +20,7 @@ function StorePoint({ value, onChange }: { value?: LatLng | null; onChange?: (v:
       onAddress={(a) => {
         if (!String(form.getFieldValue('address') ?? '').trim()) form.setFieldValue('address', a)
       }}
+      onCity={(c) => form.setFieldValue('city', c)}
     />
   )
 }
@@ -60,6 +61,9 @@ export function StoresPage() {
             <Form.Item name="address" label="Адрес">
               <Input />
             </Form.Item>
+            <Form.Item name="city" label="Город" extra="Заполняется по точке на карте. Нужен, чтобы бренды могли рекламироваться в вашем городе.">
+              <Input placeholder="Ташкент" />
+            </Form.Item>
             <Form.Item name="phone" label="Телефон">
               <Input placeholder="+998 …" />
             </Form.Item>
@@ -94,6 +98,7 @@ export function StoresPage() {
         toForm={(r) => ({
           name: r.name,
           address: r.address,
+          city: r.city,
           phone: r.phone,
           geo: r.lat !== null && r.lng !== null ? { lat: r.lat, lng: r.lng } : null,
           status: r.status,
@@ -104,7 +109,7 @@ export function StoresPage() {
         toBody={(v, editing) => {
           const p = v.geo as LatLng | null | undefined
           const geo = p ? { lat: p.lat, lng: p.lng } : {}
-          const base = { name: v.name, address: v.address ?? '', phone: v.phone ?? '', ...geo }
+          const base = { name: v.name, address: v.address ?? '', city: v.city ?? '', phone: v.phone ?? '', ...geo }
           if (!editing) return base
           return {
             ...base,

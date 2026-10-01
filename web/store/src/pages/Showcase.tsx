@@ -3,6 +3,7 @@
 // «Витрина · монетизация»).
 import { useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { App, Button, Drawer, Modal, Select, Space } from 'antd'
 import { BarChartOutlined, CheckOutlined, LockFilled, PictureFilled, ShopOutlined, TrophyFilled } from '@ant-design/icons'
 import { ApiError, HomeEditor, HomeStatsPanel, api, errorText, money, type HomeBlock, type LayoutEditor } from '@sm/shared'
@@ -179,6 +180,7 @@ function PlansModal({ open, data, highlight, onClose }: { open: boolean; data?: 
   const { message, modal } = App.useApp()
   const qc = useQueryClient()
   const [busy, setBusy] = useState<string>()
+  const navigate = useNavigate()
   if (!data) return null
   const choose = (p: Plan) =>
     modal.confirm({
@@ -194,8 +196,16 @@ function PlansModal({ open, data, highlight, onClose }: { open: boolean; data?: 
         try {
           await api.post('/store/showcase/plan', { plan: p.key })
           await qc.invalidateQueries({ queryKey: [BASE] })
-          message.success(`Тариф «${p.name}» подключён`)
           onClose()
+          if (Number(p.price_uzs) > 0) {
+            modal.success({
+              title: `Тариф «${p.name}» подключён`,
+              content: `${money(p.price_uzs)} сум в месяц добавятся в ${data.plan.in_trial ? 'первый счёт после пробного периода' : 'ближайший счёт за подписку'}. Оплатить счёт можно с баланса платформы в разделе «Баланс и подписка». Доля с рекламы брендов уменьшает этот счёт.`,
+              okText: 'Перейти к оплате',
+              onOk: () => navigate('/balance?tab=billing'),
+              closable: true,
+            })
+          } else message.success(`Тариф «${p.name}» подключён`)
         } catch (e) {
           message.error(errorText(e))
         } finally {
@@ -328,6 +338,8 @@ export function ShowcasePage() {
           switch (t) {
             case 'shelf':
               return left(c.shelves, plan.shelves, 'Свои полки', 'shelves')
+            case 'scheduled':
+              return plan.schedule ? left(c.shelves, plan.shelves, 'Свои полки', 'shelves') : { lock: '«Про»', hint: 'Полка сама включится и выключится по датам', feature: 'schedule' }
             case 'promo':
               return left(c.promos, plan.promos, 'Промо-полоски', 'promos')
             case 'banners':

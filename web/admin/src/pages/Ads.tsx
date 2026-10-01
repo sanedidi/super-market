@@ -13,6 +13,7 @@ import {
   InputNumber,
   Modal,
   Segmented,
+  Select,
   Space,
   Switch,
   Table,
@@ -22,7 +23,7 @@ import {
 } from 'antd'
 import { PlusOutlined, SettingOutlined, WarningFilled } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
-import { CrudPage, ImageUpload, LoadError, PageTitle, RemoteSelect, api, date, errorText, money, useAction, useItem, useList } from '@sm/shared'
+import { BannerUpload, CrudPage, LoadError, PageTitle, RemoteSelect, api, date, errorText, money, useAction, useItem, useList } from '@sm/shared'
 import { SearchSelect } from '../components'
 
 interface Named {
@@ -42,6 +43,7 @@ interface Campaign {
   image_url: string
   products: Named[]
   networks: Named[]
+  cities: string[]
   place: 'after_platform' | 'end'
   starts_at: string
   ends_at: string
@@ -220,9 +222,10 @@ function CampaignEditor({ campaign, onSaved }: { campaign: Campaign | null; onSa
         impression_limit: campaign.impression_limit ?? undefined,
       })
     } else {
-      form.setFieldsValue({ format: 'shelf', place: 'after_platform', pricing: 'period', network_ids: [] })
+      form.setFieldsValue({ format: 'shelf', place: 'after_platform', pricing: 'period', network_ids: [], cities: [] })
     }
   }, [campaign, form])
+  const cities = useList<string>('/admin/ads/cities')
   const report = useList<{ network_id: string; network_name: string; billable_views: number; views: number; clicks: number; orders: number; sales: string; suspicious: boolean }>(
     campaign ? `/admin/ads/campaigns/${campaign.id}/report` : null,
   )
@@ -238,6 +241,7 @@ function CampaignEditor({ campaign, onSaved }: { campaign: Campaign | null; onSa
       image_url: v.image_url ?? '',
       product_ids: v.product_ids ?? [],
       network_ids: v.network_ids ?? [],
+      cities: v.cities ?? [],
       place: v.place,
       starts_at: period[0].startOf('day').toISOString(),
       ends_at: period[1].endOf('day').toISOString(),
@@ -285,7 +289,7 @@ function CampaignEditor({ campaign, onSaved }: { campaign: Campaign | null; onSa
               <Input maxLength={80} />
             </Form.Item>
             <Form.Item name="image_url" label="Фото баннера" rules={[{ required: true, message: 'Загрузите фото' }]} extra="1080 × 450; нажатие откроет первый товар бренда в магазине">
-              <ImageUpload hint="Фото" />
+              <BannerUpload hint="Фото баннера" />
             </Form.Item>
           </>
         )}
@@ -296,6 +300,9 @@ function CampaignEditor({ campaign, onSaved }: { campaign: Campaign | null; onSa
         </Form.Item>
         <Form.Item name="network_ids" label="Где показывать" extra="Пусто — во всех сетях">
           <RemoteSelect mode="multiple" path="/admin/networks" placeholder="Все сети" style={{ width: '100%' }} />
+        </Form.Item>
+        <Form.Item name="cities" label="Города" extra="Пусто — во всех городах. Город магазина задаётся в его настройках.">
+          <Select mode="tags" options={(cities.data ?? []).map((c) => ({ value: c, label: c }))} placeholder="Все города" style={{ width: '100%' }} />
         </Form.Item>
         <Form.Item name="place" label="Место на главной">
           <Segmented block options={[{ value: 'after_platform', label: 'После блоков платформы' }, { value: 'end', label: 'В конце' }]} />
@@ -429,7 +436,20 @@ function Campaigns() {
                 ),
               },
               { title: 'Формат', dataIndex: 'format', render: (v) => (v === 'shelf' ? 'Полка' : 'Фото-баннер') },
-              { title: 'Где', render: (_, c) => (c.networks.length ? c.networks.map((n) => n.name).join(', ') : 'Все сети') },
+              {
+                title: 'Где',
+                render: (_, c) => (
+                  <>
+                    {c.networks.length ? c.networks.map((n) => n.name).join(', ') : 'Все сети'}
+                    {c.cities.length > 0 && (
+                      <>
+                        <br />
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{c.cities.join(', ')}</Typography.Text>
+                      </>
+                    )}
+                  </>
+                ),
+              },
               { title: 'Даты', render: (_, c) => `${dayjs(c.starts_at).format('D MMM')} – ${dayjs(c.ends_at).subtract(1, 'second').format('D MMM')}` },
               { title: 'Показы', dataIndex: 'billable_views', align: 'right', render: (v: number) => (v ? num(v) : '—') },
               { title: 'Начислено', dataIndex: 'accrued', align: 'right', render: (v: string) => money(v) },

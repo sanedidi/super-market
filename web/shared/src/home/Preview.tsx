@@ -177,7 +177,9 @@ export function PhonePreview({
   selected,
   onSelect,
   loading,
+  platform = 'ios',
 }: {
+  platform?: 'ios' | 'android'
   blocks: HomeBlock[]
   storeId?: string
   storeName?: string
@@ -191,10 +193,10 @@ export function PhonePreview({
     if (selected) refs.current.get(selected)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [selected])
   return (
-    <div className="smh-phone">
+    <div className={`smh-phone ${platform}`}>
       <div className="smh-screen">
         <div className="smh-header">
-          <div className="smh-status"><span>9:41</span></div>
+          <div className="smh-status"><span>{platform === 'ios' ? '9:41' : '12:30'}</span><i /></div>
           <div className="smh-addr"><span><EnvironmentFilled /> ул. Амира Темура, 12</span><BellOutlined /></div>
           <div className="smh-eta">
             <div><small>Привезём за</small><b>25 мин</b></div>
@@ -219,6 +221,7 @@ export function PhonePreview({
             </div>
           ))}
         </div>
+        {platform === 'android' && <div className="smh-gesture" />}
       </div>
     </div>
   )

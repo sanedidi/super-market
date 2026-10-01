@@ -32,6 +32,7 @@ type Campaign struct {
 	ImageURL        string    `json:"image_url"`
 	Products        []NamedID `json:"products"`
 	Networks        []NamedID `json:"networks"` // пусто — все сети
+	Cities          []string  `json:"cities"`   // пусто — все города
 	Place           string    `json:"place"`    // after_platform | end
 	StartsAt        time.Time `json:"starts_at"`
 	EndsAt          time.Time `json:"ends_at"`
@@ -61,6 +62,7 @@ type CampaignInput struct {
 	ImageURL        *string       `json:"image_url"`
 	ProductIDs      []string      `json:"product_ids"`
 	NetworkIDs      []string      `json:"network_ids"`
+	Cities          []string      `json:"cities"`
 	Place           *string       `json:"place"`
 	StartsAt        *time.Time    `json:"starts_at"`
 	EndsAt          *time.Time    `json:"ends_at"`
@@ -80,7 +82,7 @@ const campaignSelect = `
 	                 FROM products p WHERE p.id = ANY(c.product_ids)), '[]'),
 	       COALESCE((SELECT json_agg(json_build_object('id', n.id, 'name', n.name) ORDER BY n.name)
 	                 FROM networks n WHERE n.id = ANY(c.network_ids)), '[]'),
-	       c.place, c.starts_at, c.ends_at, c.pricing, c.price::text, c.impression_limit, c.paused,
+	       c.cities, c.place, c.starts_at, c.ends_at, c.pricing, c.price::text, c.impression_limit, c.paused,
 	       CASE WHEN c.paused THEN 'paused' WHEN now() < c.starts_at THEN 'scheduled' WHEN now() >= c.ends_at THEN 'finished'
 	            WHEN c.impression_limit IS NOT NULL AND bv.n >= c.impression_limit THEN 'limit' ELSE 'running' END AS status,
 	       COALESCE(ev.views, 0), COALESCE(bv.n, 0), COALESCE(ev.clicks, 0), COALESCE(o.orders, 0), COALESCE(o.sales, 0)::text,
@@ -102,7 +104,7 @@ const campaignSelect = `
 func scanCampaign(r pgx.CollectableRow) (Campaign, error) {
 	var c Campaign
 	err := r.Scan(&c.ID, &c.AdvertiserID, &c.AdvertiserName, &c.BrandID, &c.BrandName, &c.Format, &c.Title, &c.Subtitle, &c.ImageURL,
-		&c.Products, &c.Networks, &c.Place, &c.StartsAt, &c.EndsAt, &c.Pricing, &c.Price, &c.ImpressionLimit, &c.Paused, &c.Status,
+		&c.Products, &c.Networks, &c.Cities, &c.Place, &c.StartsAt, &c.EndsAt, &c.Pricing, &c.Price, &c.ImpressionLimit, &c.Paused, &c.Status,
 		&c.Views, &c.BillableViews, &c.Clicks, &c.Orders, &c.Sales, &c.Accrued, &c.Invoiced, &c.CreatedAt)
 	return c, err
 }
@@ -166,14 +168,14 @@ func (s *Service) SaveCampaign(ctx context.Context, id string, in CampaignInput)
 	}
 	c := struct {
 		advertiser, brand, format, title, subtitle, image, place, pricing, price string
-		products, networks                                                       []string
+		products, networks, cities                                               []string
 		starts, ends                                                             time.Time
 		limit                                                                    *int64
 		paused                                                                   bool
 	}{
 		str(in.AdvertiserID, cur.AdvertiserID), str(in.BrandID, cur.BrandID), str(in.Format, cur.Format), str(in.Title, cur.Title),
 		str(in.Subtitle, cur.Subtitle), str(in.ImageURL, cur.ImageURL), str(in.Place, valueOr(cur.Place, "after_platform")),
-		str(in.Pricing, cur.Pricing), cur.Price, ids(cur.Products), ids(cur.Networks), cur.StartsAt, cur.EndsAt, cur.ImpressionLimit, cur.Paused,
+		str(in.Pricing, cur.Pricing), cur.Price, ids(cur.Products), ids(cur.Networks), cur.Cities, cur.StartsAt, cur.EndsAt, cur.ImpressionLimit, cur.Paused,
 	}
 	if in.Price != nil {
 		c.price = string(*in.Price)
@@ -183,6 +185,20 @@ func (s *Service) SaveCampaign(ctx context.Context, id string, in CampaignInput)
 	}
 	if in.NetworkIDs != nil {
 		c.networks = in.NetworkIDs
+	}
+	if in.Cities != nil {
+		c.cities = []string{}
+		for _, x := range in.Cities {
+			if x = strings.TrimSpace(x); x != "" {
+				c.cities = append(c.cities, x)
+			}
+		}
+	}
+	if c.cities == nil {
+		c.cities = []string{}
+	}
+	if len(c.cities) > 30 {
+		return Campaign{}, apperr.Validation("cities: не больше 30 городов")
 	}
 	if in.StartsAt != nil {
 		c.starts = *in.StartsAt
@@ -244,16 +260,16 @@ func (s *Service) SaveCampaign(ctx context.Context, id string, in CampaignInput)
 	var err error
 	if id == "" {
 		err = s.pool.QueryRow(ctx, `INSERT INTO ad_campaigns (advertiser_id, brand_id, format, title, subtitle, image_url, product_ids,
-			network_ids, place, starts_at, ends_at, pricing, price, impression_limit, paused)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::numeric, $14, $15) RETURNING id`,
+			network_ids, place, starts_at, ends_at, pricing, price, impression_limit, paused, cities)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::numeric, $14, $15, $16) RETURNING id`,
 			c.advertiser, c.brand, c.format, c.title, c.subtitle, c.image, c.products, c.networks, c.place, c.starts, c.ends,
-			c.pricing, c.price, c.limit, c.paused).Scan(&id)
+			c.pricing, c.price, c.limit, c.paused, c.cities).Scan(&id)
 	} else {
 		_, err = s.pool.Exec(ctx, `UPDATE ad_campaigns SET advertiser_id = $2, brand_id = $3, format = $4, title = $5, subtitle = $6,
 			image_url = $7, product_ids = $8, network_ids = $9, place = $10, starts_at = $11, ends_at = $12, pricing = $13,
-			price = $14::numeric, impression_limit = $15, paused = $16, updated_at = now() WHERE id = $1`,
+			price = $14::numeric, impression_limit = $15, paused = $16, cities = $17, updated_at = now() WHERE id = $1`,
 			id, c.advertiser, c.brand, c.format, c.title, c.subtitle, c.image, c.products, c.networks, c.place, c.starts, c.ends,
-			c.pricing, c.price, c.limit, c.paused)
+			c.pricing, c.price, c.limit, c.paused, c.cities)
 	}
 	if err != nil {
 		return Campaign{}, err
@@ -339,3 +355,12 @@ func (s *Service) Summary(ctx context.Context) (Summary, error) {
 const monthRevenue = `CASE WHEN c.pricing = 'period'
 	THEN round(c.price * GREATEST(0, LEAST(b.ed, m.today) - GREATEST(b.sd, m.p0) + 1) / (b.ed - b.sd + 1), 2)
 	ELSE round(c.price * COALESCE(bv.n, 0) / 1000, 2) END`
+
+// Cities — города магазинов (для выбора в кампании).
+func (s *Service) Cities(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT DISTINCT btrim(city) FROM stores WHERE btrim(city) <> '' AND status = 'active' ORDER BY 1`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
+}

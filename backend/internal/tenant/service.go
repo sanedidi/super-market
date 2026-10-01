@@ -158,12 +158,13 @@ type Store struct {
 	OnlinePriceTypeID  *string   `json:"online_price_type_id"`
 	CreatedAt          time.Time `json:"created_at"`
 	LogoURL            string    `json:"logo_url"`
+	City               string    `json:"city"`
 }
 
 const storeSelect = `
 	SELECT id, name, address, phone,
 	       ST_Y(location::geometry), ST_X(location::geometry),
-	       status, default_warehouse_id, online_price_type_id, created_at, logo_url
+	       status, default_warehouse_id, online_price_type_id, created_at, logo_url, city
 	FROM stores`
 
 type StoreInput struct {
@@ -176,6 +177,7 @@ type StoreInput struct {
 	DefaultWarehouseID *string  `json:"default_warehouse_id"`
 	OnlinePriceTypeID  *string  `json:"online_price_type_id"`
 	LogoURL            *string  `json:"logo_url"`
+	City               *string  `json:"city"`
 }
 
 func (in StoreInput) validate() error {
@@ -193,6 +195,9 @@ func (in StoreInput) validate() error {
 	}
 	if in.DefaultWarehouseID != nil && !httpx.IsUUID(*in.DefaultWarehouseID) {
 		return apperr.Validation("default_warehouse_id: склад не найден")
+	}
+	if in.City != nil && len([]rune(strings.TrimSpace(*in.City))) > 60 {
+		return apperr.Validation("city: не длиннее 60 символов")
 	}
 	if in.LogoURL != nil && *in.LogoURL != "" && !strings.HasPrefix(*in.LogoURL, "https://") && !strings.HasPrefix(*in.LogoURL, "http://") {
 		return apperr.Validation("logo_url: ожидается ссылка http(s)")
@@ -279,12 +284,12 @@ func (s *Service) CreateStore(ctx context.Context, p *identity.Principal, in Sto
 
 		var id string
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO stores (network_id, name, address, phone, location)
+			INSERT INTO stores (network_id, name, address, phone, location, city)
 			VALUES ($1, $2, COALESCE($3, ''), COALESCE($4, ''),
 			        CASE WHEN $5::float8 IS NULL THEN NULL
-			             ELSE ST_SetSRID(ST_MakePoint($6::float8, $5::float8), 4326)::geography END)
+			             ELSE ST_SetSRID(ST_MakePoint($6::float8, $5::float8), 4326)::geography END, COALESCE($7, ''))
 			RETURNING id`,
-			p.NetworkID, strings.TrimSpace(*in.Name), trimPtr(in.Address), trimPtr(in.Phone), in.Lat, in.Lng).Scan(&id); err != nil {
+			p.NetworkID, strings.TrimSpace(*in.Name), trimPtr(in.Address), trimPtr(in.Phone), in.Lat, in.Lng, trimPtr(in.City)).Scan(&id); err != nil {
 			return err
 		}
 		var whID string
@@ -359,10 +364,11 @@ func (s *Service) UpdateStore(ctx context.Context, p *identity.Principal, id str
 				status   = COALESCE($8, status),
 				default_warehouse_id = COALESCE($9, default_warehouse_id),
 				online_price_type_id = CASE WHEN $10 THEN $11::uuid ELSE online_price_type_id END,
-				logo_url = COALESCE($12, logo_url)
+				logo_url = COALESCE($12, logo_url),
+				city     = COALESCE($13, city)
 			WHERE id = $1 AND network_id = $2`,
 			id, p.NetworkID, trimPtr(in.Name), trimPtr(in.Address), trimPtr(in.Phone),
-			in.Lat, in.Lng, in.Status, in.DefaultWarehouseID, setOnline, online, trimPtr(in.LogoURL))
+			in.Lat, in.Lng, in.Status, in.DefaultWarehouseID, setOnline, online, trimPtr(in.LogoURL), trimPtr(in.City))
 		if err != nil {
 			return err
 		}

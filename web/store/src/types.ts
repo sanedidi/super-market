@@ -25,6 +25,7 @@ export type Store = {
   online_price_type_id: string | null
   created_at: string
   logo_url: string
+  city: string
 }
 
 export type Warehouse = { id: string; store_id: string; name: string; is_active: boolean; is_default: boolean }
@@ -446,6 +447,9 @@ export type Invoice = {
   paid_at: string | null
   note: string
   created_at: string
+  showcase_plan?: string | null
+  showcase_uzs?: string
+  ad_share_uzs?: string
 }
 
 export type CashboxFlow = {

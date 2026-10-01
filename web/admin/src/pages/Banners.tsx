@@ -2,7 +2,7 @@
 import { App, Button, DatePicker, Form, Input, InputNumber, Modal, Segmented, Select, Space, Switch, Tag, Typography } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useState } from 'react'
-import { ActiveTag, CrudPage, ImageUpload, RemoteSelect, api, dateTime, useAction } from '@sm/shared'
+import { ActiveTag, BannerUpload, CrudPage, RemoteSelect, api, dateTime, useAction } from '@sm/shared'
 import { SearchSelect } from '../components'
 import { useUrlState } from '../hooks'
 
@@ -171,7 +171,7 @@ export function Banners() {
             <Input placeholder="Только до воскресенья" />
           </Form.Item>
           <Form.Item name="image_url" label="Картинка" extra="Необязательно; без картинки баннер — цветная плашка">
-            <ImageUpload hint="Картинка" />
+            <BannerUpload hint="Картинка баннера" />
           </Form.Item>
           <Form.Item name="show_text" label="Подпись на фото" valuePropName="checked" initialValue={true} extra="Выключите, если текст уже нарисован на картинке">
             <Switch />

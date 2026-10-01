@@ -1,12 +1,12 @@
 // Настройки выбранного блока (Figma «Админка · Главная приложения»).
 import { useState, type ReactNode } from 'react'
 import { App, Button, DatePicker, Input, InputNumber, Segmented, Select, Switch, Tooltip } from 'antd'
-import { CloseOutlined, DeleteOutlined, PushpinFilled, UpOutlined, DownOutlined, CloudUploadOutlined, LockFilled } from '@ant-design/icons'
+import { CloseOutlined, DeleteOutlined, PushpinFilled, UpOutlined, DownOutlined, LockFilled } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { api } from '../api'
 import { RemoteSelect } from '../components'
 import { useItem, useList, errorText } from '../hooks'
-import { ImageUpload } from '../upload'
+import { BannerUpload } from '../crop'
 import { CATALOG_VIEWS, COLORS, ICONS, LINKS, SHAPES, SHELF_VIEWS, SOURCES, typeMeta } from './meta'
 import type { BlockLink, HomeBlock } from './types'
 
@@ -191,10 +191,7 @@ function NewBanner({ path, onCreated }: { path: string; onCreated: (id: string) 
   if (!url) {
     return (
       <div className="smh-upload">
-        <ImageUpload value={url} onChange={setUrl} hint="Загрузить фото баннера" />
-        <span>
-          <CloudUploadOutlined /> JPG или PNG · 1080 × 450
-        </span>
+        <BannerUpload value={url} onChange={setUrl} />
       </div>
     )
   }

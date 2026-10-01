@@ -66,6 +66,17 @@ export function useFitMap(el: React.RefObject<HTMLDivElement | null>, map: any) 
   }, [map, el])
 }
 
+/** Город точки (населённый пункт по геокодеру). */
+export async function cityAt(ymaps: any, p: LatLng): Promise<string | null> {
+  try {
+    const res = await ymaps.geocode([p.lat, p.lng], { results: 1, kind: 'locality' })
+    const obj = res.geoObjects.get(0)
+    return obj ? (obj.getLocalities?.()[0] ?? obj.properties.get('name') ?? null) : null
+  } catch {
+    return null
+  }
+}
+
 /** Адрес точки (нужен ключ с геокодером). */
 export async function addressAt(ymaps: any, p: LatLng): Promise<string | null> {
   try {
@@ -82,17 +93,19 @@ interface PickerProps {
   onChange?: (v: LatLng | null) => void
   /** Вызывается с адресом новой точки, если его удалось определить. */
   onAddress?: (address: string) => void
+  /** Вызывается с городом новой точки. */
+  onCity?: (city: string) => void
   height?: number
 }
 
 /** Точка на карте: клик или перетаскивание метки, поиск по адресу. Для Form.Item. */
-export function MapPointPicker({ value, onChange, onAddress, height = 280 }: PickerProps) {
+export function MapPointPicker({ value, onChange, onAddress, onCity, height = 280 }: PickerProps) {
   const { ymaps, error } = useYmaps()
   const box = useRef<HTMLDivElement>(null)
   const [map, setMap] = useState<any>(null)
   const mark = useRef<any>(null)
-  const cb = useRef({ onChange, onAddress })
-  cb.current = { onChange, onAddress }
+  const cb = useRef({ onChange, onAddress, onCity })
+  cb.current = { onChange, onAddress, onCity }
 
   useEffect(() => {
     if (!ymaps || !box.current) return
@@ -102,6 +115,7 @@ export function MapPointPicker({ value, onChange, onAddress, height = 280 }: Pic
       const p = { lat: +coords[0].toFixed(6), lng: +coords[1].toFixed(6) }
       cb.current.onChange?.(p)
       if (cb.current.onAddress) void addressAt(ymaps, p).then((a) => a && cb.current.onAddress?.(a))
+      if (cb.current.onCity) void cityAt(ymaps, p).then((c) => c && cb.current.onCity?.(c))
     }
     m.events.add('click', (e: any) => set(e.get('coords')))
     const search = m.controls.get('searchControl')

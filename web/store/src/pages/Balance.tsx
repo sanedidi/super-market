@@ -1,7 +1,10 @@
 // Баланс сети на платформе, вывод денег и подписка.
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Alert, Button, Card, Col, Descriptions, Form, Input, Modal, Popconfirm, Row, Statistic, Table, Tabs, Tag } from 'antd'
 import { LoadError, PageTitle, PagedTable, StatusTag, api, date, dateTime, money, periodParams, useAction, useItem, usePaged } from '@sm/shared'
+import { useStore } from '../ctx'
 import { RangeFilter, Num, Signed, thisMonth, type Range } from '../ui'
 import type { Balance, BalanceEntry, Billing, Invoice, Payout } from '../types'
 
@@ -11,12 +14,15 @@ const entryKinds: Record<string, string> = {
   payout: 'Вывод',
   subscription: 'Подписка',
   adjustment: 'Корректировка',
+  ad_share: 'Доля с рекламы брендов',
 }
 
 export function BalancePage() {
   const balance = useItem<Balance>('/store/balance')
   const billing = useItem<Billing>('/store/billing')
   const [payout, setPayout] = useState(false)
+  const [params, setParams] = useSearchParams()
+  const tab = params.get('tab') ?? 'entries'
   const b = balance.data
 
   return (
@@ -56,6 +62,8 @@ export function BalancePage() {
       </Row>
       <Card>
         <Tabs
+          activeKey={tab}
+          onChange={(k) => setParams(k === 'entries' ? {} : { tab: k }, { replace: true })}
           items={[
             { key: 'entries', label: 'Движения', children: <Entries /> },
             { key: 'payouts', label: 'Заявки на вывод', children: <Payouts /> },
@@ -140,6 +148,32 @@ function PayoutModal({ open, onClose, available }: { open: boolean; onClose: () 
   )
 }
 
+function AdShareLine() {
+  const { can } = useStore()
+  const q = useQuery({
+    queryKey: ['/store/ads'],
+    queryFn: () => api.get<{ month_share: string; share_pct: string; share_to_subscription: boolean; month_views: number }>('/store/ads'),
+    enabled: can('showcase.manage'),
+    retry: false,
+  })
+  const d = q.data
+  if (!d) return null
+  return (
+    <Alert
+      type="success"
+      showIcon
+      style={{ marginBottom: 16 }}
+      message={
+        <>
+          Доля с рекламы брендов за этот месяц: <b>{money(d.month_share)} сум</b> ({Number(d.share_pct).toLocaleString('ru-RU')}% · {d.month_views.toLocaleString('ru-RU')} показов).{' '}
+          {d.share_to_subscription ? 'Зачтём в следующий счёт за подписку, остаток — на баланс.' : 'Зачислим на баланс после конца месяца.'}{' '}
+          <Link to="/brand-ads">Подробнее</Link>
+        </>
+      }
+    />
+  )
+}
+
 function Subscription({ billing }: { billing?: Billing }) {
 
   const pay = useAction((id: string) => api.post(`/store/billing/invoices/${id}/pay`), { success: 'Счёт оплачен с баланса' })
@@ -157,6 +191,7 @@ function Subscription({ billing }: { billing?: Billing }) {
           <Descriptions.Item label="Просрочка">{billing.overdue ? <Tag color="red">Да</Tag> : 'Нет'}</Descriptions.Item>
         </Descriptions>
       )}
+      <AdShareLine />
       <PagedTable<Invoice>
         path="/store/billing/invoices"
         pageSize={24}
@@ -167,7 +202,19 @@ function Subscription({ billing }: { billing?: Billing }) {
           { title: 'Магазинов', dataIndex: 'stores_count', align: 'right' },
           { title: 'Сумма, $', dataIndex: 'amount_usd', align: 'right', render: (v: string) => money(v) },
           { title: 'Курс', dataIndex: 'rate', align: 'right', render: (v: string) => money(v) },
-          { title: 'Сумма, сум', dataIndex: 'amount_uzs', align: 'right', render: (v: string) => <b>{money(v)}</b> },
+          {
+            title: 'Витрина, сум',
+            dataIndex: 'showcase_uzs',
+            align: 'right',
+            render: (v?: string) => (Number(v) ? money(v!) : '—'),
+          },
+          {
+            title: 'Зачтено с рекламы',
+            dataIndex: 'ad_share_uzs',
+            align: 'right',
+            render: (v?: string) => (Number(v) ? <span style={{ color: '#2E9E5B' }}>−{money(v!)}</span> : '—'),
+          },
+          { title: 'К оплате, сум', dataIndex: 'amount_uzs', align: 'right', render: (v: string) => <b>{money(v)}</b> },
           { title: 'Оплатить до', dataIndex: 'due_date', render: (v: string) => date(v) },
           {
             title: 'Статус',

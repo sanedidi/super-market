@@ -35,7 +35,7 @@ func MaxAds(plan showcase.Plan, networkChoice *int) int {
 // идут, не на паузе, не выбрали лимит показов, нацелены на эту сеть, бренд
 // не скрыт сетью. Берётся с запасом (лимит доставки — у сборки главной:
 // кампания без товаров в наличии пропускается).
-func LiveForStore(ctx context.Context, q db.Querier, networkID string, now time.Time) ([]Spot, error) {
+func LiveForStore(ctx context.Context, q db.Querier, networkID, storeID string, now time.Time) ([]Spot, error) {
 	rows, err := q.Query(ctx, `
 		WITH n AS (SELECT ads_hidden_brands, ads_excluded_categories FROM networks WHERE id = $1),
 		     st AS (SELECT allow_hide_brands, allow_exclude_categories FROM ad_settings WHERE id = 1),
@@ -49,13 +49,14 @@ func LiveForStore(ctx context.Context, q db.Querier, networkID string, now time.
 		       COALESCE(array(SELECT p.id::text FROM unnest(c.product_ids) WITH ORDINALITY u(id, ord)
 		                      JOIN products p ON p.id = u.id
 		                      WHERE p.category_id NOT IN (SELECT id FROM ex) ORDER BY u.ord), '{}')
-		FROM ad_campaigns c JOIN brands br ON br.id = c.brand_id, n, st
+		FROM ad_campaigns c JOIN brands br ON br.id = c.brand_id, n, st, (SELECT lower(btrim(city)) AS city FROM stores WHERE id = $3) sx
 		WHERE NOT c.paused AND $2 >= c.starts_at AND $2 < c.ends_at
+		  AND (cardinality(c.cities) = 0 OR sx.city IN (SELECT lower(btrim(x)) FROM unnest(c.cities) x))
 		  AND (cardinality(c.network_ids) = 0 OR $1::uuid = ANY(c.network_ids))
 		  AND NOT (st.allow_hide_brands AND c.brand_id = ANY(n.ads_hidden_brands))
 		  AND (c.impression_limit IS NULL OR (SELECT count(*) FROM ad_views v WHERE v.campaign_id = c.id) < c.impression_limit)
 		ORDER BY c.place, c.starts_at, c.id
-		LIMIT 10`, networkID, now)
+		LIMIT 10`, networkID, now, storeID)
 	if err != nil {
 		return nil, err
 	}

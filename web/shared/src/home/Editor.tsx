@@ -3,8 +3,9 @@
 // видят их после «Опубликовать».
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { App, Button, Drawer, Dropdown, Modal, Select, Spin, Switch, Tag } from 'antd'
-import { CopyOutlined, DeleteOutlined, EditFilled, HistoryOutlined, HolderOutlined, LockFilled, MoreOutlined, PlusOutlined, PushpinFilled, CarFilled, LayoutFilled } from '@ant-design/icons'
+import { App, Button, Drawer, Dropdown, Modal, Segmented, Select, Spin, Switch, Tag } from 'antd'
+import dayjs from 'dayjs'
+import { CopyOutlined, DeleteOutlined, EditFilled, HistoryOutlined, HolderOutlined, LockFilled, MoreOutlined, PlusOutlined, PushpinFilled, CarFilled, LayoutFilled, CalendarFilled, AppleFilled, AndroidFilled } from '@ant-design/icons'
 import { api, query } from '../api'
 import { LoadError } from '../components'
 import { dateTime } from '../format'
@@ -54,6 +55,21 @@ export interface BlockFeatures {
   manual?: boolean
 }
 
+/** Что можно добавить: типы блоков и «Блок по расписанию» (полка с датами). */
+export type AddKind = BlockType | 'scheduled'
+
+const SCHEDULED = { type: 'scheduled' as const, icon: <CalendarFilled />, title: 'Блок по расписанию', text: 'Полка сама включится и выключится по датам — акция к празднику' }
+
+function scheduledBlock(): HomeBlock {
+  return {
+    ...defaultBlock('shelf'),
+    title: 'Акция недели',
+    source: 'discount',
+    starts_at: dayjs().startOf('day').toISOString(),
+    ends_at: dayjs().startOf('day').add(7, 'day').toISOString(),
+  }
+}
+
 function AddBlockModal({
   open,
   onClose,
@@ -63,12 +79,12 @@ function AddBlockModal({
 }: {
   open: boolean
   onClose: () => void
-  onAdd: (t: BlockType) => void
-  info?: (t: BlockType) => AddInfo | undefined
+  onAdd: (t: AddKind) => void
+  info?: (t: AddKind) => AddInfo | undefined
   onLocked?: (feature: string) => void
 }) {
-  const [picked, setPicked] = useState<BlockType>('shelf')
-  const pick = (t: BlockType) => {
+  const [picked, setPicked] = useState<AddKind>('shelf')
+  const pick = (t: AddKind) => {
     const i = info?.(t)
     if (i?.lock) {
       onClose()
@@ -93,7 +109,7 @@ function AddBlockModal({
       width={600}
     >
       <div className="smh-types">
-        {BLOCK_TYPES.map((t) => {
+        {[...BLOCK_TYPES, SCHEDULED].map((t) => {
           const i = info?.(t.type)
           return (
             <button
@@ -204,7 +220,7 @@ export function HomeEditor({
   /** Блок нельзя менять (закреплён платформой). */
   locked?: (b: HomeBlock) => boolean
   /** Для окна «Добавить блок»: замок и подсказка по тарифу. */
-  addInfo?: (t: BlockType, blocks: HomeBlock[], raw: unknown) => AddInfo | undefined
+  addInfo?: (t: AddKind, blocks: HomeBlock[], raw: unknown) => AddInfo | undefined
   /** Что доступно в настройках блока (тариф). */
   features?: BlockFeatures
   onUpgrade?: (feature: string) => void
@@ -220,6 +236,7 @@ export function HomeEditor({
   const layout = { ...rawQ, data: rawQ.data === undefined ? undefined : unwrap(rawQ.data) }
   const [blocks, setBlocks] = useState<HomeBlock[] | null>(null)
   const [selected, setSelected] = useState<string>()
+  const [platform, setPlatform] = useState<'ios' | 'android'>('ios')
   const [adding, setAdding] = useState(false)
   const [versions, setVersions] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -508,7 +525,16 @@ export function HomeEditor({
             <h2>Предпросмотр</h2>
             <span>Так увидит покупатель</span>
           </div>
-          <PhonePreview blocks={lastPreview.current} storeId={storeId} storeName={store?.name} selected={selected} onSelect={setSelected} loading={preview.isFetching} />
+          <Segmented
+            className="smh-platform"
+            value={platform}
+            onChange={(v) => setPlatform(v as 'ios' | 'android')}
+            options={[
+              { value: 'ios', label: 'iPhone', icon: <AppleFilled /> },
+              { value: 'android', label: 'Android', icon: <AndroidFilled /> },
+            ]}
+          />
+          <PhonePreview platform={platform} blocks={lastPreview.current} storeId={storeId} storeName={store?.name} selected={selected} onSelect={setSelected} loading={preview.isFetching} />
           <Select
             className="smh-preview-store"
             value={storeId}
@@ -529,7 +555,7 @@ export function HomeEditor({
         open={adding}
         onClose={() => setAdding(false)}
         onAdd={(t) => {
-          const b = defaultBlock(t)
+          const b = t === 'scheduled' ? scheduledBlock() : defaultBlock(t)
           save([...blocks, b])
           setSelected(b.id)
           setAdding(false)

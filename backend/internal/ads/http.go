@@ -26,6 +26,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/admin/ads/settings", m.getSettings)
 		r.Put("/admin/ads/settings", m.saveSettings)
 		r.Get("/admin/ads/summary", m.summary)
+		r.Get("/admin/ads/cities", m.cities)
 		r.Get("/admin/ads/advertisers", m.advertisers)
 		r.Post("/admin/ads/advertisers", m.saveAdvertiser)
 		r.Patch("/admin/ads/advertisers/{id}", m.saveAdvertiser)
@@ -150,5 +151,12 @@ func (m *Module) networkAds(w http.ResponseWriter, r *http.Request) {
 func (m *Module) saveNetworkAds(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in NetworkAdsInput) (NetworkAds, error) {
 		return m.svc.SaveNetworkAds(r.Context(), pr(r).NetworkID, in)
+	})
+}
+
+func (m *Module) cities(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[string], error) {
+		items, err := m.svc.Cities(r.Context())
+		return httpx.List[string]{Items: items}, err
 	})
 }

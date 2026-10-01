@@ -60,6 +60,22 @@ func TestBrandAds(t *testing.T) {
 		t.Fatalf("ad block = %v", b)
 	}
 
+	// Города: кампания только для Самарканда — в магазине без города её нет.
+	a.expect(a.do("PATCH", "/admin/ads/campaigns/"+cid, adminTok, map[string]any{"cities": []string{"Самарканд"}}), 200, "cities")
+	if adBlock() != nil {
+		t.Fatal("city filter ignored")
+	}
+	a.expect(a.do("PATCH", "/store/stores/"+shop.store, owner, map[string]any{"city": " самарканд "}), 200, "store city")
+	// Правка кампании сбрасывает минутный кэш главной.
+	a.expect(a.do("PATCH", "/admin/ads/campaigns/"+cid, adminTok, map[string]any{"cities": []string{"Самарканд", "Бухара"}}), 200, "cities 2")
+	if adBlock() == nil {
+		t.Fatal("city match failed")
+	}
+	if c := a.expect(a.do("GET", "/admin/ads/cities", adminTok, nil), 200, "cities list").Body["items"].([]any); len(c) != 1 || c[0] != "самарканд" {
+		t.Fatalf("cities = %v", c)
+	}
+	a.expect(a.do("PATCH", "/admin/ads/campaigns/"+cid, adminTok, map[string]any{"cities": []string{}}), 200, "all cities")
+
 	// Показы: вошедший покупатель — один оплачиваемый в день, аноним — не в оплату.
 	ev := map[string]any{"store_id": shop.store, "items": []map[string]any{{"block_id": cid, "views": 1}}}
 	a.expect(a.do("POST", "/client/home/events", shop.client, ev), 204, "views 1")

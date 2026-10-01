@@ -500,7 +500,7 @@ func (s *Service) withAds(ctx context.Context, storeID, networkID string, blocks
 	if max <= 0 {
 		return blocks, nil
 	}
-	spots, err := ads.LiveForStore(ctx, s.pool, networkID, now)
+	spots, err := ads.LiveForStore(ctx, s.pool, networkID, storeID, now)
 	if err != nil {
 		return nil, err
 	}
