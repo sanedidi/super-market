@@ -1,9 +1,9 @@
 // «Каталог → Главная приложения»: шаблон для всех сетей или витрина одной сети.
 import { useState } from 'react'
-import { App, Button } from 'antd'
-import { GlobalOutlined, RollbackOutlined } from '@ant-design/icons'
+import { App, Button, Drawer, Space } from 'antd'
+import { BarChartOutlined, GlobalOutlined, RollbackOutlined } from '@ant-design/icons'
 import { useQueryClient } from '@tanstack/react-query'
-import { HomeEditor, api, errorText } from '@sm/shared'
+import { HomeEditor, HomeStatsPanel, api, errorText } from '@sm/shared'
 import { SearchSelect } from '../components'
 import { useUrlState } from '../hooks'
 
@@ -12,8 +12,13 @@ export function AppHome() {
   const { message, modal } = App.useApp()
   const qc = useQueryClient()
   const [reload, setReload] = useState(0)
+  const [stats, setStats] = useState(false)
   const params = { network_id: network }
   return (
+    <>
+    <Drawer open={stats} onClose={() => setStats(false)} width={980} title={null}>
+      <HomeStatsPanel path="/admin/home/stats" params={{ network_id: network }} subtitle={network ? 'одна сеть' : 'все сети'} />
+    </Drawer>
     <HomeEditor
       key={`${network ?? 'platform'}-${reload}`}
       title="Главная приложения"
@@ -29,6 +34,10 @@ export function AppHome() {
       paths={{ products: '/admin/products', categories: '/admin/catalog/categories', banners: '/admin/banners' }}
       canPin={!network}
       scope={
+        <Space>
+        <Button size="large" icon={<BarChartOutlined />} onClick={() => setStats(true)}>
+          Статистика
+        </Button>
         <SearchSelect
           path="/admin/networks"
           size="large"
@@ -42,6 +51,7 @@ export function AppHome() {
           }
           style={{ width: 240 }}
         />
+        </Space>
       }
       extraActions={(l) =>
         l.network_id && l.version > 0 ? (
@@ -76,5 +86,6 @@ export function AppHome() {
         ) : null
       }
     />
+    </>
   )
 }

@@ -44,6 +44,7 @@ func (m *Module) Routes(r chi.Router) {
 	r.Get("/client/stores/{id}/products/{pid}/related", m.related)
 	r.Get("/client/home", m.home)
 	r.Get("/client/stores/{id}/home", m.storeHome)
+	r.Post("/client/home/events", m.homeEvents)
 	r.Get("/client/stores/{id}/slots", m.slots)
 	r.Group(func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppClient))
@@ -87,6 +88,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.With(showcaseManage).Delete("/store/home", m.storeLayoutAct(m.svc.ResetLayout))
 		r.With(showcaseManage).Get("/store/home/stores", m.storePreviewStores)
 		r.With(showcaseManage).Post("/store/home/preview", m.storePreview)
+		r.With(showcaseManage).Get("/store/home/stats", m.storeHomeStats)
 		r.Post("/store/showcase/plan", m.storeChoosePlan)
 
 		r.With(manage).Get("/store/orders", m.storeList)
@@ -132,6 +134,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/admin/home/restore", m.adminRestore)
 		r.Delete("/admin/home", m.adminHomeAct(m.svc.ResetLayout))
 		r.Get("/admin/showcase/plans", m.adminPlans)
+		r.Get("/admin/home/stats", m.adminHomeStats)
 		r.Patch("/admin/showcase/plans/{key}", m.adminSavePlan)
 		r.Get("/admin/home/stores", m.adminPreviewStores)
 		r.Post("/admin/home/preview", m.adminPreview)
@@ -692,3 +695,33 @@ func (m *Module) tracking(w http.ResponseWriter, r *http.Request) {
 	})
 }
 func pr(r *http.Request) *identity.Principal { return identity.FromContext(r.Context()) }
+
+func daysParam(r *http.Request) int {
+	d, _ := strconv.Atoi(r.URL.Query().Get("days"))
+	return d
+}
+
+func (m *Module) homeEvents(w http.ResponseWriter, r *http.Request) {
+	var in HomeEventsInput
+	if err := httpx.Decode(r, &in); err != nil {
+		httpx.Fail(w, r, m.log, err)
+		return
+	}
+	if err := m.svc.RecordHomeEvents(r.Context(), in); err != nil {
+		httpx.Fail(w, r, m.log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (m *Module) storeHomeStats(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (HomeStats, error) {
+		return m.svc.StoreHomeStats(r.Context(), pr(r), storeParam(r), daysParam(r))
+	})
+}
+
+func (m *Module) adminHomeStats(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (HomeStats, error) {
+		return m.svc.AdminHomeStats(r.Context(), r.URL.Query().Get("network_id"), daysParam(r))
+	})
+}

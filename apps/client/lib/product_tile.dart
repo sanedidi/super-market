@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import 'cart_actions.dart';
+import 'home_tracking.dart';
 import 'main.dart';
 import 'screens/product_screen.dart';
 import 'state.dart';
@@ -16,6 +17,8 @@ StoreRef storeRef(Store s) => (id: s.id, name: s.name);
 
 /// Открыть карточку товара — шторкой снизу почти на весь экран.
 Future<void> openProduct(BuildContext context, StoreRef store, Product product) {
+  // Открыли с главной — карточка помнит блок (заказы по блокам витрины).
+  final block = HomeBlockScope.of(context);
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -24,7 +27,10 @@ Future<void> openProduct(BuildContext context, StoreRef store, Product product) 
     backgroundColor: AppColors.white,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.sheet))),
     clipBehavior: Clip.antiAlias,
-    builder: (_) => FractionallySizedBox(heightFactor: 0.96, child: ProductScreen(store: store, product: product)),
+    builder: (_) {
+      final sheet = FractionallySizedBox(heightFactor: 0.96, child: ProductScreen(store: store, product: product));
+      return block == null ? sheet : HomeBlockScope(blockId: block, child: sheet);
+    },
   );
 }
 

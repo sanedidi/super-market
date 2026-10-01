@@ -82,9 +82,12 @@ class Store {
 }
 
 class CartLine {
-  CartLine(this.product, this.qty);
+  CartLine(this.product, this.qty, {this.blockId});
   final Product product;
   num qty;
+
+  /// Блок главной, из которого товар добавили (статистика витрины).
+  String? blockId;
 }
 
 /// Состояние приложения: адреса, выбранный адрес, корзина одного магазина.
@@ -260,7 +263,7 @@ class AppState extends ChangeNotifier {
 
   /// Изменить количество. Корзина — одного магазина; товар другого магазина
   /// очищает её (UI спрашивает подтверждение заранее).
-  void setQty(String storeId, String storeName, Product p, num qty) {
+  void setQty(String storeId, String storeName, Product p, num qty, {String? blockId}) {
     if (cartStoreId != null && cartStoreId != storeId) {
       cart.clear();
       familyRequestId = null;
@@ -272,7 +275,8 @@ class AppState extends ChangeNotifier {
     if (qty <= 0) {
       cart.remove(p.id);
     } else {
-      cart.putIfAbsent(p.id, () => CartLine(p, qty)).qty = qty;
+      final line = cart.putIfAbsent(p.id, () => CartLine(p, qty, blockId: blockId))..qty = qty;
+      line.blockId ??= blockId;
     }
     if (cart.isEmpty) {
       cartStoreId = null;
@@ -290,7 +294,7 @@ class AppState extends ChangeNotifier {
   }
 
   List<Map<String, dynamic>> get cartItems =>
-      cart.values.map((l) => {'product_id': l.product.id, 'qty': l.qty.toString()}).toList();
+      cart.values.map((l) => {'product_id': l.product.id, 'qty': l.qty.toString(), if (l.blockId != null) 'block_id': l.blockId}).toList();
 
   /// Профиль покупателя (/client/me) и статистика (/client/me/stats).
   Map<String, dynamic>? profile;

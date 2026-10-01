@@ -3,9 +3,9 @@
 // «Витрина · монетизация»).
 import { useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { App, Button, Modal, Select } from 'antd'
-import { CheckOutlined, LockFilled, PictureFilled, ShopOutlined, TrophyFilled } from '@ant-design/icons'
-import { ApiError, HomeEditor, api, errorText, money, type HomeBlock, type LayoutEditor } from '@sm/shared'
+import { App, Button, Drawer, Modal, Select, Space } from 'antd'
+import { BarChartOutlined, CheckOutlined, LockFilled, PictureFilled, ShopOutlined, TrophyFilled } from '@ant-design/icons'
+import { ApiError, HomeEditor, HomeStatsPanel, api, errorText, money, type HomeBlock, type LayoutEditor } from '@sm/shared'
 
 interface Plan {
   key: 'start' | 'business' | 'pro'
@@ -247,6 +247,7 @@ function PlansModal({ open, data, highlight, onClose }: { open: boolean; data?: 
 export function ShowcasePage() {
   const [storeId, setStoreId] = useState<string>('')
   const [reload, setReload] = useState(0)
+  const [stats, setStats] = useState(false)
   const { message, modal } = App.useApp()
   const qc = useQueryClient()
   const [limit, setLimit] = useState<LimitInfo | null>(null)
@@ -336,6 +337,10 @@ export function ShowcasePage() {
           }
         }}
         scope={
+          <Space>
+          <Button size="large" icon={<BarChartOutlined />} onClick={() => setStats(true)}>
+            Статистика
+          </Button>
           <Select
             size="large"
             value={storeId}
@@ -361,8 +366,20 @@ export function ShowcasePage() {
               })),
             ]}
           />
+          </Space>
         }
       />
+      <Drawer open={stats} onClose={() => setStats(false)} width={980} title={null}>
+        <HomeStatsPanel
+          path="/store/home/stats"
+          params={{ store_id: storeId || undefined }}
+          subtitle={storeId ? data?.stores.find((s) => s.id === storeId)?.name : 'все магазины сети'}
+          onUpgrade={() => {
+            setStats(false)
+            setPlans({ open: true, highlight: p?.key === 'business' ? 'pro' : 'business' })
+          }}
+        />
+      </Drawer>
       <LimitModal
         info={limit}
         data={data}

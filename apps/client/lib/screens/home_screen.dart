@@ -6,6 +6,7 @@ import 'package:sm_core/sm_core.dart';
 import '../catalog.dart';
 import '../delivery_time.dart';
 import '../home_blocks.dart';
+import '../home_tracking.dart';
 import '../main.dart';
 import '../product_tile.dart';
 import '../state.dart';
@@ -35,6 +36,25 @@ class _HomeScreenState extends State<HomeScreen> {
   final _blocks = HomeBlocksCache();
   final _requested = <String>{};
   final _answered = <String>{};
+
+  /// Показы и нажатия блоков текущего магазина.
+  HomeTracker? _tracker;
+
+  HomeTracker _trackerFor(Store s) {
+    if (_tracker?.storeId == s.id) return _tracker!;
+    _tracker?.dispose();
+    return _tracker = HomeTracker(
+      api: context.read<Api>(),
+      storeId: s.id,
+      isActive: () => mounted && context.read<AppState>().tab == 0 && (ModalRoute.of(context)?.isCurrent ?? true),
+    )..start();
+  }
+
+  @override
+  void dispose() {
+    _tracker?.dispose();
+    super.dispose();
+  }
 
   List<HomeBlock>? _blocksOf(Store s) {
     if (_requested.add(s.id)) {
@@ -88,7 +108,9 @@ class _HomeScreenState extends State<HomeScreen> {
         body: RefreshIndicator(
           edgeOffset: top + _ExpressHeader.minBody,
           onRefresh: () => _refresh(state),
-          child: CustomScrollView(slivers: [
+          child: HomeTrackerScope(
+            tracker: store == null ? null : _trackerFor(store),
+            child: CustomScrollView(slivers: [
             SliverPersistentHeader(pinned: true, delegate: _ExpressHeader(top: top, address: state.address, store: store, many: state.stores.length > 1)),
             if (!state.addressesLoaded)
               const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator()))
@@ -109,7 +131,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ..._storeSlivers(context, state, store),
             ],
             SliverToBoxAdapter(child: SizedBox(height: tabBottomInset(context))),
-          ]),
+            ]),
+          ),
         ),
       ),
     );

@@ -185,6 +185,8 @@ func (s *Service) storeForClient(ctx context.Context, q db.Querier, storeID stri
 type CartItem struct {
 	ProductID string    `json:"product_id"`
 	Qty       money.Qty `json:"qty"`
+	// Блок главной, из которого товар добавили в корзину (статистика витрины).
+	BlockID string `json:"block_id,omitempty"`
 }
 
 type CheckoutInput struct {
@@ -446,11 +448,18 @@ func (s *Service) CreateOrder(ctx context.Context, p *identity.Principal, in Che
 			pv.DeliveryFrom, pv.DeliveryTo).Scan(&id); err != nil {
 			return err
 		}
+		blockOf := map[string]*string{}
+		for _, it := range in.Items {
+			if httpx.IsUUID(it.BlockID) {
+				b := it.BlockID
+				blockOf[it.ProductID] = &b
+			}
+		}
 		for i, l := range pv.Lines {
 			if _, err := tx.Exec(ctx, `
-				INSERT INTO order_items (order_id, line, product_id, qty, price, total, regular_price)
-				VALUES ($1, $2, $3, $4::numeric, $5::numeric, $6::numeric, COALESCE($7::numeric, $5::numeric))`,
-				id, i+1, l.ProductID, l.Qty, l.Price, l.Total, l.OldPrice); err != nil {
+				INSERT INTO order_items (order_id, line, product_id, qty, price, total, regular_price, home_block_id)
+				VALUES ($1, $2, $3, $4::numeric, $5::numeric, $6::numeric, COALESCE($7::numeric, $5::numeric), $8)`,
+				id, i+1, l.ProductID, l.Qty, l.Price, l.Total, l.OldPrice, blockOf[l.ProductID]); err != nil {
 				return err
 			}
 			if _, err := tx.Exec(ctx, `

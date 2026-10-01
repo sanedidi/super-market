@@ -396,3 +396,73 @@ func TestStoreShowcase(t *testing.T) {
 		t.Fatalf("plan = %v", p.Body)
 	}
 }
+
+// TestHomeStats — показы и нажатия из приложения, заказы с главной; по
+// тарифу «Бизнес» — только показы и нажатия, «Про» — всё, «Старт» — нет.
+func TestHomeStats(t *testing.T) {
+	pool := freshDB(t)
+	ctx := context.Background()
+	a := newAPI(t, paymeConfig(), pool, nil)
+	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
+	shop := newAdminShop(t, a, adminTok, "+998900000002", "+998900000077")
+	owner, _ := a.login("+998900000002", identity.AppStore)
+	hits := "a0000000-0000-4000-8000-000000000004"
+	deals := "a0000000-0000-4000-8000-000000000005"
+
+	a.expect(a.do("POST", "/client/home/events", "", map[string]any{"store_id": shop.store, "items": []map[string]any{
+		{"block_id": hits, "views": 10, "clicks": 3}, {"block_id": deals, "views": 8, "clicks": 1},
+	}}), 204, "events")
+	a.expect(a.do("POST", "/client/home/events", "", map[string]any{"store_id": shop.store, "items": []map[string]any{
+		{"block_id": hits, "views": 5, "clicks": 1},
+	}}), 204, "events 2")
+	a.expect(a.do("POST", "/client/home/events", "", map[string]any{"store_id": shop.store, "items": []map[string]any{
+		{"block_id": "x", "views": 1},
+	}}), 400, "bad block")
+	a.expect(a.do("POST", "/client/home/events", "", map[string]any{"store_id": "00000000-0000-0000-0000-000000000000", "items": []map[string]any{
+		{"block_id": hits, "views": 1},
+	}}), 404, "unknown store")
+
+	o := a.expect(a.do("POST", "/client/orders", shop.client, map[string]any{
+		"store_id": shop.store, "address_id": shop.addr, "payment_provider": "payme",
+		"items": []map[string]any{{"product_id": shop.cola, "qty": 2, "block_id": hits}},
+	}), 201, "order").str("order", "id")
+	if _, err := pool.Exec(ctx, `UPDATE orders SET status = 'paid' WHERE id = $1`, o); err != nil {
+		t.Fatal(err)
+	}
+
+	// «Бизнес» (пробный): показы и нажатия, без заказов.
+	a.expect(a.do("GET", "/store/home", owner, nil), 200, "trial")
+	b := a.expect(a.do("GET", "/store/home/stats?days=30", owner, nil), 200, "basic")
+	if b.str("level") != "basic" || b.Body["days"].(float64) != 7 || b.Body["views"].(float64) != 23 || b.Body["clicks"].(float64) != 5 || b.Body["orders"].(float64) != 0 {
+		t.Fatalf("basic = %v", b.Body)
+	}
+	top := b.Body["blocks"].([]any)[0].(map[string]any)
+	if top["title"] != "Полка «Хиты недели»" || top["views"].(float64) != 15 || top["orders"].(float64) != 0 {
+		t.Fatalf("basic top = %v", top)
+	}
+
+	a.expect(a.do("POST", "/store/showcase/plan", owner, map[string]any{"plan": "pro"}), 200, "pro")
+	f := a.expect(a.do("GET", "/store/home/stats?days=30", owner, nil), 200, "full")
+	if f.str("level") != "full" || f.Body["orders"].(float64) != 1 || f.str("revenue") != "30000.00" || len(f.Body["series"].([]any)) != 1 {
+		t.Fatalf("full = %v", f.Body)
+	}
+	top = f.Body["blocks"].([]any)[0].(map[string]any)
+	if top["block_id"] != hits || top["orders"].(float64) != 1 || f.str("hint") == "" {
+		t.Fatalf("full top = %v hint %q", top, f.str("hint"))
+	}
+
+	// Супер-админ видит всё.
+	ad := a.expect(a.do("GET", "/admin/home/stats?network_id="+shop.network, adminTok, nil), 200, "admin")
+	if ad.Body["views"].(float64) != 23 || ad.Body["orders"].(float64) != 1 {
+		t.Fatalf("admin = %v", ad.Body)
+	}
+
+	// «Старт» после пробного — статистики нет.
+	if _, err := pool.Exec(ctx, `UPDATE networks SET showcase_trial_until = current_date - 1`); err != nil {
+		t.Fatal(err)
+	}
+	a.expect(a.do("POST", "/store/showcase/plan", owner, map[string]any{"plan": "start"}), 200, "start")
+	if e := a.expect(a.do("GET", "/store/home/stats", owner, nil), 409, "none"); e.Body["error"].(map[string]any)["details"].(map[string]any)["feature"] != "stats" {
+		t.Fatalf("none = %v", e.Body)
+	}
+}

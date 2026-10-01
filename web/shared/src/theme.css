@@ -1576,3 +1576,19 @@ body {
 .smh-plan h4 { margin: 0; font-size: 18px; font-weight: 800; }
 .smh-plan ul { margin: 0; padding-left: 18px; font-size: 13px; color: var(--sm-text-2); flex: 1; }
 .smh-plan-badge { position: absolute; top: 12px; right: 12px; background: #e11d2a; color: #fff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.smh-stats { display: flex; flex-direction: column; gap: 14px; }
+.smh-stats-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.smh-stats-head h2 { margin: 0; font-size: 20px; font-weight: 800; color: var(--sm-ink); }
+.smh-stats-head span { color: var(--sm-muted); font-size: 13px; }
+.smh-stats-head a { font-weight: 700; color: var(--sm-page); font-size: 13px; }
+.smh-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+@media (max-width: 760px) { .smh-kpis { grid-template-columns: 1fr 1fr; } }
+.smh-kpi { background: #f9fafb; border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.smh-kpi span { font-size: 12px; color: var(--sm-muted); }
+.smh-kpi b { font-size: 22px; font-weight: 800; color: var(--sm-ink); }
+.smh-kpi.locked b { color: #98a2b3; font-size: 18px; }
+.smh-cell-lock { color: #98a2b3; }
+.smh-spark { display: flex; align-items: flex-end; gap: 3px; height: 56px; padding: 6px 10px; background: #f9fafb; border-radius: 12px; }
+.smh-spark i { flex: 1; background: #e11d2a; opacity: .75; border-radius: 3px 3px 0 0; min-width: 3px; }
+.smh-stats-table .ant-table { background: #f9fafb; border-radius: 14px; }
+.smh-hint { background: #ecfdf3; color: #067647; border-radius: 12px; padding: 10px 14px; font-size: 13px; font-weight: 600; display: flex; gap: 8px; align-items: center; }

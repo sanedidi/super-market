@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sm_core/sm_core.dart';
 
 import 'catalog.dart';
+import 'home_tracking.dart';
 import 'main.dart';
 import 'product_tile.dart';
 import 'screens/category_screen.dart';
@@ -65,29 +66,26 @@ class HomeBlocksCache {
   static const _known = {'shelf', 'banners', 'promo', 'category_icons', 'catalog_sections'};
 }
 
-/// Слайверы главной по блокам.
+/// Слайверы главной по блокам. Каждый блок считает показы и нажатия
+/// (HomeTracker) и отдаёт свой id товарам — для «заказов с главной».
 List<Widget> homeBlockSlivers(BuildContext context, Store store, List<HomeBlock> blocks) {
   final out = <Widget>[];
   for (final b in blocks) {
-    switch (b['type']) {
-      case 'shelf':
-        out.addAll(_shelf(context, store, b));
-      case 'banners':
-        out.add(SliverToBoxAdapter(child: HomeBanners(store: store, block: b)));
-      case 'promo':
-        out.add(SliverToBoxAdapter(child: b['kind'] == 'free_delivery' ? FreeDeliveryStrip(store: store) : PromoStrip(store: store, block: b)));
-      case 'category_icons':
-        out.add(SliverToBoxAdapter(child: CategoryIcons(store: store, block: b)));
-      case 'catalog_sections':
-        out.add(SliverToBoxAdapter(
-          child: CategorySectionsList(
-            store: store,
-            view: '${b['view'] ?? 'tiles3'}',
-            only: b['mode'] == 'selected' ? (b['category_ids'] as List?)?.cast<String>() : null,
-            showImages: b['show_images'] != false,
-          ),
-        ));
-    }
+    final Widget? child = switch (b['type']) {
+      'shelf' => _shelf(context, store, b),
+      'banners' => HomeBanners(store: store, block: b),
+      'promo' => b['kind'] == 'free_delivery' ? FreeDeliveryStrip(store: store) : PromoStrip(store: store, block: b),
+      'category_icons' => CategoryIcons(store: store, block: b),
+      'catalog_sections' => CategorySectionsList(
+          store: store,
+          view: '${b['view'] ?? 'tiles3'}',
+          only: b['mode'] == 'selected' ? (b['category_ids'] as List?)?.cast<String>() : null,
+          showImages: b['show_images'] != false,
+        ),
+      _ => null,
+    };
+    if (child == null) continue;
+    out.add(SliverToBoxAdapter(child: TrackedBlock(key: ValueKey(b['id']), blockId: '${b['id']}', child: child)));
   }
   return out;
 }
@@ -95,9 +93,9 @@ List<Widget> homeBlockSlivers(BuildContext context, Store store, List<HomeBlock>
 List<Product> _products(HomeBlock b) => ((b['products'] as List?) ?? const []).whereType<Map<String, dynamic>>().map(Product.new).toList();
 
 /// Полка: заголовок «… · Все», лента или сетка в 2–3 колонки.
-List<Widget> _shelf(BuildContext context, Store store, HomeBlock b) {
+Widget? _shelf(BuildContext context, Store store, HomeBlock b) {
   final items = _products(b);
-  if (items.isEmpty) return const [];
+  if (items.isEmpty) return null;
   final title = '${b['title'] ?? ''}';
   final source = '${b['source'] ?? ''}';
   final canAll = b['show_all'] != false && source != 'manual';
@@ -108,27 +106,27 @@ List<Widget> _shelf(BuildContext context, Store store, HomeBlock b) {
   final ref = storeRef(store);
   final view = '${b['view'] ?? 'row'}';
   if (view == 'row') {
-    return [SliverToBoxAdapter(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [header, ProductCarousel(products: items, store: ref)]))];
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [header, ProductCarousel(products: items, store: ref)]);
   }
   final cols = view == 'grid3' ? 3 : 2;
   final gap = cols == 3 ? 10.0 : 12.0;
   final w = (MediaQuery.sizeOf(context).width - AppSpace.page * 2 - gap * (cols - 1)) / cols;
-  return [
-    SliverToBoxAdapter(child: header),
-    SliverPadding(
+  return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    header,
+    GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: AppSpace.page),
-      sliver: SliverGrid.builder(
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: cols,
-          crossAxisSpacing: gap,
-          mainAxisSpacing: 16,
-          mainAxisExtent: productCardHeight(w),
-        ),
-        itemCount: items.length,
-        itemBuilder: (_, i) => ProductTile(product: items[i], store: ref),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: cols,
+        crossAxisSpacing: gap,
+        mainAxisSpacing: 16,
+        mainAxisExtent: productCardHeight(w),
       ),
+      itemCount: items.length,
+      itemBuilder: (_, i) => ProductTile(product: items[i], store: ref),
     ),
-  ];
+  ]);
 }
 
 /// «Все» у полки: список по источнику или раздел.
