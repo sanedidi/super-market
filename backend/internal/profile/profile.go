@@ -207,6 +207,11 @@ type ActiveOrder struct {
 	Number    int64  `json:"number"`
 	Status    string `json:"status"`
 	StoreName string `json:"store_name"`
+	// Курьер и ожидаемое прибытие — для карточки заказа на главной.
+	CourierName  *string    `json:"courier_name"`
+	EtaAt        *time.Time `json:"eta_at"`
+	DeliveryFrom *time.Time `json:"delivery_from"`
+	DeliveryTo   *time.Time `json:"delivery_to"`
 }
 
 type Stats struct {
@@ -233,9 +238,11 @@ func (s *Service) Stats(ctx context.Context, userID string) (Stats, error) {
 	}
 	var a ActiveOrder
 	err = s.pool.QueryRow(ctx, `
-		SELECT o.id, o.number, o.status, s.name FROM orders o JOIN stores s ON s.id = o.store_id
+		SELECT o.id, o.number, o.status, s.name, e.full_name, o.eta_at, o.delivery_from, o.delivery_to
+		FROM orders o JOIN stores s ON s.id = o.store_id
+		LEFT JOIN employees e ON e.id = o.courier_id
 		WHERE o.customer_id = $1 AND o.status IN `+activeStatuses+`
-		ORDER BY o.created_at DESC LIMIT 1`, userID).Scan(&a.ID, &a.Number, &a.Status, &a.StoreName)
+		ORDER BY o.created_at DESC LIMIT 1`, userID).Scan(&a.ID, &a.Number, &a.Status, &a.StoreName, &a.CourierName, &a.EtaAt, &a.DeliveryFrom, &a.DeliveryTo)
 	if err == nil {
 		st.ActiveOrder = &a
 	} else if !errors.Is(err, pgx.ErrNoRows) {

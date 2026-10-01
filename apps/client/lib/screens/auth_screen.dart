@@ -152,8 +152,10 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Widget _phoneStep() {
     final top = MediaQuery.paddingOf(context).top;
-    return Scaffold(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
       key: const ValueKey('phone'),
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
       body: Column(children: [
         Expanded(
           child: SingleChildScrollView(
@@ -208,6 +210,7 @@ class _AuthScreenState extends State<AuthScreen> {
           ),
         ),
       ]),
+      ),
     );
   }
 }

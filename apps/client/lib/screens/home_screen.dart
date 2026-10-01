@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../catalog.dart';
+import '../delivery_time.dart';
 import '../main.dart';
 import '../product_tile.dart';
 import '../state.dart';
@@ -10,17 +12,16 @@ import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'addresses_screen.dart';
 import 'category_screen.dart';
-import 'favorites_screen.dart';
 import 'notifications_screen.dart';
 import 'order_screen.dart';
-import 'orders_screen.dart';
 import 'root_shell.dart';
 
-/// Главная — витрина выбранного магазина: адрес и поиск в шапке, быстрые
-/// разделы, специальные предложения и категории плитками.
+/// Главная «Экспресс» (Figma «v2 · 04 Главная»): красная шапка с адресом,
+/// временем доставки, магазином и поиском; карточка текущего заказа; иконки
+/// разделов; полоска до бесплатной доставки; «Хиты недели» и каталог.
 ///
-/// Адрес, колокольчик и поиск закреплены сверху; плитки «Скидки / Мои заказы /
-/// Избранное» уезжают вместе с лентой и прячутся под шапку.
+/// При прокрутке крупное «Привезём за 25 мин» сворачивается — адрес,
+/// колокольчик и поиск остаются закреплены.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -29,96 +30,71 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _scroll = ScrollController();
-  bool _scrolled = false;
+  /// «Хиты недели» по магазину (кэш на время сессии).
+  final _hits = <String, Future<List<Product>>>{};
 
-  @override
-  void initState() {
-    super.initState();
-    _scroll.addListener(() {
-      final v = _scroll.hasClients && _scroll.offset > 0;
-      if (v != _scrolled) setState(() => _scrolled = v);
+  Future<List<Product>> _hitsOf(Store s, {bool force = false}) {
+    if (force) _hits.remove(s.id);
+    return _hits.putIfAbsent(s.id, () {
+      final f = context
+          .read<Api>()
+          .list('/client/stores/${s.id}/products', {'sort': 'popular', 'hits': 1, 'limit': 6})
+          .then((items) => items.map(Product.new).toList());
+      f.catchError((_) {
+        _hits.remove(s.id);
+        return <Product>[];
+      });
+      return f;
     });
   }
 
-  @override
-  void dispose() {
-    _scroll.dispose();
-    super.dispose();
+  Future<void> _refresh(AppState state) async {
+    state.loadProfile().catchError((_) {});
+    await state.loadStores(force: true);
+    final s = state.catalogStore;
+    if (s != null) {
+      await state.categoriesOf(s, force: true);
+      _hitsOf(s, force: true);
+      if (mounted) setState(() {});
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final store = state.catalogStore;
-    return Scaffold(
-      backgroundColor: AppColors.white,
-      body: Column(children: [
-        HomeHeader(address: state.address, store: store),
-        Expanded(
-          child: Stack(children: [
-            RefreshIndicator(
-            onRefresh: () async {
-              await state.loadStores(force: true);
-              final s = state.catalogStore;
-              if (s != null) await state.categoriesOf(s, force: true);
-            },
-            child: CustomScrollView(controller: _scroll, slivers: [
-              if (!state.addressesLoaded)
-                const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator()))
-              else if (state.address == null)
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: EmptyState(
-                    icon: Icons.add_location_alt_outlined,
-                    title: 'Куда доставить?',
-                    text: 'Укажите адрес — покажем магазины, которые привезут продукты к вам.',
-                    action: 'Добавить адрес',
-                    onAction: () => openAddressEditor(context),
-                  ),
-                )
-              else ...[
-                SliverToBoxAdapter(
-                  child: Container(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    decoration: const BoxDecoration(
-                      color: AppColors.white,
-                      borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
-                      boxShadow: [BoxShadow(color: Color(0x14000000), blurRadius: 16, offset: Offset(0, 6))],
-                    ),
-                    child: _QuickActions(store: store),
-                  ),
+    final top = MediaQuery.paddingOf(context).top;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
+        backgroundColor: AppColors.white,
+        body: RefreshIndicator(
+          edgeOffset: top + _ExpressHeader.minBody,
+          onRefresh: () => _refresh(state),
+          child: CustomScrollView(slivers: [
+            SliverPersistentHeader(pinned: true, delegate: _ExpressHeader(top: top, address: state.address, store: store, many: state.stores.length > 1)),
+            if (!state.addressesLoaded)
+              const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator()))
+            else if (state.address == null)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: EmptyState(
+                  icon: Icons.add_location_alt_outlined,
+                  title: 'Куда доставить?',
+                  text: 'Укажите адрес — покажем магазины, которые привезут продукты к вам.',
+                  action: 'Добавить адрес',
+                  onAction: () => openAddressEditor(context),
                 ),
-                const SliverToBoxAdapter(child: SizedBox(height: 16)),
-                if (state.stats?['active_order'] is Map<String, dynamic>)
-                  SliverToBoxAdapter(child: _ActiveOrderCard(order: state.stats!['active_order'] as Map<String, dynamic>)),
-                ..._storeSlivers(context, state, store),
-              ],
-              SliverToBoxAdapter(child: SizedBox(height: tabBottomInset(context))),
-            ]),
-          ),
-            // Лента ушла под шапку — тень под поиском.
-            if (_scrolled)
-              const Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                height: 14,
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Color(0x1F000000), Color(0x00000000)],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+              )
+            else ...[
+              if (state.stats?['active_order'] is Map<String, dynamic>)
+                SliverToBoxAdapter(child: OrderTrackerCard(order: state.stats!['active_order'] as Map<String, dynamic>)),
+              ..._storeSlivers(context, state, store),
+            ],
+            SliverToBoxAdapter(child: SizedBox(height: tabBottomInset(context))),
           ]),
         ),
-      ]),
+      ),
     );
   }
 
@@ -151,10 +127,11 @@ class _HomeScreenState extends State<HomeScreen> {
       ];
     }
     return [
-      SliverToBoxAdapter(child: StoreSwitcher(store: store)),
-      if (state.banners.isNotEmpty) SliverToBoxAdapter(child: _Banners(banners: state.banners)),
-      const SliverToBoxAdapter(child: SizedBox(height: 8)),
-      SliverToBoxAdapter(child: SpecialOffers(store: store)),
+      SliverToBoxAdapter(child: _CategoryCircles(store: store)),
+      SliverToBoxAdapter(child: _FreeDeliveryStrip(store: store)),
+      if (state.banners.isNotEmpty) SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.only(top: 16), child: _Banners(banners: state.banners))),
+      SliverToBoxAdapter(child: _HitsHeader(store: store)),
+      _HitsGrid(store: store, future: _hitsOf(store)),
       SliverToBoxAdapter(child: _Deals(state: state)),
       SliverToBoxAdapter(child: CategorySectionsList(store: store)),
     ];
@@ -182,63 +159,160 @@ Store? _promoStore(AppState state) {
   return state.stores.where((s) => s.id == id).firstOrNull ?? state.catalogStore;
 }
 
-/// Шапка (закреплена): метка, адрес доставки и магазин, колокольчик, поиск.
-class HomeHeader extends StatelessWidget {
-  const HomeHeader({super.key, required this.address, this.store});
+/// Красная шапка. Высоты фиксированы: адрес 44, «Привезём за» 84, поиск 48 —
+/// так шапка точно сворачивается на высоту блока со временем.
+class _ExpressHeader extends SliverPersistentHeaderDelegate {
+  _ExpressHeader({required this.top, required this.address, required this.store, required this.many});
+  final double top;
   final Address? address;
   final Store? store;
+  final bool many;
+
+  /// Без статус-бара: 8 + адрес 44 + 12 + поиск 48 + 16.
+  static const minBody = 128.0;
+
+  /// Блок «Привезём за … · магазин» с отступом под ним.
+  static const etaBlock = 96.0;
 
   @override
-  Widget build(BuildContext context) {
-    final subtitle = store == null
-        ? 'Чтобы увидеть магазины рядом'
-        : [store!.name, if (store!.etaText != null) store!.etaText!].join(' · ');
+  double get minExtent => top + minBody;
+
+  @override
+  double get maxExtent => top + minBody + etaBlock;
+
+  @override
+  bool shouldRebuild(_ExpressHeader old) =>
+      old.top != top || old.address?.id != address?.id || old.store?.id != store?.id || old.store?.etaText != store?.etaText || old.many != many;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    final t = (shrinkOffset / etaBlock).clamp(0.0, 1.0);
+    final s = store;
     return Container(
-      padding: EdgeInsets.fromLTRB(16, MediaQuery.paddingOf(context).top + 8, 16, 12),
-      color: AppColors.white,
+      padding: EdgeInsets.fromLTRB(16, top + 8, 16, 16),
+      decoration: const BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
+      ),
       child: Column(children: [
-        Row(children: [
-          Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AddressesScreen())),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(children: [
-                  const Icon(Icons.location_on_rounded, size: 38, color: AppColors.primary),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Row(children: [
-                        Flexible(
-                          child: Text(address?.title ?? 'Укажите адрес доставки',
-                              maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.title.copyWith(fontSize: 19, fontWeight: FontWeight.w700)),
+        SizedBox(
+          height: 44,
+          child: Row(children: [
+            Expanded(child: Align(alignment: Alignment.centerLeft, child: _AddressPill(address: address))),
+            const SizedBox(width: 12),
+            const _Bell(),
+          ]),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: etaBlock * (1 - t),
+          child: ClipRect(
+            child: OverflowBox(
+              alignment: Alignment.topCenter,
+              minHeight: etaBlock,
+              maxHeight: etaBlock,
+              child: Opacity(
+                opacity: (1 - t * 1.6).clamp(0.0, 1.0),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.end, children: [
+                        Text(s == null ? 'Доставка из магазинов рядом' : 'Привезём за',
+                            maxLines: 1, style: AppText.body.copyWith(color: const Color(0xB3FFFFFF), fontSize: 16)),
+                        SizedBox(
+                          height: 54,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Text(s?.etaText ?? '30–60 мин',
+                                style: const TextStyle(fontFamily: 'Inter', fontSize: 44, fontWeight: FontWeight.w800, color: AppColors.white, letterSpacing: -1, height: 1.1)),
+                          ),
                         ),
-                        const Icon(Icons.chevron_right_rounded, size: 22, color: AppColors.text2),
                       ]),
-                      Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.small.copyWith(fontSize: 14)),
-                    ]),
-                  ),
-                ]),
+                    ),
+                    if (s != null) ...[const SizedBox(width: 12), _StorePill(store: s, many: many)],
+                  ]),
+                ),
               ),
             ),
           ),
-          const SizedBox(width: 8),
-          const _Bell(),
-        ]),
-        const SizedBox(height: 12),
+        ),
         AppSearchField(
           hint: 'Найти в Super Market',
-          onTap: store == null
-              ? () {}
-              : () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CategoryScreen(store: store!, search: true))),
+          onTap: s == null ? () {} : () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CategoryScreen(store: s, search: true))),
         ),
       ]),
     );
   }
 }
 
-/// Колокольчик с красной точкой, если есть непрочитанные уведомления.
+/// Адрес в полупрозрачной «пилюле» на красном.
+class _AddressPill extends StatelessWidget {
+  const _AddressPill({required this.address});
+  final Address? address;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0x2EFFFFFF),
+      shape: const StadiumBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AddressesScreen())),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.location_on_rounded, size: 22, color: AppColors.white),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(address?.title ?? 'Укажите адрес',
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong.copyWith(color: AppColors.white)),
+            ),
+            const Icon(Icons.expand_more_rounded, size: 22, color: AppColors.white),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// Белая кнопка магазина: при нескольких — выбор, иначе условия доставки.
+class _StorePill extends StatelessWidget {
+  const _StorePill({required this.store, required this.many});
+  final Store store;
+  final bool many;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        color: AppColors.white,
+        shape: const StadiumBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => many ? pickStore(context, context.read<AppState>()) : showDeliveryTerms(context, store),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 190),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 9, 10, 9),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.storefront_rounded, size: 20, color: AppColors.ink),
+                const SizedBox(width: 6),
+                Flexible(child: Text(store.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.smallStrong.copyWith(fontSize: 14))),
+                const SizedBox(width: 6),
+                Icon(many ? Icons.swap_horiz_rounded : Icons.info_outline_rounded, size: 20, color: AppColors.ink),
+              ]),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Колокольчик на красном; жёлтая точка — есть непрочитанные.
 class _Bell extends StatelessWidget {
   const _Bell();
 
@@ -246,91 +320,137 @@ class _Bell extends StatelessWidget {
   Widget build(BuildContext context) {
     final unread = context.select<AppState, int>((s) => s.unread);
     return Stack(clipBehavior: Clip.none, children: [
-      RoundIconButton(
-        icon: Icons.notifications_none_rounded,
-        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NotificationsScreen())),
+      Material(
+        color: const Color(0x2EFFFFFF),
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NotificationsScreen())),
+          child: const SizedBox(width: 44, height: 44, child: Icon(Icons.notifications_none_rounded, color: AppColors.white)),
+        ),
       ),
       if (unread > 0)
         Positioned(
-          right: 12,
-          top: 8,
-          child: Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(color: AppColors.primary, shape: BoxShape.circle, border: Border.all(color: AppColors.soft, width: 2)),
+          right: 10,
+          top: 9,
+          child: IgnorePointer(
+            child: Container(width: 10, height: 10, decoration: const BoxDecoration(color: AppColors.accent, shape: BoxShape.circle)),
           ),
         ),
     ]);
   }
 }
 
-/// Три больших плитки: скидки магазина, мои заказы, избранное.
-class _QuickActions extends StatelessWidget {
-  const _QuickActions({this.store});
-  final Store? store;
+/// Этап заказа для полоски: 0 принят, 1 собирается/собран, 2 в пути; -1 ждёт оплаты.
+int orderStep(String status) => switch (status) {
+      'awaiting_payment' => -1,
+      'paid' || 'accepted' => 0,
+      'picking' || 'picked' => 1,
+      'delivering' => 2,
+      _ => 3,
+    };
 
-  @override
-  Widget build(BuildContext context) {
-    void push(Widget w) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => w));
-    Widget item(IconData icon, Color fg, Color bg, String label, VoidCallback? onTap) => Expanded(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onTap,
-            child: Column(children: [
-              AspectRatio(
-                aspectRatio: 1,
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 6),
-                  decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(26)),
-                  child: Icon(icon, size: 52, color: fg),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyMedium.copyWith(fontSize: 15)),
-            ]),
-          ),
-        );
-    final s = store;
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Row(children: [
-        item(Icons.percent_rounded, const Color(0xFFD99A4E), const Color(0xFFFFF4E0), 'Скидки', s == null ? null : () => openDeals(context, s)),
-        item(Icons.history_rounded, const Color(0xFF4F8EF7), const Color(0xFFFDEBF5), 'Мои заказы', () => push(const OrdersScreen())),
-        item(Icons.favorite_rounded, AppColors.primary, const Color(0xFFFDE8EA), 'Избранное', () => push(const FavoritesScreen())),
-      ]),
-    );
-  }
+const _shortStatus = {
+  'awaiting_payment': 'ждёт оплаты',
+  'paid': 'оплачен',
+  'accepted': 'принят',
+  'picking': 'собирается',
+  'picked': 'собран',
+  'delivering': 'в пути',
+};
+
+/// Подпись под номером заказа: курьер и сколько ждать, окно доставки или магазин.
+String orderTrackerSubtitle(Map<String, dynamic> o, {DateTime? now}) {
+  final courier = '${o['courier_name'] ?? ''}'.trim().split(' ').first;
+  final eta = DateTime.tryParse('${o['eta_at'] ?? ''}');
+  final parts = <String>[
+    if (courier.isNotEmpty) 'Курьер $courier',
+    if (eta != null && o['status'] == 'delivering')
+      switch (eta.difference(now ?? DateTime.now()).inMinutes) {
+        <= 1 => 'будет с минуты на минуту',
+        final m => 'будет через $m мин',
+      },
+  ];
+  if (parts.isNotEmpty) return parts.join(' · ');
+  final window = windowLabel(o['delivery_from'], o['delivery_to']);
+  return [if ('${o['store_name'] ?? ''}'.isNotEmpty) '${o['store_name']}', if (window != null) window].join(' · ');
 }
 
-/// Текущий заказ: номер, статус, магазин.
-class _ActiveOrderCard extends StatelessWidget {
-  const _ActiveOrderCard({required this.order});
+/// Карточка текущего заказа с этапами «Принят → Собран → В пути → У двери».
+class OrderTrackerCard extends StatelessWidget {
+  const OrderTrackerCard({super.key, required this.order});
   final Map<String, dynamic> order;
 
   @override
   Widget build(BuildContext context) {
     final status = '${order['status']}';
+    final step = orderStep(status);
+    const labels = ['Принят', 'Собран', 'В пути', 'У двери'];
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: Material(
-        color: AppColors.dark,
-        borderRadius: BorderRadius.circular(AppRadius.xl),
+        color: AppColors.white,
+        elevation: 6,
+        shadowColor: const Color(0x33000000),
+        borderRadius: BorderRadius.circular(24),
         child: InkWell(
-          borderRadius: BorderRadius.circular(AppRadius.xl),
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => OrderScreen(id: order['id'] as String))),
+          borderRadius: BorderRadius.circular(24),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => OrderScreen(id: '${order['id']}'))),
           child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(children: [
-              Icon(status == 'delivering' ? Icons.delivery_dining_rounded : Icons.shopping_bag_outlined, color: AppColors.white, size: 30),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Заказ № ${order['number']} · ${(statusTitles[status] ?? status).toLowerCase()}',
-                      maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong.copyWith(color: AppColors.white)),
-                  Text('${order['store_name']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.small.copyWith(color: const Color(0xCCFFFFFF))),
-                ]),
-              ),
-              const Icon(Icons.chevron_right_rounded, color: AppColors.white),
+            padding: const EdgeInsets.all(16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Row(children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: const BoxDecoration(color: Color(0xFFFFE9EA), shape: BoxShape.circle),
+                  child: Icon(
+                    step < 0
+                        ? Icons.payments_outlined
+                        : step == 2
+                            ? Icons.delivery_dining_rounded
+                            : Icons.shopping_bag_outlined,
+                    color: AppColors.primary,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Заказ № ${order['number']} ${_shortStatus[status] ?? ''}'.trim(),
+                        maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong.copyWith(fontSize: 16)),
+                    Text(orderTrackerSubtitle(order), maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.small),
+                  ]),
+                ),
+                const Icon(Icons.chevron_right_rounded, color: AppColors.text2),
+              ]),
+              const SizedBox(height: 16),
+              Row(children: [
+                for (var k = 0; k < labels.length; k++) ...[
+                  if (k > 0) const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Container(
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: k <= step ? AppColors.primary : AppColors.line,
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        labels[k],
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.caption.copyWith(
+                          color: k == step ? AppColors.primary : (k < step ? AppColors.ink : AppColors.muted),
+                          fontWeight: k == step ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                    ]),
+                  ),
+                ],
+              ]),
             ]),
           ),
         ),
@@ -339,50 +459,154 @@ class _ActiveOrderCard extends StatelessWidget {
   }
 }
 
-/// Магазин витрины: логотип, условия и кнопка смены (если магазинов несколько).
-class StoreSwitcher extends StatelessWidget {
-  const StoreSwitcher({super.key, required this.store});
+/// Круглые иконки разделов: «Скидки» и корневые категории магазина.
+class _CategoryCircles extends StatelessWidget {
+  const _CategoryCircles({required this.store});
   final Store store;
+
+  static const _tones = [
+    (Color(0xFFEEF3FB), Color(0xFF3B6FD8)),
+    (Color(0xFFEFF6EC), Color(0xFF2E9E5B)),
+    (Color(0xFFFFF4E6), Color(0xFFE8850C)),
+    (Color(0xFFFFF0EB), Color(0xFFD9544A)),
+    (Color(0xFFF3F0FA), Color(0xFF7C5CD6)),
+  ];
 
   @override
   Widget build(BuildContext context) {
     final state = context.read<AppState>();
-    final many = context.select<AppState, int>((s) => s.stores.length) > 1;
+    Widget circle({required Widget child, required Color bg, required String label, required VoidCallback onTap}) => SizedBox(
+          width: 74,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTap,
+            child: Column(children: [
+              Container(width: 62, height: 62, clipBehavior: Clip.antiAlias, decoration: BoxDecoration(color: bg, shape: BoxShape.circle), child: child),
+              const SizedBox(height: 6),
+              Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: AppText.caption.copyWith(color: AppColors.ink)),
+            ]),
+          ),
+        );
+    return FutureBuilder<List<CatalogCategory>>(
+      future: state.categoriesOf(store),
+      builder: (context, snap) {
+        final roots = snap.data ?? const <CatalogCategory>[];
+        return SizedBox(
+          height: 112,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(10, 16, 10, 0),
+            children: [
+              circle(
+                bg: const Color(0xFFFFE9EA),
+                label: 'Скидки',
+                onTap: () => openDeals(context, store),
+                child: const Icon(Icons.local_offer_rounded, color: AppColors.primary, size: 30),
+              ),
+              for (var i = 0; i < roots.length; i++)
+                circle(
+                  bg: _tones[i % _tones.length].$1,
+                  label: roots[i].name,
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CategoryScreen(store: store, category: roots[i]))),
+                  child: roots[i].imageUrl != null
+                      ? Image.network(roots[i].imageUrl!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Icon(categoryIcon(roots[i].name), color: _tones[i % _tones.length].$2, size: 30))
+                      : Icon(categoryIcon(roots[i].name), color: _tones[i % _tones.length].$2, size: 30),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Жёлтая полоска «Доставка 0 сум от …» и сколько осталось набрать.
+class _FreeDeliveryStrip extends StatelessWidget {
+  const _FreeDeliveryStrip({required this.store});
+  final Store store;
+
+  @override
+  Widget build(BuildContext context) {
+    final freeFrom = num.tryParse(store.freeFrom ?? '');
+    if (freeFrom == null || freeFrom <= 0 || store.freeDelivery) return const SizedBox.shrink();
+    final state = context.watch<AppState>();
+    final inCart = state.cartStoreId == store.id ? (num.tryParse(state.cartTotal) ?? 0) : 0;
+    final left = freeFrom - inCart;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Material(
-        color: AppColors.soft,
-        borderRadius: BorderRadius.circular(AppRadius.xl),
+        color: AppColors.accentSoft,
+        borderRadius: BorderRadius.circular(18),
         child: InkWell(
-          borderRadius: BorderRadius.circular(AppRadius.xl),
-          onTap: many ? () => pickStore(context, state) : () => showDeliveryTerms(context, store),
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => showDeliveryTerms(context, store),
           child: Padding(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
             child: Row(children: [
-              StoreLogo(name: store.name, url: store.logoUrl, size: 44),
+              const Icon(Icons.card_giftcard_rounded, color: Color(0xFFD69E00), size: 26),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(store.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong),
-                  const SizedBox(height: 2),
-                  Text(
-                    [
-                      store.isOpen ? 'Открыт' : 'Закрыт',
-                      if (store.etaText != null) store.etaText!,
-                      store.freeDelivery ? 'доставка бесплатно' : 'доставка ${money(store.deliveryFee)}',
-                    ].join(' · '),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppText.caption.copyWith(color: store.isOpen ? AppColors.text2 : AppColors.error),
-                  ),
+                  Text('Доставка 0 сум от ${money(freeFrom)}', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.smallStrong.copyWith(fontSize: 14)),
+                  Text(left > 0 ? 'Ещё ${money(left)} до бесплатной' : 'Доставка этого заказа бесплатная',
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.caption),
                 ]),
               ),
-              if (many) Text('Сменить', style: AppText.smallStrong.copyWith(color: AppColors.primary, fontSize: 14)),
               const Icon(Icons.chevron_right_rounded, color: AppColors.text2),
             ]),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Заголовок «Хиты недели · Все».
+class _HitsHeader extends StatelessWidget {
+  const _HitsHeader({required this.store});
+  final Store store;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(top: 24, bottom: 12),
+        child: SectionHeader(title: 'Хиты недели', action: 'Все', onAction: () => openDeals(context, store, title: 'Хиты недели', filter: 'hits')),
+      );
+}
+
+/// Хиты магазина сеткой в 2 колонки.
+class _HitsGrid extends StatelessWidget {
+  const _HitsGrid({required this.store, required this.future});
+  final Store store;
+  final Future<List<Product>> future;
+
+  @override
+  Widget build(BuildContext context) {
+    final w = (MediaQuery.sizeOf(context).width - AppSpace.page * 2 - 12) / 2;
+    return FutureBuilder<List<Product>>(
+      future: future,
+      builder: (context, snap) {
+        final items = snap.data ?? const <Product>[];
+        if (items.isEmpty) {
+          return SliverToBoxAdapter(
+            child: snap.connectionState == ConnectionState.done
+                ? Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Text('Скоро здесь появятся популярные товары', style: AppText.small))
+                : const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
+          );
+        }
+        return SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpace.page),
+          sliver: SliverGrid.builder(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 16,
+              mainAxisExtent: productCardHeight(w),
+            ),
+            itemCount: items.length,
+            itemBuilder: (_, i) => ProductTile(product: items[i], store: (id: store.id, name: store.name)),
+          ),
+        );
+      },
     );
   }
 }

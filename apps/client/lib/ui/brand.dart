@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'theme.dart';
@@ -28,10 +29,13 @@ class BrandSplash extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
       backgroundColor: AppColors.primary,
       body: Center(
         child: SvgPicture.asset('assets/images/logo_words_white.svg', width: 151, semanticsLabel: 'Super Market'),
+      ),
       ),
     );
   }

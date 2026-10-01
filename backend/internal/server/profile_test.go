@@ -247,6 +247,9 @@ func TestProfileAndPush(t *testing.T) {
 		st.Body["active_order"].(map[string]any)["id"] != o2id {
 		t.Fatalf("stats = %v", st.Body)
 	}
+	if ao := st.Body["active_order"].(map[string]any); ao["courier_name"] != nil || ao["eta_at"] != nil {
+		t.Fatalf("active order without courier = %v", ao)
+	}
 	a.expect(a.do("DELETE", "/client/me", client, nil), 409, "delete with active order")
 	if _, err := pool.Exec(ctx, `UPDATE orders SET status = 'delivered', discount = 1500 WHERE id = $1`, o2id); err != nil {
 		t.Fatal(err)

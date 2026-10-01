@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sm_client/screens/auth_screen.dart';
 import 'package:sm_client/screens/cart_screen.dart';
+import 'package:sm_client/screens/home_screen.dart';
 import 'package:sm_client/screens/notifications_screen.dart';
 import 'package:sm_client/screens/profile_screen.dart';
 import 'package:sm_client/screens/root_shell.dart';
@@ -47,7 +48,7 @@ final _store = {
   'recommended': true,
   'eta_min': 25,
   'eta_max': 35,
-  'delivery': {'is_open': true, 'distance_m': 800, 'delivery_fee': '7000', 'min_order_amount': '50000'},
+  'delivery': {'is_open': true, 'distance_m': 800, 'delivery_fee': '7000', 'min_order_amount': '50000', 'free_from': '150000'},
 };
 
 final _categories = [
@@ -102,7 +103,23 @@ Api _api() => Api(
           '/client/notifications' => {'items': <Object>[]},
           '/client/notifications/unread' => {'count': 2},
           '/client/me' => _profile,
-          '/client/me/stats' => {'orders_count': 3},
+          '/client/me/stats' => {
+              'orders_count': 3,
+              'active_order': {
+                'id': 'o1',
+                'number': 1042,
+                'status': 'delivering',
+                'store_name': 'Baraka Market',
+                'courier_name': 'Азиз Каримов',
+                'eta_at': DateTime.now().add(const Duration(minutes: 12, seconds: 30)).toUtc().toIso8601String(),
+              },
+            },
+          '/client/stores/s1/products' => {
+              'items': [
+                {'id': 'h1', 'name': 'Кефир Musaffo 2,5%, 900 мл', 'price': '11500', 'old_price': '13900', 'discount_percent': 17, 'available': '20', 'unit_short': 'шт'},
+                {'id': 'h2', 'name': 'Сыр «Российский», 300 г', 'price': '38000', 'available': '20', 'unit_short': 'шт'},
+              ],
+            },
           '/client/family' => {'family': null},
           '/client/favorites' => {'product_ids': <String>[]},
           '/client/addresses' => {'items': [_address]},
@@ -160,6 +177,18 @@ void main() {
     expect(UzPhoneFormatter.format('905764723'), '90 576 47 23');
     final v = UzPhoneFormatter().formatEditUpdate(TextEditingValue.empty, const TextEditingValue(text: '+998 90 576-47-23'));
     expect(v.text, '90 576 47 23');
+  });
+
+  test('карточка заказа: этапы и подпись', () {
+    expect(orderStep('awaiting_payment'), -1);
+    expect(orderStep('picking'), 1);
+    expect(orderStep('delivering'), 2);
+    final now = DateTime.parse('2026-10-01T12:00:00Z');
+    expect(
+      orderTrackerSubtitle({'status': 'delivering', 'courier_name': 'Азиз Каримов', 'eta_at': '2026-10-01T12:12:30Z'}, now: now),
+      'Курьер Азиз · будет через 12 мин',
+    );
+    expect(orderTrackerSubtitle({'status': 'paid', 'store_name': 'Baraka Market'}, now: now), 'Baraka Market');
   });
 
   test('время уведомления', () {

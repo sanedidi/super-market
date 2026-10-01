@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -55,6 +56,9 @@ class ClientApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
+      // Тёмные значки статус-бара по умолчанию; красные экраны (главная,
+      // вход, заставка) задают светлые своим AnnotatedRegion.
+      builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(value: SystemUiOverlayStyle.dark, child: child!),
       home: _Gate(onboardingDone: onboardingDone),
     );
   }
