@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -24,13 +25,13 @@ func NewAuthenticator(svc *Service, log *slog.Logger) *Authenticator {
 	return &Authenticator{svc: svc, log: log}
 }
 
-// Require пускает только запросы с токеном приложения app и живой сессией.
+// Require пускает только запросы с токеном одного из приложений apps и живой сессией.
 // Права сотрудника читаются из базы на каждый запрос, поэтому смена роли
 // или блокировка действуют сразу, без перевыпуска токена.
-func (a *Authenticator) Require(app string) func(http.Handler) http.Handler {
+func (a *Authenticator) Require(apps ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			p, err := a.authenticate(r, app)
+			p, err := a.authenticate(r, apps...)
 			if err != nil {
 				httpx.Fail(w, r, a.log, err)
 				return
@@ -74,7 +75,7 @@ func (a *Authenticator) Allow(perms ...string) func(http.Handler) http.Handler {
 	}
 }
 
-func (a *Authenticator) authenticate(r *http.Request, app string) (*Principal, error) {
+func (a *Authenticator) authenticate(r *http.Request, apps ...string) (*Principal, error) {
 	raw, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok || raw == "" {
 		return nil, apperr.Unauthorized("нужен токен авторизации")
@@ -85,7 +86,7 @@ func (a *Authenticator) authenticate(r *http.Request, app string) (*Principal, e
 		return nil, apperr.New(http.StatusUnauthorized, "token_expired", "срок токена истёк, обновите его")
 	case err != nil:
 		return nil, apperr.Unauthorized("неверный токен")
-	case claims.App != app:
+	case !slices.Contains(apps, claims.App):
 		return nil, apperr.Forbidden("токен выдан для другого приложения")
 	}
 	return a.svc.loadPrincipal(r.Context(), claims)
@@ -107,7 +108,17 @@ func (s *Service) loadPrincipal(ctx context.Context, c token.Claims) (*Principal
 		err = s.pool.QueryRow(ctx, `
 			SELECT 1 FROM sessions s JOIN platform_admins pa ON pa.user_id = s.user_id
 			WHERE `+live, c.SessionID, c.UserID).Scan(new(int))
-	case AppStore:
+	case AppStore, AppCourier:
+		// Курьеру нужен действующий логин и право доставки: отключили вход
+		// или убрали право — сессия перестаёт работать сразу.
+		courier := ""
+		if c.App == AppCourier {
+			courier = `
+			JOIN courier_logins cl ON cl.employee_id = e.id
+			WHERE (r.is_owner OR 'orders.deliver' = ANY(r.permissions)) AND `
+		} else {
+			courier = " WHERE "
+		}
 		err = s.pool.QueryRow(ctx, `
 			SELECT e.id, e.network_id, n.kind, r.permissions, r.is_owner, e.all_stores,
 			       COALESCE((SELECT array_agg(es.store_id::text) FROM employee_stores es
@@ -115,8 +126,7 @@ func (s *Service) loadPrincipal(ctx context.Context, c token.Claims) (*Principal
 			FROM sessions s
 			JOIN employees e ON e.user_id = s.user_id AND e.status = 'active'
 			JOIN roles r     ON r.id = e.role_id
-			JOIN networks n  ON n.id = e.network_id AND n.status = 'active'
-			WHERE `+live, c.SessionID, c.UserID).Scan(
+			JOIN networks n  ON n.id = e.network_id AND n.status = 'active'`+courier+live, c.SessionID, c.UserID).Scan(
 			&p.EmployeeID, &p.NetworkID, &p.NetworkKind, &p.Permissions, &p.IsOwner, &p.AllStores, &p.StoreIDs)
 	default:
 		return nil, errSession

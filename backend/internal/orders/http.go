@@ -104,14 +104,15 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/store/couriers", m.storeCouriers)
 	})
 
-	// Курьер (приложение курьера, вход как сотрудник магазина).
+	// Курьер: приложение курьера (логин и пароль) или старый вход сотрудника.
 	r.Group(func(r chi.Router) {
-		r.Use(m.auth.Require(identity.AppStore))
+		r.Use(m.auth.Require(identity.AppCourier, identity.AppStore))
 		r.Get("/courier/me", m.courierMe)
 		r.Post("/courier/shift", m.courierShift)
 		r.Post("/courier/location", m.courierLocation)
 		r.Get("/courier/orders", m.courierOrders)
 		r.Get("/courier/orders/{id}", m.courierOrder)
+		r.Get("/courier/history", m.courierHistory)
 		r.Post("/courier/orders/{id}/picked-up", m.courierAct(m.svc.PickUp))
 		r.Post("/courier/orders/{id}/delivered", m.courierAct(m.svc.CourierDelivered))
 	})
@@ -672,6 +673,12 @@ func (m *Module) courierOrders(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[CourierOrder], error) {
 		items, err := m.svc.CourierOrders(r.Context(), pr(r))
 		return httpx.List[CourierOrder]{Items: items}, err
+	})
+}
+
+func (m *Module) courierHistory(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (CourierHistory, error) {
+		return m.svc.CourierHistory(r.Context(), pr(r), r.URL.Query().Get("period"))
 	})
 }
 

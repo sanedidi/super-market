@@ -8,7 +8,21 @@
 Заказ сразу уходит магазину (статус «paid» без оплаты, без денег в балансе сети).
 **Убрать, когда заработает онлайн-оплата:** `CashOnDelivery` в `backend/internal/orders`, миграцию с ограничением
 (новой миграцией вернуть `payment_provider IN ('payme', 'click')`), вариант в `apps/client/lib/screens/cart_screen.dart`
-и тексты в `order_screen.dart`, подпись `cash` в `web/store/src/pages/Orders.tsx`, проверку в `orders_test.go`.
+и тексты в `order_screen.dart`, подпись `cash` в `web/store/src/pages/Orders.tsx`, проверку в `orders_test.go`,
+поле `cash` у курьера (`backend/internal/orders/couriers.go`, `apps/courier`, `courier_login_test.go`).
+
+## Приложение курьера «SM Курьер» 1.0.0
+
+- Вход по логину и паролю (PBKDF2-SHA256), выдаёт магазин в панели → «Курьеры»; блокировка на 15 минут после
+  5 неверных паролей; новый пароль / отключение входа закрывают сессии. Токен `courier` — только `/courier/*`.
+- Приложение переписано по Figma «Курьер · приложение»: смена и транспорт, заказы с подсветкой новых и вибрацией,
+  карточка заказа (звонки, маршрут, состав, наличные), подтверждение доставки, история с суммой для кассы, профиль.
+- Android APK — артефакт `courier-android` в workflow `apps`; iPhone — `branding/apply.sh` и `flutter build ipa`
+  (apps/README.md).
+- Наличные курьеру (`cash`) тоже временные: при удалении оплаты наличными убрать `cash` в `CourierOrder`
+  и `CourierHistory` (backend/internal/orders/couriers.go) и подписи в приложении курьера.
+- Push курьеру о новом заказе пока нет (нужна отдельная регистрация приложения в Firebase) — уведомление
+  о назначении приходит в Telegram, приложение проверяет заказы каждые 15 секунд.
 
 ## Уведомления: push-рассылки, переходы, без Telegram
 

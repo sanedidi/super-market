@@ -1,20 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'courier_state.dart';
-import 'screens/orders_screen.dart';
+import 'screens/login_screen.dart';
+import 'screens/shell.dart';
+import 'state.dart';
+import 'ui/theme.dart';
 
 /// Адрес API задаётся при сборке: flutter run --dart-define=API_URL=http://localhost:8080/api/v1
 const apiUrl = String.fromEnvironment('API_URL', defaultValue: 'https://api.super-market.uz/api/v1');
 
-const brand = Color(0xFF155EEF);
+/// Версия для экрана профиля (совпадает с pubspec.yaml).
+const appVersion = '1.0.0';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final api = Api(baseUrl: apiUrl, app: 'store');
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  final api = Api(baseUrl: apiUrl, app: 'courier');
   await api.init();
   runApp(
     MultiProvider(
@@ -32,11 +37,11 @@ class CourierApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final api = context.watch<Api>();
+    final loggedIn = context.select<Api, bool>((a) => a.loggedIn);
     return MaterialApp(
-      title: 'Курьер',
+      title: 'Super Market Курьер',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(colorSchemeSeed: brand, useMaterial3: true, scaffoldBackgroundColor: const Color(0xFFF6F7F9)),
+      theme: buildTheme(),
       locale: const Locale('ru'),
       supportedLocales: const [Locale('ru'), Locale('uz'), Locale('en')],
       localizationsDelegates: const [
@@ -44,35 +49,32 @@ class CourierApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      home: api.loggedIn
-          ? const OrdersScreen()
-          : LoginScreen(api: api, title: 'Курьер', subtitle: 'Вход сотрудника магазина', onOpenUrl: (u) => openUrl(u)),
+      home: loggedIn ? const Shell() : const LoginScreen(),
     );
   }
 }
 
-Future<void> openUrl(String url) async {
-  await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+/// Сообщение внизу экрана.
+void showMessage(BuildContext context, Object e) {
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(e.toString())));
 }
 
-void showError(BuildContext context, Object e) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
-}
-
-/// Звонок.
-Future<void> call(BuildContext context, String phone) async {
+Future<void> _open(BuildContext context, Uri uri) async {
   try {
-    await launchUrl(Uri.parse('tel:${phone.replaceAll(' ', '')}'));
-  } catch (e) {
-    if (context.mounted) showError(context, e);
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) showMessage(context, 'Не удалось открыть: $uri');
+  } catch (_) {
+    if (context.mounted) showMessage(context, 'Не удалось открыть: $uri');
   }
 }
 
-/// Маршрут в Яндекс Картах (или в браузере, если приложения нет).
-Future<void> route(BuildContext context, double lat, double lng) async {
-  try {
-    await openUrl('https://yandex.uz/maps/?rtext=~$lat,$lng&rtt=auto');
-  } catch (e) {
-    if (context.mounted) showError(context, e);
-  }
+/// Позвонить.
+Future<void> call(BuildContext context, String phone) => _open(context, Uri.parse('tel:${phone.replaceAll(RegExp(r'[^+\d]'), '')}'));
+
+/// Маршрут в Яндекс Картах (приложение или браузер).
+Future<void> route(BuildContext context, num? lat, num? lng) async {
+  if (lat == null || lng == null) return;
+  await _open(context, Uri.parse('https://yandex.uz/maps/?rtext=~$lat,$lng&rtt=auto'));
 }

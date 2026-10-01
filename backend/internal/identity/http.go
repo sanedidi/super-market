@@ -27,6 +27,8 @@ func (m *Module) Routes(r chi.Router) {
 	r.With(m.auth.Require(AppClient)).Post("/auth/client/logout", m.logout)
 	r.With(m.auth.Require(AppStore)).Post("/auth/store/logout", m.logout)
 	r.With(m.auth.Require(AppAdmin)).Post("/auth/admin/logout", m.logout)
+	r.Post("/auth/courier/login", m.courierLogin)
+	r.With(m.auth.Require(AppCourier)).Post("/auth/courier/logout", m.logout)
 
 	r.Group(func(r chi.Router) {
 		r.Use(m.auth.Require(AppStore))
@@ -38,6 +40,10 @@ func (m *Module) Routes(r chi.Router) {
 		r.With(staff).Get("/store/employees", m.listEmployees)
 		r.Post("/store/employees", m.createEmployee)
 		r.Patch("/store/employees/{id}", m.updateEmployee)
+		// Логин и пароль курьера для приложения курьера.
+		r.With(m.auth.Allow(PermStaffManage, PermOrdersManage)).Get("/store/couriers/{id}/login", m.getCourierLogin)
+		r.Put("/store/couriers/{id}/login", m.setCourierLogin)
+		r.Delete("/store/couriers/{id}/login", m.deleteCourierLogin)
 	})
 }
 
@@ -197,4 +203,50 @@ func (m *Module) updateEmployee(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, e)
+}
+
+// ----------------------------------------------------------------- курьер
+
+func (m *Module) courierLogin(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Login    string `json:"login"`
+		Password string `json:"password"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		m.fail(w, r, err)
+		return
+	}
+	t, err := m.svc.CourierLogin(r.Context(), in.Login, in.Password, r.UserAgent())
+	if err != nil {
+		m.fail(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, t)
+}
+
+func (m *Module) getCourierLogin(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (CourierLoginInfo, error) {
+		if _, err := m.svc.courierEmployee(r.Context(), FromContext(r.Context()), id); err != nil {
+			return CourierLoginInfo{}, err
+		}
+		return m.svc.CourierLoginOf(r.Context(), id)
+	})
+}
+
+func (m *Module) setCourierLogin(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in CourierLoginInput) (CourierLoginInfo, error) {
+		return m.svc.SetCourierLogin(r.Context(), FromContext(r.Context()), id, in)
+	})
+}
+
+func (m *Module) deleteCourierLogin(w http.ResponseWriter, r *http.Request) {
+	id, err := httpx.PathID(r, "id")
+	if err == nil {
+		err = m.svc.DeleteCourierLogin(r.Context(), FromContext(r.Context()), id)
+	}
+	if err != nil {
+		m.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

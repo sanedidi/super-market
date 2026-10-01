@@ -22,7 +22,7 @@ class ApiError implements Exception {
 
 /// HTTP-клиент API с токенами и автообновлением access-токена.
 ///
-/// [app] — приложение, на которое выдаётся токен: `client` или `store`.
+/// [app] — приложение, на которое выдаётся токен: `client`, `store` или `courier`.
 class Api extends ChangeNotifier {
   Api({required this.baseUrl, required this.app, http.Client? client}) : _http = client ?? http.Client();
 
@@ -71,6 +71,12 @@ class Api extends ChangeNotifier {
   /// Проверить код и войти.
   Future<void> verifyCode(String phone, String code) async {
     final tokens = await post('/auth/otp/verify', {'phone': phone, 'code': code.trim(), 'app': app});
+    await _save(tokens as Map<String, dynamic>);
+  }
+
+  /// Вход по логину и паролю (приложение курьера: /auth/courier/login).
+  Future<void> signIn(String path, Map<String, dynamic> body) async {
+    final tokens = await post(path, body);
     await _save(tokens as Map<String, dynamic>);
   }
 

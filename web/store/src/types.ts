@@ -494,4 +494,7 @@ export type Courier = {
   lng: number | null
   located_at: string | null
   active_orders: number
+  /** Логин приложения курьера; null — входа нет. */
+  login: string | null
+  last_login_at: string | null
 }

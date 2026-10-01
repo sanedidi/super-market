@@ -77,46 +77,37 @@ flutter build windows --release
 на диске, очередь отправки; `lib/state` — касса и продажа; `lib/ui` — экраны из Figma «POS · касса».
 Данные кассы — JSON-файлы в папке приложения (`pos/`): каталог, журнал смены, очередь `outbox/`.
 
-## Курьер (apps/courier)
+## Курьер (apps/courier) — «SM Курьер»
 
-Вход — как сотрудник магазина (номер и код из Telegram). Работать курьером может сотрудник, у роли
-которого есть право «Курьер: доставка заказов». Курьер выходит на смену, видит назначенные магазином
-заказы, звонит магазину и покупателю, строит маршрут в Яндекс Картах, отмечает «Забрал» и «Доставил».
-Пока он на смене, приложение раз в 10 секунд отправляет его точку — покупатель видит курьера на карте.
+Вход — по **логину и паролю**, которые выдаёт магазин: панель магазина → «Курьеры» → «Выдать логин и пароль».
+Курьер — сотрудник, у роли которого есть право «Курьер: доставка заказов». После 5 неверных паролей вход
+закрывается на 15 минут; смена пароля в панели выкидывает курьера на всех телефонах.
 
-Платформенные папки создаются так же, как у POS:
+Экраны — Figma «Курьер · приложение»: вход, смена и транспорт, заказы («Везу» и «Забрать в магазине»,
+новые подсвечиваются и телефон вибрирует), карточка заказа (магазин, покупатель, звонки, маршрут в Яндекс
+Картах, состав, оплата — сколько взять наличными), «Забрал» и «Доставил» (для наличных — подтверждение суммы),
+история за сегодня / вчера / неделю с суммой наличных для кассы, профиль. Пока курьер на смене, приложение
+раз в 10 секунд отправляет точку — покупатель видит курьера на карте. Заказы обновляются каждые 15 секунд.
+
+Устройство кода: `lib/logic.dart` — подписи, группы заказов, адрес, время (тесты в `test/`); `lib/state.dart` —
+курьер, заказы, смена, геопозиция; `lib/screens/` — экраны; `lib/ui/` — цвета, шрифт Inter, кнопки.
+
+**Android:** готовый APK собирает GitHub Actions → workflow `apps` → артефакт `courier-android`.
+
+**iPhone (TestFlight)** — один раз создать папки платформ и приложение в App Store Connect
+(bundle id `uz.supermarket.smCourier`), дальше как у приложения покупателя:
 
 ```sh
 cd apps/courier
-flutter create --org uz.supermarket --project-name sm_courier --platforms android,ios .
-flutter pub get
-flutter run 
+flutter create --platforms=android,ios --org uz.supermarket --project-name sm_courier .
+rm -f test/widget_test.dart
+bash branding/apply.sh        # название «SM Курьер», логотип, разрешения на геопозицию
+flutter build ipa
+open build/ios/archive/Runner.xcarchive   # Distribute App → App Store Connect
 ```
 
-После `flutter create` добавьте разрешения на геопозицию в фоне:
-
-- iOS — `ios/Runner/Info.plist`:
-  ```xml
-  <key>NSLocationWhenInUseUsageDescription</key>
-  <string>Покупатель видит, где его заказ, пока вы везёте</string>
-  <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-  <string>Покупатель видит, где его заказ, даже когда приложение свёрнуто</string>
-  <key>UIBackgroundModes</key>
-  <array><string>location</string></array>
-  ```
-- Android — `android/app/src/main/AndroidManifest.xml`, перед `<application>`:
-  ```xml
-  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-  <uses-permission android:name="android.permission.WAKE_LOCK" />
-  ```
-  Пока курьер на смене, Android показывает уведомление «Вы на смене» — так точка отправляется и со
-  свёрнутым приложением.
-
-Плюс исключения для HTTP из раздела ниже.
+`branding/apply.sh` добавляет разрешения: геопозиция (в том числе в фоне), фоновая служба Android с
+уведомлением «Вы на смене», вибрация, ссылки на звонок и карты. Логотип — из `branding/`.
 
 ## Настройки платформ
 

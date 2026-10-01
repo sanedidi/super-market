@@ -46,17 +46,22 @@ type Courier struct {
 	Lng          *float64   `json:"lng"`
 	LocatedAt    *time.Time `json:"located_at"`
 	ActiveOrders int        `json:"active_orders"`
+	// Логин для приложения курьера; null — входа нет.
+	Login       *string    `json:"login"`
+	LastLoginAt *time.Time `json:"last_login_at"`
 }
 
 // courierQuery — курьеры сети: право orders.deliver или уже выходили на смену.
 const courierQuery = `
 	SELECT e.id, e.full_name, u.phone, COALESCE(c.vehicle, 'foot'), COALESCE(c.on_shift, false),
 	       ST_Y(c.location::geometry), ST_X(c.location::geometry), c.located_at,
-	       (SELECT count(*) FROM orders o WHERE o.courier_id = e.id AND o.status IN ('accepted', 'picking', 'picked', 'delivering'))::int
+	       (SELECT count(*) FROM orders o WHERE o.courier_id = e.id AND o.status IN ('accepted', 'picking', 'picked', 'delivering'))::int,
+	       cl.login, cl.last_login_at
 	FROM employees e
 	JOIN roles r ON r.id = e.role_id
 	JOIN users u ON u.id = e.user_id
 	LEFT JOIN couriers c ON c.employee_id = e.id
+	LEFT JOIN courier_logins cl ON cl.employee_id = e.id
 	WHERE e.network_id = $1 AND e.status = 'active'
 	  AND ('orders.deliver' = ANY(r.permissions) OR c.employee_id IS NOT NULL)
 	  AND ($2 = '' OR r.is_owner OR e.all_stores OR EXISTS (
@@ -141,9 +146,20 @@ func (s *Service) AssignCourier(ctx context.Context, p *identity.Principal, id s
 type CourierMe struct {
 	EmployeeID string `json:"employee_id"`
 	FullName   string `json:"full_name"`
+	Phone      string `json:"phone"`
+	Login      string `json:"login"`
 	Network    string `json:"network_name"`
 	Vehicle    string `json:"vehicle"`
 	OnShift    bool   `json:"on_shift"`
+	// Магазины курьера — позвонить или посмотреть адрес.
+	Stores []CourierStore `json:"stores"`
+}
+
+type CourierStore struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Address string `json:"address"`
+	Phone   string `json:"phone"`
 }
 
 func (s *Service) CourierMe(ctx context.Context, p *identity.Principal) (CourierMe, error) {
@@ -152,10 +168,88 @@ func (s *Service) CourierMe(ctx context.Context, p *identity.Principal) (Courier
 	}
 	me := CourierMe{EmployeeID: p.EmployeeID}
 	err := s.pool.QueryRow(ctx, `
-		SELECT e.full_name, n.name, COALESCE(c.vehicle, 'foot'), COALESCE(c.on_shift, false)
-		FROM employees e JOIN networks n ON n.id = e.network_id
-		LEFT JOIN couriers c ON c.employee_id = e.id WHERE e.id = $1`, p.EmployeeID).Scan(&me.FullName, &me.Network, &me.Vehicle, &me.OnShift)
+		SELECT e.full_name, u.phone, COALESCE(cl.login, ''), n.name, COALESCE(c.vehicle, 'foot'), COALESCE(c.on_shift, false)
+		FROM employees e JOIN networks n ON n.id = e.network_id JOIN users u ON u.id = e.user_id
+		LEFT JOIN couriers c ON c.employee_id = e.id
+		LEFT JOIN courier_logins cl ON cl.employee_id = e.id
+		WHERE e.id = $1`, p.EmployeeID).Scan(&me.FullName, &me.Phone, &me.Login, &me.Network, &me.Vehicle, &me.OnShift)
+	if err != nil {
+		return me, err
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT s.id, s.name, s.address, s.phone FROM stores s
+		WHERE s.network_id = $1 AND s.status = 'active'
+		  AND ($2 OR s.id::text = ANY($3::text[]))
+		ORDER BY s.name LIMIT 20`, p.NetworkID, p.SeesAllStores(), p.StoreIDs)
+	if err != nil {
+		return me, err
+	}
+	me.Stores, err = pgx.CollectRows(rows, pgx.RowToStructByPos[CourierStore])
 	return me, err
+}
+
+// CourierHistoryItem — доставленный заказ в истории курьера.
+type CourierHistoryItem struct {
+	ID          string     `json:"id"`
+	Number      int64      `json:"number"`
+	StoreName   string     `json:"store_name"`
+	Address     string     `json:"address"`
+	Total       string     `json:"total"`
+	Cash        bool       `json:"cash"`
+	PickedUpAt  *time.Time `json:"picked_up_at"`
+	DeliveredAt *time.Time `json:"delivered_at"`
+}
+
+type CourierHistory struct {
+	Items      []CourierHistoryItem `json:"items"`
+	Delivered  int                  `json:"delivered"`
+	CashTotal  string               `json:"cash_total"`
+	AvgMinutes int                  `json:"avg_minutes"` // от «забрал» до «доставил»
+}
+
+var tashkent = time.FixedZone("Asia/Tashkent", 5*3600)
+
+// CourierHistory — доставленные заказы за период: today, yesterday, week (по Ташкенту).
+func (s *Service) CourierHistory(ctx context.Context, p *identity.Principal, period string) (CourierHistory, error) {
+	h := CourierHistory{Items: []CourierHistoryItem{}, CashTotal: "0.00"}
+	if err := p.Require(identity.PermOrdersDeliver); err != nil {
+		return h, err
+	}
+	now := time.Now().In(tashkent)
+	day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, tashkent)
+	from, to := day, day.AddDate(0, 0, 1)
+	switch period {
+	case "", "today":
+	case "yesterday":
+		from, to = day.AddDate(0, 0, -1), day
+	case "week":
+		from = day.AddDate(0, 0, -6)
+	default:
+		return h, apperr.Validation("period: today, yesterday или week")
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT o.id, o.number, s.name, o.address, o.total::text, o.payment_provider = $4, o.picked_up_at, o.delivered_at
+		FROM orders o JOIN stores s ON s.id = o.store_id
+		WHERE o.courier_id = $1 AND o.status = 'delivered' AND o.delivered_at >= $2 AND o.delivered_at < $3
+		ORDER BY o.delivered_at DESC LIMIT 300`, p.EmployeeID, from, to, CashOnDelivery)
+	if err != nil {
+		return h, err
+	}
+	h.Items, err = pgx.CollectRows(rows, pgx.RowToStructByPos[CourierHistoryItem])
+	if err != nil {
+		return h, err
+	}
+	var avg *float64
+	err = s.pool.QueryRow(ctx, `
+		SELECT count(*)::int, COALESCE(sum(o.total) FILTER (WHERE o.payment_provider = $4), 0)::numeric(18,2)::text,
+		       avg(EXTRACT(EPOCH FROM o.delivered_at - o.picked_up_at) / 60) FILTER (WHERE o.picked_up_at IS NOT NULL)
+		FROM orders o
+		WHERE o.courier_id = $1 AND o.status = 'delivered' AND o.delivered_at >= $2 AND o.delivered_at < $3`,
+		p.EmployeeID, from, to, CashOnDelivery).Scan(&h.Delivered, &h.CashTotal, &avg)
+	if avg != nil {
+		h.AvgMinutes = int(*avg + 0.5)
+	}
+	return h, err
 }
 
 type ShiftInput struct {
@@ -195,6 +289,21 @@ type StoreInfo struct {
 type CourierOrder struct {
 	Order Order     `json:"order"`
 	Store StoreInfo `json:"store"`
+	// Имя покупателя, сколько позиций, когда забран, брать ли наличные.
+	CustomerName string     `json:"customer_name"`
+	ItemsCount   int        `json:"items_count"`
+	PickedUpAt   *time.Time `json:"picked_up_at"`
+	Cash         bool       `json:"cash"`
+}
+
+func (s *Service) courierExtra(ctx context.Context, c *CourierOrder) error {
+	c.Cash = c.Order.PaymentProvider == CashOnDelivery
+	return s.pool.QueryRow(ctx, `
+		SELECT COALESCE(NULLIF(btrim(cu.first_name), ''), u.full_name, ''),
+		       (SELECT count(*) FROM order_items i WHERE i.order_id = o.id)::int, o.picked_up_at
+		FROM orders o JOIN users u ON u.id = o.customer_id
+		LEFT JOIN customers cu ON cu.user_id = o.customer_id
+		WHERE o.id = $1`, c.Order.ID).Scan(&c.CustomerName, &c.ItemsCount, &c.PickedUpAt)
 }
 
 func (s *Service) storeInfo(ctx context.Context, storeID string) (StoreInfo, error) {
@@ -226,7 +335,11 @@ func (s *Service) CourierOrders(ctx context.Context, p *identity.Principal) ([]C
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, CourierOrder{Order: o, Store: si})
+		c := CourierOrder{Order: o, Store: si}
+		if err := s.courierExtra(ctx, &c); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
 	}
 	return out, nil
 }
@@ -243,7 +356,11 @@ func (s *Service) courierOrder(ctx context.Context, p *identity.Principal, id st
 		return CourierOrder{}, apperr.NotFound("заказ не найден")
 	}
 	si, err := s.storeInfo(ctx, o.StoreID)
-	return CourierOrder{Order: o, Store: si}, err
+	if err != nil {
+		return CourierOrder{}, err
+	}
+	c := CourierOrder{Order: o, Store: si}
+	return c, s.courierExtra(ctx, &c)
 }
 
 func (s *Service) CourierOrder(ctx context.Context, p *identity.Principal, id string) (CourierOrder, error) {

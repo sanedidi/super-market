@@ -1,7 +1,7 @@
 name: sm_courier
-description: Приложение курьера магазина — заказы, маршрут, звонок покупателю, геопозиция во время доставки.
+description: Super Market Курьер — заказы, маршрут, звонки и геопозиция курьера магазина.
 publish_to: none
-version: 0.1.0+1
+version: 1.0.0+1
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -19,7 +19,19 @@ dependencies:
   geolocator: ^13.0.1
 
 dev_dependencies:
+  flutter_test:
+    sdk: flutter
   flutter_lints: ^4.0.0
 
 flutter:
   uses-material-design: true
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+        - asset: assets/fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700

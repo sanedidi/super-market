@@ -64,6 +64,24 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 | GET | `/admin/notifications?status=&kind=&q=&limit=&offset=` | журнал доставки (`notifications_outbox`): `status` — `pending`, `sent`, `skipped` (нет push), `failed`; `kind` — `order`, `family`, `campaign`, `test`; `q` — телефон (от 3 цифр) или текст заголовка. Поля: `id` (число), `user_id`, `phone`, `kind`, `title`, `body`, `status`, `channel`, `attempts`, `last_error` (причина по-русски), `devices` («iPhone, Android» — куда дошло), `send_after`, `created_at`, `sent_at` |
 | POST | `/admin/notifications/{id}/retry` | вернуть `failed`/`skipped` в очередь (попытки с нуля). Иначе 409 `not_failed` |
 
+### Вход курьера по логину и паролю
+
+Логин и пароль курьеру выдаёт магазин. Токен приложения `courier` открывает только `/courier/*`
+(и `/auth/courier/logout`); панель магазина с ним недоступна. После 5 неверных паролей подряд вход по
+логину закрыт на 15 минут. Новый пароль или отключение входа закрывают все сессии курьера.
+
+| Метод | Путь | Описание |
+|---|---|---|
+| POST | `/auth/courier/login` | `{login, password}` → токены (`access_token`, `refresh_token`). 401 `invalid_credentials` с `details.attempts_left`; 429 `too_many_requests` с `details.retry_after`; 403 — нет права «Курьер» |
+| POST | `/auth/courier/logout` | закрыть сессию |
+| GET | `/store/couriers/{employee_id}/login` | `login`, `password_changed_at`, `last_login_at`, `locked`. 404 — входа нет. Права: `staff.manage` или `orders.manage` |
+| PUT | `/store/couriers/{employee_id}/login` | `{login, password?}` — логин `[a-z0-9._-]`, 3–32; пароль 8–72 (пустой — не менять). 409 `login_taken`; 400 — у роли нет `orders.deliver` |
+| DELETE | `/store/couriers/{employee_id}/login` | отключить вход → 204 |
+
+`/store/couriers` отдаёт `login` и `last_login_at`. `/courier/me` — ещё `phone`, `login` и `stores [{id, name, address, phone}]`.
+Заказ курьера — ещё `customer_name`, `items_count`, `picked_up_at`, `cash` (брать наличные).
+`GET /courier/history?period=today|yesterday|week` (по Ташкенту) → `items [{id, number, store_name, address, total, cash, picked_up_at, delivered_at}]`, `delivered`, `cash_total`, `avg_minutes`.
+
 ### Push-рассылки
 
 Рассылка = заголовок (до 65), текст (до 240), переход `target` и аудитория `audience`. Отправляет воркер в `send_at`:
