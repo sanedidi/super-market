@@ -42,6 +42,7 @@ func (m *Module) Routes(r chi.Router) {
 	r.Get("/client/stores/{id}/products/{pid}", m.product)
 	r.Get("/client/stores/{id}/products/{pid}/related", m.related)
 	r.Get("/client/home", m.home)
+	r.Get("/client/stores/{id}/home", m.storeHome)
 	r.Get("/client/stores/{id}/slots", m.slots)
 	r.Group(func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppClient))
@@ -188,6 +189,12 @@ func (m *Module) home(w http.ResponseWriter, r *http.Request) {
 			return Home{}, err
 		}
 		return m.svc.Home(r.Context(), lat, lng)
+	})
+}
+
+func (m *Module) storeHome(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (StoreHome, error) {
+		return m.svc.StoreHome(r.Context(), chi.URLParam(r, "id"))
 	})
 }
 

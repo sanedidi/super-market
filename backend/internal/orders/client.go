@@ -40,6 +40,7 @@ type Service struct {
 	cfg      Config
 	log      *slog.Logger
 	now      func() time.Time
+	homes    homeCache
 }
 
 func NewService(pool *pgxpool.Pool, d *delivery.Service, p *payments.Service, n *notify.Notifier, cfg Config, log *slog.Logger) *Service {

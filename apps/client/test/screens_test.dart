@@ -85,6 +85,12 @@ final _preview = {
 Product _product(String id, String name, String price) =>
     Product({'id': id, 'name': name, 'price': price, 'available': '20', 'unit_short': 'шт', 'images': <String>[]});
 
+void _withStore(AppState s) {
+  s.stores = [Store(_store)];
+  s.address = Address(_address);
+  s.addressesLoaded = true;
+}
+
 void _fillCart(AppState s) {
   s.stores = [Store(_store)];
   s.address = Address(_address);
@@ -94,7 +100,46 @@ void _fillCart(AppState s) {
   s.setQty('s1', 'Baraka Market', _product('p3', 'Творог 9% весовой', '16000'), 2);
 }
 
-Api _api() => Api(
+final _hits = [
+  {'id': 'h1', 'name': 'Кефир Musaffo 2,5%, 900 мл', 'price': '11500', 'old_price': '13900', 'discount_percent': 17, 'available': '20', 'unit_short': 'шт'},
+  {'id': 'h2', 'name': 'Сыр «Российский», 300 г', 'price': '38000', 'available': '20', 'unit_short': 'шт'},
+];
+
+/// Шаблон платформы — как главная «Экспресс».
+final _homeTemplate = {
+  'version': 1,
+  'blocks': [
+    {'id': 'b1', 'type': 'category_icons', 'mode': 'auto', 'shape': 'circle', 'show_deals': true},
+    {'id': 'b2', 'type': 'promo', 'kind': 'free_delivery'},
+    {'id': 'b4', 'type': 'shelf', 'title': 'Хиты недели', 'source': 'hits', 'limit': 6, 'view': 'grid2', 'show_all': true, 'products': _hits},
+    {'id': 'b6', 'type': 'catalog_sections', 'view': 'tiles3', 'mode': 'all', 'show_images': true},
+  ],
+};
+
+/// Витрина сети: свои промо, баннеры, плитки и подборка в 3 колонки.
+final _homeNetwork = {
+  'version': 4,
+  'blocks': [
+    {'id': 'n0', 'type': 'stories'},
+    {'id': 'n1', 'type': 'promo', 'kind': 'custom', 'title': '−15% на молочное до воскресенья', 'subtitle': 'Только в Baraka', 'icon': 'percent', 'color': 'red', 'link': {'type': 'deals'}},
+    {
+      'id': 'n2',
+      'type': 'banners',
+      'size': 'big',
+      'autoplay': false,
+      'banners': [
+        {'id': 'x1', 'title': 'Осенняя ярмарка', 'subtitle': 'Фрукты и овощи со скидкой до 30%', 'color': '#2E9E5B', 'image_url': '', 'link_type': 'none'},
+        {'id': 'x2', 'title': 'Неделя сыра', 'color': '#E8850C', 'image_url': '', 'link_type': 'none'},
+      ],
+    },
+    {'id': 'n3', 'type': 'category_icons', 'mode': 'manual', 'category_ids': ['c5', 'c1'], 'shape': 'tiles', 'show_deals': true},
+    {'id': 'n4', 'type': 'shelf', 'title': 'Подборка к завтраку', 'source': 'manual', 'limit': 6, 'view': 'grid3', 'products': [..._hits, ..._hits.map((p) => {...p, 'id': '${p['id']}x'})]},
+    {'id': 'n5', 'type': 'banners', 'size': 'strip', 'banners': [{'id': 'x3', 'title': 'Доставка за 15 минут', 'subtitle': 'В радиусе 2 км', 'color': '#3B6FD8'}]},
+    {'id': 'n6', 'type': 'catalog_sections', 'view': 'list', 'mode': 'selected', 'category_ids': ['c1'], 'show_images': false},
+  ],
+};
+
+Api _api({Map<String, dynamic>? home}) => Api(
       baseUrl: 'http://test/api/v1',
       app: 'client',
       client: MockClient((req) async {
@@ -114,12 +159,8 @@ Api _api() => Api(
                 'eta_at': DateTime.now().add(const Duration(minutes: 12, seconds: 30)).toUtc().toIso8601String(),
               },
             },
-          '/client/stores/s1/products' => {
-              'items': [
-                {'id': 'h1', 'name': 'Кефир Musaffo 2,5%, 900 мл', 'price': '11500', 'old_price': '13900', 'discount_percent': 17, 'available': '20', 'unit_short': 'шт'},
-                {'id': 'h2', 'name': 'Сыр «Российский», 300 г', 'price': '38000', 'available': '20', 'unit_short': 'шт'},
-              ],
-            },
+          '/client/stores/s1/products' => {'items': _hits},
+          '/client/stores/s1/home' => home ?? _homeTemplate,
           '/client/family' => {'family': null},
           '/client/favorites' => {'product_ids': <String>[]},
           '/client/addresses' => {'items': [_address]},
@@ -146,11 +187,11 @@ Future<void> _loadFonts() async {
   }
 }
 
-Future<void> _shot(WidgetTester tester, Widget screen, String name, {AppState? state, void Function(AppState s)? setup}) async {
+Future<void> _shot(WidgetTester tester, Widget screen, String name, {AppState? state, void Function(AppState s)? setup, Map<String, dynamic>? home}) async {
   tester.view.physicalSize = const Size(780, 1688);
   tester.view.devicePixelRatio = 2;
   addTearDown(tester.view.reset);
-  final api = _api();
+  final api = _api(home: home);
   final st = state ?? AppState(api);
   setup?.call(st);
   await tester.pumpWidget(MultiProvider(
@@ -211,6 +252,10 @@ void main() {
   testWidgets('03 как вас зовут', (t) => _shot(t, NameStepScreen(onDone: () {}), '03_name'));
 
   testWidgets('04 главная с меню', (t) => _shot(t, const RootShell(), '04_home'));
+
+  testWidgets('12 главная из блоков сети', (t) => _shot(t, const HomeScreen(), '12_home_blocks', home: _homeNetwork, setup: _withStore));
+
+  testWidgets('13 главная по-старому, если блоки не пришли', (t) => _shot(t, const HomeScreen(), '13_home_fallback', home: {'error': 'x'}, setup: _withStore));
 
   testWidgets('08 корзина', (t) => _shot(t, const CartScreen(), '08_cart', setup: _fillCart));
 

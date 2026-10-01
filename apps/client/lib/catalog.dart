@@ -99,3 +99,13 @@ IconData categoryIcon(String name) {
   }
   return Icons.shopping_basket_outlined;
 }
+
+/// Категория по id в дереве (на любой глубине).
+CatalogCategory? findCategory(List<CatalogCategory> list, String id) {
+  for (final c in list) {
+    if (c.id == id) return c;
+    final sub = findCategory(c.children, id);
+    if (sub != null) return sub;
+  }
+  return null;
+}

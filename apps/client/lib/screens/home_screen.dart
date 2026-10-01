@@ -5,6 +5,7 @@ import 'package:sm_core/sm_core.dart';
 
 import '../catalog.dart';
 import '../delivery_time.dart';
+import '../home_blocks.dart';
 import '../main.dart';
 import '../product_tile.dart';
 import '../state.dart';
@@ -30,6 +31,21 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  /// Блоки главной из админки; пока не пришли (или ошибка) — главная по-старому.
+  final _blocks = HomeBlocksCache();
+  final _requested = <String>{};
+  final _answered = <String>{};
+
+  List<HomeBlock>? _blocksOf(Store s) {
+    if (_requested.add(s.id)) {
+      _blocks.load(context.read<Api>(), s.id).then((_) {
+        _answered.add(s.id);
+        if (mounted) setState(() {});
+      });
+    }
+    return _blocks.peek(s.id);
+  }
+
   /// «Хиты недели» по магазину (кэш на время сессии).
   final _hits = <String, Future<List<Product>>>{};
 
@@ -55,6 +71,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (s != null) {
       await state.categoriesOf(s, force: true);
       _hitsOf(s, force: true);
+      if (mounted) await _blocks.load(context.read<Api>(), s.id, force: true);
       if (mounted) setState(() {});
     }
   }
@@ -126,9 +143,14 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ];
     }
+    final blocks = _blocksOf(store);
+    if (blocks != null) return homeBlockSlivers(context, store, blocks);
+    if (!_answered.contains(store.id)) {
+      return const [SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(48), child: Center(child: CircularProgressIndicator())))];
+    }
     return [
       SliverToBoxAdapter(child: _CategoryCircles(store: store)),
-      SliverToBoxAdapter(child: _FreeDeliveryStrip(store: store)),
+      SliverToBoxAdapter(child: FreeDeliveryStrip(store: store)),
       if (state.banners.isNotEmpty) SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.only(top: 16), child: _Banners(banners: state.banners))),
       SliverToBoxAdapter(child: _HitsHeader(store: store)),
       _HitsGrid(store: store, future: _hitsOf(store)),
@@ -539,8 +561,8 @@ class _CategoryCircles extends StatelessWidget {
 }
 
 /// Жёлтая полоска «Доставка 0 сум от …» и сколько осталось набрать.
-class _FreeDeliveryStrip extends StatelessWidget {
-  const _FreeDeliveryStrip({required this.store});
+class FreeDeliveryStrip extends StatelessWidget {
+  const FreeDeliveryStrip({super.key, required this.store});
   final Store store;
 
   @override
@@ -747,11 +769,18 @@ class _Deals extends StatelessWidget {
 
 /// Категории магазина разделами: заголовок и плитки 3 в ряд.
 class CategorySectionsList extends StatefulWidget {
-  const CategorySectionsList({super.key, required this.store, this.keys});
+  const CategorySectionsList({super.key, required this.store, this.keys, this.view = 'tiles3', this.only, this.showImages = true});
   final Store store;
 
   /// Ключи разделов (для прокрутки к разделу по чипу в каталоге).
   final Map<String?, GlobalKey>? keys;
+
+  /// Вид: tiles3 | tiles2 | list (блок «Каталог по разделам»).
+  final String view;
+
+  /// Только эти разделы (id корневых категорий); null — все.
+  final List<String>? only;
+  final bool showImages;
 
   @override
   State<CategorySectionsList> createState() => _CategorySectionsListState();
@@ -778,7 +807,13 @@ class _CategorySectionsListState extends State<CategorySectionsList> {
             onAction: () => setState(() => state.categoriesOf(store, force: true)),
           );
         }
-        final sections = catalogSections(snap.data!);
+        var sections = catalogSections(snap.data!);
+        final only = widget.only;
+        if (only != null && only.isNotEmpty) {
+          sections = [
+            for (final id in only) ...sections.where((s) => s.id == id),
+          ];
+        }
         if (sections.isEmpty) {
           return const EmptyState(icon: Icons.inventory_2_outlined, title: 'Товаров пока нет', text: 'Магазин ещё не выложил товары в приложение.');
         }
@@ -787,7 +822,7 @@ class _CategorySectionsListState extends State<CategorySectionsList> {
             Padding(
               key: keys?[sec.id],
               padding: const EdgeInsets.only(top: 28),
-              child: CategorySection(title: sec.title, tiles: sec.tiles, store: store),
+              child: CategorySection(title: sec.title, tiles: sec.tiles, store: store, view: widget.view, showImages: widget.showImages),
             ),
         ]);
       },
@@ -797,13 +832,45 @@ class _CategorySectionsListState extends State<CategorySectionsList> {
 
 /// Раздел каталога: заголовок и сетка плиток.
 class CategorySection extends StatelessWidget {
-  const CategorySection({super.key, required this.title, required this.tiles, required this.store});
+  const CategorySection({super.key, required this.title, required this.tiles, required this.store, this.view = 'tiles3', this.showImages = true});
   final String title;
   final List<CatalogCategory> tiles;
   final Store store;
 
+  /// tiles3 | tiles2 | list.
+  final String view;
+  final bool showImages;
+
   @override
   Widget build(BuildContext context) {
+    void open(CatalogCategory c) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CategoryScreen(store: store, category: c)));
+    if (view == 'list') {
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SectionHeader(title: title),
+        const SizedBox(height: 4),
+        for (var i = 0; i < tiles.length; i++)
+          InkWell(
+            onTap: () => open(tiles[i]),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(color: AppColors.tiles[(i + title.length) % AppColors.tiles.length], borderRadius: BorderRadius.circular(12)),
+                  child: showImages && tiles[i].imageUrl != null
+                      ? Image.network(tiles[i].imageUrl!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Icon(categoryIcon(tiles[i].name), color: AppColors.text2))
+                      : Icon(categoryIcon(tiles[i].name), color: AppColors.text2),
+                ),
+                const SizedBox(width: 14),
+                Expanded(child: Text(tiles[i].name, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyMedium.copyWith(fontSize: 16))),
+                const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
+              ]),
+            ),
+          ),
+      ]);
+    }
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       SectionHeader(title: title),
       const SizedBox(height: 12),
@@ -811,14 +878,19 @@ class CategorySection extends StatelessWidget {
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, mainAxisSpacing: 10, crossAxisSpacing: 10),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: view == 'tiles2' ? 2 : 3,
+          mainAxisSpacing: 10,
+          crossAxisSpacing: 10,
+          childAspectRatio: view == 'tiles2' ? 1.6 : 1,
+        ),
         itemCount: tiles.length,
         itemBuilder: (_, i) => CategoryTile(
           name: tiles[i].name,
-          imageUrl: tiles[i].imageUrl,
+          imageUrl: showImages ? tiles[i].imageUrl : null,
           icon: categoryIcon(tiles[i].name),
           colorIndex: i + title.length,
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CategoryScreen(store: store, category: tiles[i]))),
+          onTap: () => open(tiles[i]),
         ),
       ),
     ]);
@@ -843,45 +915,9 @@ class _BannersState extends State<_Banners> {
     super.dispose();
   }
 
-  Color _color(Map<String, dynamic> b) {
-    final hex = '${b['color'] ?? ''}'.replaceFirst('#', '');
-    return Color(int.tryParse('FF$hex', radix: 16) ?? 0xFFE11D2A);
-  }
-
   Future<void> _open(Map<String, dynamic> b) async {
-    final state = context.read<AppState>();
-    final id = b['link_id'] as String?;
-    final store = _promoStore(state);
-    if (id == null || store == null) return;
-    try {
-      switch (b['link_type']) {
-        case 'store':
-          final st = state.stores.where((s) => s.id == id).firstOrNull;
-          if (st != null) state.openCatalog(st);
-        case 'promotion':
-          await openDeals(context, store, title: '${b['title']}');
-        case 'product':
-          final j = await context.read<Api>().get('/client/stores/${store.id}/products/$id') as Map<String, dynamic>;
-          if (mounted) await openProduct(context, storeRef(store), Product(j));
-        case 'category':
-          final tree = buildCategoryTree(await context.read<Api>().list('/client/stores/${store.id}/categories'));
-          CatalogCategory? find(List<CatalogCategory> l) {
-            for (final c in l) {
-              if (c.id == id) return c;
-              final sub = find(c.children);
-              if (sub != null) return sub;
-            }
-            return null;
-          }
-
-          final cat = find(tree);
-          if (cat != null && mounted) {
-            await Navigator.of(context).push(MaterialPageRoute(builder: (_) => CategoryScreen(store: store, category: cat)));
-          }
-      }
-    } catch (e) {
-      if (mounted) showError(context, e);
-    }
+    final store = _promoStore(context.read<AppState>());
+    if (store != null) await openBannerLink(context, store, b);
   }
 
   @override
@@ -901,7 +937,7 @@ class _BannersState extends State<_Banners> {
             return Padding(
               padding: EdgeInsets.only(left: 16, right: i == list.length - 1 ? 16 : 0),
               child: Material(
-                color: _color(b),
+                color: bannerColor(b),
                 borderRadius: BorderRadius.circular(AppRadius.xl),
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
@@ -927,5 +963,39 @@ class _BannersState extends State<_Banners> {
         ),
       ),
     );
+  }
+}
+
+/// Цвет баннера из «#RRGGBB».
+Color bannerColor(Map<String, dynamic> b) {
+  final hex = '${b['color'] ?? ''}'.replaceFirst('#', '');
+  return Color(int.tryParse('FF$hex', radix: 16) ?? 0xFFE11D2A);
+}
+
+/// Нажатие на баннер: акция, категория, товар или магазин.
+Future<void> openBannerLink(BuildContext context, Store store, Map<String, dynamic> b) async {
+  final state = context.read<AppState>();
+  final api = context.read<Api>();
+  final id = b['link_id'] as String?;
+  if (id == null) return;
+  try {
+    switch (b['link_type']) {
+      case 'store':
+        final st = state.stores.where((s) => s.id == id).firstOrNull;
+        if (st != null) state.openCatalog(st);
+      case 'promotion':
+        await openDeals(context, store, title: '${b['title']}');
+      case 'product':
+        final j = await api.get('/client/stores/${store.id}/products/$id') as Map<String, dynamic>;
+        if (context.mounted) await openProduct(context, storeRef(store), Product(j));
+      case 'category':
+        final tree = buildCategoryTree(await api.list('/client/stores/${store.id}/categories'));
+        final cat = findCategory(tree, id);
+        if (cat != null && context.mounted) {
+          await Navigator.of(context).push(MaterialPageRoute(builder: (_) => CategoryScreen(store: store, category: cat)));
+        }
+    }
+  } catch (e) {
+    if (context.mounted) showError(context, e);
   }
 }
