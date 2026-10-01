@@ -107,7 +107,11 @@ class _LoginScreenState extends State<LoginScreen> {
             color: C.brand,
             padding: const EdgeInsets.all(56),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Super Market · Касса', style: t(15, w: FontWeight.w700, c: Colors.white)),
+              Row(children: [
+                const Logo(size: 56),
+                const SizedBox(width: 16),
+                Text('Касса', style: t(22, w: FontWeight.w700, c: Colors.white)),
+              ]),
               const Spacer(),
               Text(s.networkName.isEmpty ? s.storeName : s.networkName, style: t(40, w: FontWeight.w700, c: Colors.white)),
               const SizedBox(height: 12),

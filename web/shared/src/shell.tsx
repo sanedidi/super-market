@@ -9,6 +9,7 @@ import 'dayjs/locale/ru'
 import { ApiError, configureApi, type AppName } from './api'
 import { AuthProvider, LoginPage, useAuth } from './auth'
 import './theme.css'
+import logo from './logo.png'
 
 dayjs.locale('ru')
 
@@ -141,10 +142,7 @@ export function Brand({ title, subtitle }: { title: string; subtitle?: string })
   return (
     <div className="sm-brand">
       <span className="sm-brand-mark">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-          <path d="M6 7h12l-1.2 11.1a2 2 0 0 1-2 1.9H9.2a2 2 0 0 1-2-1.9L6 7Z" fill="#fff" />
-          <path d="M9 9V6a3 3 0 0 1 6 0v3" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
-        </svg>
+        <img src={logo} alt="Super Market" />
       </span>
       <span className="sm-brand-text">
         {title}
@@ -254,10 +252,7 @@ function Sidebar({
         ) : (
           <div style={{ width: '100%', display: 'grid', placeItems: 'center' }}>
             <span className="sm-brand-mark">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-                <path d="M6 7h12l-1.2 11.1a2 2 0 0 1-2 1.9H9.2a2 2 0 0 1-2-1.9L6 7Z" fill="#fff" />
-                <path d="M9 9V6a3 3 0 0 1 6 0v3" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
-              </svg>
+              <img src={logo} alt="Super Market" />
             </span>
           </div>
         )}

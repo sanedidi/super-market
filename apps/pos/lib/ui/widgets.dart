@@ -5,6 +5,19 @@ import 'package:provider/provider.dart';
 import '../state/pos.dart';
 import 'theme.dart';
 
+/// Логотип Super Market (тот же, что у приложения покупателя).
+class Logo extends StatelessWidget {
+  const Logo({super.key, this.size = 32});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => ClipRRect(
+        borderRadius: BorderRadius.circular(size * 0.22),
+        child: Image.asset('assets/logo.png', width: size, height: size, filterQuality: FilterQuality.medium),
+      );
+}
+
 /// Белая карточка-панель.
 class Panel extends StatelessWidget {
   const Panel({super.key, required this.child, this.padding = const EdgeInsets.all(20), this.color = C.surface, this.border});
@@ -123,6 +136,8 @@ class TopBar extends StatelessWidget {
       color: C.surface,
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(children: [
+        const Logo(size: 28),
+        const SizedBox(width: 12),
         Text('${s.deviceName} · ${s.storeName}', style: t(15, w: FontWeight.w700)),
         const SizedBox(width: 16),
         Text(shiftText, style: t(13, c: C.ts)),

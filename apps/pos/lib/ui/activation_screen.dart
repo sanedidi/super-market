@@ -6,6 +6,7 @@ import '../core/codes.dart';
 import '../data/api.dart';
 import '../state/pos.dart';
 import 'theme.dart';
+import 'widgets.dart';
 
 /// Первый запуск: код кассы из панели магазина → касса подключена.
 class ActivationScreen extends StatefulWidget {
@@ -57,6 +58,8 @@ class _ActivationScreenState extends State<ActivationScreen> {
             padding: const EdgeInsets.all(40),
             decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(24)),
             child: Column(children: [
+              const Logo(size: 72),
+              const SizedBox(height: 20),
               Text('Подключите кассу', style: t(28, w: FontWeight.w700)),
               const SizedBox(height: 16),
               Text(
