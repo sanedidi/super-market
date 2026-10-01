@@ -8,7 +8,7 @@ import '../core/money.dart';
 import 'pos.dart';
 
 /// Команды быстрого режима — клавиши, которые не печатают символ.
-enum Cmd { enter, esc, del, backspace, up, down, star, pay, qty, search, discountLine, discountAll, hold, returns, orders, shiftMenu }
+enum Cmd { enter, esc, del, backspace, up, down, star, pay, qty, item, search, discountLine, discountAll, hold, returns, orders, shiftMenu }
 
 enum SaleMode { sale, paid, held }
 
@@ -49,6 +49,10 @@ class SaleController extends ChangeNotifier {
   PaidInfo? paid;
 
   bool busy = false;
+
+  /// Строку выбрали стрелками или нажатием — пустой Enter открывает её карточку,
+  /// а не оплату. Скан, новый товар и оплата сбрасывают выбор.
+  bool rowFocused = false;
 
   /// Звук: true — «бип» успеха, false — ошибка.
   void Function(bool ok)? onSound;
@@ -106,8 +110,12 @@ class SaleController extends ChangeNotifier {
         _delete();
       case Cmd.up:
         cart.move(up: true);
+        rowFocused = mode == SaleMode.sale && cart.selected != null;
       case Cmd.down:
         cart.move(up: false);
+        rowFocused = mode == SaleMode.sale && cart.selected != null;
+      case Cmd.item:
+        if (mode == SaleMode.sale && cart.selected != null) onNavigate?.call(Cmd.item);
       case Cmd.star:
       case Cmd.qty:
         _star();
@@ -143,6 +151,8 @@ class SaleController extends ChangeNotifier {
       _clearInput();
     } else if (mode == SaleMode.held) {
       mode = SaleMode.sale;
+    } else if (rowFocused) {
+      rowFocused = false;
     } else {
       msg = null;
     }
@@ -164,9 +174,14 @@ class SaleController extends ChangeNotifier {
     _clearInput();
 
     if (raw.isEmpty) {
-      _openPay();
+      if (rowFocused && mode == SaleMode.sale && cart.selected != null) {
+        onNavigate?.call(Cmd.item);
+      } else {
+        _openPay();
+      }
       return;
     }
+    rowFocused = false;
     final digits = RegExp(r'^[0-9]+$').hasMatch(raw);
     // Сканер, длинный код или буквы — штрихкод/марка; короткие цифры — код товара.
     if (scanned || !digits || raw.length >= 8) {
@@ -248,6 +263,7 @@ class SaleController extends ChangeNotifier {
     }
     if (mode == SaleMode.paid) _newCheck();
     if (mode != SaleMode.sale) mode = SaleMode.sale;
+    rowFocused = false;
     try {
       final line = cart.add(p, qty: qty, mark: mark);
       final q = p.fractional ? '${fmtQty(qty)} ${p.unit}' : '${fmtQty(line.qty)} ×';
@@ -276,6 +292,47 @@ class SaleController extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------- количество
+
+  /// Нажатие на строку: выбрать её (и стрелки, и карточка работают с ней).
+  void select(CartLine line) {
+    if (mode != SaleMode.sale) return;
+    cart.selected = line;
+    rowFocused = true;
+    notifyListeners();
+  }
+
+  /// Кнопки − / + в строке и в карточке товара. У маркированного товара «+»
+  /// нельзя: каждую штуку сканируют, чтобы её код попал в чек.
+  String? step(CartLine line, int delta) {
+    if (mode != SaleMode.sale) return null;
+    cart.selected = line;
+    if (line.product.fractional) return 'Весовой товар — вес меняется в карточке товара';
+    String? err;
+    if (line.product.marked) {
+      if (delta > 0) {
+        err = 'Маркированный товар — сканируйте DataMatrix следующей штуки';
+      } else if (line.marks.length <= 1) {
+        removeLine(line);
+        return null;
+      } else {
+        line.marks.removeLast();
+        line.qty = line.marks.length * 1000;
+      }
+    } else {
+      err = setQty(line.qty + delta * 1000);
+    }
+    if (err != null) _error(err, note: line.product.name);
+    notifyListeners();
+    return err;
+  }
+
+  void removeLine(CartLine line) {
+    if (mode != SaleMode.sale) return;
+    cart.remove(line);
+    rowFocused = false;
+    msg = SaleMsg(MsgKind.info, 'Удалено: ${line.product.name}');
+    notifyListeners();
+  }
 
   /// Цифры + * — количество сразу; * без цифр — окно количества.
   void _star() {
@@ -413,6 +470,7 @@ class SaleController extends ChangeNotifier {
       final rec = await pos.recordSale(cart, payments, received: kind == 'card' || kind == 'qr' ? 0 : received);
       paid = PaidInfo(rec, label);
       mode = SaleMode.paid;
+      rowFocused = false;
       cart.selected = null;
       msg = null;
       onSound?.call(true);

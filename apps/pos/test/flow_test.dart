@@ -217,6 +217,21 @@ void main() {
     await until(() => sale.cart.count == 1);
     expect(pos.held, isEmpty);
 
+    // Кнопки − / + в строке; выбранная строка + пустой Enter — карточка, а не оплата.
+    final line = sale.cart.lines.single;
+    expect(sale.step(line, 1), isNull);
+    expect(line.qty, 2000);
+    expect(sale.step(line, -1), isNull);
+    expect(line.qty, 1000);
+    final opened = <Cmd>[];
+    sale.onNavigate = opened.add;
+    sale.select(line);
+    await sale.command(Cmd.enter);
+    expect(opened, [Cmd.item]);
+    await sale.command(Cmd.esc); // снять выбор строки
+    await sale.command(Cmd.enter);
+    expect(opened, [Cmd.item, Cmd.pay]);
+
     // Смешанная: 1 000 наличными, остаток 5 000 — картой.
     expect(await sale.pay('mixed', cashPart: 600000), isNotNull); // наличных на весь чек — не смешанная
     expect(await sale.pay('mixed', cashPart: 100000), isNull);

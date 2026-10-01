@@ -52,6 +52,8 @@ class _SaleScreenState extends State<SaleScreen> {
         await showPayFlow(context, sale);
       case Cmd.qty:
         await showQtyDialog(context, sale);
+      case Cmd.item:
+        await showItemDialog(context, sale);
       case Cmd.discountLine:
       case Cmd.discountAll:
         await showDiscountDialog(context, sale, all: c == Cmd.discountAll);
@@ -269,7 +271,7 @@ class _CartList extends StatelessWidget {
                 style: t(13, w: FontWeight.w600, c: C.ts),
               ),
               const Spacer(),
-              Text('↑↓ выбрать строку · цифры + * количество · Del удалить · F6 скидка · F7 отложить', style: t(12, c: C.ts)),
+              Text('− / + количество · два нажатия или ↑↓ + Enter — карточка товара · Del удалить', style: t(12, c: C.ts)),
             ]),
           ),
           Expanded(
@@ -281,6 +283,7 @@ class _CartList extends StatelessWidget {
                       line: lines[i],
                       index: cart.count - i,
                       selected: !dim && identical(lines[i], cart.selected),
+                      enabled: !dim,
                     ),
                   ),
           ),
@@ -298,44 +301,107 @@ String _positions(int n) {
 }
 
 class _LineRow extends StatelessWidget {
-  const _LineRow({required this.line, required this.index, required this.selected});
+  const _LineRow({required this.line, required this.index, required this.selected, required this.enabled});
 
   final CartLine line;
   final int index;
   final bool selected;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
+    final sale = context.read<SaleController>();
     final p = line.product;
     final extras = [
-      if (p.fractional) 'весы ${fmtQty(line.qty)} ${p.unit}',
       if (line.hasDiscount)
         line.discountBp != null ? 'скидка ${fmtMoney(line.discountBp!)}%' : 'скидка ${fmtMoney(line.discount)}',
       if (p.marked) 'маркировка ✓',
     ];
-    return Container(
-      height: 52,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: BoxDecoration(
-        color: selected ? C.subtle : null,
-        border: Border(
-          bottom: const BorderSide(color: C.border),
-          left: BorderSide(color: selected ? C.brand : Colors.transparent, width: 3),
-        ),
-      ),
-      child: Row(children: [
-        SizedBox(width: 40, child: Text('$index', style: t(14, c: C.td))),
-        Expanded(
-          child: Text(
-            [p.name, ...extras].join(' · '),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: t(17, w: selected ? FontWeight.w600 : FontWeight.w500),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: enabled ? () => sale.select(line) : null,
+      onDoubleTap: enabled
+          ? () {
+              sale.select(line);
+              sale.command(Cmd.item);
+            }
+          : null,
+      child: Container(
+        height: 56,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        decoration: BoxDecoration(
+          color: selected ? C.subtle : null,
+          border: Border(
+            bottom: const BorderSide(color: C.border),
+            left: BorderSide(color: selected ? C.brand : Colors.transparent, width: 3),
           ),
         ),
-        SizedBox(width: 90, child: Text('${fmtQty(line.qty)} ×', textAlign: TextAlign.right, style: t(16, c: C.ts))),
-        SizedBox(width: 110, child: Text(fmtMoney(line.price), textAlign: TextAlign.right, style: t(16, c: C.ts))),
-        SizedBox(width: 130, child: Text(fmtMoney(line.total), textAlign: TextAlign.right, style: t(19, w: FontWeight.w700))),
+        child: Row(children: [
+          SizedBox(width: 40, child: Text('$index', style: t(14, c: C.td))),
+          Expanded(
+            child: Text(
+              [p.name, ...extras].join(' · '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: t(17, w: selected ? FontWeight.w600 : FontWeight.w500),
+            ),
+          ),
+          SizedBox(
+            width: 150,
+            child: Center(
+              child: p.fractional
+                  ? Text('${fmtQty(line.qty)} ${p.unit}', style: t(16, c: C.ts))
+                  : _Stepper(
+                      qty: fmtQty(line.qty),
+                      enabled: enabled,
+                      plusEnabled: !p.marked,
+                      onMinus: () => sale.step(line, -1),
+                      onPlus: () => sale.step(line, 1),
+                    ),
+            ),
+          ),
+          SizedBox(width: 100, child: Text(fmtMoney(line.price), textAlign: TextAlign.right, style: t(16, c: C.ts))),
+          SizedBox(width: 130, child: Text(fmtMoney(line.total), textAlign: TextAlign.right, style: t(19, w: FontWeight.w700))),
+        ]),
+      ),
+    );
+  }
+}
+
+/// «− 2 +» в строке чека.
+class _Stepper extends StatelessWidget {
+  const _Stepper({required this.qty, required this.enabled, required this.plusEnabled, required this.onMinus, required this.onPlus});
+
+  final String qty;
+  final bool enabled;
+  final bool plusEnabled;
+  final VoidCallback onMinus;
+  final VoidCallback onPlus;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget btn(String label, VoidCallback? onTap) => Opacity(
+          opacity: onTap == null ? 0.35 : 1,
+          child: Material(
+            color: C.subtle,
+            borderRadius: BorderRadius.circular(9),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(9),
+              onTap: onTap,
+              child: SizedBox(width: 38, height: 34, child: Center(child: Text(label, style: t(20, w: FontWeight.w700)))),
+            ),
+          ),
+        );
+    return Container(
+      decoration: BoxDecoration(
+        color: C.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: C.borderStrong),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        btn('−', enabled ? onMinus : null),
+        SizedBox(width: 44, child: Text(qty, textAlign: TextAlign.center, style: t(16, w: FontWeight.w600))),
+        btn('+', enabled && plusEnabled ? onPlus : null),
       ]),
     );
   }

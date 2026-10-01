@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/cart.dart';
 import '../core/money.dart';
 import '../state/sale.dart';
 import 'theme.dart';
@@ -22,6 +23,14 @@ Future<void> showPayFlow(BuildContext context, SaleController sale) async {
       final err = await sale.pay(kind);
       if (err != null && context.mounted) _toast(context, err);
   }
+}
+
+/// Карточка товара в чеке: двойное нажатие на строку или Enter на выбранной.
+Future<void> showItemDialog(BuildContext context, SaleController sale) async {
+  final line = sale.cart.selected;
+  if (line == null) return;
+  final next = await showDialog<String>(context: context, builder: (_) => _ItemDialog(sale: sale, line: line));
+  if (next == 'discount' && context.mounted) await showDiscountDialog(context, sale, all: false);
 }
 
 Future<void> showQtyDialog(BuildContext context, SaleController sale) =>
@@ -633,6 +642,216 @@ class _DiscountDialogState extends State<_DiscountDialog> {
               child: const Text('Убрать скидку'),
             ),
           ]),
+        ],
+      ),
+    );
+  }
+}
+
+// ------------------------------------------------------------ карточка товара
+
+class _ItemDialog extends StatefulWidget {
+  const _ItemDialog({required this.sale, required this.line});
+
+  final SaleController sale;
+  final CartLine line;
+
+  @override
+  State<_ItemDialog> createState() => _ItemDialogState();
+}
+
+class _ItemDialogState extends State<_ItemDialog> {
+  late final _Input _input;
+  String? _error;
+
+  CartLine get line => widget.line;
+  bool get _weight => line.product.fractional;
+
+  @override
+  void initState() {
+    super.initState();
+    _input = _Input(max: 6, decimals: _weight ? 3 : 0);
+  }
+
+  void _key(String k) {
+    if (!_weight && (k == '+' || k == '-')) {
+      _step(k == '+' ? 1 : -1);
+      return;
+    }
+    if (line.product.marked) return; // количество маркированного — только сканом
+    if (_input.key(k)) setState(() => _error = null);
+  }
+
+  void _step(int d) {
+    final err = widget.sale.step(line, d);
+    if (!mounted) return;
+    if (!widget.sale.cart.lines.contains(line)) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() => _error = err);
+  }
+
+  void _done() {
+    if (_input.value.isNotEmpty) {
+      widget.sale.select(line);
+      final err = widget.sale.setQty(parseQty(_input.value));
+      if (err != null) {
+        setState(() => _error = err);
+        return;
+      }
+    }
+    Navigator.of(context).pop();
+  }
+
+  void _remove() {
+    widget.sale.removeLine(line);
+    Navigator.of(context).pop();
+  }
+
+  void _discount() {
+    if (!widget.sale.canDiscount) {
+      setState(() => _error = 'Нет права на скидку');
+      return;
+    }
+    Navigator.of(context).pop('discount');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = line.product;
+    final info = [
+      if (p.barcodes.isNotEmpty) 'Штрихкод ${p.barcodes.first}',
+      if (p.plu != null) 'код ${p.plu}',
+      p.ikpu.isEmpty ? 'нет ИКПУ' : 'ИКПУ ${p.ikpu}',
+      'НДС ${fmtMoney(p.vatBp)}%',
+      p.marked ? 'маркируется — каждая штука сканом' : 'не маркируется',
+    ].join(' · ');
+    Widget fact(String label, String value) => Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(12)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(label, style: t(12, c: C.ts)),
+              FittedBox(child: Text(value, style: t(20, w: FontWeight.w700))),
+            ]),
+          ),
+        );
+    Widget bigBtn(String label, bool primary, VoidCallback? onTap) => Opacity(
+          opacity: onTap == null ? 0.35 : 1,
+          child: _Btn(
+            onTap: onTap,
+            color: primary ? C.brand : C.surface,
+            border: primary ? null : C.borderStrong,
+            padding: EdgeInsets.zero,
+            child: SizedBox(
+              width: 96,
+              height: 72,
+              child: Center(child: Text(label, style: t(36, w: FontWeight.w700, c: primary ? Colors.white : C.tp))),
+            ),
+          ),
+        );
+    final discount = line.hasDiscount
+        ? (line.discountBp != null ? '${fmtMoney(line.discountBp!)}% · −${fmtMoney(line.discount)}' : '−${fmtMoney(line.discount)}')
+        : 'нет';
+
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (_, e) {
+        if (e is KeyUpEvent) return KeyEventResult.ignored;
+        if (e.logicalKey == LogicalKeyboardKey.delete) {
+          _remove();
+          return KeyEventResult.handled;
+        }
+        if (e.logicalKey == LogicalKeyboardKey.f6) {
+          _discount();
+          return KeyEventResult.handled;
+        }
+        if (e.logicalKey == LogicalKeyboardKey.numpadAdd) {
+          _key('+');
+          return KeyEventResult.handled;
+        }
+        if (e.logicalKey == LogicalKeyboardKey.numpadSubtract) {
+          _key('-');
+          return KeyEventResult.handled;
+        }
+        return _keys(e, onEnter: _done, onChar: _key);
+      },
+      child: _Shell(
+        width: 620,
+        title: p.name,
+        subtitle: info,
+        children: [
+          Row(children: [
+            fact('Цена', '${fmtMoney(line.price)} / ${p.unit}'),
+            const SizedBox(width: 10),
+            fact(_weight ? 'Вес' : 'Скидка', _weight ? '${fmtQty(line.qty)} ${p.unit}' : discount),
+            const SizedBox(width: 10),
+            fact('Сумма', fmtMoney(line.total)),
+          ]),
+          const SizedBox(height: 16),
+          if (_weight) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: C.brand, width: 2)),
+              child: Row(children: [
+                Expanded(child: Text('Новый вес, ${p.unit}', style: t(16, w: FontWeight.w500, c: C.ts))),
+                Text(_input.value.isEmpty ? fmtQty(line.qty) : _input.value,
+                    style: t(40, w: FontWeight.w800, c: _input.value.isEmpty ? C.td : C.tp)),
+              ]),
+            ),
+            const SizedBox(height: 10),
+            _Pad(onKey: _key, extra: ','),
+          ] else
+            Row(children: [
+              bigBtn('−', false, () => _step(-1)),
+              Expanded(
+                child: Column(children: [
+                  Text(_input.value.isEmpty ? fmtQty(line.qty) : _input.value, style: t(56, w: FontWeight.w800)),
+                  Text(p.marked ? 'шт · новые штуки — сканом' : 'шт · цифры — точное количество', style: t(12, c: C.ts)),
+                ]),
+              ),
+              bigBtn('+', true, p.marked ? null : () => _step(1)),
+            ]),
+          const SizedBox(height: 16),
+          Row(children: [
+            _Btn(
+              onTap: _discount,
+              color: C.surface,
+              border: C.borderStrong,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const KeyBadge('F6', size: 36),
+                const SizedBox(width: 8),
+                Text('Скидка', style: t(16, w: FontWeight.w600)),
+              ]),
+            ),
+            const SizedBox(width: 10),
+            _Btn(
+              onTap: _remove,
+              color: C.surface,
+              border: C.brand,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const KeyBadge('Del', size: 36),
+                const SizedBox(width: 8),
+                Text('Удалить из чека', style: t(16, w: FontWeight.w600, c: C.brand)),
+              ]),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _Btn(
+                onTap: _done,
+                color: C.brand,
+                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  const KeyBadge('Enter', dark: true, size: 44),
+                  const SizedBox(width: 10),
+                  Text('Готово', style: t(17, w: FontWeight.w700, c: Colors.white)),
+                ]),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 10),
+          Text(_error ?? (_weight ? 'Наберите вес и Enter · Esc — закрыть' : '− до нуля удаляет строку · Esc — закрыть'),
+              style: t(12, c: _error != null ? C.error : C.ts)),
         ],
       ),
     );
