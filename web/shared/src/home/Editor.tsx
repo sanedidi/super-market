@@ -40,8 +40,43 @@ function plural(n: number, one: string, few: string, many: string) {
   return many
 }
 
-function AddBlockModal({ open, onClose, onAdd }: { open: boolean; onClose: () => void; onAdd: (t: BlockType) => void }) {
+export interface AddInfo {
+  /** Замок «Про» и т.п.: блок не добавить на этом тарифе. */
+  lock?: string
+  /** Почему недоступно / сколько осталось. */
+  hint?: string
+  /** Функция для окна лимита. */
+  feature?: string
+}
+
+export interface BlockFeatures {
+  schedule?: boolean
+  manual?: boolean
+}
+
+function AddBlockModal({
+  open,
+  onClose,
+  onAdd,
+  info,
+  onLocked,
+}: {
+  open: boolean
+  onClose: () => void
+  onAdd: (t: BlockType) => void
+  info?: (t: BlockType) => AddInfo | undefined
+  onLocked?: (feature: string) => void
+}) {
   const [picked, setPicked] = useState<BlockType>('shelf')
+  const pick = (t: BlockType) => {
+    const i = info?.(t)
+    if (i?.lock) {
+      onClose()
+      onLocked?.(i.feature ?? t)
+      return
+    }
+    setPicked(t)
+  }
   return (
     <Modal
       open={open}
@@ -49,22 +84,36 @@ function AddBlockModal({ open, onClose, onAdd }: { open: boolean; onClose: () =>
       title={
         <div>
           Добавить блок
-          <div className="smh-modal-sub">Блок появится в конце списка — потом его можно перетащить.</div>
+          <div className="smh-modal-sub">{info ? 'Недоступное на вашем тарифе отмечено замком.' : 'Блок появится в конце списка — потом его можно перетащить.'}</div>
         </div>
       }
       okText="Добавить"
       cancelText="Отмена"
-      onOk={() => onAdd(picked)}
+      onOk={() => (info?.(picked)?.lock ? onClose() : onAdd(picked))}
       width={600}
     >
       <div className="smh-types">
-        {BLOCK_TYPES.map((t) => (
-          <button key={t.type} type="button" className={`smh-type${picked === t.type ? ' on' : ''}`} onClick={() => setPicked(t.type)} onDoubleClick={() => onAdd(t.type)}>
-            <span className="smh-block-icon">{t.icon}</span>
-            <b>{t.title}</b>
-            <span>{t.text}</span>
-          </button>
-        ))}
+        {BLOCK_TYPES.map((t) => {
+          const i = info?.(t.type)
+          return (
+            <button
+              key={t.type}
+              type="button"
+              className={`smh-type${picked === t.type && !i?.lock ? ' on' : ''}${i?.lock ? ' locked' : ''}`}
+              onClick={() => pick(t.type)}
+              onDoubleClick={() => !i?.lock && onAdd(t.type)}
+            >
+              {i?.lock && (
+                <span className="smh-lock">
+                  <LockFilled /> {i.lock}
+                </span>
+              )}
+              <span className="smh-block-icon">{t.icon}</span>
+              <b>{t.title}</b>
+              <span>{i?.hint ?? t.text}</span>
+            </button>
+          )
+        })}
       </div>
     </Modal>
   )
@@ -127,6 +176,14 @@ export function HomeEditor({
   canPin,
   scope,
   extraActions,
+  unwrap = (raw) => raw as LayoutEditor,
+  top,
+  locked,
+  addInfo,
+  features,
+  onUpgrade,
+  onError,
+  storeParam = 'store_id',
 }: {
   title: string
   subtitle: string
@@ -140,11 +197,27 @@ export function HomeEditor({
   scope?: ReactNode
   /** Дополнительные пункты под плашкой (например, «Вернуть шаблон»). */
   extraActions?: (layout: LayoutEditor) => ReactNode
+  /** Ответ сервера → витрина (панель магазина отдаёт ещё тариф и лимиты). */
+  unwrap?: (raw: unknown) => LayoutEditor
+  /** Над колонками: полоска тарифа и т.п. */
+  top?: (raw: unknown, blocks: HomeBlock[]) => ReactNode
+  /** Блок нельзя менять (закреплён платформой). */
+  locked?: (b: HomeBlock) => boolean
+  /** Для окна «Добавить блок»: замок и подсказка по тарифу. */
+  addInfo?: (t: BlockType, blocks: HomeBlock[], raw: unknown) => AddInfo | undefined
+  /** Что доступно в настройках блока (тариф). */
+  features?: BlockFeatures
+  onUpgrade?: (feature: string) => void
+  /** Ошибка публикации/сохранения; true — обработана (окно лимита). */
+  onError?: (e: unknown) => boolean
+  /** Параметр магазина в предпросмотре списка магазинов (не используется сервером). */
+  storeParam?: string
 }) {
   const { message, modal } = App.useApp()
   const qc = useQueryClient()
   const key = [base, params]
-  const layout = useQuery({ queryKey: key, queryFn: () => api.get<LayoutEditor>(base, params) })
+  const rawQ = useQuery({ queryKey: key, queryFn: () => api.get<unknown>(base, params) })
+  const layout = { ...rawQ, data: rawQ.data === undefined ? undefined : unwrap(rawQ.data) }
   const [blocks, setBlocks] = useState<HomeBlock[] | null>(null)
   const [selected, setSelected] = useState<string>()
   const [adding, setAdding] = useState(false)
@@ -167,10 +240,11 @@ export function HomeEditor({
       setBlocks(list)
       setSelected((s) => s ?? list[0]?.id)
     }
-  }, [layout.data, blocks])
+  }, [rawQ.data, blocks]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const apply = (l: LayoutEditor) => {
-    qc.setQueryData(key, l)
+  const apply = (raw: unknown) => {
+    qc.setQueryData(key, raw)
+    const l = unwrap(raw)
     const list = l.draft ?? l.blocks
     setBlocks(list)
     if (!list.some((b) => b.id === selected)) setSelected(list[0]?.id)
@@ -182,11 +256,11 @@ export function HomeEditor({
     pending.current = setTimeout(async () => {
       setSaving(true)
       try {
-        const l = await api.put<LayoutEditor>(`${base}/draft${qs}`, { blocks: next.map(clean) })
-        qc.setQueryData(key, l)
+        const raw = await api.put<unknown>(`${base}/draft${qs}`, { blocks: next.map(clean) })
+        qc.setQueryData(key, raw)
         setSaveError(null)
       } catch (e) {
-        setSaveError(errorText(e))
+        if (!onError?.(e)) setSaveError(errorText(e))
       } finally {
         setSaving(false)
       }
@@ -194,7 +268,7 @@ export function HomeEditor({
   }
   useEffect(() => () => clearTimeout(pending.current), [])
 
-  const act = async (fn: () => Promise<LayoutEditor>, ok?: string) => {
+  const act = async (fn: () => Promise<unknown>, ok?: string) => {
     clearTimeout(pending.current)
     setBusy(true)
     try {
@@ -202,14 +276,14 @@ export function HomeEditor({
       setSaveError(null)
       if (ok) message.success(ok)
     } catch (e) {
-      message.error(errorText(e))
+      if (!onError?.(e)) message.error(errorText(e))
     } finally {
       setBusy(false)
     }
   }
 
   // Предпросмотр: магазин и блоки с настоящими товарами.
-  const stores = useList<PreviewStore>(storesPath, params)
+  const stores = useList<PreviewStore>(storesPath, storeParam in params ? {} : params)
   const [storeId, setStoreId] = useState<string>()
   useEffect(() => {
     const list = stores.data ?? []
@@ -241,7 +315,7 @@ export function HomeEditor({
     setBlocks(next)
   }
 
-  if (layout.error) return <LoadError error={layout.error} retry={layout.refetch} />
+  if (layout.error && !onError?.(layout.error)) return <LoadError error={layout.error} retry={layout.refetch} />
   const l = layout.data
   if (!l || !blocks) return <Spin style={{ margin: 48 }} />
 
@@ -306,10 +380,15 @@ export function HomeEditor({
       {!l.draft && l.inherited && (
         <div className="smh-draft smh-draft-info">
           <LayoutFilled />
-          <span>У сети нет своей витрины — магазины видят общий шаблон. Измените блоки, чтобы сделать витрину для этой сети.</span>
+          <span>
+            {l.store_id
+              ? 'У магазина нет своей витрины — покупатели видят витрину сети. Измените блоки, чтобы сделать витрину только для этого магазина.'
+              : 'У сети нет своей витрины — магазины видят общий шаблон. Измените блоки, чтобы сделать витрину для этой сети.'}
+          </span>
         </div>
       )}
       {extraActions?.(l)}
+      {top?.(rawQ.data, blocks)}
 
       <div className="smh-grid3">
         <section className="smh-card">
@@ -322,6 +401,27 @@ export function HomeEditor({
           {blocks.map((b) => {
             const meta = typeMeta(b.type)
             const tag = scheduleTag(b)
+            if (locked?.(b)) {
+              return (
+                <div
+                  key={b.id}
+                  className={`smh-row-item smh-fixed${selected === b.id ? ' on' : ''}`}
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    onDragOver(b.id)
+                  }}
+                  onClick={() => setSelected(b.id)}
+                >
+                  <PushpinFilled className="smh-handle" />
+                  <span className="smh-block-icon">{meta.icon}</span>
+                  <div className="smh-row-text">
+                    <b>{blockTitle(b)} Super Market</b>
+                    <span>Закреплено платформой — убрать нельзя</span>
+                  </div>
+                  <span className="smh-platform">платформа</span>
+                </div>
+              )
+            }
             return (
               <div
                 key={b.id}
@@ -382,7 +482,22 @@ export function HomeEditor({
 
         <section className="smh-card">
           {sel ? (
-            <BlockSettings key={sel.id} b={sel} onChange={update} onDelete={() => remove(sel.id)} paths={paths} canPin={canPin} />
+            locked?.(sel) ? (
+              <div className="smh-settings">
+                <div className="smh-settings-head">
+                  <span className="smh-block-icon">{typeMeta(sel.type).icon}</span>
+                  <div>
+                    <b>{typeMeta(sel.type).title}</b>
+                    <span>Блок Super Market</span>
+                  </div>
+                </div>
+                <div className="smh-note">
+                  <PushpinFilled /> Этот блок закрепила платформа: он есть у всех магазинов, менять и убирать его нельзя. Свои блоки можно ставить выше и ниже.
+                </div>
+              </div>
+            ) : (
+              <BlockSettings key={sel.id} b={sel} onChange={update} onDelete={() => remove(sel.id)} paths={paths} canPin={canPin} features={features} onUpgrade={onUpgrade} />
+            )
           ) : (
             <div className="smh-field-hint">Выберите блок слева, чтобы настроить его.</div>
           )}
@@ -409,6 +524,8 @@ export function HomeEditor({
       </div>
 
       <AddBlockModal
+        info={addInfo ? (t) => addInfo(t, blocks, rawQ.data) : undefined}
+        onLocked={onUpgrade}
         open={adding}
         onClose={() => setAdding(false)}
         onAdd={(t) => {

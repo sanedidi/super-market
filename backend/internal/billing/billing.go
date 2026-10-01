@@ -45,9 +45,12 @@ func NewService(pool *pgxpool.Pool, n *notify.Notifier, log *slog.Logger) *Servi
 // ------------------------------------------------------------- настройки
 
 type Settings struct {
-	USDRate           string    `json:"usd_rate"`
-	GraceDays         int       `json:"grace_days"`
-	AutoChargeBalance bool      `json:"auto_charge_balance"`
+	USDRate           string `json:"usd_rate"`
+	GraceDays         int    `json:"grace_days"`
+	AutoChargeBalance bool   `json:"auto_charge_balance"`
+	// Пробный период витрины: тариф и сколько дней (0 — без пробного).
+	ShowcaseTrialPlan string    `json:"showcase_trial_plan"`
+	ShowcaseTrialDays int       `json:"showcase_trial_days"`
 	UpdatedAt         time.Time `json:"updated_at"`
 }
 
@@ -55,12 +58,15 @@ type SettingsInput struct {
 	USDRate           *money.Rate `json:"usd_rate"`
 	GraceDays         *int        `json:"grace_days"`
 	AutoChargeBalance *bool       `json:"auto_charge_balance"`
+	ShowcaseTrialPlan *string     `json:"showcase_trial_plan"`
+	ShowcaseTrialDays *int        `json:"showcase_trial_days"`
 }
 
 func (s *Service) GetSettings(ctx context.Context) (Settings, error) {
 	var st Settings
-	err := s.pool.QueryRow(ctx, `SELECT usd_rate::text, grace_days, auto_charge_balance, updated_at FROM billing_settings WHERE id = 1`).
-		Scan(&st.USDRate, &st.GraceDays, &st.AutoChargeBalance, &st.UpdatedAt)
+	err := s.pool.QueryRow(ctx, `SELECT usd_rate::text, grace_days, auto_charge_balance, showcase_trial_plan, showcase_trial_days, updated_at
+		FROM billing_settings WHERE id = 1`).
+		Scan(&st.USDRate, &st.GraceDays, &st.AutoChargeBalance, &st.ShowcaseTrialPlan, &st.ShowcaseTrialDays, &st.UpdatedAt)
 	return st, err
 }
 
@@ -71,14 +77,21 @@ func (s *Service) SaveSettings(ctx context.Context, in SettingsInput) (Settings,
 	if in.GraceDays != nil && (*in.GraceDays < 0 || *in.GraceDays > 60) {
 		return Settings{}, apperr.Validation("grace_days: от 0 до 60 дней")
 	}
+	if in.ShowcaseTrialDays != nil && (*in.ShowcaseTrialDays < 0 || *in.ShowcaseTrialDays > 365) {
+		return Settings{}, apperr.Validation("showcase_trial_days: от 0 до 365 дней")
+	}
+	if in.ShowcaseTrialPlan != nil && *in.ShowcaseTrialPlan != "business" && *in.ShowcaseTrialPlan != "pro" {
+		return Settings{}, apperr.Validation("showcase_trial_plan: business или pro")
+	}
 	var rate *string
 	if in.USDRate != nil {
 		v := string(*in.USDRate)
 		rate = &v
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE billing_settings SET usd_rate = COALESCE($1::numeric, usd_rate),
-		grace_days = COALESCE($2, grace_days), auto_charge_balance = COALESCE($3, auto_charge_balance), updated_at = now()
-		WHERE id = 1`, rate, in.GraceDays, in.AutoChargeBalance); err != nil {
+		grace_days = COALESCE($2, grace_days), auto_charge_balance = COALESCE($3, auto_charge_balance),
+		showcase_trial_plan = COALESCE($4, showcase_trial_plan), showcase_trial_days = COALESCE($5, showcase_trial_days), updated_at = now()
+		WHERE id = 1`, rate, in.GraceDays, in.AutoChargeBalance, in.ShowcaseTrialPlan, in.ShowcaseTrialDays); err != nil {
 		return Settings{}, err
 	}
 	return s.GetSettings(ctx)
@@ -289,12 +302,16 @@ type Invoice struct {
 	PaidAt        *time.Time `json:"paid_at"`
 	Note          string     `json:"note"`
 	CreatedAt     time.Time  `json:"created_at"`
+	// Плата за тариф витрины (входит в amount_uzs).
+	ShowcasePlan *string `json:"showcase_plan"`
+	ShowcaseUZS  string  `json:"showcase_uzs"`
 }
 
 const invoiceSelect = `
 	SELECT i.id, i.network_id, n.name, to_char(i.period, 'YYYY-MM'), i.stores_count, i.price_per_store::text,
 	       i.amount_usd::text, i.rate::text, i.amount_uzs::text, i.status, to_char(i.due_date, 'YYYY-MM-DD'),
-	       i.status = 'unpaid' AND i.due_date < ` + todaySQL + `, i.paid_via, i.paid_at, i.note, i.created_at
+	       i.status = 'unpaid' AND i.due_date < ` + todaySQL + `, i.paid_via, i.paid_at, i.note, i.created_at,
+	       i.showcase_plan, i.showcase_uzs::text
 	FROM subscription_invoices i JOIN networks n ON n.id = i.network_id`
 
 func (s *Service) ListInvoices(ctx context.Context, networkID, status string, page httpx.Page) ([]Invoice, error) {
@@ -339,14 +356,21 @@ func PeriodOf(t time.Time) time.Time {
 func (s *Service) GenerateInvoices(ctx context.Context, now time.Time) (int, error) {
 	period := PeriodOf(now)
 	rows, err := s.pool.Query(ctx, `
-		INSERT INTO subscription_invoices (network_id, period, stores_count, price_per_store, amount_usd, rate, amount_uzs, due_date)
-		SELECT n.id, $1::date, c.cnt, p.price, p.price * c.cnt, bs.usd_rate, round(p.price * c.cnt * bs.usd_rate, 2),
-		       $1::date + bs.grace_days
+		INSERT INTO subscription_invoices (network_id, period, stores_count, price_per_store, amount_usd, rate, amount_uzs, due_date,
+		                                   showcase_plan, showcase_uzs)
+		SELECT n.id, $1::date, c.cnt, p.price, p.price * c.cnt, bs.usd_rate, round(p.price * c.cnt * bs.usd_rate, 2) + sc.fee,
+		       $1::date + bs.grace_days, sc.plan, sc.fee
 		FROM networks n
 		CROSS JOIN billing_settings bs
 		CROSS JOIN LATERAL (SELECT `+storesCountSQL+` AS cnt) c
 		CROSS JOIN LATERAL (SELECT `+priceSQL+` AS price) p
-		WHERE n.status = 'active' AND n.billing_from <= $1::date AND c.cnt > 0 AND p.price > 0
+		-- Тариф витрины: платный, если выбран и пробный период уже кончился.
+		CROSS JOIN LATERAL (
+			SELECT CASE WHEN sp.price_uzs > 0 AND (n.showcase_trial_until IS NULL OR n.showcase_trial_until < $1::date)
+			            THEN sp.key END AS plan,
+			       CASE WHEN n.showcase_trial_until IS NULL OR n.showcase_trial_until < $1::date THEN sp.price_uzs ELSE 0 END AS fee
+			FROM showcase_plans sp WHERE sp.key = n.showcase_plan) sc
+		WHERE n.status = 'active' AND n.billing_from <= $1::date AND c.cnt > 0 AND (p.price > 0 OR sc.fee > 0)
 		ON CONFLICT (network_id, period) DO NOTHING
 		RETURNING network_id, amount_usd::text, amount_uzs::text, to_char(due_date, 'DD.MM.YYYY')`, period)
 	if err != nil {

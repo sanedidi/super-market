@@ -54,10 +54,14 @@ export function Tariffs() {
   )
 }
 
+const SHOWCASE_NAMES: Record<string, string> = { business: 'Бизнес', pro: 'Про' }
+
 interface Settings {
   usd_rate: string
   grace_days: number
   auto_charge_balance: boolean
+  showcase_trial_plan: string
+  showcase_trial_days: number
 }
 
 export function BillingSettings() {
@@ -80,6 +84,16 @@ export function BillingSettings() {
           </Form.Item>
           <Form.Item name="auto_charge_balance" valuePropName="checked">
             <Checkbox>Оплачивать счета с баланса платформы автоматически</Checkbox>
+          </Form.Item>
+          <Form.Item label="Пробный период витрины" extra="Начинается, когда сеть впервые открывает «Витрину приложения». 0 дней — без пробного.">
+            <Space>
+              <Form.Item name="showcase_trial_plan" noStyle>
+                <Select style={{ width: 140 }} options={[{ value: 'business', label: '«Бизнес»' }, { value: 'pro', label: '«Про»' }]} />
+              </Form.Item>
+              <Form.Item name="showcase_trial_days" noStyle>
+                <InputNumber min={0} max={365} precision={0} addonAfter="дней" style={{ width: 150 }} />
+              </Form.Item>
+            </Space>
           </Form.Item>
           <Button type="primary" htmlType="submit" loading={save.isPending}>
             Сохранить
@@ -226,6 +240,8 @@ interface Invoice {
   amount_usd: string
   rate: string
   amount_uzs: string
+  showcase_plan: string | null
+  showcase_uzs: string
   status: string
   due_date: string
   overdue: boolean
@@ -302,7 +318,19 @@ export function Invoices() {
             { title: 'Месяц', dataIndex: 'period', render: (p: string) => dayjs(p + '-01').format('MM.YYYY') },
             { title: 'Сеть', dataIndex: 'network_name' },
             { title: 'Магазинов', dataIndex: 'stores_count' },
-            { title: 'Сумма', render: (_, i) => <>{money(i.amount_usd)} $ <Typography.Text type="secondary">({money(i.amount_uzs)} сум)</Typography.Text></> },
+            {
+              title: 'Сумма',
+              render: (_, i) => (
+                <>
+                  {money(i.amount_usd)} $ <Typography.Text type="secondary">({money(i.amount_uzs)} сум)</Typography.Text>
+                  {Number(i.showcase_uzs) > 0 && (
+                    <div>
+                      <Typography.Text type="secondary">в т. ч. витрина «{SHOWCASE_NAMES[i.showcase_plan ?? ''] ?? i.showcase_plan}»: {money(i.showcase_uzs)} сум</Typography.Text>
+                    </div>
+                  )}
+                </>
+              ),
+            },
             { title: 'Срок', dataIndex: 'due_date', render: (d, i) => <Typography.Text type={i.overdue ? 'danger' : undefined}>{date(d)}</Typography.Text> },
             {
               title: 'Статус',

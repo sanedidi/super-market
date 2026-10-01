@@ -15,6 +15,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/payments"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/showcase"
 )
 
 type Module struct {
@@ -75,6 +76,19 @@ func (m *Module) Routes(r chi.Router) {
 		r.Patch("/store/stores/{id}/zones/{zone}", m.updateZone)
 		r.Delete("/store/stores/{id}/zones/{zone}", m.deleteZone)
 
+		// Витрина приложения: ?store_id= — витрина одного магазина (тариф «Про»).
+		showcaseManage := m.auth.Allow(identity.PermShowcaseManage)
+		r.With(showcaseManage).Get("/store/home", m.storeShowcase)
+		r.With(showcaseManage).Put("/store/home/draft", m.storeSaveDraft)
+		r.With(showcaseManage).Delete("/store/home/draft", m.storeLayoutAct(m.svc.DiscardDraft))
+		r.With(showcaseManage).Post("/store/home/publish", m.storePublish)
+		r.With(showcaseManage).Get("/store/home/versions", m.storeVersions)
+		r.With(showcaseManage).Post("/store/home/restore", m.storeRestore)
+		r.With(showcaseManage).Delete("/store/home", m.storeLayoutAct(m.svc.ResetLayout))
+		r.With(showcaseManage).Get("/store/home/stores", m.storePreviewStores)
+		r.With(showcaseManage).Post("/store/home/preview", m.storePreview)
+		r.Post("/store/showcase/plan", m.storeChoosePlan)
+
 		r.With(manage).Get("/store/orders", m.storeList)
 		r.With(manage).Get("/store/orders/{id}", m.storeGet)
 		r.Post("/store/orders/{id}/accept", m.act(m.svc.Accept))
@@ -116,17 +130,21 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/admin/home/publish", m.adminPublish)
 		r.Get("/admin/home/versions", m.adminVersions)
 		r.Post("/admin/home/restore", m.adminRestore)
-		r.Delete("/admin/home", m.adminHomeAct(m.svc.ResetNetwork))
+		r.Delete("/admin/home", m.adminHomeAct(m.svc.ResetLayout))
+		r.Get("/admin/showcase/plans", m.adminPlans)
+		r.Patch("/admin/showcase/plans/{key}", m.adminSavePlan)
 		r.Get("/admin/home/stores", m.adminPreviewStores)
 		r.Post("/admin/home/preview", m.adminPreview)
 	})
 }
 
-func networkParam(r *http.Request) string { return r.URL.Query().Get("network_id") }
+func adminScope(r *http.Request) LayoutScope {
+	return LayoutScope{NetworkID: r.URL.Query().Get("network_id")}
+}
 
 func (m *Module) adminHome(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (LayoutEditor, error) {
-		return m.svc.LayoutForEditor(r.Context(), networkParam(r))
+		return m.svc.LayoutForEditor(r.Context(), adminScope(r))
 	})
 }
 
@@ -134,53 +152,139 @@ type blocksInput struct {
 	StoreID string      `json:"store_id"`
 	Blocks  []HomeBlock `json:"blocks"`
 	Version int         `json:"version"`
+	Plan    string      `json:"plan"`
 }
 
 func (m *Module) adminSaveDraft(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in blocksInput) (LayoutEditor, error) {
-		return m.svc.SaveDraft(r.Context(), networkParam(r), in.Blocks)
+		return m.svc.SaveDraft(r.Context(), adminScope(r), in.Blocks)
 	})
 }
 
-func (m *Module) adminHomeAct(fn func(context.Context, string) (LayoutEditor, error)) http.HandlerFunc {
+func (m *Module) adminHomeAct(fn func(context.Context, LayoutScope) (LayoutEditor, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		httpx.Respond(w, r, m.log, http.StatusOK, func() (LayoutEditor, error) { return fn(r.Context(), networkParam(r)) })
+		httpx.Respond(w, r, m.log, http.StatusOK, func() (LayoutEditor, error) { return fn(r.Context(), adminScope(r)) })
 	}
 }
 
 func (m *Module) adminPublish(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (LayoutEditor, error) {
-		return m.svc.Publish(r.Context(), networkParam(r), pr(r).UserID)
+		return m.svc.Publish(r.Context(), adminScope(r), pr(r).UserID, false, nil)
 	})
 }
 
 func (m *Module) adminVersions(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[LayoutVersion], error) {
-		items, err := m.svc.Versions(r.Context(), networkParam(r))
+		items, err := m.svc.Versions(r.Context(), adminScope(r))
 		return httpx.List[LayoutVersion]{Items: items}, err
 	})
 }
 
 func (m *Module) adminRestore(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in blocksInput) (LayoutEditor, error) {
-		return m.svc.RestoreVersion(r.Context(), networkParam(r), in.Version)
+		return m.svc.RestoreVersion(r.Context(), adminScope(r), in.Version)
 	})
 }
 
 func (m *Module) adminPreviewStores(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[PreviewStore], error) {
-		items, err := m.svc.PreviewStores(r.Context(), networkParam(r))
+		items, err := m.svc.PreviewStores(r.Context(), r.URL.Query().Get("network_id"), true)
 		return httpx.List[PreviewStore]{Items: items}, err
 	})
 }
 
 func (m *Module) adminPreview(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in blocksInput) (StoreHome, error) {
-		return m.svc.PreviewHome(r.Context(), in.StoreID, in.Blocks)
+		return m.svc.PreviewHome(r.Context(), "", in.StoreID, in.Blocks)
 	})
 }
 
-func pr(r *http.Request) *identity.Principal { return identity.FromContext(r.Context()) }
+func (m *Module) adminPlans(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[showcase.Plan], error) {
+		items, err := showcase.Plans(r.Context(), m.svc.pool)
+		return httpx.List[showcase.Plan]{Items: items}, err
+	})
+}
+
+func (m *Module) adminSavePlan(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in showcase.PlanInput) (showcase.Plan, error) {
+		p, err := showcase.SavePlan(r.Context(), m.svc.pool, chi.URLParam(r, "key"), in)
+		m.svc.forgetHomes()
+		return p, err
+	})
+}
+
+// ---------------------------------------------------- витрина магазина
+
+func storeParam(r *http.Request) string { return r.URL.Query().Get("store_id") }
+
+func (m *Module) storeShowcase(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (ShowcaseEditor, error) {
+		return m.svc.StoreShowcase(r.Context(), pr(r), storeParam(r))
+	})
+}
+
+func (m *Module) storeSaveDraft(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in blocksInput) (ShowcaseEditor, error) {
+		return m.svc.SaveStoreDraft(r.Context(), pr(r), storeParam(r), in.Blocks)
+	})
+}
+
+func (m *Module) storePublish(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (ShowcaseEditor, error) {
+		return m.svc.PublishStore(r.Context(), pr(r), storeParam(r))
+	})
+}
+
+func (m *Module) storeLayoutAct(fn func(context.Context, LayoutScope) (LayoutEditor, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		httpx.Respond(w, r, m.log, http.StatusOK, func() (ShowcaseEditor, error) {
+			return m.svc.StoreLayoutAct(r.Context(), pr(r), storeParam(r), func(sc LayoutScope) error {
+				_, err := fn(r.Context(), sc)
+				return err
+			})
+		})
+	}
+}
+
+func (m *Module) storeVersions(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[LayoutVersion], error) {
+		sc, err := storeScope(pr(r), storeParam(r))
+		if err != nil {
+			return httpx.List[LayoutVersion]{}, err
+		}
+		items, err := m.svc.Versions(r.Context(), sc)
+		return httpx.List[LayoutVersion]{Items: items}, err
+	})
+}
+
+func (m *Module) storeRestore(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in blocksInput) (ShowcaseEditor, error) {
+		return m.svc.StoreLayoutAct(r.Context(), pr(r), storeParam(r), func(sc LayoutScope) error {
+			_, err := m.svc.RestoreVersion(r.Context(), sc, in.Version)
+			return err
+		})
+	})
+}
+
+func (m *Module) storePreviewStores(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[PreviewStore], error) {
+		items, err := m.svc.PreviewStores(r.Context(), pr(r).NetworkID, true)
+		return httpx.List[PreviewStore]{Items: items}, err
+	})
+}
+
+func (m *Module) storePreview(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in blocksInput) (StoreHome, error) {
+		return m.svc.PreviewHome(r.Context(), pr(r).NetworkID, in.StoreID, in.Blocks)
+	})
+}
+
+func (m *Module) storeChoosePlan(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in blocksInput) (ShowcaseEditor, error) {
+		return m.svc.ChoosePlan(r.Context(), pr(r), in.Plan)
+	})
+}
 
 func floatParam(r *http.Request, name string) (float64, error) {
 	v, err := strconv.ParseFloat(r.URL.Query().Get(name), 64)
@@ -587,3 +691,4 @@ func (m *Module) tracking(w http.ResponseWriter, r *http.Request) {
 		return m.svc.ClientTracking(r.Context(), pr(r), id)
 	})
 }
+func pr(r *http.Request) *identity.Principal { return identity.FromContext(r.Context()) }

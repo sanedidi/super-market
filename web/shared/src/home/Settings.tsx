@@ -1,7 +1,7 @@
 // Настройки выбранного блока (Figma «Админка · Главная приложения»).
 import { useState, type ReactNode } from 'react'
 import { App, Button, DatePicker, Input, InputNumber, Segmented, Select, Switch, Tooltip } from 'antd'
-import { CloseOutlined, DeleteOutlined, PushpinFilled, UpOutlined, DownOutlined, CloudUploadOutlined } from '@ant-design/icons'
+import { CloseOutlined, DeleteOutlined, PushpinFilled, UpOutlined, DownOutlined, CloudUploadOutlined, LockFilled } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { api } from '../api'
 import { RemoteSelect } from '../components'
@@ -114,7 +114,8 @@ function LinkPicker({ value, onChange, paths }: { value?: BlockLink | null; onCh
   )
 }
 
-function ShelfSettings({ b, change, paths }: { b: HomeBlock; change: Change; paths: EditorPaths }) {
+function ShelfSettings({ b, change, paths, features, onUpgrade }: { b: HomeBlock; change: Change; paths: EditorPaths; features?: { manual?: boolean }; onUpgrade?: (f: string) => void }) {
+  const manualLocked = features?.manual === false
   const ids = b.product_ids ?? []
   return (
     <>
@@ -122,7 +123,12 @@ function ShelfSettings({ b, change, paths }: { b: HomeBlock; change: Change; pat
         <Input value={b.title} maxLength={40} onChange={(e) => change({ title: e.target.value })} />
       </Field>
       <Field label="Откуда брать товары">
-        <Segmented block options={SOURCES} value={b.source} onChange={(v) => change({ source: v as HomeBlock['source'] })} />
+        <Segmented
+          block
+          options={SOURCES.map((o) => (o.value === 'manual' && manualLocked ? { ...o, label: <span><LockFilled /> {o.label}</span> } : o))}
+          value={b.source}
+          onChange={(v) => (v === 'manual' && manualLocked ? onUpgrade?.('manual') : change({ source: v as HomeBlock['source'] }))}
+        />
       </Field>
       {b.source === 'category' && (
         <Field label="Категория">
@@ -163,6 +169,16 @@ interface AdminBanner {
   image_url: string
   color: string
   is_active: boolean
+  owner?: 'platform' | 'network'
+  moderation?: 'pending' | 'approved' | 'rejected'
+  reject_reason?: string
+}
+
+function bannerState(x?: AdminBanner): { text: string; ok: boolean } {
+  if (!x) return { text: '', ok: false }
+  if (x.moderation === 'pending') return { text: 'На модерации', ok: false }
+  if (x.moderation === 'rejected') return { text: `Отклонён: ${x.reject_reason}`, ok: false }
+  return { text: x.is_active ? 'Активен' : 'Выключен', ok: x.is_active }
 }
 
 /** Новый баннер из фото: загрузка, название, подпись на фото. */
@@ -210,7 +226,7 @@ function NewBanner({ path, onCreated }: { path: string; onCreated: (id: string) 
   )
 }
 
-function BannerSettings({ b, change, paths }: { b: HomeBlock; change: Change; paths: EditorPaths }) {
+function BannerSettings({ b, change, paths }: { b: HomeBlock; change: Change; paths: EditorPaths; features?: unknown; onUpgrade?: unknown }) {
   const all = useList<AdminBanner>(paths.banners, { limit: 200 })
   const ids = b.banner_ids ?? []
   const byId = new Map((all.data ?? []).map((x) => [x.id, x]))
@@ -255,7 +271,7 @@ function BannerSettings({ b, change, paths }: { b: HomeBlock; change: Change; pa
                     {x?.image_url ? <img src={x.image_url} alt="" /> : <i style={{ background: x?.color }} />}
                     <span>
                       {x?.title ?? '…'}
-                      <small className={x?.is_active ? 'ok' : ''}>{x ? (x.is_active ? 'Активен' : 'Выключен') : ''}</small>
+                      <small className={bannerState(x).ok ? 'ok' : ''}>{bannerState(x).text}</small>
                     </span>
                   </span>
                 )
@@ -263,8 +279,10 @@ function BannerSettings({ b, change, paths }: { b: HomeBlock; change: Change; pa
             />
             <Select
               value={null}
-              placeholder="+ Добавить из «Баннеры в приложении»"
-              options={(all.data ?? []).filter((x) => !ids.includes(x.id)).map((x) => ({ value: x.id, label: x.title }))}
+              placeholder="+ Добавить загруженный баннер"
+              options={(all.data ?? [])
+                .filter((x) => !ids.includes(x.id) && x.moderation !== 'rejected')
+                .map((x) => ({ value: x.id, label: `${x.title}${x.moderation === 'pending' ? ' · на модерации' : ''}` }))}
               onChange={(id) => id && change({ banner_ids: [...ids, id].slice(0, 10) })}
               style={{ width: '100%' }}
             />
@@ -277,7 +295,7 @@ function BannerSettings({ b, change, paths }: { b: HomeBlock; change: Change; pa
   )
 }
 
-function PromoSettings({ b, change, paths }: { b: HomeBlock; change: Change; paths: EditorPaths }) {
+function PromoSettings({ b, change, paths }: { b: HomeBlock; change: Change; paths: EditorPaths; features?: unknown; onUpgrade?: unknown }) {
   return (
     <>
       <Field label="Что показывать">
@@ -327,7 +345,7 @@ function CategoryPick({ value, onChange, path, placeholder }: { value?: string[]
   )
 }
 
-function IconsSettings({ b, change, paths }: { b: HomeBlock; change: Change; paths: EditorPaths }) {
+function IconsSettings({ b, change, paths }: { b: HomeBlock; change: Change; paths: EditorPaths; features?: unknown; onUpgrade?: unknown }) {
   return (
     <>
       <Field label="Какие разделы">
@@ -354,7 +372,7 @@ function IconsSettings({ b, change, paths }: { b: HomeBlock; change: Change; pat
   )
 }
 
-function CatalogSettings({ b, change, paths }: { b: HomeBlock; change: Change; paths: EditorPaths }) {
+function CatalogSettings({ b, change, paths }: { b: HomeBlock; change: Change; paths: EditorPaths; features?: unknown; onUpgrade?: unknown }) {
   return (
     <>
       <Field label="Разделы">
@@ -388,12 +406,16 @@ export function BlockSettings({
   onDelete,
   paths,
   canPin,
+  features,
+  onUpgrade,
 }: {
   b: HomeBlock
   onChange: (b: HomeBlock) => void
   onDelete: () => void
   paths: EditorPaths
   canPin?: boolean
+  features?: { schedule?: boolean; manual?: boolean }
+  onUpgrade?: (feature: string) => void
 }) {
   const change: Change = (patch) => onChange({ ...b, ...patch })
   const meta = typeMeta(b.type)
@@ -415,8 +437,19 @@ export function BlockSettings({
           <span>Настройки блока</span>
         </div>
       </div>
-      <Body b={b} change={change} paths={paths} />
+      <Body b={b} change={change} paths={paths} features={features} onUpgrade={onUpgrade} />
       <div className="smh-sep" />
+      {features?.schedule === false && !scheduled ? (
+        <div className="smh-locked">
+          <LockFilled />
+          <b>Расписание блоков</b>
+          <span>Блок сам включится и выключится по датам. Доступно в тарифе «Про».</span>
+          <Button type="primary" danger onClick={() => onUpgrade?.('schedule')}>
+            Перейти на «Про»
+          </Button>
+        </div>
+      ) : (
+      <>
       <Field label="Показывать">
         <Segmented
           block
@@ -438,6 +471,8 @@ export function BlockSettings({
           value={[b.starts_at ? dayjs(b.starts_at) : null, b.ends_at ? dayjs(b.ends_at) : null]}
           onChange={(r) => change({ starts_at: r?.[0] ? r[0].startOf('day').toISOString() : null, ends_at: r?.[1] ? r[1].endOf('day').toISOString() : null })}
         />
+      )}
+      </>
       )}
       {canPin && (
         <Toggle

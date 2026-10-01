@@ -15,6 +15,7 @@ import { Networks } from './pages/Networks'
 import { Products, Dictionary } from './pages/Catalog'
 import { Banners } from './pages/Banners'
 import { AppHome } from './pages/AppHome'
+import { ShowcasePlans } from './pages/ShowcasePlans'
 import { Orders, Payments } from './pages/Orders'
 import { Tariffs, BillingSettings, BillingNetworks, Invoices, Payouts } from './pages/Billing'
 import { Customers } from './pages/Customers'
@@ -56,6 +57,7 @@ const menu: MenuItem[] = [
       { key: '/billing/networks', label: 'Сети и оплата' },
       { key: '/billing/invoices', label: 'Счета' },
       { key: '/billing/tariffs', label: 'Тарифы' },
+      { key: '/billing/showcase', label: 'Тарифы витрины' },
       { key: '/billing/settings', label: 'Настройки' },
     ],
   },
@@ -81,6 +83,7 @@ export function AdminRoutes() {
         <Route path="billing/networks" element={<BillingNetworks />} />
         <Route path="billing/invoices" element={<Invoices />} />
         <Route path="billing/tariffs" element={<Tariffs />} />
+        <Route path="billing/showcase" element={<ShowcasePlans />} />
         <Route path="billing/settings" element={<BillingSettings />} />
         <Route path="payouts" element={<Payouts />} />
         <Route path="customers" element={<Customers />} />

@@ -1,8 +1,10 @@
 // Баннеры на главной приложения покупателя.
-import { DatePicker, Form, Input, InputNumber, Select, Space, Switch, Tag, Typography } from 'antd'
+import { App, Button, DatePicker, Form, Input, InputNumber, Modal, Segmented, Select, Space, Switch, Tag, Typography } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
-import { ActiveTag, CrudPage, ImageUpload, RemoteSelect, dateTime } from '@sm/shared'
+import { useState } from 'react'
+import { ActiveTag, CrudPage, ImageUpload, RemoteSelect, api, dateTime, useAction } from '@sm/shared'
 import { SearchSelect } from '../components'
+import { useUrlState } from '../hooks'
 
 interface Banner {
   id: string
@@ -19,7 +21,52 @@ interface Banner {
   sort: number
   is_active: boolean
   show_text: boolean
+  owner: 'platform' | 'network'
+  moderation: 'pending' | 'approved' | 'rejected'
+  reject_reason: string
   created_at: string
+}
+
+/** Баннер сети: принять или отклонить с причиной (сеть её увидит). */
+function Moderate({ b }: { b: Banner }) {
+  const { modal } = App.useApp()
+  const [reason, setReason] = useState('')
+  const [open, setOpen] = useState(false)
+  const approve = useAction(() => api.post(`/admin/banners/${b.id}/approve`), { success: 'Баннер принят' })
+  const reject = useAction(() => api.post(`/admin/banners/${b.id}/reject`, { reason }), { success: 'Баннер отклонён' })
+  return (
+    <Space>
+      <Button
+        size="small"
+        type="primary"
+        disabled={b.moderation === 'approved'}
+        loading={approve.isPending}
+        onClick={() => modal.confirm({ title: 'Принять баннер?', content: 'Он появится в приложении у магазинов сети.', okText: 'Принять', cancelText: 'Отмена', onOk: () => approve.mutateAsync(undefined) })}
+      >
+        Принять
+      </Button>
+      <Button size="small" danger disabled={b.moderation === 'rejected'} onClick={() => setOpen(true)}>
+        Отклонить
+      </Button>
+      <Modal
+        open={open}
+        title="Отклонить баннер"
+        okText="Отклонить"
+        okButtonProps={{ danger: true, disabled: !reason.trim() }}
+        confirmLoading={reject.isPending}
+        onCancel={() => setOpen(false)}
+        onOk={() => reject.mutate(undefined, { onSuccess: () => setOpen(false) })}
+      >
+        <Input.TextArea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} placeholder="Причина — сеть увидит её в панели, например: текст нечитаем на фото" />
+      </Modal>
+    </Space>
+  )
+}
+
+const MODERATION: Record<Banner['moderation'], { color: string; label: string }> = {
+  pending: { color: 'gold', label: 'На модерации' },
+  approved: { color: 'green', label: 'Принят' },
+  rejected: { color: 'red', label: 'Отклонён' },
 }
 
 const LINKS = [
@@ -31,17 +78,35 @@ const LINKS = [
 ]
 
 export function Banners() {
+  const [moderation, setModeration] = useUrlState('moderation')
   return (
     <CrudPage<Banner>
+      key={moderation ?? 'all'}
       title="Баннеры в приложении"
       path="/admin/banners"
+      params={{ moderation }}
+      toolbar={
+        <Segmented
+          value={moderation ?? ''}
+          onChange={(v) => setModeration(v as string)}
+          options={[
+            { value: '', label: 'Все' },
+            { value: 'pending', label: 'На модерации' },
+            { value: 'rejected', label: 'Отклонённые' },
+          ]}
+        />
+      }
       createLabel="Новый баннер"
       columns={[
         {
           title: 'Баннер',
           render: (_, b) => (
             <Space>
-              <span style={{ display: 'inline-block', width: 28, height: 28, borderRadius: 6, background: b.color }} />
+              {b.image_url ? (
+                <img src={b.image_url} alt="" style={{ width: 72, height: 30, objectFit: 'cover', borderRadius: 6 }} />
+              ) : (
+                <span style={{ display: 'inline-block', width: 28, height: 28, borderRadius: 6, background: b.color }} />
+              )}
               <span>
                 {b.title}
                 <br />
@@ -59,6 +124,19 @@ export function Banners() {
         },
         { title: 'Порядок', dataIndex: 'sort', align: 'right' },
         { title: 'Статус', dataIndex: 'is_active', render: (v: boolean) => <ActiveTag active={v} /> },
+        {
+          title: 'Модерация',
+          render: (_, b) =>
+            b.owner === 'network' ? (
+              <Space direction="vertical" size={4}>
+                <Tag color={MODERATION[b.moderation].color}>{MODERATION[b.moderation].label}</Tag>
+                {b.reject_reason && <Typography.Text type="secondary">{b.reject_reason}</Typography.Text>}
+                <Moderate b={b} />
+              </Space>
+            ) : (
+              <Typography.Text type="secondary">Super Market</Typography.Text>
+            ),
+        },
       ]}
       toForm={(b) => ({
         ...b,

@@ -8,11 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/sanedidi/super-market/backend/internal/catalog"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/showcase"
 )
 
 // Главная приложения из блоков: полка товаров, баннеры, промо-полоска,
@@ -254,8 +253,9 @@ type homeCacheItem struct {
 const homeCacheTTL = time.Minute
 
 // StoreHome — главная магазина: витрина магазина, иначе сети, иначе
-// платформы; выключенные, вне дат и пустые блоки убраны, полки и баннеры
-// уже с данными.
+// шаблон платформы; закреплённые блоки платформы есть всегда; витрина,
+// которую сеть сделала сама, показывается в пределах её тарифа;
+// выключенные, вне дат и пустые блоки убраны, полки и баннеры уже с данными.
 func (s *Service) StoreHome(ctx context.Context, storeID string) (StoreHome, error) {
 	now := s.now()
 	s.homes.mu.Lock()
@@ -269,23 +269,11 @@ func (s *Service) StoreHome(ctx context.Context, storeID string) (StoreHome, err
 	if err != nil {
 		return StoreHome{}, err
 	}
-	var raw []byte
-	var version int
-	err = s.pool.QueryRow(ctx, `
-		SELECT blocks, version FROM home_layouts
-		WHERE version > 0 AND (store_id = $1 OR (scope = 'network' AND network_id = $2) OR scope = 'platform')
-		ORDER BY CASE scope WHEN 'store' THEN 0 WHEN 'network' THEN 1 ELSE 2 END LIMIT 1`,
-		storeID, st.NetworkID).Scan(&raw, &version)
-	if errors.Is(err, pgx.ErrNoRows) {
-		raw, version = []byte("[]"), 0
-	} else if err != nil {
+	blocks, version, ownLimit, err := s.storeBlocks(ctx, storeID, st.NetworkID)
+	if err != nil {
 		return StoreHome{}, err
 	}
-	var blocks []HomeBlock
-	if err := json.Unmarshal(raw, &blocks); err != nil {
-		return StoreHome{}, fmt.Errorf("home layout: %w", err)
-	}
-	filled, err := s.fillBlocks(ctx, storeID, st.NetworkID, blocks, now)
+	filled, err := s.fillBlocks(ctx, storeID, st.NetworkID, blocks, now, false, ownLimit)
 	if err != nil {
 		return StoreHome{}, err
 	}
@@ -300,9 +288,75 @@ func (s *Service) StoreHome(ctx context.Context, storeID string) (StoreHome, err
 	return out, nil
 }
 
+// storeBlocks выбирает витрину магазина и применяет к ней тариф сети.
+// ownLimit — сколько своих баннеров сети можно показать.
+func (s *Service) storeBlocks(ctx context.Context, storeID, networkID string) ([]HomeBlock, int, int, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT scope, blocks, version, by_store FROM home_layouts
+		WHERE version > 0 AND (store_id = $1 OR (scope = 'network' AND network_id = $2) OR scope = 'platform')`,
+		storeID, networkID)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	type lay struct {
+		blocks  []HomeBlock
+		version int
+		byStore bool
+	}
+	found := map[string]lay{}
+	for rows.Next() {
+		var scope string
+		var raw []byte
+		var l lay
+		if err := rows.Scan(&scope, &raw, &l.version, &l.byStore); err != nil {
+			rows.Close()
+			return nil, 0, 0, err
+		}
+		if err := json.Unmarshal(raw, &l.blocks); err != nil {
+			rows.Close()
+			return nil, 0, 0, fmt.Errorf("home layout: %w", err)
+		}
+		found[scope] = l
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, 0, 0, err
+	}
+	platform := found["platform"]
+	plan, err := showcase.ForNetwork(ctx, s.pool, networkID)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	ownLimit := showcase.Allowed(plan.Effective.Banners)
+	// Витрина, сделанная сетью, действует только на подходящем тарифе;
+	// сделанная супер-админом — всегда.
+	usable := func(l lay, perStore bool) bool {
+		if !l.byStore {
+			return true
+		}
+		return plan.Effective.Custom && (!perStore || plan.Effective.PerStore)
+	}
+	for _, c := range []struct {
+		scope    string
+		perStore bool
+	}{{"store", true}, {"network", false}} {
+		l, ok := found[c.scope]
+		if !ok || !usable(l, c.perStore) {
+			continue
+		}
+		blocks := l.blocks
+		if l.byStore {
+			blocks = applyPlan(plan.Effective, blocks, blockIDs(platform.blocks))
+		}
+		return mergePinned(platform.blocks, blocks), l.version, ownLimit, nil
+	}
+	return platform.blocks, platform.version, ownLimit, nil
+}
+
 // fillBlocks убирает выключенные, вне дат и пустые блоки и кладёт в полки
-// товары, а в баннеры — баннеры.
-func (s *Service) fillBlocks(ctx context.Context, storeID, networkID string, blocks []HomeBlock, now time.Time) ([]HomeBlock, error) {
+// товары, а в баннеры — баннеры. preview — для редактора: баннеры сети на
+// модерации тоже видны.
+func (s *Service) fillBlocks(ctx context.Context, storeID, networkID string, blocks []HomeBlock, now time.Time, preview bool, ownLimit int) ([]HomeBlock, error) {
 	out := []HomeBlock{}
 	var banners []catalog.Banner
 	var err error
@@ -323,7 +377,7 @@ func (s *Service) fillBlocks(ctx context.Context, storeID, networkID string, blo
 				break
 			}
 			if banners == nil {
-				if banners, err = catalog.ActiveBanners(ctx, s.pool, []string{networkID}); err != nil {
+				if banners, err = catalog.HomeBanners(ctx, s.pool, networkID, ownLimit, preview); err != nil {
 					return nil, err
 				}
 			}

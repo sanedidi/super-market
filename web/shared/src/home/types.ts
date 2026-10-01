@@ -67,6 +67,8 @@ export interface PreviewBanner {
 export interface LayoutEditor {
   network_id?: string
   network_name?: string
+  store_id?: string
+  store_name?: string
   version: number
   published_at: string | null
   blocks: HomeBlock[]

@@ -12,6 +12,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/showcase"
 )
 
 // Баннеры на главной приложения. Ведёт супер-админ.
@@ -34,6 +35,11 @@ type Banner struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	// false — только фото, без заголовка поверх.
 	ShowText bool `json:"show_text"`
+	// platform — баннер супер-админа; network — сеть загрузила сама
+	// (проходит модерацию: pending → approved или rejected с причиной).
+	Owner        string `json:"owner"`
+	Moderation   string `json:"moderation"`
+	RejectReason string `json:"reject_reason"`
 }
 
 type BannerInput struct {
@@ -53,7 +59,7 @@ type BannerInput struct {
 }
 
 const bannerSelect = `SELECT id, title, subtitle, image_url, color, link_type, link_id, network_id,
-	(SELECT n.name FROM networks n WHERE n.id = banners.network_id), starts_at, ends_at, sort, is_active, created_at, show_text FROM banners`
+	(SELECT n.name FROM networks n WHERE n.id = banners.network_id), starts_at, ends_at, sort, is_active, created_at, show_text, owner, moderation, reject_reason FROM banners`
 
 var colorRe = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 
@@ -86,9 +92,15 @@ func (in BannerInput) validate(create bool) error {
 	return nil
 }
 
-func (s *Service) ListBanners(ctx context.Context, page httpx.Page) ([]Banner, error) {
-	rows, err := s.pool.Query(ctx, bannerSelect+` ORDER BY is_active DESC, sort, created_at DESC, id LIMIT $1 OFFSET $2`,
-		page.Limit, page.Offset)
+// ListBanners — баннеры для супер-админа; moderation — только с таким
+// статусом (очередь модерации — pending).
+func (s *Service) ListBanners(ctx context.Context, moderation string, page httpx.Page) ([]Banner, error) {
+	if moderation != "" && moderation != "pending" && moderation != "approved" && moderation != "rejected" {
+		return nil, apperr.Validation("moderation: pending, approved или rejected")
+	}
+	rows, err := s.pool.Query(ctx, bannerSelect+` WHERE ($3 = '' OR moderation = $3)
+		ORDER BY moderation = 'pending' DESC, is_active DESC, sort, created_at DESC, id LIMIT $1 OFFSET $2`,
+		page.Limit, page.Offset, moderation)
 	if err != nil {
 		return nil, err
 	}
@@ -199,11 +211,140 @@ func (s *Service) UpdateBanner(ctx context.Context, id string, in BannerInput) (
 // действующие сейчас.
 func ActiveBanners(ctx context.Context, q db.Querier, networkIDs []string) ([]Banner, error) {
 	rows, err := q.Query(ctx, bannerSelect+`
-		WHERE is_active AND (starts_at IS NULL OR starts_at <= now()) AND (ends_at IS NULL OR ends_at > now())
+		WHERE is_active AND moderation = 'approved' AND (starts_at IS NULL OR starts_at <= now()) AND (ends_at IS NULL OR ends_at > now())
 		  AND (network_id IS NULL OR network_id = ANY($1::uuid[]))
 		ORDER BY sort, created_at DESC LIMIT 10`, networkIDs)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[Banner])
+}
+
+// HomeBanners — баннеры для главной магазина сети: платформенные и сети.
+// Своих баннеров сети показывается не больше ownLimit (лимит тарифа —
+// после понижения лишние скрываются, но не удаляются); preview — ещё и
+// баннеры на модерации (их видит только сама сеть в предпросмотре).
+func HomeBanners(ctx context.Context, q db.Querier, networkID string, ownLimit int, preview bool) ([]Banner, error) {
+	rows, err := q.Query(ctx, `SELECT * FROM (`+bannerSelect+`
+		WHERE is_active AND (starts_at IS NULL OR starts_at <= now()) AND (ends_at IS NULL OR ends_at > now())
+		  AND (network_id IS NULL OR network_id = $1::uuid)
+		  AND (moderation = 'approved' OR ($3 AND owner = 'network' AND moderation = 'pending'))) b
+		WHERE b.owner <> 'network' OR b.id IN (
+			SELECT id FROM banners WHERE owner = 'network' AND network_id = $1::uuid AND is_active AND moderation <> 'rejected'
+			ORDER BY sort, created_at LIMIT $2)
+		ORDER BY b.sort, b.created_at DESC LIMIT 20`, networkID, ownLimit, preview)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[Banner])
+}
+
+// ---------------------------------------------- баннеры сети и модерация
+
+// NetworkBanners — свои баннеры сети.
+func (s *Service) NetworkBanners(ctx context.Context, networkID string) ([]Banner, error) {
+	rows, err := s.pool.Query(ctx, bannerSelect+` WHERE owner = 'network' AND network_id = $1 ORDER BY is_active DESC, sort, created_at`, networkID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[Banner])
+}
+
+// ActiveNetworkBanners — сколько своих баннеров у сети занимает лимит
+// (включённые и не отклонённые).
+func ActiveNetworkBanners(ctx context.Context, q db.Querier, networkID string) (int, error) {
+	var n int
+	err := q.QueryRow(ctx, `SELECT count(*) FROM banners WHERE owner = 'network' AND network_id = $1 AND is_active AND moderation <> 'rejected'`,
+		networkID).Scan(&n)
+	return n, err
+}
+
+// CreateNetworkBanner — сеть загружает свой баннер; он уходит на модерацию.
+// Сколько своих баннеров можно — по тарифу витрины.
+func (s *Service) CreateNetworkBanner(ctx context.Context, networkID string, in BannerInput) (Banner, error) {
+	plan, err := showcase.ForNetwork(ctx, s.pool, networkID)
+	if err != nil {
+		return Banner{}, err
+	}
+	used, err := ActiveNetworkBanners(ctx, s.pool, networkID)
+	if err != nil {
+		return Banner{}, err
+	}
+	if limit := showcase.Allowed(plan.Effective.Banners); used >= limit {
+		return Banner{}, showcase.Limit("banners", plan.Effective, limit, used,
+			"лимит своих баннеров на тарифе «"+plan.Effective.Name+"»")
+	}
+	if in.LinkType != nil && *in.LinkType == "store" {
+		return Banner{}, apperr.Validation("link_type: баннер сети не ведёт в другой магазин")
+	}
+	in.NetworkID = &networkID
+	b, err := s.CreateBanner(ctx, in)
+	if err != nil {
+		return b, err
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE banners SET owner = 'network', moderation = 'pending' WHERE id = $1`, b.ID); err != nil {
+		return b, err
+	}
+	return s.getBanner(ctx, s.pool, b.ID)
+}
+
+// UpdateNetworkBanner — сеть меняет свой баннер; новый текст или фото
+// снова уходят на модерацию. Включить баннер обратно можно, только если
+// есть место в лимите.
+func (s *Service) UpdateNetworkBanner(ctx context.Context, networkID, id string, in BannerInput) (Banner, error) {
+	b, err := s.getBanner(ctx, s.pool, id)
+	if err != nil {
+		return b, err
+	}
+	if b.Owner != "network" || b.NetworkID == nil || *b.NetworkID != networkID {
+		return Banner{}, apperr.NotFound("баннер не найден")
+	}
+	if in.LinkType != nil && *in.LinkType == "store" {
+		return Banner{}, apperr.Validation("link_type: баннер сети не ведёт в другой магазин")
+	}
+	if in.IsActive != nil && *in.IsActive && !b.IsActive {
+		plan, err := showcase.ForNetwork(ctx, s.pool, networkID)
+		if err != nil {
+			return Banner{}, err
+		}
+		used, err := ActiveNetworkBanners(ctx, s.pool, networkID)
+		if err != nil {
+			return Banner{}, err
+		}
+		if limit := showcase.Allowed(plan.Effective.Banners); used >= limit {
+			return Banner{}, showcase.Limit("banners", plan.Effective, limit, used, "лимит своих баннеров на тарифе «"+plan.Effective.Name+"»")
+		}
+	}
+	in.NetworkID = nil
+	if _, err := s.UpdateBanner(ctx, id, in); err != nil {
+		return Banner{}, err
+	}
+	changed := in.Title != nil || in.Subtitle != nil || in.ImageURL != nil || in.LinkType != nil || in.LinkID != nil || in.ShowText != nil
+	if changed {
+		if _, err := s.pool.Exec(ctx, `UPDATE banners SET moderation = 'pending', reject_reason = '' WHERE id = $1`, id); err != nil {
+			return Banner{}, err
+		}
+	}
+	return s.getBanner(ctx, s.pool, id)
+}
+
+// ModerateBanner — супер-админ принимает баннер сети или отклоняет с причиной.
+func (s *Service) ModerateBanner(ctx context.Context, id string, approve bool, reason string) (Banner, error) {
+	reason = strings.TrimSpace(reason)
+	if !approve && reason == "" {
+		return Banner{}, apperr.Validation("reason: укажите причину, сеть её увидит")
+	}
+	status := "approved"
+	if !approve {
+		status = "rejected"
+	}
+	tag, err := s.pool.Exec(ctx, `UPDATE banners SET moderation = $2, reject_reason = $3, updated_at = now() WHERE id = $1 AND owner = 'network'`,
+		id, status, reason)
+	if err != nil {
+		return Banner{}, err
+	}
+	if tag.RowsAffected() == 0 {
+		return Banner{}, apperr.NotFound("баннер сети не найден")
+	}
+	return s.getBanner(ctx, s.pool, id)
 }

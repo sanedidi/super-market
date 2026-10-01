@@ -243,3 +243,156 @@ func TestHomeEditor(t *testing.T) {
 	}
 	a.expect(a.do("GET", "/admin/home?network_id=00000000-0000-0000-0000-000000000000", adminTok, nil), 404, "unknown network")
 }
+
+// TestStoreShowcase — витрина сети в панели магазина: пробный «Бизнес»,
+// лимиты тарифа при публикации, закреплённые блоки платформы, свои баннеры
+// с модерацией, понижение тарифа скрывает витрину, не удаляя её.
+func TestStoreShowcase(t *testing.T) {
+	pool := freshDB(t)
+	ctx := context.Background()
+	cfg := testConfig()
+	cfg.DevOTPCode = "111111"
+	app, err := server.Build(ctx, cfg, pool, &fakeTelegram{}, quietLog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(app.Handler)
+	t.Cleanup(srv.Close)
+	a := api{t: t, srv: srv}
+
+	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
+	cola, sugar := catalogBasics(t, a, adminTok)
+	tok, store := setupNetwork(t, a, adminTok, "+998900000002")
+	a.expect(a.do("PATCH", "/store/stores/"+store, tok, map[string]any{"lat": 41.2995, "lng": 69.2401}), 200, "store")
+	wh := a.expect(a.do("GET", "/store/warehouses?store_id="+store, tok, nil), 200, "wh").items()[0]["id"].(string)
+	doc := a.expect(a.do("POST", "/store/inventory/documents", tok, map[string]any{"type": "posting", "warehouse_id": wh,
+		"items": []map[string]any{{"product_id": cola, "qty": 20, "price": 10000}, {"product_id": sugar, "qty": 10, "price": 8000}}}), 201, "posting")
+	a.expect(a.do("POST", "/store/inventory/documents/"+doc.str("id")+"/post", tok, nil), 200, "post")
+	a.expect(a.do("PUT", "/store/stores/"+store+"/delivery", tok, map[string]any{
+		"accepts_online": true, "delivery_radius_m": 5000,
+		"rules": []map[string]any{{"type": "fixed", "params": map[string]any{"price": 9000}}},
+	}), 200, "delivery")
+	home := func() []map[string]any {
+		out := []map[string]any{}
+		for _, b := range a.expect(a.do("GET", "/client/stores/"+store+"/home", "", nil), 200, "home").Body["blocks"].([]any) {
+			out = append(out, b.(map[string]any))
+		}
+		return out
+	}
+
+	// Супер-админ закрепляет промо-полоску «до бесплатной доставки» и
+	// добавляет свою полоску в шаблон.
+	tpl := a.expect(a.do("GET", "/admin/home", adminTok, nil), 200, "template").Body["blocks"].([]any)
+	pinnedPromo := map[string]any{"id": "e0000000-0000-4000-8000-000000000001", "type": "promo", "kind": "custom", "title": "Super Market", "color": "dark", "pinned": true}
+	tplBlocks := append([]any{tpl[0], pinnedPromo}, tpl[1:]...)
+	a.expect(a.do("PUT", "/admin/home/draft", adminTok, map[string]any{"blocks": tplBlocks}), 200, "template draft")
+	a.expect(a.do("POST", "/admin/home/publish", adminTok, nil), 200, "template publish")
+
+	sc := a.expect(a.do("GET", "/store/home", tok, nil), 200, "showcase")
+	plan := sc.Body["plan"].(map[string]any)
+	if plan["in_trial"] != true || plan["effective"].(map[string]any)["key"] != "business" || plan["chosen"].(map[string]any)["key"] != "start" {
+		t.Fatalf("plan = %v", plan)
+	}
+	if len(sc.Body["template_ids"].([]any)) != 7 || len(sc.Body["pinned_ids"].([]any)) != 1 || sc.Body["can_buy"] != true {
+		t.Fatalf("showcase = %v", sc.Body)
+	}
+	if sc.Body["layout"].(map[string]any)["inherited"] != true {
+		t.Fatalf("layout = %v", sc.Body["layout"])
+	}
+
+	// Сеть убирает закреплённую полоску и добавляет три свои полки — полоска
+	// возвращается, публикация упирается в лимит 2 полок.
+	shelf := func(id, title string) map[string]any {
+		return map[string]any{"id": id, "type": "shelf", "title": title, "source": "new", "limit": 6, "view": "row"}
+	}
+	own := []any{
+		shelf("f0000000-0000-4000-8000-000000000001", "Свежее"),
+		shelf("f0000000-0000-4000-8000-000000000002", "К чаю"),
+		shelf("f0000000-0000-4000-8000-000000000003", "Завтрак"),
+		tpl[5],
+	}
+	d := a.expect(a.do("PUT", "/store/home/draft", tok, map[string]any{"blocks": own}), 200, "store draft")
+	draft := d.Body["layout"].(map[string]any)["draft"].([]any)
+	if len(draft) != 5 || draft[1].(map[string]any)["id"] != pinnedPromo["id"] {
+		t.Fatalf("pinned not restored: %v", draft)
+	}
+	if d.Body["usage"].(map[string]any)["shelves"].(float64) != 3 {
+		t.Fatalf("usage = %v", d.Body["usage"])
+	}
+	lim := a.expect(a.do("POST", "/store/home/publish", tok, nil), 409, "shelves limit")
+	if det := lim.Body["error"].(map[string]any)["details"].(map[string]any); det["feature"] != "shelves" || det["limit"].(float64) != 2 || det["used"].(float64) != 3 {
+		t.Fatalf("limit = %v", lim.Body)
+	}
+	a.expect(a.do("PUT", "/store/home/draft", tok, map[string]any{"blocks": own[1:]}), 200, "store draft 2")
+	a.expect(a.do("POST", "/store/home/publish", tok, nil), 200, "store publish")
+	h := home()
+	if len(h) != 4 || h[0]["title"] != "К чаю" || h[1]["id"] != pinnedPromo["id"] || h[2]["title"] != "Завтрак" {
+		t.Fatalf("store home = %v", h)
+	}
+
+	// «Про» нужен для расписания и витрины отдельного магазина.
+	past := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	sched := shelf("f0000000-0000-4000-8000-000000000004", "Акция")
+	sched["starts_at"] = past
+	a.expect(a.do("PUT", "/store/home/draft", tok, map[string]any{"blocks": []any{sched}}), 200, "sched draft")
+	if e := a.expect(a.do("POST", "/store/home/publish", tok, nil), 409, "schedule"); e.Body["error"].(map[string]any)["details"].(map[string]any)["feature"] != "schedule" {
+		t.Fatalf("schedule = %v", e.Body)
+	}
+	a.expect(a.do("DELETE", "/store/home/draft", tok, nil), 200, "discard")
+	a.expect(a.do("PUT", "/store/home/draft?store_id="+store, tok, map[string]any{"blocks": own[1:]}), 409, "per store")
+
+	// Свои баннеры: на модерации не видны покупателям, лимит 3.
+	var banners []string
+	for i := 0; i < 3; i++ {
+		b := a.expect(a.do("POST", "/store/banners", tok, map[string]any{"title": "Баннер", "image_url": "https://cdn.example.com/x.jpg"}), 201, "banner")
+		if b.str("moderation") != "pending" || b.str("owner") != "network" {
+			t.Fatalf("banner = %v", b.Body)
+		}
+		banners = append(banners, b.str("id"))
+	}
+	a.expect(a.do("POST", "/store/banners", tok, map[string]any{"title": "Ещё", "image_url": "https://cdn.example.com/y.jpg"}), 409, "banners limit")
+	bannerBlock := map[string]any{"id": "f0000000-0000-4000-8000-000000000005", "type": "banners", "size": "big", "banner_ids": banners[:1]}
+	a.expect(a.do("PUT", "/store/home/draft", tok, map[string]any{"blocks": []any{bannerBlock}}), 200, "banner draft")
+	a.expect(a.do("POST", "/store/home/publish", tok, nil), 200, "banner publish")
+	if h := home(); len(h) != 1 {
+		t.Fatalf("pending banner leaked: %v", h)
+	}
+	if q := a.expect(a.do("GET", "/admin/banners?moderation=pending", adminTok, nil), 200, "queue").items(); len(q) != 3 {
+		t.Fatalf("queue = %v", q)
+	}
+	a.expect(a.do("POST", "/admin/banners/"+banners[1]+"/reject", adminTok, map[string]any{}), 400, "reason required")
+	a.expect(a.do("POST", "/admin/banners/"+banners[1]+"/reject", adminTok, map[string]any{"reason": "Нечитаемый текст"}), 200, "reject")
+	a.expect(a.do("POST", "/admin/banners/"+banners[0]+"/approve", adminTok, nil), 200, "approve")
+	// Публикация баннера сбрасывает кэш при следующей публикации — здесь
+	// проверяем через предпросмотр (без кэша).
+	pv := a.expect(a.do("POST", "/store/home/preview", tok, map[string]any{"store_id": store, "blocks": []any{bannerBlock}}), 200, "preview")
+	if len(pv.Body["blocks"].([]any)) != 2 {
+		t.Fatalf("preview = %v", pv.Body)
+	}
+
+	// Сеть выбирает «Старт» — своя витрина скрыта, но не удалена; «Про» —
+	// возвращается.
+	a.expect(a.do("POST", "/store/showcase/plan", tok, map[string]any{"plan": "start"}), 200, "start")
+	if _, err := pool.Exec(ctx, `UPDATE networks SET showcase_trial_until = current_date - 1`); err != nil {
+		t.Fatal(err)
+	}
+	a.expect(a.do("POST", "/store/showcase/plan", tok, map[string]any{"plan": "start"}), 200, "start again")
+	if h := home(); len(h) < 5 {
+		t.Fatalf("start should show template: %v", h)
+	}
+	a.expect(a.do("POST", "/store/showcase/plan", tok, map[string]any{"plan": "pro"}), 200, "pro")
+	if h := home(); len(h) != 2 || h[0]["type"] != "banners" {
+		t.Fatalf("pro home = %v", h)
+	}
+	a.expect(a.do("PUT", "/store/home/draft?store_id="+store, tok, map[string]any{"blocks": []any{sched}}), 200, "per store draft on pro")
+
+	// Тарифы правит супер-админ.
+	plans := a.expect(a.do("GET", "/admin/showcase/plans", adminTok, nil), 200, "plans").items()
+	if len(plans) != 3 || plans[1]["shelves"].(float64) != 2 {
+		t.Fatalf("plans = %v", plans)
+	}
+	p := a.expect(a.do("PATCH", "/admin/showcase/plans/business", adminTok, map[string]any{"shelves": -1, "price_uzs": "199000"}), 200, "plan")
+	if p.Body["shelves"] != nil || p.str("price_uzs") != "199000.00" {
+		t.Fatalf("plan = %v", p.Body)
+	}
+}

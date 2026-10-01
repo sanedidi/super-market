@@ -40,11 +40,19 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/admin/banners", m.listBanners)
 		r.Post("/admin/banners", m.createBanner)
 		r.Patch("/admin/banners/{id}", m.updateBanner)
+		r.Post("/admin/banners/{id}/approve", m.moderateBanner(true))
+		r.Post("/admin/banners/{id}/reject", m.moderateBanner(false))
 	})
 
 	r.Group(func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppStore))
 		r.Get("/store/catalog/{kind}", m.listDict(true))
+
+		// Свои баннеры сети для витрины (с модерацией).
+		showcaseManage := m.auth.Allow(identity.PermShowcaseManage)
+		r.With(showcaseManage).Get("/store/banners", m.storeBanners)
+		r.With(showcaseManage).Post("/store/banners", m.storeCreateBanner)
+		r.With(showcaseManage).Patch("/store/banners/{id}", m.storeUpdateBanner)
 
 		r.Get("/store/products", m.storeListProducts)
 		r.Post("/store/products", m.storeCreateProduct)
@@ -265,7 +273,7 @@ func (m *Module) updatePromotion(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) listBanners(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Banner], error) {
-		items, err := m.svc.ListBanners(r.Context(), httpx.PageFrom(r))
+		items, err := m.svc.ListBanners(r.Context(), r.URL.Query().Get("moderation"), httpx.PageFrom(r))
 		return httpx.List[Banner]{Items: items}, err
 	})
 }
@@ -279,5 +287,42 @@ func (m *Module) createBanner(w http.ResponseWriter, r *http.Request) {
 func (m *Module) updateBanner(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in BannerInput) (Banner, error) {
 		return m.svc.UpdateBanner(r.Context(), id, in)
+	})
+}
+
+type moderationInput struct {
+	Reason string `json:"reason"`
+}
+
+func (m *Module) moderateBanner(approve bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if approve {
+			httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (Banner, error) {
+				return m.svc.ModerateBanner(r.Context(), id, true, "")
+			})
+			return
+		}
+		httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in moderationInput) (Banner, error) {
+			return m.svc.ModerateBanner(r.Context(), id, approve, in.Reason)
+		})
+	}
+}
+
+func (m *Module) storeBanners(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Banner], error) {
+		items, err := m.svc.NetworkBanners(r.Context(), pr(r).NetworkID)
+		return httpx.List[Banner]{Items: items}, err
+	})
+}
+
+func (m *Module) storeCreateBanner(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusCreated, "", func(_ string, in BannerInput) (Banner, error) {
+		return m.svc.CreateNetworkBanner(r.Context(), pr(r).NetworkID, in)
+	})
+}
+
+func (m *Module) storeUpdateBanner(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in BannerInput) (Banner, error) {
+		return m.svc.UpdateNetworkBanner(r.Context(), pr(r).NetworkID, id, in)
 	})
 }
