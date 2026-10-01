@@ -57,16 +57,18 @@ flutter run
 ## Касса (apps/pos)
 
 Касса для Windows и Android: быстрый режим с клавиатуры, работа без интернета. Готовые сборки
-делает CI (workflow `apps`): артефакты **pos-windows** (папка с `sm_pos.exe`) и **pos-android** (APK).
+делает CI (workflow `apps`): артефакты **pos-windows** (папка с `SuperMarketPOS.exe`) и **pos-android** (APK).
+Логотип и название — в `apps/pos/branding/`, их подставляет `branding/apply.sh` после `flutter create`.
 
 Своя сборка на Windows (нужны Flutter и Visual Studio с «Desktop development with C++»):
 
 ```sh
 cd apps/pos
 flutter create --platforms=windows --org uz.supermarket --project-name sm_pos .
+bash branding/apply.sh   # логотип и название (Git Bash)
 flutter pub get
 flutter build windows --release
-# готово: build\windows\x64\runner\Release\sm_pos.exe (запускать вместе со всей папкой)
+# готово: build\windows\x64\runner\Release\SuperMarketPOS.exe (запускать вместе со всей папкой)
 ```
 
 Локальный backend: `--dart-define=API_URL=http://localhost:8080/api/v1`.

@@ -48,7 +48,7 @@ jobs:
           flutter analyze --no-fatal-infos
           flutter test
 
-  # Касса для Windows: архив с sm_pos.exe — в артефакте pos-windows.
+  # Касса для Windows: архив с SuperMarketPOS.exe — в артефакте pos-windows.
   pos-windows:
     needs: analyze
     runs-on: windows-latest
@@ -65,6 +65,7 @@ jobs:
           # Папки платформ пока создаются в CI (не перезаписывает lib/).
           flutter create --platforms=windows --org uz.supermarket --project-name sm_pos .
           rm -f test/widget_test.dart
+          bash branding/apply.sh
           flutter pub get
           flutter build windows --release
       - uses: actions/upload-artifact@v4
@@ -91,8 +92,7 @@ jobs:
         run: |
           flutter create --platforms=android --org uz.supermarket --project-name sm_pos .
           rm -f test/widget_test.dart
-          grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml || \
-            sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' android/app/src/main/AndroidManifest.xml
+          bash branding/apply.sh
           flutter pub get
           flutter build apk --release
       - uses: actions/upload-artifact@v4
