@@ -199,12 +199,19 @@ func TestPOS(t *testing.T) {
 	if s1.str("total") != "48000.00" || s1.str("fiscal_status") != "registered" || s1.str("shift_id") != shift {
 		t.Fatalf("pos sale = %v", s1.Body)
 	}
-	// Без интернета продали больше, чем было: продажа проходит, недостача записана.
+	// Без интернета продали больше, чем было, и по старой цене: чек уже у
+	// покупателя — продажа проходит по цене кассы, недостача записана.
 	past := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
-	a.expect(posDo(a, "POST", "/pos/sales", dt, cashier, sale("sale-0002",
-		[]map[string]any{{"product_id": cola, "qty": 10}},
-		[]map[string]any{{"payment_method_id": card, "amount": 150000}},
+	s2 := a.expect(posDo(a, "POST", "/pos/sales", dt, cashier, sale("sale-0002",
+		[]map[string]any{{"product_id": cola, "qty": 10, "price": 14000}},
+		[]map[string]any{{"payment_method_id": card, "amount": 140000}},
 		map[string]any{"sold_at": past})), 201, "offline oversell")
+	if s2.str("total") != "140000.00" {
+		t.Fatalf("offline price sale = %v", s2.Body)
+	}
+	a.expect(a.do("POST", "/store/sales", tok, map[string]any{
+		"client_uid": "panel-price-1", "items": []map[string]any{{"product_id": cola, "qty": 1, "price": 1}},
+	}), 400, "panel sale with price")
 	var short string
 	if err := pool.QueryRow(context.Background(), `SELECT i.short_qty::text FROM sale_items i JOIN sales s ON s.id = i.sale_id
 		WHERE s.client_uid = 'sale-0002'`).Scan(&short); err != nil || short != "2.000" {
@@ -233,6 +240,10 @@ func TestPOS(t *testing.T) {
 	if len(found2) != 1 || found2[0]["id"] != s1.str("id") {
 		t.Fatalf("find sale = %v", found2)
 	}
+	// QR на чеке кассы — client_uid продажи.
+	if byUID := a.expect(posDo(a, "GET", "/pos/sales?q=sale-0001", dt, owner, nil), 200, "find by uid").items(); len(byUID) != 1 || byUID[0]["id"] != s1.str("id") {
+		t.Fatalf("find by uid = %v", byUID)
+	}
 	a.expect(posDo(a, "POST", "/pos/returns", dt, owner, map[string]any{
 		"sale_id": s1.str("id"), "payment_method_id": cash, "shift_id": shift,
 		"items": []map[string]any{{"sale_line": 1, "qty": 1}},
@@ -241,7 +252,7 @@ func TestPOS(t *testing.T) {
 	// X-отчёт: 200 000 + 48 000 − 15 000 − 30 000 = 203 000 наличными.
 	rep := a.expect(posDo(a, "GET", "/pos/shifts/"+shift, dt, cashier, nil), 200, "report").Body["report"].(map[string]any)
 	if rep["expected_cash"] != "203000.00" || rep["sales_count"].(float64) != 2 || rep["fiscal_pending"].(float64) != 1 ||
-		rep["returns_total"] != "15000.00" || rep["sales_total"] != "198000.00" {
+		rep["returns_total"] != "15000.00" || rep["sales_total"] != "188000.00" {
 		t.Fatalf("report = %v", rep)
 	}
 

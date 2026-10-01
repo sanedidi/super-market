@@ -129,7 +129,7 @@ type SaleFilter struct {
 	StoreID       string
 	SaleID        string // только для возвратов: возвраты по чеку
 	FiscalPending bool
-	// Query — номер чека (точно) или часть телефона покупателя.
+	// Query — номер чека или client_uid (точно) или часть телефона покупателя.
 	Query    string
 	From, To *time.Time
 	Page     httpx.Page
@@ -140,7 +140,7 @@ func (s *Service) ListSales(ctx context.Context, p *identity.Principal, f SaleFi
 		WHERE s.network_id = $1 AND ($2 OR s.store_id = ANY($3::uuid[]))
 		  AND ($4 = '' OR s.store_id::text = $4) AND (NOT $5 OR s.fiscal_status = 'pending')
 		  AND ($6::timestamptz IS NULL OR s.sold_at >= $6) AND ($7::timestamptz IS NULL OR s.sold_at < $7)
-		  AND ($10 = '' OR s.number::text = $10 OR ($11 <> '' AND regexp_replace(s.customer_phone, '\D', '', 'g') LIKE '%' || $11 || '%'))
+		  AND ($10 = '' OR s.number::text = $10 OR s.client_uid = $10 OR ($11 <> '' AND regexp_replace(s.customer_phone, '\D', '', 'g') LIKE '%' || $11 || '%'))
 		ORDER BY s.sold_at DESC LIMIT $8 OFFSET $9`,
 		p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.StoreID, f.FiscalPending, f.From, f.To, f.Page.Limit, f.Page.Offset,
 		f.Query, phoneDigits(f.Query))
@@ -178,6 +178,9 @@ type SaleInput struct {
 		ProductID string        `json:"product_id"`
 		Qty       money.Qty     `json:"qty"`
 		Discount  *money.Amount `json:"discount"`
+		// Цена с кассы (только касса): по ней пробит чек. Офлайн касса могла
+		// продать по старой цене — чек уже у покупателя, сервер её принимает.
+		Price *money.Amount `json:"price"`
 		// Коды маркировки DataMatrix, по одному на каждую штуку (только касса).
 		MarkingCodes []string `json:"marking_codes"`
 	} `json:"items"`
@@ -223,6 +226,12 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 		}
 	} else if in.ShiftID != nil || in.Fiscal != nil {
 		return Sale{}, false, apperr.Validation("shift_id и fiscal передаёт только касса")
+	} else {
+		for _, it := range in.Items {
+			if it.Price != nil {
+				return Sale{}, false, apperr.Validation("items: цену строки передаёт только касса")
+			}
+		}
 	}
 	if len(in.ClientUID) < 8 || len(in.ClientUID) > 64 {
 		return Sale{}, false, apperr.Validation("client_uid: 8–64 символа, генерируется кассой (например, UUID)")
@@ -351,14 +360,22 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 			if err != nil {
 				return apperr.Validation("items: товар не найден в строке " + ls)
 			}
-			if !prod.IsActive {
+			// Касса могла продать офлайн товар, который тем временем сняли с продажи.
+			if !prod.IsActive && !pos {
 				return apperr.Validation("items: товар «" + prod.Name + "» снят с продажи")
+			}
+			price := prod.Price
+			if it.Price != nil {
+				if !it.Price.Valid() || money.D(string(*it.Price)).Sign() < 0 {
+					return apperr.Validation("items: неверная цена в строке " + ls)
+				}
+				price = money.D(string(*it.Price)).Money()
 			}
 			qty := money.D(string(it.Qty))
 			if !prod.IsFractional && qty.Cmp(money.D(qty.Fixed(0))) != 0 {
 				return apperr.Validation("items: «" + prod.Name + "» продаётся только целым количеством")
 			}
-			lineSum := money.D(prod.Price).Mul(qty).Round2()
+			lineSum := money.D(price).Mul(qty).Round2()
 			lineDiscount := money.D("0")
 			if it.Discount != nil {
 				lineDiscount = money.D(string(*it.Discount))
@@ -393,7 +410,7 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 			if _, err := tx.Exec(ctx, `
 				INSERT INTO sale_items (sale_id, line, product_id, qty, price, discount, total, cost, marking_codes, short_qty)
 				VALUES ($1, $2, $3, $4::numeric, $5::numeric, $6::numeric, $7::numeric, $8::numeric, $9, $10::numeric)`,
-				id, line, it.ProductID, qty.Fixed(3), prod.Price, lineDiscount.Money(),
+				id, line, it.ProductID, qty.Fixed(3), price, lineDiscount.Money(),
 				lineSum.Sub(lineDiscount).Money(), lineCost.Money(), codes, short); err != nil {
 				return err
 			}

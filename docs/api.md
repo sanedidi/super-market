@@ -282,8 +282,8 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 | GET | `/pos/shifts/{id}` | Смена с X-отчётом: продажи, возвраты, по способам оплаты, ожидаемые наличные |
 | POST | `/pos/shifts/{id}/cash-moves` | Внесение/изъятие `{client_uid, kind: in/out, amount, reason}` |
 | POST | `/pos/shifts/{id}/close` | `{counted_cash, diff_reason}` — расхождение без причины → 400; повтор → та же смена |
-| POST | `/pos/sales` | Как `/store/sales` + `shift_id`, `fiscal: {number, sign, qr, module}`, `items[].marking_codes`. Магазин — кассы; нехватка остатка не отклоняет продажу, а пишется в `sale_items.short_qty` |
-| GET | `/pos/sales?q=` | Поиск чека для возврата по номеру |
+| POST | `/pos/sales` | Как `/store/sales` + `shift_id`, `fiscal: {number, sign, qr, module}`, `items[].marking_codes`, `items[].price` (цена, по которой касса пробила чек — офлайн могла быть старая). Магазин — кассы; нехватка остатка и снятый с продажи товар не отклоняют продажу, недостача — в `sale_items.short_qty` |
+| GET | `/pos/sales?q=` | Поиск чека для возврата: номер или `client_uid` (QR на чеке кассы) |
 | GET | `/pos/sales/{id}` | Чек |
 | POST | `/pos/returns` | Как `/store/sales/returns` + `shift_id` |
 

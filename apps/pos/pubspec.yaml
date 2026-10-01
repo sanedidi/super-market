@@ -1,11 +1,11 @@
 name: sm_pos
-description: POS магазина — касса для планшета, телефона и компьютера. Работает без интернета, продажи досылаются позже.
+description: Касса Super Market для Windows и Android. Продаёт без интернета, чеки досылаются сами.
 publish_to: none
-version: 0.1.0+1
+version: 0.2.0+2
 
 environment:
-  sdk: ">=3.4.0 <4.0.0"
-  flutter: ">=3.22.0"
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.27.0"
 
 dependencies:
   flutter:
@@ -15,10 +15,14 @@ dependencies:
   sm_core:
     path: ../core
   provider: ^6.1.2
-  shared_preferences: ^2.3.2
+  http: ^1.2.2
+  crypto: ^3.0.6
   uuid: ^4.5.1
+  path_provider: ^2.1.4
 
 dev_dependencies:
+  flutter_test:
+    sdk: flutter
   flutter_lints: ^4.0.0
 
 flutter:

@@ -2,6 +2,7 @@ name: apps
 
 # Проверка Flutter-приложений: анализатор и тесты. Скриншоты экранов
 # приложения покупателя (golden) — в артефакте client-screens.
+# Сборки кассы: pos-windows (sm_pos.exe) и pos-android (APK).
 on:
   push:
     branches: [main, "client-*"]
@@ -45,3 +46,56 @@ jobs:
         run: |
           flutter pub get
           flutter analyze --no-fatal-infos
+          flutter test
+
+  # Касса для Windows: архив с sm_pos.exe — в артефакте pos-windows.
+  pos-windows:
+    needs: analyze
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Build
+        working-directory: apps/pos
+        shell: bash
+        run: |
+          # Папки платформ пока создаются в CI (не перезаписывает lib/).
+          flutter create --platforms=windows --org uz.supermarket --project-name sm_pos .
+          rm -f test/widget_test.dart
+          flutter pub get
+          flutter build windows --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pos-windows
+          path: apps/pos/build/windows/x64/runner/Release/
+
+  # Касса для Android: APK — в артефакте pos-android.
+  pos-android:
+    needs: analyze
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Build
+        working-directory: apps/pos
+        run: |
+          flutter create --platforms=android --org uz.supermarket --project-name sm_pos .
+          rm -f test/widget_test.dart
+          grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml || \
+            sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' android/app/src/main/AndroidManifest.xml
+          flutter pub get
+          flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pos-android
+          path: apps/pos/build/app/outputs/flutter-apk/app-release.apk
