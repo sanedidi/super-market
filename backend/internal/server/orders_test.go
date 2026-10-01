@@ -186,7 +186,7 @@ func TestOnlineOrdersFlow(t *testing.T) {
 		t.Fatalf("far preview = %v", farPv.Body)
 	}
 	a.expect(a.do("POST", "/client/orders", client, cart(addr, "payme", line(cola, 50))), 409, "too many")
-	a.expect(a.do("POST", "/client/orders", client, cart(addr, "cash", line(cola, 2))), 400, "cash not allowed")
+	a.expect(a.do("POST", "/client/orders", client, cart(addr, "card", line(cola, 2))), 400, "unknown provider")
 
 	// ---- Заказ 1: Payme, 3 колы + 1,5 кг сахара = 63 000 + 7 000 доставки.
 	o1 := a.expect(a.do("POST", "/client/orders", client, cart(addr, "payme", line(cola, 3), line(sugar, "1.5"))), 201, "order 1")
@@ -426,4 +426,16 @@ func TestOnlineOrdersFlow(t *testing.T) {
 	if n := len(stmt["result"].(map[string]any)["transactions"].([]any)); n != 2 {
 		t.Fatalf("statement = %d transactions", n)
 	}
+
+	// ВРЕМЕННО: наличные курьеру — заказ сразу у магазина, без ссылки на оплату
+	// и без денег в балансе сети. Отменяем, чтобы не мешать остальным проверкам.
+	oc := a.expect(a.do("POST", "/client/orders", client, cart(addr, "cash", line(cola, 2))), 201, "cash order")
+	if oc.str("order", "status") != "paid" || oc.Body["payment_url"] != nil && oc.Body["payment_url"] != "" {
+		t.Fatalf("cash order = %v", oc.Body)
+	}
+	var cashBalance int
+	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM balance_entries WHERE order_id = $1`, oc.str("order", "id")).Scan(&cashBalance); err != nil || cashBalance != 0 {
+		t.Fatalf("cash order balance entries = %d, %v", cashBalance, err)
+	}
+	a.expect(a.do("POST", "/client/orders/"+oc.str("order", "id")+"/cancel", client, nil), 200, "cancel cash order")
 }

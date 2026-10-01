@@ -214,7 +214,7 @@ func TestAdminOrdersAndStats(t *testing.T) {
 	if got := ids("/admin/orders?payment_provider=click"); len(got) != 0 {
 		t.Fatalf("by click = %v", got)
 	}
-	a.expect(a.do("GET", "/admin/orders?payment_provider=cash", adminTok, nil), 400, "bad provider")
+	a.expect(a.do("GET", "/admin/orders?payment_provider=card", adminTok, nil), 400, "bad provider")
 	today := time.Now().In(time.FixedZone("UZT", 5*3600))
 	if got := ids("/admin/orders?from=" + today.AddDate(0, 0, 1).Format("2006-01-02")); len(got) != 0 {
 		t.Fatalf("from tomorrow = %v", got)

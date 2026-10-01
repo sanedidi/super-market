@@ -38,7 +38,8 @@ const statusFilters = [
   { value: 'cancelled', label: 'Отменены' },
 ]
 
-const providers: Record<string, string> = { payme: 'Payme', click: 'Click' }
+// cash — ВРЕМЕННО: наличные курьеру, пока Payme и Click не подключены.
+const providers: Record<string, string> = { payme: 'Payme', click: 'Click', cash: 'Наличные курьеру' }
 
 /** Кто сменил статус: client, payment, store:<id>, admin, system. */
 function actorTitle(a: string) {

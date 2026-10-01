@@ -367,10 +367,11 @@ var problemMessages = map[string]string{
 // CreateOrder оформляет заказ: пересчитывает корзину, резервирует товар,
 // создаёт заказ в статусе «ожидает оплаты» и отдаёт ссылку на оплату.
 func (s *Service) CreateOrder(ctx context.Context, p *identity.Principal, in CheckoutInput) (Created, error) {
-	if in.PaymentProvider != payments.ProviderPayme && in.PaymentProvider != payments.ProviderClick {
-		return Created{}, apperr.Validation("payment_provider: ожидается payme или click")
+	cash := in.PaymentProvider == CashOnDelivery
+	if in.PaymentProvider != payments.ProviderPayme && in.PaymentProvider != payments.ProviderClick && !cash {
+		return Created{}, apperr.Validation("payment_provider: ожидается payme, click или cash")
 	}
-	if !s.payments.Enabled(in.PaymentProvider) {
+	if !cash && !s.payments.Enabled(in.PaymentProvider) {
 		return Created{}, apperr.Validation("payment_provider: способ оплаты временно недоступен")
 	}
 	var phone string
@@ -468,10 +469,28 @@ func (s *Service) CreateOrder(ctx context.Context, p *identity.Principal, in Che
 				return err
 			}
 		}
-		return addHistory(ctx, tx, id, StatusAwaitingPayment, "client", "")
+		if err := addHistory(ctx, tx, id, StatusAwaitingPayment, "client", ""); err != nil {
+			return err
+		}
+		if cash {
+			// Наличные курьеру: оплаты онлайн нет — заказ сразу уходит магазину.
+			// Денег у платформы нет, поэтому в баланс сети ничего не пишем.
+			if _, err := tx.Exec(ctx, `UPDATE orders SET status = 'paid', paid_at = now() WHERE id = $1`, id); err != nil {
+				return err
+			}
+			return addHistory(ctx, tx, id, StatusPaid, "client", "оплата наличными курьеру")
+		}
+		return nil
 	})
 	if err != nil {
 		return Created{}, err
+	}
+	if cash {
+		o, err := s.getOrder(ctx, s.pool, id)
+		if err == nil {
+			s.notifyNewOrder(id, o.StoreID, o.Total, true)
+		}
+		return Created{Order: o}, err
 	}
 	url, err := s.payments.CheckoutURL(in.PaymentProvider, id, total)
 	if err != nil {
@@ -480,6 +499,10 @@ func (s *Service) CreateOrder(ctx context.Context, p *identity.Principal, in Che
 	o, err := s.getOrder(ctx, s.pool, id)
 	return Created{Order: o, PaymentURL: url}, err
 }
+
+// CashOnDelivery — ВРЕМЕННЫЙ способ оплаты «наличными курьеру», пока Payme и
+// Click не подключены. Убрать: этот код, миграцию 0022 и вариант в приложении.
+const CashOnDelivery = "cash"
 
 // PaymentURL — ссылка на оплату ещё не оплаченного заказа (если клиент закрыл страницу).
 func (s *Service) PaymentURL(ctx context.Context, p *identity.Principal, id string) (string, error) {

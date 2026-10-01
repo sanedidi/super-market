@@ -126,6 +126,9 @@ func scanOrder(row pgx.CollectableRow) (Order, error) {
 		&o.PaidAt, &o.AcceptedAt, &o.DeliveredAt, &o.DeliveryFrom, &o.DeliveryTo,
 		&o.CourierID, &o.CourierName, &o.EtaAt, &o.CancelReason, &o.FiscalStatus, &o.CreatedAt)
 	o.StatusTitle = statusTitles[o.Status]
+	if o.Status == StatusPaid && o.PaymentProvider == CashOnDelivery {
+		o.StatusTitle = "Новый · наличными курьеру"
+	}
 	return o, err
 }
 
@@ -592,8 +595,8 @@ func (s *Service) AdminList(ctx context.Context, f AdminFilter) ([]Order, error)
 			return nil, apperr.Validation(name + ": неверный id")
 		}
 	}
-	if f.Provider != "" && f.Provider != "payme" && f.Provider != "click" {
-		return nil, apperr.Validation("payment_provider: payme или click")
+	if f.Provider != "" && f.Provider != "payme" && f.Provider != "click" && f.Provider != CashOnDelivery {
+		return nil, apperr.Validation("payment_provider: payme, click или cash")
 	}
 	// Номер заказа — только цифры; телефон ищем по цифрам от трёх.
 	q := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(f.Query), "№"))
@@ -685,9 +688,14 @@ func (s *Service) MarkPaid(ctx context.Context, tx pgx.Tx, orderID string) error
 	if err := addHistory(ctx, tx, orderID, StatusPaid, "payment", ""); err != nil {
 		return err
 	}
-	storeID, total := o.StoreID, o.Total
+	s.notifyNewOrder(orderID, o.StoreID, o.Total, false)
+	return nil
+}
+
+// notifyNewOrder — сообщение магазину о новом заказе (вне транзакции, не
+// влияет на ответ). Номер и окно доставки читаем сами — как и раньше.
+func (s *Service) notifyNewOrder(orderID, storeID, total string, cash bool) {
 	go func() {
-		// Уведомление — вне транзакции и без влияния на ответ провайдеру.
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		var number int64
@@ -699,9 +707,11 @@ func (s *Service) MarkPaid(ctx context.Context, tx pgx.Tx, orderID string) error
 			text = fmt.Sprintf("Новый заказ №%d на %s сум ко времени: %s, %s–%s. Примите его не позже чем за час до начала.",
 				number, total, f.Format("02.01"), f.Format("15:04"), t.Format("15:04"))
 		}
+		if cash {
+			text += " Оплата наличными курьеру."
+		}
 		s.notify.StoreStaff(ctx, storeID, identity.PermOrdersManage, text)
 	}()
-	return nil
 }
 
 // CanRefund — возврат через провайдера возможен, пока заказ не собран.

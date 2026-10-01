@@ -82,7 +82,8 @@ const statusTitles: Record<string, string> = {
   expired: 'Не оплачен',
 }
 
-const providerTitle = (p: string) => (p === 'payme' ? 'Payme' : p === 'click' ? 'Click' : p)
+// cash — ВРЕМЕННО: наличные курьеру, пока Payme и Click не подключены.
+const providerTitle = (p: string) => (p === 'payme' ? 'Payme' : p === 'click' ? 'Click' : p === 'cash' ? 'Наличные курьеру' : p)
 
 function minutesSince(v: string | null) {
   return v ? Math.floor((Date.now() - new Date(v).getTime()) / 60000) : 0
@@ -176,6 +177,7 @@ export function Orders({ stale = false }: { stale?: boolean }) {
           options={[
             { value: 'payme', label: 'Payme' },
             { value: 'click', label: 'Click' },
+            { value: 'cash', label: 'Наличные курьеру' },
           ]}
         />
         <DatePicker.RangePicker

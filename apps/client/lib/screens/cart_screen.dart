@@ -9,6 +9,7 @@ import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'checkout_sheets.dart';
+import 'order_screen.dart';
 import 'payment_screen.dart';
 import 'root_shell.dart';
 
@@ -389,7 +390,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Map<String, dynamic>? _preview;
   String? _error;
   bool _busy = false;
-  String _provider = 'payme';
+  // ВРЕМЕННО по умолчанию наличные курьеру, пока Payme и Click не подключены.
+  String _provider = 'cash';
   final _comment = TextEditingController();
 
   @override
@@ -435,13 +437,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (!mounted) return;
       final nav = Navigator.of(context);
       nav.pop(); // оформление
+      if (url == null || url.isEmpty) {
+        // Наличные курьеру: оплачивать онлайн нечего — сразу экран заказа.
+        nav.pushReplacement(MaterialPageRoute(builder: (_) => OrderScreen(id: order['id'] as String)));
+        return;
+      }
       nav.pushReplacement(MaterialPageRoute(builder: (_) => PaymentScreen(order: order))); // корзина → оплата
-      if (url != null) {
-        try {
-          await openUrl(url);
-        } catch (_) {
-          // Страница оплаты откроется кнопкой на экране оплаты.
-        }
+      try {
+        await openUrl(url);
+      } catch (_) {
+        // Страница оплаты откроется кнопкой на экране оплаты.
       }
     } on ApiError catch (e) {
       if (mounted) showError(context, e);
@@ -528,6 +533,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
             const SizedBox(height: 24),
             const Text('Способ оплаты', style: AppText.h3),
+            const SizedBox(height: 12),
+            // ВРЕМЕННО: «Наличные курьеру» — убрать, когда заработают Payme и Click.
+            _PayOption(
+              title: 'Наличными курьеру',
+              icon: Icons.payments_rounded,
+              color: AppColors.successInk,
+              selected: _provider == 'cash',
+              onTap: () => setState(() => _provider = 'cash'),
+            ),
             const SizedBox(height: 12),
             Row(children: [
               Expanded(child: _PayOption(title: 'Payme', color: const Color(0xFF33CCCC), selected: _provider == 'payme', onTap: () => setState(() => _provider = 'payme'))),
@@ -624,8 +638,9 @@ class _Card extends StatelessWidget {
 
 /// Плитка оплаты: логотип-иконка сверху, название, галочка у выбранной.
 class _PayOption extends StatelessWidget {
-  const _PayOption({required this.title, required this.color, required this.selected, required this.onTap});
+  const _PayOption({required this.title, required this.color, required this.selected, required this.onTap, this.icon = Icons.credit_card_rounded});
   final String title;
+  final IconData icon;
   final Color color;
   final bool selected;
   final VoidCallback onTap;
@@ -647,7 +662,7 @@ class _PayOption extends StatelessWidget {
           padding: const EdgeInsets.all(14),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              IconBox(Icons.credit_card_rounded, size: 36, bg: color, fg: AppColors.white, radius: 10),
+              IconBox(icon, size: 36, bg: color, fg: AppColors.white, radius: 10),
               const Spacer(),
               if (selected) const Icon(Icons.check_circle_rounded, color: AppColors.primary),
             ]),

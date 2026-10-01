@@ -319,7 +319,7 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 | GET/POST | `/client/addresses` | адреса: `{"label","address","entrance","floor","apartment","comment","lat","lng"}` |
 | PUT/DELETE | `/client/addresses/{id}` | |
 | POST | `/client/checkout/preview` | расчёт корзины: строки с `problem` (`out_of_stock`, `not_enough`, `fractional`, `unavailable`), доставка, `can_order`, `problems` (`items`, `store_closed`, `min_order_amount`, `not_deliverable`, `store_not_accepting`) |
-| POST | `/client/orders` | оформить: `{"store_id","address_id","items":[{"product_id","qty"}],"payment_provider":"payme"\|"click","comment"}` → `{order, payment_url}`. Товар резервируется |
+| POST | `/client/orders` | оформить: `{"store_id","address_id","items":[{"product_id","qty"}],"payment_provider":"payme"\|"click"\|"cash","comment"}` → `{order, payment_url}`. Товар резервируется. **Временно** `cash` — наличные курьеру: заказ сразу «paid», `payment_url` пустой |
 | GET | `/client/orders`, `/client/orders/{id}` | заказы с историей статусов |
 | POST | `/client/orders/{id}/cancel` | отмена до принятия магазином; оплаченный — деньги к возврату |
 | GET | `/client/orders/{id}/payment-url` | ссылка на оплату ещё раз |
