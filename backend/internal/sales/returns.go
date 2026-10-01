@@ -99,6 +99,8 @@ type ReturnInput struct {
 		SaleLine int       `json:"sale_line"`
 		Qty      money.Qty `json:"qty"`
 	} `json:"items"`
+	// Смена кассы — только для возврата с кассы (токен устройства).
+	ShiftID *string `json:"shift_id"`
 }
 
 // CreateReturn — возврат по чеку: товар возвращается в те же партии по той же
@@ -135,15 +137,32 @@ func (s *Service) CreateReturn(ctx context.Context, p *identity.Principal, in Re
 			return apperr.Validation("payment_method_id: способ оплаты не относится к кассе этого магазина")
 		}
 		lockCashboxForReturn(ctx, tx, cashboxID)
+		if p.DeviceID != "" {
+			var ok bool
+			if in.ShiftID == nil || !httpx.IsUUID(*in.ShiftID) {
+				return apperr.Validation("shift_id: возврат с кассы — только в смене")
+			}
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pos_shifts WHERE id = $1 AND device_id = $2)`,
+				*in.ShiftID, p.DeviceID).Scan(&ok); err != nil {
+				return err
+			}
+			if !ok {
+				return apperr.Validation("shift_id: смена не найдена на этой кассе")
+			}
+		} else {
+			in.ShiftID = nil
+		}
 
 		n, err := db.NextNumber(ctx, tx, "customer_returns", p.NetworkID, "")
 		if err != nil {
 			return err
 		}
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO customer_returns (network_id, store_id, sale_id, number, total, cost, payment_method_id, cashbox_id, reason, created_by)
-			VALUES ($1, $2, $3, $4, 0, 0, $5, $6, $7, $8) RETURNING id`,
-			p.NetworkID, storeID, in.SaleID, n, in.PaymentMethodID, cashboxID, strings.TrimSpace(in.Reason), p.EmployeeID).Scan(&id); err != nil {
+			INSERT INTO customer_returns (network_id, store_id, sale_id, number, total, cost, payment_method_id, cashbox_id, reason, created_by,
+			                              device_id, shift_id)
+			VALUES ($1, $2, $3, $4, 0, 0, $5, $6, $7, $8, NULLIF($9, '')::uuid, $10) RETURNING id`,
+			p.NetworkID, storeID, in.SaleID, n, in.PaymentMethodID, cashboxID, strings.TrimSpace(in.Reason), p.EmployeeID,
+			p.DeviceID, in.ShiftID).Scan(&id); err != nil {
 			return err
 		}
 

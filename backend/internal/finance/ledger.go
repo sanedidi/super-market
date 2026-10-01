@@ -42,8 +42,8 @@ func CreateStoreCashbox(ctx context.Context, q db.Querier, networkID, storeID, s
 		return err
 	}
 	_, err := q.Exec(ctx, `
-		INSERT INTO payment_methods (network_id, name, cashbox_id)
-		VALUES ($1, 'Наличные', $2), ($1, 'Терминал', $2)`, networkID, id)
+		INSERT INTO payment_methods (network_id, name, cashbox_id, kind)
+		VALUES ($1, 'Наличные', $2, 'cash'), ($1, 'Терминал', $2, 'card')`, networkID, id)
 	return err
 }
 

@@ -1,0 +1,286 @@
+package server_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"testing"
+	"time"
+
+	"github.com/sanedidi/super-market/backend/internal/identity"
+	"github.com/sanedidi/super-market/backend/internal/pos"
+)
+
+// posDo — запрос кассы: токен устройства и (если есть) кассир в заголовке.
+func posDo(a api, method, path, token, cashier string, body any) resp {
+	a.t.Helper()
+	var rdr io.Reader
+	if body != nil {
+		b, _ := json.Marshal(body)
+		rdr = bytes.NewReader(b)
+	}
+	req, _ := http.NewRequest(method, a.srv.URL+"/api/v1"+path, rdr)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if cashier != "" {
+		req.Header.Set("X-Cashier-ID", cashier)
+	}
+	res, err := a.srv.Client().Do(req)
+	if err != nil {
+		a.t.Fatal(err)
+	}
+	defer res.Body.Close()
+	out := resp{Status: res.StatusCode, Body: map[string]any{}}
+	_ = json.NewDecoder(res.Body).Decode(&out.Body)
+	return out
+}
+
+func TestPOS(t *testing.T) {
+	pool := freshDB(t)
+	cfg := testConfig()
+	cfg.DevOTPCode = "111111"
+	a := newAPI(t, cfg, pool, nil)
+	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
+	cola, sugar := catalogBasics(t, a, adminTok)
+	tok, store := setupNetwork(t, a, adminTok, "+998900000002")
+	wh := a.expect(a.do("GET", "/store/warehouses?store_id="+store, tok, nil), 200, "wh").items()[0]["id"].(string)
+	doc := a.expect(a.do("POST", "/store/inventory/documents", tok, map[string]any{
+		"type": "posting", "warehouse_id": wh,
+		"items": []map[string]any{{"product_id": cola, "qty": 10, "price": 10000}, {"product_id": sugar, "qty": 5, "price": 8000}},
+	}), 201, "posting")
+	a.expect(a.do("POST", "/store/inventory/documents/"+doc.str("id")+"/post", tok, nil), 200, "post posting")
+
+	// Налоговые поля: общий товар правит супер-админ, сеть — только свои.
+	a.expect(a.do("PUT", "/admin/pos/products/"+cola+"/tax", adminTok, map[string]any{
+		"ikpu": "02202001001000000", "vat_rate": 12, "marked": true,
+	}), 200, "admin tax")
+	a.expect(a.do("PUT", "/store/pos/products/"+cola+"/tax", tok, map[string]any{"ikpu": "1"}), 400, "bad ikpu")
+	a.expect(a.do("PUT", "/store/pos/products/"+cola+"/tax", tok, map[string]any{"vat_rate": 0}), 404, "network edits platform product")
+	// Короткий код: бананы/сахар — 10; тот же код второму товару нельзя.
+	a.expect(a.do("PUT", "/store/pos/products/"+sugar+"/plu", tok, map[string]any{"plu": 10}), 200, "plu")
+	a.expect(a.do("PUT", "/store/pos/products/"+cola+"/plu", tok, map[string]any{"plu": 10}), 409, "plu taken")
+
+	// Касса: создаём в панели, активируем кодом.
+	dev := a.expect(a.do("POST", "/store/pos/devices", tok, map[string]any{"store_id": store, "name": "Касса 1"}), 201, "device")
+	code := dev.str("activation_code")
+	if len(code) != 9 || dev.str("status") != "waiting" {
+		t.Fatalf("device = %v", dev.Body)
+	}
+	a.expect(a.do("POST", "/pos/activate", "", map[string]any{"code": "2222-2222"}), 400, "wrong code")
+	act := a.expect(a.do("POST", "/pos/activate", "", map[string]any{"code": code, "app_version": "0.1.0"}), 200, "activate")
+	dt := act.str("token")
+	if act.str("store_id") != store || dt == "" {
+		t.Fatalf("activation = %v", act.Body)
+	}
+	a.expect(a.do("POST", "/pos/activate", "", map[string]any{"code": code}), 400, "code reused")
+	a.expect(posDo(a, "GET", "/pos/catalog", "pd_wrong", "", nil), 401, "wrong device token")
+	a.expect(posDo(a, "GET", "/pos/catalog", tok, "", nil), 401, "store token on pos")
+
+	// Каталог: цены, ИКПУ, маркировка, PLU, способы оплаты; кассиров с ПИНом пока нет.
+	cat := a.expect(posDo(a, "GET", "/pos/catalog", dt, "", nil), 200, "catalog")
+	prods := map[string]map[string]any{}
+	for _, x := range cat.Body["products"].([]any) {
+		m := x.(map[string]any)
+		prods[m["id"].(string)] = m
+	}
+	if p := prods[cola]; p["price"] != "15000.00" || p["ikpu"] != "02202001001000000" || p["marked"] != true || p["vat_rate"] != "12.00" {
+		t.Fatalf("cola in catalog = %v", p)
+	}
+	if p := prods[sugar]; p["plu"].(float64) != 10 || p["fractional"] != true {
+		t.Fatalf("sugar in catalog = %v", p)
+	}
+	if len(cat.Body["cashiers"].([]any)) != 0 {
+		t.Fatalf("cashiers without pin = %v", cat.Body["cashiers"])
+	}
+	var cash, card string
+	for _, x := range cat.Body["payment_methods"].([]any) {
+		m := x.(map[string]any)
+		switch m["kind"] {
+		case "cash":
+			cash = m["id"].(string)
+		case "card":
+			card = m["id"].(string)
+		}
+	}
+	if cash == "" || card == "" {
+		t.Fatalf("payment methods = %v", cat.Body["payment_methods"])
+	}
+	// Дельта: ничего не менялось — пусто; поменяли цену — пришёл только этот товар.
+	ver := cat.str("version")
+	time.Sleep(10 * time.Millisecond)
+	// Делаем вид, что каталог менялся давно (триггеры updated_at на время выключаем).
+	for _, q := range []string{
+		`ALTER TABLE products DISABLE TRIGGER products_updated_at`,
+		`UPDATE products SET updated_at = now() - interval '2 hours'`,
+		`ALTER TABLE products ENABLE TRIGGER products_updated_at`,
+		`ALTER TABLE units DISABLE TRIGGER units_updated_at`,
+		`UPDATE units SET updated_at = now() - interval '2 hours'`,
+		`ALTER TABLE units ENABLE TRIGGER units_updated_at`,
+		`ALTER TABLE pos_plu DISABLE TRIGGER pos_plu_updated_at`,
+		`UPDATE pos_plu SET updated_at = now() - interval '2 hours'`,
+		`ALTER TABLE pos_plu ENABLE TRIGGER pos_plu_updated_at`,
+	} {
+		if _, err := pool.Exec(context.Background(), q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if d := a.expect(posDo(a, "GET", "/pos/catalog?since="+ver, dt, "", nil), 200, "delta"); len(d.Body["products"].([]any)) != 0 || d.Body["full"] != false {
+		t.Fatalf("empty delta = %v", d.Body["products"])
+	}
+	a.expect(a.do("PUT", "/admin/pos/products/"+sugar+"/tax", adminTok, map[string]any{"package_code": "1500"}), 200, "touch sugar")
+	if d := a.expect(posDo(a, "GET", "/pos/catalog?since="+ver, dt, "", nil), 200, "delta"); len(d.Body["products"].([]any)) != 1 {
+		t.Fatalf("delta after change = %v", d.Body["products"])
+	}
+
+	// Кассир с ПИНом. Одинаковый ПИН второму сотруднику не дадим.
+	role := a.expect(a.do("POST", "/store/roles", tok, map[string]any{
+		"name": "Кассир", "permissions": []string{identity.PermSalesPOS},
+	}), 201, "role").str("id")
+	cashier := a.expect(a.do("POST", "/store/employees", tok, map[string]any{
+		"phone": "+998900000006", "full_name": "Дилноза", "role_id": role, "store_ids": []string{store},
+	}), 201, "cashier").str("id")
+	var owner string
+	for _, e := range a.expect(a.do("GET", "/store/employees", tok, nil), 200, "employees").items() {
+		if e["id"] != cashier {
+			owner = e["id"].(string)
+		}
+	}
+	a.expect(a.do("PUT", "/store/pos/pins/"+cashier, tok, map[string]any{"pin": "12a4"}), 400, "bad pin")
+	a.expect(a.do("PUT", "/store/pos/pins/"+cashier, tok, map[string]any{"pin": "1234"}), 200, "pin")
+	a.expect(a.do("PUT", "/store/pos/pins/"+owner, tok, map[string]any{"pin": "1234"}), 409, "pin taken")
+	a.expect(a.do("PUT", "/store/pos/pins/"+owner, tok, map[string]any{"pin": "9999"}), 200, "owner pin")
+	cat = a.expect(posDo(a, "GET", "/pos/catalog", dt, "", nil), 200, "catalog with cashiers")
+	found := false
+	for _, x := range cat.Body["cashiers"].([]any) {
+		m := x.(map[string]any)
+		if m["id"] == cashier && m["pin_hash"] == pos.PinHash(cashier, "1234") {
+			found = true
+		}
+	}
+	if !found || len(cat.Body["cashiers"].([]any)) != 2 {
+		t.Fatalf("cashiers = %v", cat.Body["cashiers"])
+	}
+	wrong := a.expect(posDo(a, "POST", "/pos/login", dt, "", map[string]any{"employee_id": cashier, "pin": "0000"}), 401, "wrong pin")
+	if wrong.Body["error"].(map[string]any)["details"].(map[string]any)["attempts_left"].(float64) != 4 {
+		t.Fatalf("wrong pin = %v", wrong.Body)
+	}
+	a.expect(posDo(a, "POST", "/pos/login", dt, "", map[string]any{"employee_id": cashier, "pin": "1234"}), 200, "login")
+
+	// Смена: без кассира нельзя, повтор — та же смена, вторая открытая — нельзя.
+	a.expect(posDo(a, "POST", "/pos/shifts", dt, "", map[string]any{"client_uid": "shift-0001"}), 401, "shift without cashier")
+	sh := a.expect(posDo(a, "POST", "/pos/shifts", dt, cashier, map[string]any{"client_uid": "shift-0001", "opening_cash": 200000}), 201, "open shift")
+	shift := sh.str("id")
+	if again := a.expect(posDo(a, "POST", "/pos/shifts", dt, cashier, map[string]any{"client_uid": "shift-0001"}), 200, "open again"); again.str("id") != shift {
+		t.Fatal("repeat open created another shift")
+	}
+	a.expect(posDo(a, "POST", "/pos/shifts", dt, cashier, map[string]any{"client_uid": "shift-0002"}), 409, "second open shift")
+
+	// Продажа: маркированной коле нужен код на каждую штуку; чек уже подписан ФМ.
+	sale := func(uid string, items []map[string]any, pays []map[string]any, extra map[string]any) map[string]any {
+		b := map[string]any{"client_uid": uid, "shift_id": shift, "items": items, "payments": pays}
+		for k, v := range extra {
+			b[k] = v
+		}
+		return b
+	}
+	a.expect(posDo(a, "POST", "/pos/sales", dt, cashier, sale("sale-0001",
+		[]map[string]any{{"product_id": cola, "qty": 2, "marking_codes": []string{"0104780069000017215Ab7xQ"}}},
+		[]map[string]any{{"payment_method_id": cash, "amount": 30000}}, nil)), 400, "marking count")
+	s1 := a.expect(posDo(a, "POST", "/pos/sales", dt, cashier, sale("sale-0001",
+		[]map[string]any{
+			{"product_id": cola, "qty": 2, "marking_codes": []string{"0104780069000017215Ab7xQ", "0104780069000017215Kp2Lm"}},
+			{"product_id": sugar, "qty": "1.5"},
+		},
+		[]map[string]any{{"payment_method_id": cash, "amount": 48000}},
+		map[string]any{"fiscal": map[string]any{"number": "000231", "sign": "304812935521", "qr": "https://ofd.soliq.uz/check?t=1", "module": "UZ170201234567"}})), 201, "pos sale")
+	if s1.str("total") != "48000.00" || s1.str("fiscal_status") != "registered" || s1.str("shift_id") != shift {
+		t.Fatalf("pos sale = %v", s1.Body)
+	}
+	// Без интернета продали больше, чем было: продажа проходит, недостача записана.
+	past := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	a.expect(posDo(a, "POST", "/pos/sales", dt, cashier, sale("sale-0002",
+		[]map[string]any{{"product_id": cola, "qty": 10}},
+		[]map[string]any{{"payment_method_id": card, "amount": 150000}},
+		map[string]any{"sold_at": past})), 201, "offline oversell")
+	var short string
+	if err := pool.QueryRow(context.Background(), `SELECT i.short_qty::text FROM sale_items i JOIN sales s ON s.id = i.sale_id
+		WHERE s.client_uid = 'sale-0002'`).Scan(&short); err != nil || short != "2.000" {
+		t.Fatalf("short_qty = %q, %v", short, err)
+	}
+	if q, _ := stockOf(t, a, tok, wh, cola); q != "0" && q != "0.000" {
+		t.Fatalf("cola stock = %s", q)
+	}
+
+	// Изъятие наличных (инкассация); повтор не задваивает.
+	mv := a.expect(posDo(a, "POST", "/pos/shifts/"+shift+"/cash-moves", dt, cashier, map[string]any{
+		"client_uid": "move-0001", "kind": "out", "amount": 30000, "reason": "Инкассация",
+	}), 200, "cash out")
+	if again := a.expect(posDo(a, "POST", "/pos/shifts/"+shift+"/cash-moves", dt, cashier, map[string]any{
+		"client_uid": "move-0001", "kind": "out", "amount": 30000,
+	}), 200, "cash out again"); again.str("id") != mv.str("id") {
+		t.Fatal("cash move duplicated")
+	}
+
+	// Возврат с кассы: у кассира нет права — отказ; владелец на кассе — можно.
+	a.expect(posDo(a, "POST", "/pos/returns", dt, cashier, map[string]any{
+		"sale_id": s1.str("id"), "payment_method_id": cash, "shift_id": shift,
+		"items": []map[string]any{{"sale_line": 1, "qty": 1}},
+	}), 403, "return without permission")
+	found2 := a.expect(posDo(a, "GET", "/pos/sales?q="+jsonStr(s1.Body["number"]), dt, owner, nil), 200, "find sale").items()
+	if len(found2) != 1 || found2[0]["id"] != s1.str("id") {
+		t.Fatalf("find sale = %v", found2)
+	}
+	a.expect(posDo(a, "POST", "/pos/returns", dt, owner, map[string]any{
+		"sale_id": s1.str("id"), "payment_method_id": cash, "shift_id": shift,
+		"items": []map[string]any{{"sale_line": 1, "qty": 1}},
+	}), 201, "pos return")
+
+	// X-отчёт: 200 000 + 48 000 − 15 000 − 30 000 = 203 000 наличными.
+	rep := a.expect(posDo(a, "GET", "/pos/shifts/"+shift, dt, cashier, nil), 200, "report").Body["report"].(map[string]any)
+	if rep["expected_cash"] != "203000.00" || rep["sales_count"].(float64) != 2 || rep["fiscal_pending"].(float64) != 1 ||
+		rep["returns_total"] != "15000.00" || rep["sales_total"] != "198000.00" {
+		t.Fatalf("report = %v", rep)
+	}
+
+	// Закрытие: расхождение без причины не принимаем.
+	a.expect(posDo(a, "POST", "/pos/shifts/"+shift+"/close", dt, cashier, map[string]any{"counted_cash": 200000}), 400, "diff without reason")
+	cl := a.expect(posDo(a, "POST", "/pos/shifts/"+shift+"/close", dt, cashier, map[string]any{
+		"counted_cash": 200000, "diff_reason": "сдача без мелочи",
+	}), 200, "close")
+	if cl.str("diff") != "-3000.00" || cl.str("expected_cash") != "203000.00" || cl.Body["closed_at"] == nil {
+		t.Fatalf("closed = %v", cl.Body)
+	}
+	a.expect(posDo(a, "POST", "/pos/shifts/"+shift+"/close", dt, cashier, map[string]any{"counted_cash": 1}), 200, "close again")
+	if cur := a.expect(posDo(a, "GET", "/pos/shifts/current", dt, "", nil), 200, "current"); cur.Body["shift"] != nil {
+		t.Fatalf("current after close = %v", cur.Body)
+	}
+
+	// Панель: смена с расхождением, касса активна.
+	shifts := a.expect(a.do("GET", "/store/pos/shifts", tok, nil), 200, "shifts").items()
+	if len(shifts) != 1 || shifts[0]["diff"] != "-3000.00" || shifts[0]["diff_reason"] != "сдача без мелочи" {
+		t.Fatalf("shifts = %v", shifts)
+	}
+	devs := a.expect(a.do("GET", "/store/pos/devices", tok, nil), 200, "devices").items()
+	if len(devs) != 1 || devs[0]["status"] != "active" || devs[0]["app_version"] != "0.1.0" {
+		t.Fatalf("devices = %v", devs)
+	}
+
+	// Смену и чек ФМ передаёт только касса.
+	a.expect(a.do("POST", "/store/sales", tok, map[string]any{
+		"client_uid": "panel-0001", "store_id": store, "shift_id": shift,
+		"items":    []map[string]any{{"product_id": sugar, "qty": 1}},
+		"payments": []map[string]any{{"payment_method_id": cash, "amount": 12000}},
+	}), 400, "shift from panel")
+
+	// Отключённая касса больше не работает.
+	a.expect(a.do("POST", "/store/pos/devices/"+dev.str("id")+"/revoke", tok, nil), 200, "revoke")
+	a.expect(posDo(a, "GET", "/pos/catalog", dt, "", nil), 401, "revoked device")
+}
+
+func jsonStr(v any) string {
+	b, _ := json.Marshal(v)
+	return string(b)
+}

@@ -14,6 +14,9 @@ const (
 	AppClient = "client" // Flutter-приложение покупателя
 	AppStore  = "store"  // панель магазина и POS
 	AppAdmin  = "admin"  // панель супер-админа
+	// AppPOS — касса: входит не по SMS-коду, а токеном устройства
+	// (см. пакет pos); кассир выбирается по ПИНу на самом устройстве.
+	AppPOS = "pos"
 )
 
 // Права сотрудников. Роль — это набор прав; у владельца есть все.
@@ -78,6 +81,9 @@ type Principal struct {
 	IsOwner     bool
 	AllStores   bool
 	StoreIDs    []string
+
+	// Касса, с которой пришёл запрос (только App == AppPOS).
+	DeviceID string
 }
 
 // Can — есть ли у сотрудника право.

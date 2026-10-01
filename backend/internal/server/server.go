@@ -26,6 +26,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/config"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/platform/telegram"
+	"github.com/sanedidi/super-market/backend/internal/pos"
 	"github.com/sanedidi/super-market/backend/internal/profile"
 	"github.com/sanedidi/super-market/backend/internal/push"
 	"github.com/sanedidi/super-market/backend/internal/reports"
@@ -79,13 +80,15 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 	dlv, pay, ord := OrderServices(cfg, pool, tg, log)
 	bill := billing.NewService(pool, notify.New(pool, tg, log), log)
 
+	salesSvc := sales.NewService(pool)
 	h := httpx.NewRouter(log, pool,
 		identity.NewModule(idSvc, auth, log),
 		tenant.NewModule(tenant.NewService(pool), auth, log),
 		catalog.NewModule(catalog.NewService(pool), auth, log),
 		finance.NewModule(finance.NewService(pool), auth, log),
 		inventory.NewModule(inventory.NewService(pool), auth, log),
-		sales.NewModule(sales.NewService(pool), auth, log),
+		sales.NewModule(salesSvc, auth, log),
+		pos.NewModule(pos.NewService(pool, salesSvc), auth, log),
 		orders.NewModule(ord, dlv, pay, auth, log),
 		billing.NewModule(bill, auth, log),
 		ads.NewModule(ads.NewService(pool), auth, log),

@@ -78,6 +78,28 @@ func TakeFIFO(ctx context.Context, tx pgx.Tx, networkID, warehouseID, productID,
 	return takeFIFO(ctx, tx, networkID, warehouseID, productID, qty, docType, docID)
 }
 
+// TakeUpTo списывает по FIFO столько, сколько физически есть (без учёта
+// резервов), но не больше qty, и возвращает недостающее количество. Для
+// продаж с кассы: покупатель уже ушёл с товаром, отказать в проводке нельзя.
+func TakeUpTo(ctx context.Context, tx pgx.Tx, networkID, warehouseID, productID, qty, docType, docID string) ([]Taken, string, error) {
+	if err := LockProduct(ctx, tx, warehouseID, productID); err != nil {
+		return nil, "", err
+	}
+	var take, short string
+	var hasAny bool
+	if err := tx.QueryRow(ctx, `
+		WITH a AS (SELECT COALESCE(sum(qty_remaining), 0) AS v FROM batches WHERE warehouse_id = $1 AND product_id = $2 AND qty_remaining > 0)
+		SELECT LEAST($3::numeric, v)::numeric(14,3)::text, ($3::numeric - LEAST($3::numeric, v))::numeric(14,3)::text, LEAST($3::numeric, v) > 0 FROM a`,
+		warehouseID, productID, qty).Scan(&take, &short, &hasAny); err != nil {
+		return nil, "", err
+	}
+	if !hasAny {
+		return nil, short, nil
+	}
+	taken, err := takeFIFO(ctx, tx, networkID, warehouseID, productID, take, docType, docID)
+	return taken, short, err
+}
+
 // TakeFIFOPhysical списывает без учёта резервов — для недостачи при
 // инвентаризации: фактический остаток важнее резервов (заказ потом соберут
 // с другого склада).

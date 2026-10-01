@@ -263,6 +263,48 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 Сумма оплат должна точно совпадать с итогом (сдачу считает касса). Товар списывается по FIFO; если не хватает — 409 `insufficient_stock`.
 Возврат: сумма пропорциональна оплаченной сумме строки (со скидкой), товар возвращается в те же партии по той же себестоимости.
 
+## Касса POS (приложение кассы, этап 1 — бекенд)
+
+Касса входит не по коду из Telegram, а токеном устройства. Владелец создаёт кассу в панели и получает
+код активации (живёт сутки), касса меняет код на постоянный токен `pd_…`. Кассир выбирается по ПИНу на самой
+кассе (в том числе без интернета) и передаётся в каждом запросе заголовком `X-Cashier-ID`; сервер проверяет,
+что сотрудник активен и имеет доступ к магазину кассы. Владелец на кассе получает все права, но только в этом магазине.
+
+### Касса (`Authorization: Bearer pd_…`)
+
+| Метод | Путь | Что делает |
+| --- | --- | --- |
+| POST | `/pos/activate` | `{code, app_version}` → `{token, device_id, store_id, …}`; без токена |
+| GET | `/pos/catalog?since=<version>` | Товары (цена, штрихкоды, PLU, ИКПУ, НДС, маркировка), кассиры с хешем ПИНа, способы оплаты (`kind`: cash/card/qr/other), настройки чека. Без `since` — целиком, с `since` — изменения (с перекрытием в минуту) |
+| POST | `/pos/login` | `{employee_id, pin}` — проверка ПИНа онлайн; 5 ошибок → блок на 5 минут (`429 pin_locked`) |
+| GET | `/pos/shifts/current` | Открытая смена кассы с X-отчётом или `{shift: null}` |
+| POST | `/pos/shifts` | Открыть смену `{client_uid, opening_cash, opened_at?}`; 201/200 (повтор), `409 shift_open` |
+| GET | `/pos/shifts/{id}` | Смена с X-отчётом: продажи, возвраты, по способам оплаты, ожидаемые наличные |
+| POST | `/pos/shifts/{id}/cash-moves` | Внесение/изъятие `{client_uid, kind: in/out, amount, reason}` |
+| POST | `/pos/shifts/{id}/close` | `{counted_cash, diff_reason}` — расхождение без причины → 400; повтор → та же смена |
+| POST | `/pos/sales` | Как `/store/sales` + `shift_id`, `fiscal: {number, sign, qr, module}`, `items[].marking_codes`. Магазин — кассы; нехватка остатка не отклоняет продажу, а пишется в `sale_items.short_qty` |
+| GET | `/pos/sales?q=` | Поиск чека для возврата по номеру |
+| GET | `/pos/sales/{id}` | Чек |
+| POST | `/pos/returns` | Как `/store/sales/returns` + `shift_id` |
+
+Наличные в ящике: размен + продажи `kind = cash` − возвраты `kind = cash` + внесения − изъятия.
+
+### Панель магазина
+
+| Метод | Путь | Право |
+| --- | --- | --- |
+| GET/POST | `/store/pos/devices` | `stores.manage` — список, создать кассу (сразу с кодом) |
+| POST | `/store/pos/devices/{id}/code` | новый код активации |
+| POST | `/store/pos/devices/{id}/revoke` | отключить кассу |
+| PUT | `/store/pos/pins/{employee_id}` | `staff.manage` — `{pin}` 4–6 цифр, уникален в сети |
+| GET | `/store/pos/shifts`, `/store/pos/shifts/{id}` | `reports.view` или `finance.manage` |
+| PUT | `/store/pos/products/{id}/tax` | `catalog.manage` — ИКПУ, код упаковки, НДС, маркировка (только свои товары) |
+| PUT | `/store/pos/products/{id}/plu` | `catalog.manage` — короткий код `{plu}` или `null` |
+| PUT | `/store/pos/payment-methods/{id}/kind` | `finance.manage` — cash/card/qr/other |
+| GET/PUT | `/store/pos/settings` | весовые префиксы, шапка и низ чека (`stores.manage`) |
+
+Супер-админ: `PUT /admin/pos/products/{id}/tax` — налоговые поля общих товаров платформы.
+
 ## Онлайн-заказы (этап 5)
 
 ### Приложение покупателя (`app=client`)

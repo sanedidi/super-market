@@ -65,6 +65,8 @@ type Sale struct {
 	FiscalStatus  string        `json:"fiscal_status"`
 	FiscalNumber  string        `json:"fiscal_number"`
 	FiscalSign    string        `json:"fiscal_sign"`
+	FiscalQR      string        `json:"fiscal_qr"`
+	ShiftID       *string       `json:"shift_id"`
 	CreatedAt     time.Time     `json:"created_at"`
 	Items         []SaleItem    `json:"items,omitempty"`
 	Payments      []SalePayment `json:"payments,omitempty"`
@@ -73,14 +75,14 @@ type Sale struct {
 const saleSelect = `
 	SELECT s.id, s.number, s.store_id, st.name, s.warehouse_id, s.client_uid, s.subtotal::text, s.discount::text,
 	       s.total::text, s.customer_phone, s.note, e.full_name, s.sold_at, s.fiscal_status, s.fiscal_number,
-	       s.fiscal_sign, s.created_at
+	       s.fiscal_sign, s.fiscal_qr, s.shift_id, s.created_at
 	FROM sales s JOIN stores st ON st.id = s.store_id JOIN employees e ON e.id = s.cashier_id`
 
 func scanSale(row pgx.CollectableRow) (Sale, error) {
 	var s Sale
 	err := row.Scan(&s.ID, &s.Number, &s.StoreID, &s.StoreName, &s.WarehouseID, &s.ClientUID, &s.Subtotal,
 		&s.Discount, &s.Total, &s.CustomerPhone, &s.Note, &s.Cashier, &s.SoldAt, &s.FiscalStatus,
-		&s.FiscalNumber, &s.FiscalSign, &s.CreatedAt)
+		&s.FiscalNumber, &s.FiscalSign, &s.FiscalQR, &s.ShiftID, &s.CreatedAt)
 	return s, err
 }
 
@@ -176,11 +178,26 @@ type SaleInput struct {
 		ProductID string        `json:"product_id"`
 		Qty       money.Qty     `json:"qty"`
 		Discount  *money.Amount `json:"discount"`
+		// Коды маркировки DataMatrix, по одному на каждую штуку (только касса).
+		MarkingCodes []string `json:"marking_codes"`
 	} `json:"items"`
 	Payments []struct {
 		PaymentMethodID string       `json:"payment_method_id"`
 		Amount          money.Amount `json:"amount"`
 	} `json:"payments"`
+
+	// Только для продаж с кассы (токен устройства): смена и чек, уже
+	// подписанный фискальным модулем на кассе.
+	ShiftID *string     `json:"shift_id"`
+	Fiscal  *FiscalData `json:"fiscal"`
+}
+
+// FiscalData — что вернул фискальный модуль кассы.
+type FiscalData struct {
+	Number string `json:"number"`
+	Sign   string `json:"sign"`
+	QR     string `json:"qr"`
+	Module string `json:"module"`
 }
 
 // CreateSale проводит продажу: цены из каталога, товар по FIFO, деньги в
@@ -190,6 +207,23 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 		return Sale{}, false, err
 	}
 	in.ClientUID = strings.TrimSpace(in.ClientUID)
+	pos := p.DeviceID != ""
+	if pos {
+		// Касса продаёт только в своём магазине и только в смене.
+		in.StoreID = p.StoreIDs[0]
+		if in.ShiftID == nil || !httpx.IsUUID(*in.ShiftID) {
+			return Sale{}, false, apperr.Validation("shift_id: продажа с кассы — только в смене")
+		}
+		if in.Fiscal != nil {
+			f := in.Fiscal
+			f.Number, f.Sign, f.QR, f.Module = strings.TrimSpace(f.Number), strings.TrimSpace(f.Sign), strings.TrimSpace(f.QR), strings.TrimSpace(f.Module)
+			if f.Number == "" || f.Sign == "" || len(f.Number) > 64 || len(f.Sign) > 128 || len(f.QR) > 500 || len(f.Module) > 64 {
+				return Sale{}, false, apperr.Validation("fiscal: номер и признак чека обязательны")
+			}
+		}
+	} else if in.ShiftID != nil || in.Fiscal != nil {
+		return Sale{}, false, apperr.Validation("shift_id и fiscal передаёт только касса")
+	}
 	if len(in.ClientUID) < 8 || len(in.ClientUID) > 64 {
 		return Sale{}, false, apperr.Validation("client_uid: 8–64 символа, генерируется кассой (например, UUID)")
 	}
@@ -254,6 +288,17 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 			}
 		}
 
+		if pos {
+			var ok bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pos_shifts WHERE id = $1 AND device_id = $2)`,
+				*in.ShiftID, p.DeviceID).Scan(&ok); err != nil {
+				return err
+			}
+			if !ok {
+				return apperr.Validation("shift_id: смена не найдена на этой кассе")
+			}
+		}
+
 		priceTypeID := ""
 		if in.PriceTypeID != nil {
 			if !httpx.IsUUID(*in.PriceTypeID) {
@@ -276,10 +321,10 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 		}
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO sales (network_id, store_id, warehouse_id, number, client_uid, price_type_id,
-			                   subtotal, discount, total, cost, customer_phone, note, cashier_id, sold_at)
-			VALUES ($1, $2, $3, $4, $5, $6, 0, 0, 0, 0, $7, $8, $9, $10) RETURNING id`,
+			                   subtotal, discount, total, cost, customer_phone, note, cashier_id, sold_at, device_id, shift_id)
+			VALUES ($1, $2, $3, $4, $5, $6, 0, 0, 0, 0, $7, $8, $9, $10, NULLIF($11, '')::uuid, $12) RETURNING id`,
 			p.NetworkID, in.StoreID, warehouseID, n, in.ClientUID, priceTypeID,
-			strings.TrimSpace(in.CustomerPhone), strings.TrimSpace(in.Note), p.EmployeeID, soldAt).Scan(&id); err != nil {
+			strings.TrimSpace(in.CustomerPhone), strings.TrimSpace(in.Note), p.EmployeeID, soldAt, p.DeviceID, in.ShiftID).Scan(&id); err != nil {
 			if db.IsUniqueViolation(err, "sales_network_id_client_uid_key") {
 				return errDuplicate
 			}
@@ -288,6 +333,7 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 
 		subtotal, discount, cost := money.D("0"), money.D("0"), money.D("0")
 		seen := map[string]bool{}
+		seenCodes := map[string]bool{}
 		for i, it := range in.Items {
 			line := i + 1
 			ls := strconv.Itoa(line)
@@ -325,7 +371,18 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 					return apperr.Validation("items: скидка больше суммы строки " + ls)
 				}
 			}
-			taken, err := inventory.TakeFIFO(ctx, tx, p.NetworkID, warehouseID, it.ProductID, qty.Fixed(3), inventory.DocSale, id)
+			codes, err := markingCodes(it.MarkingCodes, qty, prod.Name, seenCodes)
+			if err != nil {
+				return err
+			}
+			var taken []inventory.Taken
+			short := "0"
+			if pos {
+				// С кассы — продажа уже случилась: недостачу фиксируем, а не отклоняем.
+				taken, short, err = inventory.TakeUpTo(ctx, tx, p.NetworkID, warehouseID, it.ProductID, qty.Fixed(3), inventory.DocSale, id)
+			} else {
+				taken, err = inventory.TakeFIFO(ctx, tx, p.NetworkID, warehouseID, it.ProductID, qty.Fixed(3), inventory.DocSale, id)
+			}
 			if err != nil {
 				return err
 			}
@@ -334,10 +391,10 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 				lineCost = lineCost.Add(money.D(t.Qty).Mul(money.D(t.UnitCost)))
 			}
 			if _, err := tx.Exec(ctx, `
-				INSERT INTO sale_items (sale_id, line, product_id, qty, price, discount, total, cost)
-				VALUES ($1, $2, $3, $4::numeric, $5::numeric, $6::numeric, $7::numeric, $8::numeric)`,
+				INSERT INTO sale_items (sale_id, line, product_id, qty, price, discount, total, cost, marking_codes, short_qty)
+				VALUES ($1, $2, $3, $4::numeric, $5::numeric, $6::numeric, $7::numeric, $8::numeric, $9, $10::numeric)`,
 				id, line, it.ProductID, qty.Fixed(3), prod.Price, lineDiscount.Money(),
-				lineSum.Sub(lineDiscount).Money(), lineCost.Money()); err != nil {
+				lineSum.Sub(lineDiscount).Money(), lineCost.Money(), codes, short); err != nil {
 				return err
 			}
 			for _, t := range taken {
@@ -386,8 +443,15 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 				WithDetails(map[string]any{"total": total.Money(), "paid": paid.Money()})
 		}
 
-		_, err = tx.Exec(ctx, `UPDATE sales SET subtotal = $2::numeric, discount = $3::numeric, total = $4::numeric, cost = $5::numeric
-			WHERE id = $1`, id, subtotal.Money(), discount.Money(), total.Money(), cost.Money())
+		if _, err = tx.Exec(ctx, `UPDATE sales SET subtotal = $2::numeric, discount = $3::numeric, total = $4::numeric, cost = $5::numeric
+			WHERE id = $1`, id, subtotal.Money(), discount.Money(), total.Money(), cost.Money()); err != nil {
+			return err
+		}
+		if pos && in.Fiscal != nil {
+			_, err = tx.Exec(ctx, `UPDATE sales SET fiscal_status = 'registered', fiscal_number = $2, fiscal_sign = $3,
+				fiscal_qr = $4, fiscal_module = $5, fiscal_at = now() WHERE id = $1`,
+				id, in.Fiscal.Number, in.Fiscal.Sign, in.Fiscal.QR, in.Fiscal.Module)
+		}
 		return err
 	})
 	if errors.Is(err, errDuplicate) {
@@ -402,6 +466,30 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 }
 
 var errDuplicate = errors.New("duplicate client_uid")
+
+// markingCodes проверяет коды маркировки строки: по одному на штуку, без
+// повторов в чеке. Пустой список — товар без маркировки.
+func markingCodes(raw []string, qty money.Dec, name string, seen map[string]bool) ([]string, error) {
+	if len(raw) == 0 {
+		return []string{}, nil
+	}
+	if qty.Cmp(money.D(strconv.Itoa(len(raw)))) != 0 {
+		return nil, apperr.Validation("marking_codes: «" + name + "» — нужен код на каждую штуку")
+	}
+	out := make([]string, 0, len(raw))
+	for _, c := range raw {
+		c = strings.TrimSpace(c)
+		if len(c) < 10 || len(c) > 200 {
+			return nil, apperr.Validation("marking_codes: неверный код маркировки у «" + name + "»")
+		}
+		if seen[c] {
+			return nil, apperr.Validation("marking_codes: код маркировки повторяется в чеке")
+		}
+		seen[c] = true
+		out = append(out, c)
+	}
+	return out, nil
+}
 
 // ------------------------------------------------------ фискальные чеки
 
