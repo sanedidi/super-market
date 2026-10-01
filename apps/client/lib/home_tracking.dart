@@ -53,8 +53,12 @@ class HomeTracker with WidgetsBindingObserver {
 
   void register(String blockId, BuildContext context) => _blocks[blockId] = context;
 
+  /// Блок ушёл из дерева (прокрутили далеко) — при возвращении это новый показ.
   void unregister(String blockId, BuildContext context) {
-    if (_blocks[blockId] == context) _blocks.remove(blockId);
+    if (_blocks[blockId] != context) return;
+    _blocks.remove(blockId);
+    _visibleSince.remove(blockId);
+    _counted.remove(blockId);
   }
 
   void click(String blockId) => _clicks[blockId] = (_clicks[blockId] ?? 0) + 1;
