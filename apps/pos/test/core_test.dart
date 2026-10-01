@@ -41,6 +41,12 @@ void main() {
       expect(vatIncluded(11200, 1200), 1200);
       expect(percentOf(1200000, 1000), 120000);
     });
+
+    test('подсказки купюр', () {
+      expect(cashSuggestions(13468000), [13500000, 14000000, 15000000, 20000000]);
+      expect(cashSuggestions(5000000), [5100000, 5500000, 6000000, 10000000]);
+      expect(cashSuggestions(0), isEmpty);
+    });
   });
 
   group('чек', () {

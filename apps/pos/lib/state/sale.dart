@@ -8,9 +8,9 @@ import '../core/money.dart';
 import 'pos.dart';
 
 /// Команды быстрого режима — клавиши, которые не печатают символ.
-enum Cmd { enter, esc, del, backspace, up, down, star, slash, search, mixed, discountLine, discountAll, hold, returns, orders, shiftMenu }
+enum Cmd { enter, esc, del, backspace, up, down, star, pay, qty, search, discountLine, discountAll, hold, returns, orders, shiftMenu }
 
-enum SaleMode { sale, paid, discount, held }
+enum SaleMode { sale, paid, held }
 
 enum MsgKind { ok, error, info }
 
@@ -31,13 +31,12 @@ class PaidInfo {
   final String label;
 }
 
-/// Продажа в быстром режиме: всё с клавиатуры, без окон.
+/// Продажа (Figma «POS v3»): товары — сканером или кодом, оплата — в окнах.
 ///
 /// - скан или код + Enter — товар в чек;
-/// - цифры + * — количество выбранной строки;
-/// - цифры + Enter — получено наличными (не меньше итога) → чек пробит;
-/// - пустой Enter при непустом чеке — подсказка ввести сумму (без «без сдачи»);
-/// - * карта, / Payme·Click, цифры + F5 — наличные + остаток картой.
+/// - цифры + * — количество выбранной строки; * без цифр — окно количества;
+/// - пустой Enter (или «Оплатить») — окно способа оплаты, наличные — окно с
+///   клавиатурой, кнопкой «Ровно» и купюрами.
 class SaleController extends ChangeNotifier {
   SaleController(this.pos);
 
@@ -49,17 +48,12 @@ class SaleController extends ChangeNotifier {
   SaleMsg? msg;
   PaidInfo? paid;
 
-  /// Наличные: Enter без суммы — подсветить поле «Получено».
-  bool needCash = false;
-
-  /// Скидка (F6): на строку или на весь чек (Shift+F6).
-  bool discountAll = false;
   bool busy = false;
 
   /// Звук: true — «бип» успеха, false — ошибка.
   void Function(bool ok)? onSound;
 
-  /// Переходы на другие экраны (F2, F9, F11).
+  /// Окна и экраны: оплата, количество, скидка, поиск, возврат, смена.
   void Function(Cmd cmd)? onNavigate;
 
   Catalog get catalog => pos.catalog;
@@ -79,9 +73,9 @@ class SaleController extends ChangeNotifier {
 
   int get due => cart.total;
 
-  /// Получено наличными — то, что набрано (для сдачи на экране).
-  int get typedAmount => parseMoney(input);
-  int get change => typedAmount > due ? typedAmount - due : 0;
+  /// Можно оплачивать: чек открыт и не пустой.
+  bool get canPay => mode == SaleMode.sale && !cart.isEmpty && !busy;
+  bool get canDiscount => pos.cashier?.can(Perm.discount) ?? false;
 
   // ------------------------------------------------------------- ввод
 
@@ -95,7 +89,6 @@ class SaleController extends ChangeNotifier {
     }
     input += ch;
     _scan.char(at);
-    needCash = false;
     notifyListeners();
   }
 
@@ -116,14 +109,13 @@ class SaleController extends ChangeNotifier {
       case Cmd.down:
         cart.move(up: false);
       case Cmd.star:
-        await _star();
-      case Cmd.slash:
-        if (input.isEmpty) await _pay('qr');
-      case Cmd.mixed:
-        await _mixed();
+      case Cmd.qty:
+        _star();
+      case Cmd.pay:
+        _openPay();
       case Cmd.discountLine:
       case Cmd.discountAll:
-        _discount(all: c == Cmd.discountAll);
+        _discount(c);
       case Cmd.hold:
         await _hold();
       case Cmd.orders:
@@ -149,25 +141,15 @@ class SaleController extends ChangeNotifier {
   void _esc() {
     if (input.isNotEmpty) {
       _clearInput();
-    } else if (mode == SaleMode.discount || mode == SaleMode.held) {
+    } else if (mode == SaleMode.held) {
       mode = SaleMode.sale;
     } else {
       msg = null;
-      needCash = false;
     }
   }
 
   void _delete() {
-    if (mode == SaleMode.discount) {
-      if (discountAll) {
-        cart.clearDiscounts();
-      } else {
-        cart.selected?.clearDiscount();
-      }
-      mode = SaleMode.sale;
-      return;
-    }
-    if (mode == SaleMode.paid) return;
+    if (mode != SaleMode.sale) return;
     final l = cart.selected;
     if (l == null) return;
     cart.remove(l);
@@ -181,47 +163,26 @@ class SaleController extends ChangeNotifier {
     final scanned = _scan.scanned;
     _clearInput();
 
-    if (mode == SaleMode.discount) {
-      _applyDiscount(raw);
-      return;
-    }
     if (raw.isEmpty) {
-      if (mode == SaleMode.sale && !cart.isEmpty) {
-        needCash = true;
-        _error('Введите сумму, которую дал покупатель', sound: false);
-      }
+      _openPay();
       return;
     }
-    final digits = RegExp(r'^[0-9]+([.,][0-9]+)?$').hasMatch(raw);
-    final active = mode == SaleMode.sale && !cart.isEmpty;
-
-    // Сканер, длинный код или буквы — это штрихкод/марка.
+    final digits = RegExp(r'^[0-9]+$').hasMatch(raw);
+    // Сканер, длинный код или буквы — штрихкод/марка; короткие цифры — код товара.
     if (scanned || !digits || raw.length >= 8) {
-      if (_scanCode(raw)) return;
-      if (scanned || !digits) return;
+      _scanCode(raw);
+      return;
     }
-    // Ручной ввод: сумма наличных (если чек открыт), иначе короткий код товара.
-    if (active) {
-      final amount = parseMoney(raw);
-      if (amount >= due) {
-        await _pay('cash', received: amount);
-        return;
-      }
-    }
-    final plu = int.tryParse(raw);
-    if (plu != null) {
-      final p = catalog.byPlu(plu);
-      if (p != null) {
-        _add(p);
-        return;
-      }
-    }
-    if (active) {
-      needCash = true;
-      _error('Получено ${fmtMoney(parseMoney(raw))} — меньше итога ${fmtMoney(due)}. Кода $raw тоже нет');
+    final p = catalog.byPlu(int.parse(raw));
+    if (p != null) {
+      _add(p);
     } else {
       _error('Код $raw не найден', note: 'Поиск по названию: F2');
     }
+  }
+
+  void _openPay() {
+    if (canPay) onNavigate?.call(Cmd.pay);
   }
 
   /// Штрихкод, этикетка весов или DataMatrix. false — не нашли (сообщение уже показано).
@@ -297,7 +258,6 @@ class SaleController extends ChangeNotifier {
         right: fmtMoney(lineSum(line.price, qty)),
         rightNote: '$q ${fmtMoney(line.price)}',
       );
-      needCash = false;
       onSound?.call(true);
     } on CartError catch (e) {
       _error(e.message, note: p.name);
@@ -317,140 +277,152 @@ class SaleController extends ChangeNotifier {
 
   // ---------------------------------------------------------- количество
 
-  Future<void> _star() async {
+  /// Цифры + * — количество сразу; * без цифр — окно количества.
+  void _star() {
+    if (mode != SaleMode.sale || cart.selected == null) {
+      _error('Нет строки для количества');
+      return;
+    }
     if (input.isEmpty) {
-      await _pay('card');
+      onNavigate?.call(Cmd.qty);
       return;
     }
     final raw = input;
     _clearInput();
+    final err = setQty(parseQty(raw));
+    if (err != null) _error(err, note: cart.selected?.product.name ?? '');
+  }
+
+  /// Количество выбранной строки (в тысячных). Возвращает ошибку или null.
+  String? setQty(int q) {
     final line = cart.selected;
-    if (line == null || mode == SaleMode.paid) {
-      _error('Нет строки для количества');
-      return;
-    }
-    final q = parseQty(raw);
+    if (line == null) return 'Нет строки для количества';
     try {
       cart.setQty(line, q);
-      msg = SaleMsg(MsgKind.info, line.product.name, note: 'Количество изменено',
-          right: fmtMoney(line.total), rightNote: '${fmtQty(q)} × ${fmtMoney(line.price)}');
+      msg = q <= 0
+          ? SaleMsg(MsgKind.info, 'Удалено: ${line.product.name}')
+          : SaleMsg(MsgKind.info, line.product.name,
+              note: 'Количество изменено', right: fmtMoney(line.total), rightNote: '${fmtQty(q)} × ${fmtMoney(line.price)}');
+      notifyListeners();
+      return null;
     } on CartError catch (e) {
-      _error(e.message, note: line.product.name);
+      return e.message;
     }
   }
 
   // -------------------------------------------------------------- скидка
 
-  void _discount({required bool all}) {
-    if (mode == SaleMode.paid || cart.isEmpty) {
+  /// F6 / ⇧F6. «10%» или «5000» перед F6 — сразу применить, иначе окно скидки.
+  void _discount(Cmd c) {
+    if (mode != SaleMode.sale || cart.isEmpty) {
       _error('Нет чека для скидки');
       return;
     }
-    if (!(pos.cashier?.can(Perm.discount) ?? false)) {
+    if (!canDiscount) {
       _error('Нет права на скидку', note: 'Скидку даёт кассир с правом «Скидки на кассе»');
       return;
     }
-    discountAll = all;
-    mode = SaleMode.discount;
-    if (input.isNotEmpty) {
-      final raw = input;
-      _clearInput();
-      _applyDiscount(raw);
-    }
-  }
-
-  void _applyDiscount(String raw) {
-    if (raw.isEmpty) return;
-    final pct = raw.endsWith('%');
-    final v = pct ? parseMoney(raw.substring(0, raw.length - 1)) : parseMoney(raw);
-    if (v <= 0 || (pct && v > 10000)) {
-      _error('Скидка: число процентов (до 100%) или сумма');
+    if (input.isEmpty) {
+      onNavigate?.call(c);
       return;
     }
-    if (discountAll) {
-      if (pct) {
-        cart.discountAllPercent(v);
+    final raw = input;
+    _clearInput();
+    final pct = raw.endsWith('%');
+    final err = applyDiscount(
+      all: c == Cmd.discountAll,
+      percent: pct,
+      value: parseMoney(pct ? raw.substring(0, raw.length - 1) : raw),
+    );
+    if (err != null) _error(err);
+  }
+
+  /// Скидка на выбранную строку или весь чек. [value] — сотые процента
+  /// (1000 = 10%) или тийины. Возвращает ошибку или null.
+  String? applyDiscount({required bool all, required bool percent, required int value}) {
+    if (!canDiscount) return 'Нет права на скидку';
+    if (value <= 0 || (percent && value > 10000)) return 'Скидка: процент до 100 или сумма больше нуля';
+    final label = percent ? '${fmtMoney(value)}%' : fmtMoney(value);
+    if (all) {
+      if (percent) {
+        cart.discountAllPercent(value);
       } else {
-        cart.discountAllAmount(v);
+        if (value >= cart.subtotal) return 'Скидка больше суммы чека';
+        cart.discountAllAmount(value);
       }
-      msg = SaleMsg(MsgKind.info, 'Скидка на чек: ${pct ? '${fmtMoney(v)}%' : fmtMoney(v)}', right: fmtMoney(cart.total));
+      msg = SaleMsg(MsgKind.info, 'Скидка на чек: $label', right: fmtMoney(cart.total));
     } else {
       final l = cart.selected;
-      if (l == null) return;
+      if (l == null) return 'Выберите строку стрелками';
+      if (!percent && value > l.sum) return 'Скидка больше суммы строки';
       l.clearDiscount();
-      if (pct) {
-        l.discountBp = v;
+      if (percent) {
+        l.discountBp = value;
       } else {
-        l.discountFixed = v;
+        l.discountFixed = value;
       }
-      msg = SaleMsg(MsgKind.info, '${l.product.name} · скидка ${pct ? '${fmtMoney(v)}%' : fmtMoney(l.discount)}',
-          right: fmtMoney(l.total));
+      msg = SaleMsg(MsgKind.info, '${l.product.name} · скидка $label', right: fmtMoney(l.total));
     }
-    mode = SaleMode.sale;
+    notifyListeners();
+    return null;
+  }
+
+  void clearDiscount({required bool all}) {
+    if (all) {
+      cart.clearDiscounts();
+    } else {
+      cart.selected?.clearDiscount();
+    }
+    msg = SaleMsg(MsgKind.info, 'Скидка убрана', right: fmtMoney(cart.total));
+    notifyListeners();
   }
 
   // ------------------------------------------------------------- оплата
 
-  Future<void> _pay(String kind, {int received = 0, int cashPart = 0}) async {
-    if (mode == SaleMode.paid || cart.isEmpty) return;
-    if (mode != SaleMode.sale) mode = SaleMode.sale;
+  /// Есть ли в магазине способ оплаты этого вида.
+  PayMethod? method(String kind) => catalog.method(kind);
+
+  /// Провести оплату из окна. [kind]: cash (с [received]), card, qr, mixed
+  /// ([cashPart] наличными, остаток картой). Ошибка — текст, успех — null.
+  Future<String?> pay(String kind, {int received = 0, int cashPart = 0}) async {
+    if (!canPay) return 'Чек пуст';
     final total = due;
-    if (total <= 0) {
-      _error('Итог чека — 0');
-      return;
-    }
+    if (total <= 0) return 'Итог чека — 0';
     final payments = <Payment>[];
     String label;
-    if (cashPart > 0) {
-      final cash = catalog.method('cash');
-      final card = catalog.method('card');
-      if (cash == null || card == null) {
-        _error('В магазине нет способов оплаты «наличные» и «карта»');
-        return;
-      }
+    if (kind == 'mixed') {
+      final cash = method('cash');
+      final card = method('card');
+      if (cash == null || card == null) return 'В магазине нет способов оплаты «Наличные» и «Карта»';
+      if (cashPart <= 0 || cashPart >= total) return 'Наличными — меньше итога, остаток уйдёт на карту';
       payments
         ..add(Payment(methodId: cash.id, name: cash.name, kind: 'cash', amount: cashPart))
         ..add(Payment(methodId: card.id, name: card.name, kind: 'card', amount: total - cashPart));
       label = 'Оплачено: ${fmtMoney(cashPart)} наличными + ${fmtMoney(total - cashPart)} картой';
+      received = cashPart;
     } else {
-      final m = catalog.method(kind);
-      if (m == null) {
-        _error('В магазине нет способа оплаты «${_kindName(kind)}» — добавьте в панели');
-        return;
-      }
+      final m = method(kind);
+      if (m == null) return 'В магазине нет способа оплаты «${_kindName(kind)}» — добавьте в панели';
+      if (kind == 'cash' && received < total) return 'Получено меньше итога';
       payments.add(Payment(methodId: m.id, name: m.name, kind: kind, amount: total));
       label = kind == 'cash' ? 'Оплачено наличными' : 'Оплачено: ${m.name}';
     }
     busy = true;
     notifyListeners();
     try {
-      final rec = await pos.recordSale(cart, payments, received: kind == 'cash' ? received : 0);
+      final rec = await pos.recordSale(cart, payments, received: kind == 'card' || kind == 'qr' ? 0 : received);
       paid = PaidInfo(rec, label);
       mode = SaleMode.paid;
       cart.selected = null;
       msg = null;
-      needCash = false;
       onSound?.call(true);
+      return null;
     } catch (e) {
-      _error('Чек не сохранён: $e');
+      return 'Чек не сохранён: $e';
     } finally {
       busy = false;
+      notifyListeners();
     }
-  }
-
-  Future<void> _mixed() async {
-    if (mode == SaleMode.paid || cart.isEmpty) return;
-    final cash = parseMoney(input);
-    _clearInput();
-    if (cash <= 0) {
-      _error('Смешанная оплата: наберите сумму наличными, затем F5 — остаток картой');
-      return;
-    }
-    if (cash >= due) {
-      _error('Наличных хватает на весь чек — нажмите Enter');
-      return;
-    }
-    await _pay('mixed', cashPart: cash, received: cash);
   }
 
   static String _kindName(String kind) => switch (kind) {

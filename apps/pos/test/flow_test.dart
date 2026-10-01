@@ -128,19 +128,22 @@ void main() {
     expect(sale.cart.count, 2);
     expect(sale.cart.total, 600000 + 2988000);
 
-    // Пустой Enter не пробивает чек — нужна сумма.
+    // Пустой Enter открывает окно оплаты (чек не пробивается сам).
+    final opened = <Cmd>[];
+    sale.onNavigate = opened.add;
     await sale.command(Cmd.enter);
-    expect(sale.needCash, isTrue);
+    expect(opened, [Cmd.pay]);
     expect(sale.mode, SaleMode.sale);
 
-    // Меньше итога и такого кода нет — ошибка.
+    // Цифры + Enter — всегда код товара, не деньги.
     type('5000');
     await sale.command(Cmd.enter);
     expect(sale.mode, SaleMode.sale);
     expect(sale.msg?.kind, MsgKind.error);
 
-    type('50000');
-    await sale.command(Cmd.enter);
+    // Окно «Наличные»: меньше итога нельзя, 50 000 — сдача.
+    expect(await sale.pay('cash', received: 3000000), isNotNull);
+    expect(await sale.pay('cash', received: 5000000), isNull);
     expect(sale.mode, SaleMode.paid);
     expect(sale.paid!.record.change, 5000000 - 3588000);
     expect(pos.queue, 2); // открытие смены + продажа
@@ -150,7 +153,12 @@ void main() {
     await sale.command(Cmd.enter);
     expect(sale.mode, SaleMode.sale);
     expect(sale.cart.count, 1);
+    // Количество: 3 + * — три хлеба, затем окно количества (0 нельзя у пустого ввода).
+    type('3');
     await sale.command(Cmd.star);
+    expect(sale.cart.lines.single.qty, 3000);
+    expect(sale.setQty(1000), isNull);
+    expect(await sale.pay('card'), isNull);
     expect(sale.mode, SaleMode.paid);
     expect(pos.report.salesTotal, 3588000 + 600000);
     expect(pos.report.expectedCash, 20000000 + 3588000);
@@ -204,6 +212,13 @@ void main() {
     sale.char('1', Duration.zero);
     await until(() => sale.cart.count == 1);
     expect(pos.held, isEmpty);
+
+    // Смешанная: 1 000 наличными, остаток 5 000 — картой.
+    expect(await sale.pay('mixed', cashPart: 600000), isNotNull); // наличных на весь чек — не смешанная
+    expect(await sale.pay('mixed', cashPart: 100000), isNull);
+    final rec = sale.paid!.record;
+    expect(rec.payments.map((p) => '${p.kind}:${p.amount}').toList(), ['cash:100000', 'card:500000']);
+    expect(rec.change, 0);
     sale.dispose();
   });
 }

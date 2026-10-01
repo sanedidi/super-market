@@ -82,3 +82,18 @@ int vatIncluded(int total, int rateBp) {
   final d = 10000 + rateBp;
   return (total * rateBp + d ~/ 2) ~/ d;
 }
+
+/// Подсказки купюр в окне «Наличные»: ближайшие круглые суммы больше итога
+/// (до 1 000, 5 000, 10 000, 50 000, 100 000, 200 000 сумов), не больше 4.
+List<int> cashSuggestions(int due) {
+  if (due <= 0) return const [];
+  final out = <int>{};
+  for (final step in const [1000, 5000, 10000, 50000, 100000, 200000]) {
+    final s = step * 100;
+    var v = (due + s - 1) ~/ s * s;
+    if (v == due) v += s;
+    out.add(v);
+  }
+  final list = out.where((v) => v > due).toList()..sort();
+  return list.take(4).toList();
+}

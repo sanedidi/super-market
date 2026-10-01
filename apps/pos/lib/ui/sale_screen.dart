@@ -7,6 +7,7 @@ import '../core/catalog.dart';
 import '../core/money.dart';
 import '../state/pos.dart';
 import '../state/sale.dart';
+import 'pay_dialogs.dart';
 import 'return_screen.dart';
 import 'search_dialog.dart';
 import 'shift_menu_screen.dart';
@@ -47,6 +48,13 @@ class _SaleScreenState extends State<SaleScreen> {
       case Cmd.search:
         final p = await showDialog<Product>(context: context, builder: (_) => SearchDialog(catalog: sale.catalog));
         if (p != null) sale.addProduct(p);
+      case Cmd.pay:
+        await showPayFlow(context, sale);
+      case Cmd.qty:
+        await showQtyDialog(context, sale);
+      case Cmd.discountLine:
+      case Cmd.discountAll:
+        await showDiscountDialog(context, sale, all: c == Cmd.discountAll);
       case Cmd.returns:
         await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ReturnScreen()));
       case Cmd.shiftMenu:
@@ -66,9 +74,7 @@ class _SaleScreenState extends State<SaleScreen> {
     LogicalKeyboardKey.arrowUp: Cmd.up,
     LogicalKeyboardKey.arrowDown: Cmd.down,
     LogicalKeyboardKey.numpadMultiply: Cmd.star,
-    LogicalKeyboardKey.numpadDivide: Cmd.slash,
     LogicalKeyboardKey.f2: Cmd.search,
-    LogicalKeyboardKey.f5: Cmd.mixed,
     LogicalKeyboardKey.f7: Cmd.hold,
     LogicalKeyboardKey.f9: Cmd.returns,
     LogicalKeyboardKey.f10: Cmd.orders,
@@ -87,11 +93,9 @@ class _SaleScreenState extends State<SaleScreen> {
     }
     final ch = printable(e);
     if (ch == null) return false;
-    // «*» — количество (после цифр) или карта; «/» с набранным — часть кода.
+    // «*» — количество: после цифр сразу, без цифр — окно.
     if (ch == '*') {
       sale.command(Cmd.star);
-    } else if (ch == '/' && sale.input.isEmpty) {
-      sale.command(Cmd.slash);
     } else {
       sale.char(ch, e.timeStamp);
     }
@@ -397,7 +401,7 @@ class _PluBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(12)),
       child: Row(children: [
-        if (sale.input.isNotEmpty && sale.mode != SaleMode.discount) ...[
+        if (sale.input.isNotEmpty) ...[
           Text('Ввод: ', style: t(14, c: C.ts)),
           Text(sale.input, style: t(18, w: FontWeight.w700)),
           const SizedBox(width: 16),
@@ -433,23 +437,35 @@ class _Right extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sale = context.watch<SaleController>();
-    return switch (sale.mode) {
-      SaleMode.discount => const _DiscountPanel(),
-      _ => const _PayPanel(),
-    };
-  }
-}
-
-class _PayPanel extends StatelessWidget {
-  const _PayPanel();
-
-  @override
-  Widget build(BuildContext context) {
-    final sale = context.watch<SaleController>();
     final cart = sale.cart;
     final paid = sale.mode == SaleMode.paid;
-    final empty = cart.isEmpty || sale.mode == SaleMode.held;
-    final style = paid || empty ? KeyCardStyle.dim : KeyCardStyle.normal;
+    final active = sale.mode == SaleMode.sale && !cart.isEmpty;
+    Widget action(String title, String key, Cmd cmd, {bool enabled = true}) => Expanded(
+          child: Opacity(
+            opacity: enabled ? 1 : 0.45,
+            child: Material(
+              color: C.surface,
+              borderRadius: BorderRadius.circular(12),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: enabled ? () => sale.command(cmd) : null,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: C.border)),
+                  child: Row(children: [
+                    Expanded(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: t(17, w: FontWeight.w600))),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(color: C.subtle, borderRadius: BorderRadius.circular(6)),
+                      child: Text(key, style: t(12, w: FontWeight.w500, c: C.ts)),
+                    ),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+        );
+    const gap = SizedBox(width: 10, height: 10);
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       if (paid)
         Panel(
@@ -460,7 +476,7 @@ class _PayPanel extends StatelessWidget {
             Text('новый чек начнётся сам · окно закрывать не нужно', style: t(12, c: C.ts)),
           ]),
         )
-      else ...[
+      else
         Panel(
           color: C.dark,
           padding: const EdgeInsets.all(24),
@@ -477,113 +493,59 @@ class _PayPanel extends StatelessWidget {
             ),
           ]),
         ),
-        const SizedBox(height: 12),
-        const _CashBox(),
-      ],
       const SizedBox(height: 12),
-      KeyCard(
-        keyLabel: 'Enter',
-        title: 'Наличные — пробить чек',
-        subtitle: 'сначала наберите, сколько дал покупатель',
-        style: paid || empty ? KeyCardStyle.dim : KeyCardStyle.primary,
-        onTap: () => sale.command(Cmd.enter),
+      Opacity(
+        opacity: paid ? 0.45 : 1,
+        child: Column(children: [
+          Row(children: [
+            action('Количество', 'цифры + *', Cmd.qty, enabled: active && cart.selected != null),
+            gap,
+            action('Удалить строку', 'Del', Cmd.del, enabled: active && cart.selected != null),
+          ]),
+          gap,
+          Row(children: [
+            action('Скидка', 'F6', Cmd.discountLine, enabled: active),
+            gap,
+            action(sale.mode == SaleMode.held ? 'Назад к чеку' : 'Отложить чек', 'F7', Cmd.hold),
+          ]),
+          gap,
+          Row(children: [
+            action('Поиск товара', 'F2', Cmd.search),
+            gap,
+            action('Меню смены', 'F11', Cmd.shiftMenu),
+          ]),
+        ]),
       ),
-      const SizedBox(height: 10),
-      KeyCard(keyLabel: '*', title: 'Карта', subtitle: 'терминал Uzcard · Humo', style: style, onTap: () => sale.command(Cmd.star)),
-      const SizedBox(height: 10),
-      KeyCard(keyLabel: '/', title: 'Payme · Click', subtitle: 'QR на экране покупателя', style: style, onTap: () => sale.command(Cmd.slash)),
-      const SizedBox(height: 10),
-      KeyCard(keyLabel: 'F5', title: 'Смешанная оплата', subtitle: 'сумма наличными + F5, остаток картой', style: style, onTap: () => sale.command(Cmd.mixed)),
       const Spacer(),
+      Opacity(
+        opacity: sale.canPay ? 1 : 0.3,
+        child: Material(
+          color: C.brand,
+          borderRadius: BorderRadius.circular(16),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: sale.canPay ? () => sale.command(Cmd.pay) : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Expanded(child: Text('Оплатить', style: t(30, w: FontWeight.w700, c: Colors.white))),
+                  Text(fmtMoney(cart.total), style: t(30, w: FontWeight.w800, c: Colors.white)),
+                ]),
+                const SizedBox(height: 4),
+                Text('Enter или нажмите — выберите способ оплаты', style: t(13, c: Colors.white)),
+              ]),
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(height: 8),
       Text(
         paid
-            ? 'F9 — возврат · F11 — меню смены · F7 — отложенные'
-            : 'Пока сумма не введена, Enter не пробьёт чек · Esc — сбросить ввод · F11 — смена',
+            ? 'Следующий скан начнёт новый чек · F9 — возврат · F11 — меню смены'
+            : 'Пустой Enter открывает оплату · цифры + Enter — код товара · Esc — сбросить ввод',
         style: t(12, c: C.ts),
       ),
-    ]);
-  }
-}
-
-/// «Получено наличными — обязательно»: набранная сумма и сдача.
-class _CashBox extends StatelessWidget {
-  const _CashBox();
-
-  @override
-  Widget build(BuildContext context) {
-    final sale = context.watch<SaleController>();
-    final digits = RegExp(r'^[0-9]+([.,][0-9]*)?$').hasMatch(sale.input);
-    final typed = digits ? sale.typedAmount : 0;
-    final enough = typed >= sale.due && typed > 0;
-    final warn = sale.needCash;
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: warn ? C.errorSoft : C.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: C.brand, width: 2),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Row(children: [
-          Expanded(child: Text('Получено наличными — обязательно', style: t(14, c: C.ts))),
-          Text(typed > 0 ? fmtMoney(typed) : '—', style: t(32, w: FontWeight.w700, c: typed > 0 ? C.tp : C.td)),
-        ]),
-        const SizedBox(height: 8),
-        if (warn)
-          Text('Введите сумму, которую дал покупатель', style: t(16, w: FontWeight.w700, c: C.error))
-        else
-          Row(children: [
-            Expanded(child: Text(enough ? 'Сдача' : 'Сдача появится после ввода суммы', style: t(16, w: FontWeight.w600, c: enough ? C.success : C.td))),
-            if (enough) Text(fmtMoney(typed - sale.due), style: t(36, w: FontWeight.w800, c: C.success)),
-          ]),
-      ]),
-    );
-  }
-}
-
-class _DiscountPanel extends StatelessWidget {
-  const _DiscountPanel();
-
-  @override
-  Widget build(BuildContext context) {
-    final sale = context.watch<SaleController>();
-    final target = sale.discountAll ? 'На весь чек' : 'На строку «${sale.cart.selected?.product.name ?? ''}»';
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Text('Скидка (F6)', style: t(22, w: FontWeight.w700)),
-      const SizedBox(height: 12),
-      Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: C.brand, width: 2)),
-        child: Row(children: [
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(target, maxLines: 1, overflow: TextOverflow.ellipsis, style: t(14, c: C.ts)),
-              const SizedBox(height: 8),
-              Text('% — процент · без % — сумма · Enter — применить', style: t(12, c: C.ts)),
-            ]),
-          ),
-          Text(sale.input.isEmpty ? '—' : sale.input, style: t(32, w: FontWeight.w700)),
-        ]),
-      ),
-      const SizedBox(height: 12),
-      KeyCard(
-        keyLabel: 'F6',
-        title: 'На строку',
-        subtitle: 'выбранная стрелками строка',
-        style: sale.discountAll ? KeyCardStyle.normal : KeyCardStyle.active,
-        onTap: () => sale.command(Cmd.discountLine),
-      ),
-      const SizedBox(height: 10),
-      KeyCard(
-        keyLabel: '⇧F6',
-        title: 'На весь чек',
-        style: sale.discountAll ? KeyCardStyle.active : KeyCardStyle.normal,
-        onTap: () => sale.command(Cmd.discountAll),
-      ),
-      const SizedBox(height: 10),
-      KeyCard(keyLabel: 'Del', title: 'Убрать скидку', onTap: () => sale.command(Cmd.del)),
-      const SizedBox(height: 10),
-      KeyCard(keyLabel: 'Esc', title: 'Назад к чеку', onTap: () => sale.command(Cmd.esc)),
     ]);
   }
 }
