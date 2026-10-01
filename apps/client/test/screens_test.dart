@@ -255,7 +255,11 @@ void main() {
 
   testWidgets('12 главная из блоков сети', (t) => _shot(t, const HomeScreen(), '12_home_blocks', home: _homeNetwork, setup: _withStore));
 
-  testWidgets('13 главная по-старому, если блоки не пришли', (t) => _shot(t, const HomeScreen(), '13_home_fallback', home: {'error': 'x'}, setup: _withStore));
+  testWidgets('13 главная по-старому, если блоки не пришли', (t) async {
+    // Без сохранённой копии блоков с прошлого запуска.
+    await t.runAsync(() async => (await SharedPreferences.getInstance()).clear());
+    await _shot(t, const HomeScreen(), '13_home_fallback', home: {'error': 'x'}, setup: _withStore);
+  });
 
   testWidgets('08 корзина', (t) => _shot(t, const CartScreen(), '08_cart', setup: _fillCart));
 
