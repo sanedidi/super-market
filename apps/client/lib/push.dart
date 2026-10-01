@@ -62,10 +62,19 @@ class Push {
           await Future<void>.delayed(const Duration(seconds: 1));
         }
       }
-      final token = await fm.getToken();
-      if (token != null) await send(token);
+      // Подписка до getToken: если APNs ответит позже, токен всё равно уйдёт на сервер.
       await _refresh?.cancel();
       _refresh = fm.onTokenRefresh.listen(send);
+      String? token;
+      for (var i = 0; i < 3 && token == null; i++) {
+        try {
+          token = await fm.getToken();
+        } catch (e) {
+          debugPrint('push: токен: $e');
+          await Future<void>.delayed(const Duration(seconds: 5));
+        }
+      }
+      if (token != null) await send(token);
 
       FirebaseMessaging.onMessageOpenedApp.listen(_open);
       final initial = await fm.getInitialMessage();

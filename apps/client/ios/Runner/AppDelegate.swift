@@ -8,6 +8,10 @@ import YandexMapsMobile
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    // Push: с неявным движком (UIScene) плагины регистрируются уже после запуска,
+    // и firebase_messaging не успевает запросить токен APNs — без него нет токена FCM
+    // и уведомления не приходят. Регистрируемся сами, токен Firebase подхватит сам.
+    application.registerForRemoteNotifications()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
