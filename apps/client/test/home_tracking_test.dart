@@ -15,10 +15,12 @@ void main() {
 
   testWidgets('показы и нажатия блока', (t) async {
     final tracker = HomeTracker(api: api(), storeId: 's1', isActive: () => true);
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
     await t.pumpWidget(MaterialApp(
       home: HomeTrackerScope(
         tracker: tracker,
-        child: ListView(children: [
+        child: ListView(controller: scroll, children: [
           TrackedBlock(blockId: 'b1', child: Container(height: 200, color: Colors.red, child: const Text('блок'))),
           const SizedBox(height: 2000),
           TrackedBlock(blockId: 'b2', child: Container(height: 200, color: Colors.blue)),
@@ -37,11 +39,16 @@ void main() {
     await t.tap(find.text('блок'));
     expect(tracker.pending['b1'], (1, 1));
 
-    // Прокрутка — не нажатие; блок ушёл с экрана и вернулся — новый показ.
-    await t.drag(find.byType(ListView), const Offset(0, -600));
+    // Прокрутка пальцем — не нажатие.
+    await t.drag(find.text('блок'), const Offset(0, -100));
+    await t.pumpAndSettle();
+    expect(tracker.pending['b1']!.$2, 1);
+
+    // Блок ушёл с экрана и вернулся — новый показ.
+    scroll.jumpTo(1000);
     await t.pump();
     tracker.check(t0.add(const Duration(seconds: 4)));
-    await t.drag(find.byType(ListView), const Offset(0, 600));
+    scroll.jumpTo(0);
     await t.pump();
     tracker.check(t0.add(const Duration(seconds: 5)));
     tracker.check(t0.add(const Duration(seconds: 7)));
