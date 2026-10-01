@@ -142,3 +142,104 @@ func TestValidateHomeBlocks(t *testing.T) {
 		t.Error("duplicate id: want error")
 	}
 }
+
+// TestHomeEditor — редактор главной: черновик не виден приложению,
+// публикация даёт версию и сразу меняет главную, откат кладёт старую версию
+// в черновик, сеть начинает с шаблона и может вернуться к нему.
+func TestHomeEditor(t *testing.T) {
+	pool := freshDB(t)
+	ctx := context.Background()
+	cfg := testConfig()
+	cfg.DevOTPCode = "111111"
+	app, err := server.Build(ctx, cfg, pool, &fakeTelegram{}, quietLog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(app.Handler)
+	t.Cleanup(srv.Close)
+	a := api{t: t, srv: srv}
+
+	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
+	cola, sugar := catalogBasics(t, a, adminTok)
+	tok, store := setupNetwork(t, a, adminTok, "+998900000002")
+	a.expect(a.do("PATCH", "/store/stores/"+store, tok, map[string]any{"lat": 41.2995, "lng": 69.2401}), 200, "store")
+	wh := a.expect(a.do("GET", "/store/warehouses?store_id="+store, tok, nil), 200, "wh").items()[0]["id"].(string)
+	doc := a.expect(a.do("POST", "/store/inventory/documents", tok, map[string]any{"type": "posting", "warehouse_id": wh,
+		"items": []map[string]any{{"product_id": cola, "qty": 20, "price": 10000}, {"product_id": sugar, "qty": 10, "price": 8000}}}), 201, "posting")
+	a.expect(a.do("POST", "/store/inventory/documents/"+doc.str("id")+"/post", tok, nil), 200, "post")
+	a.expect(a.do("PUT", "/store/stores/"+store+"/delivery", tok, map[string]any{
+		"accepts_online": true, "delivery_radius_m": 5000,
+		"rules": []map[string]any{{"type": "fixed", "params": map[string]any{"price": 9000}}},
+	}), 200, "delivery")
+	var network string
+	if err := pool.QueryRow(ctx, `SELECT network_id::text FROM stores WHERE id = $1`, store).Scan(&network); err != nil {
+		t.Fatal(err)
+	}
+
+	tpl := a.expect(a.do("GET", "/admin/home", adminTok, nil), 200, "template")
+	if tpl.Body["version"].(float64) != 1 || len(tpl.Body["blocks"].([]any)) != 6 || tpl.Body["draft"] != nil {
+		t.Fatalf("template = %v", tpl.Body)
+	}
+	a.expect(a.do("GET", "/admin/home", tok, nil), 403, "store token")
+	a.expect(a.do("POST", "/admin/home/publish", adminTok, nil), 409, "nothing to publish")
+
+	shelf := map[string]any{"id": "d0000000-0000-4000-8000-000000000001", "type": "shelf", "title": "Подборка", "source": "manual",
+		"product_ids": []string{sugar}, "limit": 6, "view": "row"}
+	a.expect(a.do("PUT", "/admin/home/draft", adminTok, map[string]any{"blocks": []any{map[string]any{"id": "x", "type": "shelf"}}}), 400, "invalid")
+	d := a.expect(a.do("PUT", "/admin/home/draft", adminTok, map[string]any{"blocks": []any{shelf}}), 200, "draft")
+	if len(d.Body["draft"].([]any)) != 1 {
+		t.Fatalf("draft = %v", d.Body)
+	}
+	// Предпросмотр — с товарами, приложению черновик не виден.
+	pv := a.expect(a.do("POST", "/admin/home/preview", adminTok, map[string]any{"store_id": store, "blocks": []any{shelf}}), 200, "preview")
+	if len(pv.Body["blocks"].([]any)[0].(map[string]any)["products"].([]any)) != 1 {
+		t.Fatalf("preview = %v", pv.Body)
+	}
+	if h := a.expect(a.do("GET", "/client/stores/"+store+"/home", "", nil), 200, "home"); h.Body["version"].(float64) != 1 {
+		t.Fatalf("draft leaked: %v", h.Body)
+	}
+	if st := a.expect(a.do("GET", "/admin/home/stores", adminTok, nil), 200, "stores").items(); len(st) != 1 || st[0]["id"] != store {
+		t.Fatalf("stores = %v", st)
+	}
+
+	p := a.expect(a.do("POST", "/admin/home/publish", adminTok, nil), 200, "publish")
+	if p.Body["version"].(float64) != 2 || p.Body["draft"] != nil {
+		t.Fatalf("published = %v", p.Body)
+	}
+	h := a.expect(a.do("GET", "/client/stores/"+store+"/home", "", nil), 200, "home v2")
+	if h.Body["version"].(float64) != 2 || len(h.Body["blocks"].([]any)) != 1 {
+		t.Fatalf("home v2 = %v", h.Body)
+	}
+	vs := a.expect(a.do("GET", "/admin/home/versions", adminTok, nil), 200, "versions").items()
+	if len(vs) != 2 || vs[0]["version"].(float64) != 2 || vs[1]["blocks"].(float64) != 6 {
+		t.Fatalf("versions = %v", vs)
+	}
+	r := a.expect(a.do("POST", "/admin/home/restore", adminTok, map[string]any{"version": 1}), 200, "restore")
+	if len(r.Body["draft"].([]any)) != 6 {
+		t.Fatalf("restore = %v", r.Body)
+	}
+	a.expect(a.do("DELETE", "/admin/home/draft", adminTok, nil), 200, "discard")
+	a.expect(a.do("POST", "/admin/home/restore", adminTok, map[string]any{"version": 9}), 404, "no version")
+
+	// Сеть: начинает с шаблона, черновик не меняет главную, публикация — меняет.
+	q := "?network_id=" + network
+	n := a.expect(a.do("GET", "/admin/home"+q, adminTok, nil), 200, "network")
+	if n.Body["inherited"] != true || n.Body["version"].(float64) != 0 || n.Body["network_name"] == "" {
+		t.Fatalf("network = %v", n.Body)
+	}
+	promo := map[string]any{"id": "d0000000-0000-4000-8000-000000000002", "type": "promo", "kind": "custom", "title": "−10%", "color": "green"}
+	a.expect(a.do("PUT", "/admin/home/draft"+q, adminTok, map[string]any{"blocks": []any{promo}}), 200, "network draft")
+	if h := a.expect(a.do("GET", "/client/stores/"+store+"/home", "", nil), 200, "home"); h.Body["version"].(float64) != 2 {
+		t.Fatalf("network draft leaked: %v", h.Body)
+	}
+	a.expect(a.do("POST", "/admin/home/publish"+q, adminTok, nil), 200, "network publish")
+	h = a.expect(a.do("GET", "/client/stores/"+store+"/home", "", nil), 200, "network home")
+	if h.Body["version"].(float64) != 1 || h.Body["blocks"].([]any)[0].(map[string]any)["type"] != "promo" {
+		t.Fatalf("network home = %v", h.Body)
+	}
+	a.expect(a.do("DELETE", "/admin/home"+q, adminTok, nil), 200, "reset")
+	if h := a.expect(a.do("GET", "/client/stores/"+store+"/home", "", nil), 200, "home"); h.Body["version"].(float64) != 2 {
+		t.Fatalf("after reset = %v", h.Body)
+	}
+	a.expect(a.do("GET", "/admin/home?network_id=00000000-0000-0000-0000-000000000000", adminTok, nil), 404, "unknown network")
+}

@@ -32,9 +32,11 @@ const (
 // HomeBlock — блок витрины: общие поля, настройки своего типа и (в ответе
 // приложению) данные — товары полки или баннеры.
 type HomeBlock struct {
-	ID       string     `json:"id"`
-	Type     string     `json:"type"`
-	Disabled bool       `json:"disabled,omitempty"`
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Disabled bool   `json:"disabled,omitempty"`
+	// Закреплён платформой: магазин не может убрать или выключить блок.
+	Pinned   bool       `json:"pinned,omitempty"`
 	StartsAt *time.Time `json:"starts_at,omitempty"`
 	EndsAt   *time.Time `json:"ends_at,omitempty"`
 
@@ -152,6 +154,18 @@ func ValidateBlocks(blocks []HomeBlock) error {
 			if err := uuids(b.BannerIDs, 10, "баннеры"); err != nil {
 				return err
 			}
+			// Узкая лента — текст с иконкой и цветом вместо фото.
+			if b.Size == "strip" {
+				if len([]rune(b.Title)) == 0 || len([]rune(b.Title)) > 60 {
+					return bad("текст ленты от 1 до 60 символов")
+				}
+				if !oneOf(b.Color, "yellow", "red", "green", "dark") {
+					return bad("цвет: yellow, red, green или dark")
+				}
+				if err := checkLink(b.Link); err != nil {
+					return bad(err.Error())
+				}
+			}
 		case BlockPromo:
 			if !oneOf(b.Kind, "custom", "free_delivery") {
 				return bad("тип полоски: custom или free_delivery")
@@ -205,6 +219,22 @@ func ValidateBlocks(blocks []HomeBlock) error {
 	return nil
 }
 
+func checkLink(l *BlockLink) error {
+	if l == nil {
+		return nil
+	}
+	if !oneOf(l.Type, "none", "deals", "category", "product", "delivery_terms", "url") {
+		return errors.New("неверная ссылка")
+	}
+	if (l.Type == "category" || l.Type == "product") && !httpx.IsUUID(l.ID) {
+		return errors.New("ссылка: выберите категорию или товар")
+	}
+	if l.Type == "url" && !httpURL(l.URL) {
+		return errors.New("ссылка должна начинаться с https://")
+	}
+	return nil
+}
+
 func httpURL(u string) bool {
 	return len(u) > 8 && len(u) <= 500 && u[:8] == "https://"
 }
@@ -243,7 +273,7 @@ func (s *Service) StoreHome(ctx context.Context, storeID string) (StoreHome, err
 	var version int
 	err = s.pool.QueryRow(ctx, `
 		SELECT blocks, version FROM home_layouts
-		WHERE store_id = $1 OR (scope = 'network' AND network_id = $2) OR scope = 'platform'
+		WHERE version > 0 AND (store_id = $1 OR (scope = 'network' AND network_id = $2) OR scope = 'platform')
 		ORDER BY CASE scope WHEN 'store' THEN 0 WHEN 'network' THEN 1 ELSE 2 END LIMIT 1`,
 		storeID, st.NetworkID).Scan(&raw, &version)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -255,35 +285,11 @@ func (s *Service) StoreHome(ctx context.Context, storeID string) (StoreHome, err
 	if err := json.Unmarshal(raw, &blocks); err != nil {
 		return StoreHome{}, fmt.Errorf("home layout: %w", err)
 	}
-
-	out := StoreHome{Version: version, Blocks: []HomeBlock{}}
-	var banners []catalog.Banner
-	for _, b := range blocks {
-		if b.Disabled || (b.StartsAt != nil && now.Before(*b.StartsAt)) || (b.EndsAt != nil && !now.Before(*b.EndsAt)) {
-			continue
-		}
-		switch b.Type {
-		case BlockShelf:
-			b.Products, err = s.shelfProducts(ctx, storeID, b)
-			if err != nil {
-				return StoreHome{}, err
-			}
-			if len(b.Products) == 0 && !b.ShowEmpty {
-				continue
-			}
-		case BlockBanners:
-			if banners == nil {
-				if banners, err = catalog.ActiveBanners(ctx, s.pool, []string{st.NetworkID}); err != nil {
-					return StoreHome{}, err
-				}
-			}
-			b.Banners = pickBanners(banners, b.BannerIDs)
-			if len(b.Banners) == 0 {
-				continue
-			}
-		}
-		out.Blocks = append(out.Blocks, b)
+	filled, err := s.fillBlocks(ctx, storeID, st.NetworkID, blocks, now)
+	if err != nil {
+		return StoreHome{}, err
 	}
+	out := StoreHome{Version: version, Blocks: filled}
 
 	s.homes.mu.Lock()
 	if s.homes.items == nil {
@@ -291,6 +297,43 @@ func (s *Service) StoreHome(ctx context.Context, storeID string) (StoreHome, err
 	}
 	s.homes.items[storeID] = homeCacheItem{home: out, at: now}
 	s.homes.mu.Unlock()
+	return out, nil
+}
+
+// fillBlocks убирает выключенные, вне дат и пустые блоки и кладёт в полки
+// товары, а в баннеры — баннеры.
+func (s *Service) fillBlocks(ctx context.Context, storeID, networkID string, blocks []HomeBlock, now time.Time) ([]HomeBlock, error) {
+	out := []HomeBlock{}
+	var banners []catalog.Banner
+	var err error
+	for _, b := range blocks {
+		if b.Disabled || (b.StartsAt != nil && now.Before(*b.StartsAt)) || (b.EndsAt != nil && !now.Before(*b.EndsAt)) {
+			continue
+		}
+		switch b.Type {
+		case BlockShelf:
+			if b.Products, err = s.shelfProducts(ctx, storeID, b); err != nil {
+				return nil, err
+			}
+			if len(b.Products) == 0 && !b.ShowEmpty {
+				continue
+			}
+		case BlockBanners:
+			if b.Size == "strip" {
+				break
+			}
+			if banners == nil {
+				if banners, err = catalog.ActiveBanners(ctx, s.pool, []string{networkID}); err != nil {
+					return nil, err
+				}
+			}
+			b.Banners = pickBanners(banners, b.BannerIDs)
+			if len(b.Banners) == 0 {
+				continue
+			}
+		}
+		out = append(out, b)
+	}
 	return out, nil
 }
 

@@ -32,6 +32,8 @@ type Banner struct {
 	Sort        int        `json:"sort"`
 	IsActive    bool       `json:"is_active"`
 	CreatedAt   time.Time  `json:"created_at"`
+	// false — только фото, без заголовка поверх.
+	ShowText bool `json:"show_text"`
 }
 
 type BannerInput struct {
@@ -47,10 +49,11 @@ type BannerInput struct {
 	EndsAt   httpx.Optional[time.Time] `json:"ends_at"`
 	Sort     *int                      `json:"sort"`
 	IsActive *bool                     `json:"is_active"`
+	ShowText *bool                     `json:"show_text"`
 }
 
 const bannerSelect = `SELECT id, title, subtitle, image_url, color, link_type, link_id, network_id,
-	(SELECT n.name FROM networks n WHERE n.id = banners.network_id), starts_at, ends_at, sort, is_active, created_at FROM banners`
+	(SELECT n.name FROM networks n WHERE n.id = banners.network_id), starts_at, ends_at, sort, is_active, created_at, show_text FROM banners`
 
 var colorRe = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 
@@ -129,12 +132,16 @@ func (s *Service) CreateBanner(ctx context.Context, in BannerInput) (Banner, err
 	if in.IsActive != nil {
 		active = *in.IsActive
 	}
+	showText := true
+	if in.ShowText != nil {
+		showText = *in.ShowText
+	}
 	var id string
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO banners (title, subtitle, image_url, color, link_type, link_id, network_id, starts_at, ends_at, sort, is_active)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+		INSERT INTO banners (title, subtitle, image_url, color, link_type, link_id, network_id, starts_at, ends_at, sort, is_active, show_text)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
 		str(in.Title, ""), str(in.Subtitle, ""), str(in.ImageURL, ""), str(in.Color, "#155EEF"), str(in.LinkType, "none"),
-		emptyToNil(in.LinkID), emptyToNil(in.NetworkID), in.StartsAt.Or(), in.EndsAt.Or(), sort, active).Scan(&id)
+		emptyToNil(in.LinkID), emptyToNil(in.NetworkID), in.StartsAt.Or(), in.EndsAt.Or(), sort, active, showText).Scan(&id)
 	if db.IsCheckViolation(err) {
 		return Banner{}, apperr.Validation("баннер: проверьте даты и ссылку")
 	}
@@ -168,11 +175,11 @@ func (s *Service) UpdateBanner(ctx context.Context, id string, in BannerInput) (
 			network_id = CASE WHEN $9 THEN $10::uuid ELSE network_id END,
 			starts_at = CASE WHEN $11 THEN $12::timestamptz ELSE starts_at END,
 			ends_at = CASE WHEN $13 THEN $14::timestamptz ELSE ends_at END,
-			sort = COALESCE($15, sort), is_active = COALESCE($16, is_active), updated_at = now()
+			sort = COALESCE($15, sort), is_active = COALESCE($16, is_active), show_text = COALESCE($17, show_text), updated_at = now()
 		WHERE id = $1`,
 		id, trim(in.Title), trim(in.Subtitle), trim(in.ImageURL), in.Color, in.LinkType,
 		setLink, emptyToNil(in.LinkID), setNetwork, emptyToNil(in.NetworkID),
-		in.StartsAt.Set, in.StartsAt.Value, in.EndsAt.Set, in.EndsAt.Value, in.Sort, in.IsActive)
+		in.StartsAt.Set, in.StartsAt.Value, in.EndsAt.Set, in.EndsAt.Value, in.Sort, in.IsActive, in.ShowText)
 	if db.IsCheckViolation(err) {
 		return Banner{}, apperr.Validation("баннер: проверьте даты и ссылку")
 	}

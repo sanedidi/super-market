@@ -129,12 +129,12 @@ final _homeNetwork = {
       'autoplay': false,
       'banners': [
         {'id': 'x1', 'title': 'Осенняя ярмарка', 'subtitle': 'Фрукты и овощи со скидкой до 30%', 'color': '#2E9E5B', 'image_url': '', 'link_type': 'none'},
-        {'id': 'x2', 'title': 'Неделя сыра', 'color': '#E8850C', 'image_url': '', 'link_type': 'none'},
+        {'id': 'x2', 'title': 'Неделя сыра', 'color': '#E8850C', 'image_url': '', 'link_type': 'none', 'show_text': false},
       ],
     },
     {'id': 'n3', 'type': 'category_icons', 'mode': 'manual', 'category_ids': ['c5', 'c1'], 'shape': 'tiles', 'show_deals': true},
     {'id': 'n4', 'type': 'shelf', 'title': 'Подборка к завтраку', 'source': 'manual', 'limit': 6, 'view': 'grid3', 'products': [..._hits, ..._hits.map((p) => {...p, 'id': '${p['id']}x'})]},
-    {'id': 'n5', 'type': 'banners', 'size': 'strip', 'banners': [{'id': 'x3', 'title': 'Доставка за 15 минут', 'subtitle': 'В радиусе 2 км', 'color': '#3B6FD8'}]},
+    {'id': 'n5', 'type': 'banners', 'size': 'strip', 'title': 'Осенняя ярмарка: −25% на фрукты', 'icon': 'tag', 'color': 'red', 'link': {'type': 'deals'}},
     {'id': 'n6', 'type': 'catalog_sections', 'view': 'list', 'mode': 'selected', 'category_ids': ['c1'], 'show_images': false},
   ],
 };

@@ -18,6 +18,7 @@ interface Banner {
   ends_at: string | null
   sort: number
   is_active: boolean
+  show_text: boolean
   created_at: string
 }
 
@@ -80,6 +81,7 @@ export function Banners() {
           ends_at: period?.[1] ? period[1].toISOString() : null,
           sort: v.sort ?? 0,
           is_active: v.is_active ?? true,
+          show_text: v.show_text ?? true,
         }
       }}
       form={(editing) => (
@@ -92,6 +94,9 @@ export function Banners() {
           </Form.Item>
           <Form.Item name="image_url" label="Картинка" extra="Необязательно; без картинки баннер — цветная плашка">
             <ImageUpload hint="Картинка" />
+          </Form.Item>
+          <Form.Item name="show_text" label="Подпись на фото" valuePropName="checked" initialValue={true} extra="Выключите, если текст уже нарисован на картинке">
+            <Switch />
           </Form.Item>
           <Form.Item name="color" label="Цвет фона" initialValue="#155EEF" rules={[{ pattern: /^#[0-9A-Fa-f]{6}$/, message: 'Формат #RRGGBB' }]}>
             <Input style={{ width: 140 }} />

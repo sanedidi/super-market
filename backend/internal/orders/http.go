@@ -108,6 +108,75 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/admin/orders/{id}/cancel", m.adminCancel)
 		r.Get("/admin/payments", m.adminPayments)
 		r.Post("/admin/payments/{id}/refunded", m.adminRefunded)
+
+		// Редактор главной; ?network_id= — витрина сети, без него — шаблон.
+		r.Get("/admin/home", m.adminHome)
+		r.Put("/admin/home/draft", m.adminSaveDraft)
+		r.Delete("/admin/home/draft", m.adminHomeAct(m.svc.DiscardDraft))
+		r.Post("/admin/home/publish", m.adminPublish)
+		r.Get("/admin/home/versions", m.adminVersions)
+		r.Post("/admin/home/restore", m.adminRestore)
+		r.Delete("/admin/home", m.adminHomeAct(m.svc.ResetNetwork))
+		r.Get("/admin/home/stores", m.adminPreviewStores)
+		r.Post("/admin/home/preview", m.adminPreview)
+	})
+}
+
+func networkParam(r *http.Request) string { return r.URL.Query().Get("network_id") }
+
+func (m *Module) adminHome(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (LayoutEditor, error) {
+		return m.svc.LayoutForEditor(r.Context(), networkParam(r))
+	})
+}
+
+type blocksInput struct {
+	StoreID string      `json:"store_id"`
+	Blocks  []HomeBlock `json:"blocks"`
+	Version int         `json:"version"`
+}
+
+func (m *Module) adminSaveDraft(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in blocksInput) (LayoutEditor, error) {
+		return m.svc.SaveDraft(r.Context(), networkParam(r), in.Blocks)
+	})
+}
+
+func (m *Module) adminHomeAct(fn func(context.Context, string) (LayoutEditor, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		httpx.Respond(w, r, m.log, http.StatusOK, func() (LayoutEditor, error) { return fn(r.Context(), networkParam(r)) })
+	}
+}
+
+func (m *Module) adminPublish(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (LayoutEditor, error) {
+		return m.svc.Publish(r.Context(), networkParam(r), pr(r).UserID)
+	})
+}
+
+func (m *Module) adminVersions(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[LayoutVersion], error) {
+		items, err := m.svc.Versions(r.Context(), networkParam(r))
+		return httpx.List[LayoutVersion]{Items: items}, err
+	})
+}
+
+func (m *Module) adminRestore(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in blocksInput) (LayoutEditor, error) {
+		return m.svc.RestoreVersion(r.Context(), networkParam(r), in.Version)
+	})
+}
+
+func (m *Module) adminPreviewStores(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[PreviewStore], error) {
+		items, err := m.svc.PreviewStores(r.Context(), networkParam(r))
+		return httpx.List[PreviewStore]{Items: items}, err
+	})
+}
+
+func (m *Module) adminPreview(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in blocksInput) (StoreHome, error) {
+		return m.svc.PreviewHome(r.Context(), in.StoreID, in.Blocks)
 	})
 }
 

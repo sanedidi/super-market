@@ -14,6 +14,7 @@ import { Dashboard } from './pages/Dashboard'
 import { Networks } from './pages/Networks'
 import { Products, Dictionary } from './pages/Catalog'
 import { Banners } from './pages/Banners'
+import { AppHome } from './pages/AppHome'
 import { Orders, Payments } from './pages/Orders'
 import { Tariffs, BillingSettings, BillingNetworks, Invoices, Payouts } from './pages/Billing'
 import { Customers } from './pages/Customers'
@@ -34,6 +35,7 @@ const menu: MenuItem[] = [
       { key: '/catalog/colors', label: 'Цвета' },
       { key: '/catalog/units', label: 'Единицы измерения' },
       { key: '/banners', label: 'Баннеры в приложении' },
+      { key: '/app-home', label: 'Главная приложения' },
     ],
   },
   {
@@ -72,6 +74,7 @@ export function AdminRoutes() {
         <Route path="moderation" element={<Products key="moderation" moderation />} />
         <Route path="catalog/:kind" element={<Dictionary />} />
         <Route path="banners" element={<Banners />} />
+        <Route path="app-home" element={<AppHome />} />
         <Route path="orders" element={<Orders key="orders" />} />
         <Route path="stale" element={<Orders key="stale" stale />} />
         <Route path="payments" element={<Payments />} />

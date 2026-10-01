@@ -196,6 +196,8 @@ const promoIcons = <String, IconData>{
   'clock': Icons.schedule_rounded,
   'bolt': Icons.bolt_rounded,
   'tag': Icons.local_offer_rounded,
+  'leaf': Icons.eco_rounded,
+  'party': Icons.celebration_rounded,
 };
 
 /// Своя промо-полоска: иконка, заголовок, подпись, переход.
@@ -283,50 +285,10 @@ class _HomeBannersState extends State<HomeBanners> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.block['size'] == 'strip') return StripBanner(store: widget.store, block: widget.block);
     final list = _list;
     if (list.isEmpty) return const SizedBox.shrink();
     void open(Map<String, dynamic> b) => openBannerLink(context, widget.store, b);
-    if (widget.block['size'] == 'strip') {
-      return Padding(
-        padding: const EdgeInsets.only(top: 16),
-        child: SizedBox(
-          height: 72,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: list.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemBuilder: (_, i) {
-              final b = list[i];
-              return SizedBox(
-                width: list.length == 1 ? MediaQuery.sizeOf(context).width - 32 : 260,
-                child: Material(
-                  color: bannerColor(b),
-                  borderRadius: BorderRadius.circular(18),
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    onTap: () => open(b),
-                    child: Row(children: [
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
-                            Text('${b['title']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong.copyWith(color: AppColors.white)),
-                            if ('${b['subtitle'] ?? ''}'.isNotEmpty)
-                              Text('${b['subtitle']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.caption.copyWith(color: const Color(0xCCFFFFFF))),
-                          ]),
-                        ),
-                      ),
-                      if ('${b['image_url'] ?? ''}'.isNotEmpty) SizedBox(width: 72, height: 72, child: _image(b)),
-                    ]),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      );
-    }
     final h = (MediaQuery.sizeOf(context).width - 32) * 0.5;
     return Padding(
       padding: const EdgeInsets.only(top: 16),
@@ -340,6 +302,7 @@ class _HomeBannersState extends State<HomeBanners> {
             itemBuilder: (_, i) {
               final b = list[i];
               final hasImage = '${b['image_url'] ?? ''}'.isNotEmpty;
+              final showText = b['show_text'] != false || !hasImage;
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Material(
@@ -350,12 +313,13 @@ class _HomeBannersState extends State<HomeBanners> {
                     onTap: () => open(b),
                     child: Stack(fit: StackFit.expand, children: [
                       _image(b),
-                      if (hasImage)
+                      if (hasImage && showText)
                         const DecoratedBox(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x00000000), Color(0x99000000)], stops: [0.35, 1]),
                           ),
                         ),
+                      if (showText)
                       Padding(
                         padding: const EdgeInsets.all(16),
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.end, children: [
@@ -388,6 +352,55 @@ class _HomeBannersState extends State<HomeBanners> {
             ]),
           ),
       ]),
+    );
+  }
+}
+
+/// «Узкая лента»: текст с иконкой на цветной полосе и переход по ссылке.
+class StripBanner extends StatelessWidget {
+  const StripBanner({super.key, required this.store, required this.block});
+  final Store store;
+  final HomeBlock block;
+
+  static const _gradients = <String, List<Color>>{
+    'red': [Color(0xFFE11D2A), Color(0xFFFF4D5A)],
+    'yellow': [Color(0xFFFFC21A), Color(0xFFFFD84D)],
+    'green': [Color(0xFF1E9E55), Color(0xFF3CC47A)],
+    'dark': [Color(0xFF1F2430), Color(0xFF3A4252)],
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final title = '${block['title'] ?? ''}';
+    if (title.isEmpty) return const SizedBox.shrink();
+    final color = '${block['color'] ?? 'red'}';
+    final fg = color == 'yellow' ? AppColors.ink : AppColors.white;
+    final link = block['link'] as Map<String, dynamic>?;
+    final tappable = link != null && link['type'] != 'none';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Material(
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: Ink(
+          decoration: BoxDecoration(gradient: LinearGradient(colors: _gradients[color] ?? _gradients['red']!)),
+          child: InkWell(
+            onTap: tappable ? () => openBlockLink(context, store, link, title: title) : null,
+            child: SizedBox(
+              height: 52,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Row(children: [
+                  Icon(promoIcons[block['icon']] ?? Icons.local_offer_rounded, color: fg, size: 24),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong.copyWith(color: fg))),
+                  if (tappable) Icon(Icons.chevron_right_rounded, color: fg),
+                ]),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
