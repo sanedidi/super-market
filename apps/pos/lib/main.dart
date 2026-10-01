@@ -33,6 +33,7 @@ class PosApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final stage = context.select<PosController, Stage>((p) => p.stage);
+    final revoked = context.select<PosController, bool>((p) => p.revoked);
     return MaterialApp(
       title: 'Super Market · Касса',
       debugShowCheckedModeBanner: false,
@@ -44,13 +45,15 @@ class PosApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      home: switch (stage) {
-        Stage.loading => const Scaffold(body: Center(child: CircularProgressIndicator())),
-        Stage.activate => const ActivationScreen(),
-        Stage.login => const LoginScreen(),
-        Stage.openShift => const OpenShiftScreen(),
-        Stage.work => const SaleScreen(),
-      },
+      home: revoked && stage != Stage.activate
+          ? const RevokedScreen()
+          : switch (stage) {
+              Stage.loading => const Scaffold(body: Center(child: CircularProgressIndicator())),
+              Stage.activate => const ActivationScreen(),
+              Stage.login => const LoginScreen(),
+              Stage.openShift => const OpenShiftScreen(),
+              Stage.work => const SaleScreen(),
+            },
     );
   }
 }

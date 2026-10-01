@@ -137,3 +137,48 @@ class _CodeFormatter extends TextInputFormatter {
     return TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
   }
 }
+
+/// Касса отключена в панели (или подключена заново на другом компьютере).
+class RevokedScreen extends StatelessWidget {
+  const RevokedScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final pos = context.watch<PosController>();
+    return Scaffold(
+      body: Center(
+        child: Container(
+          width: 576,
+          padding: const EdgeInsets.all(40),
+          decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(24)),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Logo(size: 72),
+            const SizedBox(height: 20),
+            Text('Касса отключена', style: t(28, w: FontWeight.w700)),
+            const SizedBox(height: 12),
+            Text(
+              'Эту кассу отключили в панели магазина или подключили на другом компьютере. '
+              'Создайте кассу в панели: «Касса → Кассы и ПИНы → Новая касса», и введите новый код.',
+              textAlign: TextAlign.center,
+              style: t(14, c: C.ts),
+            ),
+            if (pos.queue > 0 || pos.shift != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Неотправленные чеки (${pos.queue}) и смена сохранены на кассе — после подключения они уйдут на сервер.',
+                textAlign: TextAlign.center,
+                style: t(13, c: C.warning),
+              ),
+            ],
+            const SizedBox(height: 24),
+            FilledButton(
+              onPressed: pos.reconnect,
+              style: FilledButton.styleFrom(backgroundColor: C.brand, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18)),
+              child: Text('Ввести новый код', style: t(15, w: FontWeight.w700, c: Colors.white)),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}

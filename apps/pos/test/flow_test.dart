@@ -13,6 +13,7 @@ import 'package:sm_pos/state/sale.dart';
 /// Сервер-заглушка: активация, каталог, смены, продажи. offline — нет связи.
 class FakeServer {
   bool offline = false;
+  bool revoked = false;
   final List<Map<String, dynamic>> shifts = [];
   final List<Map<String, dynamic>> sales = [];
   final List<Map<String, dynamic>> closes = [];
@@ -24,6 +25,9 @@ class FakeServer {
     final body = req.body.isEmpty ? <String, dynamic>{} : jsonDecode(req.body) as Map<String, dynamic>;
     final c = req.headers['X-Cashier-ID'];
     if (c != null) cashiers.add(c);
+    if (revoked && path != '/pos/activate') {
+      return _json(401, {'error': {'code': 'device_revoked', 'message': 'касса отключена или активирована заново — введите новый код'}});
+    }
     if (path != '/pos/activate' && req.headers['Authorization'] != 'Bearer pd_test') {
       return _json(401, {'error': {'code': 'unauthorized', 'message': 'нужен токен кассы'}});
     }
@@ -219,6 +223,34 @@ void main() {
     final rec = sale.paid!.record;
     expect(rec.payments.map((p) => '${p.kind}:${p.amount}').toList(), ['cash:100000', 'card:500000']);
     expect(rec.change, 0);
+    sale.dispose();
+  });
+
+  test('касса отключена в панели: чеки не теряются, новый код — и всё уходит', () async {
+    await pos.activate('ABCD2345');
+    pos.login(pos.catalog.cashiers.single, '1234');
+    server.revoked = true;
+    await pos.openShift(0);
+    final sale = SaleController(pos);
+    sale.char('1', Duration.zero);
+    await sale.command(Cmd.enter);
+    expect(await sale.pay('card'), isNull);
+    await until(() => !pos.syncing);
+    await pos.sync();
+    expect(pos.revoked, isTrue);
+    expect(pos.queue, 2); // смена и чек ждут, а не «не приняты»
+    expect(pos.failed, 0);
+
+    await pos.reconnect();
+    expect(pos.stage, Stage.activate);
+    server.revoked = false;
+    await pos.activate('ABCD2345');
+    expect(pos.revoked, isFalse);
+    expect(pos.stage, Stage.work); // кассир и смена остались
+    await until(() => !pos.syncing);
+    await pos.sync();
+    await until(() => pos.queue == 0);
+    expect(server.sales.length, 1);
     sale.dispose();
   });
 }

@@ -145,9 +145,25 @@ class PosController extends ChangeNotifier {
     catalog = Catalog();
     final ok = await syncCatalog();
     if (!ok) throw ApiError(0, 'network', 'Касса подключена, но каталог не загрузился — проверьте интернет');
-    stage = Stage.login;
+    revoked = false;
+    // События, которые сервер отклонил, пока касса была отключена, — отправить снова.
+    for (final item in List.of(outbox.failed)) {
+      if ((item.error ?? '').startsWith('касса отключена')) await outbox.retry(item);
+    }
+    stage = cashier == null ? Stage.login : (shift == null ? Stage.openShift : Stage.work);
     notifyListeners();
     _startTimer();
+  }
+
+  /// Касса отключена в панели: забыть старый токен и подключиться новым кодом.
+  /// Смена, чеки и очередь остаются — после подключения уйдут на сервер.
+  Future<void> reconnect() async {
+    _timer?.cancel();
+    api.token = null;
+    await store.delete('device.json');
+    revoked = false;
+    stage = Stage.activate;
+    notifyListeners();
   }
 
   // ---------------------------------------------------- синхронизация
@@ -172,7 +188,7 @@ class PosController extends ChangeNotifier {
 
   void _netError(ApiError e) {
     if (e.status == 0) online = false;
-    if (e.status == 401 && e.code == 'unauthorized') revoked = true;
+    if (deviceRejected(e)) revoked = true;
     notifyListeners();
   }
 

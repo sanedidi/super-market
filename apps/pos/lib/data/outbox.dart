@@ -131,7 +131,7 @@ class Outbox {
             r.offline = e.status == 0;
             break;
           }
-          if (e.status == 401 && e.code == 'unauthorized') {
+          if (deviceRejected(e)) {
             r.revoked = true;
             break;
           }
@@ -210,3 +210,7 @@ class Outbox {
 }
 
 class _Wait implements Exception {}
+
+/// Сервер не принимает токен кассы: касса отключена в панели или подключена
+/// заново другим кодом. Ошибки кассира (401 cashier_*) сюда не относятся.
+bool deviceRejected(ApiError e) => e.status == 401 && e.code != 'cashier_invalid' && e.code != 'cashier_required';
