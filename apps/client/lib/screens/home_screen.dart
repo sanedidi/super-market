@@ -238,9 +238,27 @@ class _ExpressHeader extends SliverPersistentHeaderDelegate {
             ),
           ),
         ),
-        AppSearchField(
-          hint: 'Найти в Super Market',
-          onTap: s == null ? () {} : () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CategoryScreen(store: s, search: true))),
+        SizedBox(
+          height: 48,
+          child: Material(
+            color: AppColors.white,
+            shape: const StadiumBorder(),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: s == null ? null : () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CategoryScreen(store: s, search: true))),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(children: [
+                  const Icon(Icons.search_rounded, color: AppColors.text2, size: 24),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text('Найти в Super Market',
+                        maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.body.copyWith(fontSize: 16, color: AppColors.muted)),
+                  ),
+                ]),
+              ),
+            ),
+          ),
         ),
       ]),
     );
