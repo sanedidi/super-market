@@ -10,6 +10,7 @@ import {
   DollarOutlined,
   InboxOutlined,
   LayoutOutlined,
+  NotificationOutlined,
   SettingOutlined,
   ShoppingCartOutlined,
   ShoppingOutlined,
@@ -41,6 +42,7 @@ import { DeliveryPage } from './pages/Delivery'
 import { BalancePage } from './pages/Balance'
 import { CouriersPage } from './pages/Couriers'
 import { ShowcasePage } from './pages/Showcase'
+import { StoreAdsPage } from './pages/StoreAds'
 import { OrderAlerts } from './notify'
 
 const TITLE = 'Панель магазина'
@@ -54,6 +56,7 @@ const MENU: Item[] = [
   { key: '/orders', label: 'Онлайн-заказы', icon: <ShoppingCartOutlined />, perm: 'orders.manage' },
   { key: '/couriers', label: 'Курьеры', icon: <CarOutlined />, perm: 'orders.manage' },
   { key: '/showcase', label: 'Витрина приложения', icon: <LayoutOutlined />, perm: 'showcase.manage' },
+  { key: '/brand-ads', label: 'Реклама брендов', icon: <NotificationOutlined />, perm: 'showcase.manage' },
   {
     key: 'sales',
     label: 'Продажи',
@@ -215,6 +218,7 @@ export function StoreRoutes() {
         <Route path="orders" element={<OrdersPage />} />
         <Route path="couriers" element={<CouriersPage />} />
         <Route path="showcase" element={<ShowcasePage />} />
+        <Route path="brand-ads" element={<StoreAdsPage />} />
 
         <Route path="sales/pos" element={<SalesPage />} />
         <Route path="sales/returns" element={<ReturnsPage />} />

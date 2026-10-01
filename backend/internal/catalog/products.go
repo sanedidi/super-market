@@ -328,6 +328,7 @@ type ProductFilter struct {
 	CategoryID string
 	Barcode    string
 	Status     string // только для супер-админа
+	BrandID    string // только для супер-админа (товары бренда для рекламы)
 	Page       httpx.Page
 }
 
@@ -360,9 +361,9 @@ func (s *Service) AdminListProducts(ctx context.Context, f ProductFilter) ([]Pro
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx, `SELECT `+productCols+productFrom+`
-		WHERE ($4 = '' OR p.moderation_status = $4)`+filterWhere+`
+		WHERE ($4 = '' OR p.moderation_status = $4) AND ($7 = '' OR p.brand_id::text = $7)`+filterWhere+`
 		ORDER BY p.created_at DESC, p.id LIMIT $5 OFFSET $6`,
-		strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, f.Status, f.Page.Limit, f.Page.Offset)
+		strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, f.Status, f.Page.Limit, f.Page.Offset, f.BrandID)
 	if err != nil {
 		return nil, err
 	}

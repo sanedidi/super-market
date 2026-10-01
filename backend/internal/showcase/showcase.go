@@ -33,14 +33,18 @@ type Plan struct {
 	Stats       string `json:"stats"`
 	Recommended bool   `json:"recommended"`
 	Sort        int    `json:"sort"`
+	// Рекламных блоков брендов на главной; AdsReducible — сеть может
+	// поставить меньше или выключить рекламу.
+	AdsMax       int  `json:"ads_max"`
+	AdsReducible bool `json:"ads_reducible"`
 }
 
-const planSelect = `SELECT key, name, price_uzs::text, custom, banners, shelves, promos, manual, schedule, per_store, stats, recommended, sort FROM showcase_plans`
+const planSelect = `SELECT key, name, price_uzs::text, custom, banners, shelves, promos, manual, schedule, per_store, stats, recommended, sort, ads_max, ads_reducible FROM showcase_plans`
 
 func scan(r pgx.CollectableRow) (Plan, error) {
 	var p Plan
 	err := r.Scan(&p.Key, &p.Name, &p.PriceUZS, &p.Custom, &p.Banners, &p.Shelves, &p.Promos, &p.Manual, &p.Schedule, &p.PerStore,
-		&p.Stats, &p.Recommended, &p.Sort)
+		&p.Stats, &p.Recommended, &p.Sort, &p.AdsMax, &p.AdsReducible)
 	return p, err
 }
 
@@ -67,17 +71,19 @@ func get(ctx context.Context, q db.Querier, key string) (Plan, error) {
 
 // PlanInput — правка тарифа супер-админом. Лимит -1 — без лимита.
 type PlanInput struct {
-	Name        *string       `json:"name"`
-	PriceUZS    *money.Amount `json:"price_uzs"`
-	Custom      *bool         `json:"custom"`
-	Banners     *int          `json:"banners"`
-	Shelves     *int          `json:"shelves"`
-	Promos      *int          `json:"promos"`
-	Manual      *bool         `json:"manual"`
-	Schedule    *bool         `json:"schedule"`
-	PerStore    *bool         `json:"per_store"`
-	Stats       *string       `json:"stats"`
-	Recommended *bool         `json:"recommended"`
+	Name         *string       `json:"name"`
+	PriceUZS     *money.Amount `json:"price_uzs"`
+	Custom       *bool         `json:"custom"`
+	Banners      *int          `json:"banners"`
+	Shelves      *int          `json:"shelves"`
+	Promos       *int          `json:"promos"`
+	Manual       *bool         `json:"manual"`
+	Schedule     *bool         `json:"schedule"`
+	PerStore     *bool         `json:"per_store"`
+	Stats        *string       `json:"stats"`
+	Recommended  *bool         `json:"recommended"`
+	AdsMax       *int          `json:"ads_max"`
+	AdsReducible *bool         `json:"ads_reducible"`
 }
 
 // SavePlan меняет тариф.
@@ -87,6 +93,9 @@ func SavePlan(ctx context.Context, q db.Querier, key string, in PlanInput) (Plan
 	}
 	if in.Name != nil && strings.TrimSpace(*in.Name) == "" {
 		return Plan{}, apperr.Validation("name: не может быть пустым")
+	}
+	if in.AdsMax != nil && (*in.AdsMax < 0 || *in.AdsMax > 2) {
+		return Plan{}, apperr.Validation("ads_max: от 0 до 2")
 	}
 	if in.Stats != nil && *in.Stats != "none" && *in.Stats != "basic" && *in.Stats != "full" {
 		return Plan{}, apperr.Validation("stats: none, basic или full")
@@ -136,9 +145,11 @@ func SavePlan(ctx context.Context, q db.Querier, key string, in PlanInput) (Plan
 			shelves = CASE WHEN $7 THEN $8 ELSE shelves END,
 			promos = CASE WHEN $9 THEN $10 ELSE promos END,
 			manual = COALESCE($11, manual), schedule = COALESCE($12, schedule), per_store = COALESCE($13, per_store),
-			stats = COALESCE($14, stats), recommended = COALESCE($15, recommended), updated_at = now()
+			stats = COALESCE($14, stats), recommended = COALESCE($15, recommended),
+			ads_max = COALESCE($16, ads_max), ads_reducible = COALESCE($17, ads_reducible), updated_at = now()
 		WHERE key = $1`,
-		key, trimPtr(in.Name), price, in.Custom, bSet, b, sSet, sh, pSet, pr, in.Manual, in.Schedule, in.PerStore, in.Stats, in.Recommended); err != nil {
+		key, trimPtr(in.Name), price, in.Custom, bSet, b, sSet, sh, pSet, pr, in.Manual, in.Schedule, in.PerStore, in.Stats, in.Recommended,
+		in.AdsMax, in.AdsReducible); err != nil {
 		return Plan{}, err
 	}
 	return get(ctx, q, key)

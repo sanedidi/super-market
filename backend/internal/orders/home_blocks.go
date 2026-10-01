@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
+	"github.com/sanedidi/super-market/backend/internal/ads"
 	"github.com/sanedidi/super-market/backend/internal/catalog"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
@@ -69,9 +71,19 @@ type HomeBlock struct {
 	ShowImages  *bool    `json:"show_images,omitempty"`
 	ShowCounts  bool     `json:"show_counts,omitempty"`
 
+	// Реклама бренда: блок собран сервером из кампании (id блока = id
+	// кампании), в приложении — пометка «Реклама» и бренд.
+	Ad *AdInfo `json:"ad,omitempty"`
+
 	// Данные для приложения.
 	Products []CatalogProduct `json:"products,omitempty"`
 	Banners  []catalog.Banner `json:"banners,omitempty"`
+}
+
+// AdInfo — пометка рекламного блока.
+type AdInfo struct {
+	Label string `json:"label"`
+	Brand string `json:"brand"`
 }
 
 // BlockLink — куда ведёт нажатие на промо-полоску.
@@ -248,6 +260,7 @@ type homeCache struct {
 type homeCacheItem struct {
 	home StoreHome
 	at   time.Time
+	ads  int64
 }
 
 const homeCacheTTL = time.Minute
@@ -259,12 +272,13 @@ const homeCacheTTL = time.Minute
 func (s *Service) StoreHome(ctx context.Context, storeID string) (StoreHome, error) {
 	now := s.now()
 	s.homes.mu.Lock()
-	if it, ok := s.homes.items[storeID]; ok && now.Sub(it.at) < homeCacheTTL {
+	if it, ok := s.homes.items[storeID]; ok && now.Sub(it.at) < homeCacheTTL && it.ads == ads.Generation() {
 		s.homes.mu.Unlock()
 		return it.home, nil
 	}
 	s.homes.mu.Unlock()
 
+	gen := ads.Generation()
 	st, err := s.storeForClient(ctx, s.pool, storeID)
 	if err != nil {
 		return StoreHome{}, err
@@ -277,13 +291,16 @@ func (s *Service) StoreHome(ctx context.Context, storeID string) (StoreHome, err
 	if err != nil {
 		return StoreHome{}, err
 	}
+	if filled, err = s.withAds(ctx, storeID, st.NetworkID, filled, now); err != nil {
+		return StoreHome{}, err
+	}
 	out := StoreHome{Version: version, Blocks: filled}
 
 	s.homes.mu.Lock()
 	if s.homes.items == nil {
 		s.homes.items = map[string]homeCacheItem{}
 	}
-	s.homes.items[storeID] = homeCacheItem{home: out, at: now}
+	s.homes.items[storeID] = homeCacheItem{home: out, at: now, ads: gen}
 	s.homes.mu.Unlock()
 	return out, nil
 }
@@ -464,4 +481,84 @@ func (s *Service) forgetHomes() {
 	s.homes.mu.Lock()
 	s.homes.items = nil
 	s.homes.mu.Unlock()
+}
+
+// withAds добавляет рекламу брендов: не больше, чем позволяет тариф сети
+// (и её выбор на «Про»), только кампании с товарами в наличии в этом
+// магазине. «После блоков платформы» — сразу за последним закреплённым
+// блоком (без них — после первого блока), «в конце» — перед каталогом.
+func (s *Service) withAds(ctx context.Context, storeID, networkID string, blocks []HomeBlock, now time.Time) ([]HomeBlock, error) {
+	plan, err := showcase.ForNetwork(ctx, s.pool, networkID)
+	if err != nil {
+		return nil, err
+	}
+	var choice *int
+	if err := s.pool.QueryRow(ctx, `SELECT ads_max FROM networks WHERE id = $1`, networkID).Scan(&choice); err != nil {
+		return nil, err
+	}
+	max := ads.MaxAds(plan.Effective, choice)
+	if max <= 0 {
+		return blocks, nil
+	}
+	spots, err := ads.LiveForStore(ctx, s.pool, networkID, now)
+	if err != nil {
+		return nil, err
+	}
+	afterPlatform, atEnd := []HomeBlock{}, []HomeBlock{}
+	for _, sp := range spots {
+		if len(afterPlatform)+len(atEnd) >= max {
+			break
+		}
+		items, err := s.StoreCatalog(ctx, storeID, CatalogFilter{IDs: sp.ProductIDs}, httpx.Page{Limit: 20})
+		if err != nil {
+			return nil, err
+		}
+		if len(items) == 0 {
+			continue
+		}
+		pos := map[string]int{}
+		for i, id := range sp.ProductIDs {
+			pos[id] = i
+		}
+		sort.SliceStable(items, func(i, j int) bool { return pos[items[i].ID] < pos[items[j].ID] })
+		b := HomeBlock{ID: sp.CampaignID, Ad: &AdInfo{Label: "Реклама", Brand: sp.Brand}}
+		if sp.Format == "banner" {
+			link := items[0].ID
+			b.Type, b.Size = BlockBanners, "big"
+			b.Banners = []catalog.Banner{{ID: sp.CampaignID, Title: sp.Title, Subtitle: sp.Subtitle, ImageURL: sp.ImageURL,
+				Color: "#E11D2A", LinkType: "product", LinkID: &link, IsActive: true, ShowText: sp.Title != "", Owner: "ad", Moderation: "approved"}}
+		} else {
+			b.Type, b.Title, b.Source, b.View, b.Limit, b.Products = BlockShelf, sp.Title, "manual", "row", len(items), items
+		}
+		if sp.Place == "end" {
+			atEnd = append(atEnd, b)
+		} else {
+			afterPlatform = append(afterPlatform, b)
+		}
+	}
+	if len(afterPlatform)+len(atEnd) == 0 {
+		return blocks, nil
+	}
+	at := min(1, len(blocks))
+	for i, b := range blocks {
+		if b.Pinned {
+			at = i + 1
+		}
+	}
+	end := len(blocks)
+	if end > 0 && blocks[end-1].Type == BlockCatalogSections {
+		end--
+	}
+	out := make([]HomeBlock, 0, len(blocks)+len(afterPlatform)+len(atEnd))
+	out = append(out, blocks[:at]...)
+	out = append(out, afterPlatform...)
+	if end >= at {
+		out = append(out, blocks[at:end]...)
+		out = append(out, atEnd...)
+		out = append(out, blocks[end:]...)
+	} else {
+		out = append(out, atEnd...)
+		out = append(out, blocks[at:]...)
+	}
+	return out, nil
 }

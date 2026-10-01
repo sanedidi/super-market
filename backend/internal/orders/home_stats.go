@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/sanedidi/super-market/backend/internal/ads"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
@@ -28,7 +29,9 @@ type HomeEventsInput struct {
 }
 
 // RecordHomeEvents складывает показы и нажатия за сегодня.
-func (s *Service) RecordHomeEvents(ctx context.Context, in HomeEventsInput) error {
+// userID — вошедший покупатель: его показы рекламы идут в оплату (один в
+// день на кампанию).
+func (s *Service) RecordHomeEvents(ctx context.Context, in HomeEventsInput, userID string) error {
 	if !httpx.IsUUID(in.StoreID) {
 		return apperr.NotFound("магазин не найден")
 	}
@@ -63,7 +66,13 @@ func (s *Service) RecordHomeEvents(ctx context.Context, in HomeEventsInput) erro
 	if tag.RowsAffected() == 0 {
 		return apperr.NotFound("магазин не найден")
 	}
-	return nil
+	seen := []string{}
+	for i, id := range ids {
+		if views[i] > 0 {
+			seen = append(seen, id)
+		}
+	}
+	return ads.RecordBillable(ctx, s.pool, in.StoreID, userID, seen)
 }
 
 // BlockStat — строка таблицы «по блокам».
@@ -154,12 +163,14 @@ func (s *Service) homeStats(ctx context.Context, f statsFilter, full bool) (Home
 			SELECT h.block_id, h.day, sum(h.views) AS views, sum(h.clicks) AS clicks
 			FROM home_stats_daily h JOIN st ON st.id = h.store_id
 			WHERE h.day BETWEEN $3::date AND $4::date
+			  AND NOT EXISTS (SELECT 1 FROM ad_campaigns c WHERE c.id = h.block_id)
 			GROUP BY h.block_id, h.day
 		), ord AS (
 			SELECT i.home_block_id AS block_id, (o.created_at AT TIME ZONE 'Asia/Tashkent')::date AS day,
 			       count(DISTINCT o.id) AS orders, sum(i.total) AS revenue
 			FROM orders o JOIN st ON st.id = o.store_id
 			JOIN order_items i ON i.order_id = o.id AND i.home_block_id IS NOT NULL
+			     AND NOT EXISTS (SELECT 1 FROM ad_campaigns c WHERE c.id = i.home_block_id)
 			WHERE o.status NOT IN ('awaiting_payment', 'cancelled', 'expired')
 			  AND (o.created_at AT TIME ZONE 'Asia/Tashkent')::date BETWEEN $3::date AND $4::date
 			GROUP BY 1, 2

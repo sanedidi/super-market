@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/sanedidi/super-market/backend/internal/ads"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/notify"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
@@ -305,13 +306,15 @@ type Invoice struct {
 	// Плата за тариф витрины (входит в amount_uzs).
 	ShowcasePlan *string `json:"showcase_plan"`
 	ShowcaseUZS  string  `json:"showcase_uzs"`
+	// Зачтено из доли сети с рекламы брендов (уже вычтено из amount_uzs).
+	AdShareUZS string `json:"ad_share_uzs"`
 }
 
 const invoiceSelect = `
 	SELECT i.id, i.network_id, n.name, to_char(i.period, 'YYYY-MM'), i.stores_count, i.price_per_store::text,
 	       i.amount_usd::text, i.rate::text, i.amount_uzs::text, i.status, to_char(i.due_date, 'YYYY-MM-DD'),
 	       i.status = 'unpaid' AND i.due_date < ` + todaySQL + `, i.paid_via, i.paid_at, i.note, i.created_at,
-	       i.showcase_plan, i.showcase_uzs::text
+	       i.showcase_plan, i.showcase_uzs::text, i.ad_share_uzs::text
 	FROM subscription_invoices i JOIN networks n ON n.id = i.network_id`
 
 func (s *Service) ListInvoices(ctx context.Context, networkID, status string, page httpx.Page) ([]Invoice, error) {
@@ -355,13 +358,19 @@ func PeriodOf(t time.Time) time.Time {
 // вызов ничего не дублирует. Возвращает число новых счетов.
 func (s *Service) GenerateInvoices(ctx context.Context, now time.Time) (int, error) {
 	period := PeriodOf(now)
+	prev := period.AddDate(0, -1, 0)
+	// Доля сетей с рекламы за прошлый месяц — до счетов: она их уменьшает.
+	if err := ads.ComputeShares(ctx, s.pool, prev); err != nil {
+		return 0, err
+	}
 	rows, err := s.pool.Query(ctx, `
 		INSERT INTO subscription_invoices (network_id, period, stores_count, price_per_store, amount_usd, rate, amount_uzs, due_date,
-		                                   showcase_plan, showcase_uzs)
-		SELECT n.id, $1::date, c.cnt, p.price, p.price * c.cnt, bs.usd_rate, round(p.price * c.cnt * bs.usd_rate, 2) + sc.fee,
-		       $1::date + bs.grace_days, sc.plan, sc.fee
+		                                   showcase_plan, showcase_uzs, ad_share_uzs)
+		SELECT n.id, $1::date, c.cnt, p.price, p.price * c.cnt, bs.usd_rate, x.base - x.ad,
+		       $1::date + bs.grace_days, sc.plan, sc.fee, x.ad
 		FROM networks n
 		CROSS JOIN billing_settings bs
+		CROSS JOIN ad_settings ast
 		CROSS JOIN LATERAL (SELECT `+storesCountSQL+` AS cnt) c
 		CROSS JOIN LATERAL (SELECT `+priceSQL+` AS price) p
 		-- Тариф витрины: платный, если выбран и пробный период уже кончился.
@@ -370,9 +379,14 @@ func (s *Service) GenerateInvoices(ctx context.Context, now time.Time) (int, err
 			            THEN sp.key END AS plan,
 			       CASE WHEN n.showcase_trial_until IS NULL OR n.showcase_trial_until < $1::date THEN sp.price_uzs ELSE 0 END AS fee
 			FROM showcase_plans sp WHERE sp.key = n.showcase_plan) sc
+		-- Доля с рекламы за прошлый месяц уменьшает счёт (не больше суммы счёта).
+		LEFT JOIN network_ad_shares sh ON sh.network_id = n.id AND sh.period = $2::date AND sh.settled_at IS NULL
+		CROSS JOIN LATERAL (SELECT round(p.price * c.cnt * bs.usd_rate, 2) + sc.fee AS base) b0
+		CROSS JOIN LATERAL (SELECT b0.base,
+		       CASE WHEN ast.share_to_subscription THEN LEAST(COALESCE(sh.amount, 0), b0.base) ELSE 0 END AS ad) x
 		WHERE n.status = 'active' AND n.billing_from <= $1::date AND c.cnt > 0 AND (p.price > 0 OR sc.fee > 0)
 		ON CONFLICT (network_id, period) DO NOTHING
-		RETURNING network_id, amount_usd::text, amount_uzs::text, to_char(due_date, 'DD.MM.YYYY')`, period)
+		RETURNING network_id, amount_usd::text, amount_uzs::text, to_char(due_date, 'DD.MM.YYYY')`, period, prev)
 	if err != nil {
 		return 0, err
 	}
@@ -385,12 +399,63 @@ func (s *Service) GenerateInvoices(ctx context.Context, now time.Time) (int, err
 	if err != nil {
 		return 0, err
 	}
+	if err := s.settleAdShares(ctx, period, prev); err != nil {
+		return 0, err
+	}
 	for _, c := range list {
 		s.notify.NetworkOwners(ctx, c.network, identity.PermPayoutsManage, fmt.Sprintf(
-			"Счёт за подписку за %s: %s $ (%s сум). Оплатить до %s. Если на балансе платформы хватает денег, счёт оплатится автоматически.",
+			"Счёт за подписку за %s: %s $ (%s сум к оплате). Оплатить до %s. Если на балансе платформы хватает денег, счёт оплатится автоматически.",
 			period.Format("01.2006"), c.usd, c.uzs, c.due))
 	}
 	return len(list), nil
+}
+
+// settleAdShares закрывает доли сетей с рекламы за прошлый месяц: что
+// зачлось в счёт этого месяца — applied, остаток — на баланс сети. Счёт,
+// который доля покрыла целиком, сразу оплачен.
+func (s *Service) settleAdShares(ctx context.Context, period, prev time.Time) error {
+	return db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT sh.network_id, sh.amount::text, i.id, COALESCE(i.ad_share_uzs, 0)::text
+			FROM network_ad_shares sh
+			LEFT JOIN subscription_invoices i ON i.network_id = sh.network_id AND i.period = $1::date
+			WHERE sh.period = $2::date AND sh.settled_at IS NULL FOR UPDATE OF sh`, period, prev)
+		if err != nil {
+			return err
+		}
+		type share struct {
+			network, amount, applied string
+			invoice                  *string
+		}
+		list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (share, error) {
+			var x share
+			err := r.Scan(&x.network, &x.amount, &x.invoice, &x.applied)
+			return x, err
+		})
+		if err != nil {
+			return err
+		}
+		for _, x := range list {
+			credited := money.D(x.amount).Sub(money.D(x.applied))
+			if credited.Sign() > 0 {
+				if _, err := tx.Exec(ctx, `INSERT INTO balance_entries (network_id, kind, status, amount, note)
+					VALUES ($1, 'ad_share', 'available', $2::numeric, $3)`,
+					x.network, credited.Money(), "Доля с рекламы брендов за "+prev.Format("01.2006")); err != nil {
+					return err
+				}
+			}
+			if _, err := tx.Exec(ctx, `UPDATE network_ad_shares SET applied = $3::numeric, credited = $4::numeric, invoice_id = $5,
+				settled_at = now() WHERE network_id = $1 AND period = $2::date`,
+				x.network, prev, x.applied, credited.Money(), x.invoice); err != nil {
+				return err
+			}
+		}
+		// Счета, которые доля покрыла целиком.
+		_, err = tx.Exec(ctx, `UPDATE subscription_invoices SET status = 'paid', paid_via = 'balance', paid_at = now(),
+			note = 'Оплачено долей с рекламы брендов'
+			WHERE period = $1::date AND status = 'unpaid' AND amount_uzs = 0 AND ad_share_uzs > 0`, period)
+		return err
+	})
 }
 
 // AutoCharge оплачивает неоплаченные счета с баланса сети, если денег хватает

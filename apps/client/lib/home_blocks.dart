@@ -99,10 +99,23 @@ Widget? _shelf(BuildContext context, Store store, HomeBlock b) {
   final title = '${b['title'] ?? ''}';
   final source = '${b['source'] ?? ''}';
   final canAll = b['show_all'] != false && source != 'manual';
-  final header = Padding(
-    padding: const EdgeInsets.only(top: 24, bottom: 12),
-    child: SectionHeader(title: title, action: canAll ? 'Все' : null, onAction: canAll ? () => _openShelf(context, store, b) : null),
-  );
+  final ad = b['ad'] as Map<String, dynamic>?;
+  final header = ad != null
+      ? Padding(
+          padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Flexible(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.h2.copyWith(fontSize: 23, color: AppColors.dark))),
+              const SizedBox(width: 8),
+              AdLabel(text: '${ad['label'] ?? 'Реклама'}'),
+            ]),
+            if ('${ad['brand'] ?? ''}'.isNotEmpty) Text('${ad['brand']}', style: AppText.caption),
+          ]),
+        )
+      : Padding(
+          padding: const EdgeInsets.only(top: 24, bottom: 12),
+          child: SectionHeader(title: title, action: canAll ? 'Все' : null, onAction: canAll ? () => _openShelf(context, store, b) : null),
+        );
   final ref = storeRef(store);
   final view = '${b['view'] ?? 'row'}';
   if (view == 'row') {
@@ -311,6 +324,12 @@ class _HomeBannersState extends State<HomeBanners> {
                     onTap: () => open(b),
                     child: Stack(fit: StackFit.expand, children: [
                       _image(b),
+                      if (widget.block['ad'] is Map)
+                        Positioned(
+                          left: 12,
+                          top: 12,
+                          child: AdLabel(text: '${(widget.block['ad'] as Map)['label'] ?? 'Реклама'}', onDark: true),
+                        ),
                       if (hasImage && showText)
                         const DecoratedBox(
                           decoration: BoxDecoration(
@@ -352,6 +371,23 @@ class _HomeBannersState extends State<HomeBanners> {
       ]),
     );
   }
+}
+
+/// Пометка «Реклама» у блоков брендов (по закону — в самом показе).
+class AdLabel extends StatelessWidget {
+  const AdLabel({super.key, required this.text, this.onDark = false});
+  final String text;
+  final bool onDark;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: onDark ? const Color(0x99000000) : AppColors.soft,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(text, style: AppText.caption.copyWith(fontSize: 11, fontWeight: FontWeight.w600, color: onDark ? AppColors.white : AppColors.text2)),
+      );
 }
 
 /// «Узкая лента»: текст с иконкой на цветной полосе и переход по ссылке.

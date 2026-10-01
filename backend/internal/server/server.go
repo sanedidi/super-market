@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sanedidi/super-market/backend/internal/admin"
+	"github.com/sanedidi/super-market/backend/internal/ads"
 	"github.com/sanedidi/super-market/backend/internal/billing"
 	"github.com/sanedidi/super-market/backend/internal/catalog"
 	"github.com/sanedidi/super-market/backend/internal/delivery"
@@ -87,6 +88,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		sales.NewModule(sales.NewService(pool), auth, log),
 		orders.NewModule(ord, dlv, pay, auth, log),
 		billing.NewModule(bill, auth, log),
+		ads.NewModule(ads.NewService(pool), auth, log),
 		reports.NewModule(reports.NewService(pool), auth, log),
 		profile.NewModule(profile.NewService(pool, profile.Links{
 			Support: supportURL(cfg), Privacy: cfg.PrivacyURL, Offer: cfg.OfferURL, Bot: botURL(cfg),

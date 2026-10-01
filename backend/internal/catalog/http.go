@@ -118,6 +118,7 @@ func filterFrom(r *http.Request) ProductFilter {
 		CategoryID: q.Get("category_id"),
 		Barcode:    q.Get("barcode"),
 		Status:     q.Get("status"),
+		BrandID:    q.Get("brand_id"),
 		Page:       httpx.PageFrom(r),
 	}
 }

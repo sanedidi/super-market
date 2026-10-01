@@ -16,6 +16,8 @@ interface Plan {
   per_store: boolean
   stats: string
   recommended: boolean
+  ads_max: number
+  ads_reducible: boolean
 }
 
 const LIMITS = [
@@ -44,6 +46,8 @@ function PlanCard({ plan }: { plan: Plan }) {
         per_store: v.per_store,
         stats: v.stats,
         recommended: v.recommended,
+        ads_max: v.ads_max,
+        ads_reducible: v.ads_reducible,
         ...Object.fromEntries(LIMITS.map((l) => [l.name, v[`${l.name}_unlimited`] ? -1 : (v[l.name] ?? 0)])),
       }),
     { success: `Тариф «${plan.name}» сохранён` },
@@ -94,6 +98,16 @@ function PlanCard({ plan }: { plan: Plan }) {
               { value: 'full', label: 'Полная' },
             ]}
           />
+        </Form.Item>
+        <Form.Item label="Реклама брендов на главной">
+          <Space>
+            <Form.Item name="ads_max" noStyle>
+              <InputNumber min={0} max={2} precision={0} addonAfter="блоков" style={{ width: 150 }} />
+            </Form.Item>
+            <Form.Item name="ads_reducible" valuePropName="checked" noStyle>
+              <Checkbox>сеть может меньше или выключить</Checkbox>
+            </Form.Item>
+          </Space>
         </Form.Item>
         <Form.Item name="recommended" label="Метка «Рекомендуем»" valuePropName="checked">
           <Switch />

@@ -40,6 +40,19 @@ func (a *Authenticator) Require(app string) func(http.Handler) http.Handler {
 	}
 }
 
+// Optional узнаёт пользователя приложения app, если токен есть и годен;
+// без токена или с негодным запрос идёт дальше анонимно.
+func (a *Authenticator) Optional(app string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if p, err := a.authenticate(r, app); err == nil {
+				r = r.WithContext(WithPrincipal(r.Context(), p))
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // Allow пускает сотрудника, у которого есть хотя бы одно из прав perms.
 // Ставится на маршруты чтения после Require(AppStore): права на запись
 // проверяют сервисы, а это — чтобы список или карточку раздела не видел

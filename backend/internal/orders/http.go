@@ -44,7 +44,7 @@ func (m *Module) Routes(r chi.Router) {
 	r.Get("/client/stores/{id}/products/{pid}/related", m.related)
 	r.Get("/client/home", m.home)
 	r.Get("/client/stores/{id}/home", m.storeHome)
-	r.Post("/client/home/events", m.homeEvents)
+	r.With(m.auth.Optional(identity.AppClient)).Post("/client/home/events", m.homeEvents)
 	r.Get("/client/stores/{id}/slots", m.slots)
 	r.Group(func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppClient))
@@ -707,7 +707,11 @@ func (m *Module) homeEvents(w http.ResponseWriter, r *http.Request) {
 		httpx.Fail(w, r, m.log, err)
 		return
 	}
-	if err := m.svc.RecordHomeEvents(r.Context(), in); err != nil {
+	userID := ""
+	if p := pr(r); p != nil {
+		userID = p.UserID
+	}
+	if err := m.svc.RecordHomeEvents(r.Context(), in, userID); err != nil {
 		httpx.Fail(w, r, m.log, err)
 		return
 	}
