@@ -50,10 +50,41 @@ class _HomeScreenState extends State<HomeScreen> {
     )..start();
   }
 
+  final _scroll = ScrollController();
+
+  /// Блок, к которому уже прокручиваем (переход из уведомления).
+  String? _scrollingTo;
+
   @override
   void dispose() {
     _tracker?.dispose();
+    _scroll.dispose();
     super.dispose();
+  }
+
+  /// Прокрутить к блоку: блоки ниже экрана ещё не построены, поэтому
+  /// листаем вниз, пока блок не появится.
+  Future<void> _scrollToBlock(String id) async {
+    try {
+      for (var i = 0; i < 40 && mounted; i++) {
+        final ctx = homeBlockKeys[id]?.currentContext;
+        if (ctx != null) {
+          await Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 400), curve: Curves.easeOutCubic, alignment: 0.15);
+          return;
+        }
+        if (!_scroll.hasClients) return;
+        final p = _scroll.position;
+        if (p.pixels >= p.maxScrollExtent) return;
+        _scroll.jumpTo((p.pixels + p.viewportDimension * 0.8).clamp(0, p.maxScrollExtent).toDouble());
+        await WidgetsBinding.instance.endOfFrame;
+      }
+    } finally {
+      if (mounted) {
+        final state = context.read<AppState>();
+        if (state.pendingBlock == id) state.pendingBlock = null;
+      }
+      _scrollingTo = null;
+    }
   }
 
   List<HomeBlock>? _blocksOf(Store s) {
@@ -101,6 +132,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final state = context.watch<AppState>();
     final store = state.catalogStore;
     final top = MediaQuery.paddingOf(context).top;
+    final want = state.pendingBlock;
+    if (want != null && want != _scrollingTo && store != null && _blocks.peek(store.id) != null) {
+      _scrollingTo = want;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBlock(want));
+    }
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
@@ -110,7 +146,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onRefresh: () => _refresh(state),
           child: HomeTrackerScope(
             tracker: store == null ? null : _trackerFor(store),
-            child: CustomScrollView(slivers: [
+            child: CustomScrollView(controller: _scroll, slivers: [
             SliverPersistentHeader(pinned: true, delegate: _ExpressHeader(top: top, address: state.address, store: store, many: state.stores.length > 1)),
             if (!state.addressesLoaded)
               const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator()))

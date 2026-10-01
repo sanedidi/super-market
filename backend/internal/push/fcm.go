@@ -35,6 +35,24 @@ var ErrUnregistered = errors.New("fcm: токен устройства неде�
 // ErrPermanent — повтор не поможет (например, неверный запрос).
 var ErrPermanent = errors.New("fcm: сообщение отклонено")
 
+// ErrAPNsAuth — Firebase не может отправить на iPhone: не загружен APNs-ключ.
+var ErrAPNsAuth = fmt.Errorf("%w: APNs-ключ не настроен в Firebase", ErrPermanent)
+
+// Reason — причина недоставки по-русски для журнала и админки.
+func Reason(err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, ErrUnregistered):
+		return "Токен устарел — устройство удалено"
+	case errors.Is(err, ErrAPNsAuth):
+		return "APNs-ключ не настроен в Firebase"
+	case errors.Is(err, ErrPermanent):
+		return "Firebase отклонил сообщение: " + strings.TrimPrefix(err.Error(), ErrPermanent.Error()+": ")
+	}
+	return "Сбой Firebase: " + err.Error()
+}
+
 // FCM — отправка через Firebase Cloud Messaging HTTP v1 с сервисным аккаунтом.
 type FCM struct {
 	projectID string
@@ -203,14 +221,17 @@ func (f *FCM) Send(ctx context.Context, deviceToken string, m Message) error {
 		}
 	}
 	switch {
-	case res.StatusCode == http.StatusNotFound || code == "UNREGISTERED" || code == "NOT_FOUND":
+	case res.StatusCode == http.StatusNotFound || code == "UNREGISTERED" || code == "NOT_FOUND" || code == "SENDER_ID_MISMATCH":
 		return ErrUnregistered
+	case code == "THIRD_PARTY_AUTH_ERROR":
+		// Нет или неверный APNs-ключ (iOS) в настройках Firebase.
+		return fmt.Errorf("%w: %s", ErrAPNsAuth, e.Error.Message)
 	case res.StatusCode == http.StatusUnauthorized:
 		f.mu.Lock()
 		f.access = ""
 		f.mu.Unlock()
 		return fmt.Errorf("FCM: доступ отклонён: %s", e.Error.Message)
-	case res.StatusCode == http.StatusBadRequest || res.StatusCode == http.StatusForbidden || code == "SENDER_ID_MISMATCH":
+	case res.StatusCode == http.StatusBadRequest || res.StatusCode == http.StatusForbidden:
 		return fmt.Errorf("%w: %s %s", ErrPermanent, code, e.Error.Message)
 	}
 	return fmt.Errorf("FCM: статус %d: %s", res.StatusCode, strings.TrimSpace(e.Error.Message))

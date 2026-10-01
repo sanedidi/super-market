@@ -66,6 +66,9 @@ class HomeBlocksCache {
   static const _known = {'shelf', 'banners', 'promo', 'category_icons', 'catalog_sections'};
 }
 
+/// Ключи блоков главной — чтобы прокрутить к блоку из уведомления.
+final homeBlockKeys = <String, GlobalKey>{};
+
 /// Слайверы главной по блокам. Каждый блок считает показы и нажатия
 /// (HomeTracker) и отдаёт свой id товарам — для «заказов с главной».
 List<Widget> homeBlockSlivers(BuildContext context, Store store, List<HomeBlock> blocks) {
@@ -85,7 +88,10 @@ List<Widget> homeBlockSlivers(BuildContext context, Store store, List<HomeBlock>
       _ => null,
     };
     if (child == null) continue;
-    out.add(SliverToBoxAdapter(child: TrackedBlock(key: ValueKey(b['id']), blockId: '${b['id']}', child: child)));
+    final id = '${b['id']}';
+    out.add(SliverToBoxAdapter(
+      child: TrackedBlock(key: ValueKey(id), blockId: id, child: KeyedSubtree(key: homeBlockKeys.putIfAbsent(id, GlobalKey.new), child: child)),
+    ));
   }
   return out;
 }

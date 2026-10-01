@@ -341,8 +341,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             const Padding(padding: EdgeInsets.fromLTRB(20, 0, 20, 8), child: Text('Уведомления', style: AppText.h3)),
             row('orders', 'Статус заказа', 'Оплачен, собран, в пути, доставлен'),
-            row('promos', 'Акции и скидки', 'Не чаще раза в неделю'),
-            row('telegram', 'Дублировать в Telegram', 'Если push не дошёл — пришлём в бот'),
+            row('promos', 'Акции и скидки', 'Скидки, новые магазины и предложения'),
             const SizedBox(height: 12),
           ]);
         }),

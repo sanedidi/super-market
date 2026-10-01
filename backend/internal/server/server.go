@@ -81,6 +81,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 	bill := billing.NewService(pool, notify.New(pool, tg, log), log)
 
 	salesSvc := sales.NewService(pool)
+	fcm := PushSender(cfg, log)
 	h := httpx.NewRouter(log, pool,
 		identity.NewModule(idSvc, auth, log),
 		tenant.NewModule(tenant.NewService(pool), auth, log),
@@ -95,9 +96,10 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		reports.NewModule(reports.NewService(pool), auth, log),
 		profile.NewModule(profile.NewService(pool, profile.Links{
 			Support: supportURL(cfg), Privacy: cfg.PrivacyURL, Offer: cfg.OfferURL, Bot: botURL(cfg),
-		}, pushConfigured(cfg, log)), auth, log),
+		}, fcm != nil), auth, log),
 		family.NewModule(family.NewService(pool, ord, dlv, cfg.TelegramBotUsername), auth, log),
 		admin.NewModule(admin.NewService(pool, cfg.AcceptTimeout), auth, log),
+		push.NewModule(push.NewService(pool, fcm), auth, log),
 		media.NewModule(MediaService(cfg), auth, log),
 	)
 	return &App{Handler: h, Orders: ord, Payments: pay, Billing: bill}, nil
@@ -118,18 +120,29 @@ func MediaService(cfg config.Config) *media.Service {
 	return media.NewService(store, cfg.MediaBaseURL)
 }
 
-// pushConfigured — ключ Firebase задан и читается (отправляет push воркер).
-func pushConfigured(cfg config.Config, log *slog.Logger) bool {
-	creds, err := push.LoadCredentials(cfg.FCMCredentials)
-	if err == nil && creds != nil {
-		_, err = push.NewFCM(creds)
+// PushSender — отправитель FCM, если ключ Firebase задан и читается
+// (иначе nil: push выключен). Тесты подменяют его через PushOverride.
+func PushSender(cfg config.Config, log *slog.Logger) push.Sender {
+	if PushOverride != nil {
+		return PushOverride
 	}
+	creds, err := push.LoadCredentials(cfg.FCMCredentials)
+	if err != nil || creds == nil {
+		if err != nil {
+			log.Error("FCM_CREDENTIALS не читается", "err", err)
+		}
+		return nil
+	}
+	f, err := push.NewFCM(creds)
 	if err != nil {
 		log.Error("FCM_CREDENTIALS не читается", "err", err)
-		return false
+		return nil
 	}
-	return creds != nil
+	return f
 }
+
+// PushOverride — подмена FCM в тестах.
+var PushOverride push.Sender
 
 // botURL — бот, который присылает коды входа.
 func botURL(cfg config.Config) string {

@@ -2,7 +2,7 @@
 //
 // После входа спрашиваем разрешение, отправляем токен устройства на сервер
 // (POST /client/devices) и обновляем его при смене. Нажатие на уведомление
-// о заказе открывает экран заказа.
+// открывает нужный экран (links.dart): заказ, магазин, товар, раздел…
 import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
@@ -12,8 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:sm_core/sm_core.dart';
 
 import 'firebase_options.dart';
-import 'screens/family_request_screen.dart';
-import 'screens/order_screen.dart';
+import 'links.dart';
 
 /// Навигатор приложения — чтобы открыть заказ из уведомления.
 final navigatorKey = GlobalKey<NavigatorState>();
@@ -87,7 +86,7 @@ class Push {
         if (ctx == null || n == null) return;
         ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
           content: Text([n.title, n.body].whereType<String>().join('\n')),
-          action: m.data['order_id'] == null && m.data['request_id'] == null
+          action: m.data['type'] == null
               ? null
               : SnackBarAction(label: 'Открыть', onPressed: () => _open(m)),
         ));
@@ -97,15 +96,5 @@ class Push {
     }
   }
 
-  static void _open(RemoteMessage m) {
-    final nav = navigatorKey.currentState;
-    switch (m.data['type']) {
-      case 'order':
-        final id = m.data['order_id'];
-        if (id is String) nav?.push(MaterialPageRoute(builder: (_) => OrderScreen(id: id)));
-      case 'family_request':
-        final id = m.data['request_id'];
-        if (id is String) nav?.push(MaterialPageRoute(builder: (_) => FamilyRequestScreen(id: id)));
-    }
-  }
+  static void _open(RemoteMessage m) => openNotification(m.data);
 }

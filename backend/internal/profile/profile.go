@@ -53,9 +53,8 @@ func (s *Service) Config() AppConfig {
 }
 
 type Notifications struct {
-	Orders   bool `json:"orders"`
-	Promos   bool `json:"promos"`
-	Telegram bool `json:"telegram"`
+	Orders bool `json:"orders"`
+	Promos bool `json:"promos"`
 }
 
 type Profile struct {
@@ -79,12 +78,12 @@ type Profile struct {
 func (s *Service) Get(ctx context.Context, userID string) (Profile, error) {
 	p := Profile{SupportURL: s.links.Support, PrivacyURL: s.links.Privacy, OfferURL: s.links.Offer}
 	err := s.pool.QueryRow(ctx, `
-		SELECT u.phone, u.full_name, c.first_name, c.last_name, c.terms_accepted_at, c.language, c.city, to_char(c.birth_date, 'YYYY-MM-DD'), c.gender, c.notify_orders, c.notify_promos, c.notify_telegram,
+		SELECT u.phone, u.full_name, c.first_name, c.last_name, c.terms_accepted_at, c.language, c.city, to_char(c.birth_date, 'YYYY-MM-DD'), c.gender, c.notify_orders, c.notify_promos,
 		       EXISTS (SELECT 1 FROM telegram_links tl WHERE tl.phone = u.phone)
 		FROM users u JOIN customers c ON c.user_id = u.id
 		WHERE u.id = $1 AND c.deleted_at IS NULL`, userID).Scan(
 		&p.Phone, &p.FullName, &p.FirstName, &p.LastName, &p.TermsAcceptedAt, &p.Language, &p.City, &p.BirthDate, &p.Gender,
-		&p.Notifications.Orders, &p.Notifications.Promos, &p.Notifications.Telegram, &p.TelegramLinked)
+		&p.Notifications.Orders, &p.Notifications.Promos, &p.TelegramLinked)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, apperr.NotFound("профиль не найден")
 	}
@@ -104,9 +103,8 @@ type UpdateInput struct {
 	BirthDate     *string `json:"birth_date"`
 	Gender        *string `json:"gender"`
 	Notifications *struct {
-		Orders   *bool `json:"orders"`
-		Promos   *bool `json:"promos"`
-		Telegram *bool `json:"telegram"`
+		Orders *bool `json:"orders"`
+		Promos *bool `json:"promos"`
 	} `json:"notifications"`
 }
 
@@ -158,9 +156,9 @@ func (s *Service) Update(ctx context.Context, userID string, in UpdateInput) (Pr
 	if in.Gender != nil && *in.Gender != "" && *in.Gender != "male" && *in.Gender != "female" {
 		return Profile{}, apperr.Validation("gender: male, female или пусто")
 	}
-	var orders, promos, tg *bool
+	var orders, promos *bool
 	if n := in.Notifications; n != nil {
-		orders, promos, tg = n.Orders, n.Promos, n.Telegram
+		orders, promos = n.Orders, n.Promos
 	}
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		if first != nil || last != nil {
@@ -184,10 +182,9 @@ func (s *Service) Update(ctx context.Context, userID string, in UpdateInput) (Pr
 		_, err := tx.Exec(ctx, `
 			UPDATE customers SET language = COALESCE($2, language), city = COALESCE($3, city),
 			       notify_orders = COALESCE($4, notify_orders), notify_promos = COALESCE($5, notify_promos),
-			       notify_telegram = COALESCE($6, notify_telegram),
-			       birth_date = CASE WHEN $7 THEN $8::date ELSE birth_date END,
-			       gender = COALESCE($9, gender)
-			WHERE user_id = $1`, userID, in.Language, city, orders, promos, tg, in.BirthDate != nil, birth, in.Gender)
+			       birth_date = CASE WHEN $6 THEN $7::date ELSE birth_date END,
+			       gender = COALESCE($8, gender)
+			WHERE user_id = $1`, userID, in.Language, city, orders, promos, in.BirthDate != nil, birth, in.Gender)
 		if err != nil {
 			return err
 		}
@@ -319,7 +316,7 @@ func (s *Service) Delete(ctx context.Context, userID string) error {
 			`UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND app = 'client' AND revoked_at IS NULL`,
 			`UPDATE customers SET deleted_at = now(), city = '', language = 'ru',
 			        first_name = '', last_name = '', birth_date = NULL, gender = '', terms_accepted_at = NULL,
-			        notify_orders = true, notify_promos = true, notify_telegram = true WHERE user_id = $1`,
+			        notify_orders = true, notify_promos = true WHERE user_id = $1`,
 			`UPDATE orders SET customer_phone = '', entrance = '', floor = '', apartment = '', address_comment = '',
 			        comment = '', address = 'Адрес удалён',
 			        location = ST_SetSRID(ST_MakePoint(round(ST_X(location::geometry)::numeric, 2)::float8,

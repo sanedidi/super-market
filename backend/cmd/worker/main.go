@@ -76,26 +76,14 @@ func run() error {
 
 	// Push покупателям: очередь отправляется каждые 3 секунды, отдельно от
 	// минутных задач, чтобы статус заказа приходил сразу.
-	var fcm push.Sender
-	if creds, err := push.LoadCredentials(cfg.FCMCredentials); err != nil {
-		return err
-	} else if creds != nil {
-		f, err := push.NewFCM(creds)
-		if err != nil {
-			return err
-		}
-		fcm = f
-	} else {
-		log.Warn("FCM_CREDENTIALS не задан: push выключен, уведомления уходят в Telegram")
-	}
-	var tgPush push.TelegramSender
-	if sender != nil {
-		tgPush = sender
+	fcm := server.PushSender(cfg, log)
+	if fcm == nil {
+		log.Warn("FCM_CREDENTIALS не задан: push выключен, уведомления не доставляются")
 	}
 	pushDone := make(chan struct{})
 	go func() {
 		defer close(pushDone)
-		push.NewDispatcher(pool, fcm, tgPush, log).Run(ctx, 3*time.Second)
+		push.NewDispatcher(pool, fcm, log).Run(ctx, 3*time.Second)
 	}()
 	defer func() { <-pushDone }()
 

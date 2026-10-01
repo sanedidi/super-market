@@ -72,7 +72,7 @@ func (m *Module) listNotifications(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Notification], error) {
 		items, err := m.svc.ListNotifications(r.Context(), NotificationFilter{
-			Status: q.Get("status"), Query: q.Get("q"), Page: httpx.PageFrom(r),
+			Status: q.Get("status"), Kind: q.Get("kind"), Query: q.Get("q"), Page: httpx.PageFrom(r),
 		})
 		return httpx.List[Notification]{Items: items}, err
 	})

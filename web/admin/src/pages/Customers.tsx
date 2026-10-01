@@ -143,7 +143,7 @@ function CustomerDrawer({ id, onClose }: { id: string | null; onClose: () => voi
           </Descriptions>
           <Space wrap>
             <Link to={`/orders?q=${encodeURIComponent(c.phone.replace(/\D/g, ''))}`}>Все заказы покупателя</Link>
-            <Link to={`/notifications?q=${encodeURIComponent(c.phone.replace(/\D/g, ''))}`}>Уведомления</Link>
+            <Link to={`/notifications?tab=log&q=${encodeURIComponent(c.phone.replace(/\D/g, ''))}`}>Уведомления</Link>
           </Space>
           <div>
             <Typography.Title level={5}>Адреса</Typography.Title>

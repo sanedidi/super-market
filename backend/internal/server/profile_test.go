@@ -160,21 +160,19 @@ func TestProfileAndPush(t *testing.T) {
 
 	// Отправка: push на устройство.
 	fcm := &fakeFCM{}
-	d := push.NewDispatcher(pool, fcm, tg, quietLog())
+	d := push.NewDispatcher(pool, fcm, quietLog())
 	if n, err := d.Tick(ctx); err != nil || n != 2 {
 		t.Fatalf("tick = %d, %v", n, err)
 	}
 	if len(fcm.sent) != 2 || fcm.sent[0] != devToken+"|Buyurtma №1 to‘landi|"+orderID {
 		t.Fatalf("fcm = %v", fcm.sent)
 	}
-	if s := sqlStr(t, pool, `SELECT string_agg(status || ':' || channel, ',' ORDER BY id) FROM notifications_outbox`); s != "sent:push,sent:push" {
+	if s := sqlStr(t, pool, `SELECT string_agg(status || ':' || channel || ':' || devices, ',' ORDER BY id) FROM notifications_outbox`); s != "sent:push:iPhone,sent:push:iPhone" {
 		t.Fatalf("outbox after tick = %s", s)
 	}
 
-	// Токен протух — устройство удаляется, уведомление уходит в Telegram.
-	if _, err := pool.Exec(ctx, `INSERT INTO telegram_links (phone, chat_id, tg_user_id) VALUES ($1, 5050, 5050)`, phone); err != nil {
-		t.Fatal(err)
-	}
+	// Токен протух — устройство удаляется, уведомление не доставлено (в
+	// Telegram больше не дублируется), причина видна в журнале.
 	a.expect(a.do("POST", "/store/orders/"+orderID+"/start-picking", tok, nil), 200, "picking") // без уведомления
 	a.expect(a.do("POST", "/store/orders/"+orderID+"/cancel", tok, map[string]any{"reason": "Нет курьера"}), 200, "cancel")
 	fcm.err = push.ErrUnregistered
@@ -184,14 +182,11 @@ func TestProfileAndPush(t *testing.T) {
 	if n := sqlStr(t, pool, `SELECT count(*)::text FROM devices`); n != "0" {
 		t.Fatal("unregistered device kept")
 	}
-	if last := tg.last(); last.chatID != 5050 || !strings.Contains(last.text, "bekor qilindi") {
-		t.Fatalf("telegram = %v", last)
+	if s := sqlStr(t, pool, `SELECT status || ':' || last_error FROM notifications_outbox ORDER BY id DESC LIMIT 1`); s != "skipped:Токен устарел — устройство удалено" {
+		t.Fatalf("unregistered = %s", s)
 	}
 
-	// Сбой FCM без Telegram — повтор позже.
-	if _, err := pool.Exec(ctx, `DELETE FROM telegram_links WHERE phone = $1`, phone); err != nil {
-		t.Fatal(err)
-	}
+	// Сбой FCM — повтор позже.
 	a.expect(a.do("POST", "/client/devices", client, map[string]any{"token": devToken, "platform": "android"}), 204, "device 2")
 	if _, err := pool.Exec(ctx, `INSERT INTO notifications_outbox (user_id, kind, title, body)
 		SELECT customer_id, 'test', 't', 'b' FROM orders WHERE id = $1`, orderID); err != nil {

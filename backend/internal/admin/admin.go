@@ -245,6 +245,7 @@ type Notification struct {
 	Channel   string     `json:"channel"`
 	Attempts  int        `json:"attempts"`
 	LastError string     `json:"last_error"`
+	Devices   string     `json:"devices"`
 	SendAfter time.Time  `json:"send_after"`
 	CreatedAt time.Time  `json:"created_at"`
 	SentAt    *time.Time `json:"sent_at"`
@@ -252,15 +253,17 @@ type Notification struct {
 
 const notificationSelect = `
 	SELECT n.id, n.user_id, u.phone, n.kind, n.title, n.body, n.status, n.channel, n.attempts, n.last_error,
-	       n.send_after, n.created_at, n.sent_at
+	       n.devices, n.send_after, n.created_at, n.sent_at
 	FROM notifications_outbox n JOIN users u ON u.id = n.user_id`
 
 // NotificationFilter — status: pending, sent, skipped, failed; q — телефон
 // покупателя (цифры) или текст заголовка.
 type NotificationFilter struct {
 	Status string
-	Query  string
-	Page   httpx.Page
+	// Kind: order, family, campaign, test.
+	Kind  string
+	Query string
+	Page  httpx.Page
 }
 
 func (s *Service) ListNotifications(ctx context.Context, f NotificationFilter) ([]Notification, error) {
@@ -268,6 +271,11 @@ func (s *Service) ListNotifications(ctx context.Context, f NotificationFilter) (
 	case "", "pending", "sent", "skipped", "failed":
 	default:
 		return nil, apperr.Validation("status: pending, sent, skipped или failed")
+	}
+	switch f.Kind {
+	case "", "order", "family", "campaign", "test":
+	default:
+		return nil, apperr.Validation("kind: order, family, campaign или test")
 	}
 	q := strings.TrimSpace(f.Query)
 	digits := onlyDigits(q)
@@ -277,7 +285,8 @@ func (s *Service) ListNotifications(ctx context.Context, f NotificationFilter) (
 	rows, err := s.pool.Query(ctx, notificationSelect+`
 		WHERE ($1 = '' OR n.status = $1)
 		  AND ($2 = '' OR ($3 <> '' AND u.phone LIKE '%' || $3 || '%') OR n.title ILIKE '%' || $2 || '%')
-		ORDER BY n.created_at DESC, n.id DESC LIMIT $4 OFFSET $5`, f.Status, q, digits, f.Page.Limit, f.Page.Offset)
+		  AND ($6 = '' OR ($6 = 'order' AND n.kind LIKE 'order%') OR ($6 = 'family' AND n.kind LIKE 'family%') OR n.kind = $6)
+		ORDER BY n.created_at DESC, n.id DESC LIMIT $4 OFFSET $5`, f.Status, q, digits, f.Page.Limit, f.Page.Offset, f.Kind)
 	if err != nil {
 		return nil, err
 	}

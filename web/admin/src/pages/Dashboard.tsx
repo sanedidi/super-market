@@ -78,7 +78,7 @@ export function Dashboard() {
         <Tile title="Заявки на вывод" value={s?.payouts_requested ?? 0} to="/payouts?status=requested" danger loading={loading} />
         <Tile title="Товары на модерации" value={s?.products_pending ?? 0} to="/moderation" loading={loading} />
         <Tile title="Сети с долгом по подписке" value={s?.overdue_networks ?? 0} to="/billing/networks?overdue=true" danger loading={loading} />
-        <Tile title="Не доставленные уведомления" value={s?.failed_notifications ?? 0} to="/notifications?status=failed" danger loading={loading} />
+        <Tile title="Не доставленные уведомления" value={s?.failed_notifications ?? 0} to="/notifications?tab=log&status=failed" danger loading={loading} />
         <Tile title="Заказов оплачено сегодня" value={s?.today_orders ?? 0} to={`/orders?from=${today}&to=${tomorrow}`} loading={loading} />
         <Tile title="Оборот за сегодня" value={s ? money(s.today_gmv) : 0} suffix="сум" loading={loading} />
       </Row>

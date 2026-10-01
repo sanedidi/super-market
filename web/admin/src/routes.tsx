@@ -20,7 +20,7 @@ import { ShowcasePlans } from './pages/ShowcasePlans'
 import { Orders, Payments } from './pages/Orders'
 import { Tariffs, BillingSettings, BillingNetworks, Invoices, Payouts } from './pages/Billing'
 import { Customers } from './pages/Customers'
-import { Notifications } from './pages/Notifications'
+import { Notifications, PushCampaign, PushNew } from './pages/Push'
 
 const menu: MenuItem[] = [
   { key: '/', icon: <DashboardOutlined />, label: 'Главная' },
@@ -91,6 +91,8 @@ export function AdminRoutes() {
         <Route path="payouts" element={<Payouts />} />
         <Route path="customers" element={<Customers />} />
         <Route path="notifications" element={<Notifications />} />
+        <Route path="notifications/new" element={<PushNew />} />
+        <Route path="notifications/:id" element={<PushCampaign />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

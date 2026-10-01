@@ -32,7 +32,7 @@ final _profile = {
   'gender': 'male',
   'language': 'ru',
   'city': 'Ташкент',
-  'notifications': {'orders': true, 'promos': false, 'telegram': true},
+  'notifications': {'orders': true, 'promos': false},
   'support_url': 'https://t.me/super_market_bot',
 };
 

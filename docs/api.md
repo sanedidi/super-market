@@ -61,8 +61,37 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 
 | Метод | Путь | Описание |
 | --- | --- | --- |
-| GET | `/admin/notifications?status=&q=&limit=&offset=` | очередь `notifications_outbox`: `status` — `pending`, `sent`, `skipped`, `failed`; `q` — телефон (от 3 цифр) или текст заголовка. Поля: `id` (число), `user_id`, `phone`, `kind`, `title`, `body`, `status`, `channel`, `attempts`, `last_error`, `send_after`, `created_at`, `sent_at` |
+| GET | `/admin/notifications?status=&kind=&q=&limit=&offset=` | журнал доставки (`notifications_outbox`): `status` — `pending`, `sent`, `skipped` (нет push), `failed`; `kind` — `order`, `family`, `campaign`, `test`; `q` — телефон (от 3 цифр) или текст заголовка. Поля: `id` (число), `user_id`, `phone`, `kind`, `title`, `body`, `status`, `channel`, `attempts`, `last_error` (причина по-русски), `devices` («iPhone, Android» — куда дошло), `send_after`, `created_at`, `sent_at` |
 | POST | `/admin/notifications/{id}/retry` | вернуть `failed`/`skipped` в очередь (попытки с нуля). Иначе 409 `not_failed` |
+
+### Push-рассылки
+
+Рассылка = заголовок (до 65), текст (до 240), переход `target` и аудитория `audience`. Отправляет воркер в `send_at`:
+кладёт по уведомлению (`kind = campaign`) на каждого получателя, дальше — как обычные push. Ночью (22:00–08:00
+по Ташкенту) время переносится на 08:00. Отписавшиеся от акций (`notifications.promos = false`) не получают, кроме «одного клиента».
+У кого нет push — уведомление остаётся в колокольчике (`skipped`, «Нет push»).
+
+`target`: `{type}` — `home`, `catalog`, `map`, `cart`, `orders`, `profile`, `family`; `store` (`store_id`), `category`
+(`store_id`, `category_id`), `product` (`store_id`, `product_id`), `deals` (`store_id`); у category/product/deals
+`store_id` может быть `nearest` — ближайший магазин покупателя; `block` (`block_id` блока главной платформы); `url` (`https://…`).
+Данные push: `{"type": "open", "target": …, "store_id"…, "campaign_id"}`.
+
+`audience`: `{type: all}`, `{type: one, user_id}` или `{type: filter, city?, language? (ru|uz), network_id? | store_id?,
+orders? (within | not_within | never), days? (1–365)}` — город в профиле или магазина, где заказывал; сеть/магазин — где заказывал.
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/admin/push/overview` | `with_push`, `without_push`, `promos_off` — покупатели; `sent_30d`, `total_30d`, `delivered_30d` (%); `push_enabled` |
+| POST | `/admin/push/campaigns/preview` | тело как у создания → `recipients`, `with_push`, `without_push`, `send_at` (после ночного переноса), `shifted`, `target_title` («Лимонария → Фрукты»), `audience_title` |
+| POST | `/admin/push/campaigns` | `{title, body, target, audience, send_at?}` (`send_at: null` — сейчас) → 201 рассылка. 400, если никто не подходит |
+| GET | `/admin/push/campaigns?status=` | `scheduled`, `sending`, `sent`, `cancelled`. Поля: `id`, `title`, `body`, `target`, `target_title`, `audience`, `audience_title`, `send_at`, `status`, `recipients`, `created_by`, `created_at`, `started_at`, `finished_at`, `cancelled_at`, `stats {pending, sent, no_push, failed}` |
+| GET | `/admin/push/campaigns/{id}` | рассылка |
+| GET | `/admin/push/campaigns/{id}/recipients?status=&q=` | `status` — `sent`, `not_sent`, `pending`; `q` — телефон или имя. Поля: `phone`, `name`, `status`, `devices`, `reason`, `sent_at` |
+| POST | `/admin/push/campaigns/{id}/cancel` | только `scheduled`, иначе 409 `campaign_started` |
+| GET | `/admin/push/customer?phone=` | покупатель для «одного клиента» и теста (без phone — сам админ): `user_id`, `phone`, `name`, `orders`, `last_order_at`, `promos_on`, `devices [{platform, name, last_seen_at}]` |
+| POST | `/admin/push/test` | `{phone?, title?, body?, target?}` — отправить сразу; ответ `results [{name, ok, reason, ms}]`. 409 `no_devices`, `push_disabled`. Пишется в журнал (`kind = test`) |
+| GET | `/admin/push/blocks` | блоки главной платформы для перехода `block`: `id`, `title` |
+| GET | `/admin/push/cities` | города магазинов и покупателей |
 
 ## Панель магазина (`app=store`)
 
@@ -455,8 +484,8 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 
 | Метод | Путь | Описание |
 |---|---|---|
-| GET | `/client/me` | `phone`, `full_name`, `language` (`ru`/`uz`), `city`, `notifications {orders, promos, telegram}`, `telegram_linked`, `support_url`, `privacy_url` |
-| PATCH | `/client/me` | Любые из: `full_name`, `language`, `city`, `notifications {orders?, promos?, telegram?}`. Ответ — профиль |
+| GET | `/client/me` | `phone`, `full_name`, `language` (`ru`/`uz`), `city`, `notifications {orders, promos}`, `telegram_linked`, `support_url`, `privacy_url` |
+| PATCH | `/client/me` | Любые из: `full_name`, `language`, `city`, `notifications {orders?, promos?}`. Ответ — профиль |
 | GET | `/client/me/stats` | `orders_count`, `saved` (сумма скидок доставленных заказов), `addresses_count`, `favorites_count`, `active_order {id, number, status, store_name}` или `null` |
 | DELETE | `/client/me` | Удаление аккаунта → 204. 409 `active_order`, пока есть незавершённый заказ. Сессии закрываются, имя, адреса, избранное и устройства удаляются, в заказах стираются телефон и адрес. Новый вход с тем же номером создаёт новый аккаунт |
 | POST | `/client/devices` | `{token, platform: ios|android, language?}` — токен FCM для текущей сессии → 204. Вызывать после входа и при обновлении токена |
@@ -467,14 +496,14 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 
 При смене статуса заказа (`paid`, `accepted`, `picked`, `delivering`, `delivered`, `cancelled`, `expired`)
 в той же транзакции создаётся запись в `notifications_outbox` — на языке покупателя, если он не выключил
-`notifications.orders`. Воркер каждые 3 секунды отправляет очередь: push через FCM на все устройства,
-если ни одно не приняло — сообщение в Telegram-бот (если номер привязан и `notifications.telegram`).
+`notifications.orders`. Воркер каждые 3 секунды отправляет очередь: push через FCM на все устройства.
+В Telegram уведомления не дублируются (бот — только для кодов входа). Нет устройств — `skipped` с причиной.
 При временной ошибке — до 6 попыток с паузой от 30 секунд. Недействительные токены удаляются.
 
 Данные push: `{"type": "order", "order_id": "…", "status": "…"}` — приложение открывает экран заказа.
 
 Настройка: `FCM_CREDENTIALS` — ключ сервисного аккаунта Firebase (JSON, путь к файлу или base64).
-Без него push выключен и работает только Telegram.
+Без него push выключен: уведомления видны только в колокольчике приложения.
 
 ## Доставка ко времени (этап приложения 3)
 

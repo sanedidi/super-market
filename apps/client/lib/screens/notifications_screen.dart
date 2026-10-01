@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../links.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
-import 'order_screen.dart';
 
 /// Уведомления (колокольчик на главной): статусы заказов, семья, акции.
 /// При открытии все отмечаются прочитанными; новые подсвечены.
@@ -42,11 +42,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   void _open(Map<String, dynamic> n) {
-    final data = (n['data'] as Map?) ?? const {};
-    final orderId = data['order_id'];
-    if (orderId is String && orderId.isNotEmpty) {
-      Navigator.of(context).push(MaterialPageRoute(builder: (_) => OrderScreen(id: orderId)));
-    }
+    final data = (n['data'] as Map?)?.cast<String, dynamic>() ?? const {};
+    openNotification(data);
   }
 
   @override
@@ -89,7 +86,7 @@ class _NotificationTile extends StatelessWidget {
   static (IconData, Color) _icon(String kind) {
     if (kind.startsWith('order')) return (Icons.shopping_bag_rounded, AppColors.primary);
     if (kind.startsWith('family')) return (Icons.family_restroom_rounded, const Color(0xFF3B6FD8));
-    if (kind.startsWith('promo')) return (Icons.percent_rounded, const Color(0xFFD99A4E));
+    if (kind.startsWith('promo') || kind == 'campaign') return (Icons.campaign_rounded, const Color(0xFFD99A4E));
     return (Icons.notifications_rounded, AppColors.dark);
   }
 

@@ -105,8 +105,15 @@ func TestDeliverySlots(t *testing.T) {
 	if s := sl.Body["days"].([]any)[1].(map[string]any)["slots"].([]any)[0].(map[string]any); s["status"] != "full" {
 		t.Fatalf("slot after order = %v", s)
 	}
-	// Как можно скорее — как раньше.
+	// Как можно скорее — как раньше. Магазин открыт круглосуточно, чтобы
+	// тест не зависел от времени запуска.
+	allDay := make([]map[string]any, 7)
+	for d := range allDay {
+		allDay[d] = map[string]any{"weekday": d, "opens": "00:00", "closes": "23:59"}
+	}
+	a.expect(a.do("PUT", "/store/stores/"+store+"/delivery", tok, map[string]any{"working_hours": allDay}), 200, "all day")
 	asap := a.expect(a.do("POST", "/client/orders", client, cart(nil)), 201, "asap")
+	a.expect(a.do("PUT", "/store/stores/"+store+"/delivery", tok, map[string]any{"working_hours": hours}), 200, "hours back")
 
 	// Магазин видит оба после оплаты; сортировка по времени доставки: сначала «как можно скорее».
 	if _, err := pool.Exec(ctx, `UPDATE orders SET status = 'paid', paid_at = now()`); err != nil {

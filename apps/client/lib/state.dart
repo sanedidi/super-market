@@ -113,6 +113,7 @@ class AppState extends ChangeNotifier {
         family = null;
         familyRequestId = null;
         unread = 0;
+        pendingBlock = null;
       }
     });
   }
@@ -174,6 +175,14 @@ class AppState extends ChangeNotifier {
 
   void setTab(int i) {
     tab = i;
+    notifyListeners();
+  }
+
+  /// Блок главной, к которому прокрутить (переход из уведомления).
+  String? pendingBlock;
+
+  void focusBlock(String id) {
+    pendingBlock = id.isEmpty ? null : id;
     notifyListeners();
   }
 
