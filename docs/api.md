@@ -296,7 +296,9 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 | GET/POST | `/store/pos/devices` | `stores.manage` — список, создать кассу (сразу с кодом) |
 | POST | `/store/pos/devices/{id}/code` | новый код активации |
 | POST | `/store/pos/devices/{id}/revoke` | отключить кассу |
+| GET | `/store/pos/pins?store_id=` | `staff.manage` — сотрудники магазина: есть ли ПИН, права на кассе (`can_pos`, `can_discount`, `can_return`) |
 | PUT | `/store/pos/pins/{employee_id}` | `staff.manage` — `{pin}` 4–6 цифр, уникален в сети |
+| DELETE | `/store/pos/pins/{employee_id}` | `staff.manage` — убрать ПИН (сотрудник пропадёт из списка на кассе) |
 | GET | `/store/pos/shifts`, `/store/pos/shifts/{id}` | `reports.view` или `finance.manage` |
 | PUT | `/store/pos/products/{id}/tax` | `catalog.manage` — ИКПУ, код упаковки, НДС, маркировка (только свои товары) |
 | PUT | `/store/pos/products/{id}/plu` | `catalog.manage` — короткий код `{plu}` или `null` |

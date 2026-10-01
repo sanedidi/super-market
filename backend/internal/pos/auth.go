@@ -237,3 +237,60 @@ func (s *Service) Login(ctx context.Context, p *identity.Principal, in LoginInpu
 	out.ID, out.Permissions = in.EmployeeID, p.Permissions
 	return out, nil
 }
+
+// PinRow — сотрудник в списке «ПИНы кассиров» панели.
+type PinRow struct {
+	EmployeeID string `json:"employee_id"`
+	Name       string `json:"name"`
+	RoleName   string `json:"role_name"`
+	IsOwner    bool   `json:"is_owner"`
+	HasPIN     bool   `json:"has_pin"`
+	Locked     bool   `json:"locked"`
+	// Права на кассе: продавать, скидки, возвраты (старший кассир).
+	CanPOS      bool `json:"can_pos"`
+	CanDiscount bool `json:"can_discount"`
+	CanReturn   bool `json:"can_return"`
+}
+
+// ListPins — активные сотрудники магазина и есть ли у них ПИН. На кассе
+// в списке «Кто на кассе?» будут те, у кого есть ПИН и право продавать.
+func (s *Service) ListPins(ctx context.Context, p *identity.Principal, storeID string) ([]PinRow, error) {
+	if err := p.Require(identity.PermStaffManage); err != nil {
+		return nil, err
+	}
+	if storeID != "" && (!httpx.IsUUID(storeID) || !p.CanAccessStore(storeID)) {
+		return nil, apperr.Validation("store_id: магазин не найден")
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT e.id, e.full_name, r.name, r.is_owner, e.pin_hash <> '', COALESCE(e.pin_locked_until > now(), false),
+		       r.is_owner OR $3 = ANY(r.permissions), r.is_owner OR $4 = ANY(r.permissions), r.is_owner OR $5 = ANY(r.permissions)
+		FROM employees e JOIN roles r ON r.id = e.role_id
+		WHERE e.network_id = $1 AND e.status = 'active'
+		  AND ($2 = '' OR r.is_owner OR e.all_stores OR EXISTS (
+		       SELECT 1 FROM employee_stores es WHERE es.employee_id = e.id AND es.store_id::text = $2))
+		ORDER BY NOT (r.is_owner OR $3 = ANY(r.permissions)), e.full_name`,
+		p.NetworkID, storeID, identity.PermSalesPOS, identity.PermSalesDiscount, identity.PermSalesReturn)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[PinRow])
+}
+
+// ClearPIN — убрать ПИН: сотрудник пропадёт из списка на кассе.
+func (s *Service) ClearPIN(ctx context.Context, p *identity.Principal, employeeID string) (map[string]bool, error) {
+	if err := p.Require(identity.PermStaffManage); err != nil {
+		return nil, err
+	}
+	if !httpx.IsUUID(employeeID) {
+		return nil, apperr.NotFound("сотрудник не найден")
+	}
+	tag, err := s.pool.Exec(ctx, `UPDATE employees SET pin_hash = '', pin_failed = 0, pin_locked_until = NULL
+		WHERE id = $1 AND network_id = $2`, employeeID, p.NetworkID)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, apperr.NotFound("сотрудник не найден")
+	}
+	return map[string]bool{"pin_set": false}, nil
+}

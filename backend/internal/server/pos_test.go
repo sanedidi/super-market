@@ -152,6 +152,19 @@ func TestPOS(t *testing.T) {
 	a.expect(a.do("PUT", "/store/pos/pins/"+cashier, tok, map[string]any{"pin": "1234"}), 200, "pin")
 	a.expect(a.do("PUT", "/store/pos/pins/"+owner, tok, map[string]any{"pin": "1234"}), 409, "pin taken")
 	a.expect(a.do("PUT", "/store/pos/pins/"+owner, tok, map[string]any{"pin": "9999"}), 200, "owner pin")
+	pins := a.expect(a.do("GET", "/store/pos/pins?store_id="+store, tok, nil), 200, "list pins").items()
+	withPin := 0
+	for _, r := range pins {
+		if r["has_pin"] == true {
+			withPin++
+		}
+		if r["employee_id"] == cashier && (r["can_pos"] != true || r["can_return"] == true) {
+			t.Fatalf("cashier pin row = %v", r)
+		}
+	}
+	if withPin != 2 {
+		t.Fatalf("pins = %v", pins)
+	}
 	cat = a.expect(posDo(a, "GET", "/pos/catalog", dt, "", nil), 200, "catalog with cashiers")
 	found := false
 	for _, x := range cat.Body["cashiers"].([]any) {

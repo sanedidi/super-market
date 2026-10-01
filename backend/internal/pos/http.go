@@ -48,7 +48,9 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/store/pos/devices", m.createDevice)
 		r.Post("/store/pos/devices/{id}/code", m.newCode)
 		r.Post("/store/pos/devices/{id}/revoke", m.revoke)
+		r.Get("/store/pos/pins", m.listPins)
 		r.Put("/store/pos/pins/{id}", m.setPIN)
+		r.Delete("/store/pos/pins/{id}", m.clearPIN)
 		r.Get("/store/pos/shifts", m.listShifts)
 		r.Get("/store/pos/shifts/{id}", m.getShift)
 		r.Put("/store/pos/products/{id}/tax", m.setTax)
@@ -225,6 +227,19 @@ func (m *Module) revoke(w http.ResponseWriter, r *http.Request) {
 func (m *Module) setPIN(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in PinInput) (map[string]bool, error) {
 		return m.svc.SetPIN(r.Context(), pr(r), id, in)
+	})
+}
+
+func (m *Module) listPins(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[PinRow], error) {
+		items, err := m.svc.ListPins(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+		return httpx.List[PinRow]{Items: items}, err
+	})
+}
+
+func (m *Module) clearPIN(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (map[string]bool, error) {
+		return m.svc.ClearPIN(r.Context(), pr(r), id)
 	})
 }
 

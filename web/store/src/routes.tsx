@@ -6,6 +6,7 @@ import {
   BarChartOutlined,
   BookOutlined,
   CarOutlined,
+  CalculatorOutlined,
   DashboardOutlined,
   DollarOutlined,
   InboxOutlined,
@@ -43,6 +44,7 @@ import { BalancePage } from './pages/Balance'
 import { CouriersPage } from './pages/Couriers'
 import { ShowcasePage } from './pages/Showcase'
 import { StoreAdsPage } from './pages/StoreAds'
+import { PosDevicesPage, PosShiftsPage } from './pages/Pos'
 import { OrderAlerts } from './notify'
 
 const TITLE = 'Панель магазина'
@@ -66,6 +68,15 @@ const MENU: Item[] = [
       { key: '/sales/returns', label: 'Возвраты', perm: ['sales.pos', 'sales.return', 'reports.view'] },
       { key: '/sales/prices', label: 'Установка цен', perm: 'prices.manage' },
       { key: '/sales/promotions', label: 'Акции в приложении', perm: 'prices.manage' },
+    ],
+  },
+  {
+    key: 'pos',
+    label: 'Касса',
+    icon: <CalculatorOutlined />,
+    children: [
+      { key: '/pos/devices', label: 'Кассы и ПИНы', perm: ['stores.manage', 'staff.manage'] },
+      { key: '/pos/shifts', label: 'Смены', perm: ['reports.view', 'finance.manage'] },
     ],
   },
   {
@@ -219,6 +230,9 @@ export function StoreRoutes() {
         <Route path="couriers" element={<CouriersPage />} />
         <Route path="showcase" element={<ShowcasePage />} />
         <Route path="brand-ads" element={<StoreAdsPage />} />
+
+        <Route path="pos/devices" element={<PosDevicesPage />} />
+        <Route path="pos/shifts" element={<PosShiftsPage />} />
 
         <Route path="sales/pos" element={<SalesPage />} />
         <Route path="sales/returns" element={<ReturnsPage />} />
