@@ -101,6 +101,8 @@ export function AISettings() {
   const [key, setKey] = useState('')
   const [replacing, setReplacing] = useState(false)
   const [model, setModel] = useState('')
+  // Текст, который человек печатает в поле модели; пусто — показываем весь список.
+  const [search, setSearch] = useState('')
   const [models, setModels] = useState<Model[] | null>(null)
   const [busy, setBusy] = useState<'' | 'models' | 'test' | 'save'>('')
   const [test, setTest] = useState<TestResult | null>(null)
@@ -166,7 +168,9 @@ export function AISettings() {
       await refetch()
     })
 
-  const options = (models ?? []).map((m) => ({
+  const options = (models ?? [])
+    .filter((m) => !search || m.id.toLowerCase().includes(search.toLowerCase()))
+    .map((m) => ({
     value: m.id,
     label: (
       <Flex justify="space-between" gap={8}>
@@ -260,8 +264,11 @@ export function AISettings() {
                     style={{ flex: 1, minWidth: 240 }}
                     value={model}
                     onChange={setModel}
+                    onSearch={setSearch}
+                    onSelect={() => setSearch('')}
+                    onDropdownVisibleChange={(open) => open && setSearch('')}
                     options={options}
-                    filterOption={(input, o) => String(o?.value ?? '').toLowerCase().includes(input.toLowerCase())}
+                    filterOption={false}
                     placeholder={provider === 'anthropic' ? 'claude-…' : 'gpt-…'}
                   />
                   <Button size="large" icon={<ReloadOutlined />} loading={busy === 'models'} onClick={loadModels}>
