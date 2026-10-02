@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Alert, Button, Checkbox, Descriptions, Drawer, Input, Modal, Popconfirm, Space, Spin, Table, Tag, Typography } from 'antd'
-import { PageTitle, PagedTable, StatusTag, api, dateTime, errorText, money, useAction, useItem } from '@sm/shared'
+import { PagedTable, PageTitle, StatusTag, api, dateTime, errorText, formatPhone, money, useAction, useItem } from '@sm/shared'
 import { useUrlState } from '../hooks'
 
 interface Customer {
@@ -65,7 +65,7 @@ export function Customers() {
             title: 'Покупатель',
             render: (_, c) => (
               <>
-                {c.phone} <CustomerTags c={c} />
+                {formatPhone(c.phone)} <CustomerTags c={c} />
                 {c.full_name && (
                   <div>
                     <Typography.Text type="secondary">{c.full_name}</Typography.Text>
@@ -99,7 +99,7 @@ function CustomerDrawer({ id, onClose }: { id: string | null; onClose: () => voi
   })
   const unblock = useAction((cid: string) => api.post(`/admin/customers/${cid}/unblock`), { success: 'Покупатель разблокирован' })
   return (
-    <Drawer open={id !== null} onClose={onClose} width={640} title={c ? c.phone : 'Покупатель'}>
+    <Drawer open={id !== null} onClose={onClose} width={640} title={c ? formatPhone(c.phone) : 'Покупатель'}>
       {isLoading && <Spin style={{ display: 'block', margin: '48px auto' }} />}
       {error && (
         <Alert

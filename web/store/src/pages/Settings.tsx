@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { Alert, Button, Card, Checkbox, Form, Input, Modal, Radio, Select, Switch, Table, Tag, Typography } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
-import { CrudPage, ImageUpload, MapPointPicker, PageTitle, RemoteSelect, StatusTag, api, useAction, useList, type LatLng } from '@sm/shared'
+import { CrudPage, ImageUpload, MapPointPicker, PageTitle, PhoneInput, RemoteSelect, StatusTag, api, formatPhone, phoneRule, useAction, useList, type LatLng } from '@sm/shared'
 import { useStore } from '../ctx'
 import type { Employee, Permission, PriceType, Role, Store, Warehouse } from '../types'
 
@@ -45,7 +45,7 @@ export function StoresPage() {
         columns={[
           { title: 'Название', dataIndex: 'name' },
           { title: 'Адрес', dataIndex: 'address' },
-          { title: 'Телефон', dataIndex: 'phone' },
+          { title: 'Телефон', dataIndex: 'phone', render: (v: string) => formatPhone(v) || '—' },
           {
             title: 'Точка',
             key: 'geo',
@@ -64,8 +64,8 @@ export function StoresPage() {
             <Form.Item name="city" label="Город" extra="Заполняется по точке на карте. Нужен, чтобы бренды могли рекламироваться в вашем городе.">
               <Input placeholder="Ташкент" />
             </Form.Item>
-            <Form.Item name="phone" label="Телефон">
-              <Input placeholder="+998 …" />
+            <Form.Item name="phone" label="Телефон" rules={[phoneRule()]}>
+              <PhoneInput />
             </Form.Item>
             {editing && (
               <Form.Item name="logo_url" label="Логотип для приложения" extra="Квадратная картинка, JPG или PNG">
@@ -237,7 +237,7 @@ export function EmployeesPage() {
       createLabel="Новый сотрудник"
       columns={[
         { title: 'Имя', dataIndex: 'full_name', render: (v: string, r) => (r.is_owner ? <>{v} <Tag color="gold">Владелец</Tag></> : v) },
-        { title: 'Телефон', dataIndex: 'phone' },
+        { title: 'Телефон', dataIndex: 'phone', render: (v: string) => formatPhone(v) || '—' },
         { title: 'Роль', dataIndex: 'role_name' },
         {
           title: 'Магазины',
@@ -282,8 +282,8 @@ function EmployeeFields({ editing }: { editing: Employee | null }) {
   return (
     <>
       {!editing && (
-        <Form.Item name="phone" label="Телефон" rules={required} extra="Сотрудник войдёт по этому номеру через Telegram-бот">
-          <Input placeholder="+998 90 123 45 67" inputMode="tel" />
+        <Form.Item name="phone" label="Телефон" rules={[phoneRule(true)]} extra="Сотрудник войдёт по этому номеру через Telegram-бот">
+          <PhoneInput />
         </Form.Item>
       )}
       <Form.Item name="full_name" label="Имя" rules={required}>

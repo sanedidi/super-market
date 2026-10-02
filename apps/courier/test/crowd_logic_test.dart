@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sm_core/sm_core.dart' show normalizeUzPhone, formatUzLocal;
 import 'package:sm_courier/crowd/crowd_logic.dart';
 
 void main() {

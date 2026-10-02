@@ -263,7 +263,7 @@ class _CustomerCard extends StatelessWidget {
         Text('${o['address'] ?? ''}', style: prominent ? AppText.h3 : AppText.title),
         if (flat.isNotEmpty) ...[const SizedBox(height: 2), Text(flat, style: AppText.body.copyWith(color: AppColors.text2))],
         const SizedBox(height: 6),
-        Text([if (name.isNotEmpty) name, if (phone.isNotEmpty) phone].join(' · '), style: AppText.bodyStrong.copyWith(fontWeight: FontWeight.w500)),
+        Text([if (name.isNotEmpty) name, if (phone.isNotEmpty) formatPhone(phone)].join(' · '), style: AppText.bodyStrong.copyWith(fontWeight: FontWeight.w500)),
         if (note.isNotEmpty) ...[
           const SizedBox(height: 10),
           Container(

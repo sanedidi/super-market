@@ -118,7 +118,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(memberName(m), style: AppText.title),
-                  Text('${m['phone'] ?? ''}', style: AppText.small),
+                  Text(formatPhone(m['phone']), style: AppText.small),
                 ]),
               ),
             ]),
@@ -164,24 +164,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
     }
   }
 
-  Future<bool> _confirm(String title, String text, String action) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Text(text),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-          TextButton(
-            style: TextButton.styleFrom(foregroundColor: AppColors.error),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(action),
-          ),
-        ],
-      ),
-    );
-    return ok == true;
-  }
+  Future<bool> _confirm(String title, String text, String action) => confirmSheet(context, title: title, text: text, confirm: action);
 
   // ------------------------------------------------------------ экран
 

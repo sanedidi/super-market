@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Alert, Button, Card, Checkbox, Col, DatePicker, Descriptions, Form, Input, Modal, Row, Segmented, Space, Statistic, Table, Tag, Typography } from 'antd'
 import { QrcodeOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
-import { LoadError, PageTitle, api, dateTime, money, useAction } from '@sm/shared'
+import { LoadError, PageTitle, api, dateTime, formatPhone, money, useAction } from '@sm/shared'
 import { useStore } from '../ctx'
 import { NeedStore } from '../ui'
 import { QrCodeModal } from '../qr'
@@ -117,7 +117,7 @@ function VerifyCard() {
               <Typography.Text strong>{card.code}</Typography.Text> {st && <Tag color={st.color}>{st.title}</Tag>}
             </Descriptions.Item>
             <Descriptions.Item label="Телефон">
-              <a href={`tel:${card.phone}`}>{card.phone}</a>
+              <a href={`tel:${card.phone}`}>{formatPhone(card.phone)}</a>
             </Descriptions.Item>
             {card.full_name && <Descriptions.Item label="Имя">{card.full_name}</Descriptions.Item>}
             {card.status !== 'unverified' && (

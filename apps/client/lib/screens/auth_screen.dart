@@ -233,7 +233,7 @@ class _PhoneField extends StatelessWidget {
       style: AppText.h3.copyWith(fontSize: 22, fontWeight: FontWeight.w500, letterSpacing: 0.5),
       onChanged: (_) => onChanged(),
       onSubmitted: (_) => onSubmit?.call(),
-      decoration: outlinedField('90 000 00 00').copyWith(
+      decoration: outlinedField('99 999 99 99').copyWith(
         hintStyle: AppText.h3.copyWith(fontSize: 22, fontWeight: FontWeight.w400, color: AppColors.muted, letterSpacing: 0.5),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 18),
         prefixIcon: Padding(
@@ -253,28 +253,6 @@ class _PhoneField extends StatelessWidget {
             : null,
       ),
     );
-  }
-}
-
-/// Оставляет 9 цифр и расставляет пробелы: «90 576 47 23».
-class UzPhoneFormatter extends TextInputFormatter {
-  static String format(String digits) {
-    final d = digits.length > 9 ? digits.substring(0, 9) : digits;
-    final b = StringBuffer();
-    for (var i = 0; i < d.length; i++) {
-      if (i == 2 || i == 5 || i == 7) b.write(' ');
-      b.write(d[i]);
-    }
-    return b.toString();
-  }
-
-  @override
-  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
-    var digits = newValue.text.replaceAll(RegExp(r'\D'), '');
-    // Вставили номер целиком: +998 90 … или 998 90 …
-    if (digits.length > 9 && digits.startsWith('998')) digits = digits.substring(3);
-    final text = format(digits);
-    return TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
   }
 }
 

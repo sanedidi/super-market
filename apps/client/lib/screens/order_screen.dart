@@ -101,22 +101,8 @@ class _OrderScreenState extends State<OrderScreen> {
   }
 
   Future<void> _cancel() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Отменить заказ?'),
-        content: const Text('Если заказ оплачен, деньги вернутся на карту.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Нет')),
-          TextButton(
-            style: TextButton.styleFrom(foregroundColor: AppColors.error),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Отменить'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
+    final ok = await confirmSheet(context, title: 'Отменить заказ?', text: 'Если заказ оплачен, деньги вернутся на карту.', confirm: 'Отменить заказ', cancel: 'Не отменять');
+    if (!ok || !mounted) return;
     setState(() => _busy = true);
     try {
       final o = await context.read<Api>().post('/client/orders/${widget.id}/cancel') as Map<String, dynamic>;

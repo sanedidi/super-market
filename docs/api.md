@@ -115,7 +115,7 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 
 | Метод | Путь | Право | Описание |
 | --- | --- | --- | --- |
-| GET | `/store/me` | — | сеть, права, доступные магазины |
+| GET | `/store/me` | — | сеть, права, доступные магазины; `full_name`, `phone`, `role_name` сотрудника |
 | GET | `/store/stores` | — | магазины, к которым есть доступ |
 | POST | `/store/stores` | `stores.manage` | `{"name", "address"?, "phone"?, "lat"?, "lng"?}` — создаёт и «Основной склад»; у `single` только один магазин |
 | GET | `/store/stores/{id}` | — | магазин |

@@ -18,7 +18,7 @@ import {
   Typography,
 } from 'antd'
 import { PlusOutlined, RollbackOutlined } from '@ant-design/icons'
-import { LoadError, PageTitle, RemoteSelect, api, dateTime, money, periodParams, qty, useAction, useItem, useList, usePaged } from '@sm/shared'
+import { LoadError, PageTitle, RemoteSelect, api, dateTime, formatPhone, money, periodParams, qty, useAction, useItem, useList, usePaged } from '@sm/shared'
 import { useStore } from '../ctx'
 import { NeedStore, Num, RangeFilter, today, type Range } from '../ui'
 import { FiscalModal } from './Orders'
@@ -74,7 +74,7 @@ export function SalesPage() {
             { title: '№', dataIndex: 'number', width: 70 },
             { title: 'Время', dataIndex: 'sold_at', render: dateTime },
             { title: 'Кассир', dataIndex: 'cashier' },
-            { title: 'Покупатель', dataIndex: 'customer_phone' },
+            { title: 'Покупатель', dataIndex: 'customer_phone', render: (v: string) => formatPhone(v) || '—' },
             { title: 'Скидка', dataIndex: 'discount', align: 'right', render: (v: string) => money(v) },
             { title: 'Сумма', dataIndex: 'total', align: 'right', render: (v: string) => money(v) },
             { title: 'Чек', dataIndex: 'fiscal_status', render: (v: string) => <FiscalTag status={v} /> },
@@ -122,7 +122,7 @@ function SaleDrawer({ id, onClose }: { id: string | null; onClose: () => void })
             <Descriptions.Item label="Время">{dateTime(s.sold_at)}</Descriptions.Item>
             <Descriptions.Item label="Магазин">{s.store_name}</Descriptions.Item>
             <Descriptions.Item label="Кассир">{s.cashier}</Descriptions.Item>
-            <Descriptions.Item label="Покупатель">{s.customer_phone || '—'}</Descriptions.Item>
+            <Descriptions.Item label="Покупатель">{formatPhone(s.customer_phone) || '—'}</Descriptions.Item>
             <Descriptions.Item label="Чек">
               <FiscalTag status={s.fiscal_status} />
               {s.fiscal_number && `№ ${s.fiscal_number} · ${s.fiscal_sign}`}

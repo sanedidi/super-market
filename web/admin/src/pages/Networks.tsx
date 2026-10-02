@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Alert, Button, Descriptions, Drawer, Form, Input, Popconfirm, Select, Space, Spin, Table, Tag, Typography } from 'antd'
-import { CrudPage, StatusTag, api, date, dateTime, errorText, money, useAction, useItem, useList } from '@sm/shared'
+import { CrudPage, PhoneInput, StatusTag, api, date, dateTime, errorText, formatPhone, money, phoneRule, useAction, useItem, useList } from '@sm/shared'
 import { useUrlState } from '../hooks'
 
 interface Network {
@@ -43,7 +43,7 @@ export function Networks() {
               <>
                 {n.owner_name}
                 <br />
-                <Typography.Text type="secondary">{n.owner_phone}</Typography.Text>
+                <Typography.Text type="secondary">{formatPhone(n.owner_phone)}</Typography.Text>
               </>
             ),
           },
@@ -86,10 +86,10 @@ export function Networks() {
                 <Form.Item
                   name="owner_phone"
                   label="Телефон владельца"
-                  rules={[{ required: true }]}
+                  rules={[phoneRule(true)]}
                   extra="Владелец входит в панель магазина по этому номеру через Telegram-бота."
                 >
-                  <Input placeholder="+998 90 123 45 67" />
+                  <PhoneInput />
                 </Form.Item>
               </Space>
             )}
@@ -161,7 +161,7 @@ function NetworkCard({ id, onClose }: { id: string | null; onClose: () => void }
               <StatusTag status={n.status} />
             </Descriptions.Item>
             <Descriptions.Item label="Владелец">
-              {n.owner_name} · {n.owner_phone}
+              {n.owner_name} · {formatPhone(n.owner_phone)}
             </Descriptions.Item>
             <Descriptions.Item label="Подключена">{dateTime(n.created_at)}</Descriptions.Item>
             {b && (
@@ -201,7 +201,7 @@ function NetworkCard({ id, onClose }: { id: string | null; onClose: () => void }
               columns={[
                 { title: 'Название', dataIndex: 'name' },
                 { title: 'Адрес', dataIndex: 'address', render: (v) => v || '—' },
-                { title: 'Телефон', dataIndex: 'phone', render: (v) => v || '—' },
+                { title: 'Телефон', dataIndex: 'phone', render: (v) => formatPhone(v) || '—' },
                 { title: 'Статус', dataIndex: 'status', render: (s) => (s === 'active' ? <Tag color="green">Работает</Tag> : <Tag>Выключен</Tag>) },
               ]}
             />

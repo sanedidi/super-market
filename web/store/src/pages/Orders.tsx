@@ -22,7 +22,7 @@ import {
   Typography,
 } from 'antd'
 import { PrinterOutlined, QrcodeOutlined, ReloadOutlined } from '@ant-design/icons'
-import { LoadError, PageTitle, StatusTag, api, dateTime, money, periodParams, qty, useAction, useList, usePaged } from '@sm/shared'
+import { LoadError, PageTitle, StatusTag, api, dateTime, formatPhone, money, periodParams, qty, useAction, useList, usePaged } from '@sm/shared'
 import { useStore } from '../ctx'
 import { usePaidOrders } from '../notify'
 import { NeedStore, RangeFilter, type Range } from '../ui'
@@ -117,7 +117,7 @@ export function OrdersPage() {
             { title: 'Создан', dataIndex: 'created_at', render: dateTime },
             { title: 'К времени', key: 'slot', render: (_, r) => <DeliveryWindow order={r} /> },
             { title: 'Статус', dataIndex: 'status', render: (s: string, r) => <StatusTag status={s} title={r.status_title || undefined} /> },
-            { title: 'Покупатель', dataIndex: 'customer_phone' },
+            { title: 'Покупатель', dataIndex: 'customer_phone', render: (v: string) => formatPhone(v) || '—' },
             { title: 'Адрес', dataIndex: 'address', ellipsis: true },
             { title: 'Курьер', dataIndex: 'courier_name', render: (v: string | null) => v ?? <Typography.Text type="secondary">—</Typography.Text> },
             { title: 'Сумма', dataIndex: 'total', align: 'right', render: (v: string) => money(v) },
@@ -254,7 +254,7 @@ function OrderDrawer({ id, onClose }: { id: string | null; onClose: () => void }
           )}
           <Descriptions size="small" bordered column={{ xs: 1, sm: 2, md: 2, lg: 2, xl: 2, xxl: 2 }} style={{ marginBottom: 16 }}>
             <Descriptions.Item label="Покупатель">
-              <a href={`tel:${o.customer_phone}`}>{o.customer_phone}</a>
+              <a href={`tel:${o.customer_phone}`}>{formatPhone(o.customer_phone)}</a>
             </Descriptions.Item>
             <Descriptions.Item label="Создан">{dateTime(o.created_at)}</Descriptions.Item>
             <Descriptions.Item label="Доставка">
@@ -539,7 +539,7 @@ function CourierPicker({ order, editable }: { order: Order; editable: boolean })
       <Space wrap size={4}>
         {order.courier_name}
         <Tag color="purple">по пути</Tag>
-        {order.crowd_courier_phone && <a href={`tel:${order.crowd_courier_phone}`}>{order.crowd_courier_phone}</a>}
+        {order.crowd_courier_phone && <a href={`tel:${order.crowd_courier_phone}`}>{formatPhone(order.crowd_courier_phone)}</a>}
       </Space>
     )
   const canChange = editable && ['accepted', 'picking', 'picked', 'delivering'].includes(order.status)
@@ -607,7 +607,7 @@ function printPickingList(o: Order, warehouse: string) {
   <dt>Доставка</dt><dd>${esc(windowText(o))}</dd>
   <dt>Магазин</dt><dd>${esc(o.store_name)}${warehouse ? ` · склад «${esc(warehouse)}»` : ''}</dd>
   <dt>Адрес</dt><dd>${esc(address)}${o.address_comment ? `<br>${esc(o.address_comment)}` : ''}</dd>
-  <dt>Покупатель</dt><dd>${esc(o.customer_phone)}</dd>
+  <dt>Покупатель</dt><dd>${esc(formatPhone(o.customer_phone))}</dd>
   <dt>Курьер</dt><dd>${esc(o.courier_name ?? '—')}</dd>
 </dl>
 <table><thead><tr><th>№</th><th>Товар</th><th class="r">Кол-во</th><th class="c">✓</th></tr></thead><tbody>${rows}</tbody></table>

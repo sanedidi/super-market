@@ -9,7 +9,6 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
-import 'crowd_logic.dart';
 import 'crowd_state.dart';
 
 /// Переключатель режима входа: «Курьер по пути» / «Сотрудник магазина».
@@ -154,11 +153,11 @@ class _CrowdLoginFormState extends State<CrowdLoginForm> {
         enabled: !_busy,
         keyboardType: TextInputType.phone,
         autofillHints: const [AutofillHints.telephoneNumberNational],
-        inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(9), _UzPhoneFormatter()],
+        inputFormatters: [UzPhoneFormatter()],
         style: AppText.body.copyWith(fontSize: 17, fontWeight: FontWeight.w600),
         onSubmitted: (_) => _agree ? _submit() : null,
         decoration: InputDecoration(
-          hintText: '90 123 45 67',
+          hintText: '99 999 99 99',
           prefixIcon: const Padding(
             padding: EdgeInsets.only(left: 16, right: 8),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -205,15 +204,6 @@ class _CrowdLoginFormState extends State<CrowdLoginForm> {
         ),
       ]),
     ]);
-  }
-}
-
-/// «901234567» → «90 123 45 67» прямо в поле.
-class _UzPhoneFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
-    final text = formatUzLocal(newValue.text);
-    return TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
   }
 }
 

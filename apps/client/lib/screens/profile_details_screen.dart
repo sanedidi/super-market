@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart' show formatPhone;
 
 import '../main.dart';
 import '../state.dart';
 import '../ui/person_form.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
-import 'profile_screen.dart';
 
 /// «Личные данные»: имя, фамилия, дата рождения, пол; телефон только для чтения.
 class ProfileDetailsScreen extends StatefulWidget {

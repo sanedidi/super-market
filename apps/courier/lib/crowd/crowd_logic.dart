@@ -1,28 +1,5 @@
 // Логика режима «по пути» без виджетов. Покрыто тестами (test/crowd_logic_test.dart).
 
-/// Номер в формате +998XXXXXXXXX из того, что ввёл человек; null — неполный.
-String? normalizeUzPhone(String raw) {
-  var d = raw.replaceAll(RegExp(r'\D'), '');
-  if (d.length == 9) d = '998$d';
-  if (d.length != 12 || !d.startsWith('998')) return null;
-  return '+$d';
-}
-
-/// «90 123 45 67» по мере ввода (без кода страны).
-String formatUzLocal(String digits) {
-  final d = digits.replaceAll(RegExp(r'\D'), '');
-  final parts = <String>[];
-  const sizes = [2, 3, 2, 2];
-  var i = 0;
-  for (final n in sizes) {
-    if (i >= d.length) break;
-    final end = i + n > d.length ? d.length : i + n;
-    parts.add(d.substring(i, end));
-    i = end;
-  }
-  return parts.join(' ');
-}
-
 /// «350 м», «1,2 км».
 String meters(num? m) {
   if (m == null) return '';

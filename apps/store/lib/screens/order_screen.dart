@@ -66,48 +66,28 @@ class _OrderScreenState extends State<OrderScreen> {
   }
 
   Future<void> _cancel() async {
-    final ctrl = TextEditingController();
-    final reason = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Отменить заказ?'),
-        content: TextField(controller: ctrl, autofocus: true, decoration: const InputDecoration(hintText: 'Причина: нет товара, закрыты…')),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Назад')),
-          TextButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('Отменить заказ', style: TextStyle(color: AppColors.primary))),
-        ],
-      ),
+    final reason = await promptSheet(
+      context,
+      title: 'Отменить заказ № ${_o?['number'] ?? ''}?',
+      text: 'Покупатель получит уведомление и возврат денег. Укажите причину.',
+      options: const ['Нет товара', 'Покупатель отказался', 'Магазин закрыт', 'Другое'],
+      hint: 'Комментарий (необязательно)',
+      confirm: 'Отменить заказ',
+      cancel: 'Не отменять',
     );
-    // Диалог ещё анимируется с полем ввода — освобождаем контроллер после перехода.
-    Future<void>.delayed(const Duration(milliseconds: 500), ctrl.dispose);
-    if (reason == null) return;
-    if (reason.isEmpty) {
-      if (mounted) showMessage(context, 'Укажите причину отмены');
-      return;
-    }
+    if (reason == null || reason.isEmpty) return;
     await _act('cancel', {'reason': reason}, 'Заказ отменён');
   }
 
   Future<void> _handover() async {
-    final ctrl = TextEditingController();
-    final code = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Выдать курьеру'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(hintText: 'Код из приложения курьера'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Назад')),
-          TextButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('Выдать')),
-        ],
-      ),
+    final code = await promptSheet(
+      context,
+      title: 'Выдать курьеру',
+      text: 'Попросите курьера показать код в его приложении.',
+      hint: 'Код из приложения курьера',
+      keyboardType: TextInputType.number,
+      confirm: 'Выдать',
     );
-    // Диалог ещё анимируется с полем ввода — освобождаем контроллер после перехода.
-    Future<void>.delayed(const Duration(milliseconds: 500), ctrl.dispose);
     if (code == null || code.isEmpty) return;
     await _act('crowd-handover', {'code': code}, 'Заказ выдан курьеру');
   }
@@ -233,7 +213,7 @@ class _OrderScreenState extends State<OrderScreen> {
         if (o['courier_name'] != null) ...[const SizedBox(height: 6), Text('Курьер: ${o['courier_name']}', style: AppText.small)],
         if (phone.isNotEmpty) ...[
           const SizedBox(height: 12),
-          SmallButton(label: phone, icon: Icons.call_rounded, onPressed: () => launchUrl(Uri.parse('tel:$phone'))),
+          SmallButton(label: formatPhone(phone), icon: Icons.call_rounded, onPressed: () => launchUrl(Uri.parse('tel:$phone'))),
         ],
       ]),
       const SizedBox(height: 12),

@@ -104,6 +104,24 @@ func (s *Service) GetNetwork(ctx context.Context, id string) (Network, error) {
 	return getNetwork(ctx, s.pool, id)
 }
 
+// EmployeeBrief — имя, телефон и роль сотрудника (для «Кто вошёл» в приложении магазина).
+type EmployeeBrief struct {
+	FullName string
+	Phone    string
+	RoleName string
+}
+
+func (s *Service) EmployeeBrief(ctx context.Context, employeeID string) (EmployeeBrief, error) {
+	var b EmployeeBrief
+	err := s.pool.QueryRow(ctx, `
+		SELECT e.full_name, u.phone, r.name
+		FROM employees e
+		JOIN users u ON u.id = e.user_id
+		JOIN roles r ON r.id = e.role_id
+		WHERE e.id = $1`, employeeID).Scan(&b.FullName, &b.Phone, &b.RoleName)
+	return b, err
+}
+
 func (s *Service) ListNetworks(ctx context.Context, search string, page httpx.Page) ([]Network, error) {
 	rows, err := s.pool.Query(ctx, networkSelect+`
 		WHERE $1 = '' OR n.name ILIKE '%' || $1 || '%' OR u.phone LIKE '%' || $1 || '%'

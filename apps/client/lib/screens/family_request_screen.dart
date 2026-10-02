@@ -111,18 +111,13 @@ class _FamilyRequestScreenState extends State<FamilyRequestScreen> {
     }
     if (lines.isEmpty) return;
     if (state.cartCount > 0 && state.familyRequestId != widget.id) {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Заменить корзину?'),
-          content: const Text('В корзине уже есть товары. Положим вместо них товары из просьбы.'),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Заменить')),
-          ],
-        ),
+      final ok = await confirmSheet(
+        context,
+        title: 'Заменить корзину?',
+        text: 'В корзине уже есть товары. Положим вместо них товары из просьбы.',
+        confirm: 'Заменить',
       );
-      if (ok != true || !mounted) return;
+      if (!ok || !mounted) return;
     }
     state.fillCartFromRequest(widget.id, Store(q['store'] as Map<String, dynamic>), lines);
     final missing = (q['lines'] as List).length - lines.length;

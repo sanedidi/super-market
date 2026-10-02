@@ -129,12 +129,19 @@ type meResponse struct {
 	Permissions []string `json:"permissions"`
 	AllStores   bool     `json:"all_stores"`
 	StoreIDs    []string `json:"store_ids"`
+	FullName    string   `json:"full_name"`
+	Phone       string   `json:"phone"`
+	RoleName    string   `json:"role_name"`
 }
 
 func (m *Module) me(w http.ResponseWriter, r *http.Request) {
 	p := identity.FromContext(r.Context())
 	handle(m, w, r, http.StatusOK, func() (meResponse, error) {
 		n, err := m.svc.GetNetwork(r.Context(), p.NetworkID)
+		if err != nil {
+			return meResponse{}, err
+		}
+		who, err := m.svc.EmployeeBrief(r.Context(), p.EmployeeID)
 		perms := p.Permissions
 		if p.IsOwner {
 			perms = make([]string, 0, len(identity.Permissions))
@@ -145,6 +152,7 @@ func (m *Module) me(w http.ResponseWriter, r *http.Request) {
 		return meResponse{
 			UserID: p.UserID, EmployeeID: p.EmployeeID, Network: n, IsOwner: p.IsOwner,
 			Permissions: perms, AllStores: p.SeesAllStores(), StoreIDs: p.StoreIDs,
+			FullName: who.FullName, Phone: who.Phone, RoleName: who.RoleName,
 		}, err
 	})
 }

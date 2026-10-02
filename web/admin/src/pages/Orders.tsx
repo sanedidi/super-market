@@ -18,7 +18,7 @@ import {
   Typography,
 } from 'antd'
 import dayjs from 'dayjs'
-import { LoadError, PageTitle, StatusTag, api, dateTime, errorText, money, qty, useAction, useItem, useList, usePaged } from '@sm/shared'
+import { LoadError, PageTitle, StatusTag, api, dateTime, errorText, formatPhone, money, qty, useAction, useItem, useList, usePaged } from '@sm/shared'
 import { SearchSelect } from '../components'
 import { useInterval, useUrlState } from '../hooks'
 
@@ -205,7 +205,7 @@ export function Orders({ stale = false }: { stale?: boolean }) {
             { title: '№', dataIndex: 'number' },
             { title: 'Создан', dataIndex: 'created_at', render: dateTime },
             { title: 'Магазин', dataIndex: 'store_name' },
-            { title: 'Покупатель', dataIndex: 'customer_phone' },
+            { title: 'Покупатель', dataIndex: 'customer_phone', render: (v: string) => formatPhone(v) || '—' },
             { title: 'Сумма', dataIndex: 'total', align: 'right', render: (v) => money(v) },
             {
               title: 'Оплата',
@@ -271,7 +271,7 @@ function OrderDrawer({ id, onClose }: { id: string | null; onClose: () => void }
             </Descriptions.Item>
             <Descriptions.Item label="Создан">{dateTime(o.created_at)}</Descriptions.Item>
             <Descriptions.Item label="Магазин">{o.store_name}</Descriptions.Item>
-            <Descriptions.Item label="Покупатель">{o.customer_phone}</Descriptions.Item>
+            <Descriptions.Item label="Покупатель">{formatPhone(o.customer_phone)}</Descriptions.Item>
             <Descriptions.Item label="Адрес">
               {o.address}
               {o.apartment && `, кв. ${o.apartment}`}

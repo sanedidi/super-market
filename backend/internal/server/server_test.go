@@ -204,6 +204,9 @@ func TestStage1Flow(t *testing.T) {
 	if me.Body["is_owner"] != true {
 		t.Fatalf("owner is_owner = %v", me.Body["is_owner"])
 	}
+	if me.Body["full_name"] == "" || me.Body["phone"] == "" || me.Body["role_name"] == "" {
+		t.Fatalf("me without name/phone/role: %v", me.Body)
+	}
 
 	// Магазины и склады.
 	s1 := a.expect(a.do("POST", "/store/stores", ownerTok, map[string]any{

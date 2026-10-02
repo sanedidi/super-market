@@ -254,7 +254,7 @@ class _VerifyScreenState extends State<_VerifyScreen> {
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('${c['full_name'] ?? ''}'.isEmpty ? 'Без имени' : '${c['full_name']}', style: AppText.bodyStrong.copyWith(fontSize: 16)),
-                Text('${c['phone']} · ${c['level'] ?? ''} · доставок ${c['delivered'] ?? 0}', style: AppText.small),
+                Text('${formatPhone(c['phone'])} · ${c['level'] ?? ''} · доставок ${c['delivered'] ?? 0}', style: AppText.small),
               ]),
             ),
             StatusChip(

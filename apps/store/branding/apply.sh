@@ -37,6 +37,12 @@ else:
     s = s.replace('</manifest>', '    <queries>\n' + q + '    </queries>\n</manifest>', 1)
 open(p, 'w', encoding='utf-8').write(s)
 PY
+  # Face ID / отпечаток (local_auth): нужен FragmentActivity.
+  for f in $(find android/app/src/main -name 'MainActivity.kt' -o -name 'MainActivity.java'); do
+    sed -i.bak -e 's/io\.flutter\.embedding\.android\.FlutterActivity/io.flutter.embedding.android.FlutterFragmentActivity/' \
+      -e 's/: FlutterActivity()/: FlutterFragmentActivity()/' -e 's/extends FlutterActivity/extends FlutterFragmentActivity/' "$f"
+    rm -f "$f.bak"
+  done
 fi
 
 if [ -d ios ]; then
@@ -50,6 +56,7 @@ with open(p, 'rb') as f:
 d['CFBundleDisplayName'] = sys.argv[1]
 d['NSCameraUsageDescription'] = 'Сфотографировать накладную поставщика, чтобы сделать приход'
 d['NSPhotoLibraryUsageDescription'] = 'Выбрать фото накладной из галереи'
+d['NSFaceIDUsageDescription'] = 'Входить в приложение магазина по Face ID вместо кода'
 schemes = set(d.get('LSApplicationQueriesSchemes', []))
 schemes.update(['https', 'tg'])
 d['LSApplicationQueriesSchemes'] = sorted(schemes)

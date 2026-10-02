@@ -350,7 +350,7 @@ class _SupplierPickerState extends State<_SupplierPicker> {
       tile: (c) => ListTile(
         contentPadding: EdgeInsets.zero,
         title: Text('${c['name']}', style: AppText.bodyStrong),
-        subtitle: Text(n(c['balance']) > 0 ? 'Мы должны ${money(c['balance'])}' : '${c['phone'] ?? ''}', style: AppText.small),
+        subtitle: Text(n(c['balance']) > 0 ? 'Мы должны ${money(c['balance'])}' : formatPhone(c['phone']), style: AppText.small),
         onTap: () => Navigator.of(context).pop(c),
       ),
     );

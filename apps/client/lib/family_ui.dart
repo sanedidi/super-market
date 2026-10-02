@@ -1,6 +1,7 @@
 // Общие части экранов «Моя семья»: аватар участника, метка статуса просьбы,
 // карточка просьбы, время напоминания.
 import 'package:flutter/material.dart';
+import 'package:sm_core/sm_core.dart' show formatPhone;
 
 import 'ui/theme.dart';
 import 'ui/widgets.dart';
@@ -48,7 +49,7 @@ class MemberAvatar extends StatelessWidget {
 String memberName(Map<String, dynamic> m) {
   final name = '${m['name'] ?? ''}'.trim();
   if (name.isNotEmpty) return name;
-  return '${m['phone'] ?? 'Участник'}';
+  return m['phone'] == null ? 'Участник' : formatPhone(m['phone']);
 }
 
 /// Метка статуса просьбы: «Ждёт», «Куплено 1/2», «Куплено», «Заказано», «Отменено».

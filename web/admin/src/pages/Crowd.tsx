@@ -22,7 +22,7 @@ import {
   Tag,
   Typography,
 } from 'antd'
-import { LoadError, PageTitle, PagedTable, api, date, dateTime, money, useAction, useItem } from '@sm/shared'
+import { LoadError, PagedTable, PageTitle, api, date, dateTime, formatPhone, money, useAction, useItem } from '@sm/shared'
 import { useUrlState } from '../hooks'
 
 type Overview = {
@@ -231,7 +231,7 @@ function CouriersTab() {
         rowKey="user_id"
         columns={[
           { title: 'Курьер', render: (_, c) => name(c.full_name, c.code) },
-          { title: 'Телефон', dataIndex: 'phone' },
+          { title: 'Телефон', dataIndex: 'phone', render: (v: string) => formatPhone(v) },
           {
             title: 'Статус',
             render: (_, c) => (
@@ -457,7 +457,7 @@ function PayoutsTab() {
         locale={{ emptyText: 'Нет курьеров с балансом' }}
         columns={[
           { title: 'Курьер', render: (_, p) => name(p.full_name, p.code) },
-          { title: 'Телефон', dataIndex: 'phone' },
+          { title: 'Телефон', dataIndex: 'phone', render: (v: string) => formatPhone(v) },
           { title: 'Доставок с прошлой выплаты', dataIndex: 'deliveries', align: 'right' },
           { title: 'К выплате', dataIndex: 'balance', align: 'right', render: (v: string) => <Typography.Text strong>{money(v)}</Typography.Text> },
         ]}

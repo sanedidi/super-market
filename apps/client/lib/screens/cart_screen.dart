@@ -143,17 +143,8 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   Future<void> _clear() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Очистить корзину?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-          TextButton(style: TextButton.styleFrom(foregroundColor: AppColors.error), onPressed: () => Navigator.pop(ctx, true), child: const Text('Очистить')),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
+    final ok = await confirmSheet(context, title: 'Очистить корзину?', text: 'Все товары из корзины будут удалены.', confirm: 'Очистить');
+    if (!ok || !mounted) return;
     context.read<AppState>().clearCart();
     Navigator.of(context).pop();
   }

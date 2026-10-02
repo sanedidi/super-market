@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { Alert, Button, Form, Input, Typography } from 'antd'
 import { Brand } from './shell'
 import { api, ApiError, getTokens, onLogout, setTokens, type AppName, type Tokens } from './api'
+import { formatPhone, PhoneInput, phoneRule } from './phone'
 
 interface AuthState {
   loggedIn: boolean
@@ -101,8 +102,8 @@ export function LoginPage({ app, title }: { app: AppName; title: string }) {
             {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
             {step === 'phone' ? (
               <Form layout="vertical" onFinish={requestCode} initialValues={{ phone }} requiredMark={false}>
-                <Form.Item name="phone" label="Номер телефона" rules={[{ required: true, message: 'Введите номер' }]}>
-                  <Input placeholder="+998 90 123 45 67" autoFocus inputMode="tel" />
+                <Form.Item name="phone" label="Номер телефона" rules={[phoneRule(true)]}>
+                  <PhoneInput autoFocus />
                 </Form.Item>
                 <Button type="primary" htmlType="submit" block loading={busy} style={{ marginTop: 8 }}>
                   Получить код в Telegram
@@ -110,7 +111,7 @@ export function LoginPage({ app, title }: { app: AppName; title: string }) {
               </Form>
             ) : (
               <Form layout="vertical" onFinish={verify} requiredMark={false}>
-                <Typography.Paragraph type="secondary">Код отправлен в Telegram-бот на номер {phone}.</Typography.Paragraph>
+                <Typography.Paragraph type="secondary">Код отправлен в Telegram-бот на номер {formatPhone(phone)}.</Typography.Paragraph>
                 <Form.Item name="code" label="Код из Telegram" rules={[{ required: true, message: 'Введите код' }]}>
                   <Input autoFocus inputMode="numeric" maxLength={6} />
                 </Form.Item>

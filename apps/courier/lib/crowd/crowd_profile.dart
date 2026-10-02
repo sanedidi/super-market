@@ -112,7 +112,7 @@ class CrowdProfileScreen extends StatelessWidget {
             const Divider(height: 1, indent: 56, color: AppColors.line),
             ListTile(
               leading: const Icon(Icons.phone_iphone_rounded, color: AppColors.dark),
-              title: Text('${me['phone'] ?? ''}', style: AppText.body),
+              title: Text(formatPhone(me['phone']), style: AppText.body),
               trailing: Text('${me['code'] ?? ''}', style: AppText.body.copyWith(color: AppColors.text2)),
             ),
             const Divider(height: 1, indent: 56, color: AppColors.line),
@@ -120,18 +120,14 @@ class CrowdProfileScreen extends StatelessWidget {
               leading: const Icon(Icons.logout_rounded, color: AppColors.primary),
               title: Text('Выйти', style: AppText.body.copyWith(color: AppColors.primary)),
               onTap: () async {
-                final ok = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: const Text('Выйти из приложения?'),
-                    content: const Text('Лента перестанет искать заказы. Войти снова можно по номеру телефона.'),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-                      TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Выйти')),
-                    ],
-                  ),
+                final ok = await confirmSheet(
+                  context,
+                  icon: Icons.logout_rounded,
+                  title: 'Выйти из приложения?',
+                  text: 'Лента перестанет искать заказы. Войти снова можно по номеру телефона.',
+                  confirm: 'Выйти',
                 );
-                if (ok == true) await st.logout();
+                if (ok) await st.logout();
               },
             ),
           ]),

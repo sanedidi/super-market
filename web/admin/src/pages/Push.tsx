@@ -57,7 +57,7 @@ import {
 } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useQuery } from '@tanstack/react-query'
-import { LoadError, PageTitle, PagedTable, RemoteSelect, api, dateTime, errorText, useAction, useDebounced, useItem, useList } from '@sm/shared'
+import { LoadError, PagedTable, PageTitle, PhoneInput, RemoteSelect, api, dateTime, errorText, formatPhone, normalizeUzPhone, useAction, useDebounced, useItem, useList } from '@sm/shared'
 import { SearchSelect } from '../components'
 import { useUrlState } from '../hooks'
 
@@ -448,7 +448,7 @@ function DeliveryLog() {
           params={{ status, kind, q }}
           columns={[
             { title: 'Время', dataIndex: 'created_at', render: dateTime, width: 150 },
-            { title: 'Покупатель', dataIndex: 'phone', width: 160 },
+            { title: 'Покупатель', dataIndex: 'phone', width: 170, render: (v: string) => formatPhone(v) },
             {
               title: 'Уведомление',
               render: (_, x) => (
@@ -754,8 +754,7 @@ function PhonePreview({ title, body, when, tap }: { title: string; body: string;
 // ─── Новая рассылка ────────────────────────────────────────────────────────
 
 function useCustomer(phone: string) {
-  const digits = phone.replace(/\D/g, '')
-  const q = useDebounced(digits.length >= 9 ? phone : '', 400)
+  const q = useDebounced(normalizeUzPhone(phone) ?? '', 400)
   return useQuery({
     queryKey: ['/admin/push/customer', q],
     queryFn: () => api.get<CustomerInfo>('/admin/push/customer', { phone: q }),
@@ -773,7 +772,7 @@ function CustomerCard({ c }: { c: CustomerInfo }) {
       </div>
       <div style={{ flex: 1 }}>
         <b>
-          {c.name || 'Без имени'} · {c.phone}
+          {c.name || 'Без имени'} · {formatPhone(c.phone)}
         </b>
         <div style={{ fontSize: 12, color: C.t3 }}>
           {push ? `${c.devices.length} устр.: ${c.devices.map((d) => `${d.name} (${dayjs(d.last_seen_at).format('DD.MM')})`).join(', ')}` : 'Нет устройств с push'}
@@ -971,7 +970,7 @@ export function PushNew() {
                     <Space direction="vertical" size={10} style={{ width: '100%' }}>
                       <div>
                         <Label>Телефон покупателя</Label>
-                        <Input prefix={<MobileOutlined />} placeholder="+998 90 123-45-67" value={phone} onChange={(e) => setPhone(e.target.value)} style={{ maxWidth: 360 }} />
+                        <PhoneInput value={phone} onChange={setPhone} style={{ maxWidth: 360 }} />
                       </div>
                       {customer.isFetching && <Spin size="small" />}
                       {customer.error && <Alert type="warning" showIcon message={errorText(customer.error)} />}
@@ -1272,7 +1271,7 @@ export function PushCampaign() {
                       render: (_, r) => (
                         <>
                           <div style={{ fontWeight: 600 }}>{r.name || 'Без имени'}</div>
-                          <div style={{ color: C.t3, fontSize: 12 }}>{r.phone}</div>
+                          <div style={{ color: C.t3, fontSize: 12 }}>{formatPhone(r.phone)}</div>
                         </>
                       ),
                     },
@@ -1351,7 +1350,7 @@ function TestPushModal({ open, onClose }: { open: boolean; onClose: () => void }
           <>
             <div>
               <Label>Телефон покупателя</Label>
-              <Input prefix={<MobileOutlined />} placeholder="+998 90 123-45-67" value={phone} onChange={(e) => (setPhone(e.target.value), setResult(null))} />
+              <PhoneInput value={phone} onChange={(v) => (setPhone(v), setResult(null))} />
             </div>
             {customer.isFetching && <Spin size="small" />}
             {customer.error && <Alert type="warning" showIcon message={errorText(customer.error)} />}

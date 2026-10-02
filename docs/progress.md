@@ -11,6 +11,19 @@
 и тексты в `order_screen.dart`, подпись `cash` в `web/store/src/pages/Orders.tsx`, проверку в `orders_test.go`,
 поле `cash` у курьера (`backend/internal/orders/couriers.go`, `apps/courier`, `courier_login_test.go`).
 
+## Маска телефона, шторки снизу, вход в «SM Магазин» по коду и Face ID
+
+Figma «Магазин · приложение» → «Вход по коду и Face ID · маска телефона · подтверждения снизу».
+- Маска `+998 99 999 99 99` везде: `sm_core` (`phone.dart`: `PhoneField`, `UzPhoneFormatter`, `formatPhone`,
+  `normalizeUzPhone`) и `web/shared/src/phone.tsx` (`PhoneInput`, `phoneRule`, `formatPhone`). Номера в списках —
+  в том же виде.
+- Подтверждения в мобильных приложениях — шторкой снизу (`sm_core/sheet.dart`: `confirmSheet`, `promptSheet`,
+  `infoSheet`). В кассе и веб-панелях окна по центру остаются.
+- «SM Магазин» 0.6.0: первый вход на телефоне — номер и код из Telegram, затем свой код из 4 цифр и Face ID
+  (`apps/store/lib/lock`). Код только на телефоне (солёный SHA-256), 5 ошибок — выход из аккаунта, «Спрашивать код»:
+  сразу / 1 мин (по умолчанию) / 5 мин. Экран кода — поверх открытых экранов.
+- `GET /store/me` отдаёт `full_name`, `phone`, `role_name` (имя на экране кода).
+
 ## Касса 0.3.0: готовность к фискализации
 
 Figma «POS · касса» → «6. Фискализация».

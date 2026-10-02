@@ -100,7 +100,7 @@ class _SupplierScreenState extends State<SupplierScreen> {
             ? const Text('Поставщик')
             : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('${cp['name']}'),
-                Text([if ('${cp['inn']}'.isNotEmpty) 'ИНН ${cp['inn']}', if (phone.isNotEmpty) phone].join(' · '), style: AppText.small),
+                Text([if ('${cp['inn']}'.isNotEmpty) 'ИНН ${cp['inn']}', if (phone.isNotEmpty) formatPhone(phone)].join(' · '), style: AppText.small),
               ]),
         actions: [
           if (phone.isNotEmpty) IconButton(icon: const Icon(Icons.call_rounded), onPressed: () => launchUrl(Uri.parse('tel:$phone'))),

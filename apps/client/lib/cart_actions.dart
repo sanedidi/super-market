@@ -12,22 +12,13 @@ Future<void> changeQty(BuildContext context, {required String storeId, required 
   // Товар добавили с главной — запомним блок (заказы и выручка по блокам).
   final blockId = HomeBlockScope.of(context);
   if (state.cartStoreId != null && state.cartStoreId != storeId && qty > 0) {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Начать новую корзину?'),
-        content: Text('В корзине товары из «${state.cartStoreName}». Заказ оформляется из одного магазина.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-          FilledButton(
-            style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Очистить и добавить'),
-          ),
-        ],
-      ),
+    final ok = await confirmSheet(
+      context,
+      title: 'Начать новую корзину?',
+      text: 'В корзине товары из «${state.cartStoreName}». Заказ оформляется из одного магазина.',
+      confirm: 'Очистить и добавить',
     );
-    if (ok != true) return;
+    if (!ok) return;
   }
   state.setQty(storeId, storeName, product, qty, blockId: blockId);
 }

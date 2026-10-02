@@ -56,18 +56,13 @@ class _BalanceScreenState extends State<BalanceScreen> {
   }
 
   Future<void> _pay(Map<String, dynamic> inv) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Оплатить счёт с баланса?'),
-        content: Text('Счёт за ${inv['period']} — ${money(inv['amount_uzs'])}. Сумма спишется с баланса к выводу.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Оплатить')),
-        ],
-      ),
+    final ok = await confirmSheet(
+      context,
+      title: 'Оплатить счёт с баланса?',
+      text: 'Счёт за ${inv['period']} — ${money(inv['amount_uzs'])}. Сумма спишется с баланса к выводу.',
+      confirm: 'Оплатить',
     );
-    if (ok != true || !mounted) return;
+    if (!ok || !mounted) return;
     setState(() => _paying = inv['id'] as String);
     try {
       await context.read<Api>().post('/store/billing/invoices/${inv['id']}/pay');

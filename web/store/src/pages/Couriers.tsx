@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Alert, App, Button, Card, Input, Modal, Popconfirm, Space, Table, Tag, Typography } from 'antd'
 import { CopyOutlined, EnvironmentOutlined, KeyOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import { LoadError, PageTitle, api, dateTime, errorText, useAction, type List } from '@sm/shared'
+import { LoadError, PageTitle, api, dateTime, errorText, formatPhone, useAction, type List } from '@sm/shared'
 import { useStore } from '../ctx'
 import { NeedStore } from '../ui'
 import type { Courier } from '../types'
@@ -54,7 +54,7 @@ export function CouriersPage() {
             {
               title: 'Телефон',
               dataIndex: 'phone',
-              render: (v: string) => <a href={`tel:${v}`}>{v}</a>,
+              render: (v: string) => <a href={`tel:${v}`}>{formatPhone(v)}</a>,
             },
             { title: 'Транспорт', dataIndex: 'vehicle', render: (v: Courier['vehicle']) => vehicleTitles[v] ?? v },
             {
@@ -220,7 +220,7 @@ function CourierLoginModal({ courier, onClose }: { courier: Courier | null; onCl
     >
       {courier && (
         <Typography.Paragraph type="secondary">
-          {courier.full_name} · {courier.phone}
+          {courier.full_name} · {formatPhone(courier.phone)}
         </Typography.Paragraph>
       )}
       {saved ? (

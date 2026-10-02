@@ -6,8 +6,8 @@ import '../ads/ads_screen.dart';
 import '../control/cashiers_screen.dart';
 import '../crowd/crowd_screen.dart';
 import '../debts/debts_screen.dart';
+import '../lock/pin_screens.dart';
 import '../main.dart';
-import '../push.dart';
 import '../returns/return_screen.dart';
 import '../staff/staff_screen.dart';
 import '../summary/summary_screen.dart';
@@ -79,12 +79,24 @@ class MoreScreen extends StatelessWidget {
               onTap: st.stores.length > 1 ? () => pickStore(context) : null,
             ),
             ListTile(
+              leading: const Icon(Icons.lock_outline_rounded),
+              title: const Text('Код и Face ID', style: AppText.bodyStrong),
+              subtitle: const Text('Вход в приложение на этом телефоне', style: AppText.small),
+              trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LockSettingsScreen())),
+            ),
+            ListTile(
               leading: const Icon(Icons.logout_rounded, color: AppColors.primary),
               title: Text('Выйти', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
               onTap: () async {
-                final api = context.read<Api>();
-                await Push.unregister(api);
-                await api.logout();
+                final ok = await confirmSheet(
+                  context,
+                  icon: Icons.logout_rounded,
+                  title: 'Выйти из приложения?',
+                  text: 'Уведомления о заказах перестанут приходить. Войти снова — по номеру и коду из Telegram.',
+                  confirm: 'Выйти',
+                );
+                if (ok && context.mounted) await signOut(context);
               },
             ),
           ]),

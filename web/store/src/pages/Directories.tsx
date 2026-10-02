@@ -1,7 +1,7 @@
 // Справочники: контрагенты, типы, каталог платформы, типы цен, склады, способы оплаты, причины.
 import { useState } from 'react'
 import { Form, Input, Radio, Select, Switch, Tag, Typography } from 'antd'
-import { ActiveTag, CrudPage, RemoteSelect, money, useList } from '@sm/shared'
+import { ActiveTag, CrudPage, PhoneInput, RemoteSelect, formatPhone, money, phoneRule, useList } from '@sm/shared'
 import { useStore } from '../ctx'
 import { NeedStore } from '../ui'
 import { EntriesTable } from './Finance'
@@ -33,7 +33,7 @@ export function CounterpartiesPage() {
       columns={[
         { title: 'Название', dataIndex: 'name' },
         { title: 'Тип', dataIndex: 'type_name' },
-        { title: 'Телефон', dataIndex: 'phone' },
+        { title: 'Телефон', dataIndex: 'phone', render: (v: string) => formatPhone(v) || '—' },
         { title: 'ИНН', dataIndex: 'inn' },
         {
           title: 'Сальдо',
@@ -67,8 +67,8 @@ export function CounterpartiesPage() {
           <Form.Item name="type_id" label="Тип">
             <RemoteSelect<CounterpartyType> path="/store/finance/counterparty-types" filter={(t) => t.is_active} allowClear />
           </Form.Item>
-          <Form.Item name="phone" label="Телефон">
-            <Input />
+          <Form.Item name="phone" label="Телефон" rules={[phoneRule()]}>
+            <PhoneInput />
           </Form.Item>
           <Form.Item name="inn" label="ИНН">
             <Input />

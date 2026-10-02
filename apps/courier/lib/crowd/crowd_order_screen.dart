@@ -65,18 +65,13 @@ class _CrowdOrderScreenState extends State<CrowdOrderScreen> {
   }
 
   Future<void> _release() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Отказаться от заказа?'),
-        content: const Text('Заказ вернётся в ленту, его возьмёт другой курьер.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Отказаться')),
-        ],
-      ),
+    final ok = await confirmSheet(
+      context,
+      title: 'Отказаться от заказа?',
+      text: 'Заказ вернётся в ленту, его возьмёт другой курьер.',
+      confirm: 'Отказаться',
     );
-    if (ok != true || !mounted) return;
+    if (!ok || !mounted) return;
     setState(() => _busy = true);
     try {
       await context.read<CrowdState>().release(widget.orderId);
@@ -116,13 +111,11 @@ class _CrowdOrderScreenState extends State<CrowdOrderScreen> {
     try {
       await context.read<CrowdState>().problem(widget.orderId, 'no_handoff');
       if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Сообщили в поддержку'),
-          content: const Text('Позвоните покупателю ещё раз и подождите у двери 5–10 минут. Поддержка Super Market свяжется с вами.'),
-          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Понятно'))],
-        ),
+      await infoSheet(
+        context,
+        icon: Icons.support_agent_rounded,
+        title: 'Сообщили в поддержку',
+        text: 'Позвоните покупателю ещё раз и подождите у двери 5–10 минут. Поддержка Super Market свяжется с вами.',
       );
     } catch (e) {
       if (mounted) showMessage(context, e);

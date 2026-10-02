@@ -108,7 +108,7 @@ class _StaffScreenState extends State<StaffScreen> {
                       child: Text(_initials('${e['full_name']}'), style: const TextStyle(fontWeight: FontWeight.w600)),
                     ),
                     title: Text('${e['full_name']}', style: AppText.bodyStrong),
-                    subtitle: Text('${e['role_name']} · ${e['phone']}', style: AppText.small),
+                    subtitle: Text('${e['role_name']} · ${formatPhone(e['phone'])}', style: AppText.small),
                     trailing: IconButton(
                       icon: const Icon(Icons.call_rounded, color: AppColors.successInk),
                       onPressed: () => launchUrl(Uri.parse('tel:${e['phone']}')),
@@ -142,7 +142,7 @@ class _EmployeeSheet extends StatefulWidget {
 
 class _EmployeeSheetState extends State<_EmployeeSheet> {
   late final _name = TextEditingController(text: '${widget.employee?['full_name'] ?? ''}');
-  final _phone = TextEditingController(text: '+998 ');
+  final _phone = TextEditingController();
   late String? _roleId = widget.employee?['role_id'] as String?;
   late bool _active = (widget.employee?['status'] ?? 'active') == 'active';
   bool _busy = false;
@@ -163,8 +163,8 @@ class _EmployeeSheetState extends State<_EmployeeSheet> {
         ? 'Укажите имя'
         : _roleId == null
             ? 'Выберите роль'
-            : e == null && _phone.text.replaceAll(RegExp(r'\D'), '').length < 12
-                ? 'Телефон: +998 и 9 цифр'
+            : e == null && normalizeUzPhone(_phone.text) == null
+                ? 'Введите номер полностью: 9 цифр после +998'
                 : null;
     if (err != null) {
       setState(() => _error = err);
@@ -179,7 +179,7 @@ class _EmployeeSheetState extends State<_EmployeeSheet> {
     try {
       if (e == null) {
         await api.post('/store/employees', {
-          'phone': _phone.text.replaceAll(RegExp(r'[^\d+]'), ''),
+          'phone': normalizeUzPhone(_phone.text),
           'full_name': _name.text.trim(),
           'role_id': _roleId,
           'store_ids': [storeId],
@@ -211,10 +211,10 @@ class _EmployeeSheetState extends State<_EmployeeSheet> {
         child: SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(e == null ? 'Новый сотрудник' : '${e['full_name']}', style: AppText.h3),
-            if (e != null) Text('${e['phone']}', style: AppText.small),
+            if (e != null) Text(formatPhone(e['phone']), style: AppText.small),
             const SizedBox(height: 16),
             if (e == null) ...[
-              TextField(controller: _phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Телефон')),
+              PhoneField(controller: _phone, label: 'Телефон', autofocus: true),
               const SizedBox(height: 12),
             ],
             TextField(controller: _name, textCapitalization: TextCapitalization.words, decoration: const InputDecoration(labelText: 'Имя и фамилия')),

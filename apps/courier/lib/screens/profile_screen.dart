@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart' show confirmSheet, formatPhone;
 
 import '../logic.dart';
 import '../main.dart';
@@ -35,7 +36,7 @@ class ProfileScreen extends StatelessWidget {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(name, style: AppText.h3),
               Text(
-                [if ('${me['login'] ?? ''}'.isNotEmpty) 'Логин ${me['login']}', '${me['phone'] ?? ''}'].where((x) => x.isNotEmpty).join(' · '),
+                [if ('${me['login'] ?? ''}'.isNotEmpty) 'Логин ${me['login']}', formatPhone(me['phone'])].where((x) => x.isNotEmpty).join(' · '),
                 style: AppText.body.copyWith(color: const Color(0xFF8E8E93)),
               ),
             ]),
@@ -70,18 +71,14 @@ class ProfileScreen extends StatelessWidget {
             title: 'Выйти',
             color: AppColors.primary,
             onTap: () async {
-              final ok = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('Выйти из приложения?'),
-                  content: Text(st.onShift ? 'Смена завершится, магазин перестанет назначать вам заказы.' : 'Чтобы войти снова, понадобятся логин и пароль.'),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-                    TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Выйти')),
-                  ],
-                ),
+              final ok = await confirmSheet(
+                context,
+                icon: Icons.logout_rounded,
+                title: 'Выйти из приложения?',
+                text: st.onShift ? 'Смена завершится, магазин перестанет назначать вам заказы.' : 'Чтобы войти снова, понадобятся логин и пароль.',
+                confirm: 'Выйти',
               );
-              if (ok == true) await st.logout();
+              if (ok) await st.logout();
             },
           ),
         ]),

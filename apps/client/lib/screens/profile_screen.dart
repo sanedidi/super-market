@@ -29,12 +29,6 @@ String profileName(Map<String, dynamic>? p) {
   return parts.isNotEmpty ? parts.join(' ') : '${p['full_name'] ?? ''}'.trim();
 }
 
-/// +998901234567 → +998 90 123-45-67.
-String formatPhone(String p) {
-  final m = RegExp(r'^\+998(\d{2})(\d{3})(\d{2})(\d{2})$').firstMatch(p);
-  return m == null ? p : '+998 ${m[1]} ${m[2]}-${m[3]}-${m[4]}';
-}
-
 /// Вкладка «Профиль» (Figma «10 Профиль»): покупатель, текущий заказ,
 /// покупки, помощь и настройки.
 class ProfileScreen extends StatefulWidget {
@@ -365,36 +359,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _logout() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Выйти из аккаунта?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-          TextButton(style: TextButton.styleFrom(foregroundColor: AppColors.error), onPressed: () => Navigator.pop(ctx, true), child: const Text('Выйти')),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
+    final ok = await confirmSheet(context, icon: Icons.logout_rounded, title: 'Выйти из аккаунта?', text: 'Войти снова можно по номеру телефона.', confirm: 'Выйти');
+    if (!ok || !mounted) return;
     final nav = Navigator.of(context);
     await context.read<Api>().logout();
     nav.popUntil((r) => r.isFirst);
   }
 
   Future<void> _deleteAccount() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Удалить аккаунт?'),
-        content: const Text(
-            'Удалим имя, адреса, избранное и настройки. История заказов останется у магазинов без вашего телефона и адреса — это нужно для учёта. Восстановить аккаунт будет нельзя.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-          TextButton(style: TextButton.styleFrom(foregroundColor: AppColors.error), onPressed: () => Navigator.pop(ctx, true), child: const Text('Удалить')),
-        ],
-      ),
+    final ok = await confirmSheet(
+      context,
+      icon: Icons.delete_outline_rounded,
+      title: 'Удалить аккаунт?',
+      text: 'Удалим имя, адреса, избранное и настройки. История заказов останется у магазинов без вашего телефона и адреса — это нужно для учёта. Восстановить аккаунт будет нельзя.',
+      confirm: 'Удалить аккаунт',
     );
-    if (ok != true || !mounted) return;
+    if (!ok || !mounted) return;
     final api = context.read<Api>();
     final nav = Navigator.of(context);
     try {
