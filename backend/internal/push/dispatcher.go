@@ -49,6 +49,7 @@ func (d *Dispatcher) Run(ctx context.Context, every time.Duration) {
 type queued struct {
 	id       int64
 	userID   string
+	app      string
 	title    string
 	body     string
 	data     map[string]any
@@ -75,7 +76,7 @@ func (d *Dispatcher) send(ctx context.Context) (int, error) {
 	defer tx.Rollback(ctx) //nolint:errcheck
 
 	rows, err := tx.Query(ctx, `
-		SELECT id, user_id, title, body, data, attempts
+		SELECT id, user_id, app, title, body, data, attempts
 		FROM notifications_outbox
 		WHERE status = 'pending' AND send_after <= now()
 		ORDER BY id LIMIT 100
@@ -86,7 +87,7 @@ func (d *Dispatcher) send(ctx context.Context) (int, error) {
 	var batch []queued
 	for rows.Next() {
 		var q queued
-		if err := rows.Scan(&q.id, &q.userID, &q.title, &q.body, &q.data, &q.attempts); err != nil {
+		if err := rows.Scan(&q.id, &q.userID, &q.app, &q.title, &q.body, &q.data, &q.attempts); err != nil {
 			rows.Close()
 			return 0, err
 		}
@@ -148,11 +149,11 @@ func PlatformName(p string) string {
 	return "Android"
 }
 
-// UserDevices — устройства покупателя, свежие первыми.
+// UserDevices — устройства человека в приложении app (client/store), свежие первыми.
 func UserDevices(ctx context.Context, q interface {
 	Query(context.Context, string, ...any) (pgx.Rows, error)
-}, userID string) ([]Device, error) {
-	rows, err := q.Query(ctx, `SELECT id, token, platform FROM devices WHERE user_id = $1 ORDER BY last_seen_at DESC LIMIT 10`, userID)
+}, userID, app string) ([]Device, error) {
+	rows, err := q.Query(ctx, `SELECT id, token, platform FROM devices WHERE user_id = $1 AND app = $2 ORDER BY last_seen_at DESC LIMIT 10`, userID, app)
 	if err != nil {
 		return nil, err
 	}
@@ -176,11 +177,14 @@ func MessageData(data map[string]any) map[string]string {
 
 // deliver: push на все устройства покупателя.
 func (d *Dispatcher) deliver(ctx context.Context, tx pgx.Tx, q queued) (outcome, error) {
-	devs, err := UserDevices(ctx, tx, q.userID)
+	devs, err := UserDevices(ctx, tx, q.userID, q.app)
 	if err != nil {
 		return outcome{}, err
 	}
 	if len(devs) == 0 {
+		if q.app == AppStore {
+			return outcome{reason: "Нет push: сотрудник не разрешил уведомления или вышел из приложения магазина"}, nil
+		}
 		return outcome{reason: "Нет push: покупатель не разрешил уведомления или не входил в приложение"}, nil
 	}
 	if d.fcm == nil {

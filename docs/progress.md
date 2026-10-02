@@ -11,6 +11,16 @@
 и тексты в `order_screen.dart`, подпись `cash` в `web/store/src/pages/Orders.tsx`, проверку в `orders_test.go`,
 поле `cash` у курьера (`backend/internal/orders/couriers.go`, `apps/courier`, `courier_login_test.go`).
 
+## Приложение «SM Магазин» 0.2.0: push и заказы
+
+- Push сотрудникам: новый заказ, заказ ждёт, курьер «по пути» взял заказ, накладная распознана / не распознана.
+  Нажатие открывает заказ или накладную. Тот же проект Firebase, приложения `uz.supermarket.smStore` (iOS)
+  и `uz.supermarket.sm_store` (Android).
+- Вкладка «Заказы»: Новые · В работе · Собраны · В пути; карточка заказа с действиями как в панели
+  (принять, сборка, собран, выдать курьеру по коду, в путь, доставлен, отменить).
+- Для iOS в Firebase → Cloud Messaging у приложения «SM Magazin iOS» должен быть загружен APNs-ключ (.p8) —
+  без него уведомления на iPhone не приходят.
+
 ## ИИ-сервис и приход по фото накладной
 
 - Супер-админ → «ИИ-сервис» (Figma «Админка · ИИ-сервис»): OpenAI и совместимые (OpenRouter, DeepSeek, Groq,

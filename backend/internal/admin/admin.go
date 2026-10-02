@@ -172,7 +172,7 @@ func (s *Service) GetCustomer(ctx context.Context, id string) (CustomerDetail, e
 	}
 	d := CustomerDetail{Customer: c}
 	if err := s.pool.QueryRow(ctx, `
-		SELECT c.language, c.city, (SELECT count(*) FROM devices dv WHERE dv.user_id = c.user_id)::int
+		SELECT c.language, c.city, (SELECT count(*) FROM devices dv WHERE dv.user_id = c.user_id AND dv.app = 'client')::int
 		FROM customers c WHERE c.user_id = $1`, id).Scan(&d.Language, &d.City, &d.DevicesCount); err != nil {
 		return CustomerDetail{}, err
 	}

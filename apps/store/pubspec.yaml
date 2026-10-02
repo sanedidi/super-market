@@ -1,7 +1,7 @@
 name: sm_store
 description: Super Market Магазин — приход по фото накладной, склад, заказы и финансы магазина.
 publish_to: none
-version: 0.1.0+1
+version: 0.2.0+2
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -17,6 +17,8 @@ dependencies:
   provider: ^6.1.2
   http: ^1.2.2
   image_picker: ^1.1.2
+  firebase_core: ^4.0.0
+  firebase_messaging: ^16.0.0
   shared_preferences: ^2.3.2
   url_launcher: ^6.3.0
 

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../main.dart';
+import '../push.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -45,7 +46,11 @@ class MoreScreen extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.logout_rounded, color: AppColors.primary),
               title: Text('Выйти', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
-              onTap: () => context.read<Api>().logout(),
+              onTap: () async {
+                final api = context.read<Api>();
+                await Push.unregister(api);
+                await api.logout();
+              },
             ),
           ]),
         ),

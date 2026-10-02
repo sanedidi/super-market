@@ -36,6 +36,40 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/admin/push/blocks", m.blocks)
 		r.Get("/admin/push/cities", m.cities)
 	})
+	// Приложение магазина: устройство сотрудника для push.
+	r.Group(func(r chi.Router) {
+		r.Use(m.auth.Require(identity.AppStore))
+		r.Post("/store/devices", m.storeDevice)
+		r.Delete("/store/devices/{token}", m.removeStoreDevice)
+	})
+}
+
+type storeDeviceInput struct {
+	Token    string `json:"token"`
+	Platform string `json:"platform"`
+}
+
+func (m *Module) storeDevice(w http.ResponseWriter, r *http.Request) {
+	p := identity.FromContext(r.Context())
+	var in storeDeviceInput
+	if err := httpx.Decode(r, &in); err != nil {
+		httpx.Fail(w, r, m.log, err)
+		return
+	}
+	if err := RegisterStoreDevice(r.Context(), m.svc.pool, p.UserID, p.SessionID, in.Token, in.Platform); err != nil {
+		httpx.Fail(w, r, m.log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (m *Module) removeStoreDevice(w http.ResponseWriter, r *http.Request) {
+	p := identity.FromContext(r.Context())
+	if err := RemoveStoreDevice(r.Context(), m.svc.pool, p.UserID, chi.URLParam(r, "token")); err != nil {
+		httpx.Fail(w, r, m.log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func adminID(r *http.Request) string { return identity.FromContext(r.Context()).UserID }

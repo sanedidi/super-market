@@ -25,6 +25,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
+	"github.com/sanedidi/super-market/backend/internal/push"
 )
 
 const (
@@ -202,6 +203,9 @@ func (s *Service) start(id, networkID string) {
 			if _, err := s.pool.Exec(context.Background(), `UPDATE invoice_scans SET status = 'failed', error = $2 WHERE id = $1 AND status = 'processing'`, id, msg); err != nil {
 				s.log.Error("invoice scan fail", "id", id, "err", err)
 			}
+			if err := s.notifyAuthor(context.Background(), s.pool, id, "invoice_failed", "Не удалось распознать накладную", msg); err != nil {
+				s.log.Warn("push накладной", "err", err)
+			}
 		}
 	})
 }
@@ -251,6 +255,14 @@ func (s *Service) process(ctx context.Context, id, networkID string) error {
 		if _, err := tx.Exec(ctx, `DELETE FROM invoice_scan_lines WHERE scan_id = $1`, id); err != nil {
 			return err
 		}
+		supplier := inv.SupplierName
+		if supplier == "" {
+			supplier = "Накладная"
+		}
+		if err := s.notifyAuthor(ctx, tx, id, "invoice_ready", "Накладная распознана",
+			fmt.Sprintf("%s: строк %d — проверьте и проведите приход", supplier, len(inv.Lines))); err != nil {
+			return err
+		}
 		for i, l := range inv.Lines {
 			m := matchLine(ctx, tx, networkID, cp, l.Name, l.Barcode)
 			_, err := tx.Exec(ctx, `
@@ -263,6 +275,15 @@ func (s *Service) process(ctx context.Context, id, networkID string) error {
 		}
 		return nil
 	})
+}
+
+// notifyAuthor — push тому, кто сфотографировал накладную.
+func (s *Service) notifyAuthor(ctx context.Context, q db.Querier, id, kind, title, body string) error {
+	var emp string
+	if err := q.QueryRow(ctx, `SELECT created_by FROM invoice_scans WHERE id = $1`, id).Scan(&emp); err != nil {
+		return err
+	}
+	return push.EnqueueEmployee(ctx, q, emp, kind, title, body, map[string]string{"type": "invoice", "scan_id": id})
 }
 
 func fmtNum(v float64, prec int) string {

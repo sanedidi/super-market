@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart';
+
+import '../push.dart';
 
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'home_screen.dart';
 import 'more_screen.dart';
+import 'orders_screen.dart';
 import 'warehouse_screen.dart';
 
 /// Пять вкладок (Figma «Магазин · приложение»): Главная · Заказы · Склад · Финансы · Ещё.
@@ -17,13 +22,20 @@ class Shell extends StatefulWidget {
 class _ShellState extends State<Shell> {
   int _tab = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    // Вошли — подписываем устройство на уведомления сотрудника.
+    WidgetsBinding.instance.addPostFrameCallback((_) => Push.register(context.read<Api>()));
+  }
+
   void _go(int i) => setState(() => _tab = i);
 
   @override
   Widget build(BuildContext context) {
     final pages = [
       HomeScreen(onTab: _go),
-      const _Soon(title: 'Заказы', icon: Icons.receipt_long_rounded, text: 'Онлайн-заказы пока принимайте в панели магазина — в приложении они появятся в следующей версии.'),
+      const OrdersScreen(),
       const WarehouseScreen(),
       const _Soon(title: 'Финансы', icon: Icons.account_balance_wallet_rounded, text: 'Кассы, сдача кассы, прибыль и баланс появятся в следующей версии.'),
       const MoreScreen(),

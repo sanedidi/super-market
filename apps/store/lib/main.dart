@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'push.dart';
 import 'screens/shell.dart';
 import 'state.dart';
 import 'ui/theme.dart';
@@ -14,11 +15,12 @@ import 'ui/widgets.dart';
 const apiUrl = String.fromEnvironment('API_URL', defaultValue: 'https://api.super-market.uz/api/v1');
 
 /// Версия для экрана «Ещё» (совпадает с pubspec.yaml).
-const appVersion = '0.1.0';
+const appVersion = '0.2.0';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  await Push.init();
   final api = Api(baseUrl: apiUrl, app: 'store');
   await api.init();
   runApp(
@@ -40,6 +42,7 @@ class StoreApp extends StatelessWidget {
     final api = context.read<Api>();
     final loggedIn = context.select<Api, bool>((a) => a.loggedIn);
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'Super Market Магазин',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),

@@ -804,18 +804,19 @@ func (s *Service) AlertUnaccepted(ctx context.Context) error {
 		FROM stores s, networks n
 		WHERE o.alerted_at IS NULL AND `+StaleSQL("$1")+`
 		  AND s.id = o.store_id AND n.id = o.network_id
-		RETURNING o.id, o.number, n.name, s.name, s.phone, o.total::text, o.paid_at`, s.cfg.AcceptTimeout.Seconds())
+		RETURNING o.id, o.number, n.name, s.name, s.phone, o.total::text, o.paid_at, o.store_id`, s.cfg.AcceptTimeout.Seconds())
 	if err != nil {
 		return err
 	}
 	type stale struct {
 		id, network, store, phone, total string
+		storeID                          string
 		number                           int64
 		paidAt                           time.Time
 	}
 	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (stale, error) {
 		var x stale
-		err := r.Scan(&x.id, &x.number, &x.network, &x.store, &x.phone, &x.total, &x.paidAt)
+		err := r.Scan(&x.id, &x.number, &x.network, &x.store, &x.phone, &x.total, &x.paidAt, &x.storeID)
 		return x, err
 	})
 	if err != nil {
@@ -826,6 +827,11 @@ func (s *Service) AlertUnaccepted(ctx context.Context) error {
 		text := fmt.Sprintf("⚠️ Заказ №%d не принят уже %d мин.\nСеть: %s\nМагазин: %s %s\nСумма: %s сум\nID: %s",
 			x.number, mins, x.network, x.store, x.phone, x.total, x.id)
 		s.notify.SuperAdmins(ctx, text)
+		if err := push.EnqueueStaff(ctx, s.pool, x.storeID, identity.PermOrdersManage, "store_order_late",
+			fmt.Sprintf("Заказ №%d ждёт %d мин", x.number, mins), "Покупатель ждёт — примите или отмените заказ",
+			map[string]string{"type": "order", "order_id": x.id}); err != nil {
+			s.log.Warn("push сотрудникам", "err", err)
+		}
 		// Статус не меняется — только отметка в истории, без уведомления покупателю.
 		if _, err := s.pool.Exec(ctx, `INSERT INTO order_status_history (order_id, status, actor, note) VALUES ($1, $2, 'system', $3)`,
 			x.id, StatusPaid, "супер-админ уведомлён: заказ не принят вовремя"); err != nil {

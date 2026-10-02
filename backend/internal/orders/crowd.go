@@ -17,6 +17,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
+	"github.com/sanedidi/super-market/backend/internal/push"
 )
 
 // Crowd-доставка: курьеры «по пути». Обычный пользователь входит в
@@ -576,9 +577,22 @@ func (s *Service) CrowdAccept(ctx context.Context, p *identity.Principal, id str
 		if name == "" {
 			name = me.Code
 		}
-		_, err = tx.Exec(ctx, `INSERT INTO order_status_history (order_id, status, actor, note) VALUES ($1, 'picked', 'crowd', $2)`,
-			id, "Взял курьер по пути: "+name)
-		return err
+		if _, err := tx.Exec(ctx, `INSERT INTO order_status_history (order_id, status, actor, note) VALUES ($1, 'picked', 'crowd', $2)`,
+			id, "Взял курьер по пути: "+name); err != nil {
+			return err
+		}
+		var (
+			storeID string
+			number  int64
+			until   time.Time
+		)
+		if err := tx.QueryRow(ctx, `SELECT store_id, number, crowd_pickup_until FROM orders WHERE id = $1`, id).Scan(&storeID, &number, &until); err != nil {
+			return err
+		}
+		return push.EnqueueStaff(ctx, tx, storeID, identity.PermOrdersManage, "crowd_taken",
+			fmt.Sprintf("Курьер по пути взял заказ №%d", number),
+			fmt.Sprintf("%s заберёт до %s. Выдайте заказ по QR курьера", name, until.In(tashkent).Format("15:04")),
+			map[string]string{"type": "order", "order_id": id})
 	})
 	if err != nil {
 		return CrowdOrder{}, err

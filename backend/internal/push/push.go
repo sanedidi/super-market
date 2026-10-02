@@ -61,6 +61,11 @@ func format(s, store string) string {
 // заказа. Вызывается в транзакции, которая меняет статус. Если покупатель
 // выключил уведомления о заказах или удалил аккаунт — ничего не делает.
 func EnqueueOrderStatus(ctx context.Context, q db.Querier, orderID, status string) error {
+	if status == "paid" {
+		if err := enqueueNewOrder(ctx, q, orderID); err != nil {
+			return err
+		}
+	}
 	if _, ok := orderTexts["ru"][status]; !ok {
 		return nil
 	}
@@ -91,6 +96,53 @@ func EnqueueOrderStatus(ctx context.Context, q db.Querier, orderID, status strin
 		VALUES ($1, 'order_status', $2, $3, jsonb_build_object('type', 'order', 'order_id', $4::text, 'status', $5::text))`,
 		userID, fmt.Sprintf(t.title, number), format(t.body, store), orderID, status)
 	return err
+}
+
+// enqueueNewOrder — сотрудникам магазина: новый оплаченный заказ, нужно принять.
+func enqueueNewOrder(ctx context.Context, q db.Querier, orderID string) error {
+	var (
+		storeID, total string
+		number         int64
+		cash           bool
+	)
+	err := q.QueryRow(ctx, `SELECT store_id, number, total::text, payment_provider = 'cash' FROM orders WHERE id = $1`, orderID).
+		Scan(&storeID, &number, &total, &cash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	body := Sum(total) + " сум"
+	if cash {
+		body += " · наличными курьеру"
+	}
+	body += ". Примите заказ"
+	return EnqueueStaff(ctx, q, storeID, "orders.manage", "store_order", fmt.Sprintf("Новый заказ №%d", number), body,
+		map[string]string{"type": "order", "order_id": orderID})
+}
+
+// Sum — «186500.00» → «186 500».
+func Sum(v string) string {
+	if i := strings.IndexByte(v, '.'); i >= 0 {
+		if strings.Trim(v[i+1:], "0") == "" {
+			v = v[:i]
+		} else {
+			v = v[:i] + "," + v[i+1:]
+		}
+	}
+	intPart, frac, _ := strings.Cut(v, ",")
+	var b strings.Builder
+	for i, r := range intPart {
+		if i > 0 && (len(intPart)-i)%3 == 0 {
+			b.WriteRune(' ')
+		}
+		b.WriteRune(r)
+	}
+	if frac != "" {
+		b.WriteString("," + frac)
+	}
+	return b.String()
 }
 
 // Enqueue ставит в очередь произвольное уведомление покупателю (семья и

@@ -465,7 +465,7 @@ func (s *Service) check(ctx context.Context, in *CampaignInput) (Reach, error) {
 	}
 	where, args := audienceSQL(in.Audience)
 	err = s.pool.QueryRow(ctx, `
-		SELECT count(*)::int, count(*) FILTER (WHERE EXISTS (SELECT 1 FROM devices d WHERE d.user_id = c.user_id))::int
+		SELECT count(*)::int, count(*) FILTER (WHERE EXISTS (SELECT 1 FROM devices d WHERE d.user_id = c.user_id AND d.app = 'client'))::int
 		FROM customers c JOIN users u ON u.id = c.user_id WHERE `+where, args...).Scan(&r.Recipients, &r.WithPush)
 	r.WithoutPush = r.Recipients - r.WithPush
 	return r, err
@@ -622,8 +622,8 @@ type Overview struct {
 func (s *Service) Overview(ctx context.Context) (Overview, error) {
 	o := Overview{PushEnabled: s.fcm != nil}
 	err := s.pool.QueryRow(ctx, `
-		SELECT count(*) FILTER (WHERE EXISTS (SELECT 1 FROM devices d WHERE d.user_id = c.user_id))::int,
-		       count(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM devices d WHERE d.user_id = c.user_id))::int,
+		SELECT count(*) FILTER (WHERE EXISTS (SELECT 1 FROM devices d WHERE d.user_id = c.user_id AND d.app = 'client'))::int,
+		       count(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM devices d WHERE d.user_id = c.user_id AND d.app = 'client'))::int,
 		       count(*) FILTER (WHERE NOT c.notify_promos)::int
 		FROM customers c WHERE c.deleted_at IS NULL AND c.blocked_at IS NULL`).Scan(&o.WithPush, &o.WithoutPush, &o.PromosOff)
 	if err != nil {
@@ -687,7 +687,7 @@ func (s *Service) FindCustomer(ctx context.Context, rawPhone, selfID string) (Cu
 	if err != nil {
 		return c, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT platform, last_seen_at FROM devices WHERE user_id = $1 ORDER BY last_seen_at DESC LIMIT 10`, c.UserID)
+	rows, err := s.pool.Query(ctx, `SELECT platform, last_seen_at FROM devices WHERE user_id = $1 AND app = 'client' ORDER BY last_seen_at DESC LIMIT 10`, c.UserID)
 	if err != nil {
 		return c, err
 	}
@@ -742,7 +742,7 @@ func (s *Service) Test(ctx context.Context, adminID string, in TestInput) (TestR
 		return TestResult{}, err
 	}
 	res := TestResult{Customer: cust, Results: []DeviceResult{}, SentAt: s.now()}
-	devs, err := UserDevices(ctx, s.pool, cust.UserID)
+	devs, err := UserDevices(ctx, s.pool, cust.UserID, AppClient)
 	if err != nil {
 		return res, err
 	}

@@ -288,13 +288,13 @@ func (s *Service) RegisterDevice(ctx context.Context, userID, sessionID string, 
 		INSERT INTO devices (user_id, session_id, token, platform, language)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (token) DO UPDATE SET user_id = EXCLUDED.user_id, session_id = EXCLUDED.session_id,
-		       platform = EXCLUDED.platform, language = EXCLUDED.language, last_seen_at = now()`,
+		       platform = EXCLUDED.platform, language = EXCLUDED.language, app = 'client', last_seen_at = now()`,
 		userID, sessionID, in.Token, in.Platform, in.Language)
 	return err
 }
 
 func (s *Service) RemoveDevice(ctx context.Context, userID, token string) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM devices WHERE user_id = $1 AND token = $2`, userID, token)
+	_, err := s.pool.Exec(ctx, `DELETE FROM devices WHERE user_id = $1 AND token = $2 AND app = 'client'`, userID, token)
 	return err
 }
 

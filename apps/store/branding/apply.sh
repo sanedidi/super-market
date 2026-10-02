@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Папки платформ приложения магазина: название, логотип, камера и фото
-# (снимок накладной), подпись iOS.
+# (снимок накладной), push-уведомления, подпись iOS.
 # Запускать из apps/store после
 #   flutter create --platforms=android,ios --org uz.supermarket --project-name sm_store .
 set -euo pipefail
@@ -18,7 +18,7 @@ name = sys.argv[1]
 p = 'android/app/src/main/AndroidManifest.xml'
 s = open(p, encoding='utf-8').read()
 s = re.sub(r'android:label="[^"]*"', f'android:label="{name}"', s, count=1)
-perms = ['INTERNET', 'CAMERA', 'VIBRATE']
+perms = ['INTERNET', 'CAMERA', 'VIBRATE', 'POST_NOTIFICATIONS']
 add = ''.join(f'    <uses-permission android:name="android.permission.{x}"/>\n' for x in perms
               if f'android.permission.{x}"' not in s)
 s = s.replace('<application', add + '    <application', 1)
@@ -55,9 +55,23 @@ schemes.update(['https', 'tg'])
 d['LSApplicationQueriesSchemes'] = sorted(schemes)
 d['UISupportedInterfaceOrientations'] = ['UIInterfaceOrientationPortrait']
 d['ITSAppUsesNonExemptEncryption'] = False
+modes = set(d.get('UIBackgroundModes', []))
+modes.add('remote-notification')
+d['UIBackgroundModes'] = sorted(modes)
 with open(p, 'wb') as f:
     plistlib.dump(d, f)
 PY
+  # Push: право aps-environment (при выгрузке в App Store Xcode сам ставит production).
+  cat > ios/Runner/Runner.entitlements <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>
+XML
   python3 - <<'PY2'
 import re
 p = 'ios/Runner.xcodeproj/project.pbxproj'
@@ -65,6 +79,9 @@ s = open(p, encoding='utf-8').read()
 if 'DEVELOPMENT_TEAM' not in s:
     s = re.sub(r'(\n(\t+)PRODUCT_BUNDLE_IDENTIFIER = uz\.supermarket\.smStore;)',
                r'\n\2DEVELOPMENT_TEAM = Z5984ANP34;\1', s)
+if 'CODE_SIGN_ENTITLEMENTS' not in s:
+    s = re.sub(r'(\n(\t+)PRODUCT_BUNDLE_IDENTIFIER = uz\.supermarket\.smStore;)',
+               r'\n\2CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;\1', s)
 open(p, 'w', encoding='utf-8').write(s)
 PY2
 fi
