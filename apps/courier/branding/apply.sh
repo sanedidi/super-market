@@ -65,5 +65,15 @@ d['ITSAppUsesNonExemptEncryption'] = False
 with open(p, 'wb') as f:
     plistlib.dump(d, f)
 PY
+  # Команда разработчика Apple — подпись при сборке без ручной настройки в Xcode.
+  python3 - <<'PY2'
+import re
+p = 'ios/Runner.xcodeproj/project.pbxproj'
+s = open(p, encoding='utf-8').read()
+if 'DEVELOPMENT_TEAM' not in s:
+    s = re.sub(r'(\n(\t+)PRODUCT_BUNDLE_IDENTIFIER = uz\.supermarket\.smCourier;)',
+               r'\n\2DEVELOPMENT_TEAM = Z5984ANP34;\1', s)
+open(p, 'w', encoding='utf-8').write(s)
+PY2
 fi
 echo "Готово: $NAME"
