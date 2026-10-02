@@ -12,6 +12,7 @@ import {
   Grid,
   Input,
   Modal,
+  Popconfirm,
   Segmented,
   Select,
   Space,
@@ -20,11 +21,12 @@ import {
   Timeline,
   Typography,
 } from 'antd'
-import { PrinterOutlined, ReloadOutlined } from '@ant-design/icons'
+import { PrinterOutlined, QrcodeOutlined, ReloadOutlined } from '@ant-design/icons'
 import { LoadError, PageTitle, StatusTag, api, dateTime, money, periodParams, qty, useAction, useList, usePaged } from '@sm/shared'
 import { useStore } from '../ctx'
 import { usePaidOrders } from '../notify'
 import { NeedStore, RangeFilter, type Range } from '../ui'
+import { QrCodeModal } from '../qr'
 import type { Courier, Order, OrderItem, Warehouse } from '../types'
 
 const statusFilters = [
@@ -147,10 +149,14 @@ function OrderDrawer({ id, onClose }: { id: string | null; onClose: () => void }
   const [picking, setPicking] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [fiscal, setFiscal] = useState(false)
+  const [handover, setHandover] = useState(false)
 
   const act = useAction((step: string) => api.post(`/store/orders/${id}/${step}`), { success: 'Статус заказа обновлён' })
+  const giveCrowd = useAction((code: string) => api.post(`/store/orders/${id}/crowd-handover`, { code }), { success: 'Заказ выдан курьеру' })
+  const releaseCrowd = useAction(() => api.post(`/store/orders/${id}/crowd-release`), { success: 'Курьер снят с заказа' })
   const manage = can('orders.manage')
   const s = o?.status ?? ''
+  const crowd = !!o?.crowd_courier_id
 
   const actions = o && manage && (
     <Space wrap>
@@ -172,12 +178,27 @@ function OrderDrawer({ id, onClose }: { id: string | null; onClose: () => void }
           Собран
         </Button>
       )}
-      {s === 'picked' && (
+      {crowd && s === 'picked' && (
+        <Button type="primary" icon={<QrcodeOutlined />} onClick={() => setHandover(true)}>
+          Выдать курьеру
+        </Button>
+      )}
+      {crowd && s === 'picked' && (
+        <Popconfirm
+          title="Снять курьера с заказа?"
+          description="Заказ снова станет доступен курьерам или его можно отдать штатному курьеру"
+          okText="Снять"
+          onConfirm={() => releaseCrowd.mutate()}
+        >
+          <Button loading={releaseCrowd.isPending}>Снять курьера</Button>
+        </Popconfirm>
+      )}
+      {!crowd && s === 'picked' && (
         <Button type="primary" loading={act.isPending} onClick={() => act.mutate('start-delivery')}>
           В путь
         </Button>
       )}
-      {(s === 'delivering' || s === 'picked') && (
+      {!crowd && (s === 'delivering' || s === 'picked') && (
         <Button type={s === 'delivering' ? 'primary' : 'default'} loading={act.isPending} onClick={() => act.mutate('delivered')}>
           Доставлен
         </Button>
@@ -207,6 +228,29 @@ function OrderDrawer({ id, onClose }: { id: string | null; onClose: () => void }
           {actions && <div style={{ marginBottom: 16 }}>{actions}</div>}
           {o.status === 'cancelled' && o.cancel_reason && (
             <Alert type="warning" showIcon message={`Причина отмены: ${o.cancel_reason}`} style={{ marginBottom: 16 }} />
+          )}
+          {o.crowd_open && (
+            <Alert
+              type="info"
+              showIcon
+              message="Заказ предложен курьерам по пути"
+              description="Если никто не возьмёт его в ближайшие минуты, назначьте штатного курьера."
+              style={{ marginBottom: 16 }}
+            />
+          )}
+          {crowd && s === 'picked' && (
+            <Alert
+              type="info"
+              showIcon
+              message="Курьер по пути идёт за заказом"
+              description={
+                <>
+                  Выдайте заказ, только отсканировав QR курьера или введя его код выдачи
+                  {o.crowd_pickup_until && <> · должен забрать до {dateTime(o.crowd_pickup_until).slice(-5)}</>}
+                </>
+              }
+              style={{ marginBottom: 16 }}
+            />
           )}
           <Descriptions size="small" bordered column={{ xs: 1, sm: 2, md: 2, lg: 2, xl: 2, xxl: 2 }} style={{ marginBottom: 16 }}>
             <Descriptions.Item label="Покупатель">
@@ -345,6 +389,16 @@ function OrderDrawer({ id, onClose }: { id: string | null; onClose: () => void }
           <FiscalModal path={`/store/orders/${o.id}/fiscal`} open={fiscal} onClose={() => setFiscal(false)} />
         </>
       )}
+      <QrCodeModal
+        open={handover}
+        title="Выдача курьеру по пути"
+        hint="Отсканируйте QR на экране заказа у курьера или введите код выдачи из 3 символов"
+        placeholder="Код выдачи, например 7KX"
+        okText="Выдать"
+        loading={giveCrowd.isPending}
+        onClose={() => setHandover(false)}
+        onSubmit={(code) => giveCrowd.mutate(code, { onSuccess: () => setHandover(false) })}
+      />
     </Drawer>
   )
 }
@@ -480,6 +534,14 @@ function CourierPicker({ order, editable }: { order: Order; editable: boolean })
     success: 'Курьер назначен',
     invalidate: [['/store/orders']],
   })
+  if (order.crowd_courier_id)
+    return (
+      <Space wrap size={4}>
+        {order.courier_name}
+        <Tag color="purple">по пути</Tag>
+        {order.crowd_courier_phone && <a href={`tel:${order.crowd_courier_phone}`}>{order.crowd_courier_phone}</a>}
+      </Space>
+    )
   const canChange = editable && ['accepted', 'picking', 'picked', 'delivering'].includes(order.status)
   const eta = order.eta_at && order.status === 'delivering' ? ` · прибудет к ${dateTime(order.eta_at).slice(-5)}` : ''
   if (!canChange) return <>{order.courier_name ? order.courier_name + eta : <Typography.Text type="secondary">Не назначен</Typography.Text>}</>

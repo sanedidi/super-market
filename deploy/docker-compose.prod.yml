@@ -27,6 +27,11 @@ x-backend-env: &backend-env
   SUPPORT_URL: ${SUPPORT_URL:-}
   PRIVACY_URL: ${PRIVACY_URL:-}
   OFFER_URL: ${OFFER_URL:-}
+  COURIER_TERMS_URL: ${COURIER_TERMS_URL:-}
+  # SMS для кодов входа курьеров «по пути» (Eskiz). Пусто — коды в Telegram.
+  ESKIZ_EMAIL: ${ESKIZ_EMAIL:-}
+  ESKIZ_PASSWORD: ${ESKIZ_PASSWORD:-}
+  ESKIZ_FROM: ${ESKIZ_FROM:-}
   # Фото товаров, логотипы, баннеры — в MinIO (бакет создаётся сам).
   S3_ENDPOINT: http://minio:9000
   S3_ACCESS_KEY: ${MINIO_ROOT_USER}

@@ -613,3 +613,59 @@ remind_at_store, deliver_offer_at, order_id, items_total, items_bought, summary,
 Push (`data.type = family_request`, `data.request_id`): новая просьба — сразу; напоминание в `remind_at`
 (если оно позже чем через 5 минут); предложение заказать домой в `deliver_offer_at`. Приглашение также
 работает через бота: `/start fam_<код>` — бот просит номер (если ещё не привязан) и добавляет в семью.
+
+## Курьеры «по пути» (crowd-доставка)
+
+Обычный пользователь входит в приложение курьера в режиме «По пути» по телефону и коду
+(`POST /auth/otp/request {phone, app: "crowd"}` → `channel: "sms"` при настроенном Eskiz, иначе `"telegram"`;
+`POST /auth/otp/verify {phone, code, app: "crowd", terms_accepted: true}` — согласие обязательно при первом входе,
+иначе 422 `terms_required`). Токен `crowd` открывает только `/crowd/*` и `/auth/crowd/logout`; заблокированный — 403 `crowd_blocked`.
+Пока личность не подтверждена в магазине (`status: unverified`), заказы не предлагаются. Ссылки на условия и
+политику — `GET /client/config` (`courier_terms_url`, `privacy_url`).
+
+### Курьер (`app=crowd`)
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET/PUT | `/crowd/me` | профиль: `code` (KR-12345), `status`, `full_name`, `vehicle`, `online`, `dest`, уровень и прогресс. PUT — `{vehicle?, online?}` |
+| PUT | `/crowd/route` | `{dest: {lat, lng, title} \| null}` — куда иду |
+| POST | `/crowd/location` | `{lat, lng}` — точка курьера (пересчитывает время прибытия у покупателя) |
+| GET | `/crowd/points` | магазины, где можно подтвердить личность |
+| GET | `/crowd/offers` | `state` (`ok`, `unverified`, `offline`, `busy`, `no_location`) и `items` — заказы рядом с крюком к `dest`, вознаграждение |
+| POST | `/crowd/offers/{id}/accept` | взять заказ → код выдачи (3 символа), срок «забрать до». 409 — заказ уже взят или превышен лимит уровня |
+| GET | `/crowd/orders`, `/crowd/orders/{id}` | мои активные заказы; QR выдачи `sm-pickup:<номер>:<код>` |
+| POST | `/crowd/orders/{id}/release` | отказаться до выдачи |
+| POST | `/crowd/orders/{id}/deliver` | `{code}` — 4 цифры от покупателя; 5 попыток. Начисляет вознаграждение |
+| POST | `/crowd/orders/{id}/problem` | `{kind: no_handoff\|other, note}` — инцидент для поддержки |
+| GET | `/crowd/earnings` | баланс, следующая выплата, неделя и журнал начислений |
+
+### Панель магазина (право `orders.manage`)
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| POST | `/store/crowd/lookup` | `{code}` — QR `sm-courier:KR-…` или код → карточка курьера |
+| POST | `/store/crowd/verify` | `{code, store_id, decision: approve\|reject, doc_type: passport\|id_card, full_name, birth_date, doc_last4, photo_match, doc_valid, reason}`. Возраст от 18; документ хранится только хэшем, 409 `doc_used` — уже у другого курьера. Магазин должен быть подключён |
+| GET | `/store/crowd/bonuses?store_id=` | `credited_month`, `pending`, `verified`, `per_delivery`, `max_deliveries`, `items` |
+| POST | `/store/orders/{id}/crowd-handover` | `{code}` — QR или код выдачи курьера → заказ «в пути» |
+| POST | `/store/orders/{id}/crowd-release` | снять курьера «по пути» до выдачи |
+
+Заказ отдаёт `delivery_mode` (`staff`/`crowd`), `crowd_courier_id`, `crowd_courier_phone`, `crowd_pickup_until`,
+`crowd_open` (сейчас предлагается курьерам). Для заказа курьера «по пути» «В путь»/«Доставлен» и назначение
+штатного — 409 `crowd_courier`. Покупатель видит `handoff_code` в `/client/orders/{id}`, пока заказ собран или в пути,
+и `courier.crowd: true` в отслеживании.
+
+### Супер-админ
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET | `/admin/crowd/overview` | сегодня взято/предложено, среднее время, курьеры по статусам, инциденты, к выплате, бонусы |
+| GET | `/admin/crowd/couriers?status=&q=&limit=&offset=` | курьеры с уровнем, % вовремя, балансом |
+| POST | `/admin/crowd/couriers/{id}/block`, `/unblock` | `{reason}` — блокировка закрывает сессии и снимает невыданные заказы |
+| GET | `/admin/crowd/incidents?status=open\|resolved` | нарушения и жалобы |
+| POST | `/admin/crowd/incidents/{id}/resolve` | `{resolution, violation, penalty?}` |
+| GET/POST | `/admin/crowd/payouts` | к выплате / `{courier_ids, note}` — отметить выплату |
+| GET/PUT | `/admin/crowd/settings` | тарифы, время ожидания, радиус и крюк, бонус магазину, уровни |
+| GET | `/admin/crowd/stores?q=` · PUT `/admin/crowd/stores/{id}` | `{crowd_enabled}` — подключить магазин к пилоту |
+
+Воркер `crowd` (каждый тик `WORKER_INTERVAL`) снимает заказы, не забранные вовремя (нарушение), отменяет бонусы магазинам за нарушителей
+и начисляет бонусы после проверочного срока, если у курьера есть доставки из других магазинов.

@@ -4,6 +4,7 @@ import {
   AppstoreOutlined,
   BankOutlined,
   BellOutlined,
+  CarOutlined,
   DashboardOutlined,
   DollarOutlined,
   ShopOutlined,
@@ -20,6 +21,7 @@ import { ShowcasePlans } from './pages/ShowcasePlans'
 import { Orders, Payments } from './pages/Orders'
 import { Tariffs, BillingSettings, BillingNetworks, Invoices, Payouts } from './pages/Billing'
 import { Customers } from './pages/Customers'
+import { Crowd } from './pages/Crowd'
 import { Notifications, PushCampaign, PushNew } from './pages/Push'
 
 const menu: MenuItem[] = [
@@ -63,6 +65,7 @@ const menu: MenuItem[] = [
       { key: '/billing/settings', label: 'Настройки' },
     ],
   },
+  { key: '/crowd', icon: <CarOutlined />, label: 'Курьеры по пути' },
   { key: '/payouts', icon: <BankOutlined />, label: 'Выводы денег' },
   { key: '/customers', icon: <UserOutlined />, label: 'Покупатели' },
   { key: '/notifications', icon: <BellOutlined />, label: 'Уведомления' },
@@ -88,6 +91,7 @@ export function AdminRoutes() {
         <Route path="billing/tariffs" element={<Tariffs />} />
         <Route path="billing/showcase" element={<ShowcasePlans />} />
         <Route path="billing/settings" element={<BillingSettings />} />
+        <Route path="crowd" element={<Crowd />} />
         <Route path="payouts" element={<Payouts />} />
         <Route path="customers" element={<Customers />} />
         <Route path="notifications" element={<Notifications />} />

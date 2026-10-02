@@ -13,6 +13,7 @@ import {
   LayoutOutlined,
   NotificationOutlined,
   SettingOutlined,
+  SafetyCertificateOutlined,
   ShoppingCartOutlined,
   ShoppingOutlined,
   WalletOutlined,
@@ -42,6 +43,7 @@ import { EmployeesPage, RolesPage, StoresPage } from './pages/Settings'
 import { DeliveryPage } from './pages/Delivery'
 import { BalancePage } from './pages/Balance'
 import { CouriersPage } from './pages/Couriers'
+import { CrowdPage } from './pages/Crowd'
 import { ShowcasePage } from './pages/Showcase'
 import { StoreAdsPage } from './pages/StoreAds'
 import { PosDevicesPage, PosShiftsPage } from './pages/Pos'
@@ -57,6 +59,7 @@ const MENU: Item[] = [
   { key: '/', label: 'Главная', icon: <DashboardOutlined /> },
   { key: '/orders', label: 'Онлайн-заказы', icon: <ShoppingCartOutlined />, perm: 'orders.manage' },
   { key: '/couriers', label: 'Курьеры', icon: <CarOutlined />, perm: 'orders.manage' },
+  { key: '/crowd', label: 'Курьеры по пути', icon: <SafetyCertificateOutlined />, perm: 'orders.manage' },
   { key: '/showcase', label: 'Витрина приложения', icon: <LayoutOutlined />, perm: 'showcase.manage' },
   { key: '/brand-ads', label: 'Реклама брендов', icon: <NotificationOutlined />, perm: 'showcase.manage' },
   {
@@ -228,6 +231,7 @@ export function StoreRoutes() {
         <Route index element={<DashboardPage />} />
         <Route path="orders" element={<OrdersPage />} />
         <Route path="couriers" element={<CouriersPage />} />
+        <Route path="crowd" element={<CrowdPage />} />
         <Route path="showcase" element={<ShowcasePage />} />
         <Route path="brand-ads" element={<StoreAdsPage />} />
 

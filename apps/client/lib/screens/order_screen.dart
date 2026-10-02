@@ -154,6 +154,10 @@ class _OrderScreenState extends State<OrderScreen> {
                     onRefresh: _load,
                     child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
                       _StatusCard(order: o),
+                      if (o['handoff_code'] != null) ...[
+                        const SizedBox(height: 12),
+                        HandoffCodeCard(code: '${o['handoff_code']}'),
+                      ],
                       if (tr?['courier'] != null) ...[
                         const SizedBox(height: 12),
                         CourierCard(courier: tr!['courier'] as Map<String, dynamic>),
@@ -311,6 +315,10 @@ class _OrderScreenState extends State<OrderScreen> {
                 ),
                 const SizedBox(height: 20),
                 const _Steps(done: 2, current: 2),
+                if (o['handoff_code'] != null) ...[
+                  const SizedBox(height: 20),
+                  HandoffCodeCard(code: '${o['handoff_code']}'),
+                ],
                 if (courier != null) ...[
                   const SizedBox(height: 20),
                   CourierCard(courier: courier),
@@ -497,7 +505,14 @@ class CourierCard extends StatelessWidget {
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(name, style: AppText.bodyStrong),
-            Text('Курьер · ${_vehicleNames[courier['vehicle']] ?? ''}', style: AppText.small),
+            if (courier['crowd'] == true)
+              Row(children: [
+                const Icon(Icons.verified_rounded, size: 14, color: AppColors.success),
+                const SizedBox(width: 4),
+                Flexible(child: Text('Курьер по пути · личность подтверждена', style: AppText.small.copyWith(color: AppColors.success))),
+              ])
+            else
+              Text('Курьер · ${_vehicleNames[courier['vehicle']] ?? ''}', style: AppText.small),
           ]),
         ),
         if (phone != null) ...[
@@ -513,6 +528,32 @@ class CourierCard extends StatelessWidget {
             ),
           ),
         ],
+      ]),
+    );
+  }
+}
+
+/// Код вручения: покупатель называет его курьеру «по пути» при получении заказа.
+class HandoffCodeCard extends StatelessWidget {
+  const HandoffCodeCard({super.key, required this.code});
+  final String code;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      color: AppColors.primarySoft,
+      padding: const EdgeInsets.all(16),
+      child: Row(children: [
+        const Icon(Icons.lock_outline_rounded, color: AppColors.primary),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Код получения', style: AppText.bodyStrong),
+            Text('Назовите его курьеру, только когда заказ у вас в руках', style: AppText.small),
+          ]),
+        ),
+        const SizedBox(width: 12),
+        Text(code, style: AppText.h2.copyWith(color: AppColors.primary, letterSpacing: 4)),
       ]),
     );
   }

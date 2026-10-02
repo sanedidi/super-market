@@ -3,10 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import '../crowd/crowd_login.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 
-/// Вход курьера по логину и паролю (Figma «Курьер · приложение», К1).
+/// Вход: одно приложение, два режима (Figma К1 и Ц1). «Курьер по пути» —
+/// телефон и код из SMS, «Сотрудник магазина» — логин и пароль от магазина.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -20,6 +22,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordFocus = FocusNode();
   bool _hide = true;
   bool _busy = false;
+  bool _crowd = true;
   String? _error;
   String? _hint;
 
@@ -98,14 +101,25 @@ class _LoginScreenState extends State<LoginScreen> {
                   ]),
                 ),
                 const SizedBox(height: 14),
-                const Text('Заказы, маршрут и звонки — в одном приложении',
-                    style: TextStyle(fontFamily: 'Inter', fontSize: 16, height: 1.35, color: Color(0xE6FFFFFF))),
+                Text(_crowd ? 'Заказы из магазинов рядом и по пути' : 'Заказы, маршрут и звонки — в одном приложении',
+                    style: const TextStyle(fontFamily: 'Inter', fontSize: 16, height: 1.35, color: Color(0xE6FFFFFF))),
               ]),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              child: ModeSwitch(crowd: _crowd, onChanged: _busy ? null : (v) => setState(() {
+                _crowd = v;
+                _error = null;
+                _hint = null;
+              })),
+            ),
+            if (_crowd)
+              const Padding(padding: EdgeInsets.fromLTRB(20, 20, 20, 24), child: CrowdLoginForm())
+            else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                const Text('Вход для курьера', style: AppText.h2),
+                const Text('Вход по логину', style: AppText.h2),
                 const SizedBox(height: 6),
                 Text('Логин и пароль выдаёт магазин', style: AppText.body.copyWith(color: AppColors.text2)),
                 const SizedBox(height: 20),

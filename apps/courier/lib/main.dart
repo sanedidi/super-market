@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart' hide LoginScreen;
 import 'package:url_launcher/url_launcher.dart';
 
+import 'crowd/crowd_shell.dart';
+import 'crowd/crowd_state.dart';
 import 'screens/login_screen.dart';
 import 'screens/shell.dart';
 import 'state.dart';
@@ -14,18 +16,23 @@ import 'ui/theme.dart';
 const apiUrl = String.fromEnvironment('API_URL', defaultValue: 'https://api.super-market.uz/api/v1');
 
 /// Версия для экрана профиля (совпадает с pubspec.yaml).
-const appVersion = '1.0.0';
+const appVersion = '1.1.0';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  // Одно приложение — два режима со своими токенами: штатный курьер
+  // (логин и пароль) и курьер «по пути» (телефон и код).
   final api = Api(baseUrl: apiUrl, app: 'courier');
+  final crowdApi = Api(baseUrl: apiUrl, app: 'crowd');
   await api.init();
+  await crowdApi.init();
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: api),
         ChangeNotifierProvider(create: (_) => CourierState(api)),
+        ChangeNotifierProvider(create: (_) => CrowdState(crowdApi)),
       ],
       child: const CourierApp(),
     ),
@@ -38,6 +45,7 @@ class CourierApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final loggedIn = context.select<Api, bool>((a) => a.loggedIn);
+    final crowd = context.select<CrowdState, bool>((c) => c.loggedIn);
     return MaterialApp(
       title: 'Super Market Курьер',
       debugShowCheckedModeBanner: false,
@@ -49,7 +57,7 @@ class CourierApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      home: loggedIn ? const Shell() : const LoginScreen(),
+      home: loggedIn ? const Shell() : (crowd ? const CrowdShell() : const LoginScreen()),
     );
   }
 }

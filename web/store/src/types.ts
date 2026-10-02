@@ -339,6 +339,13 @@ export type Order = {
   courier_id: string | null
   courier_name: string | null
   eta_at: string | null
+  /** staff — штатный курьер, crowd — курьер «по пути». */
+  delivery_mode?: 'staff' | 'crowd'
+  crowd_courier_id?: string | null
+  crowd_courier_phone?: string | null
+  crowd_pickup_until?: string | null
+  /** Заказ сейчас предлагается курьерам «по пути». */
+  crowd_open?: boolean
   cancel_reason: string
   fiscal_status: string
   created_at: string
@@ -497,4 +504,36 @@ export type Courier = {
   /** Логин приложения курьера; null — входа нет. */
   login: string | null
   last_login_at: string | null
+}
+
+export type CrowdCourierCard = {
+  user_id: string
+  code: string
+  status: 'unverified' | 'active' | 'blocked'
+  phone: string
+  full_name: string
+  level: string
+  delivered: number
+  verified_at: string | null
+  verified_store: string | null
+}
+
+export type StoreCrowdBonus = {
+  courier_id: string
+  name: string
+  code: string
+  store_name: string
+  verified_at: string
+  deliveries: number
+  credited: string
+  pending: string
+}
+
+export type StoreCrowdBonuses = {
+  credited_month: string
+  pending: string
+  verified: number
+  per_delivery: string
+  max_deliveries: number
+  items: StoreCrowdBonus[] | null
 }

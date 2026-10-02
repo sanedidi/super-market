@@ -29,6 +29,7 @@ func (m *Module) Routes(r chi.Router) {
 	r.With(m.auth.Require(AppAdmin)).Post("/auth/admin/logout", m.logout)
 	r.Post("/auth/courier/login", m.courierLogin)
 	r.With(m.auth.Require(AppCourier)).Post("/auth/courier/logout", m.logout)
+	r.With(m.auth.Require(AppCrowd)).Post("/auth/crowd/logout", m.logout)
 
 	r.Group(func(r chi.Router) {
 		r.Use(m.auth.Require(AppStore))

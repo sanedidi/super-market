@@ -25,6 +25,8 @@ type Links struct {
 	Privacy string
 	Offer   string
 	Bot     string
+	// CourierTerms — условия для курьеров «по пути».
+	CourierTerms string
 }
 
 type Service struct {
@@ -46,10 +48,13 @@ type AppConfig struct {
 	OfferURL    string `json:"offer_url"`
 	// BotURL — бот, который присылает коды входа (кнопка «Открыть бота»).
 	BotURL string `json:"bot_url"`
+	// CourierTermsURL — условия для курьеров «по пути» (приложение курьера).
+	CourierTermsURL string `json:"courier_terms_url"`
 }
 
 func (s *Service) Config() AppConfig {
-	return AppConfig{PushEnabled: s.pushEnabled, SupportURL: s.links.Support, PrivacyURL: s.links.Privacy, OfferURL: s.links.Offer, BotURL: s.links.Bot}
+	return AppConfig{PushEnabled: s.pushEnabled, SupportURL: s.links.Support, PrivacyURL: s.links.Privacy, OfferURL: s.links.Offer, BotURL: s.links.Bot,
+		CourierTermsURL: s.links.CourierTerms}
 }
 
 type Notifications struct {

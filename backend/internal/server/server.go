@@ -102,6 +102,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		reports.NewModule(reports.NewService(pool), auth, log),
 		profile.NewModule(profile.NewService(pool, profile.Links{
 			Support: supportURL(cfg), Privacy: cfg.PrivacyURL, Offer: cfg.OfferURL, Bot: botURL(cfg),
+			CourierTerms: cfg.CourierTermsURL,
 		}, fcm != nil), auth, log),
 		family.NewModule(family.NewService(pool, ord, dlv, cfg.TelegramBotUsername), auth, log),
 		admin.NewModule(admin.NewService(pool, cfg.AcceptTimeout), auth, log),
