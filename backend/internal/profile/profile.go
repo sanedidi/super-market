@@ -27,6 +27,8 @@ type Links struct {
 	Bot     string
 	// CourierTerms — условия для курьеров «по пути».
 	CourierTerms string
+	// CourierApp — где скачать приложение курьера.
+	CourierApp string
 }
 
 type Service struct {
@@ -50,11 +52,12 @@ type AppConfig struct {
 	BotURL string `json:"bot_url"`
 	// CourierTermsURL — условия для курьеров «по пути» (приложение курьера).
 	CourierTermsURL string `json:"courier_terms_url"`
+	CourierAppURL   string `json:"courier_app_url"`
 }
 
 func (s *Service) Config() AppConfig {
 	return AppConfig{PushEnabled: s.pushEnabled, SupportURL: s.links.Support, PrivacyURL: s.links.Privacy, OfferURL: s.links.Offer, BotURL: s.links.Bot,
-		CourierTermsURL: s.links.CourierTerms}
+		CourierTermsURL: s.links.CourierTerms, CourierAppURL: s.links.CourierApp}
 }
 
 type Notifications struct {
@@ -76,12 +79,14 @@ type Profile struct {
 	SupportURL     string        `json:"support_url"`
 	PrivacyURL     string        `json:"privacy_url"`
 	OfferURL       string        `json:"offer_url"`
+	// CourierAppURL — баннер «Зарабатывайте на доставке» (пусто — скрыт).
+	CourierAppURL string `json:"courier_app_url"`
 	// TermsAcceptedAt — когда покупатель согласился с офертой (null — ещё нет).
 	TermsAcceptedAt *time.Time `json:"terms_accepted_at"`
 }
 
 func (s *Service) Get(ctx context.Context, userID string) (Profile, error) {
-	p := Profile{SupportURL: s.links.Support, PrivacyURL: s.links.Privacy, OfferURL: s.links.Offer}
+	p := Profile{SupportURL: s.links.Support, PrivacyURL: s.links.Privacy, OfferURL: s.links.Offer, CourierAppURL: s.links.CourierApp}
 	err := s.pool.QueryRow(ctx, `
 		SELECT u.phone, u.full_name, c.first_name, c.last_name, c.terms_accepted_at, c.language, c.city, to_char(c.birth_date, 'YYYY-MM-DD'), c.gender, c.notify_orders, c.notify_promos,
 		       EXISTS (SELECT 1 FROM telegram_links tl WHERE tl.phone = u.phone)

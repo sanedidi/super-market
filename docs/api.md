@@ -622,6 +622,8 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 иначе 422 `terms_required`). Токен `crowd` открывает только `/crowd/*` и `/auth/crowd/logout`; заблокированный — 403 `crowd_blocked`.
 Пока личность не подтверждена в магазине (`status: unverified`), заказы не предлагаются. Ссылки на условия и
 политику — `GET /client/config` (`courier_terms_url`, `privacy_url`).
+`courier_app_url` (env `COURIER_APP_URL`) — в `/client/config` и `/client/profile`: ссылка на приложение курьера для баннера
+«Зарабатывайте на доставке» в профиле покупателя; пусто — баннер скрыт.
 
 ### Курьер (`app=crowd`)
 

@@ -17,7 +17,7 @@ import 'profile_details_screen.dart';
 import 'root_shell.dart';
 
 /// Версия приложения (совпадает с pubspec.yaml).
-const appVersion = '0.6.0';
+const appVersion = '0.8.1';
 
 const _languages = {'ru': 'Русский', 'uz': 'O‘zbekcha'};
 const _cities = ['Ташкент', 'Самарканд', 'Бухара', 'Андижан', 'Наманган', 'Фергана', 'Нукус', 'Карши', 'Навои', 'Ургенч', 'Джизак', 'Термез'];
@@ -84,6 +84,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
     final active = state.stats?['active_order'] as Map<String, dynamic>?;
     final name = profileName(p);
+    final courierApp = '${p['courier_app_url'] ?? ''}';
     return Scaffold(
       body: SafeArea(
         bottom: false,
@@ -130,6 +131,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               AppListRow(icon: Icons.favorite_rounded, title: 'Избранное', onTap: () => _push(const FavoritesScreen())),
               AppListRow(icon: Icons.location_on_rounded, title: 'Мои адреса', divider: false, onTap: () => _push(const AddressesScreen())),
             ]),
+            if (courierApp.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              CourierBanner(url: courierApp),
+            ],
             const SizedBox(height: 16),
             SoftGroup(children: [
               AppListRow(icon: Icons.help_rounded, title: 'Помощь', onTap: () => _push(const HelpScreen())),
@@ -399,5 +404,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (e) {
       if (mounted) showError(context, e);
     }
+  }
+}
+
+/// Баннер в профиле (Figma «П2»): «Зарабатывайте на доставке» — ссылка на приложение курьера.
+/// Показывается, только если сервер отдал courier_app_url.
+class CourierBanner extends StatelessWidget {
+  const CourierBanner({super.key, required this.url});
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    Future<void> open() async {
+      try {
+        await openUrl(url);
+      } catch (e) {
+        if (context.mounted) showError(context, e);
+      }
+    }
+
+    return Material(
+      color: AppColors.white,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: open,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(children: [
+            Container(
+              width: 48,
+              height: 48,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: AppColors.primarySoft, borderRadius: BorderRadius.circular(14)),
+              child: const Icon(Icons.directions_walk_rounded, color: AppColors.primary, size: 28),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Зарабатывайте на доставке', style: AppText.bodyStrong.copyWith(fontSize: 16, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                const Text('Берите заказы из магазинов по пути', style: AppText.small),
+              ]),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: AppColors.text2),
+          ]),
+        ),
+      ),
+    );
   }
 }

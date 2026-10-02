@@ -28,6 +28,7 @@ x-backend-env: &backend-env
   PRIVACY_URL: ${PRIVACY_URL:-}
   OFFER_URL: ${OFFER_URL:-}
   COURIER_TERMS_URL: ${COURIER_TERMS_URL:-}
+  COURIER_APP_URL: ${COURIER_APP_URL:-}
   # SMS для кодов входа курьеров «по пути» (Eskiz). Пусто — коды в Telegram.
   ESKIZ_EMAIL: ${ESKIZ_EMAIL:-}
   ESKIZ_PASSWORD: ${ESKIZ_PASSWORD:-}

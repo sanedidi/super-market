@@ -77,6 +77,9 @@ type Config struct {
 	OfferURL string
 	// CourierTermsURL — условия для курьеров «по пути».
 	CourierTermsURL string
+	// CourierAppURL — где скачать приложение курьера (App Store / TestFlight / сайт).
+	// Пусто — баннер «Зарабатывайте на доставке» в приложении покупателя скрыт.
+	CourierAppURL string
 
 	// ReviewLogin — «+998XXXXXXXXX:123456»: демо-аккаунт покупателя для
 	// проверки приложения в App Store / Google Play. Для этого номера код не
@@ -132,6 +135,7 @@ func Load(getenv func(string) string) (Config, error) {
 		PrivacyURL:      getenv("PRIVACY_URL"),
 		OfferURL:        getenv("OFFER_URL"),
 		CourierTermsURL: getenv("COURIER_TERMS_URL"),
+		CourierAppURL:   getenv("COURIER_APP_URL"),
 
 		S3Endpoint:   strings.TrimRight(getenv("S3_ENDPOINT"), "/"),
 		S3AccessKey:  getenv("S3_ACCESS_KEY"),
