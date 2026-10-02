@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/sanedidi/super-market/backend/internal/invoices"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -94,6 +95,7 @@ func run() error {
 		{Name: "orders_alert", Run: ord.AlertUnaccepted},
 		{Name: "popularity", Run: ord.RefreshPopularity},
 		{Name: "crowd", Run: ord.CrowdTick},
+		{Name: "invoice_scans", Run: invoices.NewService(pool, nil, nil, nil, log).Tick},
 		{Name: "family_reminders", Run: family.NewService(pool, ord, dlv, cfg.TelegramBotUsername).Remind},
 		{Name: "billing", Run: billing.NewService(pool, notify.New(pool, sender, log), log).Tick},
 	}

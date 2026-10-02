@@ -88,6 +88,34 @@ func (s *Service) Upload(ctx context.Context, data []byte) (string, error) {
 	return key, nil
 }
 
+// KeyFromURL — ключ фото из нашей ссылки (…/api/v1/media/<ключ>) или из самого ключа.
+func KeyFromURL(raw string) (string, bool) {
+	if i := strings.LastIndex(raw, "/api/v1/media/"); i >= 0 {
+		raw = raw[i+len("/api/v1/media/"):]
+	}
+	return raw, keyRe.MatchString(raw)
+}
+
+// Read — содержимое фото и его тип.
+func (s *Service) Read(ctx context.Context, key string) ([]byte, string, error) {
+	if !keyRe.MatchString(key) {
+		return nil, "", ErrNotFound
+	}
+	if s.store == nil {
+		return nil, "", ErrDisabled
+	}
+	resp, err := s.store.Get(ctx, key)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, MaxSize+1))
+	if err != nil {
+		return nil, "", err
+	}
+	return data, http.DetectContentType(data), nil
+}
+
 // URL — публичная ссылка на фото.
 func (s *Service) URL(r *http.Request, key string) string {
 	base := s.baseURL

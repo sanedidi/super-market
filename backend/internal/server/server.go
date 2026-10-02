@@ -12,6 +12,7 @@ import (
 
 	"github.com/sanedidi/super-market/backend/internal/admin"
 	"github.com/sanedidi/super-market/backend/internal/ads"
+	"github.com/sanedidi/super-market/backend/internal/ai"
 	"github.com/sanedidi/super-market/backend/internal/billing"
 	"github.com/sanedidi/super-market/backend/internal/catalog"
 	"github.com/sanedidi/super-market/backend/internal/delivery"
@@ -19,6 +20,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/finance"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/inventory"
+	"github.com/sanedidi/super-market/backend/internal/invoices"
 	"github.com/sanedidi/super-market/backend/internal/media"
 	"github.com/sanedidi/super-market/backend/internal/notify"
 	"github.com/sanedidi/super-market/backend/internal/orders"
@@ -88,12 +90,19 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 
 	salesSvc := sales.NewService(pool)
 	fcm := PushSender(cfg, log)
+	invSvc := inventory.NewService(pool)
+	mediaSvc := MediaService(cfg)
+	aiSvc := ai.NewService(pool, cfg.JWTSecret)
+	scans := invoices.NewService(pool, aiSvc, mediaSvc, invSvc, log)
+	if InvoicesSync {
+		scans.Sync()
+	}
 	h := httpx.NewRouter(log, pool,
 		identity.NewModule(idSvc, auth, log),
 		tenant.NewModule(tenant.NewService(pool), auth, log),
 		catalog.NewModule(catalog.NewService(pool), auth, log),
 		finance.NewModule(finance.NewService(pool), auth, log),
-		inventory.NewModule(inventory.NewService(pool), auth, log),
+		inventory.NewModule(invSvc, auth, log),
 		sales.NewModule(salesSvc, auth, log),
 		pos.NewModule(pos.NewService(pool, salesSvc), auth, log),
 		orders.NewModule(ord, dlv, pay, auth, log),
@@ -107,7 +116,9 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		family.NewModule(family.NewService(pool, ord, dlv, cfg.TelegramBotUsername), auth, log),
 		admin.NewModule(admin.NewService(pool, cfg.AcceptTimeout), auth, log),
 		push.NewModule(push.NewService(pool, fcm), auth, log),
-		media.NewModule(MediaService(cfg), auth, log),
+		media.NewModule(mediaSvc, auth, log),
+		ai.NewModule(aiSvc, auth, log),
+		invoices.NewModule(scans, mediaSvc, auth, log),
 	)
 	return &App{Handler: h, Orders: ord, Payments: pay, Billing: bill}, nil
 }
@@ -150,6 +161,9 @@ func PushSender(cfg config.Config, log *slog.Logger) push.Sender {
 
 // SMSOverride — подмена SMS в тестах.
 var SMSOverride identity.SMSSender
+
+// InvoicesSync — распознавать накладные сразу в запросе (тесты).
+var InvoicesSync bool
 
 // PushOverride — подмена FCM в тестах.
 var PushOverride push.Sender
