@@ -197,7 +197,7 @@ class _DebtRow extends StatelessWidget {
                 Row(children: [
                   const Icon(Icons.schedule_rounded, size: 14, color: AppColors.primary),
                   const SizedBox(width: 4),
-                  Text('$days ${plural(days!, 'день', 'дня', 'дней')} без оплаты',
+                  Text('$days ${plural(days, 'день', 'дня', 'дней')} без оплаты',
                       style: AppText.caption.copyWith(color: AppColors.primary)),
                 ]),
             ]),
