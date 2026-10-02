@@ -681,3 +681,35 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 
 Товары группы — обычный список (`/admin/products`, `/store/products`) с `brand_id` (uuid или `none` — без бренда),
 `leaf_category_id` (ровно эта категория, без подкатегорий) и `sort=name`.
+
+## ИИ-сервис и приход по фото накладной
+
+### Супер-админ
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET | `/admin/ai` | `provider` (`openai` — OpenAI и совместимые, `anthropic`), `base_url`, `model`, `has_key`, `key_last4`, `configured`, `checked_at`, `check_ok`, `check_message`, `month_scans`, `month_failed`. Ключ не отдаётся |
+| PUT | `/admin/ai` | `{provider, base_url, api_key?, model}` — пустой `api_key` оставляет сохранённый (только для того же сервиса и адреса). Ключ шифруется (AES-GCM от `JWT_SECRET`) |
+| POST | `/admin/ai/models` | `{provider, base_url, api_key?}` → `items [{id, vision}]` — модели ключа; `vision` по названию (`null` — неизвестно) |
+| POST | `/admin/ai/test` | `{}` — проверить сохранённое (результат записывается) или `{provider, base_url, api_key, model}` — проверить введённое. Модель читает тестовую накладную → `{ok, message, ms}` |
+
+Ошибки сервиса — 502 `ai_error` с понятным текстом («ключ не подходит…», «закончились средства…»).
+
+### Магазин (право `inventory.manage`)
+
+Фото загружаются через `POST /store/uploads`, в накладную передаются полученные ссылки.
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| POST | `/store/invoice-scans` | `{store_id, images: [url, …до 5]}` → 202, накладная `processing`; распознавание в фоне. 409 `ai_not_configured` |
+| GET | `/store/invoice-scans?store_id=` | последние накладные (без строк) |
+| GET | `/store/invoice-scans/{id}` | `status` (`processing`, `ready`, `failed`, `done`), `supplier_name/inn`, `invoice_number/date`, `currency`, `invoice_total`, `lines_total`, `total_matches`, `counterparty_id/name`, `document_id/number/status`, `error`, `counts {ok, check, missing, skipped}`, `lines [{line, name, barcode, unit, qty, price, sum, product_id, product_name, unit_short, match, confidence, skipped, state, last_price, price_change}]` |
+| POST | `/store/invoice-scans/{id}/retry` | распознать заново после ошибки |
+| PUT | `/store/invoice-scans/{id}/supplier` | `{counterparty_id}` или `{create: true}` (завести из распознанного); строки пересопоставляются |
+| PUT | `/store/invoice-scans/{id}/lines/{n}` | `{product_id?, qty?, price?, skip?, remember?}` — `remember` запоминает название строки для поставщика |
+| GET | `/store/invoice-scans/{id}/lines/{n}/suggestions?q=` | до 8 похожих товаров `{product_id, name, barcode, unit_short, score}` |
+| POST | `/store/invoice-scans/{id}/document` | `{warehouse_id?, post}` → приход (черновик или проведённый) на основной склад магазина. 409 `lines_unmatched` |
+
+Состояние строки: `ok`; `check` — похожее название ниже 75% или цена отличается от прошлого прихода больше чем на 5%;
+`missing` — товар не найден; `skipped`. Сопоставление: штрихкод → запомненное название поставщика → похожее название (pg_trgm).
+Воркер `invoice_scans` помечает зависшие распознавания (>10 мин) ошибкой.

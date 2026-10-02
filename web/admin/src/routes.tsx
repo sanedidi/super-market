@@ -4,6 +4,7 @@ import {
   AppstoreOutlined,
   BankOutlined,
   BellOutlined,
+  BulbOutlined,
   CarOutlined,
   DashboardOutlined,
   DollarOutlined,
@@ -22,6 +23,7 @@ import { Orders, Payments } from './pages/Orders'
 import { Tariffs, BillingSettings, BillingNetworks, Invoices, Payouts } from './pages/Billing'
 import { Customers } from './pages/Customers'
 import { Crowd } from './pages/Crowd'
+import { AISettings } from './pages/AI'
 import { Notifications, PushCampaign, PushNew } from './pages/Push'
 
 const menu: MenuItem[] = [
@@ -69,6 +71,7 @@ const menu: MenuItem[] = [
   { key: '/payouts', icon: <BankOutlined />, label: 'Выводы денег' },
   { key: '/customers', icon: <UserOutlined />, label: 'Покупатели' },
   { key: '/notifications', icon: <BellOutlined />, label: 'Уведомления' },
+  { key: '/ai', icon: <BulbOutlined />, label: 'ИИ-сервис' },
 ]
 
 export function AdminRoutes() {
@@ -95,6 +98,7 @@ export function AdminRoutes() {
         <Route path="payouts" element={<Payouts />} />
         <Route path="customers" element={<Customers />} />
         <Route path="notifications" element={<Notifications />} />
+        <Route path="ai" element={<AISettings />} />
         <Route path="notifications/new" element={<PushNew />} />
         <Route path="notifications/:id" element={<PushCampaign />} />
         <Route path="*" element={<Navigate to="/" replace />} />
