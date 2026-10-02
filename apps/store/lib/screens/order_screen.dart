@@ -78,6 +78,8 @@ class _OrderScreenState extends State<OrderScreen> {
         ],
       ),
     );
+    // Диалог ещё анимируется с полем ввода — освобождаем контроллер после перехода.
+    Future<void>.delayed(const Duration(milliseconds: 500), ctrl.dispose);
     if (reason == null) return;
     if (reason.isEmpty) {
       if (mounted) showMessage(context, 'Укажите причину отмены');
@@ -104,6 +106,8 @@ class _OrderScreenState extends State<OrderScreen> {
         ],
       ),
     );
+    // Диалог ещё анимируется с полем ввода — освобождаем контроллер после перехода.
+    Future<void>.delayed(const Duration(milliseconds: 500), ctrl.dispose);
     if (code == null || code.isEmpty) return;
     await _act('crowd-handover', {'code': code}, 'Заказ выдан курьеру');
   }

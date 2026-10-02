@@ -5,6 +5,7 @@ import 'package:sm_core/sm_core.dart';
 import '../receipt/capture_screen.dart';
 import '../receipt/receipt_logic.dart';
 import '../receipt/review_screen.dart';
+import '../returns/return_screen.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -104,6 +105,21 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                 ]),
               ),
               const Icon(Icons.chevron_right_rounded, color: AppColors.white),
+            ]),
+          ),
+          const SizedBox(height: 10),
+          AppCard(
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SupplierReturnsScreen())),
+            child: const Row(children: [
+              IconBox(Icons.assignment_return_rounded, bg: AppColors.warningSoft, fg: AppColors.warningInk),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Возврат поставщику', style: AppText.bodyStrong),
+                  Text('Брак, просрочка, пересорт', style: AppText.small),
+                ]),
+              ),
+              Icon(Icons.chevron_right_rounded, color: AppColors.muted),
             ]),
           ),
           const SizedBox(height: 24),
