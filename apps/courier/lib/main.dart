@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
-import 'package:sm_core/sm_core.dart';
+import 'package:sm_core/sm_core.dart' hide LoginScreen;
 import 'package:url_launcher/url_launcher.dart';
 
 import 'screens/login_screen.dart';
