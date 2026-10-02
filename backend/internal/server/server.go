@@ -34,6 +34,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/push"
 	"github.com/sanedidi/super-market/backend/internal/reports"
 	"github.com/sanedidi/super-market/backend/internal/sales"
+	"github.com/sanedidi/super-market/backend/internal/summary"
 	"github.com/sanedidi/super-market/backend/internal/tenant"
 )
 
@@ -119,6 +120,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		media.NewModule(mediaSvc, auth, log),
 		ai.NewModule(aiSvc, auth, log),
 		invoices.NewModule(scans, mediaSvc, auth, log),
+		summary.NewModule(summary.NewService(pool, log), auth, log),
 	)
 	return &App{Handler: h, Orders: ord, Payments: pay, Billing: bill}, nil
 }

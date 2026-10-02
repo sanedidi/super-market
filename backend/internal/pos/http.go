@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/sanedidi/super-market/backend/internal/finance"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
@@ -53,6 +54,8 @@ func (m *Module) Routes(r chi.Router) {
 		r.Delete("/store/pos/pins/{id}", m.clearPIN)
 		r.Get("/store/pos/shifts", m.listShifts)
 		r.Get("/store/pos/shifts/{id}", m.getShift)
+		r.Get("/store/pos/shifts/{id}/events", m.shiftEvents)
+		r.Get("/store/pos/cashiers", m.cashiers)
 		r.Put("/store/pos/products/{id}/tax", m.setTax)
 		r.Put("/store/pos/products/{id}/plu", m.setPLU)
 		r.Put("/store/pos/payment-methods/{id}/kind", m.setKind)
@@ -283,5 +286,22 @@ func (m *Module) getSettings(w http.ResponseWriter, r *http.Request) {
 func (m *Module) saveSettings(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in NetworkSettings) (NetworkSettings, error) {
 		return m.svc.SaveSettings(r.Context(), pr(r), in)
+	})
+}
+
+func (m *Module) cashiers(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (CashierControl, error) {
+		from, to, err := finance.ParsePeriod(r)
+		if err != nil {
+			return CashierControl{}, err
+		}
+		return m.svc.Cashiers(r.Context(), pr(r), r.URL.Query().Get("store_id"), from, to)
+	})
+}
+
+func (m *Module) shiftEvents(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (httpx.List[ShiftEvent], error) {
+		items, err := m.svc.ShiftEvents(r.Context(), pr(r), id)
+		return httpx.List[ShiftEvent]{Items: items}, err
 	})
 }

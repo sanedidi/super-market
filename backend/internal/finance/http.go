@@ -42,6 +42,8 @@ func (m *Module) Routes(r chi.Router) {
 		r.With(cps).Get("/counterparties/{id}", m.getCounterparty)
 		r.Patch("/counterparties/{id}", m.updateCounterparty)
 		r.With(cps).Get("/counterparties/{id}/entries", m.counterpartyEntries)
+		r.With(cps).Get("/counterparties/{id}/statement", m.counterpartyStatement)
+		r.With(cps).Get("/debts", m.debts)
 
 		r.With(fin).Get("/reasons", m.listReasons)
 		r.Post("/reasons", m.createReason)
@@ -255,4 +257,20 @@ func (m *Module) createTransfer(kind string) http.HandlerFunc {
 			return m.svc.CreateTransfer(r.Context(), pr(r), kind, in)
 		})
 	}
+}
+
+func (m *Module) debts(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (Debts, error) {
+		return m.svc.SupplierDebts(r.Context(), pr(r), r.URL.Query().Get("side"), r.URL.Query().Get("q"))
+	})
+}
+
+func (m *Module) counterpartyStatement(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (Statement, error) {
+		from, to, err := ParsePeriod(r)
+		if err != nil {
+			return Statement{}, err
+		}
+		return m.svc.CounterpartyStatement(r.Context(), pr(r), id, from, to)
+	})
 }

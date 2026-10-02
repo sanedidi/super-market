@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/pos"
+	"github.com/sanedidi/super-market/backend/internal/summary"
 )
 
 // posDo — запрос кассы: токен устройства и (если есть) кассир в заголовке.
@@ -290,6 +293,71 @@ func TestPOS(t *testing.T) {
 	devs := a.expect(a.do("GET", "/store/pos/devices", tok, nil), 200, "devices").items()
 	if len(devs) != 1 || devs[0]["status"] != "active" || devs[0]["app_version"] != "0.1.0" {
 		t.Fatalf("devices = %v", devs)
+	}
+
+	// Контроль кассиров: недостача и непробитый чек у кассира, возврат — у владельца.
+	ctl := a.expect(a.do("GET", "/store/pos/cashiers?store_id="+store, tok, nil), 200, "cashiers")
+	var dil, own map[string]any
+	for _, x := range ctl.Body["items"].([]any) {
+		m := x.(map[string]any)
+		switch m["employee_id"] {
+		case cashier:
+			dil = m
+		case owner:
+			own = m
+		}
+	}
+	if dil == nil || dil["sales_count"].(float64) != 2 || dil["revenue"] != "188000.00" || dil["shortage"] != "3000.00" ||
+		!strings.Contains(fmt.Sprint(dil["flags"]), "shortage") || !strings.Contains(fmt.Sprint(dil["flags"]), "fiscal") ||
+		len(dil["shifts"].([]any)) != 1 {
+		t.Fatalf("cashier stat = %v", dil)
+	}
+	if own == nil || own["returns_count"].(float64) != 1 || own["returns_total"] != "15000.00" {
+		t.Fatalf("owner stat = %v", own)
+	}
+	if sig := fmt.Sprint(ctl.Body["signals"]); !strings.Contains(sig, "Недостача 3 000 сум в смене Дилноза") {
+		t.Fatalf("signals = %v", sig)
+	}
+	evs := a.expect(a.do("GET", "/store/pos/shifts/"+shift+"/events", tok, nil), 200, "events").items()
+	var kinds []string
+	for _, e := range evs {
+		kinds = append(kinds, e["kind"].(string))
+	}
+	if got := strings.Join(kinds, ","); got != "open,cash_out,return,close" ||
+		evs[1]["title"] != "Изъятие 30 000" || evs[3]["title"] != "Смена закрыта: недостача 3 000" || evs[3]["note"] != "сдача без мелочи" {
+		t.Fatalf("events = %s %v", got, evs)
+	}
+	cashierTok, _ := a.login("+998900000006", identity.AppStore)
+	a.expect(a.do("GET", "/store/pos/cashiers", cashierTok, nil), 403, "cashier sees control")
+
+	// Итоги дня владельцу: выручка кассы минус возврат, недостача в «требует внимания».
+	day := a.expect(a.do("GET", "/store/summary", tok, nil), 200, "summary")
+	if day.str("revenue") != "173000.00" || day.Body["sales_count"].(float64) != 2 || !strings.Contains(fmt.Sprint(day.Body["alerts"]), "Недостача 3 000 сум") {
+		t.Fatalf("summary = %v", day.Body)
+	}
+	a.expect(a.do("GET", "/store/summary?date=02.10.2026", tok, nil), 400, "summary date")
+	a.expect(a.do("GET", "/store/summary", cashierTok, nil), 403, "cashier summary")
+	if st := a.expect(a.do("GET", "/store/summary/settings", tok, nil), 200, "settings"); st.Body["enabled"] != true || st.Body["hour"].(float64) != 21 {
+		t.Fatalf("settings = %v", st.Body)
+	}
+	a.expect(a.do("PUT", "/store/summary/settings", tok, map[string]any{"enabled": true, "hour": 24}), 400, "bad hour")
+	a.expect(a.do("PUT", "/store/summary/settings", tok, map[string]any{"enabled": true, "hour": 0}), 200, "settings save")
+	sumSvc := summary.NewService(pool, quietLog())
+	if err := sumSvc.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if n := sqlStr(t, pool, `SELECT count(*)::text FROM notifications_outbox WHERE kind = 'owner_summary'`); n != "0" {
+		t.Fatalf("summary without device = %s", n)
+	}
+	a.expect(a.do("POST", "/store/devices", tok, map[string]any{"token": "owner-fcm-token-0123456789-abcdef", "platform": "ios"}), 204, "owner device")
+	for i := 0; i < 2; i++ {
+		if err := sumSvc.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	body := sqlStr(t, pool, `SELECT string_agg(title || '|' || body, ';') FROM notifications_outbox WHERE kind = 'owner_summary' AND app = 'store'`)
+	if strings.Count(body, "Итоги дня · ") != 1 || !strings.Contains(body, "Выручка 173 000") || !strings.Contains(body, "Недостача 3 000 сум у кассира") {
+		t.Fatalf("summary push = %q", body)
 	}
 
 	// Смену и чек ФМ передаёт только касса.

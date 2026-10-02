@@ -143,3 +143,26 @@ func (s *Service) loadPrincipal(ctx context.Context, c token.Claims) (*Principal
 	}
 	return p, nil
 }
+
+// EmployeePrincipal — права действующего сотрудника без сессии: для фоновых
+// задач, которые считают данные от его имени (итоги дня владельцу).
+func EmployeePrincipal(ctx context.Context, q interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}, employeeID string) (*Principal, error) {
+	p := &Principal{App: AppStore, EmployeeID: employeeID}
+	err := q.QueryRow(ctx, `
+		SELECT e.user_id, e.network_id, n.kind, r.permissions, r.is_owner, e.all_stores,
+		       COALESCE((SELECT array_agg(es.store_id::text) FROM employee_stores es WHERE es.employee_id = e.id), '{}')
+		FROM employees e
+		JOIN roles r    ON r.id = e.role_id
+		JOIN networks n ON n.id = e.network_id AND n.status = 'active'
+		WHERE e.id = $1 AND e.status = 'active'`, employeeID).Scan(
+		&p.UserID, &p.NetworkID, &p.NetworkKind, &p.Permissions, &p.IsOwner, &p.AllStores, &p.StoreIDs)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, apperr.NotFound("сотрудник не найден")
+	}
+	if err != nil {
+		return nil, err
+	}
+	return p, nil
+}

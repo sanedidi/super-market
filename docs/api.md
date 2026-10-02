@@ -731,3 +731,19 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 | Заказ не принят вовремя — «Заказ №N ждёт M мин» | `orders.manage` | `{type: order, order_id}` |
 | Курьер «по пути» взял заказ | `orders.manage` | `{type: order, order_id}` |
 | Накладная распознана / не распознана | автор накладной | `{type: invoice, scan_id}` |
+
+## Контроль кассиров, долги поставщикам, итоги дня (приложение магазина)
+
+| Метод | Путь | Право | Описание |
+|---|---|---|---|
+| GET | `/store/pos/cashiers?store_id=&from=&to=` | `reports.view` или `finance.manage` | по умолчанию — сегодня. `signals [{kind, text, employee_id, shift_id}]`, `items [{employee_id, full_name, sales_count, revenue, discounts, max_discount_pct, returns_count, returns_total, fiscal_pending, shortage, surplus, open_shift, flags, shifts[{id, number, store_name, device_name, opened_at, closed_at, diff}]}]` |
+| GET | `/store/pos/shifts/{id}/events` | то же | события смены по времени: `open`, `return`, `discount` (от 10% на чек), `cash_in`, `cash_out`, `close` |
+| GET | `/store/finance/debts?side=we_owe\|they_owe\|all&q=` | `counterparties.manage`, `inventory.manage` или `finance.manage` | `we_owe`, `we_owe_count`, `they_owe`, `they_owe_count`, `items [{id, name, phone, inn, balance, last_payment_at, last_income_at, days_unpaid}]` — по сумме долга |
+| GET | `/store/finance/counterparties/{id}/statement?from=&to=` | то же | акт сверки (по умолчанию — с начала месяца): `opening`, `closing`, `items [{at, kind, title, note, amount, balance}]`, новые сверху. Оплата — `POST /store/finance/operations` `{kind: expense, cashbox_id, amount, counterparty_id, note}` |
+| GET | `/store/summary?date=&store_id=` | `reports.view` | итоги дня: `revenue`, `revenue_prev`, `change_pct`, `profit`, `margin_pct`, `sales_count`, `avg_check`, `orders_count`, `orders_total`, `alerts [{kind, level, title, text, target, id}]`, `stores` (если магазинов больше одного), `money {stores_cash, main_cash, available}` (по правам) |
+| GET/PUT | `/store/summary/settings` | `reports.view` | `{enabled, hour}` — push «Итоги дня» в выбранный час (Ташкент). По умолчанию у владельца включено в 21:00 |
+
+Сигналы кассиров: недостача на закрытии смены; от 3 возвратов за период; скидки от 5% суммы чеков или от 15% на один чек;
+чеки без фискального признака старше часа. «Требует внимания» в итогах: недостачи за день, товары, которых осталось
+меньше чем на 2 дня продаж (по средним за 14 дней), поставщики без оплаты 14+ дней, счёт подписки (срок ≤ 3 дня или просрочен),
+оплаченные заказы, не принятые 10+ минут. Push итогов — `data {type: summary, date}`, один раз в день.

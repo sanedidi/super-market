@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
@@ -181,6 +182,32 @@ func TestInventoryAndFinanceFlow(t *testing.T) {
 	}), 201, "pay supplier")
 	if b := a.expect(a.do("GET", "/store/finance/counterparties/"+supplier, tok, nil), 200, "supplier").str("balance"); b != "4000.00" {
 		t.Fatalf("supplier balance after payment = %s", b)
+	}
+	// Долги поставщикам и акт сверки (приложение магазина).
+	debts := a.expect(a.do("GET", "/store/finance/debts", tok, nil), 200, "debts")
+	if debts.str("we_owe") != "4000.00" || debts.Body["we_owe_count"].(float64) != 1 {
+		t.Fatalf("debts = %v", debts.Body)
+	}
+	if it := debts.Body["items"].([]any); len(it) != 1 || it[0].(map[string]any)["id"] != supplier ||
+		it[0].(map[string]any)["last_payment_at"] == nil || it[0].(map[string]any)["days_unpaid"] != float64(0) {
+		t.Fatalf("debt items = %v", it)
+	}
+	a.expect(a.do("GET", "/store/finance/debts?side=wrong", tok, nil), 400, "debts side")
+	if n := len(a.expect(a.do("GET", "/store/finance/debts?side=they_owe", tok, nil), 200, "they owe").Body["items"].([]any)); n != 0 {
+		t.Fatalf("they owe = %d", n)
+	}
+	act := a.expect(a.do("GET", "/store/finance/counterparties/"+supplier+"/statement", tok, nil), 200, "statement")
+	lines := act.Body["items"].([]any)
+	if act.str("closing") != "4000.00" || len(lines) != 4 {
+		t.Fatalf("statement = %v", act.Body)
+	}
+	first, last := lines[0].(map[string]any), lines[len(lines)-1].(map[string]any)
+	if first["kind"] != "payment" || first["amount"] != "-200000.00" || first["balance"] != "4000.00" ||
+		last["kind"] != "income" || !strings.HasPrefix(last["title"].(string), "Приход № ") || last["note"] != "1 позиция" {
+		t.Fatalf("statement lines = %v … %v", first, last)
+	}
+	if ret := lines[1].(map[string]any); ret["kind"] != "supplier_return" || ret["balance"] != "204000.00" {
+		t.Fatalf("statement return = %v", ret)
 	}
 	a.expect(a.do("POST", "/store/finance/operations", tok, map[string]any{
 		"kind": "expense", "cashbox_id": storeBox, "amount": 1000, "reason_id": incomeReason,

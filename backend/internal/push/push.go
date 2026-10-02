@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
+	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
 type orderText struct{ title, body string }
@@ -123,27 +124,7 @@ func enqueueNewOrder(ctx context.Context, q db.Querier, orderID string) error {
 }
 
 // Sum — «186500.00» → «186 500».
-func Sum(v string) string {
-	if i := strings.IndexByte(v, '.'); i >= 0 {
-		if strings.Trim(v[i+1:], "0") == "" {
-			v = v[:i]
-		} else {
-			v = v[:i] + "," + v[i+1:]
-		}
-	}
-	intPart, frac, _ := strings.Cut(v, ",")
-	var b strings.Builder
-	for i, r := range intPart {
-		if i > 0 && (len(intPart)-i)%3 == 0 {
-			b.WriteRune(' ')
-		}
-		b.WriteRune(r)
-	}
-	if frac != "" {
-		b.WriteString("," + frac)
-	}
-	return b.String()
-}
+func Sum(v string) string { return money.Group(v) }
 
 // Enqueue ставит в очередь произвольное уведомление покупателю (семья и
 // др.). Удалённым аккаунтам не отправляется.

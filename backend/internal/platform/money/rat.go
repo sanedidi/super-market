@@ -3,6 +3,7 @@ package money
 import (
 	"fmt"
 	"math/big"
+	"strings"
 )
 
 // Dec — точная десятичная арифметика на big.Rat для расчётов в Go
@@ -53,3 +54,36 @@ func (a Dec) Money() string { return a.Fixed(2) }
 
 // Round2 — значение, округлённое до 2 знаков.
 func (a Dec) Round2() Dec { return D(a.Money()) }
+
+func (a Dec) Neg() Dec { var c Dec; c.r.Neg(&a.r); return c }
+
+// Float64 — для долей и процентов (не для денег).
+func (a Dec) Float64() (float64, bool) { return a.r.Float64() }
+
+// Group — сумма для текста уведомлений: «186500.00» → «186 500», «-45000» → «−45 000», «12.50» → «12,50».
+func Group(v string) string {
+	neg := strings.HasPrefix(v, "-")
+	v = strings.TrimPrefix(v, "-")
+	if i := strings.IndexByte(v, '.'); i >= 0 {
+		if strings.Trim(v[i+1:], "0") == "" {
+			v = v[:i]
+		} else {
+			v = v[:i] + "," + v[i+1:]
+		}
+	}
+	intPart, frac, _ := strings.Cut(v, ",")
+	var b strings.Builder
+	if neg {
+		b.WriteString("−")
+	}
+	for i, r := range intPart {
+		if i > 0 && (len(intPart)-i)%3 == 0 {
+			b.WriteRune(' ')
+		}
+		b.WriteRune(r)
+	}
+	if frac != "" {
+		b.WriteString("," + frac)
+	}
+	return b.String()
+}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/sanedidi/super-market/backend/internal/invoices"
+	"github.com/sanedidi/super-market/backend/internal/summary"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -97,6 +98,7 @@ func run() error {
 		{Name: "crowd", Run: ord.CrowdTick},
 		{Name: "invoice_scans", Run: invoices.NewService(pool, nil, nil, nil, log).Tick},
 		{Name: "family_reminders", Run: family.NewService(pool, ord, dlv, cfg.TelegramBotUsername).Remind},
+		{Name: "owner_summary", Run: summary.NewService(pool, log).Tick},
 		{Name: "billing", Run: billing.NewService(pool, notify.New(pool, sender, log), log).Tick},
 	}
 
