@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../main.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
