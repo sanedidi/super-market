@@ -1,0 +1,6 @@
+# Папки платформ создаёт flutter create и настраивает branding/apply.sh (см. apps/README.md).
+android/
+ios/
+.metadata
+pubspec.lock
+README.md

@@ -136,6 +136,10 @@ class Api extends ChangeNotifier {
       if (await _refreshing!) return _send(method, path, query: query, body: body, retry: false);
       await _save(null);
     }
+    return _decode(res);
+  }
+
+  dynamic _decode(http.Response res) {
     if (res.statusCode == 204) return null;
     dynamic data;
     if (res.bodyBytes.isNotEmpty) {
@@ -155,6 +159,27 @@ class Api extends ChangeNotifier {
       );
     }
     return data;
+  }
+
+  /// Загрузить файл (multipart, поле `file`), например фото: POST /store/uploads → {"url"}.
+  Future<dynamic> upload(String path, List<int> bytes, String filename, {bool retry = true}) async {
+    http.Response res;
+    try {
+      final req = http.MultipartRequest('POST', Uri.parse('$baseUrl$path'));
+      if (_access != null) req.headers['Authorization'] = 'Bearer $_access';
+      req.files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
+      res = await http.Response.fromStream(await _http.send(req).timeout(const Duration(seconds: 90)));
+    } on TimeoutException {
+      throw ApiError(0, 'network', 'Сервер не отвечает');
+    } catch (_) {
+      throw ApiError(0, 'network', 'Нет связи с сервером');
+    }
+    if (res.statusCode == 401 && retry && _refresh != null) {
+      _refreshing ??= _doRefresh().whenComplete(() => _refreshing = null);
+      if (await _refreshing!) return upload(path, bytes, filename, retry: false);
+      await _save(null);
+    }
+    return _decode(res);
   }
 
   Future<dynamic> get(String path, [Map<String, dynamic>? query]) => _send('GET', path, query: query);

@@ -43,6 +43,12 @@ jobs:
           flutter pub get
           flutter analyze --no-fatal-infos
           flutter test
+      - name: Store
+        working-directory: apps/store
+        run: |
+          flutter pub get
+          flutter analyze --no-fatal-infos
+          flutter test
       - name: POS
         working-directory: apps/pos
         run: |
