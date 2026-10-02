@@ -3,11 +3,14 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../ads/ads_screen.dart';
+import '../control/cashiers_screen.dart';
 import '../crowd/crowd_screen.dart';
+import '../debts/debts_screen.dart';
 import '../main.dart';
 import '../push.dart';
 import '../returns/return_screen.dart';
 import '../staff/staff_screen.dart';
+import '../summary/summary_screen.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -21,6 +24,11 @@ class MoreScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final st = context.watch<StoreState>();
     final modules = <(IconData, String, String, Widget)>[
+      if (st.can('reports.view')) (Icons.insights_rounded, 'Итоги дня', 'Выручка, прибыль, что требует внимания', const SummaryScreen()),
+      if (st.can('reports.view') || st.can('finance.manage'))
+        (Icons.point_of_sale_rounded, 'Контроль кассиров', 'Недостачи, возвраты, скидки', const CashiersScreen()),
+      if (st.can('counterparties.manage') || st.can('inventory.manage') || st.can('finance.manage'))
+        (Icons.local_shipping_outlined, 'Долги поставщикам', 'Кому должны, акт сверки, оплата', const DebtsScreen()),
       if (st.can('staff.manage')) (Icons.people_alt_outlined, 'Сотрудники', 'Кто работает, роли, добавить', const StaffScreen()),
       if (st.can('inventory.manage'))
         (Icons.assignment_return_outlined, 'Возврат поставщику', 'Брак, просрочка, пересорт', const SupplierReturnsScreen()),

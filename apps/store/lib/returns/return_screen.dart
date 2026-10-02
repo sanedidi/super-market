@@ -102,7 +102,10 @@ class _SupplierReturnsScreenState extends State<SupplierReturnsScreen> {
 
 /// Новый возврат: поставщик → товары со склада магазина → провести.
 class NewReturnScreen extends StatefulWidget {
-  const NewReturnScreen({super.key});
+  const NewReturnScreen({super.key, this.supplier});
+
+  /// Поставщик уже выбран (открыли из карточки поставщика).
+  final Map<String, dynamic>? supplier;
 
   @override
   State<NewReturnScreen> createState() => _NewReturnScreenState();
@@ -124,6 +127,7 @@ class _NewReturnScreenState extends State<NewReturnScreen> {
   @override
   void initState() {
     super.initState();
+    _supplier = widget.supplier;
     _loadWarehouse();
   }
 

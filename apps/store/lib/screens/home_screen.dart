@@ -4,6 +4,7 @@ import 'package:sm_core/sm_core.dart';
 
 import '../receipt/capture_screen.dart';
 import '../state.dart';
+import '../summary/summary_screen.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'store_picker.dart';
@@ -121,6 +122,23 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(width: 8),
                   Expanded(child: _Kpi('Возвратов', '${_sales!['returns_count'] ?? 0}')),
                 ]),
+              ]),
+            ),
+            const SizedBox(height: 16),
+          ],
+          if (st.can('reports.view')) ...[
+            AppCard(
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SummaryScreen())),
+              child: const Row(children: [
+                IconBox(Icons.insights_rounded, bg: AppColors.primarySoft, fg: AppColors.primary),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Итоги дня', style: AppText.bodyStrong),
+                    Text('Прибыль, магазины, что требует внимания', style: AppText.small),
+                  ]),
+                ),
+                Icon(Icons.chevron_right_rounded, color: AppColors.muted),
               ]),
             ),
             const SizedBox(height: 16),
