@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Button, ColorPicker, Form, Image, Input, InputNumber, Modal, Segmented, Space, Switch, Tag, Typography } from 'antd'
-import { ActiveTag, CrudPage, ImageUpload, RemoteSelect, StatusTag, api, money, useAction } from '@sm/shared'
+import { Button, ColorPicker, Flex, Form, Image, Input, InputNumber, Modal, Segmented, Space, Switch, Tag, Typography, type TableColumnType } from 'antd'
+import { PictureOutlined } from '@ant-design/icons'
+import { ActiveTag, CrudPage, ImageUpload, ProductTree, ProductViewSwitch, RemoteSelect, StatusTag, api, money, useAction, useProductView } from '@sm/shared'
 import { SearchSelect } from '../components'
 
 interface Dict {
@@ -189,10 +190,43 @@ function formToAttrs(v: Record<string, unknown>) {
 }
 
 /** Общий каталог товаров; moderation — очередь товаров от сетей. */
+const treeName: TableColumnType<Product> = {
+  title: 'Бренд · категория · товар',
+  key: 'name',
+  render: (_, p) => (
+    <Flex align="center" gap={12}>
+      {p.images?.[0] ? (
+        <Image src={p.images[0]} width={40} height={40} style={{ objectFit: 'cover', borderRadius: 8 }} />
+      ) : (
+        <Flex align="center" justify="center" style={{ width: 40, height: 40, borderRadius: 8, background: '#F2F4F7', color: '#98A2B3', flex: 'none' }}>
+          <PictureOutlined />
+        </Flex>
+      )}
+      <div>
+        {p.name}
+        {p.network_id && (
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              товар сети
+            </Typography.Text>
+          </div>
+        )}
+      </div>
+    </Flex>
+  ),
+}
+
 export function Products({ moderation = false }: { moderation?: boolean }) {
   const [q, setQ] = useState('')
   const [category, setCategory] = useState<string>()
   const [tab, setTab] = useState('all')
+  const [view, setView] = useProductView()
+  const tree = view === 'tree' && !moderation
+  const params = {
+    q: q.trim() || undefined,
+    category_id: category,
+    status: moderation ? 'pending' : tab === 'all' ? undefined : tab,
+  }
   const [rejecting, setRejecting] = useState<Product | null>(null)
   const [reason, setReason] = useState('')
   const closeReject = () => {
@@ -209,11 +243,20 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
       <CrudPage<Product>
         title={moderation ? 'Модерация товаров' : 'Товары'}
         path="/admin/products"
-        params={{
-          q: q.trim() || undefined,
-          category_id: category,
-          status: moderation ? 'pending' : tab === 'all' ? undefined : tab,
-        }}
+        params={params}
+        renderList={
+          tree
+            ? (cols) => (
+                <ProductTree<Product>
+                  groupsPath="/admin/products/groups"
+                  itemsPath="/admin/products"
+                  params={params}
+                  // В дереве фото — в колонке названия, бренд и категория — в группах.
+                  columns={[treeName, ...(cols.slice(2) as TableColumnType<Product>[])]}
+                />
+              )
+            : undefined
+        }
         canCreate={!moderation}
         createLabel="Новый товар"
         toolbar={
@@ -232,6 +275,7 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
             )}
             <Input.Search placeholder="Название или штрихкод" allowClear onSearch={setQ} style={{ width: 240 }} />
             <SearchSelect path="/admin/catalog/categories" placeholder="Категория" allowClear value={category} onChange={(v) => setCategory(v as string | undefined)} />
+            {!moderation && <ProductViewSwitch value={view} onChange={setView} />}
           </>
         }
         columns={[

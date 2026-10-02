@@ -1658,3 +1658,28 @@ body {
 .sm-crop-drop span { font-size: 12px; }
 .sm-crop-preview { display: block; width: 100%; max-width: 360px; aspect-ratio: 1080 / 450; object-fit: cover; border-radius: 12px; margin-bottom: 8px; }
 .ant-upload-wrapper:has(.sm-crop-drop) .ant-upload { width: 100%; }
+
+/* Дерево товаров «бренд → категория → товар» */
+.sm-tree-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fdeced;
+  color: #e11d2a;
+  font-weight: 800;
+  font-size: 15px;
+  flex: none;
+}
+.sm-tree-logo-none {
+  background: #f2f4f7;
+  color: #98a2b3;
+}
+.sm-tree .sm-tree-category > td {
+  background: #fcfcfd;
+}
+.sm-tree .ant-table-title {
+  padding: 6px 12px !important;
+}

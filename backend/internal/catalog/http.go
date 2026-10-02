@@ -31,6 +31,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Patch("/admin/catalog/{kind}/{id}", m.updateDict)
 
 		r.Get("/admin/products", m.adminListProducts)
+		r.Get("/admin/products/groups", m.adminProductGroups)
 		r.Post("/admin/products", m.adminCreateProduct)
 		r.Get("/admin/products/{id}", m.adminGetProduct)
 		r.Patch("/admin/products/{id}", m.adminUpdateProduct)
@@ -55,6 +56,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.With(showcaseManage).Patch("/store/banners/{id}", m.storeUpdateBanner)
 
 		r.Get("/store/products", m.storeListProducts)
+		r.Get("/store/products/groups", m.storeProductGroups)
 		r.Post("/store/products", m.storeCreateProduct)
 		r.Get("/store/products/{id}", m.storeGetProduct)
 		r.Patch("/store/products/{id}", m.storeUpdateProduct)
@@ -114,12 +116,14 @@ func (m *Module) updateDict(w http.ResponseWriter, r *http.Request) {
 func filterFrom(r *http.Request) ProductFilter {
 	q := r.URL.Query()
 	return ProductFilter{
-		Query:      q.Get("q"),
-		CategoryID: q.Get("category_id"),
-		Barcode:    q.Get("barcode"),
-		Status:     q.Get("status"),
-		BrandID:    q.Get("brand_id"),
-		Page:       httpx.PageFrom(r),
+		Query:          q.Get("q"),
+		CategoryID:     q.Get("category_id"),
+		Barcode:        q.Get("barcode"),
+		Status:         q.Get("status"),
+		BrandID:        q.Get("brand_id"),
+		LeafCategoryID: q.Get("leaf_category_id"),
+		Sort:           q.Get("sort"),
+		Page:           httpx.PageFrom(r),
 	}
 }
 
@@ -170,6 +174,20 @@ func (m *Module) storeListProducts(w http.ResponseWriter, r *http.Request) {
 		items, err := m.svc.StoreListProducts(r.Context(), pr(r), f,
 			r.URL.Query().Get("store_id"), r.URL.Query().Get("price_type_id"))
 		return httpx.List[Product]{Items: items}, err
+	})
+}
+
+func (m *Module) adminProductGroups(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (ProductGroups, error) {
+		return m.svc.AdminProductGroups(r.Context(), filterFrom(r))
+	})
+}
+
+func (m *Module) storeProductGroups(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (ProductGroups, error) {
+		f := filterFrom(r)
+		f.Status = ""
+		return m.svc.StoreProductGroups(r.Context(), pr(r), f)
 	})
 }
 

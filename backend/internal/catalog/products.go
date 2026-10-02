@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -328,8 +329,13 @@ type ProductFilter struct {
 	CategoryID string
 	Barcode    string
 	Status     string // только для супер-админа
-	BrandID    string // только для супер-админа (товары бренда для рекламы)
-	Page       httpx.Page
+	// BrandID — бренд: uuid или "none" (товары без бренда).
+	BrandID string
+	// LeafCategoryID — ровно эта категория, без подкатегорий (группа в дереве «бренд → категория»).
+	LeafCategoryID string
+	// Sort — "name" (по названию); по умолчанию у супер-админа — новые сверху.
+	Sort string
+	Page httpx.Page
 }
 
 func (f ProductFilter) validate() error {
@@ -339,7 +345,23 @@ func (f ProductFilter) validate() error {
 	if f.Status != "" && f.Status != "pending" && f.Status != "approved" && f.Status != "rejected" {
 		return apperr.Validation("status: ожидается pending, approved или rejected")
 	}
+	if f.BrandID != "" && f.BrandID != "none" && !httpx.IsUUID(f.BrandID) {
+		return apperr.Validation("brand_id: неверный id")
+	}
+	if f.LeafCategoryID != "" && !httpx.IsUUID(f.LeafCategoryID) {
+		return apperr.Validation("leaf_category_id: неверный id")
+	}
+	if f.Sort != "" && f.Sort != "name" {
+		return apperr.Validation("sort: ожидается name")
+	}
 	return nil
+}
+
+// groupWhere — бренд ($n: uuid, "none" или пусто) и точная категория ($n+1).
+func groupWhere(n int) string {
+	return fmt.Sprintf(`
+	AND ($%[1]d = '' OR ($%[1]d = 'none' AND p.brand_id IS NULL) OR p.brand_id::text = $%[1]d)
+	AND ($%[2]d = '' OR p.category_id::text = $%[2]d)`, n, n+1)
 }
 
 // Общие условия фильтра: $1 — строка поиска, $2 — категория (включая
@@ -361,9 +383,9 @@ func (s *Service) AdminListProducts(ctx context.Context, f ProductFilter) ([]Pro
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx, `SELECT `+productCols+productFrom+`
-		WHERE ($4 = '' OR p.moderation_status = $4) AND ($7 = '' OR p.brand_id::text = $7)`+filterWhere+`
-		ORDER BY p.created_at DESC, p.id LIMIT $5 OFFSET $6`,
-		strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, f.Status, f.Page.Limit, f.Page.Offset, f.BrandID)
+		WHERE ($4 = '' OR p.moderation_status = $4)`+filterWhere+groupWhere(7)+`
+		ORDER BY `+adminOrder(f.Sort)+` LIMIT $5 OFFSET $6`,
+		strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, f.Status, f.Page.Limit, f.Page.Offset, f.BrandID, f.LeafCategoryID)
 	if err != nil {
 		return nil, err
 	}
@@ -426,9 +448,9 @@ func (s *Service) StoreListProducts(ctx context.Context, pr *identity.Principal,
 	}
 	if storeID == "" {
 		rows, err := s.pool.Query(ctx, `SELECT `+productCols+productFrom+`
-			WHERE (p.network_id IS NULL OR p.network_id = $4)`+filterWhere+`
-			ORDER BY p.name LIMIT $5 OFFSET $6`,
-			strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, pr.NetworkID, f.Page.Limit, f.Page.Offset)
+			WHERE (p.network_id IS NULL OR p.network_id = $4)`+filterWhere+groupWhere(7)+`
+			ORDER BY p.name, p.id LIMIT $5 OFFSET $6`,
+			strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, pr.NetworkID, f.Page.Limit, f.Page.Offset, f.BrandID, f.LeafCategoryID)
 		if err != nil {
 			return nil, err
 		}
@@ -449,9 +471,9 @@ func (s *Service) StoreListProducts(ctx context.Context, pr *identity.Principal,
 		`+productFrom+`
 		LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = $7 AND sp.store_id = $8
 		LEFT JOIN prices np ON np.product_id = p.id AND np.price_type_id = $7 AND np.store_id IS NULL
-		WHERE (p.network_id IS NULL OR p.network_id = $4)`+filterWhere+`
-		ORDER BY p.name LIMIT $5 OFFSET $6`,
-		strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, pr.NetworkID, f.Page.Limit, f.Page.Offset, typeID, storeID)
+		WHERE (p.network_id IS NULL OR p.network_id = $4)`+filterWhere+groupWhere(9)+`
+		ORDER BY p.name, p.id LIMIT $5 OFFSET $6`,
+		strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, pr.NetworkID, f.Page.Limit, f.Page.Offset, typeID, storeID, f.BrandID, f.LeafCategoryID)
 	if err != nil {
 		return nil, err
 	}

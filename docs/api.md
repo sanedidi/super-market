@@ -671,3 +671,13 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 
 Воркер `crowd` (каждый тик `WORKER_INTERVAL`) снимает заказы, не забранные вовремя (нарушение), отменяет бонусы магазинам за нарушителей
 и начисляет бонусы после проверочного срока, если у курьера есть доставки из других магазинов.
+
+## Дерево товаров «бренд → категория → товар»
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET | `/admin/products/groups?q=&category_id=&status=` | `{brands: [{brand_id, brand_name, count, pending, categories: [{category_id, category_name, count, pending}]}], total}` — бренды по алфавиту, `brand_id: null` («Без бренда») в конце; `pending` — на модерации |
+| GET | `/store/products/groups?q=&category_id=` | то же для сети (общий каталог + свои товары); `pending` — свои товары на модерации |
+
+Товары группы — обычный список (`/admin/products`, `/store/products`) с `brand_id` (uuid или `none` — без бренда),
+`leaf_category_id` (ровно эта категория, без подкатегорий) и `sort=name`.

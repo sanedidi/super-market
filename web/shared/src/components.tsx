@@ -204,11 +204,13 @@ export interface CrudConfig<T> {
   expandable?: Parameters<typeof Table<T>>[0]['expandable']
   /** Ширина окна формы (по умолчанию 520). */
   modalWidth?: number
+  /** Вместо таблицы — свой вид списка (например, дерево товаров); получает колонки с «Изменить». */
+  renderList?: (columns: TableColumnsType<T>) => ReactNode
 }
 
 /** Список + модальное окно создания/правки — для справочников. */
 export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
-  const list = usePaged<T>(cfg.path, cfg.params)
+  const list = usePaged<T>(cfg.renderList ? null : cfg.path, cfg.params)
   const [editing, setEditing] = useState<T | null>(null)
   const [open, setOpen] = useState(false)
   const [form] = Form.useForm()
@@ -255,18 +257,24 @@ export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
       >
         {cfg.toolbar}
       </PageTitle>
-      <LoadError error={list.error} retry={() => list.refetch()} />
-      <Card styles={{ body: { padding: 0 } }}>
-        <Table<T>
-          rowKey={cfg.rowKey ?? 'id'}
-          loading={list.isLoading || list.isFetching}
-          dataSource={list.items}
-          columns={columns}
-          pagination={{ ...list.pagination, itemRender: pageItemRender }}
-          scroll={{ x: true }}
-          expandable={cfg.expandable}
-        />
-      </Card>
+      {cfg.renderList ? (
+        cfg.renderList(columns)
+      ) : (
+        <>
+          <LoadError error={list.error} retry={() => list.refetch()} />
+          <Card styles={{ body: { padding: 0 } }}>
+            <Table<T>
+              rowKey={cfg.rowKey ?? 'id'}
+              loading={list.isLoading || list.isFetching}
+              dataSource={list.items}
+              columns={columns}
+              pagination={{ ...list.pagination, itemRender: pageItemRender }}
+              scroll={{ x: true }}
+              expandable={cfg.expandable}
+            />
+          </Card>
+        </>
+      )}
       {cfg.form && (
         <Modal
           open={open}

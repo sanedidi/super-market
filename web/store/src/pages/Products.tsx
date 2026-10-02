@@ -1,8 +1,8 @@
 // Товары: общий каталог платформы + свои товары сети (через модерацию).
 import { useState } from 'react'
-import { Alert, Button, Card, Col, Form, Input, Modal, Radio, Row, Select, Table, Tag, Tooltip, Typography } from 'antd'
+import { Alert, Button, Card, Col, Form, Input, Modal, Radio, Row, Select, Table, Tag, Tooltip, Typography, type TableColumnType } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
-import { ImageUpload, LoadError, PageTitle, RemoteSelect, api, money, useAction, usePaged } from '@sm/shared'
+import { ImageUpload, LoadError, PageTitle, ProductTree, ProductViewSwitch, RemoteSelect, api, money, useAction, usePaged, useProductView } from '@sm/shared'
 import { useStore } from '../ctx'
 import { Num } from '../ui'
 import type { DictItem, Product } from '../types'
@@ -27,12 +27,62 @@ export function ProductsPage() {
   const [categoryId, setCategoryId] = useState<string>()
   const [editing, setEditing] = useState<Product | null>(null)
   const [open, setOpen] = useState(false)
-  const list = usePaged<Product>('/store/products', {
+  const [view, setView] = useProductView()
+  const params = {
     q: q || undefined,
     category_id: categoryId,
     store_id: storeId || undefined,
-  })
+  }
+  const list = usePaged<Product>(view === 'list' ? '/store/products' : null, params)
   const manage = can('catalog.manage')
+  const price: TableColumnType<Product> = {
+    title: 'Цена в магазине',
+    dataIndex: 'price',
+    align: 'right',
+    render: (v: string | undefined, r) =>
+      v ? (
+        <>
+          {money(v)}
+          {r.price_source && <Typography.Text type="secondary"> ({priceSource[r.price_source] ?? r.price_source})</Typography.Text>}
+        </>
+      ) : (
+        '—'
+      ),
+  }
+  const editCol: TableColumnType<Product> = {
+    key: 'edit',
+    width: 90,
+    render: (_, r) =>
+      manage && r.network_id ? (
+        <Button
+          size="small"
+          onClick={() => {
+            setEditing(r)
+            setOpen(true)
+          }}
+        >
+          Изменить
+        </Button>
+      ) : null,
+  }
+  // Дерево: бренд и категория — в группах, поэтому в строке товара их нет.
+  const treeColumns: TableColumnType<Product>[] = [
+    {
+      title: 'Бренд · категория · товар',
+      key: 'name',
+      render: (_, r) => (
+        <>
+          {r.name}
+          {!r.is_active && <Tag style={{ marginLeft: 6 }}>Отключён</Tag>}
+        </>
+      ),
+    },
+    { title: 'Ед.', dataIndex: 'unit_short' },
+    price,
+    { title: 'Штрихкод', dataIndex: 'barcodes', render: (v: string[] | null) => (v ?? []).join(', ') || '—' },
+    { title: 'Каталог', key: 'mod', render: (_, r) => <Moderation p={r} /> },
+    editCol,
+  ]
 
   return (
     <>
@@ -55,10 +105,21 @@ export function ProductsPage() {
       >
         <Input.Search placeholder="Название или штрихкод" allowClear onSearch={setQ} style={{ width: 240 }} />
         <RemoteSelect<DictItem> path="/store/catalog/categories" value={categoryId} onChange={setCategoryId} allowClear placeholder="Все категории" />
+        <ProductViewSwitch value={view} onChange={setView} />
       </PageTitle>
-      <LoadError error={list.error} retry={() => list.refetch()} />
-      <Card styles={{ body: { padding: 0 } }}>
-        <Table<Product>
+      {view === 'tree' ? (
+        <ProductTree<Product>
+          groupsPath="/store/products/groups"
+          itemsPath="/store/products"
+          params={params}
+          columns={treeColumns}
+          pendingText={(n) => `Свои на модерации: ${n}`}
+        />
+      ) : (
+        <>
+          <LoadError error={list.error} retry={() => list.refetch()} />
+          <Card styles={{ body: { padding: 0 } }}>
+            <Table<Product>
           rowKey="id"
           loading={list.isLoading || list.isFetching}
           dataSource={list.items}
@@ -80,40 +141,14 @@ export function ProductsPage() {
             { title: 'Категория', dataIndex: 'category_name' },
             { title: 'Ед.', dataIndex: 'unit_short' },
             { title: 'Базовая цена', dataIndex: 'base_price', align: 'right', render: (v: string) => money(v) },
-            {
-              title: 'Цена в магазине',
-              dataIndex: 'price',
-              align: 'right',
-              render: (v: string | undefined, r) =>
-                v ? (
-                  <>
-                    {money(v)}
-                    {r.price_source && <Typography.Text type="secondary"> ({priceSource[r.price_source] ?? r.price_source})</Typography.Text>}
-                  </>
-                ) : (
-                  '—'
-                ),
-            },
+            price,
             { title: 'Каталог', key: 'mod', render: (_, r) => <Moderation p={r} /> },
-            {
-              key: 'edit',
-              width: 90,
-              render: (_, r) =>
-                manage && r.network_id ? (
-                  <Button
-                    size="small"
-                    onClick={() => {
-                      setEditing(r)
-                      setOpen(true)
-                    }}
-                  >
-                    Изменить
-                  </Button>
-                ) : null,
-            },
+            editCol,
           ]}
         />
-      </Card>
+          </Card>
+        </>
+      )}
       <ProductModal open={open} editing={editing} onClose={() => setOpen(false)} />
     </>
   )
