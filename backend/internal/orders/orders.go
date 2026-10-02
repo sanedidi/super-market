@@ -96,6 +96,15 @@ type Order struct {
 	CourierID   *string    `json:"courier_id"`
 	CourierName *string    `json:"courier_name"`
 	EtaAt       *time.Time `json:"eta_at"`
+	// Курьер «по пути» (crowd): кто взял заказ и до какого времени заберёт.
+	DeliveryMode      string     `json:"delivery_mode"` // staff или crowd
+	CrowdCourierID    *string    `json:"crowd_courier_id"`
+	CrowdCourierPhone *string    `json:"crowd_courier_phone"`
+	CrowdPickupUntil  *time.Time `json:"crowd_pickup_until"`
+	// Заказ сейчас предлагается курьерам «по пути».
+	CrowdOpen bool `json:"crowd_open"`
+	// Код вручения — только покупателю, пока заказ у курьера «по пути».
+	HandoffCode *string `json:"handoff_code,omitempty"`
 	// До какого момента нужно оплатить (только для «ожидает оплаты»).
 	PaymentDeadline *time.Time `json:"payment_deadline,omitempty"`
 	// Для супер-админа: оплачен, но магазин не принял вовремя.
@@ -114,9 +123,15 @@ const orderSelect = `
 	       o.payment_provider,
 	       (SELECT p.status FROM payments p WHERE p.order_id = o.id ORDER BY (p.status IN ('paid', 'refund_pending', 'refunded')) DESC, p.created_at DESC LIMIT 1),
 	       o.paid_at, o.accepted_at, o.delivered_at, o.delivery_from, o.delivery_to,
-	       o.courier_id, ce.full_name, o.eta_at, o.cancel_reason, o.fiscal_status, o.created_at
+	       o.courier_id, COALESCE(ce.full_name, CASE WHEN o.crowd_courier_id IS NOT NULL THEN COALESCE(NULLIF(cc.full_name, ''), 'Курьер по пути') END),
+	       o.eta_at, o.cancel_reason, o.fiscal_status, o.created_at,
+	       o.crowd_courier_id, cu.phone, o.crowd_pickup_until,
+	       (o.status = 'picked' AND o.courier_id IS NULL AND o.crowd_courier_id IS NULL AND s.crowd_enabled
+	        AND o.payment_provider <> 'cash' AND o.picked_at > now() - make_interval(mins => (SELECT wait_minutes FROM crowd_settings)))
 	FROM orders o JOIN stores s ON s.id = o.store_id
-	LEFT JOIN employees ce ON ce.id = o.courier_id`
+	LEFT JOIN employees ce ON ce.id = o.courier_id
+	LEFT JOIN crowd_couriers cc ON cc.user_id = o.crowd_courier_id
+	LEFT JOIN users cu ON cu.id = o.crowd_courier_id`
 
 func scanOrder(row pgx.CollectableRow) (Order, error) {
 	var o Order
@@ -124,8 +139,13 @@ func scanOrder(row pgx.CollectableRow) (Order, error) {
 		&o.DeliveryFee, &o.Total, &o.Address, &o.Entrance, &o.Floor, &o.Apartment, &o.AddressComment,
 		&o.Lat, &o.Lng, &o.DistanceM, &o.CustomerPhone, &o.Comment, &o.PaymentProvider, &o.PaymentStatus,
 		&o.PaidAt, &o.AcceptedAt, &o.DeliveredAt, &o.DeliveryFrom, &o.DeliveryTo,
-		&o.CourierID, &o.CourierName, &o.EtaAt, &o.CancelReason, &o.FiscalStatus, &o.CreatedAt)
+		&o.CourierID, &o.CourierName, &o.EtaAt, &o.CancelReason, &o.FiscalStatus, &o.CreatedAt,
+		&o.CrowdCourierID, &o.CrowdCourierPhone, &o.CrowdPickupUntil, &o.CrowdOpen)
 	o.StatusTitle = statusTitles[o.Status]
+	o.DeliveryMode = "staff"
+	if o.CrowdCourierID != nil {
+		o.DeliveryMode = "crowd"
+	}
 	if o.Status == StatusPaid && o.PaymentProvider == CashOnDelivery {
 		o.StatusTitle = "Новый · наличными курьеру"
 	}
@@ -236,8 +256,12 @@ func (s *Service) ClientGetOrder(ctx context.Context, p *identity.Principal, id 
 		return Order{}, err
 	}
 	var owner string
-	if err := s.pool.QueryRow(ctx, `SELECT customer_id FROM orders WHERE id = $1`, id).Scan(&owner); err != nil || owner != p.UserID {
+	var handoff *string
+	if err := s.pool.QueryRow(ctx, `SELECT customer_id, handoff_code FROM orders WHERE id = $1`, id).Scan(&owner, &handoff); err != nil || owner != p.UserID {
 		return Order{}, apperr.NotFound("заказ не найден")
+	}
+	if o.CrowdCourierID != nil && (o.Status == StatusPicked || o.Status == StatusDelivering) {
+		o.HandoffCode = handoff
 	}
 	return o, nil
 }
@@ -344,6 +368,9 @@ func (s *Service) StartPicking(ctx context.Context, p *identity.Principal, id st
 }
 
 func (s *Service) StartDelivery(ctx context.Context, p *identity.Principal, id string) (Order, error) {
+	if err := s.notCrowd(ctx, id); err != nil {
+		return Order{}, err
+	}
 	return s.transition(ctx, p, id, StatusDelivering, "", StatusPicked)
 }
 
@@ -353,6 +380,9 @@ func (s *Service) Delivered(ctx context.Context, p *identity.Principal, id strin
 		return Order{}, err
 	}
 	if _, err := s.StoreGet(ctx, p, id); err != nil {
+		return Order{}, err
+	}
+	if err := s.notCrowd(ctx, id); err != nil {
 		return Order{}, err
 	}
 	if err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {

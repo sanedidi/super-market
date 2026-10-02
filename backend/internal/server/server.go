@@ -25,6 +25,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/payments"
 	"github.com/sanedidi/super-market/backend/internal/platform/config"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/sms"
 	"github.com/sanedidi/super-market/backend/internal/platform/telegram"
 	"github.com/sanedidi/super-market/backend/internal/pos"
 	"github.com/sanedidi/super-market/backend/internal/profile"
@@ -72,6 +73,11 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		}
 	}
 	idSvc := identity.NewService(pool, tg, IdentityConfig(cfg), log)
+	if SMSOverride != nil {
+		idSvc.WithSMS(SMSOverride)
+	} else if cfg.EskizEmail != "" {
+		idSvc.WithSMS(sms.NewEskiz(cfg.EskizAPIURL, cfg.EskizEmail, cfg.EskizPassword, cfg.EskizFrom))
+	}
 	if err := idSvc.EnsureSuperAdmins(ctx, cfg.SuperAdminPhones); err != nil {
 		return nil, err
 	}
@@ -141,6 +147,9 @@ func PushSender(cfg config.Config, log *slog.Logger) push.Sender {
 	return f
 }
 
+// SMSOverride — подмена SMS в тестах.
+var SMSOverride identity.SMSSender
+
 // PushOverride — подмена FCM в тестах.
 var PushOverride push.Sender
 
@@ -170,6 +179,7 @@ func OrderServices(cfg config.Config, pool *pgxpool.Pool, tg notify.Sender, log 
 	ord := orders.NewService(pool, dlv, pay, notify.New(pool, tg, log), orders.Config{
 		PaymentTimeout: cfg.PaymentTimeout,
 		AcceptTimeout:  cfg.AcceptTimeout,
+		Secret:         cfg.JWTSecret,
 	}, log)
 	return dlv, pay, ord
 }

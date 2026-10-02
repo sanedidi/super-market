@@ -93,6 +93,7 @@ func run() error {
 		{Name: "orders_expire", Run: ord.ExpireUnpaid},
 		{Name: "orders_alert", Run: ord.AlertUnaccepted},
 		{Name: "popularity", Run: ord.RefreshPopularity},
+		{Name: "crowd", Run: ord.CrowdTick},
 		{Name: "family_reminders", Run: family.NewService(pool, ord, dlv, cfg.TelegramBotUsername).Remind},
 		{Name: "billing", Run: billing.NewService(pool, notify.New(pool, sender, log), log).Tick},
 	}

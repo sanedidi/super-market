@@ -47,6 +47,13 @@ type Config struct {
 	TelegramBotUsername string
 	TelegramAPIURL      string
 
+	// SMS для кодов входа курьеров «по пути» (Eskiz). Пустой EskizEmail —
+	// коды уходят в Telegram, как покупателям.
+	EskizEmail    string
+	EskizPassword string
+	EskizFrom     string
+	EskizAPIURL   string
+
 	// Онлайн-оплата.
 	PaymeMerchantID  string
 	PaymeKey         string
@@ -104,6 +111,10 @@ func Load(getenv func(string) string) (Config, error) {
 		TelegramBotToken:    getenv("TELEGRAM_BOT_TOKEN"),
 		TelegramBotUsername: strings.TrimPrefix(getenv("TELEGRAM_BOT_USERNAME"), "@"),
 		TelegramAPIURL:      getenv("TELEGRAM_API_URL"),
+		EskizEmail:          getenv("ESKIZ_EMAIL"),
+		EskizPassword:       getenv("ESKIZ_PASSWORD"),
+		EskizFrom:           getenv("ESKIZ_FROM"),
+		EskizAPIURL:         getenv("ESKIZ_API_URL"),
 
 		PaymeMerchantID:  getenv("PAYME_MERCHANT_ID"),
 		PaymeKey:         getenv("PAYME_KEY"),

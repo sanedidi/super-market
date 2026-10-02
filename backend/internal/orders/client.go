@@ -30,6 +30,8 @@ import (
 type Config struct {
 	PaymentTimeout time.Duration // неоплаченный заказ истекает
 	AcceptTimeout  time.Duration // оплаченный заказ не принят — уведомить супер-админа
+	// Secret — ключ для хэша номера документа курьера «по пути».
+	Secret string
 }
 
 type Service struct {

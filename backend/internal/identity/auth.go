@@ -46,11 +46,17 @@ type Config struct {
 	ReviewCode  string
 }
 
+// SMSSender отправляет SMS (коды входа курьеров «по пути»).
+type SMSSender interface {
+	Send(ctx context.Context, phone, text string) error
+}
+
 // Service — вход, сессии, роли и сотрудники.
 type Service struct {
 	pool   *pgxpool.Pool
 	signer *token.Signer
-	tg     Sender // nil, если бот не настроен
+	tg     Sender    // nil, если бот не настроен
+	sms    SMSSender // nil — коды курьерам «по пути» тоже уходят в Telegram
 	cfg    Config
 	log    *slog.Logger
 	now    func() time.Time
@@ -67,6 +73,12 @@ func NewService(pool *pgxpool.Pool, tg Sender, cfg Config, log *slog.Logger) *Se
 	}
 }
 
+// WithSMS включает отправку кодов курьерам «по пути» по SMS.
+func (s *Service) WithSMS(sms SMSSender) *Service {
+	s.sms = sms
+	return s
+}
+
 // Tokens — ответ на успешный вход или обновление токена.
 type Tokens struct {
 	AccessToken  string `json:"access_token"`
@@ -80,7 +92,10 @@ var (
 	errNoAccess    = apperr.Forbidden("нет доступа к этому приложению")
 	// ErrCustomerBlocked — покупателя заблокировал супер-админ.
 	ErrCustomerBlocked = apperr.New(http.StatusForbidden, "customer_blocked", "аккаунт заблокирован, обратитесь в поддержку")
-	errRefresh         = apperr.Unauthorized("сессия недействительна, войдите заново")
+	// ErrCrowdBlocked — курьера «по пути» заблокировал супер-админ.
+	ErrCrowdBlocked  = apperr.New(http.StatusForbidden, "crowd_blocked", "вход для курьера заблокирован, обратитесь в поддержку")
+	errTermsRequired = apperr.New(http.StatusUnprocessableEntity, "terms_required", "примите условия для курьеров и политику конфиденциальности")
+	errRefresh       = apperr.Unauthorized("сессия недействительна, войдите заново")
 )
 
 func (s *Service) botURL() string {
@@ -90,9 +105,9 @@ func (s *Service) botURL() string {
 	return "https://t.me/" + s.cfg.BotUsername
 }
 
-// RequestCode создаёт код входа и отправляет его в Telegram.
-// Возвращает, через сколько секунд код истечёт.
-func (s *Service) RequestCode(ctx context.Context, rawPhone string) (int, error) {
+// RequestCode создаёт код входа и отправляет его в Telegram (курьеру «по
+// пути» — по SMS, если SMS настроены). Возвращает, через сколько секунд код истечёт.
+func (s *Service) RequestCode(ctx context.Context, rawPhone, app string) (int, error) {
 	ph, err := phone.Normalize(rawPhone)
 	if err != nil {
 		return 0, apperr.Validation("неверный номер телефона")
@@ -117,7 +132,12 @@ func (s *Service) RequestCode(ctx context.Context, rawPhone string) (int, error)
 		code = s.cfg.ReviewCode
 	}
 	var chatID int64
-	if code == "" {
+	viaSMS := app == AppCrowd && s.sms != nil
+	if code == "" && viaSMS {
+		if code, err = randomCode(); err != nil {
+			return 0, err
+		}
+	} else if code == "" {
 		err := s.pool.QueryRow(ctx, `SELECT chat_id FROM telegram_links WHERE phone = $1`, ph).Scan(&chatID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, apperr.Conflict("telegram_not_linked",
@@ -145,7 +165,14 @@ func (s *Service) RequestCode(ctx context.Context, rawPhone string) (int, error)
 		return 0, err
 	}
 
-	if s.cfg.DevOTPCode == "" && !review {
+	if s.cfg.DevOTPCode == "" && !review && viaSMS {
+		text := fmt.Sprintf("Super Market: kod dlya vhoda %s. Nikomu ne soobshayte ego.", code)
+		if err := s.sms.Send(ctx, ph, text); err != nil {
+			_, _ = s.pool.Exec(ctx, `DELETE FROM auth_codes WHERE phone = $1`, ph)
+			s.log.Error("не удалось отправить SMS с кодом", "err", err)
+			return 0, apperr.New(http.StatusBadGateway, "sms_send_failed", "не удалось отправить SMS, попробуйте ещё раз")
+		}
+	} else if s.cfg.DevOTPCode == "" && !review {
 		text := fmt.Sprintf("Код для входа: %s\n\nНикому не сообщайте этот код.", code)
 		if err := s.tg.SendMessage(ctx, chatID, text, nil); err != nil {
 			_, _ = s.pool.Exec(ctx, `DELETE FROM auth_codes WHERE phone = $1`, ph)
@@ -158,8 +185,14 @@ func (s *Service) RequestCode(ctx context.Context, rawPhone string) (int, error)
 
 // VerifyCode проверяет код и открывает сессию в приложении app.
 func (s *Service) VerifyCode(ctx context.Context, rawPhone, code, app, userAgent string) (Tokens, error) {
-	if app != AppClient && app != AppStore && app != AppAdmin {
-		return Tokens{}, apperr.Validation("app: ожидается client, store или admin")
+	return s.VerifyCodeTerms(ctx, rawPhone, code, app, userAgent, false)
+}
+
+// VerifyCodeTerms — то же, плюс согласие с условиями: без него курьер «по
+// пути» не регистрируется.
+func (s *Service) VerifyCodeTerms(ctx context.Context, rawPhone, code, app, userAgent string, terms bool) (Tokens, error) {
+	if app != AppClient && app != AppStore && app != AppAdmin && app != AppCrowd {
+		return Tokens{}, apperr.Validation("app: ожидается client, store, admin или crowd")
 	}
 	ph, err := phone.Normalize(rawPhone)
 	if err != nil {
@@ -216,7 +249,7 @@ func (s *Service) VerifyCode(ctx context.Context, rawPhone, code, app, userAgent
 	)
 	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		var err error
-		userID, err = s.userForApp(ctx, tx, ph, app)
+		userID, err = s.userForApp(ctx, tx, ph, app, terms)
 		if err != nil {
 			return err
 		}
@@ -229,8 +262,11 @@ func (s *Service) VerifyCode(ctx context.Context, rawPhone, code, app, userAgent
 	return s.tokens(userID, sessionID, app, refresh)
 }
 
-func (s *Service) userForApp(ctx context.Context, tx pgx.Tx, ph, app string) (string, error) {
+func (s *Service) userForApp(ctx context.Context, tx pgx.Tx, ph, app string, terms bool) (string, error) {
 	var userID string
+	if app == AppCrowd {
+		return crowdUser(ctx, tx, ph, terms)
+	}
 	if app == AppClient {
 		// Покупатель регистрируется при первом входе.
 		if err := tx.QueryRow(ctx, `

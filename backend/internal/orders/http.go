@@ -117,6 +117,9 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/courier/orders/{id}/delivered", m.courierAct(m.svc.CourierDelivered))
 	})
 
+	// Crowd-доставка: курьеры «по пути».
+	m.crowdRoutes(r)
+
 	// Супер-админ.
 	r.Group(func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppAdmin))

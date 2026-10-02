@@ -56,19 +56,25 @@ func (m *Module) fail(w http.ResponseWriter, r *http.Request, err error) {
 func (m *Module) requestCode(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Phone string `json:"phone"`
+		App   string `json:"app"` // crowd — код по SMS
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		m.fail(w, r, err)
 		return
 	}
-	expiresIn, err := m.svc.RequestCode(r.Context(), in.Phone)
+	expiresIn, err := m.svc.RequestCode(r.Context(), in.Phone, in.App)
 	if err != nil {
 		m.fail(w, r, err)
 		return
 	}
 	// resend_in — через сколько секунд можно запросить код снова (таймер на экране).
+	channel := "telegram"
+	if in.App == AppCrowd && m.svc.sms != nil {
+		channel = "sms"
+	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"sent": true, "expires_in": expiresIn, "resend_in": int(resendCooldown.Seconds()), "bot_url": m.svc.botURL(),
+		"channel": channel,
 	})
 }
 
@@ -77,12 +83,14 @@ func (m *Module) verifyCode(w http.ResponseWriter, r *http.Request) {
 		Phone string `json:"phone"`
 		Code  string `json:"code"`
 		App   string `json:"app"`
+		// Согласие с условиями — для регистрации курьера «по пути».
+		TermsAccepted bool `json:"terms_accepted"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		m.fail(w, r, err)
 		return
 	}
-	t, err := m.svc.VerifyCode(r.Context(), in.Phone, in.Code, in.App, r.UserAgent())
+	t, err := m.svc.VerifyCodeTerms(r.Context(), in.Phone, in.Code, in.App, r.UserAgent(), in.TermsAccepted)
 	if err != nil {
 		m.fail(w, r, err)
 		return

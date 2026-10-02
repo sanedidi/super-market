@@ -96,6 +96,9 @@ func (s *Service) AssignCourier(ctx context.Context, p *identity.Principal, id s
 	if err != nil {
 		return Order{}, err
 	}
+	if in.CourierID != nil && o.CrowdCourierID != nil {
+		return Order{}, apperr.Conflict("crowd_courier", "заказ взял курьер «по пути» — сначала снимите его")
+	}
 	var name string
 	if in.CourierID != nil {
 		if !httpx.IsUUID(*in.CourierID) {
@@ -480,6 +483,8 @@ type TrackingCourier struct {
 	Phone     *string    `json:"phone"` // только пока заказ в пути
 	Location  *Point     `json:"location"`
 	LocatedAt *time.Time `json:"located_at"`
+	// Курьер «по пути» — личность подтверждена в магазине.
+	Crowd bool `json:"crowd"`
 }
 
 type Tracking struct {
@@ -512,7 +517,28 @@ func (s *Service) ClientTracking(ctx context.Context, p *identity.Principal, id 
 		m := int(math.Max(1, math.Ceil(time.Until(*o.EtaAt).Minutes())))
 		t.EtaMinutes = &m
 	}
-	if o.CourierID == nil || o.CourierName == nil || o.Status == StatusDelivered || o.Status == StatusCancelled {
+	if o.Status == StatusDelivered || o.Status == StatusCancelled {
+		return t, nil
+	}
+	if o.CrowdCourierID != nil {
+		c := TrackingCourier{Name: *o.CourierName, Crowd: true}
+		var lat, lng *float64
+		var at *time.Time
+		if err := s.pool.QueryRow(ctx, `
+			SELECT cc.vehicle, ST_Y(cc.location::geometry), ST_X(cc.location::geometry), cc.located_at
+			FROM crowd_couriers cc WHERE cc.user_id = $1`, *o.CrowdCourierID).Scan(&c.Vehicle, &lat, &lng, &at); err != nil {
+			return t, err
+		}
+		if o.Status == StatusDelivering {
+			c.Phone = o.CrowdCourierPhone
+			if lat != nil && lng != nil && at != nil && time.Since(*at) < locationFresh {
+				c.Location, c.LocatedAt = &Point{*lat, *lng}, at
+			}
+		}
+		t.Courier = &c
+		return t, nil
+	}
+	if o.CourierID == nil || o.CourierName == nil {
 		return t, nil
 	}
 	c := TrackingCourier{Name: *o.CourierName}
