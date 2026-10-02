@@ -138,16 +138,11 @@ func (s *Service) CreateReturn(ctx context.Context, p *identity.Principal, in Re
 		}
 		lockCashboxForReturn(ctx, tx, cashboxID)
 		if p.DeviceID != "" {
-			var ok bool
 			if in.ShiftID == nil || !httpx.IsUUID(*in.ShiftID) {
 				return apperr.Validation("shift_id: возврат с кассы — только в смене")
 			}
-			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pos_shifts WHERE id = $1 AND device_id = $2)`,
-				*in.ShiftID, p.DeviceID).Scan(&ok); err != nil {
+			if err := CheckShiftTime(ctx, tx, *in.ShiftID, p.DeviceID, s.now()); err != nil {
 				return err
-			}
-			if !ok {
-				return apperr.Validation("shift_id: смена не найдена на этой кассе")
 			}
 		} else {
 			in.ShiftID = nil

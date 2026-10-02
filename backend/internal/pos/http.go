@@ -41,6 +41,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/pos/sales", m.findSales)
 		r.Get("/pos/sales/{id}", m.getSale)
 		r.Post("/pos/returns", m.createReturn)
+		r.Post("/pos/returns/{id}/fiscal", m.returnFiscal)
 	})
 	// Панель магазина: кассы, ПИНы, смены, налоговые поля, коды.
 	r.Group(func(r chi.Router) {
@@ -197,6 +198,16 @@ func (m *Module) createReturn(w http.ResponseWriter, r *http.Request) {
 			return sales.CustomerReturn{}, requireCashier(pr(r))
 		}
 		return m.svc.sales.CreateReturn(r.Context(), pr(r), in)
+	})
+}
+
+// returnFiscal — касса пробила чек возврата на фискальном модуле.
+func (m *Module) returnFiscal(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in sales.FiscalInput) (map[string]bool, error) {
+		if pr(r).EmployeeID == "" {
+			return nil, requireCashier(pr(r))
+		}
+		return map[string]bool{"registered": true}, m.svc.sales.RegisterFiscal(r.Context(), pr(r), "customer_returns", id, in)
 	})
 }
 

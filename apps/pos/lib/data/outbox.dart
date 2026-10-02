@@ -9,9 +9,13 @@ import 'store.dart';
 /// (смена, продажа, изъятие), сначала пишется сюда, а потом уходит по порядку.
 /// Повтор безопасен: сервер узнаёт события по client_uid.
 class OutboxItem {
-  OutboxItem({required this.seq, required this.kind, required this.body, required this.cashier, this.error});
+  OutboxItem({required this.seq, required this.kind, required this.body, required this.cashier, this.error, DateTime? at})
+      : at = at ?? DateTime.now();
 
   final int seq;
+
+  /// Когда событие случилось на кассе — для правила «не больше 24 часов без связи».
+  final DateTime at;
 
   /// shift_open, cash_move, sale, shift_close.
   final String kind;
@@ -21,7 +25,8 @@ class OutboxItem {
 
   String get fileName => '${seq.toString().padLeft(10, '0')}.json';
 
-  Map<String, dynamic> toJson() => {'seq': seq, 'kind': kind, 'body': body, 'cashier': cashier, 'error': error};
+  Map<String, dynamic> toJson() =>
+      {'seq': seq, 'kind': kind, 'body': body, 'cashier': cashier, 'error': error, 'at': at.toUtc().toIso8601String()};
 
   factory OutboxItem.fromJson(Map<String, dynamic> j) => OutboxItem(
         seq: j['seq'] as int,
@@ -29,6 +34,7 @@ class OutboxItem {
         body: j['body'] as Map<String, dynamic>,
         cashier: j['cashier'] as String? ?? '',
         error: j['error'] as String?,
+        at: DateTime.tryParse(j['at'] as String? ?? '')?.toLocal(),
       );
 }
 
@@ -65,6 +71,9 @@ class Outbox {
   Future<void> Function(String uid, String id, int number)? onSaleSent;
 
   int get pending => _pending.length;
+
+  /// Самое старое неотправленное событие; null — очередь пуста.
+  DateTime? get oldestPendingAt => _pending.isEmpty ? null : _pending.first.at;
   List<OutboxItem> get failed => List.unmodifiable(_failed);
 
   Future<void> load() async {
@@ -97,10 +106,10 @@ class Outbox {
     return out;
   }
 
-  Future<void> add(String kind, Map<String, dynamic> body, String cashier) async {
+  Future<void> add(String kind, Map<String, dynamic> body, String cashier, {DateTime? at}) async {
     _seq++;
     await store.writeJson('outbox_seq.json', {'seq': _seq});
-    final item = OutboxItem(seq: _seq, kind: kind, body: body, cashier: cashier);
+    final item = OutboxItem(seq: _seq, kind: kind, body: body, cashier: cashier, at: at);
     await store.writeJson('$_dir${Platform.pathSeparator}${item.fileName}', item.toJson());
     _pending.add(item);
   }

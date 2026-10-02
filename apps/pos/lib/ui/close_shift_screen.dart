@@ -56,7 +56,17 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
       return;
     }
     setState(() => _busy = true);
-    await pos.closeShift(_counted, diff == 0 ? '' : _reason!);
+    try {
+      await pos.closeShift(_counted, diff == 0 ? '' : _reason!);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = '$e';
+        });
+      }
+      return;
+    }
     if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
@@ -192,7 +202,7 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
                     KeyCard(
                       keyLabel: 'Enter',
                       title: _revealed ? 'Закрыть смену' : 'Сверить с кассой',
-                      subtitle: _revealed ? 'Z-отчёт напечатается после подключения принтера' : 'покажем, сколько должно быть',
+                      subtitle: _revealed ? (pos.printer.enabled ? 'и напечатать Z-отчёт' : 'Z-отчёт — когда подключите принтер') : 'покажем, сколько должно быть',
                       style: KeyCardStyle.primary,
                       onTap: () {
                         if (_revealed) {

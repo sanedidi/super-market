@@ -40,6 +40,11 @@ type SaleItem struct {
 	Discount    string `json:"discount"`
 	Total       string `json:"total"`
 	ReturnedQty string `json:"returned_qty"`
+	// Для чека возврата на фискальном модуле.
+	IKPU         string   `json:"ikpu"`
+	PackageCode  string   `json:"package_code"`
+	VatRate      string   `json:"vat_rate"`
+	MarkingCodes []string `json:"marking_codes"`
 }
 
 type SalePayment struct {
@@ -66,6 +71,7 @@ type Sale struct {
 	FiscalNumber  string        `json:"fiscal_number"`
 	FiscalSign    string        `json:"fiscal_sign"`
 	FiscalQR      string        `json:"fiscal_qr"`
+	FiscalModule  string        `json:"fiscal_module"`
 	ShiftID       *string       `json:"shift_id"`
 	CreatedAt     time.Time     `json:"created_at"`
 	Items         []SaleItem    `json:"items,omitempty"`
@@ -75,14 +81,14 @@ type Sale struct {
 const saleSelect = `
 	SELECT s.id, s.number, s.store_id, st.name, s.warehouse_id, s.client_uid, s.subtotal::text, s.discount::text,
 	       s.total::text, s.customer_phone, s.note, e.full_name, s.sold_at, s.fiscal_status, s.fiscal_number,
-	       s.fiscal_sign, s.fiscal_qr, s.shift_id, s.created_at
+	       s.fiscal_sign, s.fiscal_qr, s.fiscal_module, s.shift_id, s.created_at
 	FROM sales s JOIN stores st ON st.id = s.store_id JOIN employees e ON e.id = s.cashier_id`
 
 func scanSale(row pgx.CollectableRow) (Sale, error) {
 	var s Sale
 	err := row.Scan(&s.ID, &s.Number, &s.StoreID, &s.StoreName, &s.WarehouseID, &s.ClientUID, &s.Subtotal,
 		&s.Discount, &s.Total, &s.CustomerPhone, &s.Note, &s.Cashier, &s.SoldAt, &s.FiscalStatus,
-		&s.FiscalNumber, &s.FiscalSign, &s.FiscalQR, &s.ShiftID, &s.CreatedAt)
+		&s.FiscalNumber, &s.FiscalSign, &s.FiscalQR, &s.FiscalModule, &s.ShiftID, &s.CreatedAt)
 	return s, err
 }
 
@@ -101,7 +107,8 @@ func (s *Service) getSale(ctx context.Context, q db.Querier, p *identity.Princip
 	rows, err = q.Query(ctx, `
 		SELECT i.line, i.product_id, p.name, i.qty::text, i.price::text, i.discount::text, i.total::text,
 		       COALESCE((SELECT sum(ri.qty) FROM customer_return_items ri JOIN customer_returns r ON r.id = ri.return_id
-		                 WHERE r.sale_id = i.sale_id AND ri.sale_line = i.line), 0)::text
+		                 WHERE r.sale_id = i.sale_id AND ri.sale_line = i.line), 0)::text,
+		       p.ikpu, p.package_code, p.vat_rate::text, i.marking_codes
 		FROM sale_items i JOIN products p ON p.id = i.product_id
 		WHERE i.sale_id = $1 ORDER BY i.line`, id)
 	if err != nil {
@@ -298,13 +305,8 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 		}
 
 		if pos {
-			var ok bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pos_shifts WHERE id = $1 AND device_id = $2)`,
-				*in.ShiftID, p.DeviceID).Scan(&ok); err != nil {
+			if err := CheckShiftTime(ctx, tx, *in.ShiftID, p.DeviceID, soldAt); err != nil {
 				return err
-			}
-			if !ok {
-				return apperr.Validation("shift_id: смена не найдена на этой кассе")
 			}
 		}
 
@@ -513,6 +515,9 @@ func markingCodes(raw []string, qty money.Dec, name string, seen map[string]bool
 type FiscalInput struct {
 	FiscalNumber string `json:"fiscal_number"`
 	FiscalSign   string `json:"fiscal_sign"`
+	// С кассы: QR чека и номер фискального модуля.
+	FiscalQR     string `json:"fiscal_qr"`
+	FiscalModule string `json:"fiscal_module"`
 }
 
 // RegisterFiscal отмечает, что касса магазина пробила чек по продаже или возврату.
@@ -527,9 +532,18 @@ func (s *Service) RegisterFiscal(ctx context.Context, p *identity.Principal, tab
 	if table != "sales" && table != "customer_returns" {
 		return apperr.NotFound("документ не найден")
 	}
+	in.FiscalQR, in.FiscalModule = strings.TrimSpace(in.FiscalQR), strings.TrimSpace(in.FiscalModule)
+	if len(in.FiscalQR) > 500 || len(in.FiscalModule) > 64 {
+		return apperr.Validation("fiscal_qr, fiscal_module: слишком длинные")
+	}
 	var storeID, status string
-	err := s.pool.QueryRow(ctx, `SELECT store_id, fiscal_status FROM `+table+` WHERE id = $1 AND network_id = $2`,
-		id, p.NetworkID).Scan(&storeID, &status)
+	var deviceID *string
+	err := s.pool.QueryRow(ctx, `SELECT store_id, fiscal_status, device_id::text FROM `+table+` WHERE id = $1 AND network_id = $2`,
+		id, p.NetworkID).Scan(&storeID, &status, &deviceID)
+	// Касса отмечает только свои чеки.
+	if err == nil && p.DeviceID != "" && (deviceID == nil || *deviceID != p.DeviceID) {
+		err = pgx.ErrNoRows
+	}
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !p.CanAccessStore(storeID)) {
 		return apperr.NotFound("документ не найден")
 	}
@@ -539,8 +553,9 @@ func (s *Service) RegisterFiscal(ctx context.Context, p *identity.Principal, tab
 	if status == "registered" {
 		return apperr.Conflict("already_registered", "чек уже зарегистрирован")
 	}
-	_, err = s.pool.Exec(ctx, `UPDATE `+table+` SET fiscal_status = 'registered', fiscal_number = $2, fiscal_sign = $3, fiscal_at = now()
-		WHERE id = $1`, id, in.FiscalNumber, in.FiscalSign)
+	_, err = s.pool.Exec(ctx, `UPDATE `+table+` SET fiscal_status = 'registered', fiscal_number = $2, fiscal_sign = $3, fiscal_at = now(),
+		fiscal_qr = CASE WHEN $4 = '' THEN fiscal_qr ELSE $4 END, fiscal_module = CASE WHEN $5 = '' THEN fiscal_module ELSE $5 END
+		WHERE id = $1`, id, in.FiscalNumber, in.FiscalSign, in.FiscalQR, in.FiscalModule)
 	return err
 }
 
@@ -605,4 +620,23 @@ func (s *Service) FiscalControl(ctx context.Context, p *identity.Principal, stor
 		     AND ($2 OR store_id = ANY($3::uuid[])) AND ($4 = '' OR store_id::text = $4))`,
 		p.NetworkID, p.SeesAllStores(), p.StoreIDs, storeID).Scan(&out.PendingSales, &out.PendingReturns, &out.OldestPendingAt)
 	return out, err
+}
+
+// ShiftMaxDuration — смена кассы по закону не длиннее 24 часов.
+const ShiftMaxDuration = 24 * time.Hour
+
+// CheckShiftTime — смена есть на этой кассе и на момент at длится не больше 24 часов.
+func CheckShiftTime(ctx context.Context, q db.Querier, shiftID, deviceID string, at time.Time) error {
+	var opened time.Time
+	err := q.QueryRow(ctx, `SELECT opened_at FROM pos_shifts WHERE id = $1 AND device_id = $2`, shiftID, deviceID).Scan(&opened)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return apperr.Validation("shift_id: смена не найдена на этой кассе")
+	}
+	if err != nil {
+		return err
+	}
+	if at.Sub(opened) > ShiftMaxDuration {
+		return apperr.Conflict("shift_expired", "смена идёт больше 24 часов — закройте её (Z-отчёт) и откройте новую")
+	}
+	return nil
 }

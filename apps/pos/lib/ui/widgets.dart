@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../core/limits.dart';
 import '../state/pos.dart';
 import 'theme.dart';
 
@@ -143,7 +144,11 @@ class TopBar extends StatelessWidget {
         Text(shiftText, style: t(13, c: C.ts)),
         const Spacer(),
         if (pos.revoked) const _Dot('Касса отключена в панели', C.error),
-        _Dot(pos.online ? 'Онлайн' : 'Нет связи', pos.online ? C.success : C.warning),
+        if (pos.printError != null) ...[
+          Tooltip(message: pos.printError!, child: const _Dot('Принтер', C.error)),
+          const SizedBox(width: 16),
+        ],
+        _connection(pos),
         const SizedBox(width: 16),
         _Dot(pos.fiscalMode ? 'ФМ' : 'Тестовый режим', pos.fiscalMode ? C.success : C.warning),
         const SizedBox(width: 16),
@@ -155,6 +160,219 @@ class TopBar extends StatelessWidget {
       ]),
     );
   }
+}
+
+Widget _connection(PosController pos) {
+  final off = pos.offlineLimit;
+  if (pos.online && off.state != LimitState.warn) return const _Dot('Онлайн', C.success);
+  if (off.state == LimitState.ok) return const _Dot('Нет связи', C.warning);
+  return _Dot('Нет связи ${fmtDuration(off.age)}', C.error);
+}
+
+/// Полоса под верхней строкой: смена скоро 24 часа или касса давно без связи
+/// (Figma «POS · Смена скоро 24 часа», «POS · Нет связи 3 часа»).
+class LimitBanner extends StatelessWidget {
+  const LimitBanner({super.key, this.onCloseShift});
+
+  final VoidCallback? onCloseShift;
+
+  @override
+  Widget build(BuildContext context) {
+    final pos = context.watch<PosController>();
+    final sh = pos.shiftLimit;
+    if (sh != null && sh.state == LimitState.warn) {
+      return _Banner(
+        icon: Icons.schedule_rounded,
+        bg: C.warningSoft,
+        fg: C.warning,
+        title: 'Смена идёт ${fmtDuration(sh.age)}.',
+        text: 'Через ${fmtDuration(sh.left)} касса перестанет продавать — закройте смену и напечатайте Z-отчёт.',
+        action: 'Закрыть смену · F11',
+        onAction: onCloseShift,
+      );
+    }
+    final off = pos.offlineLimit;
+    if (off.state == LimitState.warn) {
+      return _Banner(
+        icon: Icons.wifi_off_rounded,
+        bg: const Color(0xFFEFF8FF),
+        fg: const Color(0xFF175CD3),
+        title: 'Нет связи ${fmtDuration(off.age)}.',
+        text: 'Продавать можно: ${off.queue} ${_plural(off.queue, 'чек сохранён', 'чека сохранены', 'чеков сохранены')} в кассе и уйдут сами. '
+            'Без связи — ещё ${fmtDuration(off.left)}.',
+        action: 'Проверить связь',
+        onAction: () => pos.sync(catalog: true),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+}
+
+String _plural(int n, String one, String few, String many) {
+  final m = n % 100;
+  if (m >= 11 && m <= 14) return many;
+  return switch (n % 10) { 1 => one, 2 || 3 || 4 => few, _ => many };
+}
+
+class _Banner extends StatelessWidget {
+  const _Banner({required this.icon, required this.bg, required this.fg, required this.title, required this.text, this.action, this.onAction});
+
+  final IconData icon;
+  final Color bg;
+  final Color fg;
+  final String title;
+  final String text;
+  final String? action;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        color: bg,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        child: Row(children: [
+          Icon(icon, color: fg, size: 22),
+          const SizedBox(width: 12),
+          Text(title, style: t(15, w: FontWeight.w600, c: fg)),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: t(14), maxLines: 2, overflow: TextOverflow.ellipsis)),
+          if (action != null) ...[
+            const SizedBox(width: 12),
+            Material(
+              color: C.surface,
+              borderRadius: BorderRadius.circular(8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: onAction,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  child: Text(action!, style: t(13, w: FontWeight.w600, c: fg)),
+                ),
+              ),
+            ),
+          ],
+        ]),
+      );
+}
+
+/// Окно поверх продажи, когда продавать нельзя: смена дольше 24 часов или
+/// касса без связи больше суток (Figma «… — продажи остановлены»).
+class LimitLock extends StatelessWidget {
+  const LimitLock({super.key, required this.onCloseShift, required this.onChangeCashier});
+
+  final VoidCallback onCloseShift;
+  final VoidCallback onChangeCashier;
+
+  @override
+  Widget build(BuildContext context) {
+    final pos = context.watch<PosController>();
+    final sh = pos.shiftLimit;
+    final off = pos.offlineLimit;
+    final shiftBlocked = sh != null && sh.state == LimitState.blocked;
+    if (!shiftBlocked && off.state != LimitState.blocked) return const SizedBox.shrink();
+    String hm(DateTime d) {
+      final l = d.toLocal();
+      final now = DateTime.now();
+      final day = l.year == now.year && l.month == now.month && l.day == now.day ? 'сегодня' : 'вчера';
+      return '$day ${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
+    }
+
+    final (icon, title, text, rows, primary, onPrimary, secondary) = shiftBlocked
+        ? (
+            Icons.lock_clock_rounded,
+            'Смена идёт больше 24 часов',
+            'По закону смена кассы не может длиться дольше 24 часов. Закройте смену — напечатается Z-отчёт, и следующий кассир откроет новую.',
+            [
+              ('Смена ${pos.shift!.number ?? ''} открыта', hm(pos.shift!.openedAt)),
+              ('Чеков за смену', '${pos.report.salesCount}'),
+              ('Отложенные чеки', 'сохранятся'),
+            ],
+            'Закрыть смену · Enter',
+            onCloseShift,
+            'Сменить кассира',
+          )
+        : (
+            Icons.cloud_off_rounded,
+            'Касса без связи больше 24 часов',
+            'Чеки нельзя хранить в кассе дольше суток — их нужно отправить в ОФД. Подключите интернет: продажи откроются сами, как только очередь уйдёт.',
+            [
+              ('Чеков ждут отправки', '${off.queue}'),
+              if (off.since != null) ('Самый старый', hm(off.since!)),
+            ],
+            'Проверить связь · Enter',
+            () {
+              pos.sync(catalog: true);
+            },
+            null,
+          );
+    return Positioned.fill(
+      child: Container(
+        color: const Color(0x8C0F1729),
+        alignment: Alignment.center,
+        child: Container(
+          width: 600,
+          padding: const EdgeInsets.fromLTRB(32, 32, 32, 28),
+          decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(24)),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: const BoxDecoration(color: C.errorSoft, shape: BoxShape.circle),
+              child: Icon(icon, color: C.brand, size: 30),
+            ),
+            const SizedBox(height: 16),
+            Text(title, style: t(26, w: FontWeight.w700)),
+            const SizedBox(height: 16),
+            Text(text, style: t(16, c: C.ts)),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(color: C.page, borderRadius: BorderRadius.circular(14)),
+              child: Column(children: [
+                for (final (k, v) in rows)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(children: [
+                      Expanded(child: Text(k, style: t(15, c: C.ts))),
+                      Text(v, style: t(15, w: FontWeight.w600)),
+                    ]),
+                  ),
+              ]),
+            ),
+            const SizedBox(height: 24),
+            Row(children: [
+              Expanded(child: _LockButton(label: primary, primary: true, onTap: onPrimary)),
+              if (secondary != null) ...[
+                const SizedBox(width: 12),
+                _LockButton(label: secondary, primary: false, onTap: onChangeCashier),
+              ],
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _LockButton extends StatelessWidget {
+  const _LockButton({required this.label, required this.primary, required this.onTap});
+
+  final String label;
+  final bool primary;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: primary ? C.brand : C.page,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Center(child: Text(label, style: t(17, w: FontWeight.w600, c: primary ? Colors.white : C.tp))),
+          ),
+        ),
+      );
 }
 
 class _Dot extends StatelessWidget {

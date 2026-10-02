@@ -7,11 +7,15 @@ import 'package:uuid/uuid.dart';
 import '../core/cart.dart';
 import '../core/catalog.dart';
 import '../core/journal.dart';
+import '../core/limits.dart';
 import '../core/money.dart';
 import '../core/pin.dart';
 import '../data/api.dart';
 import '../data/outbox.dart';
 import '../data/store.dart';
+import '../fiscal/fiscal.dart';
+import '../printer/receipts.dart';
+import '../printer/transport.dart';
 
 /// Где сейчас касса.
 enum Stage { loading, activate, login, openShift, work }
@@ -30,7 +34,7 @@ class HeldCart {
 /// Состояние кассы: устройство, каталог, кассир, смена, очередь на сервер.
 /// Всё, что касается продажи, работает без интернета.
 class PosController extends ChangeNotifier {
-  PosController({required this.store, required this.api, this.appVersion = '0.2.0', DateTime Function()? now})
+  PosController({required this.store, required this.api, this.appVersion = '0.3.0', DateTime Function()? now})
       : _now = now ?? DateTime.now {
     outbox = Outbox(store, api)
       ..onShiftOpened = _shiftOpened
@@ -66,8 +70,37 @@ class PosController extends ChangeNotifier {
   Timer? _timer;
   DateTime? _lastCatalog;
 
-  /// Фискальный модуль подключается на этапе 3; пока — тестовый режим чека.
-  bool get fiscalMode => false;
+  /// Фискальный модуль. Пока ОФД не выдал протокол — тестовый: чеки не фискальные.
+  FiscalModule fiscal = TestFiscalModule();
+  FiscalStatus? fiscalStatus;
+
+  bool get fiscalMode => fiscal.real;
+
+  /// Чековый принтер и последняя ошибка печати (показывается в верхней строке).
+  PrinterConfig printer = PrinterConfig();
+  String? printError;
+
+  /// Сколько идёт смена (правило 24 часов).
+  ShiftLimit? get shiftLimit => shift == null ? null : ShiftLimit(shift!.openedAt, _now());
+
+  /// Работа без связи (правило 24 часов): по очереди на сервер и очереди модуля в ОФД.
+  OfflineLimit get offlineLimit {
+    DateTime? since = outbox.oldestPendingAt;
+    final f = fiscalStatus?.oldestPending;
+    if (f != null && (since == null || f.isBefore(since))) since = f;
+    return OfflineLimit(since: since, online: online, queue: outbox.pending + (fiscalStatus?.pending ?? 0), now: _now());
+  }
+
+  /// Можно ли сейчас продавать; иначе — причина.
+  String? get saleBlocked {
+    if (shiftLimit?.state == LimitState.blocked) {
+      return 'Смена идёт больше 24 часов — закройте смену (Z-отчёт)';
+    }
+    if (offlineLimit.state == LimitState.blocked) {
+      return 'Касса без связи больше 24 часов — подключите интернет, чтобы отправить чеки';
+    }
+    return null;
+  }
 
   int get queue => outbox.pending;
   int get failed => outbox.failed.length;
@@ -97,6 +130,7 @@ class PosController extends ChangeNotifier {
       }
       (st['server_numbers'] as Map<String, dynamic>?)?.forEach((k, v) => serverNumbers[k] = v as int);
     }
+    printer = PrinterConfig.fromJson(await store.readJson('printer.json'));
     await outbox.load();
     if (shift != null) {
       shift!.serverId ??= outbox.shiftIds[shift!.uid];
@@ -197,6 +231,11 @@ class PosController extends ChangeNotifier {
     if (syncing || api.token == null) return;
     syncing = true;
     try {
+      try {
+        fiscalStatus = await fiscal.status();
+      } catch (_) {
+        fiscalStatus = null;
+      }
       final r = await outbox.flush();
       if (r.offline) online = false;
       if (r.sent > 0) online = true;
@@ -309,7 +348,7 @@ class PosController extends ChangeNotifier {
       'client_uid': s.uid,
       'opened_at': s.openedAt.toUtc().toIso8601String(),
       'opening_cash': moneyApi(openingCash),
-    }, c.id);
+    }, c.id, at: s.openedAt);
     shift = s;
     journal.clear();
     await _saveState();
@@ -329,7 +368,7 @@ class PosController extends ChangeNotifier {
       cashierId: cashier!.id,
     );
     await store.append(_journalName(shift!.uid), m.toJson());
-    await outbox.add('cash_move', m.toJson(), cashier!.id);
+    await outbox.add('cash_move', m.toJson(), cashier!.id, at: m.at);
     journal.add(m);
     notifyListeners();
     unawaited(sync());
@@ -339,12 +378,35 @@ class PosController extends ChangeNotifier {
   /// следующего кассира и новая смена.
   Future<void> closeShift(int counted, String reason) async {
     final s = shift!;
+    final now = _now();
+    FiscalResult? z;
+    if (fiscalMode) {
+      try {
+        z = await fiscal.closeShift(shiftNumber: s.number ?? 0, at: now);
+      } on FiscalError catch (e) {
+        throw CartError('Фискальный модуль не закрыл смену: ${e.message}');
+      }
+    }
+    final rep = report;
+    unawaited(_print(() => shiftReport(
+          s: catalog.settings,
+          rep: rep,
+          z: true,
+          at: now,
+          counted: counted,
+          diffReason: reason,
+          vat: rep.vat,
+          queue: outbox.pending,
+          fiscal: z,
+          paperMm: printer.paperMm,
+          codePage: printer.codePage,
+        )));
     await outbox.add('shift_close', {
       'shift_uid': s.uid,
       'counted_cash': counted,
       'diff_reason': reason,
-      'closed_at': _now().toUtc().toIso8601String(),
-    }, cashier!.id);
+      'closed_at': now.toUtc().toIso8601String(),
+    }, cashier!.id, at: now);
     if (s.serverId != null) _closedServerShifts.add(s.serverId!);
     shift = null;
     journal.clear();
@@ -357,28 +419,97 @@ class PosController extends ChangeNotifier {
 
   // ----------------------------------------------------------- продажа
 
-  /// Чек оплачен: в журнал смены и в очередь. Сервер не нужен.
+  /// Чек оплачен: фискальный модуль (если подключён), журнал смены, очередь,
+  /// печать. Сервер не нужен.
   Future<SaleRecord> recordSale(Cart cart, List<Payment> payments, {int received = 0, Map<String, dynamic>? fiscal}) async {
-    _saleSeq++;
-    final rec = SaleRecord(
-      uid: _uuid.v4(),
-      seq: _saleSeq,
+    final blocked = saleBlocked;
+    if (blocked != null) throw CartError(blocked);
+    final uid = _uuid.v4();
+    final soldAt = _now();
+    var draft = SaleRecord(
+      uid: uid,
+      seq: _saleSeq + 1,
       shiftUid: shift!.uid,
       cashierId: cashier!.id,
       cashierName: cashier!.name,
-      soldAt: _now(),
+      soldAt: soldAt,
       lines: SaleRecord.snapshot(cart),
       payments: payments,
       received: received,
       fiscal: fiscal,
     );
+    if (fiscalMode && fiscal == null) {
+      final receipt = FiscalReceipt.sale(draft);
+      final problems = receiptProblems(receipt);
+      if (problems.isNotEmpty) throw CartError(problems.first);
+      try {
+        final res = await this.fiscal.register(receipt);
+        draft = SaleRecord.fromJson({...draft.toJson(), 'fiscal': res.toSale()});
+      } on FiscalError catch (e) {
+        throw CartError('Фискальный модуль: ${e.message}');
+      }
+    }
+    _saleSeq++;
+    final rec = draft;
     await store.append(_journalName(rec.shiftUid), rec.toJson());
-    await outbox.add('sale', rec.toJson(), rec.cashierId);
+    await outbox.add('sale', rec.toJson(), rec.cashierId, at: rec.soldAt);
     await _saveState();
     journal.add(rec);
     notifyListeners();
     unawaited(sync());
+    unawaited(printSale(rec));
     return rec;
+  }
+
+  String get _shiftLabel => '${catalog.settings.deviceName.isEmpty ? 'Касса' : catalog.settings.deviceName}'
+      '${shift?.number != null ? ' · смена ${shift!.number}' : ''}';
+
+  /// Напечатать чек продажи (и открыть ящик при наличных). Ошибка не мешает продаже.
+  Future<bool> printSale(SaleRecord rec) => _print(() => saleReceipt(
+        s: catalog.settings,
+        sale: rec,
+        shiftLabel: _shiftLabel,
+        serverNumber: serverNumbers[rec.uid],
+        paperMm: printer.paperMm,
+        codePage: printer.codePage,
+        openDrawer: printer.drawer,
+      ));
+
+  /// X-отчёт на принтер.
+  Future<bool> printX() => _print(() => shiftReport(
+        s: catalog.settings,
+        rep: report,
+        z: false,
+        at: _now(),
+        vat: report.vat,
+        queue: outbox.pending,
+        paperMm: printer.paperMm,
+        codePage: printer.codePage,
+      ));
+
+  Future<bool> testPrint() => _print(() => testPage(s: catalog.settings, paperMm: printer.paperMm, codePage: printer.codePage));
+
+  Future<bool> openDrawer() => _print(drawerPulse);
+
+  Future<bool> _print(List<int> Function() build) async {
+    if (!printer.enabled) return false;
+    try {
+      await sendToPrinter(printer, Uint8List.fromList(build()));
+      printError = null;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      printError = '$e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<void> savePrinter(PrinterConfig c) async {
+    printer = c;
+    printError = null;
+    await store.writeJson('printer.json', c.toJson());
+    notifyListeners();
   }
 
   int get nextSeq => _saleSeq + 1;
@@ -425,8 +556,14 @@ class PosController extends ChangeNotifier {
     required Cashier by,
   }) async {
     await sync();
+    final blocked = shiftLimit?.state == LimitState.blocked ? 'Смена идёт больше 24 часов — закройте смену (Z-отчёт)' : null;
+    if (blocked != null) throw ApiError(409, 'shift_expired', blocked);
     final shiftId = shift!.serverId ?? outbox.shiftIds[shift!.uid];
     if (shiftId == null) throw ApiError(0, 'network', 'Смена ещё не дошла до сервера — нужен интернет');
+    final saleSign = '${sale['fiscal_sign'] ?? ''}';
+    if (fiscalMode && saleSign.isEmpty) {
+      throw ApiError(409, 'not_fiscal', 'Исходный чек не фискальный — возврат через фискальный модуль невозможен');
+    }
     final res = await api.post('/pos/returns', {
       'sale_id': sale['id'],
       'payment_method_id': method.id,
@@ -434,18 +571,77 @@ class PosController extends ChangeNotifier {
       'shift_id': shiftId,
       'items': items,
     }, cashier: by.id) as Map<String, dynamic>;
+    final id = res['id'] as String;
+    final total = parseMoney(res['total']);
+    final at = _now();
+
+    // Чек возврата: строки — из ответа сервера (суммы с учётом скидки), реквизиты — из исходного чека.
+    final saleItems = ((sale['items'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    final lines = <FiscalLine>[];
+    for (final it in ((res['items'] as List?) ?? const []).cast<Map<String, dynamic>>()) {
+      final src = saleItems.firstWhere((x) => x['line'] == it['sale_line'], orElse: () => {'product_name': it['product_name']});
+      lines.add(refundLine(src, parseQty(it['qty']), parseMoney(it['total'])));
+    }
+    final receipt = FiscalReceipt(
+      kind: ReceiptKind.refund,
+      uid: id,
+      at: at,
+      cashier: by.name,
+      lines: lines,
+      cash: method.kind == 'cash' ? total : 0,
+      card: method.kind == 'cash' ? 0 : total,
+      ref: saleSign.isEmpty
+          ? null
+          : FiscalRef(
+              number: '${sale['fiscal_number'] ?? ''}',
+              sign: saleSign,
+              module: '${sale['fiscal_module'] ?? ''}',
+              at: DateTime.tryParse('${sale['sold_at'] ?? ''}')?.toLocal() ?? at,
+            ),
+    );
+    FiscalResult? fr;
+    String? fiscalError;
+    if (fiscalMode) {
+      try {
+        fr = await fiscal.register(receipt);
+        await api.post('/pos/returns/$id/fiscal', fr.toReturn(), cashier: by.id);
+      } on FiscalError catch (e) {
+        fiscalError = 'Возврат проведён, но фискальный модуль не пробил чек: ${e.message}';
+      } on ApiError catch (e) {
+        fiscalError = 'Чек возврата пробит, но сервер не сохранил признак: ${e.message}';
+      }
+    }
     final rec = ReturnRecord(
-      id: res['id'] as String,
+      id: id,
       shiftUid: shift!.uid,
       saleNumber: (res['sale_number'] as num?)?.toInt() ?? 0,
-      total: parseMoney(res['total']),
+      total: total,
       kind: method.kind,
       methodName: method.name,
-      at: _now(),
+      at: at,
+      number: (res['number'] as num?)?.toInt() ?? 0,
+      fiscal: fr?.toJson(),
     );
     await store.append(_journalName(shift!.uid), rec.toJson());
     journal.add(rec);
     notifyListeners();
+    unawaited(_print(() => refundReceipt(
+          s: catalog.settings,
+          r: receipt,
+          returnNumber: rec.number,
+          saleNumber: rec.saleNumber,
+          shiftLabel: _shiftLabel,
+          by: by.name,
+          reason: reason,
+          methodName: method.name,
+          fiscal: fr,
+          paperMm: printer.paperMm,
+          codePage: printer.codePage,
+        )));
+    if (fiscalError != null) {
+      printError = fiscalError;
+      notifyListeners();
+    }
     return rec;
   }
 }

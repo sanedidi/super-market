@@ -4,9 +4,11 @@ import 'package:provider/provider.dart';
 
 import '../core/cart.dart';
 import '../core/catalog.dart';
+import '../core/limits.dart';
 import '../core/money.dart';
 import '../state/pos.dart';
 import '../state/sale.dart';
+import 'close_shift_screen.dart';
 import 'pay_dialogs.dart';
 import 'return_screen.dart';
 import 'search_dialog.dart';
@@ -83,7 +85,29 @@ class _SaleScreenState extends State<SaleScreen> {
     LogicalKeyboardKey.f11: Cmd.shiftMenu,
   };
 
+  Future<void> _closeShift() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const CloseShiftScreen()));
+    if (mounted) _focus.requestFocus();
+  }
+
+  /// Продавать нельзя (смена 24 ч или сутки без связи): Enter — действие из окна,
+  /// F11 — меню смены, остальное не работает.
+  bool _onBlockedKey(KeyEvent e, PosController pos) {
+    if (isEnter(e)) {
+      if (pos.shiftLimit?.state == LimitState.blocked) {
+        _closeShift();
+      } else {
+        pos.sync(catalog: true);
+      }
+    } else if (e.logicalKey == LogicalKeyboardKey.f11) {
+      sale.command(Cmd.shiftMenu);
+    }
+    return true;
+  }
+
   bool _onKey(KeyEvent e) {
+    final pos = context.read<PosController>();
+    if (pos.saleBlocked != null) return _onBlockedKey(e, pos);
     if (e.logicalKey == LogicalKeyboardKey.f6) {
       sale.command(HardwareKeyboard.instance.isShiftPressed ? Cmd.discountAll : Cmd.discountLine);
       return true;
@@ -115,17 +139,24 @@ class _SaleScreenState extends State<SaleScreen> {
           child: GestureDetector(
             onTap: _focus.requestFocus,
             behavior: HitTestBehavior.translucent,
-            child: const Column(children: [
-              TopBar(),
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                    Expanded(child: _Left()),
-                    SizedBox(width: 16),
-                    SizedBox(width: 480, child: _Right()),
-                  ]),
+            child: Stack(fit: StackFit.expand, children: [
+              Column(children: [
+                const TopBar(),
+                LimitBanner(onCloseShift: () => sale.command(Cmd.shiftMenu)),
+                const Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      Expanded(child: _Left()),
+                      SizedBox(width: 16),
+                      SizedBox(width: 480, child: _Right()),
+                    ]),
+                  ),
                 ),
+              ]),
+              LimitLock(
+                onCloseShift: _closeShift,
+                onChangeCashier: () => context.read<PosController>().logout(),
               ),
             ]),
           ),

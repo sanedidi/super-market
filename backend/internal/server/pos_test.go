@@ -260,16 +260,41 @@ func TestPOS(t *testing.T) {
 	if byUID := a.expect(posDo(a, "GET", "/pos/sales?q=sale-0001", dt, owner, nil), 200, "find by uid").items(); len(byUID) != 1 || byUID[0]["id"] != s1.str("id") {
 		t.Fatalf("find by uid = %v", byUID)
 	}
-	a.expect(posDo(a, "POST", "/pos/returns", dt, owner, map[string]any{
+	ret := a.expect(posDo(a, "POST", "/pos/returns", dt, owner, map[string]any{
 		"sale_id": s1.str("id"), "payment_method_id": cash, "shift_id": shift,
 		"items": []map[string]any{{"sale_line": 1, "qty": 1}},
 	}), 201, "pos return")
+	// Чек возврата пробит на фискальном модуле кассы.
+	a.expect(posDo(a, "POST", "/pos/returns/"+ret.str("id")+"/fiscal", dt, owner, map[string]any{"fiscal_number": "000232"}), 400, "return fiscal without sign")
+	a.expect(posDo(a, "POST", "/pos/returns/"+ret.str("id")+"/fiscal", dt, owner, map[string]any{
+		"fiscal_number": "000232", "fiscal_sign": "304812991044", "fiscal_qr": "https://ofd.soliq.uz/check?t=2", "fiscal_module": "UZ170201234567",
+	}), 200, "return fiscal")
+	if q := sqlStr(t, pool, `SELECT fiscal_status || '|' || fiscal_qr || '|' || fiscal_module FROM customer_returns WHERE id = $1`, ret.str("id")); q != "registered|https://ofd.soliq.uz/check?t=2|UZ170201234567" {
+		t.Fatalf("return fiscal = %s", q)
+	}
 
 	// X-отчёт: 200 000 + 48 000 − 15 000 − 30 000 = 203 000 наличными.
 	rep := a.expect(posDo(a, "GET", "/pos/shifts/"+shift, dt, cashier, nil), 200, "report").Body["report"].(map[string]any)
 	if rep["expected_cash"] != "203000.00" || rep["sales_count"].(float64) != 2 || rep["fiscal_pending"].(float64) != 1 ||
 		rep["returns_total"] != "15000.00" || rep["sales_total"] != "188000.00" {
 		t.Fatalf("report = %v", rep)
+	}
+
+	// Смена дольше 24 часов: продажи и возвраты не принимаются, пока её не закроют.
+	if _, err := pool.Exec(context.Background(), `UPDATE pos_shifts SET opened_at = opened_at - interval '25 hours' WHERE id = $1`, shift); err != nil {
+		t.Fatal(err)
+	}
+	if r := a.expect(posDo(a, "POST", "/pos/sales", dt, cashier, sale("sale-0003",
+		[]map[string]any{{"product_id": sugar, "qty": 1}},
+		[]map[string]any{{"payment_method_id": cash, "amount": 12000}}, nil)), 409, "sale in expired shift"); !strings.Contains(r.str("error", "code"), "shift_expired") {
+		t.Fatalf("expired shift = %v", r.Body)
+	}
+	a.expect(posDo(a, "POST", "/pos/returns", dt, owner, map[string]any{
+		"sale_id": s1.str("id"), "payment_method_id": cash, "shift_id": shift,
+		"items": []map[string]any{{"sale_line": 2, "qty": "0.5"}},
+	}), 409, "return in expired shift")
+	if _, err := pool.Exec(context.Background(), `UPDATE pos_shifts SET opened_at = opened_at + interval '25 hours' WHERE id = $1`, shift); err != nil {
+		t.Fatal(err)
 	}
 
 	// Закрытие: расхождение без причины не принимаем.

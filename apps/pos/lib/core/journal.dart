@@ -218,11 +218,19 @@ class ReturnRecord {
     required this.kind,
     required this.methodName,
     required this.at,
+    this.number = 0,
+    this.fiscal,
   });
 
   final String id;
   final String shiftUid;
   final int saleNumber;
+
+  /// Номер возврата на сервере.
+  final int number;
+
+  /// Ответ фискального модуля на чек возврата; null — тестовый режим.
+  final Map<String, dynamic>? fiscal;
   final int total;
   final String kind;
   final String methodName;
@@ -237,6 +245,8 @@ class ReturnRecord {
         'kind': kind,
         'method_name': methodName,
         'at': at.toUtc().toIso8601String(),
+        'number': number,
+        'fiscal': fiscal,
       };
 
   factory ReturnRecord.fromJson(Map<String, dynamic> j) => ReturnRecord(
@@ -247,6 +257,8 @@ class ReturnRecord {
         kind: j['kind'] as String? ?? 'other',
         methodName: j['method_name'] as String? ?? '',
         at: DateTime.parse(j['at'] as String),
+        number: (j['number'] as int?) ?? 0,
+        fiscal: j['fiscal'] as Map<String, dynamic>?,
       );
 }
 
@@ -266,6 +278,8 @@ class ShiftReport {
         salesCount++;
         salesTotal += e.total;
         discounts += e.discount;
+        vat += e.vat;
+        if (e.fiscal == null) notFiscal++;
         for (final p in e.payments) {
           (byMethod[p.name] ??= MethodTotal(p.name, p.kind)).sales += p.amount;
           if (p.kind == 'cash') cashSales += p.amount;
@@ -296,6 +310,12 @@ class ShiftReport {
   int cashReturns = 0;
   int cashIn = 0;
   int cashOut = 0;
+
+  /// НДС в проданных чеках.
+  int vat = 0;
+
+  /// Чеков без фискального признака (тестовый режим).
+  int notFiscal = 0;
   final Map<String, MethodTotal> byMethod = {};
   final List<CashMoveRecord> moves = [];
 

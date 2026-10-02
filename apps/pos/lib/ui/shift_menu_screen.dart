@@ -6,6 +6,7 @@ import '../core/journal.dart';
 import '../core/money.dart';
 import '../state/pos.dart';
 import 'close_shift_screen.dart';
+import 'equipment_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -48,6 +49,19 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
     await Navigator.of(context).pushReplacement(MaterialPageRoute<void>(builder: (_) => const CloseShiftScreen()));
   }
 
+  Future<void> _printX() async {
+    if (!pos.printer.enabled) {
+      setState(() => _error = 'Принтер не выбран — откройте «Оборудование» (6). Отчёт — слева.');
+      return;
+    }
+    final ok = await pos.printX();
+    if (mounted) setState(() => _error = ok ? null : pos.printError);
+  }
+
+  Future<void> _equipment() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const EquipmentScreen()));
+  }
+
   void _changeCashier() {
     Navigator.of(context).pop();
     pos.logout();
@@ -82,11 +96,13 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
       case '2':
         setState(() => _move = 'out');
       case '3':
-        setState(() => _error = 'Печать X-отчёта — после подключения принтера (этап 3). Отчёт — слева.');
+        _printX();
       case '4':
         _changeCashier();
       case '5':
         _close();
+      case '6':
+        _equipment();
       default:
         return false;
     }
@@ -152,11 +168,19 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
                       ),
                     ],
                     const SizedBox(height: 10),
-                    const KeyCard(keyLabel: '3', title: 'Печать X-отчёта', subtitle: 'после подключения принтера', style: KeyCardStyle.dim),
+                    KeyCard(
+                      keyLabel: '3',
+                      title: 'Печать X-отчёта',
+                      subtitle: pos.printer.enabled ? pos.printer.title : 'принтер не выбран',
+                      style: pos.printer.enabled ? KeyCardStyle.normal : KeyCardStyle.dim,
+                      onTap: _printX,
+                    ),
                     const SizedBox(height: 10),
                     KeyCard(keyLabel: '4', title: 'Сменить кассира', subtitle: 'вход по ПИНу', onTap: _changeCashier),
                     const SizedBox(height: 10),
                     KeyCard(keyLabel: '5', title: 'Закрыть смену', subtitle: 'пересчёт наличных и Z-отчёт', onTap: _close),
+                    const SizedBox(height: 10),
+                    KeyCard(keyLabel: '6', title: 'Оборудование', subtitle: 'принтер, ящик, фискальный модуль', onTap: _equipment),
                     const SizedBox(height: 10),
                     KeyCard(keyLabel: 'Esc', title: 'Назад к продаже', onTap: () => Navigator.of(context).pop()),
                     if (_error != null) ...[
