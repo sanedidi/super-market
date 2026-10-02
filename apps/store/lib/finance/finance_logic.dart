@@ -1,0 +1,55 @@
+/// Чистая логика вкладки «Финансы» (без Flutter) — покрыта тестами.
+library;
+
+/// Период отчёта: from включительно, to не включается (как в /store/reports).
+enum Period { today, week, month }
+
+String periodTitle(Period p) => switch (p) {
+      Period.today => 'Сегодня',
+      Period.week => '7 дней',
+      Period.month => 'Месяц',
+    };
+
+String _d(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+/// Параметры from/to (YYYY-MM-DD) для периода относительно [now].
+Map<String, String> periodQuery(Period p, DateTime now) {
+  final today = DateTime(now.year, now.month, now.day);
+  final from = switch (p) {
+    Period.today => today,
+    Period.week => today.subtract(const Duration(days: 6)),
+    Period.month => DateTime(now.year, now.month, 1),
+  };
+  return {'from': _d(from), 'to': _d(today.add(const Duration(days: 1)))};
+}
+
+num n(Object? v) => num.tryParse('${v ?? ''}') ?? 0;
+
+/// Кассы, которые сотрудник может сдать: активные кассы выбранного магазина.
+List<Map<String, dynamic>> storeCashboxes(List<Map<String, dynamic>> all, String? storeId) =>
+    [for (final c in all) if (c['store_id'] == storeId && c['is_active'] != false) c];
+
+/// Проверка суммы сдачи кассы; null — всё верно.
+String? handoverError(String text, Object? balance) {
+  final v = num.tryParse(plainAmount(text));
+  if (v == null || v <= 0) return 'Введите сумму больше нуля';
+  if (v > n(balance)) return 'В кассе меньше — сдать можно не больше остатка';
+  return null;
+}
+
+/// Сумма без пробелов для API: «1 250 000» → «1250000».
+String plainAmount(String text) => text.replaceAll(RegExp(r'\s'), '').replaceAll(',', '.');
+
+String billingStatus(Map<String, dynamic> b) {
+  if (b['overdue'] == true) return 'Есть просроченный счёт';
+  if (n(b['unpaid_uzs']) > 0) return 'Есть неоплаченный счёт';
+  return 'Оплачено';
+}
+
+String balanceKindTitle(String? kind) => switch (kind) {
+      'order' => 'Заказ',
+      'payout' => 'Вывод',
+      'subscription' => 'Подписка',
+      'adjustment' => 'Корректировка',
+      _ => kind ?? '',
+    };

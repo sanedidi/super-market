@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import '../finance/finance_screen.dart';
 import '../push.dart';
 
 import '../ui/theme.dart';
-import '../ui/widgets.dart';
 import 'home_screen.dart';
 import 'more_screen.dart';
 import 'orders_screen.dart';
@@ -37,7 +37,7 @@ class _ShellState extends State<Shell> {
       HomeScreen(onTab: _go),
       const OrdersScreen(),
       const WarehouseScreen(),
-      const _Soon(title: 'Финансы', icon: Icons.account_balance_wallet_rounded, text: 'Кассы, сдача кассы, прибыль и баланс появятся в следующей версии.'),
+      const FinanceScreen(),
       const MoreScreen(),
     ];
     return Scaffold(
@@ -66,25 +66,6 @@ class _ShellState extends State<Shell> {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _Soon extends StatelessWidget {
-  const _Soon({required this.title, required this.icon, required this.text});
-
-  final String title;
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: ListView(padding: const EdgeInsets.all(16), children: [
-        Text(title, style: AppText.h1),
-        const SizedBox(height: 40),
-        EmptyState(icon: icon, title: 'Скоро в приложении', text: text),
-      ]),
     );
   }
 }
