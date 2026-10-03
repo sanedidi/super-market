@@ -65,7 +65,8 @@ func (f *fakeAI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		f.calls++
 		f.last = "openai"
-		out, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": "```json\n" + f.reply + "\n```"}}}})
+		out, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": "```json\n" + f.reply + "\n```"}}},
+			"usage": map[string]any{"prompt_tokens": 1200, "completion_tokens": 300}})
 		_, _ = w.Write(out)
 	case r.Method == "POST" && r.URL.Path == "/v1/messages":
 		b, _ := io.ReadAll(r.Body)
@@ -75,7 +76,8 @@ func (f *fakeAI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		f.calls++
 		f.last = "anthropic"
-		out, _ := json.Marshal(map[string]any{"content": []any{map[string]any{"type": "text", "text": f.reply}}})
+		out, _ := json.Marshal(map[string]any{"content": []any{map[string]any{"type": "text", "text": f.reply}},
+			"usage": map[string]any{"input_tokens": 1000, "cache_read_input_tokens": 500, "output_tokens": 400}})
 		_, _ = w.Write(out)
 	default:
 		w.WriteHeader(404)
@@ -163,6 +165,11 @@ func TestInvoiceScan(t *testing.T) {
 	if raw, _ := json.Marshal(st.Body); strings.Contains(string(raw), fai.key) {
 		t.Fatal("key leaked")
 	}
+	// Цена токенов: $3 / $15 за 1 млн, 1 $ = 12 650 сум.
+	a.expect(a.do("PUT", "/admin/ai/prices", adminTok, map[string]any{"price_in": 3, "price_out": 15, "currency": "EUR", "rate_uzs": 12650}), 400, "bad currency")
+	a.expect(a.do("PUT", "/admin/ai/prices", adminTok, map[string]any{"price_in": -1, "price_out": 15, "currency": "USD", "rate_uzs": 12650}), 400, "negative price")
+	a.expect(a.do("PUT", "/admin/ai/prices", adminTok, map[string]any{"price_in": 3, "price_out": 15, "currency": "USD", "rate_uzs": 12650}), 200, "prices")
+
 	// Ключ в базе зашифрован.
 	var enc []byte
 	if err := pool.QueryRow(ctx, `SELECT api_key_enc FROM ai_settings`).Scan(&enc); err != nil || bytes.Contains(enc, []byte(fai.key)) {
@@ -297,6 +304,32 @@ func TestInvoiceScan(t *testing.T) {
 		t.Fatalf("usage = %v", s)
 	}
 
+	// Расход: 3 проверки и 4 накладные через OpenAI (1200 + 300 токенов),
+	// проверка Anthropic (1000 + 500 из кэша, 400). Ошибки: неверная проверка и «не JSON».
+	use := a.expect(a.do("GET", "/admin/ai/usage", adminTok, nil), 200, "usage")
+	tot := use.Body["totals"].(map[string]any)
+	if tot["requests"] != 8.0 || tot["invoices"] != 4.0 || tot["tests"] != 4.0 || tot["errors"] != 2.0 ||
+		tot["input_tokens"] != 9900.0 || tot["output_tokens"] != 2500.0 || tot["cost_uzs"] != 850.12 {
+		t.Fatalf("totals = %v", tot)
+	}
+	items := use.items()
+	if len(items) != 2 || items[0]["id"] != "" || items[0]["name"] != "Проверки подключения" || items[1]["invoices"] != 4.0 ||
+		items[1]["cost_uzs"] != 409.88 || items[1]["stores"] != 1.0 || items[1]["share"] != 48.2 {
+		t.Fatalf("by network = %v", items)
+	}
+	days := use.Body["days"].([]any)
+	if last := days[len(days)-1].(map[string]any); last["requests"] != 8.0 {
+		t.Fatalf("days = %v", days)
+	}
+	netID := items[1]["id"].(string)
+	byEmp := a.expect(a.do("GET", "/admin/ai/usage?group=employee&network_id="+netID, adminTok, nil), 200, "by employee").items()
+	if len(byEmp) != 1 || byEmp[0]["name"] != "Владелец" || byEmp[0]["requests"] != 4.0 {
+		t.Fatalf("by employee = %v", byEmp)
+	}
+	a.expect(a.do("GET", "/admin/ai/usage?group=x", adminTok, nil), 400, "bad group")
+	a.expect(a.do("GET", "/admin/ai/usage?from=2026-13-01", adminTok, nil), 400, "bad date")
+
 	// Чужое приложение — нет доступа.
 	a.expect(a.do("GET", "/admin/ai", ownerTok, nil), 403, "store token on admin")
+	a.expect(a.do("GET", "/admin/ai/usage", ownerTok, nil), 403, "store token on usage")
 }

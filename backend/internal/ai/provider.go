@@ -199,10 +199,16 @@ func visionGuess(provider, id string) *bool {
 	return nil
 }
 
-// Vision — запрос к модели с фото; ответ — текст модели.
-func (c Conn) Vision(ctx context.Context, system, prompt string, images []Image) (string, error) {
+// Usage — сколько токенов потратил запрос (из ответа сервиса).
+type Usage struct {
+	Input  int
+	Output int
+}
+
+// Vision — запрос к модели с фото; ответ — текст модели и потраченные токены.
+func (c Conn) Vision(ctx context.Context, system, prompt string, images []Image) (string, Usage, error) {
 	if c.Model == "" {
-		return "", &ErrService{Msg: "не выбрана модель"}
+		return "", Usage{}, &ErrService{Msg: "не выбрана модель"}
 	}
 	if c.Provider == ProviderAnthropic {
 		content := []map[string]any{}
@@ -216,21 +222,28 @@ func (c Conn) Vision(ctx context.Context, system, prompt string, images []Image)
 				Type string `json:"type"`
 				Text string `json:"text"`
 			} `json:"content"`
+			Usage struct {
+				Input       int `json:"input_tokens"`
+				Output      int `json:"output_tokens"`
+				CacheCreate int `json:"cache_creation_input_tokens"`
+				CacheRead   int `json:"cache_read_input_tokens"`
+			} `json:"usage"`
 		}
 		err := c.do(ctx, http.MethodPost, "/v1/messages", map[string]any{
 			"model": c.Model, "max_tokens": 8000, "system": system,
 			"messages": []map[string]any{{"role": "user", "content": content}},
 		}, &out)
 		if err != nil {
-			return "", err
+			return "", Usage{}, err
 		}
+		u := Usage{Input: out.Usage.Input + out.Usage.CacheCreate + out.Usage.CacheRead, Output: out.Usage.Output}
 		var b strings.Builder
 		for _, p := range out.Content {
 			if p.Type == "text" {
 				b.WriteString(p.Text)
 			}
 		}
-		return b.String(), nil
+		return b.String(), u, nil
 	}
 	content := []map[string]any{{"type": "text", "text": prompt}}
 	for _, im := range images {
@@ -243,6 +256,10 @@ func (c Conn) Vision(ctx context.Context, system, prompt string, images []Image)
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage struct {
+			Prompt     int `json:"prompt_tokens"`
+			Completion int `json:"completion_tokens"`
+		} `json:"usage"`
 	}
 	err := c.do(ctx, http.MethodPost, "/chat/completions", map[string]any{
 		"model": c.Model,
@@ -252,12 +269,13 @@ func (c Conn) Vision(ctx context.Context, system, prompt string, images []Image)
 		},
 	}, &out)
 	if err != nil {
-		return "", err
+		return "", Usage{}, err
 	}
+	u := Usage{Input: out.Usage.Prompt, Output: out.Usage.Completion}
 	if len(out.Choices) == 0 {
-		return "", &ErrService{Msg: "модель вернула пустой ответ"}
+		return "", u, &ErrService{Msg: "модель вернула пустой ответ"}
 	}
-	return out.Choices[0].Message.Content, nil
+	return out.Choices[0].Message.Content, u, nil
 }
 
 // ExtractJSON — первый JSON-объект из ответа модели (модели любят обёртки ```json).

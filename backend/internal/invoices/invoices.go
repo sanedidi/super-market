@@ -212,7 +212,8 @@ func (s *Service) start(id, networkID string) {
 
 func (s *Service) process(ctx context.Context, id, networkID string) error {
 	var keys []string
-	if err := s.pool.QueryRow(ctx, `SELECT images FROM invoice_scans WHERE id = $1`, id).Scan(&keys); err != nil {
+	var storeID, employeeID string
+	if err := s.pool.QueryRow(ctx, `SELECT images, store_id, created_by FROM invoice_scans WHERE id = $1`, id).Scan(&keys, &storeID, &employeeID); err != nil {
 		return err
 	}
 	conn, err := s.ai.Conn(ctx)
@@ -228,7 +229,15 @@ func (s *Service) process(ctx context.Context, id, networkID string) error {
 		images = append(images, ai.Image{MIME: mime, Data: data})
 	}
 	start := time.Now()
-	inv, err := conn.ReadInvoice(ctx, images)
+	inv, usage, err := conn.ReadInvoice(ctx, images)
+	// Расход ИИ — и при ошибке: токены уже потрачены.
+	if usage.Input+usage.Output > 0 || err == nil {
+		rec := ai.UsageRecord{Kind: "invoice", NetworkID: &networkID, StoreID: &storeID, EmployeeID: &employeeID, ScanID: &id,
+			Provider: conn.Provider, Model: conn.Model, Usage: usage, OK: err == nil}
+		if rerr := s.ai.Record(context.WithoutCancel(ctx), rec); rerr != nil {
+			s.log.Error("ai usage", "scan", id, "err", rerr)
+		}
+	}
 	if err != nil {
 		return err
 	}

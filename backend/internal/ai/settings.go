@@ -254,8 +254,14 @@ func (s *Service) Test(ctx context.Context, in Input) (TestResult, error) {
 	ctx2, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	start := s.now()
-	inv, err := c.ReadInvoice(ctx2, []Image{{MIME: "image/png", Data: testInvoice}})
+	inv, usage, err := c.ReadInvoice(ctx2, []Image{{MIME: "image/png", Data: testInvoice}})
 	res := TestResult{Ms: s.now().Sub(start).Milliseconds()}
+	defer func() {
+		// Проверка тоже тратит токены — пишем её в расход отдельной строкой.
+		if usage.Input+usage.Output > 0 {
+			_ = s.Record(context.WithoutCancel(ctx), UsageRecord{Kind: "test", Provider: c.Provider, Model: c.Model, Usage: usage, OK: res.OK})
+		}
+	}()
 	var se *ErrService
 	switch {
 	case errors.As(err, &se):

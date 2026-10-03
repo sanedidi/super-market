@@ -693,6 +693,8 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 | PUT | `/admin/ai` | `{provider, base_url, api_key?, model}` — пустой `api_key` оставляет сохранённый (только для того же сервиса и адреса). Ключ шифруется (AES-GCM от `JWT_SECRET`) |
 | POST | `/admin/ai/models` | `{provider, base_url, api_key?}` → `items [{id, vision}]` — модели ключа; `vision` по названию (`null` — неизвестно) |
 | POST | `/admin/ai/test` | `{}` — проверить сохранённое (результат записывается) или `{provider, base_url, api_key, model}` — проверить введённое. Модель читает тестовую накладную → `{ok, message, ms}` |
+| GET | `/admin/ai/usage` | `?from=&to=` (YYYY-MM-DD, `to` не включается; по умолчанию — текущий месяц), `group=network\|store\|employee`, `network_id?` → `{totals {requests, invoices, errors, tests, input_tokens, output_tokens, cost_uzs}, days [{date, requests, input_tokens, output_tokens, cost_uzs}], items [{id, name, sub, network_id, stores, employees, requests, invoices, errors, input_tokens, output_tokens, cost_uzs, share}], prices, model}`. Строка с пустым `id` — проверки подключения |
+| PUT | `/admin/ai/prices` | `{price_in, price_out, currency: USD\|RUB\|UZS, rate_uzs}` — цена за 1 млн токенов; стоимость запроса фиксируется в момент запроса |
 
 Ошибки сервиса — 502 `ai_error` с понятным текстом («ключ не подходит…», «закончились средства…»).
 

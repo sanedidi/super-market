@@ -43,13 +43,15 @@ const invoicePrompt = `На фото — одна накладная (стран
 Правила: числа без пробелов и валюты, десятичная точка. Если цена указана с НДС и без — бери с НДС.
 Не придумывай строки, которых нет. Строки итогов, НДС и подписи — не товары.`
 
-// ReadInvoice — распознать накладную.
-func (c Conn) ReadInvoice(ctx context.Context, images []Image) (Invoice, error) {
-	text, err := c.Vision(ctx, invoiceSystem, invoicePrompt, images)
+// ReadInvoice — распознать накладную. Токены возвращаются и при ошибке разбора:
+// за них уже заплачено.
+func (c Conn) ReadInvoice(ctx context.Context, images []Image) (Invoice, Usage, error) {
+	text, u, err := c.Vision(ctx, invoiceSystem, invoicePrompt, images)
 	if err != nil {
-		return Invoice{}, err
+		return Invoice{}, u, err
 	}
-	return ParseInvoice(text)
+	inv, err := ParseInvoice(text)
+	return inv, u, err
 }
 
 // ParseInvoice — разбор ответа модели; числа принимает и строками («12 500,50»).

@@ -2,9 +2,11 @@
 // Ключ хранится на сервере зашифрованным и обратно не показывается.
 import { useEffect, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Alert, App, AutoComplete, Badge, Button, Card, Col, Flex, Input, Radio, Row, Space, Statistic, Tag, Typography } from 'antd'
+import { Alert, App, AutoComplete, Badge, Button, Card, Col, Flex, Input, Radio, Row, Segmented, Space, Statistic, Tag, Typography } from 'antd'
 import { ApiOutlined, CheckCircleFilled, KeyOutlined, LinkOutlined, LockOutlined, ReloadOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { useSearchParams } from 'react-router-dom'
 import { LoadError, PageTitle, api, dateTime, errorText, useItem } from '@sm/shared'
+import { AIUsage } from './AIUsage'
 
 type Provider = 'openai' | 'anthropic'
 
@@ -92,7 +94,7 @@ function ProviderCard({ active, title, text, onClick }: { active: boolean; title
   )
 }
 
-export function AISettings() {
+function AIConnection() {
   const { message } = App.useApp()
   const qc = useQueryClient()
   const { data: s, error, refetch, isLoading } = useItem<Settings>('/admin/ai')
@@ -183,7 +185,6 @@ export function AISettings() {
 
   return (
     <>
-      <PageTitle title="ИИ-сервис" />
       <LoadError error={error} retry={() => refetch()} />
       <Row gutter={[24, 24]}>
         <Col xs={24} xl={16}>
@@ -360,6 +361,31 @@ export function AISettings() {
           </Space>
         </Col>
       </Row>
+    </>
+  )
+}
+
+/** ИИ-сервис: вкладки «Подключение» и «Расход» (Figma А1–А3). */
+export function AISettings() {
+  const [sp, setSp] = useSearchParams()
+  const tab = sp.get('tab') === 'usage' ? 'usage' : 'connection'
+  return (
+    <>
+      <PageTitle
+        title="ИИ-сервис"
+        tabs={
+          <Segmented
+            style={{ marginTop: 12 }}
+            value={tab}
+            onChange={(v) => setSp(v === 'usage' ? { tab: 'usage' } : {}, { replace: true })}
+            options={[
+              { value: 'connection', label: 'Подключение' },
+              { value: 'usage', label: 'Расход' },
+            ]}
+          />
+        }
+      />
+      {tab === 'usage' ? <AIUsage /> : <AIConnection />}
     </>
   )
 }
