@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Полная очистка боевой базы: удаляет все данные (сети, магазины, товары,
-# заказы, покупатели, платежи, каталог, тарифы…), схема и миграции остаются.
-# Затем возвращает начальные строки миграций (единицы, тарифы, настройки
-# биллинга) — как после первой установки. Супер-админы из SUPER_ADMIN_PHONES
-# создаются заново при старте api.
+# заказы, покупатели, платежи, каталог…), схема и миграции остаются.
+# Настройки платформы сохраняются: единицы, тарифы, планы витрины, настройки
+# биллинга, рекламы, crowd-доставки, ИИ и главная платформы с версиями.
+# Супер-админы из SUPER_ADMIN_PHONES создаются заново при старте api.
 # Перед очисткой делается резервная копия в /root/super-market-backups.
 # Запускается из GitHub Actions (reset-data.yml) на сервере.
 set -euo pipefail
@@ -32,6 +32,19 @@ trap restart EXIT
 echo ">> Очистка всех таблиц"
 $COMPOSE exec -T db sh -c "$PSQL" <<'SQL'
 BEGIN;
+-- Настройки платформы сохраняем: копии во временные таблицы до очистки,
+-- после очистки возвращаем (ссылки на пользователей обнуляем).
+CREATE TEMP TABLE keep_units           AS SELECT * FROM units;
+CREATE TEMP TABLE keep_tariffs         AS SELECT * FROM tariffs;
+CREATE TEMP TABLE keep_showcase_plans  AS SELECT * FROM showcase_plans;
+CREATE TEMP TABLE keep_billing         AS SELECT * FROM billing_settings;
+CREATE TEMP TABLE keep_ad_settings     AS SELECT * FROM ad_settings;
+CREATE TEMP TABLE keep_crowd_settings  AS SELECT * FROM crowd_settings;
+CREATE TEMP TABLE keep_ai_settings     AS SELECT * FROM ai_settings;
+CREATE TEMP TABLE keep_layouts         AS SELECT * FROM home_layouts WHERE scope = 'platform';
+CREATE TEMP TABLE keep_layout_versions AS
+    SELECT v.* FROM home_layout_versions v JOIN keep_layouts l ON l.id = v.layout_id;
+
 DO $$
 DECLARE t text;
 BEGIN
@@ -43,16 +56,18 @@ BEGIN
   END IF;
 END $$;
 
--- Начальные данные из миграций 0003 и 0007.
-INSERT INTO units (name, short_name, is_fractional) VALUES
-    ('Штука', 'шт', false),
-    ('Килограмм', 'кг', true),
-    ('Литр', 'л', true),
-    ('Упаковка', 'уп', false);
-INSERT INTO tariffs (name, min_stores, price_per_store) VALUES
-    ('До 3 магазинов', 1, 20),
-    ('От 3 магазинов', 3, 15);
-INSERT INTO billing_settings DEFAULT VALUES;
+INSERT INTO units            SELECT * FROM keep_units;
+INSERT INTO tariffs          SELECT * FROM keep_tariffs;
+INSERT INTO showcase_plans   SELECT * FROM keep_showcase_plans;
+INSERT INTO billing_settings SELECT * FROM keep_billing;
+INSERT INTO ad_settings      SELECT * FROM keep_ad_settings;
+INSERT INTO crowd_settings   SELECT * FROM keep_crowd_settings;
+UPDATE keep_ai_settings SET updated_by = NULL;
+INSERT INTO ai_settings      SELECT * FROM keep_ai_settings;
+UPDATE keep_layouts SET published_by = NULL;
+INSERT INTO home_layouts     SELECT * FROM keep_layouts;
+UPDATE keep_layout_versions SET published_by = NULL;
+INSERT INTO home_layout_versions SELECT * FROM keep_layout_versions;
 COMMIT;
 SQL
 
