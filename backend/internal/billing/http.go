@@ -41,6 +41,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/tariffs", m.listTariffs)
 		r.Post("/tariffs", m.createTariff)
 		r.Patch("/tariffs/{id}", m.updateTariff)
+		r.Delete("/tariffs/{id}", m.deleteTariff)
 		r.Get("/networks", m.listNetworks)
 		r.Get("/networks/{id}", m.getNetwork)
 		r.Patch("/networks/{id}", m.updateNetwork)

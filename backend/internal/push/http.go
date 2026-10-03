@@ -31,6 +31,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/admin/push/campaigns/{id}", m.get)
 		r.Get("/admin/push/campaigns/{id}/recipients", m.recipients)
 		r.Post("/admin/push/campaigns/{id}/cancel", m.cancel)
+		r.Delete("/admin/push/campaigns/{id}", m.deleteCampaign)
 		r.Get("/admin/push/customer", m.customer)
 		r.Post("/admin/push/test", m.test)
 		r.Get("/admin/push/blocks", m.blocks)

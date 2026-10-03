@@ -1,8 +1,8 @@
 // Настройки: магазины, роли, сотрудники.
 import { useState } from 'react'
-import { Alert, Button, Card, Checkbox, Form, Input, Modal, Radio, Select, Switch, Table, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Checkbox, Form, Input, Modal, Radio, Select, Space, Switch, Table, Tag, Typography } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
-import { CrudPage, ImageUpload, MapPointPicker, PageTitle, PhoneInput, RemoteSelect, StatusTag, api, formatPhone, phoneRule, useAction, useList, type LatLng } from '@sm/shared'
+import { CrudPage, DeleteButton, ImageUpload, MapPointPicker, PageTitle, PhoneInput, RemoteSelect, StatusTag, api, formatPhone, phoneRule, useAction, useList, type LatLng } from '@sm/shared'
 import { useStore } from '../ctx'
 import type { Employee, Permission, PriceType, Role, Store, Warehouse } from '../types'
 
@@ -180,12 +180,16 @@ export function RolesPage() {
             },
             {
               key: 'e',
-              width: 90,
+              width: 190,
+              align: 'right',
               render: (_, r) =>
                 !r.is_owner && (
-                  <Button size="small" onClick={() => openForm(r)}>
-                    Изменить
-                  </Button>
+                  <Space size={8}>
+                    <Button size="small" onClick={() => openForm(r)}>
+                      Изменить
+                    </Button>
+                    <DeleteButton path={`/store/roles/${r.id}`} name={r.name} />
+                  </Space>
                 ),
             },
           ]}
@@ -234,6 +238,9 @@ export function EmployeesPage() {
     <CrudPage<Employee>
       title="Сотрудники"
       path="/store/employees"
+      canDelete={(r) => !r.is_owner}
+      rowName={(r) => r.full_name}
+      deactivate={() => ({ status: 'inactive' })}
       createLabel="Новый сотрудник"
       columns={[
         { title: 'Имя', dataIndex: 'full_name', render: (v: string, r) => (r.is_owner ? <>{v} <Tag color="gold">Владелец</Tag></> : v) },

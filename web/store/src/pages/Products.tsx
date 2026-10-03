@@ -1,8 +1,8 @@
 // Товары: общий каталог платформы + свои товары сети (через модерацию).
 import { useState } from 'react'
-import { Alert, Button, Card, Col, Form, Input, Modal, Radio, Row, Select, Table, Tag, Tooltip, Typography, type TableColumnType } from 'antd'
+import { Alert, Button, Card, Col, Form, Input, Modal, Radio, Row, Select, Space, Table, Tag, Tooltip, Typography, type TableColumnType } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
-import { ImageUpload, LoadError, PageTitle, ProductTree, ProductViewSwitch, RemoteSelect, api, money, useAction, usePaged, useProductView } from '@sm/shared'
+import { DeleteButton, ImageUpload, LoadError, PageTitle, ProductTree, ProductViewSwitch, RemoteSelect, api, money, useAction, usePaged, useProductView } from '@sm/shared'
 import { useStore } from '../ctx'
 import { Num } from '../ui'
 import type { DictItem, Product } from '../types'
@@ -51,18 +51,26 @@ export function ProductsPage() {
   }
   const editCol: TableColumnType<Product> = {
     key: 'edit',
-    width: 90,
+    width: 190,
+    align: 'right',
     render: (_, r) =>
       manage && r.network_id ? (
-        <Button
-          size="small"
-          onClick={() => {
-            setEditing(r)
-            setOpen(true)
-          }}
-        >
-          Изменить
-        </Button>
+        <Space size={8}>
+          <Button
+            size="small"
+            onClick={() => {
+              setEditing(r)
+              setOpen(true)
+            }}
+          >
+            Изменить
+          </Button>
+          <DeleteButton
+            path={`/store/products/${r.id}`}
+            name={r.name}
+            deactivate={() => api.patch(`/store/products/${r.id}`, { is_active: false })}
+          />
+        </Space>
       ) : null,
   }
   // Дерево: бренд и категория — в группах, поэтому в строке товара их нет.

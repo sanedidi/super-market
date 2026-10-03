@@ -51,6 +51,7 @@ export function CashboxesPage() {
     <CrudPage<Cashbox>
       title="Кассы"
       path="/store/finance/cashboxes"
+      canDelete={(r) => !r.is_main}
       createLabel="Новая касса"
       columns={[
         { title: 'Касса', dataIndex: 'name', render: (v: string, r) => (r.is_main ? <b>{v}</b> : v) },

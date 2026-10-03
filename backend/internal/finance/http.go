@@ -36,11 +36,13 @@ func (m *Module) Routes(r chi.Router) {
 		r.With(cps).Get("/counterparty-types", m.listCounterpartyTypes)
 		r.Post("/counterparty-types", m.createCounterpartyType)
 		r.Patch("/counterparty-types/{id}", m.updateCounterpartyType)
+		r.Delete("/counterparty-types/{id}", m.del(m.svc.DeleteCounterpartyType))
 
 		r.With(cps).Get("/counterparties", m.listCounterparties)
 		r.Post("/counterparties", m.createCounterparty)
 		r.With(cps).Get("/counterparties/{id}", m.getCounterparty)
 		r.Patch("/counterparties/{id}", m.updateCounterparty)
+		r.Delete("/counterparties/{id}", m.del(m.svc.DeleteCounterparty))
 		r.With(cps).Get("/counterparties/{id}/entries", m.counterpartyEntries)
 		r.With(cps).Get("/counterparties/{id}/statement", m.counterpartyStatement)
 		r.With(cps).Get("/debts", m.debts)
@@ -48,15 +50,18 @@ func (m *Module) Routes(r chi.Router) {
 		r.With(fin).Get("/reasons", m.listReasons)
 		r.Post("/reasons", m.createReason)
 		r.Patch("/reasons/{id}", m.updateReason)
+		r.Delete("/reasons/{id}", m.del(m.svc.DeleteReason))
 
 		r.With(fin).Get("/cashboxes", m.listCashboxes)
 		r.Post("/cashboxes", m.createCashbox)
 		r.Patch("/cashboxes/{id}", m.updateCashbox)
+		r.Delete("/cashboxes/{id}", m.del(m.svc.DeleteCashbox))
 		r.With(fin).Get("/cashboxes/{id}/entries", m.cashboxEntries)
 
 		r.Get("/payment-methods", m.listPaymentMethods)
 		r.Post("/payment-methods", m.createPaymentMethod)
 		r.Patch("/payment-methods/{id}", m.updatePaymentMethod)
+		r.Delete("/payment-methods/{id}", m.del(m.svc.DeletePaymentMethod))
 
 		r.With(fin).Get("/operations", m.listOperations)
 		r.Post("/operations", m.createOperation)

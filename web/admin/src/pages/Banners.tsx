@@ -84,6 +84,8 @@ export function Banners() {
       key={moderation ?? 'all'}
       title="Баннеры в приложении"
       path="/admin/banners"
+      canDelete
+      rowName={(r) => r.title}
       params={{ moderation }}
       toolbar={
         <Segmented

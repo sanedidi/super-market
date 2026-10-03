@@ -23,7 +23,7 @@ import {
 } from 'antd'
 import { KeyOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import { LoadError, PageTitle, api, dateTime, money, useAction, useItem, useList, usePaged } from '@sm/shared'
+import { DeleteButton, LoadError, PageTitle, api, dateTime, money, useAction, useItem, useList, usePaged } from '@sm/shared'
 import { useStore } from '../ctx'
 import { NeedStore } from '../ui'
 
@@ -206,6 +206,7 @@ function DevicesCard() {
                   >
                     {d.status === 'waiting' ? 'Показать код' : 'Новый код'}
                   </Button>
+                  {d.status === 'waiting' && <DeleteButton path={`/store/pos/devices/${d.id}`} name={d.name} />}
                   <Popconfirm
                     title="Отключить кассу?"
                     description="Она перестанет продавать и отправлять чеки. Неотправленные чеки останутся на ней."

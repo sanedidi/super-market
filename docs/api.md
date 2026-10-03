@@ -756,3 +756,18 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 Продажа и возврат с кассы в смене, которая на момент операции (`sold_at` или сейчас) идёт дольше 24 часов, —
 409 `shift_expired`: смену нужно закрыть (Z-отчёт) и открыть новую. Касса сама предупреждает за 2 часа и
 останавливает продажи; без связи больше 24 часов касса тоже не продаёт, пока очередь не уйдёт.
+
+
+## Удаление (DELETE → 204)
+
+Ответы: 404 — нет записи; 409 `in_use` — запись используется (`details.deactivate: true` — можно отключить);
+409 с особым кодом — служебная запись (`default_price_type`, `main_cashbox`, `owner_role`, `owner`, `self`,
+`document_posted`, `campaign_sent`).
+
+Панель магазина: `/store/finance/{counterparties,counterparty-types,reasons,cashboxes,payment-methods}/{id}`,
+`/store/price-types/{id}`, `/store/warehouses/{id}`, `/store/roles/{id}`, `/store/employees/{id}`,
+`/store/products/{id}` (свой товар), `/store/price-documents/{id}` (черновик), `/store/promotions/{id}`,
+`/store/banners/{id}`, `/store/pos/devices/{id}` (не подключённая касса), `/store/inventory/documents/{id}` (черновик).
+
+Супер-админ: `/admin/catalog/{kind}/{id}`, `/admin/products/{id}`, `/admin/banners/{id}`, `/admin/billing/tariffs/{id}`,
+`/admin/ads/advertisers/{id}`, `/admin/ads/campaigns/{id}` (без показов), `/admin/push/campaigns/{id}` (scheduled/cancelled).

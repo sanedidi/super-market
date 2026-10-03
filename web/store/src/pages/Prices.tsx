@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Alert, App, Button, Card, Col, Form, Input, Popconfirm, Row, Select, Space, Table, Typography } from 'antd'
 import { CheckOutlined, CloseOutlined, DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
-import { LoadError, PageTitle, RemoteSelect, StatusTag, api, dateTime, errorText, money, useItem, useList, usePaged } from '@sm/shared'
+import { DeleteButton, LoadError, PageTitle, RemoteSelect, StatusTag, api, dateTime, errorText, money, useItem, useList, usePaged } from '@sm/shared'
 import { useStore } from '../ctx'
 import { Num, ProductSelect, trimNum } from '../ui'
 import type { PriceDocument, PriceType } from '../types'
@@ -45,6 +45,11 @@ export function PriceDocsPage() {
             { title: 'Статус', dataIndex: 'status', render: (s: string) => <StatusTag status={s} /> },
             { title: 'Проведён', dataIndex: 'posted_at', render: dateTime },
             { title: 'Автор', dataIndex: 'created_by' },
+            {
+              key: 'del',
+              align: 'right',
+              render: (_, r) => r.status === 'draft' && <DeleteButton path={`/store/price-documents/${r.id}`} name={`Черновик № ${r.number}`} />,
+            },
           ]}
         />
       </Card>

@@ -23,7 +23,7 @@ import {
 } from 'antd'
 import { PlusOutlined, SettingOutlined, WarningFilled } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
-import { BannerUpload, CrudPage, LoadError, PageTitle, RemoteSelect, api, date, errorText, money, useAction, useItem, useList } from '@sm/shared'
+import { BannerUpload, CrudPage, DeleteButton, LoadError, PageTitle, RemoteSelect, api, date, errorText, money, useAction, useItem, useList } from '@sm/shared'
 import { SearchSelect } from '../components'
 
 interface Named {
@@ -454,6 +454,13 @@ function Campaigns() {
               { title: 'Показы', dataIndex: 'billable_views', align: 'right', render: (v: number) => (v ? num(v) : '—') },
               { title: 'Начислено', dataIndex: 'accrued', align: 'right', render: (v: string) => money(v) },
               { title: 'Статус', dataIndex: 'status', render: (v: Campaign['status']) => <Tag color={STATUS[v].color}>{STATUS[v].label}</Tag> },
+              {
+                key: 'del',
+                align: 'right',
+                render: (_, c) => (
+                  <DeleteButton path={`/admin/ads/campaigns/${c.id}`} name={c.title} onDone={() => selected === c.id && setSelected(null)} />
+                ),
+              },
             ]}
           />
         </Card>
@@ -576,6 +583,8 @@ function Advertisers() {
     <CrudPage<{ id: string; name: string; inn: string; contract_number: string; contract_date: string | null; contact: string }>
       title="Рекламодатели"
       path="/admin/ads/advertisers"
+      canDelete
+      deactivate={null}
       createLabel="Новый рекламодатель"
       columns={[
         { title: 'Юрлицо', dataIndex: 'name' },

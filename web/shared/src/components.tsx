@@ -1,9 +1,10 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { Alert, Button, Card, Form, Modal, Select, Table, Tag, type SelectProps, type PaginationProps, type TableColumnsType, type TableProps } from 'antd'
+import { Alert, Button, Card, Form, Modal, Select, Space, Table, Tag, type SelectProps, type PaginationProps, type TableColumnsType, type TableProps } from 'antd'
 import { LeftOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons'
 import { useShell } from './shell'
 import { api } from './api'
 import { errorText, useAction, useDebounced, useList, usePaged } from './hooks'
+import { DeleteButton } from './remove'
 
 type Params = Record<string, string | number | boolean | undefined | null>
 
@@ -206,6 +207,12 @@ export interface CrudConfig<T> {
   modalWidth?: number
   /** Вместо таблицы — свой вид списка (например, дерево товаров); получает колонки с «Изменить». */
   renderList?: (columns: TableColumnsType<T>) => ReactNode
+  /** «Удалить» в строке: DELETE `${path}/${id}`; функция — для каких строк. */
+  canDelete?: boolean | ((row: T) => boolean)
+  /** Название строки для подтверждения (по умолчанию поле name). */
+  rowName?: (row: T) => string
+  /** Тело PATCH «Отключить», если запись уже используется (по умолчанию { is_active: false }; null — без кнопки). */
+  deactivate?: ((row: T) => Record<string, unknown>) | null
 }
 
 /** Список + модальное окно создания/правки — для справочников. */
@@ -230,14 +237,30 @@ export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
   }
 
   const columns = [...cfg.columns]
-  if (cfg.form && cfg.canEdit !== false) {
+  const editable = !!cfg.form && cfg.canEdit !== false
+  const deletable = (row: T) => (typeof cfg.canDelete === 'function' ? cfg.canDelete(row) : !!cfg.canDelete)
+  if (editable || cfg.canDelete) {
     columns.push({
       key: '_edit',
-      width: 90,
+      width: cfg.canDelete ? 190 : 90,
+      align: 'right',
       render: (_: unknown, row: T) => (
-        <Button size="small" onClick={() => openForm(row)}>
-          Изменить
-        </Button>
+        <Space size={8}>
+          {editable && (
+            <Button size="small" onClick={() => openForm(row)}>
+              Изменить
+            </Button>
+          )}
+          {deletable(row) && (
+            <DeleteButton
+              path={`${cfg.path}/${row.id}`}
+              name={cfg.rowName ? cfg.rowName(row) : String((row as Record<string, unknown>).name ?? '')}
+              deactivate={
+                cfg.deactivate === null ? undefined : () => api.patch(`${cfg.path}/${row.id}`, cfg.deactivate ? cfg.deactivate(row) : { is_active: false })
+              }
+            />
+          )}
+        </Space>
       ),
     })
   }

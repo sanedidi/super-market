@@ -38,9 +38,11 @@ func (m *Module) Routes(r chi.Router) {
 		r.With(staff).Get("/store/roles", m.listRoles)
 		r.Post("/store/roles", m.createRole)
 		r.Patch("/store/roles/{id}", m.updateRole)
+		r.Delete("/store/roles/{id}", m.deleteRole)
 		r.With(staff).Get("/store/employees", m.listEmployees)
 		r.Post("/store/employees", m.createEmployee)
 		r.Patch("/store/employees/{id}", m.updateEmployee)
+		r.Delete("/store/employees/{id}", m.deleteEmployee)
 		// Логин и пароль курьера для приложения курьера.
 		r.With(m.auth.Allow(PermStaffManage, PermOrdersManage)).Get("/store/couriers/{id}/login", m.getCourierLogin)
 		r.Put("/store/couriers/{id}/login", m.setCourierLogin)

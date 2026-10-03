@@ -164,3 +164,16 @@ func (o Optional[T]) Or() *T {
 	}
 	return o.Value
 }
+
+// Delete — DELETE /…/{id}: fn удаляет запись, ответ 204 без тела.
+func Delete(w http.ResponseWriter, r *http.Request, log *slog.Logger, fn func(id string) error) {
+	id, err := PathID(r, "id")
+	if err == nil {
+		err = fn(id)
+	}
+	if err != nil {
+		Fail(w, r, log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

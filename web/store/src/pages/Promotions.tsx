@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Alert, App, Button, Card, Col, DatePicker, Form, Input, Row, Segmented, Select, Space, Switch, Table, Tag, Typography } from 'antd'
 import { CloseOutlined, DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
-import { LoadError, PageTitle, api, dateTime, errorText, money, useItem, usePaged } from '@sm/shared'
+import { DeleteButton, LoadError, PageTitle, api, dateTime, errorText, money, useItem, usePaged } from '@sm/shared'
 import { useStore } from '../ctx'
 import { Num, ProductSelect, trimNum } from '../ui'
 import type { Promotion } from '../types'
@@ -69,6 +69,7 @@ export function PromotionsPage() {
             { title: 'Где', dataIndex: 'store_ids', render: storeName },
             { title: 'Товаров', dataIndex: 'item_count', align: 'right' },
             { title: 'Статус', dataIndex: 'status', render: (s: Promotion['status']) => <PromoStatus status={s} /> },
+            { key: 'del', align: 'right', render: (_, r) => <DeleteButton path={`/store/promotions/${r.id}`} name={r.name} /> },
           ]}
         />
       </Card>

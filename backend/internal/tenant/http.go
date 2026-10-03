@@ -40,6 +40,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/store/warehouses", m.listWarehouses)
 		r.Post("/store/warehouses", m.createWarehouse)
 		r.Patch("/store/warehouses/{id}", m.updateWarehouse)
+		r.Delete("/store/warehouses/{id}", m.deleteWarehouse)
 	})
 }
 

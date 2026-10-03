@@ -20,6 +20,7 @@ export function Tariffs() {
       <CrudPage<Tariff>
         title="Тарифы подписки"
         path="/admin/billing/tariffs"
+        canDelete
         createLabel="Новый тариф"
         columns={[
           { title: 'Название', dataIndex: 'name' },

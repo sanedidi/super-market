@@ -66,6 +66,7 @@ function DictionaryPage({ kind }: { kind: string }) {
     <CrudPage<Dict>
       title={dictTitles[kind] ?? kind}
       path={path}
+      canDelete
       params={{ q: q || undefined }}
       toolbar={<Input.Search placeholder="Поиск по названию" allowClear onSearch={setQ} style={{ width: 240 }} />}
       columns={columns}
@@ -243,6 +244,7 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
       <CrudPage<Product>
         title={moderation ? 'Модерация товаров' : 'Товары'}
         path="/admin/products"
+        canDelete
         params={params}
         renderList={
           tree

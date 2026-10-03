@@ -57,7 +57,7 @@ import {
 } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useQuery } from '@tanstack/react-query'
-import { LoadError, PagedTable, PageTitle, PhoneInput, RemoteSelect, api, dateTime, errorText, formatPhone, normalizeUzPhone, useAction, useDebounced, useItem, useList } from '@sm/shared'
+import { DeleteButton, LoadError, PagedTable, PageTitle, PhoneInput, RemoteSelect, api, dateTime, errorText, formatPhone, normalizeUzPhone, useAction, useDebounced, useItem, useList } from '@sm/shared'
 import { SearchSelect } from '../components'
 import { useUrlState } from '../hooks'
 
@@ -372,6 +372,12 @@ function Campaigns() {
               ),
             },
             { title: 'Статус', render: (_, c) => <CampaignTag status={c.status} /> },
+            {
+              key: 'del',
+              align: 'right',
+              render: (_, c) =>
+                (c.status === 'scheduled' || c.status === 'cancelled') && <DeleteButton path={`/admin/push/campaigns/${c.id}`} name={c.title} />,
+            },
             {
               title: 'Доставка',
               render: (_, c) => (

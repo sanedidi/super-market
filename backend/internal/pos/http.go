@@ -50,6 +50,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/store/pos/devices", m.createDevice)
 		r.Post("/store/pos/devices/{id}/code", m.newCode)
 		r.Post("/store/pos/devices/{id}/revoke", m.revoke)
+		r.Delete("/store/pos/devices/{id}", m.deleteDevice)
 		r.Get("/store/pos/pins", m.listPins)
 		r.Put("/store/pos/pins/{id}", m.setPIN)
 		r.Delete("/store/pos/pins/{id}", m.clearPIN)

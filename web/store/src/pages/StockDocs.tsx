@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Alert, App, Button, Card, Col, Form, Input, Popconfirm, Row, Segmented, Select, Space, Table, Typography } from 'antd'
 import { CheckOutlined, CloseOutlined, DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 import {
+  DeleteButton,
   LoadError,
   PageTitle,
   RemoteSelect,
@@ -161,6 +162,12 @@ export function StockDocsPage({ type }: { type: StockDocType }) {
               : []),
             { title: 'Статус', dataIndex: 'status', render: (s: string) => <StatusTag status={s} /> },
             { title: 'Автор', dataIndex: 'created_by' },
+            {
+              key: 'del',
+              align: 'right' as const,
+              render: (_: unknown, r: StockDocument) =>
+                r.status === 'draft' && <DeleteButton path={`/store/inventory/documents/${r.id}`} name={`Черновик № ${r.number}`} />,
+            },
           ]}
         />
       </Card>

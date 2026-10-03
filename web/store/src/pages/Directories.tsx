@@ -25,6 +25,7 @@ export function CounterpartiesPage() {
     <CrudPage<Counterparty>
       title="Контрагенты"
       path="/store/finance/counterparties"
+      canDelete
       params={{ q: q || undefined }}
       createLabel="Новый контрагент"
       canCreate={manage}
@@ -90,6 +91,7 @@ export function CounterpartyTypesPage() {
     <CrudPage<CounterpartyType>
       title="Типы контрагентов"
       path="/store/finance/counterparty-types"
+      canDelete
       columns={[
         { title: 'Название', dataIndex: 'name' },
         { title: 'Статус', dataIndex: 'is_active', render: (v: boolean) => <ActiveTag active={v} /> },
@@ -157,6 +159,7 @@ export function PriceTypesPage() {
     <CrudPage<PriceType>
       title="Типы цен"
       path="/store/price-types"
+      canDelete={(r) => !r.is_default}
       canCreate={manage}
       canEdit={manage}
       columns={[
@@ -198,6 +201,7 @@ export function WarehousesPage() {
       <CrudPage<Warehouse>
         title={`Склады${store ? ' — ' + store.name : ''}`}
         path="/store/warehouses"
+        canDelete={(r) => !r.is_default}
         params={{ store_id: storeId }}
         createLabel="Новый склад"
         canCreate={manage}
@@ -229,6 +233,7 @@ export function PaymentMethodsPage() {
       <CrudPage<PaymentMethod>
         title="Способы оплаты"
         path="/store/finance/payment-methods"
+        canDelete
         params={{ store_id: storeId }}
         createLabel="Новый способ"
         columns={[
@@ -263,6 +268,7 @@ export function ReasonsPage() {
     <CrudPage<Reason>
       title="Финансовые причины"
       path="/store/finance/reasons"
+      canDelete
       columns={[
         { title: 'Название', dataIndex: 'name' },
         {
