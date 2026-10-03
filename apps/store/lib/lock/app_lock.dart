@@ -60,7 +60,10 @@ class DeviceBiometrics implements Biometrics {
     try {
       return await _auth.authenticate(
         localizedReason: reason,
-        options: const AuthenticationOptions(biometricOnly: true, stickyAuth: true),
+        biometricOnly: true,
+        // Не держим проверку при сворачивании: на iPhone это ломало жизненный
+        // цикл приложения (переходы между экранами замирали).
+        persistAcrossBackgrounding: false,
       );
     } catch (_) {
       return false;

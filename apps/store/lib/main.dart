@@ -17,7 +17,7 @@ import 'ui/widgets.dart';
 const apiUrl = String.fromEnvironment('API_URL', defaultValue: 'https://api.super-market.uz/api/v1');
 
 /// Версия для экрана «Ещё» (совпадает с pubspec.yaml).
-const appVersion = '0.6.2';
+const appVersion = '0.6.3';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -114,10 +114,13 @@ class _StoreAppState extends State<StoreApp> with WidgetsBindingObserver {
       home: home,
       // Экран кода — поверх всего, что было открыто (заказ, шторка, push):
       // после кода человек возвращается туда же.
-      builder: (context, child) => Stack(children: [
-        ExcludeSemantics(excluding: showLock, child: child!),
-        if (showLock) const Positioned.fill(child: _LockLayer()),
-      ]),
+      // Без замка дерево приложения — как раньше, без обёрток.
+      builder: (context, child) => showLock
+          ? Stack(fit: StackFit.expand, children: [
+              ExcludeSemantics(child: child!),
+              const _LockLayer(),
+            ])
+          : child!,
     );
   }
 }
