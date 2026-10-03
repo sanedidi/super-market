@@ -274,9 +274,11 @@ class _LockScreenState extends State<LockScreen> {
   @override
   void initState() {
     super.initState();
-    // Клавиатуру открытого под замком экрана прячем, Face ID — сразу.
+    // Клавиатуру открытого под замком экрана прячем.
     FocusManager.instance.primaryFocus?.unfocus();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _bio());
+    // Face ID — после того как экран кода нарисован (системное окно посреди
+    // анимации на iPhone замораживает её).
+    Future<void>.delayed(const Duration(milliseconds: 400), _bio);
   }
 
   Future<void> _bio() async {

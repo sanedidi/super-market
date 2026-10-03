@@ -32,12 +32,27 @@ class _CaptureScreenState extends State<CaptureScreen> {
   void initState() {
     super.initState();
     // Сразу открываем камеру — обычно накладная в одну страницу.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_askedCamera) {
-        _askedCamera = true;
-        _take(ImageSource.camera);
-      }
-    });
+    // Но только когда экран доехал: если открыть камеру посреди перехода,
+    // на iPhone анимация замирает и экран остаётся наполовину чёрным.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _cameraAfterTransition());
+  }
+
+  void _cameraAfterTransition() {
+    if (!mounted || _askedCamera) return;
+    final anim = ModalRoute.of(context)?.animation;
+    if (anim == null || anim.status == AnimationStatus.completed) {
+      _askedCamera = true;
+      _take(ImageSource.camera);
+      return;
+    }
+    void listener(AnimationStatus st) {
+      if (st != AnimationStatus.completed) return;
+      anim.removeStatusListener(listener);
+      // Ещё кадр — чтобы iOS успел дорисовать экран до камеры.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _cameraAfterTransition());
+    }
+
+    anim.addStatusListener(listener);
   }
 
   Future<void> _take(ImageSource source) async {
@@ -47,6 +62,8 @@ class _CaptureScreenState extends State<CaptureScreen> {
       // Сжимаем на телефоне: текст накладной читается, а файл — до 1–2 МБ.
       // Камера — своё окно приложения: пока она открыта, замок кодом не включается.
       final x = await lock.hold(() => _picker.pickImage(source: source, maxWidth: 2200, maxHeight: 2200, imageQuality: 80));
+      // После системного окна камеры просим кадр явно — экран не должен «замереть».
+      WidgetsBinding.instance.scheduleFrame();
       if (x == null) return;
       final bytes = await x.readAsBytes();
       if (mounted) setState(() => _pages.add(bytes));
