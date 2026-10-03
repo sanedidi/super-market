@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import '../lock/app_lock.dart';
 import '../main.dart';
 import '../state.dart';
 import '../ui/theme.dart';
@@ -41,9 +42,11 @@ class _CaptureScreenState extends State<CaptureScreen> {
 
   Future<void> _take(ImageSource source) async {
     if (_pages.length >= maxPages) return;
+    final lock = context.read<AppLock>();
     try {
       // Сжимаем на телефоне: текст накладной читается, а файл — до 1–2 МБ.
-      final x = await _picker.pickImage(source: source, maxWidth: 2200, maxHeight: 2200, imageQuality: 80);
+      // Камера — своё окно приложения: пока она открыта, замок кодом не включается.
+      final x = await lock.hold(() => _picker.pickImage(source: source, maxWidth: 2200, maxHeight: 2200, imageQuality: 80));
       if (x == null) return;
       final bytes = await x.readAsBytes();
       if (mounted) setState(() => _pages.add(bytes));

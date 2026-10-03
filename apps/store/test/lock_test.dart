@@ -95,6 +95,15 @@ void main() {
 
     await lock.check('4812');
     await lock.setLockAfter(Duration.zero);
+
+    // Камера для накладной: «свернули» на 3 минуты, но код не спрашиваем.
+    await lock.hold(() async {
+      lock.paused();
+      now = now.add(const Duration(minutes: 3));
+      lock.resumed();
+    });
+    expect(lock.locked, isFalse);
+
     lock.paused();
     lock.resumed();
     expect(lock.locked, isTrue);

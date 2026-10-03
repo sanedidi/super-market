@@ -148,7 +148,7 @@ class AppLock extends ChangeNotifier {
   /// Открыть по Face ID (если включён).
   Future<bool> unlockWithBiometrics() async {
     if (!bioEnabled || !bioAvailable || !locked) return false;
-    final ok = await biometrics.authenticate('Вход в Super Market Магазин');
+    final ok = await hold(() => biometrics.authenticate('Вход в Super Market Магазин'));
     if (ok) {
       fails = 0;
       locked = false;
@@ -162,7 +162,7 @@ class AppLock extends ChangeNotifier {
   Future<bool> setBiometrics(bool on) async {
     if (on) {
       if (!bioAvailable) return false;
-      final ok = await biometrics.authenticate('Включить вход по Face ID');
+      final ok = await hold(() => biometrics.authenticate('Включить вход по Face ID'));
       if (!ok) return false;
     }
     bioEnabled = on;
@@ -179,11 +179,30 @@ class AppLock extends ChangeNotifier {
 
   /// Приложение свернули.
   void paused() {
+    if (_holds > 0) return;
     if (hasPin && !locked) _pausedAt ??= _now();
+  }
+
+  int _holds = 0;
+
+  /// Своё системное окно приложения (камера для накладной, Face ID): iOS и Android
+  /// считают его «свернули приложение», но код после него не спрашиваем.
+  Future<T> hold<T>(Future<T> Function() action) async {
+    _holds++;
+    try {
+      return await action();
+    } finally {
+      _holds--;
+      _pausedAt = null;
+    }
   }
 
   /// Вернулись в приложение: если прошло [lockAfter] — закрываем кодом.
   void resumed() {
+    if (_holds > 0) {
+      _pausedAt = null;
+      return;
+    }
     final at = _pausedAt;
     _pausedAt = null;
     if (!hasPin || locked || at == null) return;
