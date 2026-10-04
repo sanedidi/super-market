@@ -14,8 +14,8 @@ import 'start_api.dart';
 import 'start_logic.dart';
 
 /// Фото товара или серый квадрат.
-class Thumb extends StatelessWidget {
-  const Thumb(this.url, {super.key, this.size = 44});
+class ProductThumb extends StatelessWidget {
+  const ProductThumb(this.url, {super.key, this.size = 44});
 
   final String? url;
   final double size;
@@ -211,7 +211,7 @@ class _AddSheetState extends State<_AddSheet> {
     final markup = _markup;
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Row(children: [
-        Thumb(p.image, size: 56),
+        ProductThumb(p.image, size: 56),
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -384,7 +384,7 @@ class _PickSheetState extends State<_PickSheet> {
                 Icon(_picked == p.id ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
                     color: _picked == p.id ? AppColors.primary : AppColors.muted),
                 const SizedBox(width: 10),
-                Thumb(p.image, size: 40),
+                ProductThumb(p.image, size: 40),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -512,7 +512,7 @@ class _LineSheetState extends State<_LineSheet> {
     final canBind = context.read<StoreState>().can('catalog.manage');
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Row(children: [
-        Thumb(l['image'] as String?, size: 56),
+        ProductThumb(l['image'] as String?, size: 56),
         const SizedBox(width: 12),
         Expanded(child: Text('${l['name']}', style: AppText.title, maxLines: 2, overflow: TextOverflow.ellipsis)),
       ]),

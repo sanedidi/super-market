@@ -303,7 +303,7 @@ class _PhotoResultsScreenState extends State<PhotoResultsScreen> {
         child: Row(children: [
           icon,
           const SizedBox(width: 10),
-          Thumb(ref?.image, size: 44),
+          ProductThumb(ref?.image, size: 44),
           const SizedBox(width: 10),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

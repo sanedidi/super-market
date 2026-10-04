@@ -308,7 +308,7 @@ class _CatalogSectionScreenState extends State<CatalogSectionScreen> {
             color: inDraft ? AppColors.muted : (picked ? AppColors.primary : AppColors.muted),
           ),
           const SizedBox(width: 10),
-          Thumb(it['image'] as String?, size: 44),
+          ProductThumb(it['image'] as String?, size: 44),
           const SizedBox(width: 10),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -408,7 +408,7 @@ class _StartSearchScreenState extends State<StartSearchScreen> {
                           padding: const EdgeInsets.all(12),
                           onTap: () => _open(items[i]),
                           child: Row(children: [
-                            Thumb(items[i].image, size: 44),
+                            ProductThumb(items[i].image, size: 44),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

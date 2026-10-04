@@ -34,7 +34,7 @@ class StartLineTile extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(children: [
-          Thumb(l['image'] as String?, size: 40),
+          ProductThumb(l['image'] as String?, size: 40),
           const SizedBox(width: 10),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
