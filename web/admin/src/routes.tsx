@@ -6,6 +6,7 @@ import {
   BellOutlined,
   BulbOutlined,
   CarOutlined,
+  DeliveredProcedureOutlined,
   DashboardOutlined,
   DollarOutlined,
   ShopOutlined,
@@ -23,6 +24,7 @@ import { Orders, Payments } from './pages/Orders'
 import { Tariffs, BillingSettings, BillingNetworks, Invoices, Payouts } from './pages/Billing'
 import { Customers } from './pages/Customers'
 import { Crowd } from './pages/Crowd'
+import { Wishes } from './pages/Wishes'
 import { AISettings } from './pages/AI'
 import { Notifications, PushCampaign, PushNew } from './pages/Push'
 
@@ -68,6 +70,7 @@ const menu: MenuItem[] = [
     ],
   },
   { key: '/crowd', icon: <CarOutlined />, label: 'Курьеры по пути' },
+  { key: '/delivery-wishes', icon: <DeliveredProcedureOutlined />, label: 'Спрос на доставку' },
   { key: '/payouts', icon: <BankOutlined />, label: 'Выводы денег' },
   { key: '/customers', icon: <UserOutlined />, label: 'Покупатели' },
   { key: '/notifications', icon: <BellOutlined />, label: 'Уведомления' },
@@ -95,6 +98,7 @@ export function AdminRoutes() {
         <Route path="billing/showcase" element={<ShowcasePlans />} />
         <Route path="billing/settings" element={<BillingSettings />} />
         <Route path="crowd" element={<Crowd />} />
+        <Route path="delivery-wishes" element={<Wishes />} />
         <Route path="payouts" element={<Payouts />} />
         <Route path="customers" element={<Customers />} />
         <Route path="notifications" element={<Notifications />} />

@@ -384,7 +384,7 @@ func (s *Service) PreviewHome(ctx context.Context, networkID, storeID string, bl
 	if err := ValidateBlocks(blocks); err != nil {
 		return StoreHome{}, err
 	}
-	st, err := s.storeForClient(ctx, s.pool, storeID)
+	st, err := s.storeForBrowse(ctx, s.pool, storeID)
 	if err != nil {
 		return StoreHome{}, err
 	}

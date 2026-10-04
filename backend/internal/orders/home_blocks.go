@@ -279,7 +279,7 @@ func (s *Service) StoreHome(ctx context.Context, storeID string) (StoreHome, err
 	s.homes.mu.Unlock()
 
 	gen := ads.Generation()
-	st, err := s.storeForClient(ctx, s.pool, storeID)
+	st, err := s.storeForBrowse(ctx, s.pool, storeID)
 	if err != nil {
 		return StoreHome{}, err
 	}

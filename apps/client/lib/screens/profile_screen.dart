@@ -17,7 +17,7 @@ import 'profile_details_screen.dart';
 import 'root_shell.dart';
 
 /// Версия приложения (совпадает с pubspec.yaml).
-const appVersion = '0.8.1';
+const appVersion = '0.9.0';
 
 const _languages = {'ru': 'Русский', 'uz': 'O‘zbekcha'};
 const _cities = ['Ташкент', 'Самарканд', 'Бухара', 'Андижан', 'Наманган', 'Фергана', 'Нукус', 'Карши', 'Навои', 'Ургенч', 'Джизак', 'Термез'];

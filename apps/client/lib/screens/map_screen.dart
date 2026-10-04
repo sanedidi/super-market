@@ -5,10 +5,12 @@ import '../map_view.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
+import '../wish.dart';
 import 'addresses_screen.dart';
 import 'home_screen.dart';
 
-/// Вкладка «Карта»: магазины, которые доставляют по выбранному адресу.
+/// Вкладка «Карта»: магазины рядом — красные привезут, серые пока не доставляют
+/// (Figma К2): у них «Смотреть товары» и «Хочу доставку».
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
 
@@ -62,7 +64,7 @@ class _MapScreenState extends State<MapScreen> {
         ),
       );
     }
-    final stores = state.stores;
+    final stores = [...state.stores, ...state.others];
     final selected = stores.where((s) => s.id == _selected).firstOrNull ?? stores.firstOrNull;
     // Нижнее меню прозрачное поверх карты (extendBody): его высота уже в padding.bottom.
     final bottom = MediaQuery.paddingOf(context).bottom + 12;
@@ -81,6 +83,7 @@ class _MapScreenState extends State<MapScreen> {
                   lat: s.lat,
                   lng: s.lng,
                   highlight: s.id == selected?.id,
+                  muted: !s.delivers,
                   onTap: () => _onMarker(stores, s.id),
                 ),
             ],
@@ -103,8 +106,15 @@ class _MapScreenState extends State<MapScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(state.storesLoading ? 'Ищем магазины…' : 'Магазинов рядом: ${state.stores.length}', style: AppText.bodyStrong),
-                    Text(address.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.caption),
+                    Text(state.storesLoading ? 'Ищем магазины…' : 'Магазинов рядом: ${stores.length}', style: AppText.bodyStrong),
+                    Text(
+                      state.others.isEmpty
+                          ? address.title
+                          : 'Привезут · ${state.stores.length}   Не доставляют · ${state.others.length}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.caption,
+                    ),
                   ]),
                 ),
               ]),
@@ -135,15 +145,22 @@ class _MapScreenState extends State<MapScreen> {
                       child: Column(children: [
                         StoreCard(
                           name: s.name,
-                          subtitle: storeSubtitle(s),
+                          subtitle: s.delivers ? storeSubtitle(s) : (s.address.isNotEmpty ? s.address : s.networkName),
                           logoUrl: s.logoUrl,
                           recommended: s.recommended,
                           closed: !s.isOpen,
-                          meta: storeMeta(s),
+                          meta: s.delivers ? storeMeta(s) : [(Icons.block_rounded, 'Не доставляет'), (Icons.place_outlined, s.distanceText)],
                           onTap: () => _open(state, s),
                         ),
                         const Spacer(),
-                        AppButton(label: 'Смотреть товары', onPressed: () => _open(state, s)),
+                        if (s.delivers)
+                          AppButton(label: 'Смотреть товары', onPressed: () => _open(state, s))
+                        else
+                          Row(children: [
+                            Expanded(child: AppButton(label: 'Смотреть товары', type: AppButtonType.dark, onPressed: () => _open(state, s))),
+                            const SizedBox(width: 8),
+                            Expanded(child: WishButton(store: s, height: 56)),
+                          ]),
                       ]),
                     ),
                   ),

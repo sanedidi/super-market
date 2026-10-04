@@ -33,11 +33,14 @@ Future<({double lat, double lng})?> currentLocation() async {
 }
 
 class MapMarker {
-  const MapMarker({required this.id, required this.lat, required this.lng, this.highlight = false, this.onTap});
+  const MapMarker({required this.id, required this.lat, required this.lng, this.highlight = false, this.muted = false, this.onTap});
   final String id;
   final double lat;
   final double lng;
   final bool highlight;
+
+  /// Серая метка — магазин не доставляет по адресу.
+  final bool muted;
   final VoidCallback? onTap;
 }
 
@@ -102,7 +105,9 @@ class _StoresMapState extends State<StoresMap> {
           CircleMapObject(
             mapId: MapObjectId('store_${m.id}'),
             circle: Circle(center: Point(latitude: m.lat, longitude: m.lng), radius: m.highlight ? 110 : 70),
-            fillColor: m.highlight ? color : color.withOpacity(0.45),
+            fillColor: m.muted
+                ? (m.highlight ? const Color(0xFF6B6B70) : const Color(0x996B6B70))
+                : (m.highlight ? color : color.withOpacity(0.45)),
             strokeColor: Colors.white,
             strokeWidth: m.highlight ? 3 : 2,
             zIndex: m.highlight ? 2 : 1,

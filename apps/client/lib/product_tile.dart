@@ -49,6 +49,8 @@ class ProductTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final inCart = context.select<AppState, num>((s) => s.cartStoreId == store.id ? s.qtyOf(product.id) : 0);
+    // Магазин не доставляет по адресу — товар только посмотреть.
+    final canOrder = context.select<AppState, bool>((s) => s.canOrder(store.id));
     Future<void> change(num q) async {
       try {
         await changeQty(context, storeId: store.id, storeName: store.name, product: product, qty: q);
@@ -66,7 +68,7 @@ class ProductTile extends StatelessWidget {
       image: product.image,
       qtyLabel: inCart == 0 ? null : qty(inCart),
       onTap: () => openProduct(context, store, product),
-      onAdd: () => change(product.step),
+      onAdd: canOrder ? () => change(product.step) : null,
       onMinus: () => change(inCart - product.step),
       onPlus: () => change(inCart + product.step),
     );

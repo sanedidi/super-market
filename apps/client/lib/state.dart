@@ -44,7 +44,9 @@ class Product {
   num get step => fractional ? 0.5 : 1;
 }
 
-/// Магазин из /client/stores/nearby: доставка считается для выбранного адреса.
+/// Магазин из /client/home: доставка считается для выбранного адреса.
+/// Магазины из `others` по адресу не доставляют — товары можно посмотреть,
+/// заказать нельзя (у них нет `delivery`).
 class Store {
   Store(this.json);
   final Map<String, dynamic> json;
@@ -57,8 +59,14 @@ class Store {
   double get lng => (json['lng'] as num).toDouble();
   bool get recommended => json['recommended'] == true;
   Map<String, dynamic> get delivery => (json['delivery'] as Map<String, dynamic>?) ?? const {};
-  bool get isOpen => delivery['is_open'] == true;
-  int get distanceM => (delivery['distance_m'] as num?)?.toInt() ?? 0;
+
+  /// Доставляет по выбранному адресу (иначе — только посмотреть товары).
+  bool get delivers => json['delivery'] is Map;
+
+  /// Почему не доставляет: not_online — нет онлайн-заказов, out_of_zone — адрес вне зоны.
+  String get reason => (json['reason'] as String?) ?? '';
+  bool get isOpen => delivers ? delivery['is_open'] == true : json['is_open'] == true;
+  int get distanceM => ((delivers ? delivery['distance_m'] : json['distance_m']) as num?)?.toInt() ?? 0;
   String get deliveryFee => '${delivery['delivery_fee'] ?? '0'}';
   String get minOrder => '${delivery['min_order_amount'] ?? '0'}';
   String? get freeFrom => delivery['free_from'] as String?;
@@ -101,6 +109,8 @@ class AppState extends ChangeNotifier {
         cartStoreId = null;
         cartStoreName = null;
         stores = [];
+        others = [];
+        wishes = {};
         _storesFor = null;
         catalogStoreId = null;
         _categories.clear();
@@ -148,8 +158,30 @@ class AppState extends ChangeNotifier {
   /// Вкладка нижнего меню: 0 главная, 1 каталог, 2 карта, 4 профиль (корзина открывается поверх).
   int tab = 0;
 
-  /// Магазины рядом с выбранным адресом.
+  /// Магазины, которые доставляют по выбранному адресу.
   List<Store> stores = [];
+
+  /// Магазины до 10 км, которые по адресу не доставляют (можно попросить доставку).
+  List<Store> others = [];
+
+  /// Магазины, у которых покупатель нажал «Хочу доставку».
+  Set<String> wishes = {};
+
+  /// Магазин по id — и доставляющий, и нет.
+  Store? storeById(String? id) => id == null ? null : (stores.where((s) => s.id == id).firstOrNull ?? others.where((s) => s.id == id).firstOrNull);
+
+  /// Из магазина можно заказать (он доставляет по выбранному адресу).
+  bool canOrder(String storeId) => stores.any((s) => s.id == storeId);
+
+  /// Сколько магазинов рядом доставляют и самое быстрое время доставки.
+  String? get fastestEta {
+    int? best;
+    for (final s in stores) {
+      final m = s.etaMin ?? s.etaMax;
+      if (m != null && (best == null || m < best)) best = m;
+    }
+    return best == null ? null : '$best мин';
+  }
   bool storesLoading = false;
   Object? storesError;
   String? _storesFor;
@@ -165,12 +197,13 @@ class AppState extends ChangeNotifier {
   String? catalogStoreId;
 
   Store? get catalogStore {
-    Store? byId(String? id) => id == null ? null : stores.where((s) => s.id == id).firstOrNull;
-    return byId(catalogStoreId) ??
-        byId(cartStoreId) ??
+    return storeById(catalogStoreId) ??
+        storeById(cartStoreId) ??
         stores.where((s) => s.recommended && s.isOpen).firstOrNull ??
         stores.where((s) => s.isOpen).firstOrNull ??
-        stores.firstOrNull;
+        stores.firstOrNull ??
+        // Никто не доставляет — показываем ближайший магазин: товары и «Хочу доставку».
+        others.firstOrNull;
   }
 
   void setTab(int i) {
@@ -211,6 +244,7 @@ class AppState extends ChangeNotifier {
     final a = address;
     if (a == null) {
       stores = [];
+      others = [];
       _storesFor = null;
       notifyListeners();
       return;
@@ -224,6 +258,8 @@ class AppState extends ChangeNotifier {
       final home = await api.get('/client/home', {'lat': a.lat, 'lng': a.lng}) as Map<String, dynamic>;
       if (_storesFor != a.id) return;
       stores = ((home['stores'] as List?) ?? const []).cast<Map<String, dynamic>>().map(Store.new).toList();
+      others = ((home['others'] as List?) ?? const []).cast<Map<String, dynamic>>().map(Store.new).toList();
+      if (api.loggedIn) loadWishes();
       banners = ((home['banners'] as List?) ?? const []).cast<Map<String, dynamic>>();
       deals = home['deals'] as Map<String, dynamic>?;
     } catch (e) {
@@ -231,6 +267,36 @@ class AppState extends ChangeNotifier {
     } finally {
       storesLoading = false;
       notifyListeners();
+    }
+  }
+
+  Future<void> loadWishes() async {
+    try {
+      final items = await api.get('/client/wishes') as Map<String, dynamic>;
+      wishes = ((items['items'] as List?) ?? const []).cast<String>().toSet();
+      notifyListeners();
+    } catch (_) {
+      // Не критично: кнопка покажет «Хочу доставку».
+    }
+  }
+
+  /// «Хочу доставку» / снять. Голос привязан к точке выбранного адреса.
+  Future<void> toggleWish(Store s) async {
+    final a = address;
+    if (a == null) return;
+    final on = !wishes.contains(s.id);
+    on ? wishes.add(s.id) : wishes.remove(s.id);
+    notifyListeners();
+    try {
+      if (on) {
+        await api.post('/client/stores/${s.id}/wish', {'lat': a.lat, 'lng': a.lng});
+      } else {
+        await api.delete('/client/stores/${s.id}/wish');
+      }
+    } catch (_) {
+      on ? wishes.remove(s.id) : wishes.add(s.id);
+      notifyListeners();
+      rethrow;
     }
   }
 

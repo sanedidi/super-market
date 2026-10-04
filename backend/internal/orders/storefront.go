@@ -97,7 +97,7 @@ var catalogSorts = map[string]string{
 }
 
 func (s *Service) StoreCatalog(ctx context.Context, storeID string, f CatalogFilter, page httpx.Page) ([]CatalogProduct, error) {
-	st, err := s.storeForClient(ctx, s.pool, storeID)
+	st, err := s.storeForBrowse(ctx, s.pool, storeID)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +147,7 @@ type CatalogCategory struct {
 
 // StoreCategories — категории, в которых у магазина есть товары в наличии.
 func (s *Service) StoreCategories(ctx context.Context, storeID string) ([]CatalogCategory, error) {
-	st, err := s.storeForClient(ctx, s.pool, storeID)
+	st, err := s.storeForBrowse(ctx, s.pool, storeID)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +183,7 @@ type ProductDetail struct {
 
 func (s *Service) StoreProduct(ctx context.Context, storeID, productID string) (ProductDetail, error) {
 	var out ProductDetail
-	st, err := s.storeForClient(ctx, s.pool, storeID)
+	st, err := s.storeForBrowse(ctx, s.pool, storeID)
 	if err != nil {
 		return out, err
 	}
@@ -207,7 +207,7 @@ func (s *Service) StoreProduct(ctx context.Context, storeID, productID string) (
 // в этом магазине за 90 дней (онлайн и на кассе); не хватает — популярное из
 // той же категории.
 func (s *Service) RelatedProducts(ctx context.Context, storeID, productID string, limit int) ([]CatalogProduct, error) {
-	st, err := s.storeForClient(ctx, s.pool, storeID)
+	st, err := s.storeForBrowse(ctx, s.pool, storeID)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +261,10 @@ func (s *Service) RelatedProducts(ctx context.Context, storeID, productID string
 type Home struct {
 	Banners []catalog.Banner       `json:"banners"`
 	Stores  []delivery.NearbyStore `json:"stores"`
-	Deals   *Deals                 `json:"deals"`
+	// Others — магазины до 10 км, которые по адресу не доставляют: товары можно
+	// посмотреть, заказать нельзя, можно нажать «Хочу доставку».
+	Others []delivery.OtherStore `json:"others"`
+	Deals  *Deals                `json:"deals"`
 }
 
 // Deals — «Скидки недели» из ближайшего открытого магазина.
@@ -272,12 +275,19 @@ type Deals struct {
 }
 
 func (s *Service) Home(ctx context.Context, lat, lng float64) (Home, error) {
-	out := Home{Banners: []catalog.Banner{}, Stores: []delivery.NearbyStore{}}
+	out := Home{Banners: []catalog.Banner{}, Stores: []delivery.NearbyStore{}, Others: []delivery.OtherStore{}}
 	stores, err := s.delivery.Nearby(ctx, lat, lng)
 	if err != nil {
 		return out, err
 	}
 	out.Stores = stores
+	ids := make([]string, len(stores))
+	for i, st := range stores {
+		ids[i] = st.ID
+	}
+	if out.Others, err = s.delivery.Others(ctx, lat, lng, ids); err != nil {
+		return out, err
+	}
 	networks := []string{}
 	for _, st := range stores {
 		networks = append(networks, st.NetworkID)

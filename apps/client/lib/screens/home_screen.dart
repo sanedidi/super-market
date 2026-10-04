@@ -12,11 +12,13 @@ import '../product_tile.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
+import '../wish.dart';
 import 'addresses_screen.dart';
 import 'category_screen.dart';
 import 'notifications_screen.dart';
 import 'order_screen.dart';
 import 'root_shell.dart';
+import 'search_screen.dart';
 
 /// Главная «Экспресс» (Figma «v2 · 04 Главная»): красная шапка с адресом,
 /// временем доставки, магазином и поиском; карточка текущего заказа; иконки
@@ -147,7 +149,9 @@ class _HomeScreenState extends State<HomeScreen> {
           child: HomeTrackerScope(
             tracker: store == null ? null : _trackerFor(store),
             child: CustomScrollView(controller: _scroll, slivers: [
-            SliverPersistentHeader(pinned: true, delegate: _ExpressHeader(top: top, address: state.address, store: store, many: state.stores.length > 1)),
+            SliverPersistentHeader(
+                pinned: true,
+                delegate: _ExpressHeader(top: top, address: state.address, store: store, many: state.stores.length + state.others.length > 1)),
             if (!state.addressesLoaded)
               const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator()))
             else if (state.address == null)
@@ -202,12 +206,17 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ];
     }
+    // Магазин не доставляет: товары можно посмотреть, сверху — почему нельзя заказать.
+    final note = store.delivers
+        ? null
+        : SliverToBoxAdapter(child: NoDeliveryCard(store: store, onDelivering: () => pickStore(context, state)));
     final blocks = _blocksOf(store);
-    if (blocks != null) return homeBlockSlivers(context, store, blocks);
+    if (blocks != null) return [if (note != null) note, ...homeBlockSlivers(context, store, blocks)];
     if (!_answered.contains(store.id)) {
       return const [SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(48), child: Center(child: CircularProgressIndicator())))];
     }
     return [
+      if (note != null) note,
       SliverToBoxAdapter(child: _CategoryCircles(store: store)),
       SliverToBoxAdapter(child: FreeDeliveryStrip(store: store)),
       if (state.banners.isNotEmpty) SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.only(top: 16), child: _Banners(banners: state.banners))),
@@ -255,25 +264,40 @@ class _ExpressHeader extends SliverPersistentHeaderDelegate {
   /// Блок «Привезём за … · магазин» с отступом под ним.
   static const etaBlock = 96.0;
 
+  /// Блок «Не доставляет» с кнопкой «Хочу доставку».
+  static const noDeliveryBlock = 136.0;
+
+  /// Тёмная шапка магазина, который не доставляет.
+  static const noDeliveryColor = Color(0xFF2B2B2E);
+
+  bool get _noDelivery => store != null && !store!.delivers;
+  double get _eta => _noDelivery ? noDeliveryBlock : etaBlock;
+
   @override
   double get minExtent => top + minBody;
 
   @override
-  double get maxExtent => top + minBody + etaBlock;
+  double get maxExtent => top + minBody + _eta;
 
   @override
   bool shouldRebuild(_ExpressHeader old) =>
-      old.top != top || old.address?.id != address?.id || old.store?.id != store?.id || old.store?.etaText != store?.etaText || old.many != many;
+      old.top != top ||
+      old.address?.id != address?.id ||
+      old.store?.id != store?.id ||
+      old.store?.etaText != store?.etaText ||
+      old.store?.delivers != store?.delivers ||
+      old.many != many;
 
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
-    final t = (shrinkOffset / etaBlock).clamp(0.0, 1.0);
+    final eta = _eta;
+    final t = (shrinkOffset / eta).clamp(0.0, 1.0);
     final s = store;
     return Container(
       padding: EdgeInsets.fromLTRB(16, top + 8, 16, 16),
-      decoration: const BoxDecoration(
-        color: AppColors.primary,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
+      decoration: BoxDecoration(
+        color: _noDelivery ? noDeliveryColor : AppColors.primary,
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(32)),
       ),
       child: Column(children: [
         SizedBox(
@@ -286,17 +310,17 @@ class _ExpressHeader extends SliverPersistentHeaderDelegate {
         ),
         const SizedBox(height: 12),
         SizedBox(
-          height: etaBlock * (1 - t),
+          height: eta * (1 - t),
           child: ClipRect(
             child: OverflowBox(
               alignment: Alignment.topCenter,
-              minHeight: etaBlock,
-              maxHeight: etaBlock,
+              minHeight: eta,
+              maxHeight: eta,
               child: Opacity(
                 opacity: (1 - t * 1.6).clamp(0.0, 1.0),
                 child: Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  child: s != null && !s.delivers ? _noDeliveryBlock(s) : Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
                     Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.end, children: [
                         Text(s == null ? 'Доставка из магазинов рядом' : 'Привезём за',
@@ -326,14 +350,14 @@ class _ExpressHeader extends SliverPersistentHeaderDelegate {
             shape: const StadiumBorder(),
             clipBehavior: Clip.antiAlias,
             child: InkWell(
-              onTap: s == null ? null : () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CategoryScreen(store: s, search: true))),
+              onTap: address == null ? null : () => openSearch(context),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(children: [
                   const Icon(Icons.search_rounded, color: AppColors.text2, size: 24),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text('Найти в Super Market',
+                    child: Text('Найти во всех магазинах',
                         maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.body.copyWith(fontSize: 16, color: AppColors.muted)),
                   ),
                 ]),
@@ -344,6 +368,29 @@ class _ExpressHeader extends SliverPersistentHeaderDelegate {
       ]),
     );
   }
+}
+
+/// Шапка магазина, который не доставляет: «Не доставляет» и «Хочу доставку».
+Widget _noDeliveryBlock(Store s) {
+  return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.end, children: [
+    Text([s.name, s.distanceText, if (!s.isOpen) 'закрыто'].join(' · '),
+        maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.body.copyWith(color: const Color(0xB3FFFFFF), fontSize: 15)),
+    const SizedBox(
+      height: 46,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Text('Не доставляет',
+            style: TextStyle(fontFamily: 'Inter', fontSize: 40, fontWeight: FontWeight.w800, color: AppColors.white, letterSpacing: -1, height: 1.1)),
+      ),
+    ),
+    const SizedBox(height: 10),
+    Row(children: [
+      Expanded(child: WishButton(store: s, onDark: true)),
+      const SizedBox(width: 8),
+      _StorePill(store: s, many: true, pad: false),
+    ]),
+  ]);
 }
 
 /// Адрес в полупрозрачной «пилюле» на красном.
@@ -378,14 +425,17 @@ class _AddressPill extends StatelessWidget {
 
 /// Белая кнопка магазина: при нескольких — выбор, иначе условия доставки.
 class _StorePill extends StatelessWidget {
-  const _StorePill({required this.store, required this.many});
+  const _StorePill({required this.store, required this.many, this.pad = true});
   final Store store;
   final bool many;
+
+  /// Отступ снизу — выровнять по строке «25 мин».
+  final bool pad;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+      padding: EdgeInsets.only(bottom: pad ? 6 : 0),
       child: Material(
         color: AppColors.white,
         shape: const StadiumBorder(),
@@ -712,19 +762,38 @@ class _HitsGrid extends StatelessWidget {
 
 /// Список магазинов рядом — выбор витрины.
 void pickStore(BuildContext context, AppState state) {
+  void open(BuildContext ctx, Store s) {
+    state.openCatalog(s);
+    Navigator.pop(ctx);
+  }
+
+  Widget section(IconData icon, String title, Color color) => Padding(
+        padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+        child: Row(children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 6),
+          Text(title, style: AppText.smallStrong.copyWith(color: color)),
+        ]),
+      );
+
   showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     builder: (ctx) => DraggableScrollableSheet(
       expand: false,
-      initialChildSize: 0.6,
-      maxChildSize: 0.9,
+      initialChildSize: 0.7,
+      maxChildSize: 0.92,
       builder: (ctx, scroll) => ListView(
         controller: scroll,
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
         children: [
           const Text('Магазины рядом', style: AppText.h2),
-          const SizedBox(height: 16),
+          if (state.address != null) ...[
+            const SizedBox(height: 2),
+            Text('${state.address!.title} · ${storesWord(state.stores.length + state.others.length)} до 10 км', style: AppText.small),
+          ],
+          const SizedBox(height: 12),
+          if (state.stores.isNotEmpty) section(Icons.local_shipping_rounded, 'Привезут · ${state.stores.length}', AppColors.successInk),
           for (final s in state.stores) ...[
             StoreCard(
               name: s.name,
@@ -733,12 +802,28 @@ void pickStore(BuildContext context, AppState state) {
               recommended: s.recommended,
               closed: !s.isOpen,
               meta: storeMeta(s),
-              onTap: () {
-                state.openCatalog(s);
-                Navigator.pop(ctx);
-              },
+              onTap: () => open(ctx, s),
             ),
             const SizedBox(height: 10),
+          ],
+          if (state.others.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            section(Icons.storefront_rounded, 'Пока не доставляют · ${state.others.length}', AppColors.text2),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(4, 0, 4, 10),
+              child: Text('Можно посмотреть товары и цены и попросить доставку', style: AppText.small),
+            ),
+            for (final s in state.others) ...[
+              StoreCard(
+                name: s.name,
+                subtitle: s.address.isNotEmpty ? s.address : s.networkName,
+                logoUrl: s.logoUrl,
+                closed: !s.isOpen,
+                meta: [(Icons.block_rounded, 'Не доставляет'), (Icons.place_outlined, s.distanceText)],
+                onTap: () => open(ctx, s),
+              ),
+              const SizedBox(height: 10),
+            ],
           ],
         ],
       ),

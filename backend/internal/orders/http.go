@@ -46,8 +46,12 @@ func (m *Module) Routes(r chi.Router) {
 	r.Get("/client/stores/{id}/home", m.storeHome)
 	r.With(m.auth.Optional(identity.AppClient)).Post("/client/home/events", m.homeEvents)
 	r.Get("/client/stores/{id}/slots", m.slots)
+	r.Get("/client/search", m.search)
 	r.Group(func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppClient))
+		r.Get("/client/wishes", m.myWishes)
+		r.Post("/client/stores/{id}/wish", m.wish)
+		r.Delete("/client/stores/{id}/wish", m.unwish)
 		r.Get("/client/favorites", m.favorites)
 		r.Post("/client/favorites", m.addFavorite)
 		r.Delete("/client/favorites/{pid}", m.removeFavorite)
@@ -102,6 +106,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/store/orders/{id}/fiscal", m.fiscal)
 		r.Post("/store/orders/{id}/assign-courier", m.assignCourier)
 		r.Get("/store/couriers", m.storeCouriers)
+		r.Get("/store/stores/{id}/wishes", m.storeWishes)
 	})
 
 	// Курьер: приложение курьера (логин и пароль) или старый вход сотрудника.
@@ -142,6 +147,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Patch("/admin/showcase/plans/{key}", m.adminSavePlan)
 		r.Get("/admin/home/stores", m.adminPreviewStores)
 		r.Post("/admin/home/preview", m.adminPreview)
+		r.Get("/admin/delivery-wishes", m.adminWishes)
 	})
 }
 
@@ -737,5 +743,55 @@ func (m *Module) storeHomeStats(w http.ResponseWriter, r *http.Request) {
 func (m *Module) adminHomeStats(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (HomeStats, error) {
 		return m.svc.AdminHomeStats(r.Context(), r.URL.Query().Get("network_id"), daysParam(r))
+	})
+}
+
+// ------------------------------------------------- «Хочу доставку» и поиск
+
+func (m *Module) search(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (SearchResult, error) {
+		lat, err := floatParam(r, "lat")
+		if err != nil {
+			return SearchResult{}, err
+		}
+		lng, err := floatParam(r, "lng")
+		if err != nil {
+			return SearchResult{}, err
+		}
+		q := r.URL.Query()
+		only := q.Get("only_delivering") == "1" || q.Get("only_delivering") == "true"
+		limit, _ := strconv.Atoi(q.Get("limit"))
+		return m.svc.Search(r.Context(), lat, lng, q.Get("q"), only, limit)
+	})
+}
+
+func (m *Module) myWishes(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[string], error) {
+		items, err := m.svc.MyWishes(r.Context(), identity.FromContext(r.Context()))
+		return httpx.List[string]{Items: items}, err
+	})
+}
+
+func (m *Module) wish(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in WishInput) (WishState, error) {
+		return m.svc.Wish(r.Context(), identity.FromContext(r.Context()), id, in)
+	})
+}
+
+func (m *Module) unwish(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (WishState, error) {
+		return m.svc.Unwish(r.Context(), identity.FromContext(r.Context()), id)
+	})
+}
+
+func (m *Module) storeWishes(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (WishStats, error) {
+		return m.svc.StoreWishStats(r.Context(), identity.FromContext(r.Context()), id)
+	})
+}
+
+func (m *Module) adminWishes(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (WishReport, error) {
+		return m.svc.AdminWishes(r.Context(), httpx.PageFrom(r))
 	})
 }

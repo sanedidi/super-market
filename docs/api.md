@@ -717,6 +717,23 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 `missing` — товар не найден; `skipped`. Сопоставление: штрихкод → запомненное название поставщика → похожее название (pg_trgm).
 Воркер `invoice_scans` помечает зависшие распознавания (>10 мин) ошибкой.
 
+## Все магазины рядом, «Хочу доставку», поиск по всем магазинам
+
+`GET /client/home` дополнительно отдаёт `others` — активные магазины до 10 км, которые по адресу не доставляют:
+`{id, network_id, network_name, name, address, lat, lng, logo_url, distance_m, is_open, reason}`; `reason`:
+`not_online` — магазин не принимает онлайн-заказы, `out_of_zone` — адрес вне зоны доставки. Их витрина открыта:
+`/client/stores/{id}/home|categories|products|products/{pid}|related` работают и для магазинов без онлайн-заказов
+(корзина и заказ — только у доставляющих: `checkout/preview` и `orders` → 404).
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET | `/client/search?lat=&lng=&q=&only_delivering=1&limit=` | поиск по названию или штрихкоду во всех магазинах рядом (доставляющие + до 10 км; `only_delivering` — только доставляющие). `q` короче 2 символов — пусто. → `{items [{product {id, name, description, brand_name, category_id, unit_short, is_fractional, images, is_new}, offers [{store_id, store_name, network_name, delivers, eta_min, eta_max, distance_m, is_open, reason, price, old_price, discount_percent, available}], min_price}], stores}`. Предложения: привезут → дешевле → ближе; товары: есть с доставкой → название начинается с запроса → больше магазинов |
+| GET | `/client/wishes` | id магазинов, где покупатель нажал «Хочу доставку» |
+| POST | `/client/stores/{id}/wish` | `{lat, lng}` — точка адреса → `{store_id, wished: true}`; повтор обновляет точку. Один голос на магазин |
+| DELETE | `/client/stores/{id}/wish` | снять → `{store_id, wished: false}` |
+| GET | `/store/stores/{id}/wishes` | панель (право `stores.manage` или `orders.manage`): `{accepts_online, total, week, month, nearest_m, farthest_m, out_of_zone, out_of_zone_week}` |
+| GET | `/admin/delivery-wishes?limit=&offset=` | `{totals {total, week, stores}, items [{store_id, store_name, network_id, network_name, total, week, accepts_online, out_of_zone, hidden}]}` — по убыванию голосов; `hidden` — магазин сейчас не виден покупателям |
+
 ## Начало работы (панель и «SM Магазин», право `inventory.manage`)
 
 Магазин заводит товары, которые у него уже есть. Один открытый черновик на основной склад магазина — общий для

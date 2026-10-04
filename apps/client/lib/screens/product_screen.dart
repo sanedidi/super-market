@@ -8,7 +8,9 @@ import '../product_tile.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
+import '../wish.dart';
 import 'root_shell.dart';
+import 'search_screen.dart';
 
 /// Карточка товара: фото, цена со скидкой, магазин, пищевая ценность,
 /// описание и характеристики, «С этим покупают», количество внизу.
@@ -26,6 +28,9 @@ class ProductScreen extends StatefulWidget {
 class _ProductScreenState extends State<ProductScreen> {
   late Product _p = widget.product;
   List<Product> _related = const [];
+
+  /// Магазин не доставляет — где этот товар привезут (поиск по всем магазинам).
+  SearchItem? _elsewhere;
   final _page = PageController();
   int _photo = 0;
 
@@ -58,6 +63,25 @@ class _ProductScreenState extends State<ProductScreen> {
     } catch (_) {
       // Рекомендации не обязательны.
     }
+    if (!mounted) return;
+    final state = context.read<AppState>();
+    final a = state.address;
+    if (a == null || state.canOrder(_store.id)) return;
+    try {
+      final r = await api.get('/client/search', {'lat': a.lat, 'lng': a.lng, 'q': _p.name, 'only_delivering': 1, 'limit': 50}) as Map<String, dynamic>;
+      final found = ((r['items'] as List?) ?? const []).cast<Map<String, dynamic>>().map(SearchItem.new).where((it) => it.product['id'] == _p.id).firstOrNull;
+      if (mounted) setState(() => _elsewhere = found);
+    } catch (_) {
+      // Подсказка не обязательна.
+    }
+  }
+
+  Future<void> _addFrom(SearchOffer o, Product p, num q) async {
+    try {
+      await changeQty(context, storeId: o.storeId, storeName: o.storeName, product: p, qty: q);
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
   }
 
   Future<void> _favorite() async {
@@ -82,7 +106,8 @@ class _ProductScreenState extends State<ProductScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final fav = state.isFavorite(_p.id);
-    final store = state.stores.where((s) => s.id == _store.id).firstOrNull;
+    final store = state.storeById(_store.id);
+    final canOrder = state.canOrder(_store.id);
     final attrs = _attrs;
     final subtitle = [_p.brand, attrs['volume']].whereType<String>().where((s) => s.isNotEmpty).join(' · ');
     final nutrition = (attrs['nutrition'] as Map<String, dynamic>?) ?? const {};
@@ -122,6 +147,7 @@ class _ProductScreenState extends State<ProductScreen> {
                 ]),
               ),
               if (subtitle.isNotEmpty) ...[const SizedBox(height: 6), Text(subtitle, style: AppText.body.copyWith(color: AppColors.text2))],
+              if (!canOrder) ...[const SizedBox(height: 10), Text(money(_p.price), style: AppText.h2.copyWith(fontSize: 26))],
               if (_p.description.trim().isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text(_p.description, style: AppText.body.copyWith(fontSize: 17, color: AppColors.text2)),
@@ -134,10 +160,21 @@ class _ProductScreenState extends State<ProductScreen> {
                     : const AppBadge(label: 'Нет в наличии', kind: BadgeKind.error),
               ]),
               const SizedBox(height: 20),
-              _StoreRow(name: _store.name, logoUrl: store?.logoUrl, eta: store?.etaText, onTap: store == null ? null : () {
-                state.openCatalog(store);
-                Navigator.of(context).popUntil((r) => r.isFirst);
-              }),
+              _StoreRow(
+                  name: _store.name,
+                  logoUrl: store?.logoUrl,
+                  eta: canOrder ? store?.etaText : null,
+                  note: canOrder || store == null ? null : 'Есть в магазине · ${noDeliveryText(store)}',
+                  onTap: store == null
+                      ? null
+                      : () {
+                          state.openCatalog(store);
+                          Navigator.of(context).popUntil((r) => r.isFirst);
+                        }),
+              if (!canOrder && _elsewhere != null) ...[
+                const SizedBox(height: 16),
+                _Elsewhere(item: _elsewhere!, state: state, onAdd: _addFrom),
+              ],
               if (nutrition.isNotEmpty) ...[
                 const SizedBox(height: 24),
                 const Text('Пищевая ценность на 100 г', style: AppText.title),
@@ -178,7 +215,13 @@ class _ProductScreenState extends State<ProductScreen> {
           ),
         const SliverToBoxAdapter(child: SizedBox(height: 24)),
       ]),
-      bottomNavigationBar: BottomActionBar(child: _actions(state, available)),
+      bottomNavigationBar: BottomActionBar(
+        child: canOrder
+            ? _actions(state, available)
+            : store == null
+                ? const AppButton(label: 'Магазин не доставляет', onPressed: null)
+                : WishButton(store: store, label: 'Хочу доставку из ${store.name}', height: 56),
+      ),
     );
   }
 
@@ -299,10 +342,13 @@ class _ProductScreenState extends State<ProductScreen> {
 }
 
 class _StoreRow extends StatelessWidget {
-  const _StoreRow({required this.name, this.logoUrl, this.eta, this.onTap});
+  const _StoreRow({required this.name, this.logoUrl, this.eta, this.note, this.onTap});
   final String name;
   final String? logoUrl;
   final String? eta;
+
+  /// «Есть в магазине · Не доставляет · 1,2 км».
+  final String? note;
   final VoidCallback? onTap;
 
   @override
@@ -329,6 +375,10 @@ class _StoreRow extends StatelessWidget {
                     Text('Привезём за $eta', style: AppText.small),
                   ]),
                 ],
+                if (note != null) ...[
+                  const SizedBox(height: 2),
+                  Text(note!, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.small),
+                ],
               ]),
             ),
             if (onTap != null) const Icon(Icons.chevron_right_rounded, color: AppColors.ink),
@@ -353,6 +403,53 @@ class _Nutrient extends StatelessWidget {
         FittedBox(child: Text(value, style: AppText.bodyStrong)),
         const SizedBox(height: 2),
         Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.caption),
+      ]),
+    );
+  }
+}
+
+/// «Привезут из других магазинов»: тот же товар в магазинах с доставкой.
+class _Elsewhere extends StatelessWidget {
+  const _Elsewhere({required this.item, required this.state, required this.onAdd});
+  final SearchItem item;
+  final AppState state;
+  final Future<void> Function(SearchOffer o, Product p, num q) onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    final offers = item.offers.where((o) => o.delivers).take(4).toList();
+    if (offers.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(AppRadius.xl), border: Border.all(color: AppColors.line)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Row(children: [
+          Icon(Icons.local_shipping_rounded, color: AppColors.success, size: 20),
+          SizedBox(width: 6),
+          Text('Привезут из других магазинов', style: AppText.bodyStrong),
+        ]),
+        const SizedBox(height: 6),
+        for (final o in offers)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Builder(builder: (context) {
+              final p = item.productIn(o);
+              final inCart = state.cartStoreId == o.storeId ? state.qtyOf(p.id) : 0;
+              return Row(children: [
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(o.storeName, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong),
+                    Text(o.meta, style: AppText.caption.copyWith(color: AppColors.successInk)),
+                  ]),
+                ),
+                Text(money(o.price), style: AppText.bodyStrong),
+                const SizedBox(width: 10),
+                inCart == 0
+                    ? AddCircleButton(onTap: () => onAdd(o, p, p.step))
+                    : QtyStepper(label: qty(inCart), onMinus: () => onAdd(o, p, inCart - p.step), onPlus: () => onAdd(o, p, inCart + p.step), height: 36),
+              ]);
+            }),
+          ),
       ]),
     );
   }

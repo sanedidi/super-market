@@ -6,7 +6,7 @@ import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'addresses_screen.dart';
-import 'category_screen.dart';
+import 'search_screen.dart';
 import 'home_screen.dart';
 import 'root_shell.dart';
 
@@ -80,10 +80,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
           PageHeader(
             title: 'Каталог',
             onBack: () => state.setTab(0),
-            trailing: RoundIconButton(
-              icon: Icons.search_rounded,
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CategoryScreen(store: store, search: true))),
-            ),
+            trailing: RoundIconButton(icon: Icons.search_rounded, onTap: () => openSearch(context)),
           ),
           Expanded(
             child: FutureBuilder<List<CatalogCategory>>(
@@ -99,10 +96,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                      child: AppSearchField(
-                        hint: 'Найти в разделе',
-                        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CategoryScreen(store: store, search: true))),
-                      ),
+                      child: AppSearchField(hint: 'Найти во всех магазинах', onTap: () => openSearch(context)),
                     ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),

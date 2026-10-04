@@ -1,7 +1,7 @@
 // Главная: продажи за сегодня, новые заказы, баланс, контроль чеков.
 import { Link, useNavigate } from 'react-router-dom'
 import { Alert, Button, Card, Col, Flex, Row, Statistic, Table, Typography } from 'antd'
-import { RocketOutlined } from '@ant-design/icons'
+import { EnvironmentOutlined, RocketOutlined, ShoppingOutlined } from '@ant-design/icons'
 import { PageTitle, StatusTag, dateTime, money, periodParams, useItem } from '@sm/shared'
 import { useStore } from '../ctx'
 import { usePaidOrders } from '../notify'
@@ -15,6 +15,7 @@ export function DashboardPage() {
       <PageTitle title="Главная" />
       <NeedStore>
         <StartBlock />
+        <WishesBlock />
         <Widgets />
       </NeedStore>
     </>
@@ -159,6 +160,76 @@ function StartBlock() {
         <Button type="primary" onClick={() => nav('/start')}>
           {n > 0 ? 'Продолжить' : 'Начать'}
         </Button>
+      </Flex>
+    </Card>
+  )
+}
+
+type WishStats = {
+  accepts_online: boolean
+  total: number
+  week: number
+  month: number
+  nearest_m: number | null
+  farthest_m: number | null
+  out_of_zone: number
+  out_of_zone_week: number
+}
+
+const km = (m: number | null) => (m === null ? '' : m < 1000 ? `${Math.round(m / 10) * 10} м` : `${(m / 1000).toFixed(1).replace('.', ',')} км`)
+const people = (n: number) => {
+  const m10 = n % 10
+  const m100 = n % 100
+  return m10 === 1 && m100 !== 11 ? 'покупатель' : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? 'покупателя' : 'покупателей'
+}
+
+/** «Хочу доставку» в приложении: сколько покупателей рядом ждут доставку из магазина. */
+function WishesBlock() {
+  const { storeId, can } = useStore()
+  const nav = useNavigate()
+  const sees = can('stores.manage') || can('orders.manage')
+  const d = useItem<WishStats>(sees ? `/store/stores/${storeId}/wishes` : null).data
+  if (!d) return null
+  const off = !d.accepts_online && d.total > 0
+  const outside = d.accepts_online && d.out_of_zone > 0
+  if (!off && !outside) return null
+  const n = off ? d.total : d.out_of_zone
+  const week = off ? d.week : d.out_of_zone_week
+  const chips = off
+    ? [week > 0 && `+${week} за 7 дней`, `за 30 дней — ${d.month}`, d.nearest_m !== null && `ближайший — ${km(d.nearest_m)}`]
+    : [week > 0 && `+${week} за 7 дней`, d.farthest_m !== null && `дальше всего — ${km(d.farthest_m)}`]
+  return (
+    <Card style={{ marginBottom: 16, borderColor: off ? '#E11D2A' : '#B54708' }}>
+      <Flex align="center" justify="space-between" gap={16} wrap>
+        <Flex align="center" gap={16} style={{ flex: 1, minWidth: 280 }}>
+          {off ? (
+            <ShoppingOutlined style={{ fontSize: 28, color: '#E11D2A' }} />
+          ) : (
+            <EnvironmentOutlined style={{ fontSize: 28, color: '#B54708' }} />
+          )}
+          <div>
+            <Typography.Title level={5} style={{ margin: 0 }}>
+              {off ? `${n} ${people(n)} рядом хотят, чтобы вы доставляли` : `${n} ${people(n)} ждут доставку, но живут вне вашей зоны`}
+            </Typography.Title>
+            <Typography.Text type="secondary">
+              {off
+                ? 'Они нажали «Хочу доставку» на странице вашего магазина в приложении Super Market. Включите онлайн-заказы — и они смогут заказать у вас.'
+                : 'Магазин принимает онлайн-заказы, но до их адресов не доставляет. Расширьте зону или радиус доставки.'}
+            </Typography.Text>
+            <Flex gap={8} wrap style={{ marginTop: 8 }}>
+              {chips.filter(Boolean).map((c) => (
+                <Typography.Text key={String(c)} style={{ background: '#F2F4F7', borderRadius: 8, padding: '2px 10px', fontSize: 13 }}>
+                  {c}
+                </Typography.Text>
+              ))}
+            </Flex>
+          </div>
+        </Flex>
+        {can('stores.manage') && (
+          <Button type="primary" onClick={() => nav('/settings/delivery')}>
+            {off ? 'Включить онлайн-заказы' : 'Настроить зону доставки'}
+          </Button>
+        )}
       </Flex>
     </Card>
   )

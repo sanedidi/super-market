@@ -361,14 +361,16 @@ class ProductCard extends StatelessWidget {
                     AppBadge(label: discount!, kind: BadgeKind.discount),
                   ]),
                 ),
-              Positioned(
-                right: 4,
-                bottom: 4,
-                left: qtyLabel == null ? null : 4,
-                child: qtyLabel == null
-                    ? AddCircleButton(onTap: onAdd, key: const ValueKey('add'))
-                    : QtyStepper(label: qtyLabel!, onMinus: onMinus, onPlus: onPlus, height: 38),
-              ),
+              // Нет onAdd — заказать нельзя (магазин не доставляет): без кнопки.
+              if (qtyLabel != null || onAdd != null)
+                Positioned(
+                  right: 4,
+                  bottom: 4,
+                  left: qtyLabel == null ? null : 4,
+                  child: qtyLabel == null
+                      ? AddCircleButton(onTap: onAdd, key: const ValueKey('add'))
+                      : QtyStepper(label: qtyLabel!, onMinus: onMinus, onPlus: onPlus, height: 38),
+                ),
             ]),
           ),
           const SizedBox(height: 6),

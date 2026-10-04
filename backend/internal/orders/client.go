@@ -156,28 +156,43 @@ func (s *Service) DeleteAddress(ctx context.Context, p *identity.Principal, id s
 // ------------------------------------------------- каталог магазина в приложении
 
 type storeInfo struct {
-	NetworkID   string
-	WarehouseID string
-	PriceTypeID string
-	Name        string
+	NetworkID     string
+	WarehouseID   string
+	PriceTypeID   string
+	Name          string
+	AcceptsOnline bool
 }
 
-// storeForClient — магазин, открытый для онлайн-заказов.
+// storeForClient — магазин, открытый для онлайн-заказов (корзина и заказ).
 func (s *Service) storeForClient(ctx context.Context, q db.Querier, storeID string) (storeInfo, error) {
+	return s.clientStore(ctx, q, storeID, true)
+}
+
+// storeForBrowse — магазин, товары которого видны в приложении: и тот, что
+// не доставляет (покупатель смотрит товары и цены и может попросить доставку).
+func (s *Service) storeForBrowse(ctx context.Context, q db.Querier, storeID string) (storeInfo, error) {
+	return s.clientStore(ctx, q, storeID, false)
+}
+
+func (s *Service) clientStore(ctx context.Context, q db.Querier, storeID string, online bool) (storeInfo, error) {
 	var st storeInfo
 	if !httpx.IsUUID(storeID) {
 		return st, apperr.NotFound("магазин не найден")
 	}
 	err := q.QueryRow(ctx, `
-		SELECT s.network_id, s.default_warehouse_id, COALESCE(s.online_price_type_id, pt.id), s.name
+		SELECT s.network_id, s.default_warehouse_id, COALESCE(s.online_price_type_id, pt.id), s.name, s.accepts_online
 		FROM stores s
 		JOIN networks n ON n.id = s.network_id
 		JOIN price_types pt ON pt.network_id = s.network_id AND pt.is_default
-		WHERE s.id = $1 AND s.accepts_online AND s.status = 'active' AND n.status = 'active'
-		  AND `+delivery.ActiveSubscriptionSQL, storeID).
-		Scan(&st.NetworkID, &st.WarehouseID, &st.PriceTypeID, &st.Name)
+		WHERE s.id = $1 AND (s.accepts_online OR NOT $2) AND s.status = 'active' AND n.status = 'active'
+		  AND s.default_warehouse_id IS NOT NULL
+		  AND `+delivery.ActiveSubscriptionSQL, storeID, online).
+		Scan(&st.NetworkID, &st.WarehouseID, &st.PriceTypeID, &st.Name, &st.AcceptsOnline)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return st, apperr.NotFound("магазин не найден или не принимает заказы")
+		if online {
+			return st, apperr.NotFound("магазин не найден или не принимает заказы")
+		}
+		return st, apperr.NotFound("магазин не найден")
 	}
 	return st, err
 }
