@@ -8,10 +8,11 @@ import 'package:flutter/services.dart';
 /// 9 цифр после +998 из того, что ввёл или вставил человек
 /// («+998 90 123-45-67», «998901234567», «90 123 45 67»).
 String uzLocalDigits(String raw) {
-  var d = raw.replaceAll(RegExp(r'\D'), '');
-  // Код страны срезаем только у полного номера (12 цифр): иначе лишняя цифра
-  // после «99 8…» отрезала бы начало номера.
-  if (d.length >= 12 && d.startsWith('998')) d = d.substring(3);
+  final s = raw.trim();
+  var d = s.replaceAll(RegExp(r'\D'), '');
+  // Код страны срезаем у номера с «+998» (в т. ч. недописанного) и у полного номера
+  // «998…» из 12 цифр: иначе цифры «99 8…» в начале местного номера отрезали бы его начало.
+  if (s.startsWith('+998') || (d.length >= 12 && d.startsWith('998'))) d = d.substring(3);
   return d.length > 9 ? d.substring(0, 9) : d;
 }
 
