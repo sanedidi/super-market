@@ -9,6 +9,7 @@ import 'lock/app_lock.dart';
 import 'lock/pin_screens.dart';
 import 'push.dart';
 import 'screens/shell.dart';
+import 'setup/setup_screens.dart';
 import 'state.dart';
 import 'ui/theme.dart';
 import 'ui/widgets.dart';
@@ -17,7 +18,7 @@ import 'ui/widgets.dart';
 const apiUrl = String.fromEnvironment('API_URL', defaultValue: 'https://api.super-market.uz/api/v1');
 
 /// Версия для экрана «Ещё» (совпадает с pubspec.yaml).
-const appVersion = '0.7.0';
+const appVersion = '0.8.0';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -154,6 +155,11 @@ class _Gate extends StatelessWidget {
                 ),
         ),
       );
+    }
+    // Первая настройка: пока у сети нет магазина с точкой и часами — только мастер.
+    final setup = st.setup;
+    if (setup != null && setup.required) {
+      return setup.canSetup ? SetupFlow(key: const ValueKey('setup'), initial: setup, required: true) : const SetupWaitingScreen();
     }
     if (st.storeId == null) {
       return Scaffold(

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../receipt/capture_screen.dart';
+import '../setup/setup_screens.dart';
 import '../start/start_screen.dart';
 import '../state.dart';
 import '../summary/summary_screen.dart';
@@ -92,6 +93,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ]),
           const SizedBox(height: 16),
+          // С6 · чек-лист настройки — пока не пройдены все шаги (например, пропустили доставку).
+          if (st.can('stores.manage') && st.storeId != null) SetupHomeBlock(key: ValueKey('setup-${st.storeId}'), storeId: st.storeId!),
           // Н1 · «Начало работы» — пока товары магазина не заведены.
           if (canIncome && st.storeId != null) StartHomeBlock(key: ValueKey(st.storeId), storeId: st.storeId!),
           if ((_newOrders ?? 0) > 0) ...[

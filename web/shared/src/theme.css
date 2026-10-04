@@ -1687,3 +1687,58 @@ body {
 /* «Начало работы»: дерево каталога с галочками — название и счётчик в строку. */
 .sm-start-tree .ant-tree-node-content-wrapper { min-width: 0; }
 .sm-start-tree .ant-tree-title { display: block; min-width: 0; }
+
+/* ---------- Первая настройка магазина (мастер) ---------- */
+.sm-setup { min-height: 100vh; background: var(--sm-bg); }
+.sm-setup-top {
+  height: 64px; display: flex; align-items: center; gap: 12px; padding: 0 32px;
+  background: #fff; border-bottom: 1px solid var(--sm-line);
+}
+.sm-setup-top .sm-brand { color: var(--sm-ink); }
+.sm-setup-top .sm-brand small { color: var(--sm-muted); }
+.sm-setup-top-user { margin-left: auto; color: var(--sm-text); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sm-setup-wrap { display: flex; gap: 24px; align-items: flex-start; justify-content: center; padding: 40px 16px 48px; }
+.sm-setup-steps { width: 280px; flex-shrink: 0; background: #fff; border-radius: 16px; padding: 20px; }
+.sm-setup-steps h3 { margin: 0; font-size: 18px; font-weight: 800; color: var(--sm-ink); }
+.sm-setup-step { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 10px; }
+.sm-setup-step.is-current { background: #fdeced; }
+.sm-setup-step b { display: block; font-size: 14px; color: var(--sm-ink); }
+.sm-setup-step.is-next b { color: var(--sm-muted); }
+.sm-setup-step small { display: block; font-size: 12px; color: var(--sm-muted); }
+.sm-setup-dot {
+  width: 28px; height: 28px; flex-shrink: 0; border-radius: 50%; display: grid; place-items: center;
+  font-weight: 800; font-size: 13px; border: 1.5px solid #d0d5dd; color: var(--sm-muted); background: #fff;
+}
+.sm-setup-step.is-current .sm-setup-dot { background: #e11d2a; border-color: #e11d2a; color: #fff; }
+.sm-setup-step.is-done .sm-setup-dot { background: var(--sm-success); border-color: var(--sm-success); color: #fff; }
+.sm-setup-main { width: 736px; max-width: 100%; background: #fff; border-radius: 16px; padding: 24px 28px; }
+.sm-setup-main h2 { margin: 0; font-size: 22px; font-weight: 800; color: var(--sm-ink); }
+.sm-setup-foot { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--sm-line); padding-top: 20px; margin-top: 24px; }
+.sm-setup-foot .sm-grow { flex: 1; }
+.sm-setup-option {
+  flex: 1; display: flex; gap: 12px; align-items: flex-start; padding: 16px; border-radius: 12px; cursor: pointer;
+  border: 1px solid #d0d5dd; background: #fff; text-align: left; min-width: 240px; font: inherit;
+}
+.sm-setup-option.is-on { border: 1.5px solid #e11d2a; background: #fffbfb; }
+.sm-setup-option .ic { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; font-size: 20px; background: var(--sm-bg); color: var(--sm-muted); flex-shrink: 0; }
+.sm-setup-option.is-on .ic { background: #fdeced; color: #e11d2a; }
+.sm-setup-option b { display: block; font-size: 15px; color: var(--sm-ink); }
+.sm-setup-option span { display: block; font-size: 13px; color: var(--sm-muted); margin-top: 3px; }
+.sm-setup-days { border: 1px solid var(--sm-line); border-radius: 12px; overflow: hidden; }
+.sm-setup-day { display: grid; grid-template-columns: 1fr 90px 140px 140px; gap: 16px; align-items: center; padding: 8px 16px; border-top: 1px solid var(--sm-line); }
+.sm-setup-day:first-child { border-top: 0; background: #f9fafb; font-size: 12px; font-weight: 700; color: var(--sm-muted); text-transform: uppercase; padding: 10px 16px; }
+.sm-setup-check { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.sm-setup-check > div { border: 1px solid var(--sm-line); background: #f9fafb; border-radius: 12px; padding: 16px; }
+.sm-setup-check > div.is-todo { border: 1.5px solid #e11d2a; background: #fff; }
+@media (max-width: 1080px) {
+  .sm-setup-wrap { flex-direction: column; align-items: stretch; }
+  .sm-setup-steps, .sm-setup-main { width: auto; }
+  .sm-setup-check { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .sm-setup-top { padding: 0 16px; }
+  .sm-setup-main { padding: 20px 16px; }
+  .sm-setup-day { grid-template-columns: 1fr 60px; }
+  .sm-setup-day > :nth-child(3), .sm-setup-day > :nth-child(4) { grid-column: span 1; }
+  .sm-setup-day:first-child { display: none; }
+}

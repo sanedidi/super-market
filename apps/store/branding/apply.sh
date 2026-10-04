@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Папки платформ приложения магазина: название, логотип, камера и фото
-# (снимок накладной), push-уведомления, подпись iOS.
+# (снимок накладной), геолокация (точка магазина на карте), push-уведомления, подпись iOS.
 # Запускать из apps/store после
 #   flutter create --platforms=android,ios --org uz.supermarket --project-name sm_store .
 set -euo pipefail
@@ -18,7 +18,7 @@ name = sys.argv[1]
 p = 'android/app/src/main/AndroidManifest.xml'
 s = open(p, encoding='utf-8').read()
 s = re.sub(r'android:label="[^"]*"', f'android:label="{name}"', s, count=1)
-perms = ['INTERNET', 'CAMERA', 'VIBRATE', 'POST_NOTIFICATIONS']
+perms = ['INTERNET', 'CAMERA', 'VIBRATE', 'POST_NOTIFICATIONS', 'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION']
 add = ''.join(f'    <uses-permission android:name="android.permission.{x}"/>\n' for x in perms
               if f'android.permission.{x}"' not in s)
 s = s.replace('<application', add + '    <application', 1)
@@ -57,6 +57,7 @@ d['CFBundleDisplayName'] = sys.argv[1]
 d['NSCameraUsageDescription'] = 'Сфотографировать накладную поставщика, чтобы сделать приход'
 d['NSPhotoLibraryUsageDescription'] = 'Выбрать фото накладной из галереи'
 d['NSFaceIDUsageDescription'] = 'Входить в приложение магазина по Face ID вместо кода'
+d['NSLocationWhenInUseUsageDescription'] = 'Поставить метку магазина на карте там, где вы сейчас'
 schemes = set(d.get('LSApplicationQueriesSchemes', []))
 schemes.update(['https', 'tg'])
 d['LSApplicationQueriesSchemes'] = sorted(schemes)

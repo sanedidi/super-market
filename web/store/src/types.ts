@@ -11,6 +11,8 @@ export type Me = {
   permissions: string[]
   all_stores: boolean
   store_ids: string[] | null
+  full_name?: string
+  role_name?: string
 }
 
 export type Store = {

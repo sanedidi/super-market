@@ -734,6 +734,23 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 | GET | `/store/stores/{id}/wishes` | панель (право `stores.manage` или `orders.manage`): `{accepts_online, total, week, month, nearest_m, farthest_m, out_of_zone, out_of_zone_week}` |
 | GET | `/admin/delivery-wishes?limit=&offset=` | `{totals {total, week, stores}, items [{store_id, store_name, network_id, network_name, total, week, accepts_online, out_of_zone, hidden}]}` — по убыванию голосов; `hidden` — магазин сейчас не виден покупателям |
 
+## Первая настройка магазина (панель и «SM Магазин»)
+
+Мастер обязателен, пока в сети нет магазина с точкой на карте и указанными часами работы (`required`): панель и
+приложение показывают только его, сотрудникам без права `stores.manage` — «Магазин ещё настраивается». Шаги
+сохраняются сразу, прогресс общий для панели и приложения. Доставку можно пропустить — тогда на главной чек-лист,
+пока не включены онлайн-заказы или не выбрано «Пока без доставки». Уже работавшие до мастера магазины считаются настроенными.
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET | `/store/setup?store_id=` | `{required, can_setup, store {id, name, phone, address, lat, lng} \| null, working_hours, steps {store, hours, delivery, done}, delivery {accepts_online, declined, delivery_radius_m, min_order_amount, eta_min, eta_max, fee, free_from}, wishes}`. Без `store_id` — первый доступный магазин (настроенный — первым); `wishes` — сколько нажали «Хочу доставку» |
+| POST | `/store/setup/store` | право `stores.manage`: `{store_id?, name, phone?, address, lat, lng, city?}` — без `store_id` и без магазинов создаёт первый магазин (с основным складом и кассой), иначе меняет первый/указанный → состояние |
+| PUT | `/store/setup/hours` | `{store_id, working_hours: [{weekday 0–6, opens, closes}]}`; пустой список — круглосуточно → состояние |
+| PUT | `/store/setup/delivery` | `{store_id, mode: "none"}` — пока без доставки (онлайн-заказы выключены) или `{store_id, mode: "deliver", delivery_radius_m (100–100 000), fee, free_from?, min_order_amount?, eta_min?, eta_max?}` — включает онлайн-заказы; правила `fixed` и `free_from` заменяются, зоны и цена по расстоянию остаются → состояние |
+
+Шаги: `store` — у магазина есть точка; `hours` — часы сохранены (в том числе через `PUT /store/stores/{id}/delivery`);
+`delivery` — онлайн-заказы включены или выбрано «Пока без доставки».
+
 ## Начало работы (панель и «SM Магазин», право `inventory.manage`)
 
 Магазин заводит товары, которые у него уже есть. Один открытый черновик на основной склад магазина — общий для

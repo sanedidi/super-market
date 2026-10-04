@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sm_core/sm_core.dart';
 
+import 'setup/setup_logic.dart';
+
 /// Кто вошёл (сеть, права) и выбранный магазин.
 class StoreState extends ChangeNotifier {
   StoreState(this.api) {
@@ -14,6 +16,9 @@ class StoreState extends ChangeNotifier {
   Map<String, dynamic>? me;
   List<Map<String, dynamic>> stores = const [];
   String? storeId;
+
+  /// Первая настройка магазина (null — сервер не ответил, мастер не показываем).
+  SetupState? setup;
   bool loading = false;
   Object? error;
   bool _wasIn = false;
@@ -29,6 +34,7 @@ class StoreState extends ChangeNotifier {
       me = null;
       stores = const [];
       storeId = null;
+      setup = null;
       notifyListeners();
     }
   }
@@ -40,6 +46,16 @@ class StoreState extends ChangeNotifier {
     try {
       me = await api.get('/store/me') as Map<String, dynamic>;
       stores = await api.list('/store/stores');
+      try {
+        setup = SetupState(await api.get('/store/setup') as Map<String, dynamic>);
+      } catch (_) {
+        setup = null;
+        // Новому владельцу без магазинов без мастера делать нечего — пусть будет «Повторить».
+        if (stores.isEmpty) {
+          me = null;
+          rethrow;
+        }
+      }
       final prefs = await SharedPreferences.getInstance();
       final saved = prefs.getString(_storeKey);
       storeId = stores.any((s) => s['id'] == saved) ? saved : (stores.isEmpty ? null : stores.first['id'] as String);

@@ -23,6 +23,7 @@ import { Shell, type MenuItem } from '@sm/shared'
 import { useStore } from './ctx'
 import { DashboardPage } from './pages/Dashboard'
 import { StartPage } from './pages/start/Start'
+import { SetupGate, SetupPage } from './pages/setup/Setup'
 import { OrdersPage } from './pages/Orders'
 import { ReturnsPage, SalesPage } from './pages/Sales'
 import { PriceDocEditor, PriceDocsPage } from './pages/Prices'
@@ -223,7 +224,9 @@ export function StoreRoutes() {
   const { can, me } = useStore()
   const menu = me ? filterMenu(MENU, can) : []
   return (
+    <SetupGate>
     <Routes>
+      <Route path="setup" element={<SetupPage />} />
       <Route element={<Shell
           title={TITLE}
           menu={menu}
@@ -287,5 +290,6 @@ export function StoreRoutes() {
        </Route>
       </Route>
     </Routes>
+    </SetupGate>
   )
 }

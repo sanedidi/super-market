@@ -8,16 +8,31 @@ import { usePaidOrders } from '../notify'
 import { NeedStore, today } from '../ui'
 import type { Balance, FiscalSummary, Order, SalesSummary } from '../types'
 import type { Draft } from './start/api'
+import { SetupChecklist, useSetupState } from './setup/Setup'
 
 export function DashboardPage() {
   return (
     <>
       <PageTitle title="Главная" />
       <NeedStore>
-        <StartBlock />
-        <WishesBlock />
+        <Blocks />
         <Widgets />
       </NeedStore>
+    </>
+  )
+}
+
+/** Чек-лист настройки, «Начало работы» и спрос на доставку. */
+function Blocks() {
+  const { storeId, can } = useStore()
+  const setup = useSetupState(storeId, can('stores.manage')).data
+  // Пока доставка не выбрана, спрос на неё показывает чек-лист.
+  const checklist = !!setup && setup.can_setup && !setup.required && !setup.steps.done
+  return (
+    <>
+      {setup && <SetupChecklist s={setup} />}
+      <StartBlock />
+      {!(checklist && !setup.steps.delivery) && <WishesBlock />}
     </>
   )
 }

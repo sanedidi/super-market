@@ -418,7 +418,7 @@ func (s *seeder) store(tok string, ds demoStore, idx int, prices map[string]int)
 	}
 	id := str(st, "id")
 
-	var hours []obj
+	hours := []obj{} // пусто — круглосуточно
 	if ds.opens != ds.closes {
 		for d := 0; d < 7; d++ {
 			hours = append(hours, obj{"weekday": d, "opens": ds.opens, "closes": ds.closes})

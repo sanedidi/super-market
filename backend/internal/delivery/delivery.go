@@ -255,6 +255,9 @@ func (s *Service) SaveSettings(ctx context.Context, p *identity.Principal, store
 			return err
 		}
 		if in.WorkingHours != nil {
+			if _, err := tx.Exec(ctx, `UPDATE stores SET hours_set_at = now() WHERE id = $1`, storeID); err != nil {
+				return err
+			}
 			if _, err := tx.Exec(ctx, `DELETE FROM store_working_hours WHERE store_id = $1`, storeID); err != nil {
 				return err
 			}
