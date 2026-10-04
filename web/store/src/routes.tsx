@@ -12,6 +12,7 @@ import {
   InboxOutlined,
   LayoutOutlined,
   NotificationOutlined,
+  RocketOutlined,
   SettingOutlined,
   SafetyCertificateOutlined,
   ShoppingCartOutlined,
@@ -21,6 +22,7 @@ import {
 import { Shell, type MenuItem } from '@sm/shared'
 import { useStore } from './ctx'
 import { DashboardPage } from './pages/Dashboard'
+import { StartPage } from './pages/start/Start'
 import { OrdersPage } from './pages/Orders'
 import { ReturnsPage, SalesPage } from './pages/Sales'
 import { PriceDocEditor, PriceDocsPage } from './pages/Prices'
@@ -57,6 +59,7 @@ type Item = { key: string; label: string; perm?: string | string[]; icon?: React
 // Права совпадают с правами сервера на чтение раздела (docs/api.md, «Права на чтение»).
 const MENU: Item[] = [
   { key: '/', label: 'Главная', icon: <DashboardOutlined /> },
+  { key: '/start', label: 'Начало работы', icon: <RocketOutlined />, perm: 'inventory.manage' },
   { key: '/orders', label: 'Онлайн-заказы', icon: <ShoppingCartOutlined />, perm: 'orders.manage' },
   { key: '/couriers', label: 'Курьеры', icon: <CarOutlined />, perm: 'orders.manage' },
   { key: '/crowd', label: 'Курьеры по пути', icon: <SafetyCertificateOutlined />, perm: 'orders.manage' },
@@ -229,6 +232,7 @@ export function StoreRoutes() {
         />}>
        <Route element={<Guard />}>
         <Route index element={<DashboardPage />} />
+        <Route path="start" element={<StartPage />} />
         <Route path="orders" element={<OrdersPage />} />
         <Route path="couriers" element={<CouriersPage />} />
         <Route path="crowd" element={<CrowdPage />} />

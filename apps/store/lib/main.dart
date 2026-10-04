@@ -17,7 +17,7 @@ import 'ui/widgets.dart';
 const apiUrl = String.fromEnvironment('API_URL', defaultValue: 'https://api.super-market.uz/api/v1');
 
 /// Версия для экрана «Ещё» (совпадает с pubspec.yaml).
-const appVersion = '0.6.3';
+const appVersion = '0.7.0';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

@@ -54,11 +54,12 @@ func (s *Service) SavePrices(ctx context.Context, adminID string, in Prices) (Pr
 
 // UsageRecord — один запрос к ИИ.
 type UsageRecord struct {
-	Kind       string // invoice, test
+	Kind       string // invoice, test, shelf
 	NetworkID  *string
 	StoreID    *string
 	EmployeeID *string
 	ScanID     *string
+	PhotoID    *string
 	Provider   string
 	Model      string
 	Usage      Usage
@@ -68,13 +69,13 @@ type UsageRecord struct {
 // Record — записать расход; стоимость — по текущей цене.
 func (s *Service) Record(ctx context.Context, r UsageRecord) error {
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO ai_usage (kind, network_id, store_id, employee_id, scan_id, provider, model, input_tokens, output_tokens, ok,
+		INSERT INTO ai_usage (kind, network_id, store_id, employee_id, scan_id, photo_id, provider, model, input_tokens, output_tokens, ok,
 		                      cost, currency, cost_uzs)
-		SELECT $1, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, $8::int, $9::int, $10,
+		SELECT $1, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $11::uuid, $6, $7, $8::int, $9::int, $10,
 		       ($8::int * p.price_in + $9::int * p.price_out) / 1000000, p.price_currency,
 		       round(($8::int * p.price_in + $9::int * p.price_out) / 1000000 * p.rate_uzs, 2)
 		FROM ai_settings p`,
-		r.Kind, r.NetworkID, r.StoreID, r.EmployeeID, r.ScanID, r.Provider, r.Model, max(r.Usage.Input, 0), max(r.Usage.Output, 0), r.OK)
+		r.Kind, r.NetworkID, r.StoreID, r.EmployeeID, r.ScanID, r.Provider, r.Model, max(r.Usage.Input, 0), max(r.Usage.Output, 0), r.OK, r.PhotoID)
 	return err
 }
 
@@ -89,6 +90,7 @@ type UsageFilter struct {
 type UsageTotals struct {
 	Requests int     `json:"requests"`
 	Invoices int     `json:"invoices"`
+	Photos   int     `json:"photos"` // фото полок («Начало работы»)
 	Errors   int     `json:"errors"`
 	Tests    int     `json:"tests"`
 	Input    int64   `json:"input_tokens"`
@@ -114,6 +116,7 @@ type UsageItem struct {
 	Employees int     `json:"employees"`
 	Requests  int     `json:"requests"`
 	Invoices  int     `json:"invoices"`
+	Photos    int     `json:"photos"`
 	Errors    int     `json:"errors"`
 	Input     int64   `json:"input_tokens"`
 	Output    int64   `json:"output_tokens"`
@@ -161,10 +164,10 @@ func (s *Service) Usage(ctx context.Context, f UsageFilter) (UsageReport, error)
 	t := &rep.Totals
 	err = s.pool.QueryRow(ctx, `
 		SELECT count(*)::int, (count(*) FILTER (WHERE u.kind = 'invoice'))::int, (count(*) FILTER (WHERE NOT u.ok))::int,
-		       (count(*) FILTER (WHERE u.kind = 'test'))::int,
+		       (count(*) FILTER (WHERE u.kind = 'test'))::int, (count(*) FILTER (WHERE u.kind = 'shelf'))::int,
 		       COALESCE(sum(u.input_tokens), 0)::int8, COALESCE(sum(u.output_tokens), 0)::int8, COALESCE(sum(u.cost_uzs), 0)::float8
 		FROM ai_usage u WHERE `+where, f.From, f.To, nf).
-		Scan(&t.Requests, &t.Invoices, &t.Errors, &t.Tests, &t.Input, &t.Output, &t.CostUZS)
+		Scan(&t.Requests, &t.Invoices, &t.Errors, &t.Tests, &t.Photos, &t.Input, &t.Output, &t.CostUZS)
 	if err != nil {
 		return rep, err
 	}
@@ -208,7 +211,8 @@ func (s *Service) Usage(ctx context.Context, f UsageFilter) (UsageReport, error)
 	rows, err = s.pool.Query(ctx, `
 		SELECT COALESCE(`+key+`::text, ''), min(`+name+`), min(`+sub+`), COALESCE(min(u.network_id::text), ''),
 		       count(DISTINCT u.store_id)::int, count(DISTINCT u.employee_id)::int,
-		       count(*)::int, (count(*) FILTER (WHERE u.kind = 'invoice'))::int, (count(*) FILTER (WHERE NOT u.ok))::int,
+		       count(*)::int, (count(*) FILTER (WHERE u.kind = 'invoice'))::int, (count(*) FILTER (WHERE u.kind = 'shelf'))::int,
+		       (count(*) FILTER (WHERE NOT u.ok))::int,
 		       sum(u.input_tokens)::int8, sum(u.output_tokens)::int8, sum(u.cost_uzs)::float8
 		FROM ai_usage u
 		LEFT JOIN networks n ON n.id = u.network_id
@@ -222,7 +226,7 @@ func (s *Service) Usage(ctx context.Context, f UsageFilter) (UsageReport, error)
 	}
 	rep.Items, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (UsageItem, error) {
 		var it UsageItem
-		err := r.Scan(&it.ID, &it.Name, &it.Sub, &it.NetworkID, &it.Stores, &it.Employees, &it.Requests, &it.Invoices, &it.Errors,
+		err := r.Scan(&it.ID, &it.Name, &it.Sub, &it.NetworkID, &it.Stores, &it.Employees, &it.Requests, &it.Invoices, &it.Photos, &it.Errors,
 			&it.Input, &it.Output, &it.CostUZS)
 		return it, err
 	})

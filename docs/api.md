@@ -693,7 +693,7 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 | PUT | `/admin/ai` | `{provider, base_url, api_key?, model}` — пустой `api_key` оставляет сохранённый (только для того же сервиса и адреса). Ключ шифруется (AES-GCM от `JWT_SECRET`) |
 | POST | `/admin/ai/models` | `{provider, base_url, api_key?}` → `items [{id, vision}]` — модели ключа; `vision` по названию (`null` — неизвестно) |
 | POST | `/admin/ai/test` | `{}` — проверить сохранённое (результат записывается) или `{provider, base_url, api_key, model}` — проверить введённое. Модель читает тестовую накладную → `{ok, message, ms}` |
-| GET | `/admin/ai/usage` | `?from=&to=` (YYYY-MM-DD, `to` не включается; по умолчанию — текущий месяц), `group=network\|store\|employee`, `network_id?` → `{totals {requests, invoices, errors, tests, input_tokens, output_tokens, cost_uzs}, days [{date, requests, input_tokens, output_tokens, cost_uzs}], items [{id, name, sub, network_id, stores, employees, requests, invoices, errors, input_tokens, output_tokens, cost_uzs, share}], prices, model}`. Строка с пустым `id` — проверки подключения |
+| GET | `/admin/ai/usage` | `?from=&to=` (YYYY-MM-DD, `to` не включается; по умолчанию — текущий месяц), `group=network\|store\|employee`, `network_id?` → `{totals {requests, invoices, photos, errors, tests, input_tokens, output_tokens, cost_uzs}, days [{date, requests, input_tokens, output_tokens, cost_uzs}], items [{id, name, sub, network_id, stores, employees, requests, invoices, photos, errors, input_tokens, output_tokens, cost_uzs, share}], prices, model}`; `photos` — фото полок «Начала работы». Строка с пустым `id` — проверки подключения |
 | PUT | `/admin/ai/prices` | `{price_in, price_out, currency: USD\|RUB\|UZS, rate_uzs}` — цена за 1 млн токенов; стоимость запроса фиксируется в момент запроса |
 
 Ошибки сервиса — 502 `ai_error` с понятным текстом («ключ не подходит…», «закончились средства…»).
@@ -716,6 +716,29 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 Состояние строки: `ok`; `check` — похожее название ниже 75% или цена отличается от прошлого прихода больше чем на 5%;
 `missing` — товар не найден; `skipped`. Сопоставление: штрихкод → запомненное название поставщика → похожее название (pg_trgm).
 Воркер `invoice_scans` помечает зависшие распознавания (>10 мин) ошибкой.
+
+## Начало работы (панель и «SM Магазин», право `inventory.manage`)
+
+Магазин заводит товары, которые у него уже есть. Один открытый черновик на основной склад магазина — общий для
+панели и приложения. Нет основного склада — 409 `no_warehouse`. Товары: общий каталог и свои товары сети.
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET | `/store/start?store_id=&q=&only=no_cost\|new&limit=&offset=` | `{id (null — не начат), store_id, store_name, warehouse_id, warehouse_name, status (open, posting), lines, totals {products, qty, cost_total, price_total, no_cost, pending}, stock_products, last_posted_at}`. Строки — новые сверху (`limit` до 1000, по умолчанию 200): `{product_id, name, image, unit_short, is_fractional, barcode, qty, cost, price, current_price, source, own, moderation, posted, added_at}`. `price` null — останется действующая цена (`current_price`) |
+| POST | `/store/start/lines` | `{store_id, items: [{product_id, qty?, add?, cost?, price?, barcode?, source?}]}` (1–500) → `{lines, totals}`. Черновик создаётся сам. `add: true` — прибавить `qty` (по умолчанию 1) — повторный скан. `cost`/`price: null` — сбросить. `barcode` — привязать штрихкод к товару (право `catalog.manage`; чужой — 409 `barcode_exists`, `details.product_id`). Штучный товар — целое количество. `source`: `photo`, `barcode`, `catalog`, `search`, `new`, `manual` |
+| DELETE | `/store/start/lines/{product_id}?store_id=` | убрать товар → `totals` |
+| GET | `/store/start/catalog?store_id=&q=` | `{groups [{category_ids, category_names, brand_id, brand_name, count, selected}], total, selected}` — путь категории от корня + бренд; `selected` — сколько уже в черновике |
+| GET | `/store/start/catalog/items?store_id=&category_id=&brand_id=&q=` | товары группы (ровно эта категория; `brand_id=none` — без бренда), до 200: `{product_id, name, image, unit_short, current_price, barcode, own, selected}` |
+| POST | `/store/start/catalog/select` | `{store_id, category_id?, brand_id?, exact?, q?, selected}` — отметить (по 1 шт) или снять всю группу; `category_id` — с подкатегориями, `exact: true` — только сама категория. До 2000 товаров за раз → `{changed, totals}` |
+| POST | `/store/start/photos` | `{store_id, images: [url, …до 6]}` (из `POST /store/uploads`) → 202, `processing`; Super Market ищет товары в фоне. 409 `ai_not_configured` |
+| GET | `/store/start/photos/{id}` | `{status (processing, ready, failed), error, images, counts {found, choose, missing}, items [{n, name, brand, barcode, qty, state, product, candidates [{product_id, name, image, unit_short, current_price, barcode, score}], brand_id, category_id, in_draft}]}` |
+| POST | `/store/start/photos/{id}/retry` | распознать заново |
+| POST | `/store/start/post` | `{store_id}` → установка цен магазина (изменённые цены, право `prices.manage`) и оприходование на основной склад по закупочным ценам (по 1000 строк; без закупки — себестоимость 0) → `{draft_id, products, qty, cost_total, documents [{id, number}], price_document, visible, pending}`. Пустой — 409 `draft_empty` |
+
+Фото: модель перечисляет товары и штуки → поиск по штрихкоду (100%), иначе по похожему названию (pg_trgm, +15 за бренд).
+`found` — лучший ≥ 70 и отрыв от второго ≥ 8; `choose` — есть похожие ≥ 35; `missing` — нет. Расход — в `ai_usage` (`kind = shelf`).
+Повторное проведение после сбоя пропускает уже проведённые строки. Покупатель видит товар, когда он в общем каталоге,
+активен и есть в наличии на складе магазина.
 
 ## Уведомления сотрудникам магазина (приложение «SM Магазин»)
 

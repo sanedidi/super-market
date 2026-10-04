@@ -34,6 +34,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/push"
 	"github.com/sanedidi/super-market/backend/internal/reports"
 	"github.com/sanedidi/super-market/backend/internal/sales"
+	"github.com/sanedidi/super-market/backend/internal/start"
 	"github.com/sanedidi/super-market/backend/internal/summary"
 	"github.com/sanedidi/super-market/backend/internal/tenant"
 )
@@ -95,13 +96,16 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 	mediaSvc := MediaService(cfg)
 	aiSvc := ai.NewService(pool, cfg.JWTSecret)
 	scans := invoices.NewService(pool, aiSvc, mediaSvc, invSvc, log)
+	catSvc := catalog.NewService(pool)
+	startSvc := start.NewService(pool, aiSvc, mediaSvc, invSvc, catSvc, log)
 	if InvoicesSync {
 		scans.Sync()
+		startSvc.Sync()
 	}
 	h := httpx.NewRouter(log, pool,
 		identity.NewModule(idSvc, auth, log),
 		tenant.NewModule(tenant.NewService(pool), auth, log),
-		catalog.NewModule(catalog.NewService(pool), auth, log),
+		catalog.NewModule(catSvc, auth, log),
 		finance.NewModule(finance.NewService(pool), auth, log),
 		inventory.NewModule(invSvc, auth, log),
 		sales.NewModule(salesSvc, auth, log),
@@ -120,6 +124,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		media.NewModule(mediaSvc, auth, log),
 		ai.NewModule(aiSvc, auth, log),
 		invoices.NewModule(scans, mediaSvc, auth, log),
+		start.NewModule(startSvc, mediaSvc, auth, log),
 		summary.NewModule(summary.NewService(pool, log), auth, log),
 	)
 	return &App{Handler: h, Orders: ord, Payments: pay, Billing: bill}, nil

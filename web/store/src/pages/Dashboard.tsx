@@ -1,17 +1,20 @@
 // Главная: продажи за сегодня, новые заказы, баланс, контроль чеков.
 import { Link, useNavigate } from 'react-router-dom'
-import { Alert, Button, Card, Col, Row, Statistic, Table, Typography } from 'antd'
+import { Alert, Button, Card, Col, Flex, Row, Statistic, Table, Typography } from 'antd'
+import { RocketOutlined } from '@ant-design/icons'
 import { PageTitle, StatusTag, dateTime, money, periodParams, useItem } from '@sm/shared'
 import { useStore } from '../ctx'
 import { usePaidOrders } from '../notify'
 import { NeedStore, today } from '../ui'
 import type { Balance, FiscalSummary, Order, SalesSummary } from '../types'
+import type { Draft } from './start/api'
 
 export function DashboardPage() {
   return (
     <>
       <PageTitle title="Главная" />
       <NeedStore>
+        <StartBlock />
         <Widgets />
       </NeedStore>
     </>
@@ -127,5 +130,36 @@ function Widgets() {
         )}
       </Row>
     </>
+  )
+}
+
+/** «Начало работы» — пока на складе нет товаров или список не проведён. */
+function StartBlock() {
+  const { storeId, can } = useStore()
+  const nav = useNavigate()
+  const d = useItem<Draft>(can('inventory.manage') ? '/store/start' : null, { store_id: storeId, limit: 1 })
+  if (!d.data || (d.data.stock_products > 0 && !d.data.id)) return null
+  const n = d.data.totals.products
+  return (
+    <Card style={{ marginBottom: 16, borderColor: '#E11D2A' }}>
+      <Flex align="center" justify="space-between" gap={16} wrap>
+        <Flex align="center" gap={16}>
+          <RocketOutlined style={{ fontSize: 28, color: '#E11D2A' }} />
+          <div>
+            <Typography.Title level={5} style={{ margin: 0 }}>
+              Начало работы
+            </Typography.Title>
+            <Typography.Text type="secondary">
+              {n > 0
+                ? `В списке ${n} — проверьте цены и проведите, чтобы товары появились на складе и у покупателей.`
+                : 'Добавьте товары, которые уже есть в магазине: фото полок, штрихкод или каталог. Super Market найдёт их в общем каталоге.'}
+            </Typography.Text>
+          </div>
+        </Flex>
+        <Button type="primary" onClick={() => nav('/start')}>
+          {n > 0 ? 'Продолжить' : 'Начать'}
+        </Button>
+      </Flex>
+    </Card>
   )
 }

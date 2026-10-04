@@ -1683,3 +1683,7 @@ body {
 .sm-tree .ant-table-title {
   padding: 6px 12px !important;
 }
+
+/* «Начало работы»: дерево каталога с галочками — название и счётчик в строку. */
+.sm-start-tree .ant-tree-node-content-wrapper { min-width: 0; }
+.sm-start-tree .ant-tree-title { display: block; min-width: 0; }

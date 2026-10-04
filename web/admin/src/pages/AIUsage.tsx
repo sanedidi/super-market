@@ -19,6 +19,7 @@ interface Prices {
 interface Totals {
   requests: number
   invoices: number
+  photos: number
   errors: number
   tests: number
   input_tokens: number
@@ -43,6 +44,7 @@ interface Item {
   employees: number
   requests: number
   invoices: number
+  photos: number
   errors: number
   input_tokens: number
   output_tokens: number
@@ -264,8 +266,9 @@ function columns(group: Group, prices: Prices, total: number) {
     {
       title: 'Накладных',
       key: 'invoices',
-      width: 110,
-      render: (_: unknown, r: Item) => (r.id ? r.invoices : r.requests) + (r.errors ? ` · ошибок ${r.errors}` : ''),
+      width: 180,
+      render: (_: unknown, r: Item) =>
+        (r.id ? r.invoices : r.requests) + (r.photos ? ` · фото полок ${r.photos}` : '') + (r.errors ? ` · ошибок ${r.errors}` : ''),
     },
     { title: 'Токены вход', dataIndex: 'input_tokens', width: 120, render: tokens },
     { title: 'Токены выход', dataIndex: 'output_tokens', width: 120, render: tokens },
@@ -306,9 +309,9 @@ function columns(group: Group, prices: Prices, total: number) {
 }
 
 function downloadCsv(rep: Report, group: Group) {
-  const head = ['Название', 'Где', 'Запросов', 'Накладных', 'Ошибок', 'Токены вход', 'Токены выход', 'Стоимость, сум']
-  const rows = rep.items.map((r) => [r.name, r.sub, r.requests, r.invoices, r.errors, r.input_tokens, r.output_tokens, r.cost_uzs.toFixed(2).replace('.', ',')])
-  const days = rep.days.map((d) => [d.date, '', d.requests, '', '', d.input_tokens, d.output_tokens, d.cost_uzs.toFixed(2).replace('.', ',')])
+  const head = ['Название', 'Где', 'Запросов', 'Накладных', 'Фото полок', 'Ошибок', 'Токены вход', 'Токены выход', 'Стоимость, сум']
+  const rows = rep.items.map((r) => [r.name, r.sub, r.requests, r.invoices, r.photos, r.errors, r.input_tokens, r.output_tokens, r.cost_uzs.toFixed(2).replace('.', ',')])
+  const days = rep.days.map((d) => [d.date, '', d.requests, '', '', '', d.input_tokens, d.output_tokens, d.cost_uzs.toFixed(2).replace('.', ',')])
   const esc = (v: unknown) => `"${String(v).replace(/"/g, '""')}"`
   const lines = [head, ...rows, [], ['По дням'], ...days].map((r) => r.map(esc).join(';'))
   const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
@@ -400,7 +403,7 @@ export function AIUsage() {
             fg="#12B76A"
             title="Накладных прочитано"
             value={t ? money(t.invoices) : '…'}
-            sub={t ? `ошибок ${t.errors} · проверок подключения ${t.tests}` : ''}
+            sub={t ? `фото полок ${t.photos} · ошибок ${t.errors} · проверок ${t.tests}` : ''}
           />
         </Col>
         <Col xs={24} sm={12} xl={6}>
