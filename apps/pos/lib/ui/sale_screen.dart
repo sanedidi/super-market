@@ -241,7 +241,7 @@ class _Header extends StatelessWidget {
     final paid = sale.paid;
 
     var title = cart.isEmpty ? 'Новый чек' : 'Чек №${pos.nextSeq} · ${cart.count} ${_positions(cart.count)}';
-    var note = cart.isEmpty ? 'Сканируйте товар, нажмите плитку или наберите код' : 'новые сверху · нажмите строку — карточка товара';
+    var note = cart.isEmpty ? 'Сканируйте товар, нажмите плитку или наберите код' : 'новые сверху · нажмите строку, ещё раз — карточка товара';
     var noteColor = C.ts;
     var bg = C.surface;
     String rightNote = '', right = '';
@@ -314,7 +314,9 @@ class _CartList extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            'Сканируйте штрихкод, нажмите товар справа\nили наберите код и «Код» · F2 — поиск по названию',
+            dim
+                ? 'Чек пробит · следующий покупатель — сканируйте товар или нажмите плитку'
+                : 'Сканируйте штрихкод, нажмите товар справа\nили наберите код и «Код» · F2 — поиск по названию',
             textAlign: TextAlign.center,
             style: t(16, c: C.td),
           ),
@@ -360,13 +362,18 @@ class _LineRow extends StatelessWidget {
         line.discountBp != null ? 'скидка ${fmtMoney(line.discountBp!)}%' : 'скидка ${fmtMoney(line.discount)}',
       if (p.marked) 'маркировка ✓',
     ];
+    // Без двойного нажатия: оно задерживало кнопки − / + (Flutter ждёт второе
+    // нажатие) и открывало карточку, если кассир быстро жал «+» дважды.
+    // Первое нажатие выбирает строку, второе на выбранной — карточка товара.
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: enabled ? () => sale.select(line) : null,
-      onDoubleTap: enabled
+      onTap: enabled
           ? () {
-              sale.select(line);
-              sale.command(Cmd.item);
+              if (selected && sale.rowFocused) {
+                sale.command(Cmd.item);
+              } else {
+                sale.select(line);
+              }
             }
           : null,
       child: Container(
@@ -484,11 +491,15 @@ class _Stepper extends StatelessWidget {
             child: InkWell(
               borderRadius: BorderRadius.circular(9),
               onTap: onTap,
-              child: SizedBox(width: 38, height: 34, child: Center(child: Text(label, style: t(20, w: FontWeight.w700)))),
+              child: SizedBox(width: 44, height: 38, child: Center(child: Text(label, style: t(20, w: FontWeight.w700)))),
             ),
           ),
         );
-    return Container(
+    // Нажатие мимо кнопок (на число) не выбирает строку и не открывает карточку.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {},
+      child: Container(
       decoration: BoxDecoration(
         color: C.surface,
         borderRadius: BorderRadius.circular(10),
@@ -499,6 +510,7 @@ class _Stepper extends StatelessWidget {
         SizedBox(width: 44, child: Text(qty, textAlign: TextAlign.center, style: t(16, w: FontWeight.w600))),
         btn('+', enabled && plusEnabled ? onPlus : null),
       ]),
+      ),
     );
   }
 }
