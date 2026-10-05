@@ -149,6 +149,23 @@ func TestCatalogImportAndPhotos(t *testing.T) {
 		t.Fatalf("second batch = %d", n)
 	}
 	a.expect(a.do("POST", "/admin/catalog-import/retry-photos", adminTok, nil), 200, "retry")
+
+	// Итоги загрузки из браузера супер-админа.
+	noPhotoID := without[0]["id"].(string)
+	pr := a.expect(a.do("POST", "/admin/catalog-import/photo-results", adminTok, map[string]any{
+		"results": []map[string]any{{"product_id": noPhotoID, "status": "failed", "error": "timeout"}},
+	}), 200, "photo results")
+	if num(pr, "updated") != 1 {
+		t.Fatalf("photo results = %v", pr.Body)
+	}
+	st = a.expect(a.do("GET", "/admin/catalog-import/status", adminTok, nil), 200, "status 2")
+	jobs, _ = st.Body["photo_jobs"].(map[string]any)
+	if jobs["failed"] != float64(1) || jobs["none"] != float64(0) || st.Body["last_photo_error"] != "timeout" {
+		t.Fatalf("status 2 = %v", st.Body)
+	}
+	a.expect(a.do("POST", "/admin/catalog-import/photo-results", adminTok, map[string]any{
+		"results": []map[string]any{{"product_id": noPhotoID, "status": "maybe"}},
+	}), 400, "bad photo result")
 }
 
 func num(r resp, key string) int {

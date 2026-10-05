@@ -93,7 +93,10 @@ func run() error {
 
 	// Фото импортированных товаров из каталога ИКПУ: отдельный цикл, очередь большая.
 	photosDone := make(chan struct{})
-	if cfg.S3Endpoint != "" && cfg.MediaBaseURL != "" {
+	if cfg.PhotoFetcher == "off" {
+		close(photosDone)
+		log.Info("PHOTO_FETCHER=off: фото из каталога ИКПУ сервер не качает")
+	} else if cfg.S3Endpoint != "" && cfg.MediaBaseURL != "" {
 		fetcher := catalog.NewPhotoFetcher(pool, server.MediaService(cfg), cfg.MediaBaseURL, cfg.TasnifURL, cfg.PhotosPerProduct, log)
 		go func() {
 			defer close(photosDone)

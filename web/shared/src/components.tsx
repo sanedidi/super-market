@@ -201,6 +201,10 @@ export interface CrudConfig<T> {
   canEdit?: boolean
   createLabel?: string
   toolbar?: ReactNode
+  /** Полоса между заголовком и списком (сводка, предупреждение). */
+  banner?: ReactNode
+  /** Подпись под списком. */
+  footer?: ReactNode
   rowKey?: string
   expandable?: Parameters<typeof Table<T>>[0]['expandable']
   /** Ширина окна формы (по умолчанию 520). */
@@ -280,6 +284,7 @@ export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
       >
         {cfg.toolbar}
       </PageTitle>
+      {cfg.banner}
       {cfg.renderList ? (
         cfg.renderList(columns)
       ) : (
@@ -298,6 +303,7 @@ export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
           </Card>
         </>
       )}
+      {cfg.footer}
       {cfg.form && (
         <Modal
           open={open}

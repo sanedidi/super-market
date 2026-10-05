@@ -97,6 +97,9 @@ type Config struct {
 	// TasnifURL — каталог ИКПУ (фото для импортированных товаров), PhotosPerProduct — сколько фото брать.
 	TasnifURL        string
 	PhotosPerProduct int
+	// PhotoFetcher — кто качает фото из tasnif: server (воркер) или off
+	// (фото ставит супер-админ из браузера: сервер может не достучаться до tasnif).
+	PhotoFetcher string
 }
 
 const devJWTSecret = "dev-secret-do-not-use-in-production"
@@ -167,7 +170,11 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.ShutdownTimeout, err = durationOr(getenv("SHUTDOWN_TIMEOUT"), 15*time.Second); err != nil {
 		errs = append(errs, fmt.Errorf("SHUTDOWN_TIMEOUT: %w", err))
 	}
-	cfg.PhotosPerProduct = 2
+	cfg.PhotosPerProduct = 1
+	cfg.PhotoFetcher = valueOr(getenv("PHOTO_FETCHER"), "server")
+	if cfg.PhotoFetcher != "server" && cfg.PhotoFetcher != "off" {
+		errs = append(errs, fmt.Errorf("PHOTO_FETCHER: server или off"))
+	}
 	if v := getenv("PHOTOS_PER_PRODUCT"); v != "" {
 		n, convErr := strconv.Atoi(v)
 		if convErr != nil || n < 1 || n > 10 {

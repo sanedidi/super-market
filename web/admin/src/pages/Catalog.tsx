@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
 import { Button, ColorPicker, Flex, Form, Image, Input, InputNumber, Modal, Segmented, Space, Switch, Tag, Typography, type TableColumnType } from 'antd'
-import { PictureOutlined } from '@ant-design/icons'
+import { InfoCircleOutlined, PictureOutlined, SyncOutlined } from '@ant-design/icons'
+import { useQuery } from '@tanstack/react-query'
 import { ActiveTag, CrudPage, ImageUpload, ProductTree, ProductViewSwitch, RemoteSelect, StatusTag, api, money, useAction, useProductView } from '@sm/shared'
 import { SearchSelect } from '../components'
 
@@ -190,6 +191,76 @@ function formToAttrs(v: Record<string, unknown>) {
   return { rest, attrs }
 }
 
+const fmtNum = (n: number) => n.toLocaleString('ru-RU')
+
+/** «Без фото · ИКПУ …» — товар из каталога ИКПУ, фото у источника не нашлось. */
+function noPhotoNote(p: Product) {
+  if (p.images?.length) return null
+  const ikpu = typeof p.attributes?.ikpu === 'string' ? p.attributes.ikpu : ''
+  return ikpu ? `Без фото · ИКПУ ${ikpu}` : 'Без фото'
+}
+
+interface ImportStatus {
+  products: number
+  with_photo: number
+  without_photo: number
+  photo_jobs: Record<string, number>
+  last_photo_error: string
+}
+
+/** Сводка общего каталога: сколько товаров с фото, без фото, сколько ещё загружается. */
+function PhotoStatus({ photo, onPhoto }: { photo: string; onPhoto: (v: string) => void }) {
+  const st = useQuery({
+    queryKey: ['/admin/catalog-import/status'],
+    queryFn: () => api.get<ImportStatus>('/admin/catalog-import/status'),
+    refetchInterval: 30_000,
+  })
+  const retry = useAction(() => api.post<{ requeued: number }>('/admin/catalog-import/retry-photos'), {
+    success: 'Фото с ошибками снова в очереди',
+    invalidate: [['/admin/catalog-import/status']],
+  })
+  const d = st.data
+  if (!d) return null
+  const loading = (d.photo_jobs.pending ?? 0) + (d.photo_jobs.working ?? 0)
+  const failed = d.photo_jobs.failed ?? 0
+  const chip = (value: string, color: string, icon: ReactNode, label: string) => (
+    <Tag
+      bordered={false}
+      color={photo === value ? color : undefined}
+      icon={icon}
+      style={{ cursor: 'pointer', padding: '2px 10px', fontSize: 14, ...(photo === value ? {} : { background: color === 'green' ? '#ECFDF3' : '#F2F4F7', color: color === 'green' ? '#067647' : '#344054' }) }}
+      onClick={() => onPhoto(photo === value ? '' : value)}
+    >
+      {label}
+    </Tag>
+  )
+  return (
+    <Flex align="center" gap={12} wrap="wrap" className="sm-card" style={{ background: '#fff', borderRadius: 12, padding: '12px 20px', marginBottom: 16 }}>
+      <PictureOutlined style={{ fontSize: 18, color: '#475467' }} />
+      <Typography.Text strong style={{ fontSize: 15 }}>
+        Общий каталог: {fmtNum(d.products)} товаров
+      </Typography.Text>
+      {chip('with', 'green', <PictureOutlined />, `С фото ${fmtNum(d.with_photo)}`)}
+      {chip('without', 'default', <PictureOutlined style={{ opacity: 0.5 }} />, `Без фото ${fmtNum(d.without_photo)}`)}
+      {loading > 0 && (
+        <Tag bordered={false} color="blue" icon={<SyncOutlined spin />} style={{ padding: '2px 10px', fontSize: 14 }}>
+          Загружаются {fmtNum(loading)}
+        </Tag>
+      )}
+      {failed > 0 && (
+        <Flex align="center" gap={12} style={{ marginLeft: 'auto' }}>
+          <Typography.Text type="secondary" title={d.last_photo_error || undefined}>
+            Ошибок загрузки: {fmtNum(failed)}
+          </Typography.Text>
+          <Button type="link" danger style={{ padding: 0 }} loading={retry.isPending} onClick={() => retry.mutate(undefined)}>
+            Повторить
+          </Button>
+        </Flex>
+      )}
+    </Flex>
+  )
+}
+
 /** Общий каталог товаров; moderation — очередь товаров от сетей. */
 const treeName: TableColumnType<Product> = {
   title: 'Бренд · категория · товар',
@@ -205,10 +276,10 @@ const treeName: TableColumnType<Product> = {
       )}
       <div>
         {p.name}
-        {p.network_id && (
+        {(p.network_id || noPhotoNote(p)) && (
           <div>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              товар сети
+              {p.network_id ? 'товар сети' : noPhotoNote(p)}
             </Typography.Text>
           </div>
         )}
@@ -221,12 +292,14 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
   const [q, setQ] = useState('')
   const [category, setCategory] = useState<string>()
   const [tab, setTab] = useState('all')
+  const [photo, setPhoto] = useState('')
   const [view, setView] = useProductView()
   const tree = view === 'tree' && !moderation
   const params = {
     q: q.trim() || undefined,
     category_id: category,
     status: moderation ? 'pending' : tab === 'all' ? undefined : tab,
+    photo: photo || undefined,
   }
   const [rejecting, setRejecting] = useState<Product | null>(null)
   const [reason, setReason] = useState('')
@@ -261,6 +334,16 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
         }
         canCreate={!moderation}
         createLabel="Новый товар"
+        banner={!moderation && <PhotoStatus photo={photo} onPhoto={setPhoto} />}
+        footer={
+          !moderation && (
+            <Flex gap={8} align="center" style={{ marginTop: 12, color: '#667085', fontSize: 13 }}>
+              <InfoCircleOutlined />
+              Фото подтягиваются из каталога ИКПУ (tasnif.soliq.uz) по коду ИКПУ — 1 фото на товар, уменьшается до 1000 px. «Без фото» — у источника фото нет: загрузите
+              вручную в карточке товара.
+            </Flex>
+          )
+        }
         toolbar={
           <>
             {!moderation && (
@@ -277,6 +360,15 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
             )}
             <Input.Search placeholder="Название или штрихкод" allowClear onSearch={setQ} style={{ width: 240 }} />
             <SearchSelect path="/admin/catalog/categories" placeholder="Категория" allowClear value={category} onChange={(v) => setCategory(v as string | undefined)} />
+            <Segmented
+              value={photo}
+              onChange={(v) => setPhoto(String(v))}
+              options={[
+                { value: '', label: 'Все фото' },
+                { value: 'with', label: <span><span style={{ color: '#17B26A' }}>●</span> С фото</span> },
+                { value: 'without', label: <span><span style={{ color: '#98A2B3' }}>●</span> Без фото</span> },
+              ]}
+            />
             {!moderation && <ProductViewSwitch value={view} onChange={setView} />}
           </>
         }
@@ -285,7 +377,14 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
             title: '',
             dataIndex: 'images',
             width: 56,
-            render: (imgs: string[]) => (imgs?.[0] ? <Image src={imgs[0]} width={40} height={40} style={{ objectFit: 'cover' }} /> : null),
+            render: (imgs: string[]) =>
+              imgs?.[0] ? (
+                <Image src={imgs[0]} width={40} height={40} style={{ objectFit: 'cover' }} />
+              ) : (
+                <Flex align="center" justify="center" style={{ width: 40, height: 40, borderRadius: 8, background: '#F2F4F7', color: '#98A2B3' }}>
+                  <PictureOutlined />
+                </Flex>
+              ),
           },
           {
             title: 'Товар',
@@ -293,7 +392,7 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
               <>
                 {p.name}
                 <br />
-                <Typography.Text type="secondary">{[p.brand_name, p.category_name].filter(Boolean).join(' · ')}</Typography.Text>
+                <Typography.Text type="secondary">{[p.brand_name, p.category_name, noPhotoNote(p)].filter(Boolean).join(' · ')}</Typography.Text>
               </>
             ),
           },

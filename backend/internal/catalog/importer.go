@@ -10,6 +10,7 @@ import (
 
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
+	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 )
 
 // Импорт товаров в общий каталог пачками (супер-админ). Источник — каталог
@@ -306,7 +307,12 @@ func (s *Service) ImportStatus(ctx context.Context) (ImportStatus, error) {
 		FROM products WHERE network_id IS NULL`).Scan(&out.Products, &out.WithPhoto, &out.WithoutPhoto); err != nil {
 		return out, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT status, count(*) FROM product_photo_jobs GROUP BY status`)
+	// Фото могут поставить и в обход очереди (из браузера супер-админа, вручную) —
+	// задача товара с фото считается выполненной.
+	rows, err := s.pool.Query(ctx, `
+		SELECT CASE WHEN cardinality(p.images) > 0 THEN 'done' ELSE j.status END, count(*)
+		FROM product_photo_jobs j JOIN products p ON p.id = j.product_id
+		GROUP BY 1`)
 	if err != nil {
 		return out, err
 	}
@@ -323,7 +329,10 @@ func (s *Service) ImportStatus(ctx context.Context) (ImportStatus, error) {
 	if err := rows.Err(); err != nil {
 		return out, err
 	}
-	err = s.pool.QueryRow(ctx, `SELECT error FROM product_photo_jobs WHERE error <> '' ORDER BY updated_at DESC LIMIT 1`).Scan(&out.LastPhotoError)
+	err = s.pool.QueryRow(ctx, `
+		SELECT j.error FROM product_photo_jobs j JOIN products p ON p.id = j.product_id
+		WHERE j.status = 'failed' AND j.error <> '' AND cardinality(p.images) = 0
+		ORDER BY j.updated_at DESC LIMIT 1`).Scan(&out.LastPhotoError)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = nil
 	}
@@ -335,5 +344,52 @@ func (s *Service) RetryPhotos(ctx context.Context) (int, error) {
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE product_photo_jobs SET status = 'pending', attempts = 0, error = '', next_at = now(), updated_at = now()
 		WHERE status = 'failed'`)
+	return int(tag.RowsAffected()), err
+}
+
+// PhotoResult — итог загрузки фото товара, сделанной вне сервера
+// (из браузера супер-админа: сервер может не достучаться до tasnif).
+type PhotoResult struct {
+	ProductID string `json:"product_id"`
+	Status    string `json:"status"` // done | none | failed
+	Error     string `json:"error"`
+}
+
+type PhotoResultsInput struct {
+	Results []PhotoResult `json:"results"`
+}
+
+// PhotoResults отмечает задачи очереди фото. Задачи товаров, которых нет
+// в очереди, пропускаются.
+func (s *Service) PhotoResults(ctx context.Context, in PhotoResultsInput) (int, error) {
+	if len(in.Results) == 0 || len(in.Results) > 1000 {
+		return 0, apperr.Validation("results: от 1 до 1000")
+	}
+	ids := make([]string, 0, len(in.Results))
+	sts := make([]string, 0, len(in.Results))
+	errs := make([]string, 0, len(in.Results))
+	for _, r := range in.Results {
+		switch r.Status {
+		case "done", "none", "failed":
+		default:
+			return 0, apperr.Validation("status: done, none или failed")
+		}
+		if !httpx.IsUUID(r.ProductID) {
+			return 0, apperr.Validation("product_id: неверный id")
+		}
+		e := r.Error
+		if len(e) > 500 {
+			e = e[:500]
+		}
+		ids, sts, errs = append(ids, r.ProductID), append(sts, r.Status), append(errs, e)
+	}
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE product_photo_jobs j
+		SET status = r.st,
+		    error = CASE WHEN r.st = 'failed' THEN r.err ELSE '' END,
+		    attempts = j.attempts + 1,
+		    updated_at = now()
+		FROM unnest($1::uuid[], $2::text[], $3::text[]) AS r(id, st, err)
+		WHERE j.product_id = r.id`, ids, sts, errs)
 	return int(tag.RowsAffected()), err
 }

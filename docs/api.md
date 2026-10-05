@@ -823,16 +823,21 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 | Метод | Путь | Описание |
 |---|---|---|
 | POST | `/admin/catalog-import` | `{source: "tasnif", items: [{barcode, name, brand, category: ["Раздел", "Подкатегория"], unit: "шт"\|"кг", description, attributes, ikpu, attach_to?}]}` (1–500) → `{created, attached, skipped, errors [{barcode, message}]}`. Бренд и категории находятся по названию без учёта регистра или создаются. `attach_to` — точное название существующего товара общего каталога: ему добавляются штрихкод и атрибуты, новый не создаётся. Штрихкод уже есть — `skipped` (товару дописывается `ikpu`). В `attributes` пишутся `ikpu`, `ikpu_name`, `package`, `marked`, `source` |
-| GET | `/admin/catalog-import/status` | `{products, with_photo, without_photo, photo_jobs {pending, working, done, none, failed}, last_photo_error}` — по общему каталогу |
+| GET | `/admin/catalog-import/status` | `{products, with_photo, without_photo, photo_jobs {pending, working, done, none, failed}, last_photo_error}` — по общему каталогу; задача товара, у которого уже есть фото, считается `done` |
 | POST | `/admin/catalog-import/retry-photos` | вернуть в очередь задачи фото с ошибкой → `{requeued}` |
+| POST | `/admin/catalog-import/photo-results` | `{results: [{product_id, status: "done"\|"none"\|"failed", error?}]}` (1–1000) → `{updated}` — итоги загрузки фото вне сервера (из браузера супер-админа) |
 | GET | `/admin/products?photo=with\|without` | фильтр «с фото / без фото» (и в `/admin/products/groups`) |
 
 Фото: у каждого нового товара с ИКПУ — задача в `product_photo_jobs`. Воркер берёт по 20 задач, 4 параллельно:
 `GET tasnif.soliq.uz/api/cls-api/integration-mxik/references/get/mxik/picture-names?mxik_code=<ИКПУ>` →
 `…/get/file/<имя>`; фото уменьшается до 1000 px по большей стороне (JPEG, белый фон), до `PHOTOS_PER_PRODUCT`
-штук (по умолчанию 2), кладётся в хранилище и ставится товару, если своих фото у него нет. Нет фото у
+штук (по умолчанию 1), кладётся в хранилище и ставится товару, если своих фото у него нет. Нет фото у
 источника — `none`; ошибка сети — повтор через 10, 20, … минут, после 5 попыток — `failed`. Источник —
 `TASNIF_URL` (по умолчанию https://tasnif.soliq.uz).
+
+`PHOTO_FETCHER=off` (в проде по умолчанию) — воркер фото не качает: с сервера tasnif недоступен. Тогда фото
+ставит супер-админ из браузера (tasnif отдаёт CORS): картинка → `/admin/uploads` → `PATCH /admin/products/{id}`,
+итог — в `photo-results`. Супер-админка → Товары: сводка «с фото / без фото / загружаются / ошибки» и фильтр по фото.
 
 ## Долги покупателей
 

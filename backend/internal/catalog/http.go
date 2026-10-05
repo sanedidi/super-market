@@ -34,6 +34,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/admin/catalog-import", m.importProducts)
 		r.Get("/admin/catalog-import/status", m.importStatus)
 		r.Post("/admin/catalog-import/retry-photos", m.retryPhotos)
+		r.Post("/admin/catalog-import/photo-results", m.photoResults)
 
 		r.Get("/admin/products", m.adminListProducts)
 		r.Get("/admin/products/groups", m.adminProductGroups)
@@ -156,6 +157,13 @@ func (m *Module) retryPhotos(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (map[string]int, error) {
 		n, err := m.svc.RetryPhotos(r.Context())
 		return map[string]int{"requeued": n}, err
+	})
+}
+
+func (m *Module) photoResults(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in PhotoResultsInput) (map[string]int, error) {
+		n, err := m.svc.PhotoResults(r.Context(), in)
+		return map[string]int{"updated": n}, err
 	})
 }
 
