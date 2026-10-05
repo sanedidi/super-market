@@ -6,6 +6,7 @@ import 'package:sm_pos/core/debts.dart';
 import 'package:sm_pos/core/journal.dart';
 import 'package:sm_pos/core/money.dart';
 import 'package:sm_pos/core/pin.dart';
+import 'package:sm_pos/core/quick.dart';
 
 Product prod(String id, int price, {bool fractional = false, bool marked = false, int vat = 1200, int? plu}) => Product(
       id: id,
@@ -261,5 +262,56 @@ void main() {
     }, pending: 1000000);
     expect(v.debt, 6000000);
     expect(v.available, 44000000);
+  });
+
+  group('быстрые кнопки', () {
+    Product item(String id, String cat, {bool marked = false, bool active = true}) =>
+        Product(id: id, name: 'Товар $id', price: 100000, category: cat, marked: marked, active: active);
+
+    test('«Частые»: закреплённые по порядку, потом продаваемые; разделы — по продажам', () {
+      final c = Catalog(products: [
+        item('bread', 'Хлеб'),
+        item('lavash', 'Хлеб'),
+        item('milk', 'Молочное'),
+        item('kefir', 'Молочное'),
+        item('cig', 'Табак', marked: true),
+        item('old', 'Хлеб', active: false),
+        item('salt', 'Бакалея'),
+        item('nocat', ''),
+      ])
+        ..quickPinned = ['lavash', 'gone']
+        ..quickTop = ['milk', 'bread', 'cig', 'lavash', 'old'];
+      final tabs = buildQuickTabs(c);
+      expect(tabs.first.frequent, isTrue);
+      expect(tabs.first.products.map((p) => p.id), ['lavash', 'milk', 'bread']);
+      expect(tabs.skip(1).map((t) => t.name), ['Молочное', 'Хлеб', 'Бакалея']);
+      expect(tabs[1].products.map((p) => p.id), ['milk', 'kefir']);
+      expect(tabs[2].products.map((p) => p.id), ['bread', 'lavash']);
+    });
+
+    test('без продаж и закреплённых — пустые «Частые», разделы по алфавиту', () {
+      final c = Catalog(products: [item('a', 'Овощи'), item('b', 'Бакалея')]);
+      final tabs = buildQuickTabs(c);
+      expect(tabs.first.products, isEmpty);
+      expect(tabs.skip(1).map((t) => t.name), ['Бакалея', 'Овощи']);
+    });
+
+    test('каталог с сервера: фото, раздел и быстрые кнопки переживают сохранение', () {
+      final c = Catalog()
+        ..apply({
+          'full': true,
+          'version': 'v1',
+          'epoch': 2,
+          'products': [
+            {'id': 'p1', 'name': 'Хлеб', 'price': '6000.00', 'image': 'https://x/1.jpg', 'category': 'Хлеб'},
+          ],
+          'quick': {'pinned': ['p1'], 'top': ['p1']},
+        });
+      final back = Catalog.fromJson(c.toJson());
+      expect(back.epoch, 2);
+      expect(back.quickPinned, ['p1']);
+      expect(back.byId('p1')!.image, 'https://x/1.jpg');
+      expect(back.byId('p1')!.category, 'Хлеб');
+    });
   });
 }

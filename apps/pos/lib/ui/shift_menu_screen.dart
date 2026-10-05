@@ -8,6 +8,7 @@ import '../state/pos.dart';
 import 'close_shift_screen.dart';
 import 'debt_payment_dialog.dart';
 import 'equipment_screen.dart';
+import 'quick_keys_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -68,6 +69,11 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
     await showDebtPaymentDialog(context, pos);
   }
 
+  Future<void> _quickKeys() async {
+    if (!pos.canQuickKeys) return;
+    await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const QuickKeysScreen()));
+  }
+
   void _changeCashier() {
     Navigator.of(context).pop();
     pos.logout();
@@ -111,6 +117,8 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
         _equipment();
       case '7':
         _debtPayment();
+      case '8':
+        _quickKeys();
       default:
         return false;
     }
@@ -135,7 +143,8 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
                 const SizedBox(width: 16),
                 SizedBox(
                   width: 480,
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  child: SingleChildScrollView(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                     Text('Меню смены', style: t(22, w: FontWeight.w700)),
                     const SizedBox(height: 12),
                     KeyCard(
@@ -193,6 +202,10 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
                       const SizedBox(height: 10),
                       KeyCard(keyLabel: '7', title: 'Погашение долга', subtitle: 'покупатель по номеру · наличные или карта', onTap: _debtPayment),
                     ],
+                    if (pos.canQuickKeys) ...[
+                      const SizedBox(height: 10),
+                      KeyCard(keyLabel: '8', title: 'Быстрые кнопки', subtitle: 'товары на плитках экрана продажи', onTap: _quickKeys),
+                    ],
                     const SizedBox(height: 10),
                     KeyCard(keyLabel: 'Esc', title: 'Назад к продаже', onTap: () => Navigator.of(context).pop()),
                     if (_error != null) ...[
@@ -200,6 +213,7 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
                       Text(_error!, style: t(14, c: C.error)),
                     ],
                   ]),
+                  ),
                 ),
               ]),
             ),
