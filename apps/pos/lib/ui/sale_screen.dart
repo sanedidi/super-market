@@ -314,7 +314,9 @@ class _CartList extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            'Сканируйте штрихкод, нажмите товар справа\nили наберите код и «Код» · F2 — поиск по названию',
+            dim
+                ? 'Чек пробит · следующий покупатель — сканируйте товар или нажмите плитку'
+                : 'Сканируйте штрихкод, нажмите товар справа\nили наберите код и «Код» · F2 — поиск по названию',
             textAlign: TextAlign.center,
             style: t(16, c: C.td),
           ),

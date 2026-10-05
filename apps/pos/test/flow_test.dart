@@ -151,6 +151,7 @@ void main() {
     expect(await sale.pay('cash', received: 5000000), isNull);
     expect(sale.mode, SaleMode.paid);
     expect(sale.paid!.record.change, 5000000 - 3588000);
+    expect(sale.cart.isEmpty, isTrue); // чек пробит — список очищен
     expect(pos.queue, 2); // открытие смены + продажа
 
     // Следующий покупатель: код 1 + Enter = хлеб, сразу новый чек; оплата картой.

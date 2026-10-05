@@ -649,7 +649,8 @@ class SaleController extends ChangeNotifier {
       paid = PaidInfo(rec, label);
       mode = SaleMode.paid;
       rowFocused = false;
-      cart.selected = null;
+      // Чек пробит — список очищается, в заголовке остаются итог и сдача.
+      cart = Cart();
       msg = null;
       onSound?.call(true);
       return null;
@@ -689,7 +690,8 @@ class SaleController extends ChangeNotifier {
       paid = PaidInfo(rec, '$label · долг ${fmtMoney(who.debt + debt)}');
       mode = SaleMode.paid;
       rowFocused = false;
-      cart.selected = null;
+      // Чек пробит — список очищается, в заголовке остаются итог и сдача.
+      cart = Cart();
       msg = null;
       onSound?.call(true);
       return null;
