@@ -335,7 +335,9 @@ type ProductFilter struct {
 	LeafCategoryID string
 	// Sort — "name" (по названию); по умолчанию у супер-админа — новые сверху.
 	Sort string
-	Page httpx.Page
+	// Photo — with (есть фото) или without (нет фото); только у супер-админа.
+	Photo string
+	Page  httpx.Page
 }
 
 func (f ProductFilter) validate() error {
@@ -353,6 +355,9 @@ func (f ProductFilter) validate() error {
 	}
 	if f.Sort != "" && f.Sort != "name" {
 		return apperr.Validation("sort: ожидается name")
+	}
+	if f.Photo != "" && f.Photo != "with" && f.Photo != "without" {
+		return apperr.Validation("photo: ожидается with или without")
 	}
 	return nil
 }
@@ -384,8 +389,9 @@ func (s *Service) AdminListProducts(ctx context.Context, f ProductFilter) ([]Pro
 	}
 	rows, err := s.pool.Query(ctx, `SELECT `+productCols+productFrom+`
 		WHERE ($4 = '' OR p.moderation_status = $4)`+filterWhere+groupWhere(7)+`
+		AND ($9 = '' OR ($9 = 'with') = (cardinality(p.images) > 0))
 		ORDER BY `+adminOrder(f.Sort)+` LIMIT $5 OFFSET $6`,
-		strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, f.Status, f.Page.Limit, f.Page.Offset, f.BrandID, f.LeafCategoryID)
+		strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, f.Status, f.Page.Limit, f.Page.Offset, f.BrandID, f.LeafCategoryID, f.Photo)
 	if err != nil {
 		return nil, err
 	}

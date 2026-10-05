@@ -82,8 +82,9 @@ func (s *Service) AdminProductGroups(ctx context.Context, f ProductFilter) (Prod
 		return ProductGroups{}, err
 	}
 	rows, err := s.pool.Query(ctx, strings.Replace(groupSelect, "%s", `(count(*) FILTER (WHERE p.moderation_status = 'pending'))::int`, 1)+`
-		WHERE ($4 = '' OR p.moderation_status = $4)`+filterWhere+groupOrder,
-		strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, f.Status)
+		WHERE ($4 = '' OR p.moderation_status = $4)`+filterWhere+`
+		AND ($5 = '' OR ($5 = 'with') = (cardinality(p.images) > 0))`+groupOrder,
+		strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, f.Status, f.Photo)
 	if err != nil {
 		return ProductGroups{}, err
 	}

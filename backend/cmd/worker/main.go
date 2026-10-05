@@ -16,6 +16,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sanedidi/super-market/backend/internal/billing"
+	"github.com/sanedidi/super-market/backend/internal/catalog"
 	"github.com/sanedidi/super-market/backend/internal/debts"
 	"github.com/sanedidi/super-market/backend/internal/family"
 	"github.com/sanedidi/super-market/backend/internal/identity"
@@ -89,6 +90,20 @@ func run() error {
 		push.NewDispatcher(pool, fcm, log).Run(ctx, 3*time.Second)
 	}()
 	defer func() { <-pushDone }()
+
+	// Фото импортированных товаров из каталога ИКПУ: отдельный цикл, очередь большая.
+	photosDone := make(chan struct{})
+	if cfg.S3Endpoint != "" && cfg.MediaBaseURL != "" {
+		fetcher := catalog.NewPhotoFetcher(pool, server.MediaService(cfg), cfg.MediaBaseURL, cfg.TasnifURL, cfg.PhotosPerProduct, log)
+		go func() {
+			defer close(photosDone)
+			fetcher.Run(ctx, 30*time.Second)
+		}()
+	} else {
+		close(photosDone)
+		log.Warn("S3_ENDPOINT или MEDIA_BASE_URL не заданы: фото товаров из каталога ИКПУ не загружаются")
+	}
+	defer func() { <-photosDone }()
 
 	dlv, _, ord := server.OrderServices(cfg, pool, sender, log)
 	jobs := []Job{

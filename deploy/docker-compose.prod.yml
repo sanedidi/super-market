@@ -39,6 +39,8 @@ x-backend-env: &backend-env
   S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
   S3_BUCKET: ${S3_BUCKET:-media}
   MEDIA_BASE_URL: ${MEDIA_BASE_URL:-https://api.super-market.uz}
+  # Фото товаров из каталога ИКПУ (tasnif.soliq.uz): сколько брать на товар.
+  PHOTOS_PER_PRODUCT: ${PHOTOS_PER_PRODUCT:-2}
 
 x-logging: &logging
   driver: json-file

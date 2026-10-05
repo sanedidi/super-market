@@ -31,6 +31,10 @@ func (m *Module) Routes(r chi.Router) {
 		r.Patch("/admin/catalog/{kind}/{id}", m.updateDict)
 		r.Delete("/admin/catalog/{kind}/{id}", m.deleteDict)
 
+		r.Post("/admin/catalog-import", m.importProducts)
+		r.Get("/admin/catalog-import/status", m.importStatus)
+		r.Post("/admin/catalog-import/retry-photos", m.retryPhotos)
+
 		r.Get("/admin/products", m.adminListProducts)
 		r.Get("/admin/products/groups", m.adminProductGroups)
 		r.Post("/admin/products", m.adminCreateProduct)
@@ -131,8 +135,28 @@ func filterFrom(r *http.Request) ProductFilter {
 		BrandID:        q.Get("brand_id"),
 		LeafCategoryID: q.Get("leaf_category_id"),
 		Sort:           q.Get("sort"),
+		Photo:          q.Get("photo"),
 		Page:           httpx.PageFrom(r),
 	}
+}
+
+func (m *Module) importProducts(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in ImportInput) (ImportResult, error) {
+		return m.svc.Import(r.Context(), in)
+	})
+}
+
+func (m *Module) importStatus(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (ImportStatus, error) {
+		return m.svc.ImportStatus(r.Context())
+	})
+}
+
+func (m *Module) retryPhotos(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (map[string]int, error) {
+		n, err := m.svc.RetryPhotos(r.Context())
+		return map[string]int{"requeued": n}, err
+	})
 }
 
 func (m *Module) adminListProducts(w http.ResponseWriter, r *http.Request) {
