@@ -5,6 +5,7 @@ import 'package:sm_core/sm_core.dart';
 import '../ads/ads_screen.dart';
 import '../control/cashiers_screen.dart';
 import '../crowd/crowd_screen.dart';
+import '../customers/customer_debts_screen.dart';
 import '../debts/debts_screen.dart';
 import '../lock/pin_screens.dart';
 import '../main.dart';
@@ -29,6 +30,8 @@ class MoreScreen extends StatelessWidget {
         (Icons.point_of_sale_rounded, 'Контроль кассиров', 'Недостачи, возвраты, скидки', const CashiersScreen()),
       if (st.can('counterparties.manage') || st.can('inventory.manage') || st.can('finance.manage'))
         (Icons.local_shipping_outlined, 'Долги поставщикам', 'Кому должны, акт сверки, оплата', const DebtsScreen()),
+      if (st.can('debts.manage'))
+        (Icons.receipt_long_rounded, 'Долги покупателей', 'Кто должен, напоминания, оплата', const CustomerDebtsScreen()),
       if (st.can('staff.manage')) (Icons.people_alt_outlined, 'Сотрудники', 'Кто работает, роли, добавить', const StaffScreen()),
       if (st.can('inventory.manage'))
         (Icons.assignment_return_outlined, 'Возврат поставщику', 'Брак, просрочка, пересорт', const SupplierReturnsScreen()),

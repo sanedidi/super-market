@@ -1,5 +1,5 @@
 // Push-уведомления сотруднику: новый заказ, заказ ждёт, курьер по пути взял
-// заказ, накладная распознана, итоги дня владельцу. Токен устройства — POST /store/devices.
+// заказ, накладная распознана, итоги дня владельцу, покупатель оспаривает долг. Токен устройства — POST /store/devices.
 import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:sm_core/sm_core.dart';
 
+import 'customers/customer_debts_screen.dart';
 import 'firebase_options.dart';
 import 'receipt/review_screen.dart';
 import 'screens/order_screen.dart';
@@ -120,6 +121,8 @@ class Push {
       case 'invoice':
         final id = d['scan_id'];
         if (id is String && id.isNotEmpty) nav.push(MaterialPageRoute(builder: (_) => ReviewScreen(id: id)));
+      case 'debt_dispute':
+        nav.push(MaterialPageRoute(builder: (_) => const CustomerDebtsScreen(status: 'disputes')));
       case 'summary':
         final date = d['date'];
         nav.push(MaterialPageRoute(builder: (_) => SummaryScreen(date: date is String ? date : null)));
