@@ -83,14 +83,57 @@ Uint8List saleReceipt({
   }
   if (sale.received > sale.cash) p.pair('Получено наличными', fmtMoney(sale.received));
   if (sale.change > 0) p.pair('Сдача', fmtMoney(sale.change));
+  final debt = sale.debt;
+  if (debt != null) {
+    p.bold(true).pair('В долг', fmtMoney(debt.amount)).bold(false);
+    p.dashes();
+    if (debt.name.isNotEmpty) p.pair('Покупатель', debt.name);
+    p.pair('Телефон', maskPhone(debt.phone));
+    if (debt.balance > 0) p.bold(true).pair('Долг в магазине', fmtMoney(debt.balance)).bold(false);
+  }
   _fiscalBlock(p, FiscalResult.fromJson(sale.fiscal));
   p.dashes().align(PrintAlign.center);
   final footer = s.receiptFooter.trim().isEmpty ? 'Спасибо за покупку!' : s.receiptFooter.trim();
   for (final l in footer.split('\n')) {
     p.wrapped(l);
   }
+  if (debt != null) p.wrapped('Ваш долг и история — в приложении Super Market');
   p.feed(3).cut();
   if (openDrawer && sale.cash > 0) p.drawer();
+  return p.bytes();
+}
+
+/// +998905764723 → +998 90 ••• •• 23 (номер на чеке не печатаем целиком).
+String maskPhone(String phone) {
+  final d = phone.replaceAll(RegExp(r'[^0-9]'), '');
+  if (d.length != 12) return phone;
+  return '+${d.substring(0, 3)} ${d.substring(3, 5)} ••• •• ${d.substring(10)}';
+}
+
+/// Квитанция о погашении долга (не фискальный документ).
+Uint8List debtPaymentReceipt({
+  required PosSettings s,
+  required DebtPaymentRecord r,
+  required String shiftLabel,
+  required String cashier,
+  int paperMm = 80,
+  int codePage = 17,
+  bool openDrawer = false,
+}) {
+  final p = EscPos(paperMm: paperMm, codePage: codePage);
+  _header(p, s);
+  p.align(PrintAlign.center).bold(true).line('КВИТАНЦИЯ · ПОГАШЕНИЕ ДОЛГА').bold(false).align(PrintAlign.left);
+  p.pair(shiftLabel, _dt(r.at));
+  p.pair('Кассир', cashier);
+  p.dashes();
+  if (r.name.isNotEmpty) p.pair('Покупатель', r.name);
+  p.pair('Телефон', maskPhone(r.phone));
+  p.bold(true).size(1, 2).pair('ПРИНЯТО', fmtMoney(r.amount)).size(1, 1).bold(false);
+  p.pair(r.methodName, fmtMoney(r.amount));
+  p.bold(true).pair('Остаток долга', fmtMoney(r.balance)).bold(false);
+  p.dashes().align(PrintAlign.center).wrapped('Ваш долг и история — в приложении Super Market');
+  p.feed(3).cut();
+  if (openDrawer && r.kind == 'cash') p.drawer();
   return p.bytes();
 }
 
@@ -107,6 +150,7 @@ Uint8List refundReceipt({
   FiscalResult? fiscal,
   int paperMm = 80,
   int codePage = 17,
+  int debtAmount = 0,
 }) {
   final p = EscPos(paperMm: paperMm, codePage: codePage);
   _header(p, s);
@@ -123,7 +167,8 @@ Uint8List refundReceipt({
   p.dashes();
   p.bold(true).size(1, 2).pair('ВОЗВРАТ', fmtMoney(r.total)).size(1, 1).bold(false);
   if (r.vat > 0) p.pair('в т.ч. НДС', fmtMoney(r.vat));
-  p.pair('Выдано: $methodName', fmtMoney(r.total));
+  if (debtAmount > 0) p.pair('В счёт долга', fmtMoney(debtAmount));
+  if (r.total - debtAmount > 0) p.pair('Выдано: $methodName', fmtMoney(r.total - debtAmount));
   _fiscalBlock(p, fiscal);
   p.feed(3).cut();
   return p.bytes();
@@ -161,8 +206,15 @@ Uint8List shiftReport({
   for (final m in rep.byMethod.values) {
     if (m.returns > 0) p.pair('  ${m.name}', fmtMoney(m.returns));
   }
+  if (rep.debtGivenCount > 0 || rep.debtPaidCount > 0) {
+    p.dashes().line('ДОЛГИ ПОКУПАТЕЛЕЙ');
+    p.pair('Отпущено в долг · ${rep.debtGivenCount}', fmtMoney(rep.debtGiven));
+    p.pair('Погашено наличными', fmtMoney(rep.debtPaidCash));
+    p.pair('Погашено картой и др.', fmtMoney(rep.debtPaidOther));
+  }
   p.dashes().line('НАЛИЧНЫЕ В ЯЩИКЕ');
   p.pair('Размен', fmtMoney(sh.openingCash)).pair('Внесено', fmtMoney(rep.cashIn)).pair('Изъято', fmtMoney(rep.cashOut));
+  if (rep.debtPaidCash > 0) p.pair('Погашения долгов', fmtMoney(rep.debtPaidCash));
   p.bold(true).pair('Должно быть', fmtMoney(rep.expectedCash)).bold(false);
   if (counted != null) {
     final diff = counted - rep.expectedCash;

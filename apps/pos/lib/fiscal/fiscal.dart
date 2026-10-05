@@ -130,7 +130,8 @@ class FiscalReceipt {
         cashier: s.cashierName,
         lines: [for (final l in s.lines) lineFromJournal(l)],
         cash: s.cash,
-        card: s.total - s.cash,
+        // Часть в долг — не карта: её фискализацию уточняем у ОФД.
+        card: s.total - s.cash - (s.debt?.amount ?? 0),
       );
 }
 

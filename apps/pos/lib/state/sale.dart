@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../core/cart.dart';
 import '../core/catalog.dart';
 import '../core/codes.dart';
+import '../core/debts.dart';
 import '../core/journal.dart';
 import '../core/money.dart';
 import 'pos.dart';
@@ -469,6 +470,46 @@ class SaleController extends ChangeNotifier {
     try {
       final rec = await pos.recordSale(cart, payments, received: kind == 'card' || kind == 'qr' ? 0 : received);
       paid = PaidInfo(rec, label);
+      mode = SaleMode.paid;
+      rowFocused = false;
+      cart.selected = null;
+      msg = null;
+      onSound?.call(true);
+      return null;
+    } catch (e) {
+      return 'Чек не сохранён: $e';
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  /// Продажа в долг: [debt] — сколько в долг, остаток итога — [restKind]
+  /// (наличными или картой). [name] — имя покупателя для нового номера.
+  Future<String?> payDebt(DebtorView who, {required int debt, String name = '', String restKind = 'cash'}) async {
+    if (!canPay) return 'Чек пуст';
+    if (!pos.canDebt) return 'Продажа в долг выключена в этом магазине';
+    if (who.blocked) return 'Покупатель в стоп-листе — в долг не давать';
+    final total = due;
+    if (debt <= 0 || debt > total) return 'В долг — больше нуля и не больше итога';
+    final rest = total - debt;
+    final payments = <Payment>[];
+    if (rest > 0) {
+      final m = method(restKind);
+      if (m == null) return 'В магазине нет способа оплаты «${_kindName(restKind)}» — добавьте в панели';
+      payments.add(Payment(methodId: m.id, name: m.name, kind: restKind, amount: rest));
+    }
+    final buyer = name.trim().isNotEmpty ? name.trim() : who.name;
+    busy = true;
+    notifyListeners();
+    try {
+      final rec = await pos.recordSale(cart, payments,
+          received: restKind == 'cash' ? rest : 0,
+          debt: DebtPart(phone: who.phone, name: buyer, amount: debt, balance: who.debt + debt));
+      final label = rest > 0
+          ? 'В долг ${fmtMoney(debt)} + ${fmtMoney(rest)} ${restKind == 'cash' ? 'наличными' : 'картой'}'
+          : 'В долг: ${fmtMoney(debt)}';
+      paid = PaidInfo(rec, '$label · долг ${fmtMoney(who.debt + debt)}');
       mode = SaleMode.paid;
       rowFocused = false;
       cart.selected = null;

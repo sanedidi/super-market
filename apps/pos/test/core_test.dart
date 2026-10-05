@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sm_pos/core/cart.dart';
 import 'package:sm_pos/core/catalog.dart';
 import 'package:sm_pos/core/codes.dart';
+import 'package:sm_pos/core/debts.dart';
 import 'package:sm_pos/core/journal.dart';
 import 'package:sm_pos/core/money.dart';
 import 'package:sm_pos/core/pin.dart';
@@ -200,5 +201,65 @@ void main() {
     expect(c.byPlu(1), isNull);
     expect(c.length, 1);
     expect(c.search('хле').length, 1);
+  });
+
+  test('долги: номер, чек в долг, погашение в X-отчёте', () {
+    expect(uzPhone('90 576 47 23'), '+998905764723');
+    expect(uzPhone('+998 90 576-47-23'), '+998905764723');
+    expect(uzPhone('12345'), isNull);
+    expect(fmtUzPhone('+998905764723'), '+998 90 576 47 23');
+    expect(fmtLocalDigits('9057647'), '90 576 47');
+
+    final shift = LocalShift(uid: 's', openedAt: DateTime(2026), openingCash: 0, openedBy: 'e', openedByName: 'Дилноза');
+    final sale = SaleRecord(
+      uid: 'u',
+      seq: 1,
+      shiftUid: 's',
+      cashierId: 'e',
+      cashierName: 'Дилноза',
+      soldAt: DateTime(2026),
+      lines: const [],
+      payments: [Payment(methodId: 'm1', name: 'Наличные', kind: 'cash', amount: 2000000)],
+      received: 2000000,
+      debt: DebtPart(phone: '+998905764723', name: 'Азиз', amount: 5000000, balance: 5000000),
+    );
+    expect(sale.total, 7000000);
+    expect(sale.apiBody('sh')['debt'], {'phone': '+998905764723', 'full_name': 'Азиз', 'amount': '50000.00'});
+    final back = SaleRecord.fromJson(sale.toJson());
+    expect(back.debt!.amount, 5000000);
+
+    final pay = DebtPaymentRecord(
+      uid: 'p1',
+      shiftUid: 's',
+      phone: '+998905764723',
+      name: 'Азиз',
+      amount: 3000000,
+      kind: 'cash',
+      methodId: 'm1',
+      methodName: 'Наличные',
+      at: DateTime(2026),
+      cashierId: 'e',
+      balance: 2000000,
+    );
+    expect(journalEntry(pay.toJson()), isA<DebtPaymentRecord>());
+    final r = ShiftReport(shift, [
+      sale,
+      pay,
+      ReturnRecord(id: 'r', shiftUid: 's', saleNumber: 1, total: 1000000, kind: 'cash', methodName: 'Наличные', at: DateTime(2026), debtAmount: 1000000),
+    ]);
+    expect(r.debtGiven, 5000000);
+    expect(r.debtPaidCash, 3000000);
+    // наличные: 20 000 продажа + 30 000 погашение, возврат целиком ушёл в долг
+    expect(r.expectedCash, 2000000 + 3000000);
+
+    final v = DebtorView.fromLookup({
+      'phone': '+998905764723',
+      'found': true,
+      'unverified_limit': '100000.00',
+      'default_limit': '500000.00',
+      'debtor': {'full_name': 'Азиз', 'amount': '50000.00', 'limit': '500000.00', 'verified': true},
+    }, pending: 1000000);
+    expect(v.debt, 6000000);
+    expect(v.available, 44000000);
   });
 }

@@ -90,6 +90,40 @@ class Perm {
   static const pos = 'sales.pos';
   static const discount = 'sales.discount';
   static const returns = 'sales.return';
+  static const debtsGive = 'debts.give';
+}
+
+/// Покупатель с долгом в магазине кассы (для продажи в долг без связи).
+class Debtor {
+  Debtor({required this.phone, this.fullName = '', this.debt = 0, this.limit = 0, this.blocked = false, this.verified = false});
+
+  /// +998XXXXXXXXX.
+  final String phone;
+  final String fullName;
+
+  /// Долг в этом магазине на момент загрузки каталога, в тийинах.
+  final int debt;
+  final int limit;
+  final bool blocked;
+  final bool verified;
+
+  factory Debtor.fromJson(Map<String, dynamic> j) => Debtor(
+        phone: j['phone'] as String? ?? '',
+        fullName: j['full_name'] as String? ?? '',
+        debt: parseMoney(j['debt']),
+        limit: parseMoney(j['limit']),
+        blocked: j['blocked'] == true,
+        verified: j['verified'] == true,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'phone': phone,
+        'full_name': fullName,
+        'debt': moneyApi(debt),
+        'limit': moneyApi(limit),
+        'blocked': blocked,
+        'verified': verified,
+      };
 }
 
 class PayMethod {
@@ -118,6 +152,7 @@ class PosSettings {
     this.receiptHeader = '',
     this.receiptFooter = '',
     this.weightPrefixes = const ['22'],
+    this.debtEnabled = false,
   });
 
   final String deviceId;
@@ -130,6 +165,9 @@ class PosSettings {
   final String receiptFooter;
   final List<String> weightPrefixes;
 
+  /// Магазин даёт в долг: показывать «В долг» кассиру с правом.
+  final bool debtEnabled;
+
   factory PosSettings.fromJson(Map<String, dynamic> j) => PosSettings(
         deviceId: j['device_id'] as String? ?? '',
         deviceName: j['device_name'] as String? ?? '',
@@ -140,6 +178,7 @@ class PosSettings {
         receiptHeader: j['receipt_header'] as String? ?? '',
         receiptFooter: j['receipt_footer'] as String? ?? '',
         weightPrefixes: ((j['weight_prefixes'] as List?) ?? const ['22']).map((e) => '$e').toList(),
+        debtEnabled: j['debt_enabled'] == true,
       );
 
   Map<String, dynamic> toJson() => {
@@ -152,6 +191,7 @@ class PosSettings {
         'receipt_header': receiptHeader,
         'receipt_footer': receiptFooter,
         'weight_prefixes': weightPrefixes,
+        'debt_enabled': debtEnabled,
       };
 }
 
@@ -180,6 +220,9 @@ class Catalog {
   final Map<String, Product> _byId = {};
   final Map<String, String> _byBarcode = {};
   final Map<int, String> _byPlu = {};
+
+  /// Покупатели сети с их долгом в этом магазине: телефон → покупатель.
+  Map<String, Debtor> debtors = {};
 
   Iterable<Product> get products => _byId.values;
   int get length => _byId.length;
@@ -255,6 +298,12 @@ class Catalog {
     if (j['settings'] is Map) settings = PosSettings.fromJson(j['settings'] as Map<String, dynamic>);
     openShiftId = j['open_shift_id'] as String?;
     version = j['version'] as String? ?? version;
+    if (j['debtors'] is List) {
+      debtors = {
+        for (final e in (j['debtors'] as List).cast<Map<String, dynamic>>())
+          if ((e['phone'] as String? ?? '').isNotEmpty) e['phone'] as String: Debtor.fromJson(e),
+      };
+    }
   }
 
   Map<String, dynamic> toJson() => {
@@ -265,6 +314,7 @@ class Catalog {
         'payment_methods': [for (final m in methods) m.toJson()],
         'settings': settings.toJson(),
         'open_shift_id': openShiftId,
+        'debtors': [for (final d in debtors.values) d.toJson()],
       };
 
   factory Catalog.fromJson(Map<String, dynamic> j) => Catalog()..apply(j);

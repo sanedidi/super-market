@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/cart.dart';
+import '../core/debts.dart';
 import '../core/money.dart';
+import '../data/api.dart';
 import '../state/sale.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -19,6 +21,8 @@ Future<void> showPayFlow(BuildContext context, SaleController sale) async {
       await showDialog<void>(context: context, builder: (_) => _CashDialog(sale: sale, mixed: false));
     case 'mixed':
       await showDialog<void>(context: context, builder: (_) => _CashDialog(sale: sale, mixed: true));
+    case 'debt':
+      await showDialog<void>(context: context, builder: (_) => _DebtDialog(sale: sale));
     default:
       final err = await sale.pay(kind);
       if (err != null && context.mounted) _toast(context, err);
@@ -88,9 +92,10 @@ class _Shell extends StatelessWidget {
 
 /// Кнопки внизу окна: «Esc · Назад» и красная «Enter · …».
 class _Footer extends StatelessWidget {
-  const _Footer({required this.back, this.primary, this.onPrimary, this.busy = false});
+  const _Footer({required this.back, this.primary, this.onPrimary, this.busy = false, this.onBack});
 
   final String back;
+  final VoidCallback? onBack;
   final String? primary;
   final VoidCallback? onPrimary;
   final bool busy;
@@ -98,7 +103,7 @@ class _Footer extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Row(children: [
         _Btn(
-          onTap: () => Navigator.of(context).pop(),
+          onTap: onBack ?? () => Navigator.of(context).pop(),
           color: C.surface,
           border: C.borderStrong,
           child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -259,9 +264,17 @@ class _MethodDialog extends StatelessWidget {
     ('2', 'card', 'Карта', 'терминал Uzcard · Humo'),
     ('3', 'qr', 'Payme · Click', 'QR на экране покупателя'),
     ('4', 'mixed', 'Смешанная', 'часть наличными, остаток картой'),
+    ('5', 'debt', 'В долг', 'покупатель по номеру телефона · долг и свободный лимит видны до подтверждения'),
   ];
 
-  bool _available(String kind) => kind == 'mixed' ? sale.method('cash') != null && sale.method('card') != null : sale.method(kind) != null;
+  /// «В долг» показываем, только если магазин даёт в долг и у кассира есть право.
+  List<(String, String, String, String)> get _shown => [for (final it in _items) if (it.$2 != 'debt' || sale.pos.canDebt) it];
+
+  bool _available(String kind) => switch (kind) {
+        'mixed' => sale.method('cash') != null && sale.method('card') != null,
+        'debt' => sale.pos.canDebt,
+        _ => sale.method(kind) != null,
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -305,7 +318,7 @@ class _MethodDialog extends StatelessWidget {
           return KeyEventResult.handled;
         }
         final ch = printable(e);
-        for (final it in _items) {
+        for (final it in _shown) {
           if (ch == it.$1) {
             pick(it.$2);
             return KeyEventResult.handled;
@@ -320,6 +333,7 @@ class _MethodDialog extends StatelessWidget {
         children: [
           Row(children: [tile(_items[0]), tile(_items[1])]),
           Row(children: [tile(_items[2]), tile(_items[3])]),
+          if (_shown.length > 4) Row(children: [tile(_items[4])]),
           const SizedBox(height: 14),
           const _Footer(back: 'Назад к чеку'),
         ],
@@ -856,4 +870,434 @@ class _ItemDialogState extends State<_ItemDialog> {
       ),
     );
   }
+}
+
+// ------------------------------------------------------------------ в долг
+
+/// Продажа в долг (Figma Д2–Д4): номер покупателя → карточка с долгом и
+/// свободным лимитом → (новый номер: имя и код) → пробить. Если лимита не
+/// хватает на весь чек — остаток наличными или картой.
+class _DebtDialog extends StatefulWidget {
+  const _DebtDialog({required this.sale});
+
+  final SaleController sale;
+
+  @override
+  State<_DebtDialog> createState() => _DebtDialogState();
+}
+
+class _DebtDialogState extends State<_DebtDialog> {
+  final _phone = _Input(max: 9);
+  final _amount = _Input();
+  final _name = TextEditingController();
+  final _code = TextEditingController();
+  final _nameFocus = FocusNode();
+  final _codeFocus = FocusNode();
+  final _keysFocus = FocusNode();
+
+  DebtorView? _who;
+  String _restKind = 'cash';
+  String? _channel;
+  bool _busy = false;
+  String? _error;
+
+  SaleController get sale => widget.sale;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _code.dispose();
+    _nameFocus.dispose();
+    _codeFocus.dispose();
+    _keysFocus.dispose();
+    super.dispose();
+  }
+
+  bool get _typing => _nameFocus.hasFocus || _codeFocus.hasFocus;
+
+  /// Сколько в долг: набрано кассиром, иначе весь чек или свободный лимит.
+  int get _debt {
+    final w = _who;
+    if (w == null) return 0;
+    if (_amount.value.isNotEmpty) return parseMoney(_amount.value);
+    return w.available < sale.due ? w.available : sale.due;
+  }
+
+  int get _rest => sale.due - _debt;
+
+  String? get _problem {
+    final w = _who;
+    if (w == null) return null;
+    if (w.blocked) return 'Покупатель в стоп-листе — в долг не давать';
+    if (!w.found && _name.text.trim().isEmpty) return 'Новый покупатель — впишите имя';
+    final d = _debt;
+    if (d <= 0) return w.available <= 0 ? 'Лимит исчерпан: долг ${fmtMoney(w.debt)} из ${fmtMoney(w.limit)}' : 'Наберите сумму в долг';
+    if (d > sale.due) return 'В долг — не больше итога ${fmtMoney(sale.due)}';
+    if (d > w.available) return 'Больше свободного лимита ${fmtMoney(w.available)}';
+    if (_rest > 0 && sale.method(_restKind) == null) return 'Нет способа оплаты для остатка';
+    return null;
+  }
+
+  void _fail(Object e) {
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _error = e is ApiError ? (e.isNetwork ? 'Нет связи с сервером' : e.message) : '$e';
+    });
+  }
+
+  Future<void> _lookup() async {
+    final phone = uzPhone(_phone.value);
+    if (phone == null) {
+      setState(() => _error = 'Наберите 9 цифр номера: 90 123 45 67');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final w = await sale.pos.lookupDebtor(phone);
+      if (!mounted) return;
+      setState(() {
+        _who = w;
+        _busy = false;
+        _name.text = w.name;
+        if (sale.method('cash') == null) _restKind = 'card';
+      });
+      // Новый покупатель — сразу в поле имени, иначе цифры идут в сумму.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) (w.found && w.name.isNotEmpty ? _keysFocus : _nameFocus).requestFocus();
+      });
+    } catch (e) {
+      _fail(e);
+    }
+  }
+
+  Future<void> _sendCode() async {
+    final w = _who;
+    if (w == null || _busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final ch = await sale.pos.sendDebtCode(w.phone);
+      if (!mounted) return;
+      setState(() {
+        _channel = ch;
+        _busy = false;
+      });
+      _codeFocus.requestFocus();
+    } catch (e) {
+      _fail(e);
+    }
+  }
+
+  Future<void> _verify() async {
+    final w = _who;
+    if (w == null || _busy) return;
+    final name = _name.text.trim();
+    if (!w.found && name.isEmpty) {
+      setState(() => _error = 'Впишите имя покупателя');
+      _nameFocus.requestFocus();
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final v = await sale.pos.verifyDebtCode(w.phone, _code.text.trim(), name);
+      if (!mounted) return;
+      setState(() {
+        _who = v;
+        _busy = false;
+        _channel = null;
+        _code.clear();
+      });
+      _keysFocus.requestFocus();
+    } catch (e) {
+      _fail(e);
+    }
+  }
+
+  Future<void> _pay() async {
+    final w = _who;
+    if (w == null || _busy) return;
+    final problem = _problem;
+    if (problem != null) {
+      setState(() => _error = problem);
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final err = await sale.payDebt(w, debt: _debt, name: _name.text, restKind: _restKind);
+    if (!mounted) return;
+    if (err == null) {
+      Navigator.of(context).pop();
+    } else {
+      setState(() {
+        _busy = false;
+        _error = err;
+      });
+    }
+  }
+
+  void _enter() {
+    if (_who == null) {
+      _lookup();
+    } else if (_codeFocus.hasFocus && _code.text.trim().isNotEmpty) {
+      _verify();
+    } else if (_nameFocus.hasFocus) {
+      _keysFocus.requestFocus();
+    } else {
+      _pay();
+    }
+  }
+
+  void _key(String k) {
+    final input = _who == null ? _phone : _amount;
+    if (_who == null && k.length > 1) return; // «000» в номере не нужно
+    if (input.key(k)) setState(() => _error = null);
+  }
+
+  void _back() {
+    if (_who == null) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() {
+      _who = null;
+      _amount.value = '';
+      _channel = null;
+      _code.clear();
+      _error = null;
+    });
+    _keysFocus.requestFocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final w = _who;
+    return Focus(
+      focusNode: _keysFocus,
+      autofocus: true,
+      onKeyEvent: (_, e) {
+        if (e is KeyUpEvent) return KeyEventResult.ignored;
+        if (e.logicalKey == LogicalKeyboardKey.escape && w != null) {
+          _back();
+          return KeyEventResult.handled;
+        }
+        if (_typing) {
+          // В полях имени и кода буквы печатает само поле; перехватываем только Enter.
+          if (isEnter(e)) {
+            _enter();
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        }
+        return _keys(e, onEnter: _enter, onChar: _key);
+      },
+      child: _Shell(
+        title: 'В долг',
+        subtitle: w == null ? 'Номер телефона покупателя — по нему он увидит долг в приложении' : fmtUzPhone(w.phone),
+        right: fmtMoney(sale.due),
+        children: w == null ? _phoneStage() : _cardStage(w),
+      ),
+    );
+  }
+
+  List<Widget> _phoneStage() => [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: C.brand, width: 2)),
+          child: Row(children: [
+            Text('+998', style: t(32, w: FontWeight.w700, c: C.ts)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(_phone.value.isEmpty ? '90 123 45 67' : fmtLocalDigits(_phone.value),
+                  style: t(36, w: FontWeight.w800, c: _phone.value.isEmpty ? C.td : C.tp)),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 12),
+        _Pad(onKey: _key, extra: ''),
+        const SizedBox(height: 12),
+        _Footer(back: 'Назад', primary: _busy ? 'Ищем…' : 'Найти покупателя', onPrimary: _phone.value.length == 9 ? _lookup : null, busy: _busy),
+        const SizedBox(height: 10),
+        Text(_error ?? 'Ищем только по номеру. Нет связи — касса возьмёт долг из своего каталога.',
+            style: t(12, c: _error != null ? C.error : C.ts)),
+      ];
+
+  List<Widget> _cardStage(DebtorView w) {
+    final status = w.blocked
+        ? ('Стоп-лист', C.error, C.errorSoft)
+        : w.overdueDays > 0
+            ? ('Просрочка ${w.overdueDays} дн.', C.warning, C.warningSoft)
+            : !w.found
+                ? ('Новый покупатель', C.ts, C.subtle)
+                : w.verified
+                    ? ('Номер подтверждён', C.success, C.successSoft)
+                    : ('Номер не подтверждён', C.warning, C.warningSoft);
+    Widget fact(String label, String value, {Color c = C.tp}) => Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(12)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(label, style: t(12, c: C.ts)),
+              FittedBox(child: Text(value, style: t(22, w: FontWeight.w700, c: c))),
+            ]),
+          ),
+        );
+    Widget restBtn(String kind, String label) {
+      final on = _restKind == kind;
+      final ok = sale.method(kind) != null;
+      return Expanded(
+        child: Opacity(
+          opacity: ok ? 1 : 0.4,
+          child: _Btn(
+            onTap: ok ? () => setState(() => _restKind = kind) : null,
+            color: on ? C.brandSoft : C.surface,
+            border: on ? C.brand : C.border,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Center(child: Text(label, style: t(15, w: FontWeight.w600, c: on ? C.brand : C.tp))),
+          ),
+        ),
+      );
+    }
+
+    final newNumber = !w.verified && !w.blocked;
+    final debt = _debt;
+    final rest = _rest;
+    final problem = _problem;
+    return [
+      Row(children: [
+        Expanded(
+          child: w.found && w.name.isNotEmpty
+              ? Text(w.name, style: t(22, w: FontWeight.w700))
+              : TextField(
+                  controller: _name,
+                  focusNode: _nameFocus,
+                  onChanged: (_) => setState(() => _error = null),
+                  decoration: const InputDecoration(labelText: 'Имя покупателя', hintText: 'Как к нему обращаться'),
+                ),
+        ),
+        const SizedBox(width: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(color: status.$3, borderRadius: BorderRadius.circular(20)),
+          child: Text(status.$1, style: t(13, w: FontWeight.w600, c: status.$2)),
+        ),
+      ]),
+      const SizedBox(height: 12),
+      Row(children: [
+        fact('Долг в магазине', fmtMoney(w.debt), c: w.debt > 0 ? C.brand : C.tp),
+        const SizedBox(width: 10),
+        fact('Лимит', fmtMoney(w.limit)),
+        const SizedBox(width: 10),
+        fact('Свободно', fmtMoney(w.available), c: w.available >= sale.due ? C.success : C.warning),
+      ]),
+      if (w.dueDate != null && w.debt > 0) ...[
+        const SizedBox(height: 6),
+        Text('Срок оплаты ${w.dueDate} · покупок в долг ${w.purchases}', style: t(12, c: C.ts)),
+      ],
+      if (!w.online) ...[
+        const SizedBox(height: 6),
+        Text('Нет связи: долг из каталога кассы и чеков этой смены', style: t(12, c: C.warning)),
+      ],
+      if (newNumber && w.online) ...[
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: C.warningSoft, borderRadius: BorderRadius.circular(12)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text(
+              'Без подтверждения — до ${fmtMoney(w.unverifiedLimit)}. С кодом лимит ${fmtMoney(w.defaultLimit)}'
+              '${w.requireCode ? ' — лучше подтвердить номер' : ''}.',
+              style: t(13, c: C.warning),
+            ),
+            const SizedBox(height: 8),
+            Row(children: [
+              if (_channel == null)
+                _Btn(
+                  onTap: _busy ? null : _sendCode,
+                  color: C.surface,
+                  border: C.borderStrong,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  child: Text('Отправить код', style: t(15, w: FontWeight.w600)),
+                )
+              else ...[
+                SizedBox(
+                  width: 160,
+                  child: TextField(
+                    controller: _code,
+                    focusNode: _codeFocus,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    decoration: InputDecoration(labelText: 'Код', counterText: '', helperText: _channelName(_channel!)),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                _Btn(
+                  onTap: _busy ? null : _verify,
+                  color: C.surface,
+                  border: C.borderStrong,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  child: Text('Подтвердить', style: t(15, w: FontWeight.w600)),
+                ),
+              ],
+            ]),
+          ]),
+        ),
+      ],
+      const SizedBox(height: 12),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: C.brand, width: 2)),
+        child: Column(children: [
+          Row(children: [
+            Expanded(child: Text('В долг', style: t(16, w: FontWeight.w500, c: C.ts))),
+            Text(debt > 0 ? fmtMoney(debt) : '—', style: t(36, w: FontWeight.w800, c: _amount.value.isEmpty ? C.tp : C.brand)),
+          ]),
+          if (rest > 0 && debt > 0)
+            Row(children: [
+              Expanded(child: Text(_restKind == 'cash' ? 'Остаток наличными' : 'Остаток картой', style: t(16, w: FontWeight.w600, c: C.ts))),
+              Text(fmtMoney(rest), style: t(28, w: FontWeight.w800)),
+            ]),
+          if (debt > 0)
+            Row(children: [
+              Expanded(child: Text('Долг станет', style: t(13, c: C.ts))),
+              Text(fmtMoney(w.debt + debt), style: t(16, w: FontWeight.w700, c: C.brand)),
+            ]),
+        ]),
+      ),
+      if (rest > 0 && debt > 0) ...[
+        const SizedBox(height: 10),
+        Row(children: [restBtn('cash', 'Остаток наличными'), const SizedBox(width: 10), restBtn('card', 'Остаток картой')]),
+      ],
+      const SizedBox(height: 10),
+      _Pad(onKey: _key),
+      const SizedBox(height: 12),
+      _Footer(
+        back: 'Другой номер',
+        onBack: _back,
+        primary: rest > 0 && debt > 0 ? 'Пробить · ${fmtMoney(debt)} в долг + ${fmtMoney(rest)}' : 'Пробить в долг · ${fmtMoney(debt)}',
+        onPrimary: problem == null ? _pay : null,
+        busy: _busy,
+      ),
+      const SizedBox(height: 10),
+      Text(_error ?? problem ?? 'Цифры — другая сумма в долг, остаток — наличными или картой. Покупатель увидит долг в приложении.',
+          style: t(12, c: _error != null || problem != null ? C.error : C.ts)),
+    ];
+  }
+
+  static String _channelName(String ch) => switch (ch) {
+        'telegram' => 'отправлен в Telegram',
+        'push' => 'отправлен в приложение',
+        'dev' => 'тестовый режим сервера',
+        _ => 'код отправлен',
+      };
 }
