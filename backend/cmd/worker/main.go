@@ -16,6 +16,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sanedidi/super-market/backend/internal/billing"
+	"github.com/sanedidi/super-market/backend/internal/debts"
 	"github.com/sanedidi/super-market/backend/internal/family"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/notify"
@@ -100,6 +101,8 @@ func run() error {
 		{Name: "family_reminders", Run: family.NewService(pool, ord, dlv, cfg.TelegramBotUsername).Remind},
 		{Name: "owner_summary", Run: summary.NewService(pool, log).Tick},
 		{Name: "billing", Run: billing.NewService(pool, notify.New(pool, sender, log), log).Tick},
+		// Долги покупателей: напоминание в день оплаты (10:00), за 3 дня и после срока.
+		{Name: "debt_reminders", Run: debts.NewService(pool, nil, "", cfg.JWTSecret, nil, log).Tick},
 	}
 
 	log.Info("worker запущен", "interval", cfg.WorkerInterval, "jobs", len(jobs))

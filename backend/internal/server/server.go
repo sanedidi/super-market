@@ -15,6 +15,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/ai"
 	"github.com/sanedidi/super-market/backend/internal/billing"
 	"github.com/sanedidi/super-market/backend/internal/catalog"
+	"github.com/sanedidi/super-market/backend/internal/debts"
 	"github.com/sanedidi/super-market/backend/internal/delivery"
 	"github.com/sanedidi/super-market/backend/internal/family"
 	"github.com/sanedidi/super-market/backend/internal/finance"
@@ -92,6 +93,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 	bill := billing.NewService(pool, notify.New(pool, tg, log), log)
 
 	salesSvc := sales.NewService(pool)
+	debtSvc := debts.NewService(pool, tg, cfg.DevOTPCode, cfg.JWTSecret, sales.CheckShiftTime, log)
 	fcm := PushSender(cfg, log)
 	invSvc := inventory.NewService(pool)
 	mediaSvc := MediaService(cfg)
@@ -112,7 +114,8 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		finance.NewModule(finance.NewService(pool), auth, log),
 		inventory.NewModule(invSvc, auth, log),
 		sales.NewModule(salesSvc, auth, log),
-		pos.NewModule(pos.NewService(pool, salesSvc), auth, log),
+		pos.NewModule(pos.NewService(pool, salesSvc).WithDebts(debtSvc), auth, log),
+		debts.NewModule(debtSvc, auth, log),
 		orders.NewModule(ord, dlv, pay, auth, log),
 		billing.NewModule(bill, auth, log),
 		ads.NewModule(ads.NewService(pool), auth, log),

@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/sanedidi/super-market/backend/internal/catalog"
+	"github.com/sanedidi/super-market/backend/internal/debts"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 )
 
@@ -52,6 +53,8 @@ type Settings struct {
 	ReceiptHeader  string   `json:"receipt_header"`
 	ReceiptFooter  string   `json:"receipt_footer"`
 	WeightPrefixes []string `json:"weight_prefixes"`
+	// «Даёт в долг»: показывать ли кассиру продажу в долг.
+	DebtEnabled bool `json:"debt_enabled"`
 }
 
 type Catalog struct {
@@ -64,6 +67,8 @@ type Catalog struct {
 	PaymentMethods []PaymentMethod  `json:"payment_methods"`
 	Settings       Settings         `json:"settings"`
 	OpenShiftID    *string          `json:"open_shift_id"`
+	// Покупатели сети с долгом в этом магазине — для продажи в долг без связи.
+	Debtors []debts.CatalogDebtor `json:"debtors"`
 }
 
 // Перекрытие окна: изменения, которые закоммитились чуть позже версии,
@@ -79,11 +84,11 @@ func (s *Service) Catalog(ctx context.Context, p *identity.Principal, since *tim
 	out.Version = out.Version.UTC()
 	err := s.pool.QueryRow(ctx, `
 		SELECT d.id, d.name, st.id, st.name, COALESCE(st.address, ''), n.name, n.receipt_header, n.receipt_footer, n.pos_weight_prefixes,
-		       (SELECT sh.id FROM pos_shifts sh WHERE sh.device_id = d.id AND sh.closed_at IS NULL)
+		       st.debt_enabled, (SELECT sh.id FROM pos_shifts sh WHERE sh.device_id = d.id AND sh.closed_at IS NULL)
 		FROM pos_devices d JOIN stores st ON st.id = d.store_id JOIN networks n ON n.id = d.network_id
 		WHERE d.id = $1`, p.DeviceID).Scan(&out.Settings.DeviceID, &out.Settings.DeviceName, &out.Settings.StoreID,
 		&out.Settings.StoreName, &out.Settings.StoreAddress, &out.Settings.NetworkName, &out.Settings.ReceiptHeader,
-		&out.Settings.ReceiptFooter, &out.Settings.WeightPrefixes, &out.OpenShiftID)
+		&out.Settings.ReceiptFooter, &out.Settings.WeightPrefixes, &out.Settings.DebtEnabled, &out.OpenShiftID)
 	if err != nil {
 		return out, err
 	}
@@ -141,7 +146,10 @@ func (s *Service) Catalog(ctx context.Context, p *identity.Principal, since *tim
 	if err != nil {
 		return out, err
 	}
-	out.PaymentMethods, err = pgx.CollectRows(rows, pgx.RowToStructByPos[PaymentMethod])
+	if out.PaymentMethods, err = pgx.CollectRows(rows, pgx.RowToStructByPos[PaymentMethod]); err != nil {
+		return out, err
+	}
+	out.Debtors, err = debts.CatalogDebtors(ctx, s.pool, p.NetworkID, storeID)
 	return out, err
 }
 

@@ -33,7 +33,32 @@ function Blocks() {
       {setup && <SetupChecklist s={setup} />}
       <StartBlock />
       {!(checklist && !setup.steps.delivery) && <WishesBlock />}
+      <DebtsBlock />
     </>
+  )
+}
+
+/** Долги покупателей: сколько должны и сколько просрочено. */
+function DebtsBlock() {
+  const { storeId, can } = useStore()
+  const nav = useNavigate()
+  const d = useItem<{ total: string; count: number; overdue: string; overdue_count: number; open_disputes: number }>(
+    can('debts.manage') ? '/store/debtors/summary' : null,
+    { store_id: storeId },
+  ).data
+  if (!d || d.count === 0) return null
+  const extra = [d.overdue_count > 0 && `просрочено ${money(d.overdue)} у ${d.overdue_count}`, d.open_disputes > 0 && `споров: ${d.open_disputes}`]
+    .filter(Boolean)
+    .join(' · ')
+  return (
+    <Alert
+      style={{ marginBottom: 16 }}
+      type={d.overdue_count > 0 || d.open_disputes > 0 ? 'warning' : 'info'}
+      showIcon
+      message={`Долги покупателей: ${money(d.total)} сум у ${d.count}`}
+      description={extra || undefined}
+      action={<Button size="small" onClick={() => nav('/debts')}>Открыть</Button>}
+    />
   )
 }
 

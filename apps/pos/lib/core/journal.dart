@@ -61,6 +61,28 @@ class Payment {
       amount: j['amount'] as int);
 }
 
+/// Часть чека в долг: покупатель по номеру телефона.
+class DebtPart {
+  DebtPart({required this.phone, this.name = '', required this.amount, this.balance = 0});
+
+  /// +998XXXXXXXXX.
+  final String phone;
+  final String name;
+
+  /// Сколько в долг, в тийинах.
+  final int amount;
+
+  /// Долг покупателя в магазине после этой покупки (для чека).
+  final int balance;
+
+  Map<String, dynamic> toJson() => {'phone': phone, 'name': name, 'amount': amount, 'balance': balance};
+  factory DebtPart.fromJson(Map<String, dynamic> j) => DebtPart(
+      phone: j['phone'] as String? ?? '',
+      name: j['name'] as String? ?? '',
+      amount: j['amount'] as int,
+      balance: (j['balance'] as int?) ?? 0);
+}
+
 /// Пробитый чек — в журнале смены и в очереди на сервер.
 class SaleRecord {
   SaleRecord({
@@ -74,9 +96,13 @@ class SaleRecord {
     required this.payments,
     this.received = 0,
     this.fiscal,
+    this.debt,
   });
 
   final String uid;
+
+  /// Часть итога в долг; null — оплачено полностью.
+  final DebtPart? debt;
 
   /// Номер чека на этой кассе (номер на сервере появится после отправки).
   final int seq;
@@ -93,7 +119,7 @@ class SaleRecord {
   /// Ответ фискального модуля; null — тестовый режим, чек не фискальный.
   final Map<String, dynamic>? fiscal;
 
-  int get total => payments.fold(0, (s, p) => s + p.amount);
+  int get total => payments.fold(0, (s, p) => s + p.amount) + (debt?.amount ?? 0);
   int get cash => payments.where((p) => p.kind == 'cash').fold(0, (s, p) => s + p.amount);
   int get change => received > cash ? received - cash : 0;
   int get discount => lines.fold(0, (s, l) => s + (l['discount'] as int));
@@ -135,6 +161,7 @@ class SaleRecord {
         'payments': [
           for (final p in payments) {'payment_method_id': p.methodId, 'amount': moneyApi(p.amount)},
         ],
+        if (debt != null) 'debt': {'phone': debt!.phone, 'full_name': debt!.name, 'amount': moneyApi(debt!.amount)},
         if (fiscal != null) 'fiscal': fiscal,
       };
 
@@ -150,6 +177,7 @@ class SaleRecord {
         'payments': [for (final p in payments) p.toJson()],
         'received': received,
         'fiscal': fiscal,
+        if (debt != null) 'debt': debt!.toJson(),
       };
 
   factory SaleRecord.fromJson(Map<String, dynamic> j) => SaleRecord(
@@ -163,6 +191,79 @@ class SaleRecord {
         payments: ((j['payments'] as List?) ?? const []).map((e) => Payment.fromJson(e as Map<String, dynamic>)).toList(),
         received: (j['received'] as int?) ?? 0,
         fiscal: j['fiscal'] as Map<String, dynamic>?,
+        debt: j['debt'] is Map ? DebtPart.fromJson(j['debt'] as Map<String, dynamic>) : null,
+      );
+}
+
+/// Погашение долга на кассе — в журнале смены и в очереди на сервер.
+class DebtPaymentRecord {
+  DebtPaymentRecord({
+    required this.uid,
+    required this.shiftUid,
+    required this.phone,
+    required this.name,
+    required this.amount,
+    required this.kind,
+    required this.methodId,
+    required this.methodName,
+    required this.at,
+    required this.cashierId,
+    this.balance = 0,
+  });
+
+  final String uid;
+  final String shiftUid;
+  final String phone;
+  final String name;
+  final int amount;
+
+  /// Вид способа оплаты: cash, card…
+  final String kind;
+  final String methodId;
+  final String methodName;
+  final DateTime at;
+  final String cashierId;
+
+  /// Долг после оплаты (как его знала касса).
+  final int balance;
+
+  /// Тело POST /pos/debt-payments.
+  Map<String, dynamic> apiBody(String shiftId) => {
+        'client_uid': uid,
+        'shift_id': shiftId,
+        'phone': phone,
+        'amount': moneyApi(amount),
+        'payment_method_id': methodId,
+        'paid_at': at.toUtc().toIso8601String(),
+      };
+
+  Map<String, dynamic> toJson() => {
+        'type': 'debt_payment',
+        'uid': uid,
+        'shift_uid': shiftUid,
+        'phone': phone,
+        'name': name,
+        'amount': amount,
+        'kind': kind,
+        'method_id': methodId,
+        'method_name': methodName,
+        'at': at.toUtc().toIso8601String(),
+        'cashier_id': cashierId,
+        'balance': balance,
+      };
+
+  factory DebtPaymentRecord.fromJson(Map<String, dynamic> j) => DebtPaymentRecord(
+        uid: j['uid'] as String,
+        shiftUid: j['shift_uid'] as String,
+        phone: j['phone'] as String? ?? '',
+        name: j['name'] as String? ?? '',
+        amount: j['amount'] as int,
+        kind: j['kind'] as String? ?? 'cash',
+        methodId: j['method_id'] as String? ?? '',
+        methodName: j['method_name'] as String? ?? '',
+        at: DateTime.parse(j['at'] as String),
+        cashierId: j['cashier_id'] as String? ?? '',
+        balance: (j['balance'] as int?) ?? 0,
       );
 }
 
@@ -220,11 +321,15 @@ class ReturnRecord {
     required this.at,
     this.number = 0,
     this.fiscal,
+    this.debtAmount = 0,
   });
 
   final String id;
   final String shiftUid;
   final int saleNumber;
+
+  /// Сколько из возврата ушло в счёт долга покупателя (не деньгами).
+  final int debtAmount;
 
   /// Номер возврата на сервере.
   final int number;
@@ -247,6 +352,7 @@ class ReturnRecord {
         'at': at.toUtc().toIso8601String(),
         'number': number,
         'fiscal': fiscal,
+        'debt_amount': debtAmount,
       };
 
   factory ReturnRecord.fromJson(Map<String, dynamic> j) => ReturnRecord(
@@ -259,6 +365,7 @@ class ReturnRecord {
         at: DateTime.parse(j['at'] as String),
         number: (j['number'] as int?) ?? 0,
         fiscal: j['fiscal'] as Map<String, dynamic>?,
+        debtAmount: (j['debt_amount'] as int?) ?? 0,
       );
 }
 
@@ -284,11 +391,24 @@ class ShiftReport {
           (byMethod[p.name] ??= MethodTotal(p.name, p.kind)).sales += p.amount;
           if (p.kind == 'cash') cashSales += p.amount;
         }
+        if (e.debt != null) {
+          debtGiven += e.debt!.amount;
+          debtGivenCount++;
+        }
       } else if (e is ReturnRecord) {
         returnsCount++;
         returnsTotal += e.total;
-        (byMethod[e.methodName] ??= MethodTotal(e.methodName, e.kind)).returns += e.total;
-        if (e.kind == 'cash') cashReturns += e.total;
+        // Часть возврата могла уйти в счёт долга — денег из ящика меньше.
+        final money = e.total - e.debtAmount;
+        (byMethod[e.methodName] ??= MethodTotal(e.methodName, e.kind)).returns += money;
+        if (e.kind == 'cash') cashReturns += money;
+      } else if (e is DebtPaymentRecord) {
+        debtPaidCount++;
+        if (e.kind == 'cash') {
+          debtPaidCash += e.amount;
+        } else {
+          debtPaidOther += e.amount;
+        }
       } else if (e is CashMoveRecord) {
         moves.add(e);
         if (e.kind == 'in') {
@@ -319,10 +439,18 @@ class ShiftReport {
   final Map<String, MethodTotal> byMethod = {};
   final List<CashMoveRecord> moves = [];
 
+  /// Отпущено в долг и погашено долгов за смену.
+  int debtGiven = 0;
+  int debtGivenCount = 0;
+  int debtPaidCash = 0;
+  int debtPaidOther = 0;
+  int debtPaidCount = 0;
+
   int get average => salesCount == 0 ? 0 : salesTotal ~/ salesCount;
 
-  /// Должно быть в ящике: размен + наличные продажи − наличные возвраты + внесения − изъятия.
-  int get expectedCash => shift.openingCash + cashSales - cashReturns + cashIn - cashOut;
+  /// Должно быть в ящике: размен + наличные продажи − наличные возвраты + внесения − изъятия
+  /// + наличные погашения долгов.
+  int get expectedCash => shift.openingCash + cashSales - cashReturns + cashIn - cashOut + debtPaidCash;
 }
 
 /// Запись журнала из JSON.
@@ -330,5 +458,6 @@ Object journalEntry(Map<String, dynamic> j) => switch (j['type']) {
       'sale' => SaleRecord.fromJson(j),
       'move' => CashMoveRecord.fromJson(j),
       'return' => ReturnRecord.fromJson(j),
+      'debt_payment' => DebtPaymentRecord.fromJson(j),
       _ => j,
     };

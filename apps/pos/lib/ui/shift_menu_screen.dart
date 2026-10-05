@@ -6,6 +6,7 @@ import '../core/journal.dart';
 import '../core/money.dart';
 import '../state/pos.dart';
 import 'close_shift_screen.dart';
+import 'debt_payment_dialog.dart';
 import 'equipment_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -62,6 +63,11 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
     await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const EquipmentScreen()));
   }
 
+  Future<void> _debtPayment() async {
+    if (!pos.canTakeDebtPayment) return;
+    await showDebtPaymentDialog(context, pos);
+  }
+
   void _changeCashier() {
     Navigator.of(context).pop();
     pos.logout();
@@ -103,6 +109,8 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
         _close();
       case '6':
         _equipment();
+      case '7':
+        _debtPayment();
       default:
         return false;
     }
@@ -181,6 +189,10 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
                     KeyCard(keyLabel: '5', title: 'Закрыть смену', subtitle: 'пересчёт наличных и Z-отчёт', onTap: _close),
                     const SizedBox(height: 10),
                     KeyCard(keyLabel: '6', title: 'Оборудование', subtitle: 'принтер, ящик, фискальный модуль', onTap: _equipment),
+                    if (pos.canTakeDebtPayment) ...[
+                      const SizedBox(height: 10),
+                      KeyCard(keyLabel: '7', title: 'Погашение долга', subtitle: 'покупатель по номеру · наличные или карта', onTap: _debtPayment),
+                    ],
                     const SizedBox(height: 10),
                     KeyCard(keyLabel: 'Esc', title: 'Назад к продаже', onTap: () => Navigator.of(context).pop()),
                     if (_error != null) ...[
@@ -246,6 +258,13 @@ class XReportView extends StatelessWidget {
           for (final m in r.byMethod.values)
             row(m.name, m.returns == 0 ? fmtMoney(m.sales) : '${fmtMoney(m.sales)}  (возвраты −${fmtMoney(m.returns)})'),
           if (r.discounts > 0) row('Скидки', fmtMoney(r.discounts)),
+          if (r.debtGivenCount > 0 || r.debtPaidCount > 0) ...[
+            const SizedBox(height: 12),
+            Text('Долги покупателей', style: t(15, w: FontWeight.w700)),
+            if (r.debtGivenCount > 0) row('Отпущено в долг · ${r.debtGivenCount} чеков', fmtMoney(r.debtGiven)),
+            if (r.debtPaidCash > 0) row('Погашено наличными', '+${fmtMoney(r.debtPaidCash)}'),
+            if (r.debtPaidOther > 0) row('Погашено картой и др.', '+${fmtMoney(r.debtPaidOther)}'),
+          ],
           const SizedBox(height: 12),
           Text('Движение наличных', style: t(15, w: FontWeight.w700)),
           row('Размен на начало', fmtMoney(s.openingCash)),

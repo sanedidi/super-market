@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/sanedidi/super-market/backend/internal/debts"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
@@ -83,6 +84,8 @@ type Report struct {
 	ExpectedCash string `json:"expected_cash"`
 	// Чеки без фискального признака — их касса ещё не досылала.
 	FiscalPending int `json:"fiscal_pending"`
+	// Долги покупателей: отпущено в долг и погашено за смену.
+	debts.ShiftDebt
 }
 
 func (s *Service) shift(ctx context.Context, q db.Querier, p *identity.Principal, id string) (Shift, error) {
@@ -112,7 +115,7 @@ func (s *Service) report(ctx context.Context, q db.Querier, sh Shift) (Report, e
 		       (SELECT COALESCE(sum(amount), 0) FROM pos_cash_moves WHERE shift_id = $1 AND kind = 'out')::numeric(18,2)::text,
 		       (SELECT COALESCE(sum(sp.amount), 0) FROM sale_payments sp JOIN sales sl ON sl.id = sp.sale_id
 		          JOIN payment_methods m ON m.id = sp.payment_method_id WHERE sl.shift_id = $1 AND m.kind = 'cash')::numeric(18,2)::text,
-		       (SELECT COALESCE(sum(cr.total), 0) FROM customer_returns cr JOIN payment_methods m ON m.id = cr.payment_method_id
+		       (SELECT COALESCE(sum(cr.total - cr.debt_amount), 0) FROM customer_returns cr JOIN payment_methods m ON m.id = cr.payment_method_id
 		          WHERE cr.shift_id = $1 AND m.kind = 'cash')::numeric(18,2)::text,
 		       (SELECT count(*) FROM sales WHERE shift_id = $1 AND fiscal_status = 'pending')::int`, sh.ID).Scan(
 		&r.SalesCount, &r.SalesTotal, &r.Discounts, &r.ReturnsCount, &r.ReturnsTotal, &r.CashIn, &r.CashOut,
@@ -120,12 +123,16 @@ func (s *Service) report(ctx context.Context, q db.Querier, sh Shift) (Report, e
 	if err != nil {
 		return r, err
 	}
+	if r.ShiftDebt, err = debts.ShiftTotals(ctx, q, sh.ID); err != nil {
+		return r, err
+	}
+	// Наличные погашения долгов тоже лежат в ящике.
 	r.ExpectedCash = money.D(sh.OpeningCash).Add(money.D(r.CashSales)).Sub(money.D(r.CashReturns)).
-		Add(money.D(r.CashIn)).Sub(money.D(r.CashOut)).Money()
+		Add(money.D(r.CashIn)).Sub(money.D(r.CashOut)).Add(money.D(r.PaidCash)).Money()
 	rows, err := q.Query(ctx, `
 		WITH s AS (SELECT sp.payment_method_id AS m, sum(sp.amount) AS v FROM sale_payments sp JOIN sales sl ON sl.id = sp.sale_id
 		           WHERE sl.shift_id = $1 GROUP BY 1),
-		     r AS (SELECT payment_method_id AS m, sum(total) AS v FROM customer_returns WHERE shift_id = $1 GROUP BY 1)
+		     r AS (SELECT payment_method_id AS m, sum(total - debt_amount) AS v FROM customer_returns WHERE shift_id = $1 GROUP BY 1)
 		SELECT pm.id, pm.name, pm.kind, COALESCE(s.v, 0)::numeric(18,2)::text, COALESCE(r.v, 0)::numeric(18,2)::text
 		FROM payment_methods pm LEFT JOIN s ON s.m = pm.id LEFT JOIN r ON r.m = pm.id
 		WHERE s.m IS NOT NULL OR r.m IS NOT NULL

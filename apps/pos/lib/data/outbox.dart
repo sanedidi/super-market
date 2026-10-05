@@ -76,6 +76,9 @@ class Outbox {
   DateTime? get oldestPendingAt => _pending.isEmpty ? null : _pending.first.at;
   List<OutboxItem> get failed => List.unmodifiable(_failed);
 
+  /// События в очереди (ещё не на сервере).
+  List<OutboxItem> get pendingItems => List.unmodifiable(_pending);
+
   Future<void> load() async {
     final ids = await store.readJson('shift_ids.json');
     ids?.forEach((k, v) => shiftIds[k] = v as String);
@@ -191,6 +194,11 @@ class Outbox {
         final id = _shiftId(sale.shiftUid);
         final res = await api.post('/pos/sales', sale.apiBody(id), cashier: item.cashier) as Map<String, dynamic>;
         await onSaleSent?.call(sale.uid, res['id'] as String, (res['number'] as num).toInt());
+      }
+      case 'debt_payment': {
+        final rec = DebtPaymentRecord.fromJson(b);
+        final id = _shiftId(rec.shiftUid);
+        await api.post('/pos/debt-payments', rec.apiBody(id), cashier: item.cashier);
       }
       case 'shift_close': {
         final id = _shiftId(b['shift_uid'] as String);

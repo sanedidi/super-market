@@ -815,6 +815,58 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 останавливает продажи; без связи больше 24 часов касса тоже не продаёт, пока очередь не уйдёт.
 
 
+## Долги покупателей
+
+Магазин продаёт «в долг» покупателю по номеру телефона. Долг считается по журналу `debt_entries`
+(продажа +, оплата −, возврат −, списание −) отдельно по каждой паре «покупатель — магазин»; покупатель
+один на сеть. Срок — `term_days` с первой покупки в долг после последнего нуля. Признак магазина
+`debt_enabled` («Даёт в долг») только показывает или прячет кнопку «В долг» на кассе — покупателям его не отдаём.
+
+Права: `debts.give` — продавать в долг на кассе; `debts.manage` — список, оплата, напоминания, лимиты, списания,
+споры, настройки. Принять погашение на кассе может любой кассир (`sales.pos`).
+
+### Касса (токен устройства, `X-Cashier-ID`)
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/pos/catalog` | дополнительно `settings.debt_enabled` и `debtors [{phone, full_name, debt, limit, blocked, verified}]` — для работы без связи |
+| GET | `/pos/debtors?phone=` | `{found, phone, debtor: Balance\|null, purchases, unverified_limit, default_limit, require_code, debt_enabled}` |
+| POST | `/pos/debtors/code` | `{phone}` → `{channel: telegram\|push\|dev, expires_in}`; 409 `no_channel` — некуда отправить, записать без кода |
+| POST | `/pos/debtors/verify` | `{phone, code, full_name}` → как `GET /pos/debtors`, номер подтверждён (лимит — `default_limit`) |
+| POST | `/pos/sales` | `debt: {phone, full_name, amount}` — часть итога в долг; `payments` — остаток (может быть пустым). Сверх лимита касса не останавливается: продажа сохраняется с `debt_over_limit` |
+| POST | `/pos/returns` | возврат чека с долгом сначала уменьшает долг: в ответе `debt_amount`, деньгами отдаётся остальное |
+| POST | `/pos/debt-payments` | `{client_uid, shift_id, phone, amount, payment_method_id, paid_at}` — погашение на кассе, идемпотентно по `client_uid`; наличные попадают в «должно быть в ящике» |
+
+Без фискального модуля продажа в долг работает; с фискальным модулем касса её не проводит, пока не уточнены правила ОФД.
+
+### Панель и «SM Магазин»
+
+| Метод | Путь | Право | Описание |
+|---|---|---|---|
+| GET | `/store/debtors?store_id=&status=all\|overdue\|blocked\|unverified\|disputes&q=` | `debts.manage` или `debts.give` | `items [Balance]`: `debtor_id, phone, full_name, store_id, store_name, amount, limit, available, blocked, verified, since, due_date, overdue_days, last_paid_at, last_reminder_at, open_disputes` — по сумме долга |
+| GET | `/store/debtors/summary?store_id=` | то же | `total, count, overdue, overdue_count, unverified, open_disputes, given_today, given_today_count, paid_today, paid_today_cash, paid_today_other` |
+| GET | `/store/debtors/{id}?store_id=` | то же | карточка: `phone, full_name, credit_limit, blocked, verified, note, has_app, stores [Balance], entries [{id, store_id, store_name, doc_type, doc_id, number, amount, balance, detail, employee, dispute_status, created_at}], sales_count, sales_amount` |
+| PATCH | `/store/debtors/{id}` | `debts.manage` | `{full_name, credit_limit (null — по настройкам сети), blocked, note}` |
+| POST | `/store/debtors/{id}/remind` | `debts.manage` | `{store_id}` → `{sent_at, next_at}`; 409 `no_debt`, `no_app`, `too_soon` (не чаще раза в сутки) |
+| POST | `/store/debt-payments` | `debts.manage` | `{debtor_id, store_id, amount, payment_method_id, note}` → `{id, number, amount, payment_method, payment_kind, balance, paid_at}`; деньги — в кассу способа оплаты |
+| POST | `/store/debt-writeoffs` | `debts.manage` | `{debtor_id, store_id, amount, reason}` |
+| GET | `/store/debt-disputes?store_id=&status=open\|accepted\|rejected\|all` | `debts.manage` | жалобы «Это не я» |
+| POST | `/store/debt-disputes/{id}/resolve` | `debts.manage` | `{status: accepted}` — запись ошибочна, долг списывается; `rejected` — запись верна. Покупателю — push |
+| GET/PUT | `/store/debt-settings` | `debts.manage` | `{default_limit, unverified_limit, term_days, require_code, extra_reminders, stores [{store_id, name, debt_enabled}]}` (по умолчанию 500 000 / 100 000 / 30 дней) |
+| PUT | `/store/debt-settings/stores/{id}` | `debts.manage` | `{debt_enabled}` — «Даёт в долг» |
+
+### Приложение покупателя
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/client/debts` | долги по номеру аккаунта во всех сетях: `{total, next_due, stores [{store_id, name, address, phone, logo_url, lat, lng, amount, since, due_date, overdue_days}]}` |
+| GET | `/client/debts/{store_id}` | то же по магазину + `entries [{id, doc_type, number, amount, balance, detail, dispute_status, created_at, sale?: {total, paid, debt, items [{name, qty, unit, total}]}}]` |
+| POST | `/client/debts/entries/{id}/dispute` | `{comment}` — «Это не я» по покупке в долг; владельцу push `{type: debt_dispute, entry_id}`; 409 `already_disputed` |
+
+Уведомления покупателю — `data {type: debt, store_id}`: `debt_added` (записали в долг), `debt_paid` (оплата принята),
+`debt_reminder` (день оплаты — всегда в 10:00 по Ташкенту; за 3 дня и после просрочки — если `extra_reminders`;
+ручное «Напомнить»). Тихие часы 22:00–08:00: уведомление ждёт утра.
+
 ## Удаление (DELETE → 204)
 
 Ответы: 404 — нет записи; 409 `in_use` — запись используется (`details.deactivate: true` — можно отключить);

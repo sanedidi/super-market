@@ -3,6 +3,7 @@ import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { Flex, Result, Select, Spin } from 'antd'
 import {
   AppstoreOutlined,
+  AuditOutlined,
   BarChartOutlined,
   BookOutlined,
   CarOutlined,
@@ -50,6 +51,7 @@ import { CrowdPage } from './pages/Crowd'
 import { ShowcasePage } from './pages/Showcase'
 import { StoreAdsPage } from './pages/StoreAds'
 import { PosDevicesPage, PosShiftsPage } from './pages/Pos'
+import { DebtSettingsPage, DebtorsPage } from './pages/Debts'
 import { OrderAlerts } from './notify'
 
 const TITLE = 'Панель магазина'
@@ -86,6 +88,7 @@ const MENU: Item[] = [
       { key: '/pos/shifts', label: 'Смены', perm: ['reports.view', 'finance.manage'] },
     ],
   },
+  { key: '/debts', label: 'Долги покупателей', icon: <AuditOutlined />, perm: ['debts.manage', 'debts.give'] },
   {
     key: 'purchases',
     label: 'Закупки',
@@ -154,6 +157,7 @@ const MENU: Item[] = [
     children: [
       { key: '/settings/stores', label: 'Магазины', perm: 'stores.manage' },
       { key: '/settings/delivery', label: 'Доставка', perm: 'stores.manage' },
+      { key: '/settings/debts', label: 'Долги покупателей', perm: ['debts.manage', 'debts.give'] },
       { key: '/settings/roles', label: 'Роли', perm: 'staff.manage' },
       { key: '/settings/employees', label: 'Сотрудники', perm: 'staff.manage' },
     ],
@@ -244,6 +248,8 @@ export function StoreRoutes() {
 
         <Route path="pos/devices" element={<PosDevicesPage />} />
         <Route path="pos/shifts" element={<PosShiftsPage />} />
+        <Route path="debts" element={<DebtorsPage />} />
+        <Route path="settings/debts" element={<DebtSettingsPage />} />
 
         <Route path="sales/pos" element={<SalesPage />} />
         <Route path="sales/returns" element={<ReturnsPage />} />

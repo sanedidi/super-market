@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sanedidi/super-market/backend/internal/catalog"
+	"github.com/sanedidi/super-market/backend/internal/debts"
 	"github.com/sanedidi/super-market/backend/internal/finance"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/inventory"
@@ -54,26 +55,32 @@ type SalePayment struct {
 }
 
 type Sale struct {
-	ID            string        `json:"id"`
-	Number        int64         `json:"number"`
-	StoreID       string        `json:"store_id"`
-	StoreName     string        `json:"store_name"`
-	WarehouseID   string        `json:"warehouse_id"`
-	ClientUID     string        `json:"client_uid"`
-	Subtotal      string        `json:"subtotal"`
-	Discount      string        `json:"discount"`
-	Total         string        `json:"total"`
-	CustomerPhone string        `json:"customer_phone"`
-	Note          string        `json:"note"`
-	Cashier       string        `json:"cashier"`
-	SoldAt        time.Time     `json:"sold_at"`
-	FiscalStatus  string        `json:"fiscal_status"`
-	FiscalNumber  string        `json:"fiscal_number"`
-	FiscalSign    string        `json:"fiscal_sign"`
-	FiscalQR      string        `json:"fiscal_qr"`
-	FiscalModule  string        `json:"fiscal_module"`
-	ShiftID       *string       `json:"shift_id"`
-	CreatedAt     time.Time     `json:"created_at"`
+	ID            string    `json:"id"`
+	Number        int64     `json:"number"`
+	StoreID       string    `json:"store_id"`
+	StoreName     string    `json:"store_name"`
+	WarehouseID   string    `json:"warehouse_id"`
+	ClientUID     string    `json:"client_uid"`
+	Subtotal      string    `json:"subtotal"`
+	Discount      string    `json:"discount"`
+	Total         string    `json:"total"`
+	CustomerPhone string    `json:"customer_phone"`
+	Note          string    `json:"note"`
+	Cashier       string    `json:"cashier"`
+	SoldAt        time.Time `json:"sold_at"`
+	FiscalStatus  string    `json:"fiscal_status"`
+	FiscalNumber  string    `json:"fiscal_number"`
+	FiscalSign    string    `json:"fiscal_sign"`
+	FiscalQR      string    `json:"fiscal_qr"`
+	FiscalModule  string    `json:"fiscal_module"`
+	ShiftID       *string   `json:"shift_id"`
+	CreatedAt     time.Time `json:"created_at"`
+	// В долг: сумма, покупатель и его долг в магазине сейчас (для чека).
+	DebtAmount    string        `json:"debt_amount"`
+	DebtorName    string        `json:"debtor_name"`
+	DebtorPhone   string        `json:"debtor_phone"`
+	DebtBalance   string        `json:"debt_balance"`
+	DebtOverLimit bool          `json:"debt_over_limit"`
 	Items         []SaleItem    `json:"items,omitempty"`
 	Payments      []SalePayment `json:"payments,omitempty"`
 }
@@ -81,14 +88,19 @@ type Sale struct {
 const saleSelect = `
 	SELECT s.id, s.number, s.store_id, st.name, s.warehouse_id, s.client_uid, s.subtotal::text, s.discount::text,
 	       s.total::text, s.customer_phone, s.note, e.full_name, s.sold_at, s.fiscal_status, s.fiscal_number,
-	       s.fiscal_sign, s.fiscal_qr, s.fiscal_module, s.shift_id, s.created_at
-	FROM sales s JOIN stores st ON st.id = s.store_id JOIN employees e ON e.id = s.cashier_id`
+	       s.fiscal_sign, s.fiscal_qr, s.fiscal_module, s.shift_id, s.created_at,
+	       s.debt_amount::text, COALESCE(dr.full_name, ''), COALESCE(dr.phone, ''),
+	       COALESCE((SELECT sum(de.amount) FROM debt_entries de WHERE de.debtor_id = s.debtor_id AND de.store_id = s.store_id), 0)::numeric(18,2)::text,
+	       s.debt_over_limit
+	FROM sales s JOIN stores st ON st.id = s.store_id JOIN employees e ON e.id = s.cashier_id
+	LEFT JOIN debtors dr ON dr.id = s.debtor_id`
 
 func scanSale(row pgx.CollectableRow) (Sale, error) {
 	var s Sale
 	err := row.Scan(&s.ID, &s.Number, &s.StoreID, &s.StoreName, &s.WarehouseID, &s.ClientUID, &s.Subtotal,
 		&s.Discount, &s.Total, &s.CustomerPhone, &s.Note, &s.Cashier, &s.SoldAt, &s.FiscalStatus,
-		&s.FiscalNumber, &s.FiscalSign, &s.FiscalQR, &s.FiscalModule, &s.ShiftID, &s.CreatedAt)
+		&s.FiscalNumber, &s.FiscalSign, &s.FiscalQR, &s.FiscalModule, &s.ShiftID, &s.CreatedAt,
+		&s.DebtAmount, &s.DebtorName, &s.DebtorPhone, &s.DebtBalance, &s.DebtOverLimit)
 	return s, err
 }
 
@@ -195,11 +207,20 @@ type SaleInput struct {
 		PaymentMethodID string       `json:"payment_method_id"`
 		Amount          money.Amount `json:"amount"`
 	} `json:"payments"`
+	// Часть итога в долг (покупатель по номеру телефона).
+	Debt *DebtInput `json:"debt"`
 
 	// Только для продаж с кассы (токен устройства): смена и чек, уже
 	// подписанный фискальным модулем на кассе.
 	ShiftID *string     `json:"shift_id"`
 	Fiscal  *FiscalData `json:"fiscal"`
+}
+
+// DebtInput — продажа в долг: кому и сколько.
+type DebtInput struct {
+	Phone    string       `json:"phone"`
+	FullName string       `json:"full_name"`
+	Amount   money.Amount `json:"amount"`
 }
 
 // FiscalData — что вернул фискальный модуль кассы.
@@ -249,8 +270,11 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 	if len(in.Items) == 0 || len(in.Items) > 500 {
 		return Sale{}, false, apperr.Validation("items: от 1 до 500 строк")
 	}
-	if len(in.Payments) == 0 {
+	if len(in.Payments) == 0 && in.Debt == nil {
 		return Sale{}, false, apperr.Validation("payments: укажите оплату")
+	}
+	if in.Debt != nil && (!in.Debt.Amount.Valid() || money.D(string(in.Debt.Amount)).Sign() <= 0) {
+		return Sale{}, false, apperr.Validation("debt.amount: сумма в долг должна быть больше нуля")
 	}
 
 	// Повторная отправка — отдаём уже проведённую продажу.
@@ -456,6 +480,20 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 				return err
 			}
 			paid = paid.Add(money.D(string(pay.Amount)))
+		}
+		if in.Debt != nil {
+			debt := money.D(string(in.Debt.Amount))
+			res, err := debts.Charge(ctx, tx, p, debts.ChargeInput{
+				Phone: in.Debt.Phone, Name: in.Debt.FullName, Amount: debt, StoreID: in.StoreID, SaleID: id, POS: pos,
+			})
+			if err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `UPDATE sales SET debt_amount = $2::numeric, debtor_id = $3, debt_over_limit = $4 WHERE id = $1`,
+				id, debt.Money(), res.DebtorID, res.OverLimit); err != nil {
+				return err
+			}
+			paid = paid.Add(debt)
 		}
 		if paid.Cmp(total.Round2()) != 0 {
 			return apperr.Validation("payments: сумма оплат " + paid.Money() + " не равна итогу " + total.Money()).

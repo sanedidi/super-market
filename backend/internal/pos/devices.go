@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/sanedidi/super-market/backend/internal/debts"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
@@ -25,11 +26,18 @@ import (
 type Service struct {
 	pool  *pgxpool.Pool
 	sales *sales.Service
+	debts *debts.Service
 	now   func() time.Time
 }
 
 func NewService(pool *pgxpool.Pool, salesSvc *sales.Service) *Service {
 	return &Service{pool: pool, sales: salesSvc, now: time.Now}
+}
+
+// WithDebts подключает долги покупателей (продажа в долг и погашение на кассе).
+func (s *Service) WithDebts(d *debts.Service) *Service {
+	s.debts = d
+	return s
 }
 
 // Код активации живёт сутки: владелец создаёт кассу в панели и вводит код

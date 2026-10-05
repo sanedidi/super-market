@@ -85,6 +85,7 @@ class _NotificationTile extends StatelessWidget {
 
   static (IconData, Color) _icon(String kind) {
     if (kind.startsWith('order')) return (Icons.shopping_bag_rounded, AppColors.primary);
+    if (kind.startsWith('debt')) return (Icons.account_balance_wallet_rounded, AppColors.warningInk);
     if (kind.startsWith('family')) return (Icons.family_restroom_rounded, const Color(0xFF3B6FD8));
     if (kind.startsWith('promo') || kind == 'campaign') return (Icons.campaign_rounded, const Color(0xFFD99A4E));
     return (Icons.notifications_rounded, AppColors.dark);

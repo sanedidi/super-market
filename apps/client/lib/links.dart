@@ -1,4 +1,4 @@
-// Переходы из уведомлений (push и колокольчик): заказ, просьба семьи и
+// Переходы из уведомлений (push и колокольчик): заказ, просьба семьи, долг в магазине и
 // рассылки супер-админа — магазин, категория, товар, скидки, блок главной,
 // раздел приложения или внешняя ссылка.
 //
@@ -14,6 +14,7 @@ import 'home_blocks.dart';
 import 'main.dart';
 import 'product_tile.dart';
 import 'push.dart';
+import 'screens/debts_screen.dart';
 import 'screens/family_request_screen.dart';
 import 'screens/family_screen.dart';
 import 'screens/home_screen.dart';
@@ -37,6 +38,14 @@ Future<void> openNotification(Map<String, dynamic> data) async {
       if (s('order_id').isNotEmpty) unawaited(nav.push(MaterialPageRoute(builder: (_) => OrderScreen(id: s('order_id')))));
     case 'family_request':
       if (s('request_id').isNotEmpty) unawaited(nav.push(MaterialPageRoute(builder: (_) => FamilyRequestScreen(id: s('request_id')))));
+    case 'debt':
+      // Записали в долг, оплата принята, день оплаты, просрочка — долг в магазине.
+      ctx.read<AppState>().loadDebts().catchError((_) {});
+      if (s('store_id').isNotEmpty) {
+        unawaited(nav.push(MaterialPageRoute(builder: (_) => StoreDebtScreen(storeId: s('store_id')))));
+      } else {
+        unawaited(nav.push(MaterialPageRoute(builder: (_) => const MyDebtsScreen())));
+      }
     case 'open':
       await _openTarget(ctx, nav, s);
   }

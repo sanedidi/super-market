@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import '../core/cart.dart';
 import '../core/catalog.dart';
+import '../core/debts.dart';
 import '../core/journal.dart';
 import '../core/limits.dart';
 import '../core/money.dart';
@@ -421,9 +422,13 @@ class PosController extends ChangeNotifier {
 
   /// Чек оплачен: фискальный модуль (если подключён), журнал смены, очередь,
   /// печать. Сервер не нужен.
-  Future<SaleRecord> recordSale(Cart cart, List<Payment> payments, {int received = 0, Map<String, dynamic>? fiscal}) async {
+  Future<SaleRecord> recordSale(Cart cart, List<Payment> payments, {int received = 0, Map<String, dynamic>? fiscal, DebtPart? debt}) async {
     final blocked = saleBlocked;
     if (blocked != null) throw CartError(blocked);
+    if (debt != null && fiscalMode) {
+      // Как фискализировать продажу в долг, уточняем у ОФД — до этого не продаём.
+      throw CartError('Продажа в долг с фискальным модулем пока недоступна — ждём правила ОФД');
+    }
     final uid = _uuid.v4();
     final soldAt = _now();
     var draft = SaleRecord(
@@ -437,6 +442,7 @@ class PosController extends ChangeNotifier {
       payments: payments,
       received: received,
       fiscal: fiscal,
+      debt: debt,
     );
     if (fiscalMode && fiscal == null) {
       final receipt = FiscalReceipt.sale(draft);
@@ -526,6 +532,116 @@ class PosController extends ChangeNotifier {
     await _saveState();
     notifyListeners();
     return h.cart;
+  }
+
+  // ------------------------------------------------------- долги
+
+  /// Продажа в долг доступна: магазин «даёт в долг» и у кассира есть право.
+  bool get canDebt => catalog.settings.debtEnabled && (cashier?.can(Perm.debtsGive) ?? false);
+
+  /// Принять погашение долга может любой кассир — если магазин даёт в долг
+  /// или долги в сети уже есть (магазин мог выключить продажу в долг).
+  bool get canTakeDebtPayment => catalog.settings.debtEnabled || catalog.debtors.isNotEmpty;
+
+  /// Долг по номеру из чеков и погашений в очереди (ещё не на сервере).
+  int _pendingDebt(String phone) {
+    var sum = 0;
+    for (final i in outbox.pendingItems) {
+      if (i.kind == 'sale') {
+        final d = i.body['debt'];
+        if (d is Map && d['phone'] == phone) sum += (d['amount'] as int?) ?? 0;
+      } else if (i.kind == 'debt_payment' && i.body['phone'] == phone) {
+        sum -= (i.body['amount'] as int?) ?? 0;
+      }
+    }
+    return sum;
+  }
+
+  /// Покупатель из каталога кассы — когда нет связи. К долгу из каталога
+  /// добавляем чеки и погашения этой смены после его загрузки.
+  DebtorView localDebtor(String phone) {
+    final d = catalog.debtors[phone];
+    var debt = d?.debt ?? 0;
+    final since = catalogAt;
+    for (final e in journal) {
+      if (e is SaleRecord && e.debt?.phone == phone && (since == null || e.soldAt.isAfter(since))) debt += e.debt!.amount;
+      if (e is DebtPaymentRecord && e.phone == phone && (since == null || e.at.isAfter(since))) debt -= e.amount;
+    }
+    if (d == null) {
+      return DebtorView(phone: phone, debt: debt, limit: 10000000, unverifiedLimit: 10000000);
+    }
+    return DebtorView(
+      phone: phone,
+      found: true,
+      name: d.fullName,
+      debt: debt,
+      limit: d.limit,
+      blocked: d.blocked,
+      verified: d.verified,
+    );
+  }
+
+  /// Покупатель по номеру: с сервера, без связи — из каталога.
+  Future<DebtorView> lookupDebtor(String phone) async {
+    try {
+      final res = await api.get('/pos/debtors', query: {'phone': phone}, cashier: cashier?.id) as Map<String, dynamic>;
+      online = true;
+      return DebtorView.fromLookup(res, pending: _pendingDebt(phone));
+    } on ApiError catch (e) {
+      if (e.status != 0) rethrow;
+      _netError(e);
+      return localDebtor(phone);
+    }
+  }
+
+  /// Отправить покупателю код подтверждения номера (нужен интернет).
+  /// Возвращает канал: telegram, push или dev.
+  Future<String> sendDebtCode(String phone) async {
+    final res = await api.post('/pos/debtors/code', {'phone': phone}, cashier: cashier?.id) as Map<String, dynamic>;
+    return res['channel'] as String? ?? '';
+  }
+
+  /// Проверить код и подтвердить номер; заводит покупателя с именем.
+  Future<DebtorView> verifyDebtCode(String phone, String code, String name) async {
+    final res = await api.post('/pos/debtors/verify', {'phone': phone, 'code': code, 'full_name': name}, cashier: cashier?.id)
+        as Map<String, dynamic>;
+    return DebtorView.fromLookup(res, pending: _pendingDebt(phone));
+  }
+
+  /// Погашение долга на кассе: журнал смены, очередь, квитанция. Без сервера.
+  Future<DebtPaymentRecord> recordDebtPayment({required DebtorView who, required int amount, required PayMethod method}) async {
+    if (shiftLimit?.state == LimitState.blocked) throw CartError('Смена идёт больше 24 часов — закройте смену (Z-отчёт)');
+    if (amount <= 0) throw CartError('Наберите сумму');
+    if (amount > who.debt) throw CartError('Сумма больше долга ${fmtMoney(who.debt)}');
+    final r = DebtPaymentRecord(
+      uid: _uuid.v4(),
+      shiftUid: shift!.uid,
+      phone: who.phone,
+      name: who.name,
+      amount: amount,
+      kind: method.kind,
+      methodId: method.id,
+      methodName: method.name,
+      at: _now(),
+      cashierId: cashier!.id,
+      balance: who.debt - amount,
+    );
+    await store.append(_journalName(r.shiftUid), r.toJson());
+    await outbox.add('debt_payment', r.toJson(), r.cashierId, at: r.at);
+    journal.add(r);
+    notifyListeners();
+    unawaited(sync());
+    final by = cashier!.name;
+    unawaited(_print(() => debtPaymentReceipt(
+          s: catalog.settings,
+          r: r,
+          shiftLabel: _shiftLabel,
+          cashier: by,
+          paperMm: printer.paperMm,
+          codePage: printer.codePage,
+          openDrawer: printer.drawer,
+        )));
+    return r;
   }
 
   // ----------------------------------------------------------- возврат
@@ -621,6 +737,7 @@ class PosController extends ChangeNotifier {
       at: at,
       number: (res['number'] as num?)?.toInt() ?? 0,
       fiscal: fr?.toJson(),
+      debtAmount: parseMoney(res['debt_amount']),
     );
     await store.append(_journalName(shift!.uid), rec.toJson());
     journal.add(rec);
@@ -637,6 +754,7 @@ class PosController extends ChangeNotifier {
           fiscal: fr,
           paperMm: printer.paperMm,
           codePage: printer.codePage,
+          debtAmount: rec.debtAmount,
         )));
     if (fiscalError != null) {
       printError = fiscalError;
