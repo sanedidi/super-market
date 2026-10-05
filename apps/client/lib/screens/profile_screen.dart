@@ -8,6 +8,7 @@ import '../ui/brand.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'addresses_screen.dart';
+import 'debts_screen.dart';
 import 'family_screen.dart';
 import 'favorites_screen.dart';
 import 'help_screen.dart';
@@ -109,6 +110,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ]),
               ),
             ),
+            const DebtsProfileCard(),
             if (active != null) ...[
               const SizedBox(height: 16),
               ActiveOrderCard(order: active, onTap: () => _push(OrderScreen(id: active['id'] as String))),

@@ -15,6 +15,7 @@ import '../ui/widgets.dart';
 import '../wish.dart';
 import 'addresses_screen.dart';
 import 'category_screen.dart';
+import 'debts_screen.dart';
 import 'notifications_screen.dart';
 import 'order_screen.dart';
 import 'root_shell.dart';
@@ -210,13 +211,15 @@ class _HomeScreenState extends State<HomeScreen> {
     final note = store.delivers
         ? null
         : SliverToBoxAdapter(child: NoDeliveryCard(store: store, onDelivering: () => pickStore(context, state)));
+    final debt = debtBannerSliver(context, state, store.id);
     final blocks = _blocksOf(store);
-    if (blocks != null) return [if (note != null) note, ...homeBlockSlivers(context, store, blocks)];
+    if (blocks != null) return [if (note != null) note, if (debt != null) debt, ...homeBlockSlivers(context, store, blocks)];
     if (!_answered.contains(store.id)) {
       return const [SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(48), child: Center(child: CircularProgressIndicator())))];
     }
     return [
       if (note != null) note,
+      if (debt != null) debt,
       SliverToBoxAdapter(child: _CategoryCircles(store: store)),
       SliverToBoxAdapter(child: FreeDeliveryStrip(store: store)),
       if (state.banners.isNotEmpty) SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.only(top: 16), child: _Banners(banners: state.banners))),

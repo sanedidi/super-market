@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sm_client/screens/auth_screen.dart';
 import 'package:sm_client/screens/cart_screen.dart';
+import 'package:sm_client/screens/debts_screen.dart';
 import 'package:sm_client/screens/home_screen.dart';
 import 'package:sm_client/screens/notifications_screen.dart';
 import 'package:sm_client/screens/profile_screen.dart';
@@ -149,6 +150,58 @@ final _homeNetwork = {
   ],
 };
 
+final _debtStore = {
+  'store_id': 's1',
+  'name': 'Baraka Market',
+  'address': 'Чиланзар, 9-квартал, 14',
+  'phone': '+998712000000',
+  'logo_url': '',
+  'lat': 41.28,
+  'lng': 69.2,
+  'amount': '120000.00',
+  'since': '2026-09-28T14:05:00Z',
+  'due_date': '2026-11-05',
+  'overdue_days': 0,
+};
+
+final _debts = {
+  'total': '165000.00',
+  'next_due': '2026-10-02',
+  'stores': [
+    _debtStore,
+    {..._debtStore, 'store_id': 's2', 'name': 'Минимаркет Нур', 'address': 'Чиланзар, 7-квартал', 'amount': '45000.00', 'due_date': '2026-10-02', 'overdue_days': 3},
+  ],
+};
+
+final _storeDebt = {
+  ..._debtStore,
+  'entries': [
+    {
+      'id': 3,
+      'doc_type': 'sale',
+      'number': 4518,
+      'amount': '80000.00',
+      'balance': '120000.00',
+      'detail': '',
+      'dispute_status': '',
+      'created_at': '2026-10-04T09:37:00Z',
+      'sale': {
+        'total': '89180.00',
+        'paid': '9180.00',
+        'debt': '80000.00',
+        'items': [
+          {'name': 'Сыр Hochland 200 г', 'qty': '1', 'unit': 'шт', 'total': '32000.00'},
+          {'name': 'Вода Hydrolife 1,5 л', 'qty': '3', 'unit': 'шт', 'total': '16500.00'},
+          {'name': 'Бананы', 'qty': '1.245', 'unit': 'кг', 'total': '29880.00'},
+          {'name': 'Coca-Cola 1 л', 'qty': '1', 'unit': 'шт', 'total': '10800.00'},
+        ],
+      },
+    },
+    {'id': 2, 'doc_type': 'payment', 'number': 12, 'amount': '-50000.00', 'balance': '40000.00', 'detail': 'Наличные', 'dispute_status': '', 'created_at': '2026-10-01T07:10:00Z'},
+    {'id': 1, 'doc_type': 'sale', 'number': 4471, 'amount': '55000.00', 'balance': '90000.00', 'detail': '', 'dispute_status': 'open', 'created_at': '2026-09-28T14:05:00Z'},
+  ],
+};
+
 Api _api({Map<String, dynamic>? home}) => Api(
       baseUrl: 'http://test/api/v1',
       app: 'client',
@@ -172,6 +225,8 @@ Api _api({Map<String, dynamic>? home}) => Api(
           '/client/stores/s1/products' => {'items': _hits},
           '/client/stores/s1/home' => home ?? _homeTemplate,
           '/client/family' => {'family': null},
+          '/client/debts' => _debts,
+          '/client/debts/s1' => _storeDebt,
           '/client/favorites' => {'product_ids': <String>[]},
           '/client/addresses' => {'items': [_address]},
           '/client/home' => {'stores': [_store], 'banners': <Object>[]},
@@ -287,6 +342,10 @@ void main() {
       setup: (s) => s.profile = _profile,
     );
   });
+
+  testWidgets('14 мои долги', (t) => _shot(t, const MyDebtsScreen(), '14_debts'));
+
+  testWidgets('15 долг в магазине', (t) => _shot(t, const StoreDebtScreen(storeId: 's1'), '15_store_debt'));
 
   testWidgets('11 настройки', (t) => _shot(t, const SettingsScreen(), '11_settings', setup: (s) => s.profile = _profile));
 

@@ -120,6 +120,7 @@ class AppState extends ChangeNotifier {
         favorites = {};
         profile = null;
         stats = null;
+        debts = null;
         family = null;
         familyRequestId = null;
         unread = 0;
@@ -376,10 +377,28 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic>? stats;
 
   Future<void> loadProfile() async {
+    loadDebts().catchError((_) {}); // долги не мешают профилю загрузиться
     final results = await Future.wait([api.get('/client/me'), api.get('/client/me/stats')]);
     profile = results[0] as Map<String, dynamic>;
     stats = results[1] as Map<String, dynamic>;
     notifyListeners();
+  }
+
+  /// Долги покупателя в магазинах (/client/debts): итог, магазины, ближайший срок.
+  /// Магазин записывает долг, когда покупатель берёт товар без оплаты.
+  Map<String, dynamic>? debts;
+
+  Future<void> loadDebts() async {
+    debts = await api.get('/client/debts') as Map<String, dynamic>;
+    notifyListeners();
+  }
+
+  /// Долг в магазине, если есть (для плашки на странице магазина).
+  Map<String, dynamic>? debtAt(String storeId) {
+    for (final d in ((debts?['stores'] as List?) ?? const []).cast<Map<String, dynamic>>()) {
+      if (d['store_id'] == storeId) return d;
+    }
+    return null;
   }
 
   /// Изменить профиль: имя, язык, город, настройки уведомлений.
