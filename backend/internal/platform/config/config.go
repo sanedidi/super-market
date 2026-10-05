@@ -47,8 +47,8 @@ type Config struct {
 	TelegramBotUsername string
 	TelegramAPIURL      string
 
-	// SMS для кодов входа курьеров «по пути» (Eskiz). Пустой EskizEmail —
-	// коды уходят в Telegram, как покупателям.
+	// SMS для кодов входа (Eskiz): курьерам «по пути» и всем, чей номер не
+	// привязан к Telegram-боту. Пустой EskizEmail — коды только в Telegram.
 	EskizEmail    string
 	EskizPassword string
 	EskizFrom     string

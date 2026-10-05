@@ -46,7 +46,7 @@ type Config struct {
 	ReviewCode  string
 }
 
-// SMSSender отправляет SMS (коды входа курьеров «по пути»).
+// SMSSender отправляет SMS с кодами входа (курьерам «по пути» и тем, у кого нет Telegram).
 type SMSSender interface {
 	Send(ctx context.Context, phone, text string) error
 }
@@ -108,9 +108,22 @@ func (s *Service) botURL() string {
 // RequestCode создаёт код входа и отправляет его в Telegram (курьеру «по
 // пути» — по SMS, если SMS настроены). Возвращает, через сколько секунд код истечёт.
 func (s *Service) RequestCode(ctx context.Context, rawPhone, app string) (int, error) {
+	n, _, err := s.RequestCodeVia(ctx, rawPhone, app)
+	return n, err
+}
+
+// SMSCodeText — текст SMS с кодом входа. Должен совпадать с шаблоном,
+// одобренным в кабинете Eskiz (меняются только цифры кода).
+const SMSCodeText = "Super Market ilovasiga kirish uchun kod: %s. Kodni hech kimga bermang."
+
+// RequestCodeVia — то же, что RequestCode, и куда ушёл код: "telegram" или "sms".
+// Курьерам «по пути» код идёт по SMS. Остальным — в Telegram, если номер
+// привязан к боту, иначе по SMS (если SMS настроены). Не удалось отправить SMS
+// без Telegram — та же ошибка telegram_not_linked с ссылкой на бота, что и раньше.
+func (s *Service) RequestCodeVia(ctx context.Context, rawPhone, app string) (int, string, error) {
 	ph, err := phone.Normalize(rawPhone)
 	if err != nil {
-		return 0, apperr.Validation("неверный номер телефона")
+		return 0, "", apperr.Validation("неверный номер телефона")
 	}
 	now := s.now()
 
@@ -119,39 +132,46 @@ func (s *Service) RequestCode(ctx context.Context, rawPhone, app string) (int, e
 	switch {
 	case err == nil:
 		if wait := resendCooldown - now.Sub(sentAt); wait > 0 {
-			return 0, apperr.New(http.StatusTooManyRequests, "too_many_requests", "код уже отправлен, попробуйте позже").
+			return 0, "", apperr.New(http.StatusTooManyRequests, "too_many_requests", "код уже отправлен, попробуйте позже").
 				WithDetails(map[string]any{"retry_after": int(wait.Seconds()) + 1})
 		}
 	case !errors.Is(err, pgx.ErrNoRows):
-		return 0, err
+		return 0, "", err
 	}
+
+	notLinked := apperr.Conflict("telegram_not_linked",
+		"откройте бота в Telegram и поделитесь номером, чтобы получать коды").
+		WithDetails(map[string]any{"bot_url": s.botURL()})
 
 	code := s.cfg.DevOTPCode
 	review := s.cfg.ReviewPhone != "" && ph == s.cfg.ReviewPhone
 	if review {
 		code = s.cfg.ReviewCode
 	}
+	channel := "telegram"
 	var chatID int64
-	viaSMS := app == AppCrowd && s.sms != nil
-	if code == "" && viaSMS {
-		if code, err = randomCode(); err != nil {
-			return 0, err
-		}
-	} else if code == "" {
+	if app == AppCrowd && s.sms != nil {
+		channel = "sms"
+	} else {
 		err := s.pool.QueryRow(ctx, `SELECT chat_id FROM telegram_links WHERE phone = $1`, ph).Scan(&chatID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, apperr.Conflict("telegram_not_linked",
-				"откройте бота в Telegram и поделитесь номером, чтобы получать коды").
-				WithDetails(map[string]any{"bot_url": s.botURL()})
+		switch {
+		case errors.Is(err, pgx.ErrNoRows) && s.sms != nil:
+			channel = "sms"
+		case errors.Is(err, pgx.ErrNoRows):
+			if code == "" {
+				return 0, "", notLinked
+			}
+		case err != nil:
+			return 0, "", err
 		}
-		if err != nil {
-			return 0, err
-		}
-		if s.tg == nil {
-			return 0, apperr.New(http.StatusServiceUnavailable, "telegram_unavailable", "отправка кодов временно недоступна")
+	}
+	send := code == ""
+	if send {
+		if channel == "telegram" && s.tg == nil {
+			return 0, "", apperr.New(http.StatusServiceUnavailable, "telegram_unavailable", "отправка кодов временно недоступна")
 		}
 		if code, err = randomCode(); err != nil {
-			return 0, err
+			return 0, "", err
 		}
 	}
 
@@ -162,25 +182,28 @@ func (s *Service) RequestCode(ctx context.Context, rawPhone, app string) (int, e
 		SET code_hash = EXCLUDED.code_hash, attempts = 0,
 		    sent_at = EXCLUDED.sent_at, expires_at = EXCLUDED.expires_at`,
 		ph, s.codeHash(ph, code), now, now.Add(s.cfg.OTPTTL)); err != nil {
-		return 0, err
+		return 0, "", err
 	}
 
-	if s.cfg.DevOTPCode == "" && !review && viaSMS {
-		text := fmt.Sprintf("Super Market: kod dlya vhoda %s. Nikomu ne soobshayte ego.", code)
-		if err := s.sms.Send(ctx, ph, text); err != nil {
+	if send && channel == "sms" {
+		if err := s.sms.Send(ctx, ph, fmt.Sprintf(SMSCodeText, code)); err != nil {
 			_, _ = s.pool.Exec(ctx, `DELETE FROM auth_codes WHERE phone = $1`, ph)
-			s.log.Error("не удалось отправить SMS с кодом", "err", err)
-			return 0, apperr.New(http.StatusBadGateway, "sms_send_failed", "не удалось отправить SMS, попробуйте ещё раз")
+			s.log.Error("не удалось отправить SMS с кодом", "err", err, "app", app)
+			if app != AppCrowd {
+				// Без Telegram и без SMS — по-старому: привязать номер к боту.
+				return 0, "", notLinked
+			}
+			return 0, "", apperr.New(http.StatusBadGateway, "sms_send_failed", "не удалось отправить SMS, попробуйте ещё раз")
 		}
-	} else if s.cfg.DevOTPCode == "" && !review {
+	} else if send {
 		text := fmt.Sprintf("Код для входа: %s\n\nНикому не сообщайте этот код.", code)
 		if err := s.tg.SendMessage(ctx, chatID, text, nil); err != nil {
 			_, _ = s.pool.Exec(ctx, `DELETE FROM auth_codes WHERE phone = $1`, ph)
 			s.log.Error("не удалось отправить код в Telegram", "err", err)
-			return 0, apperr.New(http.StatusBadGateway, "telegram_send_failed", "не удалось отправить код, попробуйте ещё раз")
+			return 0, "", apperr.New(http.StatusBadGateway, "telegram_send_failed", "не удалось отправить код, попробуйте ещё раз")
 		}
 	}
-	return int(s.cfg.OTPTTL.Seconds()), nil
+	return int(s.cfg.OTPTTL.Seconds()), channel, nil
 }
 
 // VerifyCode проверяет код и открывает сессию в приложении app.

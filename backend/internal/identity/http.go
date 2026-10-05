@@ -65,16 +65,13 @@ func (m *Module) requestCode(w http.ResponseWriter, r *http.Request) {
 		m.fail(w, r, err)
 		return
 	}
-	expiresIn, err := m.svc.RequestCode(r.Context(), in.Phone, in.App)
+	expiresIn, channel, err := m.svc.RequestCodeVia(r.Context(), in.Phone, in.App)
 	if err != nil {
 		m.fail(w, r, err)
 		return
 	}
-	// resend_in — через сколько секунд можно запросить код снова (таймер на экране).
-	channel := "telegram"
-	if in.App == AppCrowd && m.svc.sms != nil {
-		channel = "sms"
-	}
+	// resend_in — через сколько секунд можно запросить код снова (таймер на экране);
+	// channel — куда ушёл код: telegram или sms.
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"sent": true, "expires_in": expiresIn, "resend_in": int(resendCooldown.Seconds()), "bot_url": m.svc.botURL(),
 		"channel": channel,
