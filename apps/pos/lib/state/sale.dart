@@ -146,7 +146,7 @@ class SaleController extends ChangeNotifier {
       case 'Ввод':
         await command(Cmd.enter);
       case 'Код':
-        _plu();
+        _byCode();
         notifyListeners();
       default:
         typed(k);
@@ -169,7 +169,7 @@ class SaleController extends ChangeNotifier {
   }
 
   /// «Код»: набранные цифры — короткий код товара без штрихкода.
-  void _plu() {
+  void _byCode() {
     final raw = input.trim();
     _clearInput();
     if (raw.isEmpty || !RegExp(r'^[0-9]+$').hasMatch(raw)) {
