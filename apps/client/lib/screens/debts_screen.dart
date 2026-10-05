@@ -34,6 +34,14 @@ String _days(int n) {
   return '$n дней';
 }
 
+/// «2 магазина», «5 магазинов».
+String _stores(int n) {
+  final m10 = n % 10, m100 = n % 100;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return '$n магазина';
+  if (m10 == 1 && m100 != 11) return '$n магазин';
+  return '$n магазинов';
+}
+
 /// «вернуть до 5 ноября · осталось 31 день» / «просрочено 3 дня · срок был 2 октября».
 String debtDue(Map<String, dynamic> d, {bool left = false}) {
   final overdue = (d['overdue_days'] as num?)?.toInt() ?? 0;
@@ -63,7 +71,7 @@ class DebtsProfileCard extends StatelessWidget {
     if (stores.isEmpty) return const SizedBox.shrink();
     final overdue = stores.any((s) => ((s['overdue_days'] as num?)?.toInt() ?? 0) > 0);
     final sub = [
-      stores.length == 1 ? '${stores.first['name']}' : '${stores.length} ${stores.length < 5 ? 'магазина' : 'магазинов'}',
+      stores.length == 1 ? '${stores.first['name']}' : _stores(stores.length),
       if (overdue) 'есть просрочка' else if (d?['next_due'] != null) 'ближайший срок ${debtDay(d!['next_due'])}',
     ].join(' · ');
     return Padding(

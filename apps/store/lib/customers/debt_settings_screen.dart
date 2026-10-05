@@ -59,7 +59,7 @@ class _DebtSettingsScreenState extends State<DebtSettingsScreen> {
 
   Future<void> _number(String field, String title, String hint, {bool days = false}) async {
     final cur = '${_s?[field] ?? ''}';
-    final ctl = TextEditingController(text: days ? cur : money(cur, suffix: false));
+    final ctl = TextEditingController(text: days || cur.isEmpty ? cur : money(cur, suffix: false));
     final v = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
