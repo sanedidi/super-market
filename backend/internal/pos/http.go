@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/sanedidi/super-market/backend/internal/debts"
 	"github.com/sanedidi/super-market/backend/internal/finance"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
@@ -42,6 +43,11 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/pos/sales/{id}", m.getSale)
 		r.Post("/pos/returns", m.createReturn)
 		r.Post("/pos/returns/{id}/fiscal", m.returnFiscal)
+		// Долги покупателей: покупатель по номеру, код подтверждения, погашение.
+		r.Get("/pos/debtors", m.debtorLookup)
+		r.Post("/pos/debtors/code", m.debtorCode)
+		r.Post("/pos/debtors/verify", m.debtorVerify)
+		r.Post("/pos/debt-payments", m.debtPayment)
 	})
 	// Панель магазина: кассы, ПИНы, смены, налоговые поля, коды.
 	r.Group(func(r chi.Router) {
@@ -316,4 +322,55 @@ func (m *Module) shiftEvents(w http.ResponseWriter, r *http.Request) {
 		items, err := m.svc.ShiftEvents(r.Context(), pr(r), id)
 		return httpx.List[ShiftEvent]{Items: items}, err
 	})
+}
+
+// ------------------------------------------------------- долги на кассе
+
+func (m *Module) debtorLookup(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (debts.Lookup, error) {
+		if err := requireCashier(pr(r)); err != nil {
+			return debts.Lookup{}, err
+		}
+		return m.svc.debts.Lookup(r.Context(), pr(r), r.URL.Query().Get("phone"))
+	})
+}
+
+func (m *Module) debtorCode(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in debts.CodeInput) (debts.CodeSent, error) {
+		if err := requireCashier(pr(r)); err != nil {
+			return debts.CodeSent{}, err
+		}
+		return m.svc.debts.SendCode(r.Context(), pr(r), in)
+	})
+}
+
+func (m *Module) debtorVerify(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in debts.CodeInput) (debts.Lookup, error) {
+		if err := requireCashier(pr(r)); err != nil {
+			return debts.Lookup{}, err
+		}
+		return m.svc.debts.VerifyCode(r.Context(), pr(r), in)
+	})
+}
+
+func (m *Module) debtPayment(w http.ResponseWriter, r *http.Request) {
+	var in debts.PaymentInput
+	if err := httpx.Decode(r, &in); err != nil {
+		httpx.Fail(w, r, m.log, err)
+		return
+	}
+	if err := requireCashier(pr(r)); err != nil {
+		httpx.Fail(w, r, m.log, err)
+		return
+	}
+	pay, created, err := m.svc.debts.Pay(r.Context(), pr(r), in)
+	if err != nil {
+		httpx.Fail(w, r, m.log, err)
+		return
+	}
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	httpx.WriteJSON(w, status, pay)
 }

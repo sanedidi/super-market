@@ -103,6 +103,7 @@ type CashFlow struct {
 var flowTitles = map[string]string{
 	"sale":              "Продажи",
 	"customer_return":   "Возвраты покупателям",
+	"debt_payment":      "Погашение долгов покупателей",
 	"transfer:transfer": "Из кассы в кассу",
 	"transfer:handover": "Сдача кассы",
 	"counterparty":      "Расчёты с контрагентами",
@@ -294,6 +295,14 @@ func (s *Service) ProfitLoss(ctx context.Context, p *identity.Principal, f Filte
 		return out, err
 	}
 	other, expenses := money.D("0"), money.D("0")
+	// Списанные долги покупателей — расход.
+	var writtenOff string
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COALESCE(sum(amount), 0)::numeric(18,2)::text FROM debt_writeoffs
+		WHERE network_id = $1 AND ($2::uuid[] IS NULL OR store_id = ANY($2)) AND created_at >= $3 AND created_at < $4`, args...).
+		Scan(&writtenOff); err != nil {
+		return out, err
+	}
 	for rows.Next() {
 		var kind string
 		var ra ReasonAmount
@@ -311,6 +320,10 @@ func (s *Service) ProfitLoss(ctx context.Context, p *identity.Principal, f Filte
 	}
 	if err := rows.Err(); err != nil {
 		return out, err
+	}
+	if money.D(writtenOff).Sign() > 0 {
+		out.Expenses = append(out.Expenses, ReasonAmount{Name: "Списанные долги покупателей", Amount: writtenOff})
+		expenses = expenses.Add(money.D(writtenOff))
 	}
 
 	out.Subscription = "0.00"

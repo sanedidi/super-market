@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/sanedidi/super-market/backend/internal/debts"
 	"github.com/sanedidi/super-market/backend/internal/finance"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/inventory"
@@ -26,23 +27,25 @@ type ReturnItem struct {
 }
 
 type CustomerReturn struct {
-	ID           string       `json:"id"`
-	Number       int64        `json:"number"`
-	SaleID       string       `json:"sale_id"`
-	SaleNumber   int64        `json:"sale_number"`
-	StoreID      string       `json:"store_id"`
-	Total        string       `json:"total"`
-	PaymentName  string       `json:"payment_method"`
-	Reason       string       `json:"reason"`
-	CreatedBy    string       `json:"created_by"`
-	FiscalStatus string       `json:"fiscal_status"`
-	CreatedAt    time.Time    `json:"created_at"`
-	Items        []ReturnItem `json:"items,omitempty" db:"-"`
+	ID           string    `json:"id"`
+	Number       int64     `json:"number"`
+	SaleID       string    `json:"sale_id"`
+	SaleNumber   int64     `json:"sale_number"`
+	StoreID      string    `json:"store_id"`
+	Total        string    `json:"total"`
+	PaymentName  string    `json:"payment_method"`
+	Reason       string    `json:"reason"`
+	CreatedBy    string    `json:"created_by"`
+	FiscalStatus string    `json:"fiscal_status"`
+	CreatedAt    time.Time `json:"created_at"`
+	// Сколько из суммы возврата ушло в счёт долга (остальное — деньгами).
+	DebtAmount string       `json:"debt_amount"`
+	Items      []ReturnItem `json:"items,omitempty" db:"-"`
 }
 
 const returnSelect = `
 	SELECT r.id, r.number, r.sale_id, s.number, r.store_id, r.total::text, m.name, r.reason, e.full_name,
-	       r.fiscal_status, r.created_at
+	       r.fiscal_status, r.created_at, r.debt_amount::text
 	FROM customer_returns r
 	JOIN sales s ON s.id = r.sale_id
 	JOIN payment_methods m ON m.id = r.payment_method_id
@@ -231,8 +234,17 @@ func (s *Service) CreateReturn(ctx context.Context, p *identity.Principal, in Re
 			id, total.Money(), cost.Money()); err != nil {
 			return err
 		}
+		// По чеку с долгом возврат сначала уменьшает долг, деньгами — остаток.
+		cashPart := total
 		if total.Sign() > 0 {
-			return finance.SubtractCash(ctx, tx, p.NetworkID, cashboxID, total.Money(), finance.DocCustomerReturn, id)
+			debtPart, err := debts.ReduceForReturn(ctx, tx, p.NetworkID, in.SaleID, id, total)
+			if err != nil {
+				return err
+			}
+			cashPart = total.Sub(debtPart)
+		}
+		if cashPart.Sign() > 0 {
+			return finance.SubtractCash(ctx, tx, p.NetworkID, cashboxID, cashPart.Money(), finance.DocCustomerReturn, id)
 		}
 		return nil
 	})
