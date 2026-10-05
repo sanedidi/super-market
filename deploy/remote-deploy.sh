@@ -48,10 +48,28 @@ host_nginx() {
     return 0
   fi
   echo ">> Nginx: домены super-market.uz"
+  # Сертификаты для доменов из конфига, которых ещё нет (например, store).
+  local d
+  for d in $(grep -oE 'live/[a-z0-9.-]+/fullchain' deploy/host-nginx.conf | cut -d/ -f2 | sort -u); do
+    [ -f "/etc/letsencrypt/live/$d/fullchain.pem" ] && continue
+    echo ">> Certbot: сертификат для $d"
+    if ! certbot certonly --nginx -d "$d" --non-interactive --agree-tos --register-unsafely-without-email --keep-until-expiring; then
+      echo "!! certbot не выпустил сертификат для $d — nginx не трогаю"
+      return 1
+    fi
+  done
   mkdir -p /root/nginx-backup /etc/nginx/snippets
   local ts; ts=$(date +%Y%m%d-%H%M%S)
   [ -f /etc/nginx/sites-available/kids-shop.conf ] && cp -a /etc/nginx/sites-available/kids-shop.conf "/root/nginx-backup/kids-shop.conf.$ts"
-  [ -f "$avail" ] && cp -a "$avail" "/root/nginx-backup/super-market.conf.$ts"
+  local prev="" prev_snip=""
+  if [ -f "$avail" ]; then
+    prev="/root/nginx-backup/super-market.conf.$ts"
+    cp -a "$avail" "$prev"
+  fi
+  if [ -f "$snip" ]; then
+    prev_snip="/root/nginx-backup/super-market-proxy.conf.$ts"
+    cp -a "$snip" "$prev_snip"
+  fi
   local kids_was_enabled=0
   [ -e "$kids" ] && kids_was_enabled=1
   install -m 644 deploy/host-nginx.conf "$avail"
@@ -63,8 +81,14 @@ host_nginx() {
     echo ">> Nginx: super-market.uz → наш стек"
   else
     echo "!! nginx -t не прошёл — возвращаю как было"
-    rm -f /etc/nginx/sites-enabled/super-market.conf
-    [ "$kids_was_enabled" = 1 ] && ln -sfn /etc/nginx/sites-available/kids-shop.conf "$kids"
+    if [ -n "$prev" ]; then
+      # Был рабочий конфиг super-market — возвращаем его, домены не падают.
+      install -m 644 "$prev" "$avail"
+      [ -n "$prev_snip" ] && install -m 644 "$prev_snip" "$snip"
+    else
+      rm -f /etc/nginx/sites-enabled/super-market.conf
+      [ "$kids_was_enabled" = 1 ] && ln -sfn /etc/nginx/sites-available/kids-shop.conf "$kids"
+    fi
     nginx -t && systemctl reload nginx
     return 1
   fi
