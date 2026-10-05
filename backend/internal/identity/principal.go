@@ -44,6 +44,7 @@ const (
 	PermShowcaseManage       = "showcase.manage"       // витрина магазина в приложении
 	PermDebtsGive            = "debts.give"            // продажа в долг на кассе
 	PermDebtsManage          = "debts.manage"          // долги покупателей: оплата, лимиты, списание, настройки
+	PermPOSSettings          = "pos.settings"          // настройка кассы: быстрые кнопки
 )
 
 // PermissionInfo — право с понятным названием для экрана ролей.
@@ -71,6 +72,7 @@ var Permissions = []PermissionInfo{
 	{PermShowcaseManage, "Витрина в приложении"},
 	{PermDebtsGive, "Продажа в долг на кассе"},
 	{PermDebtsManage, "Долги покупателей: оплата, лимиты, списание"},
+	{PermPOSSettings, "Настройка кассы: быстрые кнопки"},
 }
 
 func knownPermission(code string) bool {

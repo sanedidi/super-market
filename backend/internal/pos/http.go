@@ -3,6 +3,7 @@ package pos
 import (
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,6 +49,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/pos/debtors/code", m.debtorCode)
 		r.Post("/pos/debtors/verify", m.debtorVerify)
 		r.Post("/pos/debt-payments", m.debtPayment)
+		r.Put("/pos/quick-keys", m.setQuickKeys)
 	})
 	// Панель магазина: кассы, ПИНы, смены, налоговые поля, коды.
 	r.Group(func(r chi.Router) {
@@ -95,7 +97,17 @@ func (m *Module) catalog(w http.ResponseWriter, r *http.Request) {
 			}
 			since = &t
 		}
+		// Касса другого поколения каталога получает его целиком (старые кассы epoch не шлют).
+		if e := r.URL.Query().Get("epoch"); e != "" && e != strconv.Itoa(CatalogEpoch) {
+			since = nil
+		}
 		return m.svc.Catalog(r.Context(), pr(r), since)
+	})
+}
+
+func (m *Module) setQuickKeys(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in QuickKeysInput) (QuickKeys, error) {
+		return m.svc.SetQuickKeys(r.Context(), pr(r), in)
 	})
 }
 
