@@ -93,6 +93,10 @@ type Config struct {
 	S3Bucket    string
 	// MediaBaseURL — начало ссылок на фото (https://super-market.uz). Пусто — из адреса запроса.
 	MediaBaseURL string
+
+	// TasnifURL — каталог ИКПУ (фото для импортированных товаров), PhotosPerProduct — сколько фото брать.
+	TasnifURL        string
+	PhotosPerProduct int
 }
 
 const devJWTSecret = "dev-secret-do-not-use-in-production"
@@ -142,6 +146,7 @@ func Load(getenv func(string) string) (Config, error) {
 		S3SecretKey:  getenv("S3_SECRET_KEY"),
 		S3Bucket:     valueOr(getenv("S3_BUCKET"), "media"),
 		MediaBaseURL: strings.TrimRight(getenv("MEDIA_BASE_URL"), "/"),
+		TasnifURL:    valueOr(strings.TrimRight(getenv("TASNIF_URL"), "/"), "https://tasnif.soliq.uz"),
 	}
 
 	var errs []error
@@ -161,6 +166,15 @@ func Load(getenv func(string) string) (Config, error) {
 	var err error
 	if cfg.ShutdownTimeout, err = durationOr(getenv("SHUTDOWN_TIMEOUT"), 15*time.Second); err != nil {
 		errs = append(errs, fmt.Errorf("SHUTDOWN_TIMEOUT: %w", err))
+	}
+	cfg.PhotosPerProduct = 2
+	if v := getenv("PHOTOS_PER_PRODUCT"); v != "" {
+		n, convErr := strconv.Atoi(v)
+		if convErr != nil || n < 1 || n > 10 {
+			errs = append(errs, fmt.Errorf("PHOTOS_PER_PRODUCT: от 1 до 10"))
+		} else {
+			cfg.PhotosPerProduct = n
+		}
 	}
 	if cfg.WorkerInterval, err = durationOr(getenv("WORKER_INTERVAL"), time.Minute); err != nil {
 		errs = append(errs, fmt.Errorf("WORKER_INTERVAL: %w", err))
