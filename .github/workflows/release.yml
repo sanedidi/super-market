@@ -1,0 +1,140 @@
+name: release
+
+# Сборки для Google Play: AAB приложений покупателя (client), магазина (store) и курьера
+# (courier), подписанные ключом загрузки (upload key) из секретов репозитория.
+# Артефакты: client-aab, store-aab, courier-aab. Подробно — docs/release.md.
+#
+# Запуск: Actions → release → Run workflow, или тег v* (git tag v1.2.0 && git push origin v1.2.0).
+# versionCode = номер запуска workflow (растёт с каждым запуском), либо число из поля build_number.
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: "versionCode (пусто — номер запуска workflow)"
+        required: false
+        default: ""
+  push:
+    tags: ["v*"]
+
+env:
+  # Та же версия, что в apps.yml: apps/client/pubspec.lock требует Flutter >= 3.44 (Dart >= 3.12).
+  # Flutter 3.44 по умолчанию собирает с targetSdk 36 (требование Google Play с 31.08.2026);
+  # build.gradle.kts дополнительно не даёт опуститься ниже 36.
+  FLUTTER_VERSION: "3.44.x"
+
+permissions:
+  contents: read
+
+jobs:
+  aab:
+    name: ${{ matrix.app }}-aab
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Папки платформ в git, подпись настроена в android/app/build.gradle.kts.
+          - app: client
+            project: sm_client
+            create: false
+          # Папки платформ создаёт flutter create, подпись и разрешения — branding/apply.sh.
+          - app: store
+            project: sm_store
+            create: true
+          - app: courier
+            project: sm_courier
+            create: true
+    defaults:
+      run:
+        working-directory: apps/${{ matrix.app }}
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Проверка секретов подписи
+        run: |
+          missing=""
+          for v in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            [ -n "${!v}" ] || missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error title=Нет ключа подписи::Не заданы секреты репозитория:$missing. Без них AAB нельзя загрузить в Google Play. Как создать ключ загрузки и добавить секреты — docs/release.md."
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Versions
+        run: flutter --version
+
+      - name: Папки платформ
+        if: matrix.create
+        run: |
+          flutter create --platforms=android --org uz.supermarket --project-name ${{ matrix.project }} .
+          rm -f test/widget_test.dart
+          bash branding/apply.sh
+
+      - name: Ключ загрузки
+        run: |
+          keystore="$RUNNER_TEMP/upload-keystore.jks"
+          if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore" 2>/dev/null || [ ! -s "$keystore" ]; then
+            echo "::error title=Ключ подписи::Секрет ANDROID_KEYSTORE_BASE64 — не base64 файла .jks. Создайте его заново по docs/release.md."
+            exit 1
+          fi
+          if ! keytool -list -keystore "$keystore" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" > /dev/null 2>&1; then
+            echo "::error title=Ключ подписи::Не удалось открыть ключ: неверный ANDROID_KEYSTORE_PASSWORD или в хранилище нет псевдонима ANDROID_KEY_ALIAS."
+            exit 1
+          fi
+          # В .properties обратная косая черта — спецсимвол, экранируем.
+          esc() { printf '%s' "$1" | sed 's/\\/\\\\/g'; }
+          {
+            echo "storeFile=$(esc "$keystore")"
+            echo "storePassword=$(esc "$ANDROID_KEYSTORE_PASSWORD")"
+            echo "keyAlias=$(esc "$ANDROID_KEY_ALIAS")"
+            echo "keyPassword=$(esc "$ANDROID_KEY_PASSWORD")"
+          } > android/key.properties
+
+      - name: Сборка AAB
+        env:
+          YANDEX_MAPKIT_KEY: ${{ secrets.YANDEX_MAPKIT_KEY }}
+          BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
+        run: |
+          case "$BUILD_NUMBER" in
+            ''|*[!0-9]*) echo "::error::build_number должен быть целым числом, получено: $BUILD_NUMBER"; exit 1 ;;
+          esac
+          if [ "${{ matrix.app }}" = client ] && [ -z "$YANDEX_MAPKIT_KEY" ]; then
+            echo "::warning title=Нет ключа карт::Секрет YANDEX_MAPKIT_KEY не задан — в приложении покупателя карта Яндекса не загрузится. Сборка продолжается."
+          fi
+          flutter pub get
+          flutter build appbundle --release --build-number="$BUILD_NUMBER"
+
+      - name: Проверка подписи
+        run: |
+          aab=build/app/outputs/bundle/release/app-release.aab
+          cert=$(keytool -printcert -jarfile "$aab")
+          echo "$cert" | head -n 8
+          if echo "$cert" | grep -q "CN=Android Debug"; then
+            echo "::error title=Подпись debug::AAB подписан debug-ключом — Google Play его не примет. Проверьте android/key.properties и build.gradle.kts."
+            exit 1
+          fi
+
+      - name: Удалить ключ с раннера
+        if: always()
+        run: rm -f android/key.properties "$RUNNER_TEMP/upload-keystore.jks"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}-aab
+          path: apps/${{ matrix.app }}/build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error

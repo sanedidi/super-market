@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Папки платформ приложения курьера: название, логотип, разрешения на
-# геопозицию (в том числе в фоне), звонки и ссылки.
+# геопозицию во время смены (Android — фоновая служба с уведомлением «Вы на смене»,
+# разрешение «только во время использования»), звонки и ссылки, подпись release
+# для Google Play, манифест конфиденциальности iOS (PrivacyInfo.xcprivacy).
 # Запускать из apps/courier после
 #   flutter create --platforms=android,ios --org uz.supermarket --project-name sm_courier .
 set -euo pipefail
@@ -18,8 +20,12 @@ name = sys.argv[1]
 p = 'android/app/src/main/AndroidManifest.xml'
 s = open(p, encoding='utf-8').read()
 s = re.sub(r'android:label="[^"]*"', f'android:label="{name}"', s, count=1)
-perms = ['INTERNET', 'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION', 'ACCESS_BACKGROUND_LOCATION',
+# ACCESS_BACKGROUND_LOCATION не нужен: точка отправляется из фоновой службы (foreground service
+# type location), которую курьер запускает сам, — Google Play требует для неё только FOREGROUND_SERVICE_LOCATION.
+perms = ['INTERNET', 'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION',
          'FOREGROUND_SERVICE', 'FOREGROUND_SERVICE_LOCATION', 'WAKE_LOCK', 'VIBRATE', 'POST_NOTIFICATIONS']
+# Убрать из манифеста, созданного прежней версией этого скрипта.
+s = re.sub(r'[ \t]*<uses-permission android:name="android\.permission\.ACCESS_BACKGROUND_LOCATION"\s*/>\n?', '', s)
 add = ''.join(f'    <uses-permission android:name="android.permission.{x}"/>\n' for x in perms
               if f'android.permission.{x}"' not in s)
 s = s.replace('<application', add + '    <application', 1)
@@ -40,6 +46,8 @@ else:
     s = s.replace('</manifest>', '    <queries>\n' + q + '    </queries>\n</manifest>', 1)
 open(p, 'w', encoding='utf-8').write(s)
 PY
+  # Подпись release ключом загрузки (android/key.properties) и targetSdk >= 36.
+  python3 ../scripts/android_release_signing.py android
 fi
 
 if [ -d ios ]; then
@@ -65,6 +73,9 @@ d['ITSAppUsesNonExemptEncryption'] = False
 with open(p, 'wb') as f:
     plistlib.dump(d, f)
 PY
+  # Манифест конфиденциальности (требование App Store): файл + ресурс цели Runner.
+  cp branding/ios/PrivacyInfo.xcprivacy ios/Runner/PrivacyInfo.xcprivacy
+  python3 ../scripts/ios_add_resource.py ios PrivacyInfo.xcprivacy
   # Команда разработчика Apple — подпись при сборке без ручной настройки в Xcode.
   python3 - <<'PY2'
 import re

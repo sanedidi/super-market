@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Папки платформ приложения магазина: название, логотип, камера и фото
-# (снимок накладной), геолокация (точка магазина на карте), push-уведомления, подпись iOS.
+# (снимок накладной), геолокация (точка магазина на карте), push-уведомления, подпись iOS,
+# подпись release для Google Play, манифест конфиденциальности iOS (PrivacyInfo.xcprivacy).
 # Запускать из apps/store после
 #   flutter create --platforms=android,ios --org uz.supermarket --project-name sm_store .
 set -euo pipefail
@@ -43,6 +44,8 @@ PY
       -e 's/: FlutterActivity()/: FlutterFragmentActivity()/' -e 's/extends FlutterActivity/extends FlutterFragmentActivity/' "$f"
     rm -f "$f.bak"
   done
+  # Подпись release ключом загрузки (android/key.properties) и targetSdk >= 36.
+  python3 ../scripts/android_release_signing.py android
 fi
 
 if [ -d ios ]; then
@@ -69,7 +72,12 @@ d['UIBackgroundModes'] = sorted(modes)
 with open(p, 'wb') as f:
     plistlib.dump(d, f)
 PY
-  # Push: право aps-environment (при выгрузке в App Store Xcode сам ставит production).
+  # Манифест конфиденциальности (требование App Store): файл + ресурс цели Runner.
+  cp branding/ios/PrivacyInfo.xcprivacy ios/Runner/PrivacyInfo.xcprivacy
+  python3 ../scripts/ios_add_resource.py ios PrivacyInfo.xcprivacy
+  # Push: право aps-environment. В файле — development, чтобы работали отладочные сборки;
+  # при архиве и выгрузке в App Store (Distribute App / flutter build ipa) Xcode переподписывает
+  # приложение профилем App Store, и в нём aps-environment = production.
   cat > ios/Runner/Runner.entitlements <<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

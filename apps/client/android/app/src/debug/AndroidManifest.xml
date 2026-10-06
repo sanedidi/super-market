@@ -4,4 +4,8 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Только для debug-сборки: локальный backend по HTTP
+         (API_URL=http://10.0.2.2:8080/api/v1, см. lib/main.dart).
+         В release HTTP запрещён — сервер работает только по HTTPS. -->
+    <application android:usesCleartextTraffic="true"/>
 </manifest>

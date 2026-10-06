@@ -5,6 +5,7 @@
 - Концепция и MVP: https://claude.ai/code/artifact/ed1758d3-5505-49e8-87e0-7c6bf1ac431f
 - Архитектура и схема данных: https://claude.ai/code/artifact/5354efa4-3e4f-41a9-bfb1-9254a483052d
 - API: [docs/api.md](docs/api.md)
+- Выпуск мобильных приложений в Google Play и App Store: [docs/release.md](docs/release.md)
 
 ## Структура
 
