@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import '../guest.dart';
 import '../main.dart';
 import '../state.dart';
 import '../ui/brand.dart';
@@ -64,9 +65,71 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (mounted) _load();
   }
 
+  /// Раздел, которому нужен вход: гостю — шторка входа, потом раздел.
+  Future<void> _gated(LoginReason reason, Widget screen) async {
+    if (!await requireLogin(context, reason) || !mounted) return;
+    _push(screen);
+  }
+
+  Future<void> _login() async {
+    if (await openLogin(context) && mounted) _load();
+  }
+
+  /// Профиль гостя (Figma «Т5»): «Войдите в Super Market»; заказы, семья,
+  /// избранное и адреса — после входа; помощь и настройки — сразу.
+  Widget _guest() {
+    return Scaffold(
+      body: SafeArea(
+        bottom: false,
+        child: ListView(padding: EdgeInsets.fromLTRB(16, 16, 16, tabBottomInset(context)), children: [
+          const Text('Профиль', style: AppText.h1),
+          const SizedBox(height: 16),
+          InkWell(
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            onTap: _login,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(children: [
+                const Avatar(name: '?', size: 64),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Войдите в Super Market',
+                        maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.h3.copyWith(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text('Заказы, адреса и избранное', style: AppText.body.copyWith(color: AppColors.text2)),
+                  ]),
+                ),
+                const Icon(Icons.chevron_right_rounded, color: AppColors.text2),
+              ]),
+            ),
+          ),
+          const SizedBox(height: 16),
+          SoftGroup(children: [
+            AppListRow(icon: Icons.inventory_2_rounded, title: 'История заказов', onTap: () => _gated(LoginReason.orders, const OrdersScreen())),
+            AppListRow(icon: Icons.family_restroom_rounded, title: 'Моя семья', onTap: () => _gated(LoginReason.family, const FamilyScreen())),
+            AppListRow(icon: Icons.favorite_rounded, title: 'Избранное', onTap: () => _gated(LoginReason.favorite, const FavoritesScreen())),
+            AppListRow(
+              icon: Icons.location_on_rounded,
+              title: 'Мои адреса',
+              divider: false,
+              onTap: () => _gated(LoginReason.addresses, const AddressesScreen()),
+            ),
+          ]),
+          const SizedBox(height: 16),
+          SoftGroup(children: [
+            AppListRow(icon: Icons.help_rounded, title: 'Помощь', onTap: () => _push(const HelpScreen())),
+            AppListRow(icon: Icons.settings_rounded, title: 'Настройки', divider: false, onTap: () => _push(const SettingsScreen())),
+          ]),
+        ]),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    if (state.isGuest) return _guest();
     final p = state.profile;
     if (p == null) {
       return Scaffold(
@@ -207,6 +270,12 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    context.read<AppState>().loadConfig();
+  }
+
   Future<void> _update(Map<String, dynamic> patch) async {
     try {
       await context.read<AppState>().updateProfile(patch);
@@ -225,9 +294,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.watch<AppState>().profile ?? const <String, dynamic>{};
+    final state = context.watch<AppState>();
+    // Гостю — только то, что не требует аккаунта: поддержка, политика, о приложении.
+    final guest = state.isGuest;
+    final p = state.profile ?? const <String, dynamic>{};
     final notif = (p['notifications'] as Map<String, dynamic>?) ?? const {};
-    final supportUrl = '${p['support_url'] ?? ''}';
+    final supportUrl = state.link('support_url');
     final city = '${p['city'] ?? ''}';
     Widget value(String v) => Padding(padding: const EdgeInsets.only(right: 4), child: Text(v, style: AppText.small.copyWith(fontSize: 14)));
     return Scaffold(
@@ -236,41 +308,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const PageHeader(title: 'Настройки'),
           Expanded(
             child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 16), children: [
+              if (!guest) ...[
+                SoftGroup(children: [
+                  AppListRow(
+                    icon: Icons.account_circle_rounded,
+                    title: 'Личные данные',
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileDetailsScreen())),
+                  ),
+                  AppListRow(
+                    icon: Icons.language_rounded,
+                    title: 'Язык приложения',
+                    trailing: value(_languages[p['language']] ?? 'Русский'),
+                    onTap: () => _pick('Язык приложения', _languages, '${p['language']}', (v) => _update({'language': v})),
+                  ),
+                  AppListRow(
+                    icon: Icons.notifications_rounded,
+                    title: 'Уведомления',
+                    trailing: value(notif['orders'] == true ? 'Вкл' : 'Выкл'),
+                    divider: false,
+                    onTap: () => _notifications(notif),
+                  ),
+                ]),
+                const SizedBox(height: 12),
+              ],
               SoftGroup(children: [
-                AppListRow(
-                  icon: Icons.account_circle_rounded,
-                  title: 'Личные данные',
-                  onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileDetailsScreen())),
-                ),
-                AppListRow(
-                  icon: Icons.language_rounded,
-                  title: 'Язык приложения',
-                  trailing: value(_languages[p['language']] ?? 'Русский'),
-                  onTap: () => _pick('Язык приложения', _languages, '${p['language']}', (v) => _update({'language': v})),
-                ),
-                AppListRow(
-                  icon: Icons.notifications_rounded,
-                  title: 'Уведомления',
-                  trailing: value(notif['orders'] == true ? 'Вкл' : 'Выкл'),
-                  divider: false,
-                  onTap: () => _notifications(notif),
-                ),
-              ]),
-              const SizedBox(height: 12),
-              SoftGroup(children: [
-                AppListRow(
-                  icon: Icons.location_city_rounded,
-                  title: 'Город',
-                  trailing: value(city.isEmpty ? 'Не выбран' : city),
-                  onTap: () => _pick('Город', {for (final c in _cities) c: c}, city, (v) => _update({'city': v})),
-                ),
+                if (!guest)
+                  AppListRow(
+                    icon: Icons.location_city_rounded,
+                    title: 'Город',
+                    trailing: value(city.isEmpty ? 'Не выбран' : city),
+                    onTap: () => _pick('Город', {for (final c in _cities) c: c}, city, (v) => _update({'city': v})),
+                  ),
                 if (supportUrl.isNotEmpty) AppListRow(icon: Icons.headset_mic_rounded, title: 'Служба поддержки', onTap: () => _open(supportUrl)),
+                AppListRow(icon: Icons.privacy_tip_rounded, title: 'Политика конфиденциальности', onTap: () => _open(state.privacyUrl)),
                 AppListRow(icon: Icons.info_rounded, title: 'О приложении', divider: false, onTap: _about),
               ]),
-              const SizedBox(height: 12),
-              SoftGroup(children: [
-                AppListRow(icon: Icons.delete_rounded, title: 'Удалить аккаунт', divider: false, onTap: _deleteAccount),
-              ]),
+              if (!guest) ...[
+                const SizedBox(height: 12),
+                SoftGroup(children: [
+                  AppListRow(icon: Icons.delete_rounded, title: 'Удалить аккаунт', divider: false, onTap: _deleteAccount),
+                ]),
+              ],
             ]),
           ),
           Padding(
@@ -285,8 +363,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   shape: const StadiumBorder(),
                   textStyle: AppText.bodyStrong.copyWith(fontSize: 17),
                 ),
-                onPressed: _logout,
-                child: const Text('Выйти'),
+                onPressed: guest ? _login : _logout,
+                child: Text(guest ? 'Войти' : 'Выйти'),
               ),
             ),
           ),
@@ -360,6 +438,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _login() => openLogin(context);
+
   Future<void> _logout() async {
     final ok = await confirmSheet(context, icon: Icons.logout_rounded, title: 'Выйти из аккаунта?', text: 'Войти снова можно по номеру телефона.', confirm: 'Выйти');
     if (!ok || !mounted) return;
@@ -383,6 +463,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await api.delete('/client/me');
       await api.forget();
       nav.popUntil((r) => r.isFirst);
+    } on ApiError catch (e) {
+      if (!mounted) return;
+      if (e.code == 'active_order') {
+        // 409: есть незавершённый заказ — удалить можно после доставки или отмены.
+        final n = e.details['order_number'];
+        await infoSheet(
+          context,
+          icon: Icons.local_shipping_outlined,
+          title: 'Сначала дождитесь заказа',
+          text: n == null ? e.message : 'Заказ № $n ещё не завершён. Когда его доставят или отменят, аккаунт можно будет удалить.',
+        );
+      } else {
+        showError(context, e);
+      }
     } catch (e) {
       if (mounted) showError(context, e);
     }

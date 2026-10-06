@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../cart_actions.dart';
+import '../guest.dart';
 import '../main.dart';
 import '../product_tile.dart';
 import '../state.dart';
@@ -85,8 +86,13 @@ class _ProductScreenState extends State<ProductScreen> {
   }
 
   Future<void> _favorite() async {
+    final state = context.read<AppState>();
+    final wasGuest = state.isGuest;
+    if (!await requireLogin(context, LoginReason.favorite)) return;
+    // Только что вошли, а товар уже в избранном аккаунта — не снимаем его.
+    if (wasGuest && state.isFavorite(_p.id)) return;
     try {
-      await context.read<AppState>().toggleFavorite(_p.id);
+      await state.toggleFavorite(_p.id);
     } catch (e) {
       if (mounted) showError(context, e);
     }

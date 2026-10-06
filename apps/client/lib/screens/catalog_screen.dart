@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../catalog.dart';
+import '../guest.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
-import 'addresses_screen.dart';
 import 'search_screen.dart';
 import 'home_screen.dart';
 import 'root_shell.dart';
@@ -64,7 +64,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 title: state.address == null ? 'Сначала укажите адрес' : 'Рядом нет магазинов',
                 text: 'Каталог зависит от того, какие магазины доставляют к вам.',
                 action: 'Выбрать адрес',
-                onAction: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AddressesScreen())),
+                onAction: () => openAddressPicker(context),
               ),
             ),
           ]),

@@ -3,6 +3,13 @@ import 'package:sm_core/sm_core.dart';
 
 import 'catalog.dart';
 
+/// id точки гостя: адрес не сохранён на сервере, это только координаты
+/// (геолокация или точка на карте), чтобы показать магазины рядом.
+const guestPointId = 'guest';
+
+/// Политика конфиденциальности, если сервер не прислал ссылку.
+const defaultPrivacyUrl = 'https://super-market.uz/privacy';
+
 /// Адрес доставки покупателя.
 class Address {
   Address(this.json);
@@ -14,6 +21,9 @@ class Address {
   double get lat => (json['lat'] as num).toDouble();
   double get lng => (json['lng'] as num).toDouble();
   String get title => label.isNotEmpty ? label : address;
+
+  /// Точка гостя, а не сохранённый адрес: заказать на неё нельзя.
+  bool get isGuestPoint => id == guestPointId;
 }
 
 /// Товар в каталоге магазина.
@@ -105,6 +115,7 @@ class AppState extends ChangeNotifier {
       if (!api.loggedIn) {
         addresses = [];
         address = null;
+        addressesLoaded = false;
         cart.clear();
         cartStoreId = null;
         cartStoreName = null;
@@ -130,6 +141,38 @@ class AppState extends ChangeNotifier {
   }
   final Api api;
 
+  /// Гость: вход не выполнен. Можно смотреть магазины и товары и собирать
+  /// корзину; оформление, избранное, семья и разделы профиля — после входа
+  /// (requireLogin в guest.dart). Запросы, которым нужен вход, гость не шлёт.
+  bool get isGuest => !api.loggedIn;
+
+  /// Настройки до входа (/client/config): ссылки на поддержку, оферту, политику.
+  Map<String, dynamic>? config;
+
+  Future<void> loadConfig() async {
+    if (config != null) return;
+    try {
+      config = await api.get('/client/config') as Map<String, dynamic>;
+      notifyListeners();
+    } catch (_) {
+      // Ссылки необязательны.
+    }
+  }
+
+  /// Ссылка из профиля, иначе из /client/config: support_url, privacy_url, offer_url, bot_url.
+  String link(String key) {
+    for (final m in [profile, config]) {
+      final v = '${m?[key] ?? ''}';
+      if (v.isNotEmpty) return v;
+    }
+    return '';
+  }
+
+  String get privacyUrl {
+    final u = link('privacy_url');
+    return u.isEmpty ? defaultPrivacyUrl : u;
+  }
+
   List<Address> addresses = [];
   Address? address;
 
@@ -140,6 +183,7 @@ class AppState extends ChangeNotifier {
   int unread = 0;
 
   Future<void> loadUnread() async {
+    if (isGuest) return;
     try {
       final r = await api.get('/client/notifications/unread') as Map<String, dynamic>;
       unread = (r['count'] as num?)?.toInt() ?? 0;
@@ -250,14 +294,16 @@ class AppState extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    if (!force && _storesFor == a.id && storesError == null) return;
-    _storesFor = a.id;
+    // Ключ — и id, и точка: у гостя id один, а точка меняется.
+    final key = '${a.id}@${a.lat},${a.lng}';
+    if (!force && _storesFor == key && storesError == null) return;
+    _storesFor = key;
     storesLoading = true;
     storesError = null;
     notifyListeners();
     try {
       final home = await api.get('/client/home', {'lat': a.lat, 'lng': a.lng}) as Map<String, dynamic>;
-      if (_storesFor != a.id) return;
+      if (_storesFor != key) return;
       stores = ((home['stores'] as List?) ?? const []).cast<Map<String, dynamic>>().map(Store.new).toList();
       others = ((home['others'] as List?) ?? const []).cast<Map<String, dynamic>>().map(Store.new).toList();
       if (api.loggedIn) loadWishes();
@@ -272,6 +318,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> loadWishes() async {
+    if (isGuest) return;
     try {
       final items = await api.get('/client/wishes') as Map<String, dynamic>;
       wishes = ((items['items'] as List?) ?? const []).cast<String>().toSet();
@@ -305,7 +352,16 @@ class AppState extends ChangeNotifier {
   String? cartStoreName;
   final Map<String, CartLine> cart = {};
 
+  /// Точка гостя: магазины рядом с ней (адрес на сервере не сохраняется).
+  void setGuestPoint(double lat, double lng) {
+    address = Address({'id': guestPointId, 'label': '', 'address': '', 'lat': lat, 'lng': lng});
+    addressesLoaded = true;
+    notifyListeners();
+    loadStores(force: true);
+  }
+
   Future<void> loadAddresses() async {
+    if (isGuest) return;
     final List<Map<String, dynamic>> items;
     try {
       items = await api.list('/client/addresses');
@@ -317,7 +373,9 @@ class AppState extends ChangeNotifier {
     addresses = items.map(Address.new).toList();
     addressesLoaded = true;
     if (address == null || !addresses.any((a) => a.id == address!.id)) {
-      address = addresses.isEmpty ? null : addresses.first;
+      // Вошли из гостя без сохранённых адресов — витрина остаётся у точки гостя.
+      final keep = address?.isGuestPoint == true ? address : null;
+      address = addresses.isEmpty ? keep : addresses.first;
     } else {
       address = addresses.firstWhere((a) => a.id == address!.id);
     }
@@ -377,6 +435,7 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic>? stats;
 
   Future<void> loadProfile() async {
+    if (isGuest) return;
     loadDebts().catchError((_) {}); // долги не мешают профилю загрузиться
     final results = await Future.wait([api.get('/client/me'), api.get('/client/me/stats')]);
     profile = results[0] as Map<String, dynamic>;
@@ -389,6 +448,7 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic>? debts;
 
   Future<void> loadDebts() async {
+    if (isGuest) return;
     debts = await api.get('/client/debts') as Map<String, dynamic>;
     notifyListeners();
   }
@@ -410,6 +470,7 @@ class AppState extends ChangeNotifier {
   bool isFavorite(String productId) => favorites.contains(productId);
 
   Future<void> loadFavorites() async {
+    if (isGuest) return;
     try {
       final r = await api.get('/client/favorites') as Map<String, dynamic>;
       favorites = ((r['product_ids'] as List?) ?? const []).cast<String>().toSet();
@@ -447,6 +508,7 @@ class AppState extends ChangeNotifier {
   int get familyForMe => (family?['requests_for_me'] as num?)?.toInt() ?? 0;
 
   Future<void> loadFamily() async {
+    if (isGuest) return;
     final r = await api.get('/client/family') as Map<String, dynamic>;
     family = r['family'] as Map<String, dynamic>?;
     familyLoaded = true;

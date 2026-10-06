@@ -64,8 +64,9 @@ class ClientApp extends StatelessWidget {
   }
 }
 
-/// Онбординг (один раз) → вход → приложение. Заставку показывает система
-/// (flutter_native_splash), пока Flutter запускается.
+/// Онбординг (один раз) → приложение. Вход не обязателен: гость сразу видит
+/// главную, а войти просят при оформлении заказа и в разделах профиля
+/// (guest.dart). Заставку показывает система (flutter_native_splash).
 class _Gate extends StatefulWidget {
   const _Gate({required this.onboardingDone});
   final bool onboardingDone;
@@ -85,20 +86,14 @@ class _GateState extends State<_Gate> {
 
   @override
   Widget build(BuildContext context) {
-    final api = context.watch<Api>();
-    final Widget child;
-    if (!_onboardingDone) {
-      child = OnboardingScreen(onDone: _finishOnboarding);
-    } else if (!api.loggedIn) {
-      child = const AuthScreen();
-    } else {
-      child = const _ProfileGate();
-    }
+    final Widget child = _onboardingDone ? const _ProfileGate() : OnboardingScreen(onDone: _finishOnboarding);
     return AnimatedSwitcher(duration: const Duration(milliseconds: 250), child: child);
   }
 }
 
-/// После входа: если имя ещё не указано — шаг 3 «Как вас зовут?», иначе приложение.
+/// Запуск со входом: если имя ещё не указано — шаг 3 «Как вас зовут?», иначе
+/// приложение. Гость сразу попадает в приложение; вход по ходу работы
+/// спрашивает имя сам (AuthScreen).
 class _ProfileGate extends StatefulWidget {
   const _ProfileGate();
 
@@ -113,7 +108,12 @@ class _ProfileGateState extends State<_ProfileGate> {
   @override
   void initState() {
     super.initState();
-    _check();
+    // Гостю имя не нужно — сразу приложение.
+    if (context.read<AppState>().isGuest) {
+      _needName = false;
+    } else {
+      _check();
+    }
   }
 
   Future<void> _check() async {
@@ -130,10 +130,21 @@ class _ProfileGateState extends State<_ProfileGate> {
 
   @override
   Widget build(BuildContext context) {
+    final loggedIn = context.select<Api, bool>((a) => a.loggedIn);
     final need = _needName;
     // Пока грузится профиль — та же картинка, что у нативной заставки.
     if (need == null) return const BrandSplash();
-    if (need) return NameStepScreen(onDone: () => setState(() => _needName = false));
+    // «Назад» на шаге имени выходит из аккаунта — тогда приложение гостя.
+    if (need && loggedIn) {
+      return NameStepScreen(
+        onDone: () => setState(() => _needName = false),
+        onBack: () {
+          final api = context.read<Api>();
+          setState(() => _needName = false);
+          return api.logout();
+        },
+      );
+    }
     return const RootShell();
   }
 }

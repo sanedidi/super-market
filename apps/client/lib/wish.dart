@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'guest.dart';
 import 'main.dart';
 import 'state.dart';
 import 'ui/theme.dart';
@@ -12,8 +13,13 @@ import 'ui/theme.dart';
 /// Нажать или снять «Хочу доставку»; после нажатия — спасибо.
 Future<void> toggleWishWithMessage(BuildContext context, Store s) async {
   final state = context.read<AppState>();
-  final was = state.wishes.contains(s.id);
   final messenger = ScaffoldMessenger.of(context);
+  final wasGuest = state.isGuest;
+  if (!await requireLogin(context, LoginReason.wish)) return;
+  if (wasGuest) await state.loadWishes();
+  final was = state.wishes.contains(s.id);
+  // Только что вошли, а голос уже есть — не снимаем его.
+  if (wasGuest && was) return;
   try {
     await state.toggleWish(s);
     if (!was) {
