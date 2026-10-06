@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
 	"sync"
@@ -14,11 +15,15 @@ import (
 type fakeSMS struct {
 	mu   sync.Mutex
 	sent []string
+	fail bool
 }
 
 func (f *fakeSMS) Send(_ context.Context, phone, text string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.fail {
+		return errors.New("eskiz: test mode")
+	}
 	f.sent = append(f.sent, phone+"|"+text)
 	return nil
 }
@@ -31,8 +36,16 @@ func TestCrowdSMSCode(t *testing.T) {
 	t.Cleanup(func() { server.SMSOverride = nil })
 	a := newAPI(t, testConfig(), pool, nil)
 
-	// Покупателю без привязки к боту код не отправить — как и раньше.
-	a.expect(a.do("POST", "/auth/otp/request", "", map[string]any{"phone": "+998900000090"}), 409, "client needs telegram")
+	// Покупателю без привязки к боту код уходит по SMS с одобренным текстом;
+	// SMS не ушло — как раньше, просим привязать номер к боту.
+	sms.fail = true
+	a.expect(a.do("POST", "/auth/otp/request", "", map[string]any{"phone": "+998900000091"}), 409, "client sms failed")
+	sms.fail = false
+	if r := a.expect(a.do("POST", "/auth/otp/request", "", map[string]any{"phone": "+998900000091"}), 200, "client sms"); r.str("channel") != "sms" ||
+		len(sms.sent) != 1 || !strings.HasPrefix(sms.sent[0], "+998900000091|Super Market ilovasiga kirish uchun kod: ") {
+		t.Fatalf("client sms = %v, sent = %v", r.Body, sms.sent)
+	}
+	sms.sent = nil
 	r := a.expect(a.do("POST", "/auth/otp/request", "", map[string]any{"phone": "+998900000090", "app": "crowd"}), 200, "crowd sms")
 	if r.str("channel") != "sms" || len(sms.sent) != 1 {
 		t.Fatalf("resp = %v, sent = %v", r.Body, sms.sent)

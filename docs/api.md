@@ -16,7 +16,7 @@
 
 | Метод | Путь | Тело | Ответ |
 | --- | --- | --- | --- |
-| POST | `/auth/otp/request` | `{"phone"}` | `{"sent": true, "expires_in": 300}` · 409 `telegram_not_linked` с `details.bot_url` · 429 `too_many_requests` с `details.retry_after` |
+| POST | `/auth/otp/request` | `{"phone"}` | `{"sent": true, "expires_in": 300, "channel": "telegram"\|"sms"}` — код в Telegram, если номер привязан к боту, иначе по SMS (Eskiz, текст — одобренный шаблон `identity.SMSCodeText`) · 409 `telegram_not_linked` с `details.bot_url`, если нет ни бота, ни SMS · 429 `too_many_requests` с `details.retry_after` |
 | POST | `/auth/otp/verify` | `{"phone", "code", "app"}` | `{"access_token", "refresh_token", "token_type", "expires_in"}` · 403 — нет доступа к приложению |
 | POST | `/auth/refresh` | `{"refresh_token"}` | новая пара токенов; старый refresh больше не действует |
 | POST | `/auth/{client,store,admin}/logout` | — | 204 |

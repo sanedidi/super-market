@@ -58,12 +58,18 @@ jobs:
           FCM_CREDENTIALS: ${{ secrets.FCM_CREDENTIALS }}
           # Демо-аккаунт покупателя для проверки Apple / Google (номер:код), только приложение покупателя.
           REVIEW_LOGIN: ${{ secrets.REVIEW_LOGIN || '+998900000077:343549' }}
+          # SMS с кодами входа (Eskiz): email кабинета и секретный ключ из «СМС шлюз». Пусто — только Telegram.
+          ESKIZ_EMAIL: ${{ secrets.ESKIZ_EMAIL }}
+          ESKIZ_PASSWORD: ${{ secrets.ESKIZ_PASSWORD }}
         run: |
           test -n "$PROD_ENV" || { echo "Нет секрета PROD_ENV"; exit 1; }
           {
             printf '%s\n' "$PROD_ENV"
             if [ -n "$FCM_CREDENTIALS" ]; then printf 'FCM_CREDENTIALS=%s\n' "$(printf '%s' "$FCM_CREDENTIALS" | tr -d '\n\r ')"; fi
             printf 'REVIEW_LOGIN=%s\n' "$REVIEW_LOGIN"
+            if [ -n "$ESKIZ_EMAIL" ] && [ -n "$ESKIZ_PASSWORD" ]; then
+              printf 'ESKIZ_EMAIL=%s\nESKIZ_PASSWORD=%s\n' "$(printf '%s' "$ESKIZ_EMAIL" | tr -d '\n\r ')" "$(printf '%s' "$ESKIZ_PASSWORD" | tr -d '\n\r ')"
+            fi
           } | ssh "$SSH_USER@$SSH_HOST" "umask 077 && cat > $APP_DIR/.env"
 
       - name: Deploy
