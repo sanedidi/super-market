@@ -126,6 +126,37 @@ func (s *Service) ListTariffs(ctx context.Context, page httpx.Page) ([]Tariff, e
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[Tariff])
 }
 
+// PublicTariff — тариф для сайта: только действующие, с диапазоном числа магазинов.
+type PublicTariff struct {
+	Name          string `json:"name"`
+	MinStores     int    `json:"min_stores"`
+	MaxStores     *int   `json:"max_stores"` // nil — без верхней границы
+	PricePerStore string `json:"price_per_store"`
+	Currency      string `json:"currency"`
+}
+
+// PublicTariffs — действующие тарифы по возрастанию числа магазинов. Сайт
+// показывает их в блоке «Тарифы»; меняет супер-админ в «Биллинге».
+func (s *Service) PublicTariffs(ctx context.Context) ([]PublicTariff, error) {
+	rows, err := s.pool.Query(ctx, `SELECT name, min_stores, price_per_store::text FROM tariffs
+		WHERE is_active ORDER BY min_stores, id`)
+	if err != nil {
+		return nil, err
+	}
+	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (PublicTariff, error) {
+		t := PublicTariff{Currency: "USD"}
+		return t, row.Scan(&t.Name, &t.MinStores, &t.PricePerStore)
+	})
+	if err != nil {
+		return nil, err
+	}
+	for i := 0; i+1 < len(items); i++ {
+		max := items[i+1].MinStores - 1
+		items[i].MaxStores = &max
+	}
+	return items, nil
+}
+
 func (s *Service) getTariff(ctx context.Context, id string) (Tariff, error) {
 	rows, err := s.pool.Query(ctx, tariffSelect+` WHERE id = $1`, id)
 	if err != nil {

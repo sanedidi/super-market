@@ -11,51 +11,73 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@900&amp;text=Super%20Market&amp;display=swap">
+<link rel="stylesheet" href="/site/landing.css">
 <link rel="stylesheet" href="/site/site.css">
+<script src="/site/landing.js" defer></script>
 </head>
-<body>
-<a class="skip" href="#main">Перейти к содержанию</a>
-<header class="topbar">
-  <div class="wrap topbar__in">
-    <span class="brand"><span class="brand__logo" aria-hidden="true">SM</span>Super Market</span>
+<body class="docpage">
+<a class="skip-link" href="#main">Перейти к содержанию</a>
+<header class="site-header">
+  <div class="container site-header__in">
+    <a class="logo" href="/">Super Market</a>
+    <nav class="site-nav" aria-label="Разделы">
+      <a href="/#stores">Магазинам</a>
+      <a href="/#buyers">Покупателям</a>
+      <a href="/#couriers">Курьерам</a>
+      <a href="/#pos">Касса</a>
+      <a href="/#pricing">Тарифы</a>
+      <a href="/#faq">Вопросы</a>
+    </nav>
+    <div class="site-header__actions">
+      <nav class="lang-switch" aria-label="Язык / Til">
+        <a href="/uz" lang="uz" hreflang="uz">UZ</a><a href="/delete-account" lang="ru" hreflang="ru" aria-current="page">RU</a>
+      </nav>
+      <a class="button button--secondary" href="https://store.super-market.uz/" data-link="login">Войти</a>
+      <a class="button button--primary" href="https://store.super-market.uz/" data-link="register">Подключить магазин</a>
+      <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="mobile-menu" aria-label="Меню">
+        <svg class="i-menu" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg class="i-close" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="mobile-menu" id="mobile-menu">
+    <div class="container">
+      <nav aria-label="Разделы">
+        <a href="/#stores">Магазинам</a>
+        <a href="/#buyers">Покупателям</a>
+        <a href="/#couriers">Курьерам</a>
+        <a href="/#pos">Касса</a>
+        <a href="/#pricing">Тарифы</a>
+        <a href="/#faq">Вопросы</a>
+      </nav>
+      <div class="mobile-menu__actions">
+        <a class="button button--lg button--primary" href="https://store.super-market.uz/" data-link="register">Подключить магазин</a>
+        <a class="button button--lg button--secondary" href="https://store.super-market.uz/" data-link="login">Войти</a>
+      </div>
+    </div>
   </div>
 </header>
 
-<main id="main">
-  <div class="wrap wrap--narrow">
+<main id="main" class="docmain docmain--flow">
+  <div class="container flow-grid">
+   <div class="card flow-card">
+    <ol class="flow-steps" aria-label="Шаги">
+      <li data-for="phone" aria-current="step">1. Номер</li>
+      <li data-for="code">2. Код</li>
+      <li data-for="done">3. Готово</li>
+    </ol>
 
     <!-- Шаг 1: номер телефона -->
     <section class="flow" id="step-phone" aria-labelledby="t-phone">
       <h1 id="t-phone" tabindex="-1">Удаление аккаунта</h1>
       <p class="intro">Удалите аккаунт Super Market, Super Market Курьер или SM Магазин, если приложение уже не установлено. Подтвердим кодом на ваш номер.</p>
 
-      <div class="card what">
-        <h2>Что удалим</h2>
-        <ul class="checklist">
-          <li>
-            <svg class="ico ico--ok" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="currentColor"/><path d="M6 10.2l2.6 2.6L14 7.4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span>Имя, телефон, адреса, избранное, семья</span>
-          </li>
-          <li>
-            <svg class="ico ico--ok" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="currentColor"/><path d="M6 10.2l2.6 2.6L14 7.4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span>Данные курьера «по пути»: документ, геопозиция</span>
-          </li>
-          <li>
-            <svg class="ico ico--wait" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.25" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="M10 5.5V10l3 2" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span>Аккаунт сотрудника магазина<span class="sub">закроет владелец сети или поддержка — до 30 дней</span></span>
-          </li>
-          <li>
-            <svg class="ico ico--info" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="currentColor"/><path d="M10 9v5" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="6.2" r="1.2" fill="#fff"/></svg>
-            <span>Чеки и документы для налоговой<span class="sub">храним по закону, без вашего имени и номера</span></span>
-          </li>
-        </ul>
-      </div>
-
       <form id="delete-form" novalidate>
         <div class="field">
           <label for="phone">Номер телефона</label>
           <div class="phone" id="phone-box">
-            <span class="phone__prefix" aria-hidden="true">+998</span>
+            <span class="phone__prefix" aria-hidden="true">UZ&nbsp;&nbsp;+998</span>
             <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel-national"
                    placeholder="90 123 45 67" required
                    aria-describedby="phone-help phone-error">
@@ -66,7 +88,7 @@
         <button type="submit" class="btn btn--primary" id="send-btn">
           <span class="spinner" aria-hidden="true"></span><span class="btn__label">Получить код</span>
         </button>
-        <p class="hint">Код придёт в Telegram, если номер привязан к боту, иначе по SMS. В приложении: Профиль → Настройки → Удалить аккаунт.</p>
+        <p class="hint">Код придёт в Telegram, если номер привязан к боту Super Market, иначе — по SMS.</p>
       </form>
       <noscript>
         <div class="alert alert--error"><span></span><p>Для формы нужен JavaScript. Без него напишите в поддержку с номера аккаунта — контакты внизу страницы.</p></div>
@@ -122,17 +144,43 @@
       <div class="card result">
         <ul class="checklist" id="done-list"></ul>
       </div>
-      <p class="hint">Вопросы — в Telegram-боте поддержки или на почту из <a href="/privacy">политики конфиденциальности</a>.</p>
+      <p class="hint">Вопросы — в Telegram <a href="https://t.me/super_market_support">@super_market_support</a> или по телефону <a href="tel:+998505764723">+998 50 576 47 23</a>.</p>
       <p><a class="btn btn--secondary" href="/">На главную</a></p>
     </section>
+   </div>
 
+      <aside class="card what" id="what" aria-labelledby="what-title">
+        <h2 id="what-title">Что произойдёт</h2>
+        <ul class="checklist">
+          <li>
+            <svg class="ico ico--ok" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="currentColor"/><path d="M6 10.2l2.6 2.6L14 7.4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Удалим имя, телефон, адреса, избранное и семью</span>
+          </li>
+          <li>
+            <svg class="ico ico--ok" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="currentColor"/><path d="M6 10.2l2.6 2.6L14 7.4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Курьер «по пути»: данные документа и геопозиция</span>
+          </li>
+          <li>
+            <svg class="ico ico--wait" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.25" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="M10 5.5V10l3 2" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Аккаунт сотрудника магазина<span class="sub">закроет владелец сети или поддержка — до 30 дней</span></span>
+          </li>
+          <li>
+            <svg class="ico ico--info" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="currentColor"/><path d="M10 9v5" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="6.2" r="1.2" fill="#fff"/></svg>
+            <span>Чеки и документы для налоговой<span class="sub">храним по закону, без вашего имени и номера</span></span>
+          </li>
+        </ul>
+        <div class="what__apps">
+          <h3>Удобнее в приложении</h3>
+          <p>Super Market: Профиль → Настройки → Удалить аккаунт<br>SM Магазин: Ещё → Удалить аккаунт<br>Курьер: Профиль → Удалить аккаунт</p>
+        </div>
+      </aside>
   </div>
 
-  <div class="wrap wrap--narrow">
-    <article class="doc" id="about" aria-label="Подробно об удалении аккаунта">
+  <div class="container about-wrap">
+    <article class="doc doc-card" id="about" aria-label="Подробно об удалении аккаунта">
 <!-- doc:start (текст из delete-account.md) -->
       <h2 id="p-1">Удаление аккаунта Super Market</h2>
-      <p><strong>Дата вступления в силу: [дата]</strong></p>
+      <p><strong>Дата вступления в силу: 6 октября 2026</strong></p>
       <p>Вы можете удалить аккаунт в любой момент. Ниже — как это сделать и что произойдёт с вашими данными.</p>
       <h3 id="p-2">Покупатели — в приложении Super Market</h3>
       <ol>
@@ -147,7 +195,7 @@
       <p>Ваш аккаунт создал владелец магазина. Попросите его отключить вас в панели магазина или отправьте запрос через <a href="#delete-form">форму в начале страницы</a>.</p>
       <h3 id="p-5">Без приложения — веб-форма</h3>
       <p>Если приложение удалено или недоступно, воспользуйтесь <a href="#delete-form">формой в начале страницы</a>: укажите номер телефона аккаунта и подтвердите его кодом из SMS или Telegram. Аккаунты покупателя и курьера «по пути» удаляются сразу; для сотрудников магазинов и штатных курьеров создаётся запрос.</p>
-      <p>Также можно написать в Telegram [@бот поддержки] или на [email поддержки] с номера телефона аккаунта.</p>
+      <p>Также можно написать в Telegram @super_market_support с номера телефона аккаунта или позвоните +998 50 576 47 23.</p>
       <p>Запросы сотрудников и обращения в поддержку выполняются <strong>в течение 30 дней</strong>. Мы сообщим о результате.</p>
       <h3 id="p-6">Что удаляется</h3>
       <p><strong>Покупатель</strong> — сразу:</p>
@@ -170,20 +218,65 @@
       </ul>
       <p>Восстановить удалённый аккаунт нельзя.</p>
       <p>Подробнее — в <a href="/privacy">Политике конфиденциальности</a>.</p>
-      <p>Контакты: [email поддержки] · [телефон] · Telegram [@бот поддержки]</p>
+      <p>Контакты: +998 50 576 47 23 · Telegram @super_market_support</p>
 <!-- doc:end -->
     </article>
   </div>
 </main>
 
-<footer class="footer">
-  <div class="wrap wrap--narrow">
-    <nav aria-label="Документы">
-      <a href="/privacy">Политика конфиденциальности</a>
-      <a href="/courier-terms">Условия для курьеров</a>
-      <a href="/delete-account" aria-current="page">Удаление аккаунта</a>
-    </nav>
-    <p>© Super Market</p>
+<footer class="site-footer">
+  <div class="container">
+    <div class="site-footer__top">
+      <div class="site-footer__brand">
+        <a class="logo" href="/">Super Market</a>
+        <p>Онлайн-заказы, касса и учёт для продуктовых магазинов у дома.</p>
+      </div>
+      <nav class="site-footer__cols" aria-label="Подвал">
+        <div class="site-footer__col">
+          <h2>Магазинам</h2>
+          <ul>
+            <li><a href="https://store.super-market.uz/" data-link="register">Подключить магазин</a></li>
+            <li><a href="https://store.super-market.uz/" data-link="login">Войти в панель</a></li>
+            <li><a href="/#pos">Касса SM POS</a></li>
+            <li><a href="/#pricing">Тарифы</a></li>
+          </ul>
+        </div>
+        <div class="site-footer__col">
+          <h2>Покупателям</h2>
+          <ul>
+            <li><a href="#" data-link="clientAppStore" aria-disabled="true">App Store</a></li>
+            <li><a href="#" data-link="clientGooglePlay" aria-disabled="true">Google Play</a></li>
+          </ul>
+        </div>
+        <div class="site-footer__col">
+          <h2>Курьерам</h2>
+          <ul>
+            <li><a href="/#couriers">Стать курьером</a></li>
+            <li><a href="#" data-link="courierApp" aria-disabled="true">SM Курьер</a></li>
+          </ul>
+        </div>
+        <div class="site-footer__col">
+          <h2>Документы</h2>
+          <ul>
+            <li><a href="#" data-link="offer" aria-disabled="true">Публичная оферта</a></li>
+            <li><a href="/privacy">Политика конфиденциальности</a></li>
+            <li><a href="/courier-terms">Условия для курьеров</a></li>
+            <li><a href="/delete-account" aria-current="page">Удаление аккаунта</a></li>
+          </ul>
+        </div>
+        <div class="site-footer__col">
+          <h2>Связь</h2>
+          <ul>
+            <li><a href="https://t.me/super_market_support" data-link="telegram">Telegram</a></li>
+            <li><a href="tel:+998505764723" data-link="support">+998 50 576 47 23</a></li>
+          </ul>
+        </div>
+      </nav>
+    </div>
+    <div class="site-footer__bottom">
+      <span>© 2026 Super Market</span>
+      <span>super-market.uz</span>
+    </div>
   </div>
 </footer>
 

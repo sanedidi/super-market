@@ -13,24 +13,58 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@900&amp;text=Super%20Market&amp;display=swap">
+<link rel="stylesheet" href="/site/landing.css">
 <link rel="stylesheet" href="/site/site.css">
+<script src="/site/landing.js" defer></script>
 </head>
-<body>
-<a class="skip" href="#main">Asosiy matnga o‘tish</a>
-<header class="topbar">
-  <div class="wrap topbar__in">
-    <span class="brand"><span class="brand__logo" aria-hidden="true">SM</span>Super Market</span>
-    <nav class="lang" aria-label="Язык / Til">
-      <a href="/privacy" lang="ru" hreflang="ru">RU</a><span aria-hidden="true">·</span><a href="/privacy/uz" lang="uz" hreflang="uz" aria-current="page">UZ</a>
+<body class="docpage">
+<a class="skip-link" href="#main">Asosiy matnga o‘tish</a>
+<header class="site-header">
+  <div class="container site-header__in">
+    <a class="logo" href="/uz">Super Market</a>
+    <nav class="site-nav" aria-label="Bo‘limlar">
+      <a href="/uz#stores">Do‘konlarga</a>
+      <a href="/uz#buyers">Xaridorlarga</a>
+      <a href="/uz#couriers">Kuryerlarga</a>
+      <a href="/uz#pos">Kassa</a>
+      <a href="/uz#pricing">Tariflar</a>
+      <a href="/uz#faq">Savollar</a>
     </nav>
+    <div class="site-header__actions">
+      <nav class="lang-switch" aria-label="Язык / Til">
+        <a href="/privacy/uz" lang="uz" hreflang="uz" aria-current="page">UZ</a><a href="/privacy" lang="ru" hreflang="ru">RU</a>
+      </nav>
+      <a class="button button--secondary" href="https://store.super-market.uz/" data-link="login">Kirish</a>
+      <a class="button button--primary" href="https://store.super-market.uz/" data-link="register">Do‘konni ulash</a>
+      <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="mobile-menu" aria-label="Menyu">
+        <svg class="i-menu" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg class="i-close" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="mobile-menu" id="mobile-menu">
+    <div class="container">
+      <nav aria-label="Bo‘limlar">
+        <a href="/uz#stores">Do‘konlarga</a>
+        <a href="/uz#buyers">Xaridorlarga</a>
+        <a href="/uz#couriers">Kuryerlarga</a>
+        <a href="/uz#pos">Kassa</a>
+        <a href="/uz#pricing">Tariflar</a>
+        <a href="/uz#faq">Savollar</a>
+      </nav>
+      <div class="mobile-menu__actions">
+        <a class="button button--lg button--primary" href="https://store.super-market.uz/" data-link="register">Do‘konni ulash</a>
+        <a class="button button--lg button--secondary" href="https://store.super-market.uz/" data-link="login">Kirish</a>
+      </div>
+    </div>
   </div>
 </header>
 
-<main id="main">
-  <article class="wrap doc">
-    <h1>Super Market maxfiylik siyosati</h1>
-    <p><strong>Kuchga kirish sanasi: [sana]</strong></p>
-    <nav class="card toc" aria-labelledby="toc-title">
+<main id="main" class="docmain">
+  <div class="container docmain__grid">
+    <aside class="docmain__aside">
+    <nav class="toc" aria-labelledby="toc-title">
       <p class="toc__title" id="toc-title">Mundarija</p>
       <ol>
         <li><a href="#s-1">1. Biz kimmiz</a></li>
@@ -51,10 +85,15 @@
         <li><a href="#s-16">16. Aloqa</a></li>
       </ol>
     </nav>
+    </aside>
+  <article class="doc doc-card">
+    <p class="crumbs">Hujjatlar / Maxfiylik siyosati</p>
+    <h1>Maxfiylik siyosati</h1>
+    <p class="doc-meta">Kuchga kirish sanasi: 2026-yil 6-oktabr · <a href="/privacy" lang="ru" hreflang="ru">Русский</a> · <a href="/privacy/uz" aria-current="page">O‘zbekcha</a></p>
     <p>Ushbu Siyosat Super Market platformasi qanday shaxsga doir ma’lumotlarni yig‘ishi, ularni nima uchun ishlatishi, kimga uzatishi, qayerda va qancha muddat saqlashi hamda siz ularni qanday boshqarishingiz mumkinligini tushuntiradi. Siyosat O‘zbekiston Respublikasining 02.07.2019 yildagi O‘RQ-547-son «Shaxsga doir ma’lumotlar to‘g‘risida»gi Qonuniga (keyingi o‘rinlarda — Qonun) muvofiq tuzilgan.</p>
     <h2 id="s-1">1. Biz kimmiz</h2>
-    <p>Shaxsga doir ma’lumotlar operatori — yakka tartibdagi tadbirkor (YaTT) <strong>ANVAROV SHAHZODBEK XOJIMUROD O‘G‘LI</strong>, STIR [STIR], manzil: [manzil], Toshkent shahri, Yunusobod tumani (keyingi o‘rinlarda — «Super Market», «biz»).</p>
-    <p>Biz bilan bog‘lanish: [support email], [telefon], Telegram: [@support bot].</p>
+    <p>Shaxsga doir ma’lumotlar operatori — yakka tartibdagi tadbirkor (YaTT) <strong>ANVAROV SHAHZODBEK XOJIMUROD O‘G‘LI</strong>, YaTT reyestridagi yozuv № 7967982, 25.08.2026, manzil: Toshkent shahri, Yunusobod tumani, Registon, 6-tor ko‘chasi, 10-uy (keyingi o‘rinlarda — «Super Market», «biz»).</p>
+    <p>Biz bilan bog‘lanish: +998 50 576 47 23, Telegram: @super_market_support.</p>
     <h2 id="s-2">2. Siyosat qayerda amal qiladi</h2>
     <p>Siyosat quyidagilarga tatbiq etiladi:</p>
     <ul>
@@ -249,7 +288,7 @@
     <li><strong>Qarzlarni (nasiya)</strong> do‘kon qarz to‘languncha yoki hisobdan chiqarilguncha, keyin esa do‘kon hisobi muddatlarida saqlaydi.</li>
     <li><strong>«Yo‘l-yo‘lakay» kuryerlar</strong> — akkaunt amal qilguncha; hisoblangan va to‘langan summalar — kamida 5 yil; hujjat izi va bloklash haqidagi ma’lumotlar — bloklangan kuryer qayta ro‘yxatdan o‘tmasligi uchun akkaunt o‘chirilgandan keyin 3 yilgacha.</li>
     <li><strong>Kirish kodlari</strong> 5 daqiqa amal qiladi; seans — kirilmasa 30 kungacha.</li>
-    <li><strong>Texnik jurnallar</strong> — [jurnallar muddati] gacha.</li>
+    <li><strong>Texnik jurnallar</strong> — 90 kun gacha.</li>
     </ul>
     <h2 id="s-11">11. Akkauntni o‘chirish</h2>
     <p>Xaridor akkauntni ilovada o‘chirishi mumkin: <strong>Profil → Sozlamalar → Akkauntni o‘chirish</strong>. Kuryerlar va xodimlar, shuningdek ilovaga kira olmaydiganlar <a href="/delete-account">https://super-market.uz/delete-account</a> sahifasidagi veb-shakl orqali yoki qo‘llab-quvvatlash xizmatiga so‘rov yuborishi mumkin. Nima o‘chirilishi va nima qolishi haqida batafsil ma’lumot — o‘sha sahifada.</p>
@@ -262,32 +301,77 @@
     <li>aksiyalar haqidagi bildirishnomalarga e’tiroz bildirish;</li>
     <li>harakatlarimiz ustidan vakolatli davlat organiga yoki sudga shikoyat qilish.</li>
     </ul>
-    <p>Akkauntingiz telefon raqamidan [support email] manziliga yoki Telegram’da [@support bot] ga yozing. Biz 10 ish kuni ichida javob beramiz. Ma’lumotlarni himoya qilish uchun raqamni kod bilan tasdiqlashni so‘rashimiz mumkin.</p>
+    <p>Akkauntingiz telefon raqamidan Telegram’da @super_market_support ga yozing. Biz 10 ish kuni ichida javob beramiz. Ma’lumotlarni himoya qilish uchun raqamni kod bilan tasdiqlashni so‘rashimiz mumkin.</p>
     <h2 id="s-13">13. Ma’lumotlarni qanday himoya qilamiz</h2>
     <p>Server bilan ulanish shifrlanadi (HTTPS). Kirish kodlari, seans tokenlari, parollar va PIN-kodlar faqat xesh ko‘rinishida saqlanadi. Tashqi xizmatlarning kalitlari shifrlanadi. Do‘kon xodimlarining kirish huquqi rollar va do‘konlar bilan cheklangan. Serverga faqat vakolatli shaxslar kira oladi.</p>
     <h2 id="s-14">14. Bolalar</h2>
-    <p>Xaridor ilovasi [minimal yosh] yoshga to‘lmagan shaxslar uchun mo‘ljallanmagan. «Yo‘l-yo‘lakay» kuryer faqat 18 yoshdan bo‘lishi mumkin — yosh hujjat bo‘yicha tekshiriladi. Agar bola bizga ma’lumot berganini bilsangiz, bizga yozing — biz ularni o‘chiramiz.</p>
+    <p>Xaridor ilovasi 16 yoshga to‘lmagan shaxslar uchun mo‘ljallanmagan. «Yo‘l-yo‘lakay» kuryer faqat 18 yoshdan bo‘lishi mumkin — yosh hujjat bo‘yicha tekshiriladi. Agar bola bizga ma’lumot berganini bilsangiz, bizga yozing — biz ularni o‘chiramiz.</p>
     <h2 id="s-15">15. Siyosatdagi o‘zgarishlar</h2>
     <p>Biz Siyosatni yangilashimiz mumkin. Yangi tahrir kuchga kirish sanasi bilan <a href="/privacy">https://super-market.uz/privacy</a> sahifasida e’lon qilinadi. Muhim o‘zgarishlar haqida ilovada xabar beramiz.</p>
     <h2 id="s-16">16. Aloqa</h2>
     <p>YaTT ANVAROV SHAHZODBEK XOJIMUROD O‘G‘LI<br>
-    STIR: [STIR]<br>
-    Manzil: [manzil]<br>
-    E-mail: [support email]<br>
-    Telefon: [telefon]<br>
-    Telegram: [@support bot]</p>
+    YaTT reyestri: № 7967982, 25.08.2026<br>
+    Manzil: Toshkent shahri, Yunusobod tumani, Registon, 6-tor ko‘chasi, 10-uy<br>
+    Telefon: +998 50 576 47 23<br>
+    Telegram: @super_market_support</p>
     <a class="back-top" href="#main">↑ Yuqoriga</a>
   </article>
+  </div>
 </main>
 
-<footer class="footer">
-  <div class="wrap">
-    <nav aria-label="Hujjatlar">
-      <a href="/privacy/uz" aria-current="page">Maxfiylik siyosati</a>
-      <a href="/courier-terms" lang="ru">Условия для курьеров</a>
-      <a href="/delete-account">Akkauntni o‘chirish</a>
-    </nav>
-    <p>© Super Market</p>
+<footer class="site-footer">
+  <div class="container">
+    <div class="site-footer__top">
+      <div class="site-footer__brand">
+        <a class="logo" href="/uz">Super Market</a>
+        <p>Uy yonidagi oziq-ovqat do‘konlari uchun onlayn buyurtmalar, kassa va hisob.</p>
+      </div>
+      <nav class="site-footer__cols" aria-label="Sayt pastki qismi">
+        <div class="site-footer__col">
+          <h2>Do‘konlarga</h2>
+          <ul>
+            <li><a href="https://store.super-market.uz/" data-link="register">Do‘konni ulash</a></li>
+            <li><a href="https://store.super-market.uz/" data-link="login">Panelga kirish</a></li>
+            <li><a href="/uz#pos">SM POS kassasi</a></li>
+            <li><a href="/uz#pricing">Tariflar</a></li>
+          </ul>
+        </div>
+        <div class="site-footer__col">
+          <h2>Xaridorlarga</h2>
+          <ul>
+            <li><a href="#" data-link="clientAppStore" aria-disabled="true">App Store</a></li>
+            <li><a href="#" data-link="clientGooglePlay" aria-disabled="true">Google Play</a></li>
+          </ul>
+        </div>
+        <div class="site-footer__col">
+          <h2>Kuryerlarga</h2>
+          <ul>
+            <li><a href="/uz#couriers">Kuryer bo‘lish</a></li>
+            <li><a href="#" data-link="courierApp" aria-disabled="true">SM Курьер</a></li>
+          </ul>
+        </div>
+        <div class="site-footer__col">
+          <h2>Hujjatlar</h2>
+          <ul>
+            <li><a href="#" data-link="offer" aria-disabled="true">Ommaviy oferta</a></li>
+            <li><a href="/privacy/uz" aria-current="page">Maxfiylik siyosati</a></li>
+            <li><a href="/courier-terms" hreflang="ru">Kuryerlar uchun shartlar</a></li>
+            <li><a href="/delete-account">Akkauntni o‘chirish</a></li>
+          </ul>
+        </div>
+        <div class="site-footer__col">
+          <h2>Aloqa</h2>
+          <ul>
+            <li><a href="https://t.me/super_market_support" data-link="telegram">Telegram</a></li>
+            <li><a href="tel:+998505764723" data-link="support">+998 50 576 47 23</a></li>
+          </ul>
+        </div>
+      </nav>
+    </div>
+    <div class="site-footer__bottom">
+      <span>© 2026 Super Market</span>
+      <span>super-market.uz</span>
+    </div>
   </div>
 </footer>
 </body>

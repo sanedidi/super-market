@@ -81,6 +81,13 @@
   function show(name) {
     Object.keys(steps).forEach(function (k) { steps[k].hidden = k !== name; });
     about.hidden = name !== 'phone';
+    // Шаги «1. Номер · 2. Код · 3. Готово» и боковая карточка «Что произойдёт» (только на шаге 1) — через CSS.
+    document.documentElement.setAttribute('data-step', name);
+    var chips = document.querySelectorAll('.flow-steps [data-for]');
+    for (var i = 0; i < chips.length; i++) {
+      if (chips[i].getAttribute('data-for') === name) chips[i].setAttribute('aria-current', 'step');
+      else chips[i].removeAttribute('aria-current');
+    }
     var h = steps[name].querySelector('h1');
     window.scrollTo(0, 0);
     if (h) h.focus({ preventScroll: true });

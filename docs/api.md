@@ -439,6 +439,9 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 | GET/PUT | `/admin/billing/settings` | `usd_rate` (курс для счетов), `grace_days` (дней на оплату), `auto_charge_balance` |
 | GET/POST | `/admin/billing/tariffs?limit=&offset=` | `{"name","min_stores","price_per_store"}` — цена за магазин в месяц, USD |
 | PATCH | `/admin/billing/tariffs/{id}` | в т.ч. `is_active` |
+
+Тарифы для сайта, без входа: `GET /public/tariffs` → `{"items": [{"name", "min_stores", "max_stores", "price_per_store", "currency": "USD"}]}` —
+только действующие, по возрастанию `min_stores`; `max_stores` — до следующего тарифа (у последнего `null`). Кэш 5 минут.
 | GET | `/admin/billing/networks?overdue=true` | сети: магазины, цена, баланс, долг |
 | GET/PATCH | `/admin/billing/networks/{id}` | `{"custom_price_per_store"}`, `{"clear_custom_price":true}`, `{"billing_from":"YYYY-MM-01"}` |
 | GET | `/admin/billing/invoices?network_id=&status=` | счета |
