@@ -51,6 +51,15 @@ func TestPushCampaigns(t *testing.T) {
 	}
 	client2, _ := a.login("+998901111111", identity.AppClient)
 	a.expect(a.do("PATCH", "/client/me", client2, map[string]any{"language": "uz"}), 200, "lang")
+	// Рекламные push — только с явного согласия: новым покупателям выключены.
+	if n := a.expect(a.do("POST", "/admin/push/campaigns/preview", adminTok, map[string]any{
+		"title": "Скидки", "body": "Фрукты", "target": map[string]any{"type": "home"}, "audience": map[string]any{"type": "all"},
+	}), 200, "preview without consent").Body["recipients"].(float64); n != 0 {
+		t.Fatalf("без согласия = %v", n)
+	}
+	for _, tok := range []string{shop.client, client2} {
+		a.expect(a.do("PATCH", "/client/me", tok, map[string]any{"notifications": map[string]any{"promos": true}}), 200, "promos consent")
+	}
 	user1 := sqlStr(t, pool, `SELECT id::text FROM users WHERE phone = '+998901234567'`)
 	category := sqlStr(t, pool, `SELECT category_id::text FROM products WHERE id = $1`, shop.cola)
 

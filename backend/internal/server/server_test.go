@@ -420,22 +420,64 @@ func TestTelegramLoginFlow(t *testing.T) {
 }
 
 // TestReviewLogin — демо-аккаунт для проверки в магазинах приложений:
-// фиксированный код без Telegram, только приложение покупателя.
+// фиксированный код без Telegram в приложениях покупателя, магазина
+// (только если номер — активный сотрудник) и курьера «по пути»; в панель
+// супер-админа — нет.
 func TestReviewLogin(t *testing.T) {
 	pool := freshDB(t)
 	cfg := testConfig()
 	cfg.ReviewLogin = "+998900000077:482915"
 	tg := &fakeTelegram{}
 	a := newAPI(t, cfg, pool, tg)
+	// Второй сервер с dev-кодом — чтобы завести демо-сеть.
+	devCfg := cfg
+	devCfg.DevOTPCode = "111111"
+	dev := newAPI(t, devCfg, pool, nil)
+
+	verify := func(app string, terms bool) resp {
+		t.Helper()
+		a.expect(a.do("POST", "/auth/otp/request", "", map[string]any{"phone": "+998900000077", "app": app}), 200, "review request "+app)
+		return a.do("POST", "/auth/otp/verify", "", map[string]any{"phone": "+998900000077", "code": "482915", "app": app, "terms_accepted": terms})
+	}
 
 	a.expect(a.do("POST", "/auth/otp/request", "", map[string]string{"phone": "+998 90 000 00 77"}), 200, "review request")
 	a.expect(a.do("POST", "/auth/otp/verify", "", map[string]string{"phone": "+998900000077", "code": "111111", "app": "client"}), 400, "wrong code")
 	r := a.expect(a.do("POST", "/auth/otp/verify", "", map[string]string{"phone": "+998900000077", "code": "482915", "app": "client"}), 200, "review verify")
-	if r.str("access_token") == "" || len(tg.sent) != 0 {
-		t.Fatalf("verify = %v, telegram = %v", r.Body, tg.sent)
+	if r.str("access_token") == "" {
+		t.Fatalf("verify = %v", r.Body)
 	}
-	a.expect(a.do("POST", "/auth/otp/request", "", map[string]string{"phone": "+998900000077"}), 200, "again")
-	a.expect(a.do("POST", "/auth/otp/verify", "", map[string]string{"phone": "+998900000077", "code": "482915", "app": "store"}), 400, "store app")
+
+	// Панель супер-админа — никогда.
+	a.expect(verify("admin", false), 400, "admin app")
+	// Код не тратится на отказ до проверки — следующий запрос без паузы.
+	if _, err := pool.Exec(context.Background(), `DELETE FROM auth_codes`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Магазин: обычные проверки — номер должен быть у активного сотрудника
+	// (его заводит владелец демо-сети).
+	a.expect(verify("store", false), 403, "store app before employee")
+	adminTok, _ := dev.login("+998900000001", identity.AppAdmin)
+	ownerTok, _ := setupNetwork(t, dev, adminTok, "+998900000002")
+	role := dev.expect(dev.do("POST", "/store/roles", ownerTok, map[string]any{
+		"name": "Проверка", "permissions": []string{identity.PermOrdersManage},
+	}), 201, "role").str("id")
+	emp := dev.expect(dev.do("POST", "/store/employees", ownerTok, map[string]any{
+		"phone": "+998900000077", "full_name": "App Review", "role_id": role, "all_stores": true,
+	}), 201, "review employee").str("id")
+	st := a.expect(verify("store", false), 200, "store app")
+	a.expect(a.do("GET", "/store/me", st.str("access_token"), nil), 200, "store me")
+	dev.expect(dev.do("PATCH", "/store/employees/"+emp, ownerTok, map[string]any{"status": "inactive"}), 200, "disable employee")
+	a.expect(verify("store", false), 403, "store app after disable")
+
+	// Курьер «по пути»: обычная регистрация с согласием.
+	a.expect(verify("crowd", false), 422, "crowd without terms")
+	cr := a.expect(verify("crowd", true), 200, "crowd app")
+	a.expect(a.do("GET", "/crowd/me", cr.str("access_token"), nil), 200, "crowd me")
+
+	if len(tg.sent) != 0 {
+		t.Fatalf("коды демо-номера не отправляются: %v", tg.sent)
+	}
 	// Другие номера по-прежнему требуют Telegram.
 	a.expect(a.do("POST", "/auth/otp/request", "", map[string]string{"phone": "+998900000078"}), 409, "not linked")
 }

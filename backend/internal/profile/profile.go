@@ -4,10 +4,8 @@ package profile
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
-	"math/big"
 	"strings"
 	"time"
 
@@ -15,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sanedidi/super-market/backend/internal/family"
+	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 )
@@ -62,7 +61,12 @@ func (s *Service) Config() AppConfig {
 
 type Notifications struct {
 	Orders bool `json:"orders"`
+	// Promos — рекламные push. Новым покупателям выключены: включаются только
+	// явным согласием (Apple 4.5.4), PATCH /client/me {notifications: {promos: true}}.
 	Promos bool `json:"promos"`
+	// PromosConsentAt — когда покупатель включил рекламные push (null — не
+	// включал явно или выключил).
+	PromosConsentAt *time.Time `json:"promos_consent_at"`
 }
 
 type Profile struct {
@@ -88,12 +92,12 @@ type Profile struct {
 func (s *Service) Get(ctx context.Context, userID string) (Profile, error) {
 	p := Profile{SupportURL: s.links.Support, PrivacyURL: s.links.Privacy, OfferURL: s.links.Offer, CourierAppURL: s.links.CourierApp}
 	err := s.pool.QueryRow(ctx, `
-		SELECT u.phone, u.full_name, c.first_name, c.last_name, c.terms_accepted_at, c.language, c.city, to_char(c.birth_date, 'YYYY-MM-DD'), c.gender, c.notify_orders, c.notify_promos,
+		SELECT u.phone, u.full_name, c.first_name, c.last_name, c.terms_accepted_at, c.language, c.city, to_char(c.birth_date, 'YYYY-MM-DD'), c.gender, c.notify_orders, c.notify_promos, c.promos_consent_at,
 		       EXISTS (SELECT 1 FROM telegram_links tl WHERE tl.phone = u.phone)
 		FROM users u JOIN customers c ON c.user_id = u.id
 		WHERE u.id = $1 AND c.deleted_at IS NULL`, userID).Scan(
 		&p.Phone, &p.FullName, &p.FirstName, &p.LastName, &p.TermsAcceptedAt, &p.Language, &p.City, &p.BirthDate, &p.Gender,
-		&p.Notifications.Orders, &p.Notifications.Promos, &p.TelegramLinked)
+		&p.Notifications.Orders, &p.Notifications.Promos, &p.Notifications.PromosConsentAt, &p.TelegramLinked)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, apperr.NotFound("профиль не найден")
 	}
@@ -192,9 +196,11 @@ func (s *Service) Update(ctx context.Context, userID string, in UpdateInput) (Pr
 		_, err := tx.Exec(ctx, `
 			UPDATE customers SET language = COALESCE($2, language), city = COALESCE($3, city),
 			       notify_orders = COALESCE($4, notify_orders), notify_promos = COALESCE($5, notify_promos),
+			       promos_consent_at = CASE WHEN $5::bool THEN COALESCE(promos_consent_at, $9)
+			                                WHEN NOT $5::bool THEN NULL ELSE promos_consent_at END,
 			       birth_date = CASE WHEN $6 THEN $7::date ELSE birth_date END,
 			       gender = COALESCE($8, gender)
-			WHERE user_id = $1`, userID, in.Language, city, orders, promos, in.BirthDate != nil, birth, in.Gender)
+			WHERE user_id = $1`, userID, in.Language, city, orders, promos, in.BirthDate != nil, birth, in.Gender, s.now())
 		if err != nil {
 			return err
 		}
@@ -303,69 +309,45 @@ func (s *Service) RemoveDevice(ctx context.Context, userID, token string) error 
 // Delete удаляет аккаунт покупателя: закрывает сессии, стирает имя, адреса,
 // избранное и устройства. Заказы остаются для учёта и фискализации, но без
 // телефона и адреса (координаты огрубляются до ~1 км). Номер телефона
-// освобождается — новый вход с ним создаст новый аккаунт. У сотрудников и
-// супер-админов номер остаётся (он нужен для входа в панели).
+// освобождается — новый вход с ним создаст новый аккаунт. У сотрудников,
+// супер-админов и курьеров «по пути» номер остаётся (он нужен для входа).
 func (s *Service) Delete(ctx context.Context, userID string) error {
-	return db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		var active int64
-		err := tx.QueryRow(ctx, `SELECT number FROM orders WHERE customer_id = $1 AND status IN `+activeStatuses+` LIMIT 1`, userID).Scan(&active)
-		if err == nil {
-			return apperr.Conflict("active_order", fmt.Sprintf("Дождитесь завершения заказа №%d — потом аккаунт можно удалить", active))
-		}
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return err
-		}
-		if err := family.RemoveUser(ctx, tx, userID); err != nil {
-			return err
-		}
-		for _, q := range []string{
-			`DELETE FROM devices WHERE user_id = $1`,
-			`DELETE FROM favorites WHERE user_id = $1`,
-			`DELETE FROM customer_addresses WHERE user_id = $1`,
-			`DELETE FROM notifications_outbox WHERE user_id = $1`,
-			`UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND app = 'client' AND revoked_at IS NULL`,
-			`UPDATE customers SET deleted_at = now(), city = '', language = 'ru',
-			        first_name = '', last_name = '', birth_date = NULL, gender = '', terms_accepted_at = NULL,
-			        notify_orders = true, notify_promos = true WHERE user_id = $1`,
-			`UPDATE orders SET customer_phone = '', entrance = '', floor = '', apartment = '', address_comment = '',
-			        comment = '', address = 'Адрес удалён',
-			        location = ST_SetSRID(ST_MakePoint(round(ST_X(location::geometry)::numeric, 2)::float8,
-			                                           round(ST_Y(location::geometry)::numeric, 2)::float8), 4326)::geography
-			 WHERE customer_id = $1`,
-		} {
-			if _, err := tx.Exec(ctx, q, userID); err != nil {
-				return err
-			}
-		}
-		var staff bool
-		if err := tx.QueryRow(ctx, `
-			SELECT EXISTS (SELECT 1 FROM employees WHERE user_id = $1)
-			    OR EXISTS (SELECT 1 FROM platform_admins WHERE user_id = $1)`, userID).Scan(&staff); err != nil {
-			return err
-		}
-		if staff {
-			return nil
-		}
-		tomb, err := tombstonePhone()
-		if err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `DELETE FROM telegram_links WHERE phone = (SELECT phone FROM users WHERE id = $1)`, userID); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `DELETE FROM auth_codes WHERE phone = (SELECT phone FROM users WHERE id = $1)`, userID); err != nil {
-			return err
-		}
-		_, err = tx.Exec(ctx, `UPDATE users SET full_name = '', phone = $2 WHERE id = $1`, userID, tomb)
-		return err
-	})
+	return db.InTx(ctx, s.pool, func(tx pgx.Tx) error { return DeleteClient(ctx, tx, userID) })
 }
 
-// tombstonePhone — номер вида +999…: код +999 не выдаётся ни одной стране.
-func tombstonePhone() (string, error) {
-	n, err := rand.Int(rand.Reader, big.NewInt(1_000_000_000_000))
-	if err != nil {
-		return "", err
+// DeleteClient — удаление аккаунта покупателя в транзакции tx (DELETE
+// /client/me и удаление с сайта). 409 active_order — есть незавершённый заказ.
+func DeleteClient(ctx context.Context, tx pgx.Tx, userID string) error {
+	var active int64
+	err := tx.QueryRow(ctx, `SELECT number FROM orders WHERE customer_id = $1 AND status IN `+activeStatuses+` LIMIT 1`, userID).Scan(&active)
+	if err == nil {
+		return apperr.Conflict("active_order", fmt.Sprintf("Дождитесь завершения заказа №%d — потом аккаунт можно удалить", active)).
+			WithDetails(map[string]any{"account": "client", "order_number": active})
 	}
-	return fmt.Sprintf("+999%012d", n.Int64()), nil
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	if err := family.RemoveUser(ctx, tx, userID); err != nil {
+		return err
+	}
+	for _, q := range []string{
+		`DELETE FROM devices WHERE user_id = $1 AND app = 'client'`,
+		`DELETE FROM favorites WHERE user_id = $1`,
+		`DELETE FROM customer_addresses WHERE user_id = $1`,
+		`DELETE FROM notifications_outbox WHERE user_id = $1`,
+		`UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND app = 'client' AND revoked_at IS NULL`,
+		`UPDATE customers SET deleted_at = now(), city = '', language = 'ru',
+		        first_name = '', last_name = '', birth_date = NULL, gender = '', terms_accepted_at = NULL,
+		        notify_orders = true, notify_promos = false, promos_consent_at = NULL WHERE user_id = $1`,
+		`UPDATE orders SET customer_phone = '', entrance = '', floor = '', apartment = '', address_comment = '',
+		        comment = '', address = 'Адрес удалён',
+		        location = ST_SetSRID(ST_MakePoint(round(ST_X(location::geometry)::numeric, 2)::float8,
+		                                           round(ST_Y(location::geometry)::numeric, 2)::float8), 4326)::geography
+		 WHERE customer_id = $1`,
+	} {
+		if _, err := tx.Exec(ctx, q, userID); err != nil {
+			return err
+		}
+	}
+	return identity.ReleasePhone(ctx, tx, userID)
 }

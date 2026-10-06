@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/sanedidi/super-market/backend/internal/account"
 	"github.com/sanedidi/super-market/backend/internal/admin"
 	"github.com/sanedidi/super-market/backend/internal/ads"
 	"github.com/sanedidi/super-market/backend/internal/ai"
@@ -132,6 +133,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		invoices.NewModule(scans, mediaSvc, auth, log),
 		start.NewModule(startSvc, mediaSvc, auth, log),
 		summary.NewModule(summary.NewService(pool, log), auth, log),
+		account.NewModule(account.NewService(pool, idSvc, notify.New(pool, tg, log), log), auth, log),
 	)
 	return &App{Handler: h, Orders: ord, Payments: pay, Billing: bill}, nil
 }
