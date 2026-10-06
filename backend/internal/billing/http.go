@@ -23,6 +23,9 @@ func NewModule(svc *Service, auth *identity.Authenticator, log *slog.Logger) *Mo
 }
 
 func (m *Module) Routes(r chi.Router) {
+	// Тарифы для сайта super-market.uz — без входа.
+	r.Get("/public/tariffs", m.publicTariffs)
+
 	r.Group(func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppStore))
 		r.Get("/store/balance", m.balance)
@@ -55,6 +58,14 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/", m.adminPayouts)
 		r.Post("/{id}/paid", m.processPayout("paid"))
 		r.Post("/{id}/reject", m.processPayout("rejected"))
+	})
+}
+
+func (m *Module) publicTariffs(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[PublicTariff], error) {
+		items, err := m.svc.PublicTariffs(r.Context())
+		return httpx.List[PublicTariff]{Items: items}, err
 	})
 }
 
