@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +8,10 @@ import '../main.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'finance_logic.dart';
+
+/// На iOS подписка только для просмотра (Apple 3.1.1): без оплаты счетов и без
+/// текста о том, где и как платить. Вывод денег магазина — на обеих платформах.
+bool get subscriptionReadOnly => defaultTargetPlatform == TargetPlatform.iOS;
 
 /// Баланс сети на платформе (деньги онлайн-заказов), вывод и подписка.
 class BalanceScreen extends StatefulWidget {
@@ -121,50 +126,55 @@ class _BalanceScreenState extends State<BalanceScreen> {
                   ]),
                 ),
                 const SizedBox(height: 16),
-                const Text('Подписка', style: AppText.h3),
-                const SizedBox(height: 10),
-                AppCard(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [
-                      Expanded(child: Text('\$${money(bill['monthly_usd'], suffix: false)} в месяц', style: AppText.title)),
-                      StatusChip(
-                        billingStatus(bill),
-                        tone: bill['overdue'] == true ? ChipTone.red : (n(bill['unpaid_uzs']) > 0 ? ChipTone.amber : ChipTone.green),
-                      ),
-                    ]),
-                    const SizedBox(height: 6),
-                    Text('Магазинов: ${bill['stores_count'] ?? 0} × \$${money(bill['price_per_store'], suffix: false)}', style: AppText.small),
-                    if (n(bill['unpaid_uzs']) > 0) Text('К оплате: ${money(bill['unpaid_uzs'])}', style: AppText.bodyStrong),
-                  ]),
-                ),
-                for (final inv in _invoices) ...[
+                if (subscriptionReadOnly)
+                  SubscriptionInfoCard(bill: bill)
+                else ...[
+                  const Text('Подписка', style: AppText.h3),
                   const SizedBox(height: 10),
                   AppCard(
-                    border: inv['overdue'] == true ? AppColors.primary : null,
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Row(children: [
-                        Expanded(child: Text('Счёт за ${inv['period']}', style: AppText.bodyStrong)),
-                        Text(money(inv['amount_uzs']), style: AppText.bodyStrong),
-                      ]),
-                      Text(
-                        inv['overdue'] == true ? 'Просрочен · срок был ${inv['due_date']}' : 'Оплатить до ${inv['due_date']}',
-                        style: AppText.small.copyWith(color: inv['overdue'] == true ? AppColors.primary : AppColors.text2),
-                      ),
-                      const SizedBox(height: 10),
-                      BigButton(
-                        label: 'Оплатить с баланса',
-                        height: 44,
-                        busy: _paying == inv['id'],
-                        onPressed: _paying == null && n(b['available']) >= n(inv['amount_uzs']) ? () => _pay(inv) : null,
-                      ),
-                      if (n(b['available']) < n(inv['amount_uzs']))
-                        const Padding(
-                          padding: EdgeInsets.only(top: 6),
-                          child: Text('На балансе не хватает — оплатите счёт другим способом, реквизиты у администратора платформы.', style: AppText.small),
+                        Expanded(child: Text('\$${money(bill['monthly_usd'], suffix: false)} в месяц', style: AppText.title)),
+                        StatusChip(
+                          billingStatus(bill),
+                          tone: bill['overdue'] == true ? ChipTone.red : (n(bill['unpaid_uzs']) > 0 ? ChipTone.amber : ChipTone.green),
                         ),
+                      ]),
+                      const SizedBox(height: 6),
+                      Text('Магазинов: ${bill['stores_count'] ?? 0} × \$${money(bill['price_per_store'], suffix: false)}', style: AppText.small),
+                      if (n(bill['unpaid_uzs']) > 0) Text('К оплате: ${money(bill['unpaid_uzs'])}', style: AppText.bodyStrong),
                     ]),
                   ),
                 ],
+                if (!subscriptionReadOnly)
+                  for (final inv in _invoices) ...[
+                    const SizedBox(height: 10),
+                    AppCard(
+                      border: inv['overdue'] == true ? AppColors.primary : null,
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Row(children: [
+                          Expanded(child: Text('Счёт за ${inv['period']}', style: AppText.bodyStrong)),
+                          Text(money(inv['amount_uzs']), style: AppText.bodyStrong),
+                        ]),
+                        Text(
+                          inv['overdue'] == true ? 'Просрочен · срок был ${inv['due_date']}' : 'Оплатить до ${inv['due_date']}',
+                          style: AppText.small.copyWith(color: inv['overdue'] == true ? AppColors.primary : AppColors.text2),
+                        ),
+                        const SizedBox(height: 10),
+                        BigButton(
+                          label: 'Оплатить с баланса',
+                          height: 44,
+                          busy: _paying == inv['id'],
+                          onPressed: _paying == null && n(b['available']) >= n(inv['amount_uzs']) ? () => _pay(inv) : null,
+                        ),
+                        if (n(b['available']) < n(inv['amount_uzs']))
+                          const Padding(
+                            padding: EdgeInsets.only(top: 6),
+                            child: Text('На балансе не хватает — оплатите счёт другим способом, реквизиты у администратора платформы.', style: AppText.small),
+                          ),
+                      ]),
+                    ),
+                  ],
                 if (_payouts.isNotEmpty) ...[
                   const SizedBox(height: 20),
                   const Text('Заявки на вывод', style: AppText.h3),
@@ -224,6 +234,48 @@ class _BalanceScreenState extends State<BalanceScreen> {
             ),
     );
   }
+}
+
+/// Подписка на iOS (Figma М11а): тариф, магазины × цена, «Оплачено до» и статус —
+/// только просмотр, без кнопок оплаты и без текста о способах оплаты.
+class SubscriptionInfoCard extends StatelessWidget {
+  const SubscriptionInfoCard({super.key, required this.bill, this.today});
+
+  final Map<String, dynamic> bill;
+
+  /// Для тестов; по умолчанию — сегодня.
+  final DateTime? today;
+
+  @override
+  Widget build(BuildContext context) {
+    final tariff = '${bill['tariff_name'] ?? ''}'.trim();
+    final paidUntil = subscriptionPaidUntil(bill, today ?? DateTime.now());
+    return AppCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Expanded(child: Text('Подписка', style: AppText.title)),
+          StatusChip(
+            billingStatus(bill),
+            icon: bill['overdue'] != true && n(bill['unpaid_uzs']) <= 0 ? Icons.check_circle_rounded : null,
+            tone: bill['overdue'] == true ? ChipTone.red : (n(bill['unpaid_uzs']) > 0 ? ChipTone.amber : ChipTone.green),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        if (tariff.isNotEmpty) _row('Тариф', tariff),
+        _row('Магазинов', '${bill['stores_count'] ?? 0} × \$${money(bill['price_per_store'], suffix: false)} в месяц'),
+        if (paidUntil != null) _row('Оплачено до', ruDate(paidUntil)),
+      ]),
+    );
+  }
+
+  Widget _row(String label, String value) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(children: [
+          Text(label, style: AppText.body.copyWith(color: AppColors.text2)),
+          const SizedBox(width: 12),
+          Expanded(child: Text(value, style: AppText.bodyStrong, textAlign: TextAlign.right)),
+        ]),
+      );
 }
 
 class _PayoutSheet extends StatefulWidget {

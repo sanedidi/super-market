@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../account/account_logic.dart';
+import '../account/delete_account_sheet.dart';
 import '../ads/ads_screen.dart';
 import '../control/cashiers_screen.dart';
 import '../crowd/crowd_screen.dart';
@@ -89,6 +92,20 @@ class MoreScreen extends StatelessWidget {
               onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LockSettingsScreen())),
             ),
             ListTile(
+              leading: const Icon(Icons.privacy_tip_outlined),
+              title: const Text('Политика конфиденциальности', style: AppText.bodyStrong),
+              subtitle: const Text('откроется в браузере', style: AppText.small),
+              trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
+              onTap: () => _openPrivacy(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.person_remove_outlined, color: AppColors.primary),
+              title: Text('Удалить аккаунт', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
+              subtitle: const Text('запрос на удаление', style: AppText.small),
+              trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
+              onTap: () => requestAccountDeletion(context, isOwner: st.me?['is_owner'] == true),
+            ),
+            ListTile(
               leading: const Icon(Icons.logout_rounded, color: AppColors.primary),
               title: Text('Выйти', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
               onTap: () async {
@@ -108,5 +125,15 @@ class MoreScreen extends StatelessWidget {
         const Center(child: Text('Super Market Магазин · версия $appVersion', style: AppText.small)),
       ]),
     );
+  }
+
+  Future<void> _openPrivacy(BuildContext context) async {
+    bool ok;
+    try {
+      ok = await launchUrl(Uri.parse(privacyUrl), mode: LaunchMode.externalApplication);
+    } catch (_) {
+      ok = false;
+    }
+    if (!ok && context.mounted) showMessage(context, 'Не удалось открыть браузер. Политика — на $privacyUrl');
   }
 }

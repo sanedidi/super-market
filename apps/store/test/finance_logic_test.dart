@@ -33,4 +33,15 @@ void main() {
     expect(billingStatus({'overdue': false, 'unpaid_uzs': '100.00'}), 'Есть неоплаченный счёт');
     expect(billingStatus({'overdue': false, 'unpaid_uzs': '0'}), 'Оплачено');
   });
+
+  test('ruDate и subscriptionPaidUntil', () {
+    expect(ruDate(DateTime(2026, 11, 1)), '1 ноября 2026');
+    final today = DateTime(2026, 10, 6);
+    final paid = {'billing_from': '2026-01-01', 'unpaid_uzs': '0.00', 'overdue': false};
+    expect(subscriptionPaidUntil(paid, today), DateTime(2026, 11, 1));
+    expect(subscriptionPaidUntil({...paid, 'unpaid_uzs': '381000.00'}, today), isNull);
+    expect(subscriptionPaidUntil({...paid, 'billing_from': '2027-01-01'}, today), DateTime(2027, 1, 1));
+    expect(subscriptionPaidUntil({...paid, 'paid_until': '2026-12-01'}, today), DateTime(2026, 12, 1));
+    expect(subscriptionPaidUntil(paid, DateTime(2026, 12, 15)), DateTime(2027, 1, 1));
+  });
 }
