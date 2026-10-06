@@ -110,7 +110,7 @@ func (s *Service) loadPrincipal(ctx context.Context, c token.Claims) (*Principal
 			WHERE `+live, c.SessionID, c.UserID).Scan(new(int))
 	case AppCrowd:
 		err = s.pool.QueryRow(ctx, `
-			SELECT 1 FROM sessions s JOIN crowd_couriers cc ON cc.user_id = s.user_id AND cc.status <> 'blocked'
+			SELECT 1 FROM sessions s JOIN crowd_couriers cc ON cc.user_id = s.user_id AND cc.status <> 'blocked' AND cc.deleted_at IS NULL
 			WHERE `+live, c.SessionID, c.UserID).Scan(new(int))
 	case AppStore, AppCourier:
 		// Курьеру нужен действующий логин и право доставки: отключили вход

@@ -25,6 +25,12 @@
 сотруднику активной сети, в `admin` — номерам из `SUPER_ADMIN_PHONES`.
 Access-токен живёт 15 минут, refresh — 30 дней. После 5 неверных кодов код сгорает.
 
+**Демо-вход для проверки в App Store / Google Play** — env `REVIEW_LOGIN=+998XXXXXXXXX:123456`. Для этого
+номера код не отправляется (ни Telegram, ни SMS) и всегда равен указанному. Работает в приложениях
+`client`, `store` и `crowd` с обычными проверками: в `store` номер должен быть у активного сотрудника
+активной сети (владелец демо-сети заводит его в «Сотрудниках», иначе 403), в `crowd` — регистрация с
+`terms_accepted: true` (иначе 422 `terms_required`). В `admin` демо-номер не входит никогда (400).
+
 ## Супер-админ (`app=admin`)
 
 | Метод | Путь | Описание |
@@ -451,6 +457,20 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 
 ## Витрина приложения (этап приложения 1)
 
+### Без входа (гостевой просмотр, Apple 5.1.1)
+
+Эти маршруты приложения покупателя работают **без токена** (токен, если есть, ни на что не влияет — личных
+данных в ответах нет): `GET /client/config`, `GET /client/home?lat=&lng=`, `GET /client/stores/nearby?lat=&lng=`,
+`GET /client/stores/{id}/home`, `GET /client/stores/{id}/categories`, `GET /client/stores/{id}/products`,
+`GET /client/stores/{id}/products/{pid}`, `GET /client/stores/{id}/products/{pid}/related`,
+`GET /client/search?lat=&lng=&q=`, `GET /client/stores/{id}/slots`, `POST /client/home/events`.
+Точку гость передаёт в `lat`/`lng` (геолокация или точка на карте) — сохранённые адреса не нужны.
+Цены — обычные цены магазина и акции (персональных цен нет), избранное приложение берёт отдельно из
+`GET /client/favorites` только после входа.
+
+Только со входом (без токена — 401): профиль, статистика, избранное, адреса, корзина (`/client/checkout/preview`),
+заказы, уведомления, долги, семья, «Хочу доставку» (`/client/wishes`, `/client/stores/{id}/wish`), устройства.
+
 ### Приложение покупателя
 
 | Метод | Путь | Что делает |
@@ -503,10 +523,10 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 
 | Метод | Путь | Описание |
 |---|---|---|
-| GET | `/client/me` | `phone`, `full_name`, `language` (`ru`/`uz`), `city`, `notifications {orders, promos}`, `telegram_linked`, `support_url`, `privacy_url` |
-| PATCH | `/client/me` | Любые из: `full_name`, `language`, `city`, `notifications {orders?, promos?}`. Ответ — профиль |
+| GET | `/client/me` | `phone`, `full_name`, `language` (`ru`/`uz`), `city`, `notifications {orders, promos, promos_consent_at}`, `telegram_linked`, `support_url`, `privacy_url` |
+| PATCH | `/client/me` | Любые из: `full_name`, `language`, `city`, `notifications {orders?, promos?}`. Ответ — профиль. `notifications.promos: true` — явное согласие на рекламные push (записывается `promos_consent_at`), `false` — отказ (`promos_consent_at: null`) |
 | GET | `/client/me/stats` | `orders_count`, `saved` (сумма скидок доставленных заказов), `addresses_count`, `favorites_count`, `active_order {id, number, status, store_name}` или `null` |
-| DELETE | `/client/me` | Удаление аккаунта → 204. 409 `active_order`, пока есть незавершённый заказ. Сессии закрываются, имя, адреса, избранное и устройства удаляются, в заказах стираются телефон и адрес. Новый вход с тем же номером создаёт новый аккаунт |
+| DELETE | `/client/me` | Удаление аккаунта → 204. 409 `active_order` (`details: {account: "client", order_number}`), пока есть незавершённый заказ. Сессии закрываются, имя, адреса, избранное и устройства удаляются, в заказах стираются телефон и адрес. Номер освобождается (новый вход создаёт новый аккаунт), если он не нужен сотруднику, супер-админу или курьеру «по пути» |
 | POST | `/client/devices` | `{token, platform: ios|android, language?}` — токен FCM для текущей сессии → 204. Вызывать после входа и при обновлении токена |
 | GET | `/client/config` | Без входа: `push_enabled`, `support_url`, `privacy_url` |
 | DELETE | `/client/devices/{token}` | Забыть устройство → 204. При выходе (`/auth/client/logout`) устройство сессии удаляется само |
@@ -520,6 +540,11 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 При временной ошибке — до 6 попыток с паузой от 30 секунд. Недействительные токены удаляются.
 
 Данные push: `{"type": "order", "order_id": "…", "status": "…"}` — приложение открывает экран заказа.
+
+**Рекламные push (рассылки, Apple 4.5.4).** С миграции `0037` у новых покупателей `notifications.promos = false`:
+рассылки супер-админа уходят только тем, кто включил их сам (`PATCH /client/me {"notifications": {"promos": true}}` —
+экран согласия или переключатель в профиле). У покупателей, зарегистрированных раньше, настройка не менялась;
+`promos_consent_at: null` при `promos: true` — согласие получено до этого правила.
 
 Настройка: `FCM_CREDENTIALS` — ключ сервисного аккаунта Firebase (JSON, путь к файлу или base64).
 Без него push выключен: уведомления видны только в колокольчике приложения.
@@ -641,6 +666,7 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 | POST | `/crowd/orders/{id}/deliver` | `{code}` — 4 цифры от покупателя; 5 попыток. Начисляет вознаграждение |
 | POST | `/crowd/orders/{id}/problem` | `{kind: no_handoff\|other, note}` — инцидент для поддержки |
 | GET | `/crowd/earnings` | баланс, следующая выплата, неделя и журнал начислений |
+| DELETE | `/crowd/me` | удалить аккаунт → 204. 409 `active_order` (`details: {account: "crowd", order_number}`) — заказ на руках (взят или в пути); 409 `unpaid_balance` (`details: {account: "crowd", balance}`) — невыплаченный остаток > 0. Имя, дата рождения, хэш документа (у заблокированного хэш остаётся), маршрут и точка стираются, сессии закрываются; заказы, начисления, выплаты и нарушения остаются без имени. Номер освобождается, если он не нужен покупателю или сотруднику; иначе повторный вход в `crowd` — регистрация заново с согласием и новой проверкой личности (код KR- прежний) |
 
 ### Панель магазина (право `orders.manage`)
 
@@ -885,6 +911,37 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 Уведомления покупателю — `data {type: debt, store_id}`: `debt_added` (записали в долг), `debt_paid` (оплата принята),
 `debt_reminder` (день оплаты — всегда в 10:00 по Ташкенту; за 3 дня и после просрочки — если `extra_reminders`;
 ручное «Напомнить»). Тихие часы 22:00–08:00: уведомление ждёт утра.
+
+## Удаление аккаунтов (App Store / Google Play)
+
+Покупатель удаляет аккаунт сам — `DELETE /client/me`, курьер «по пути» — `DELETE /crowd/me` (см. выше).
+Сотрудников «SM Магазин» и штатных курьеров заводит владелец сети, поэтому из приложения отправляется
+**запрос**, а удаляет супер-админ (отключает сотрудника; для владельца — закрывает сеть).
+
+| Метод | Путь | Кто | Описание |
+| --- | --- | --- | --- |
+| POST | `/store/me/deletion-request` | `app=store` | Тело необязательно: `{reason?}` (до 500 символов). 201 — запрос создан, 200 — уже есть открытый (тот же). Ответ — запрос (ниже). Супер-админам и владельцу сети (если просит не он) — сообщение в Telegram-бот |
+| POST | `/courier/me/deletion-request` | `app=courier` (и `store`) | То же для приложения курьера (вход по логину и паролю), `app: "courier"` |
+| GET | `/admin/account-deletion-requests?status=pending\|done\|rejected&limit=&offset=` | `app=admin` | Запросы, открытые сверху |
+| POST | `/admin/account-deletion-requests/{id}/done` | `app=admin` | `{note?}` — выполнено. 409 `already_resolved` — уже обработан |
+| POST | `/admin/account-deletion-requests/{id}/reject` | `app=admin` | `{note?}` — отклонено |
+
+Запрос: `{id, app: store|courier, source: app|web, status: pending|done|rejected, is_owner, phone, full_name, reason, note,
+user_id, employee_id, network_id, network_name, created_at, resolved_at}`. `is_owner: true` — владелец сети: удаление
+аккаунта = закрытие сети. Отметка «выполнено» сама ничего не удаляет — супер-админ отключает сотрудника или сеть.
+
+### С сайта, без входа (ссылка для Google Play)
+
+| Метод | Путь | Тело | Ответ |
+| --- | --- | --- | --- |
+| POST | `/public/account-deletion/request` | `{phone}` | Код как при входе (`/auth/otp/request`: Telegram, если номер привязан к боту, иначе SMS; пауза 60 с — 429 `too_many_requests`). `{"sent": true, "expires_in", "resend_in", "channel"}` · 404 `account_not_found` — у номера нет аккаунта (покупателя, курьера «по пути» или сотрудника) |
+| POST | `/public/account-deletion/confirm` | `{phone, code}` | `{"deleted": ["crowd", "client"], "requested": ["store"\|"courier"]}` · 400 — код неверный (5 попыток, потом код сгорает) |
+
+`confirm` удаляет аккаунт покупателя и курьера «по пути» по тем же правилам, что `DELETE /client/me` и `DELETE /crowd/me`,
+в одной транзакции: если хоть одно правило не выполнено (409 `active_order` / `unpaid_balance` с `details.account`),
+не удаляется ничего (код при этом использован — нужен новый). Сотруднику или штатному курьеру создаётся запрос
+супер-админу (`source: "web"`, `requested: ["store"]` или `["courier"]`). Код общий с входом: код, запрошенный здесь,
+подходит и для входа, и наоборот — оба подтверждают владение номером.
 
 ## Удаление (DELETE → 204)
 

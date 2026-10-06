@@ -53,7 +53,7 @@ func (s *Service) crowdCard(ctx context.Context, where string, arg any) (CrowdCo
 		SELECT cc.user_id, cc.code, cc.status, u.phone, cc.full_name, cc.verified_at, vs.name
 		FROM crowd_couriers cc JOIN users u ON u.id = cc.user_id
 		LEFT JOIN stores vs ON vs.id = cc.verified_store_id
-		WHERE `+where, arg).Scan(&c.UserID, &c.Code, &c.Status, &c.Phone, &c.FullName, &c.VerifiedAt, &c.VerifiedStore)
+		WHERE cc.deleted_at IS NULL AND `+where, arg).Scan(&c.UserID, &c.Code, &c.Status, &c.Phone, &c.FullName, &c.VerifiedAt, &c.VerifiedStore)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return c, apperr.NotFound("курьер с таким кодом не найден")
 	}
