@@ -55,9 +55,9 @@ func (s *Service) AdminCrowdOverview(ctx context.Context) (CrowdOverview, error)
 		   WHERE crowd_courier_id IS NOT NULL AND status = 'delivered' AND delivered_at > now() - interval '7 days' AND picked_up_at IS NOT NULL),
 		  (SELECT avg(EXTRACT(EPOCH FROM delivered_at - picked_up_at) / 60) FROM orders
 		   WHERE courier_id IS NOT NULL AND status = 'delivered' AND delivered_at > now() - interval '7 days' AND picked_up_at IS NOT NULL),
-		  (SELECT count(*) FROM crowd_couriers WHERE status = 'active')::int,
-		  (SELECT count(*) FROM crowd_couriers WHERE status = 'unverified')::int,
-		  (SELECT count(*) FROM crowd_couriers WHERE status = 'blocked')::int,
+		  (SELECT count(*) FROM crowd_couriers WHERE deleted_at IS NULL AND status = 'active')::int,
+		  (SELECT count(*) FROM crowd_couriers WHERE deleted_at IS NULL AND status = 'unverified')::int,
+		  (SELECT count(*) FROM crowd_couriers WHERE deleted_at IS NULL AND status = 'blocked')::int,
 		  (SELECT count(*) FROM crowd_couriers WHERE status = 'active' AND online AND located_at > now() - interval '15 minutes')::int,
 		  (SELECT count(*) FROM crowd_couriers WHERE verified_at > now() - interval '7 days')::int,
 		  (SELECT count(*) FROM courier_incidents WHERE status = 'open')::int,
@@ -126,7 +126,7 @@ func (s *Service) AdminCrowdCouriers(ctx context.Context, f AdminCrowdFilter) ([
 		       vs.name, cc.verified_at, cc.blocked_reason, cc.created_at
 		FROM crowd_couriers cc JOIN users u ON u.id = cc.user_id
 		LEFT JOIN stores vs ON vs.id = cc.verified_store_id
-		WHERE ($1 = '' OR cc.status = $1)
+		WHERE cc.deleted_at IS NULL AND ($1 = '' OR cc.status = $1)
 		  AND ($2 = '' OR cc.full_name ILIKE '%' || $2 || '%' OR cc.code ILIKE '%' || $2 || '%'
 		       OR ($3 <> '' AND regexp_replace(u.phone, '\D', '', 'g') LIKE '%' || $3 || '%'))
 		ORDER BY cc.status = 'unverified', cc.verified_at DESC NULLS LAST, cc.created_at DESC

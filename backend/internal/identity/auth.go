@@ -41,7 +41,8 @@ type Config struct {
 	OTPTTL      time.Duration
 	DevOTPCode  string
 	BotUsername string
-	// ReviewPhone/ReviewCode — демо-аккаунт для проверки в магазинах приложений.
+	// ReviewPhone/ReviewCode — демо-аккаунт для проверки в магазинах приложений:
+	// приложения покупателя, магазина и курьера «по пути» (не супер-админа).
 	ReviewPhone string
 	ReviewCode  string
 }
@@ -221,14 +222,46 @@ func (s *Service) VerifyCodeTerms(ctx context.Context, rawPhone, code, app, user
 	if err != nil {
 		return Tokens{}, apperr.Validation("неверный номер телефона")
 	}
-	if s.cfg.ReviewPhone != "" && ph == s.cfg.ReviewPhone && app != AppClient {
+	// Демо-номер для проверки в магазинах приложений не открывает панель
+	// супер-админа. В приложении магазина действуют обычные проверки:
+	// номер должен быть у активного сотрудника (его заводит владелец
+	// демо-сети); в приложении курьера — обычная регистрация с согласием.
+	if s.cfg.ReviewPhone != "" && ph == s.cfg.ReviewPhone && app == AppAdmin {
 		return Tokens{}, errCodeInvalid
 	}
 
-	// Шаг 1: проверить код. Отдельная транзакция, чтобы счётчик попыток
-	// сохранялся даже при неверном коде.
-	var verdict error
+	// Шаг 1: проверить код.
+	if err := s.checkCode(ctx, ph, code); err != nil {
+		return Tokens{}, err
+	}
+
+	// Шаг 2: найти или создать пользователя, проверить доступ, открыть сессию.
+	var (
+		sessionID string
+		refresh   string
+		userID    string
+	)
 	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		var err error
+		userID, err = s.userForApp(ctx, tx, ph, app, terms)
+		if err != nil {
+			return err
+		}
+		sessionID, refresh, err = s.createSession(ctx, tx, userID, app, userAgent)
+		return err
+	})
+	if err != nil {
+		return Tokens{}, err
+	}
+	return s.tokens(userID, sessionID, app, refresh)
+}
+
+// checkCode проверяет и гасит код входа. Отдельная транзакция, чтобы
+// счётчик попыток сохранялся даже при неверном коде; после 5 неверных
+// попыток код сгорает.
+func (s *Service) checkCode(ctx context.Context, ph, code string) error {
+	var verdict error
+	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		var (
 			hash     []byte
 			attempts int
@@ -258,31 +291,20 @@ func (s *Service) VerifyCodeTerms(ctx context.Context, rawPhone, code, app, user
 		return err
 	})
 	if err != nil {
-		return Tokens{}, err
-	}
-	if verdict != nil {
-		return Tokens{}, verdict
-	}
-
-	// Шаг 2: найти или создать пользователя, проверить доступ, открыть сессию.
-	var (
-		sessionID string
-		refresh   string
-		userID    string
-	)
-	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		var err error
-		userID, err = s.userForApp(ctx, tx, ph, app, terms)
-		if err != nil {
-			return err
-		}
-		sessionID, refresh, err = s.createSession(ctx, tx, userID, app, userAgent)
 		return err
-	})
-	if err != nil {
-		return Tokens{}, err
 	}
-	return s.tokens(userID, sessionID, app, refresh)
+	return verdict
+}
+
+// ConsumeCode проверяет код, присланный на номер, без входа в приложение
+// (удаление аккаунта с сайта). Те же лимиты, что у входа. Возвращает номер
+// в формате E.164.
+func (s *Service) ConsumeCode(ctx context.Context, rawPhone, code string) (string, error) {
+	ph, err := phone.Normalize(rawPhone)
+	if err != nil {
+		return "", apperr.Validation("неверный номер телефона")
+	}
+	return ph, s.checkCode(ctx, ph, code)
 }
 
 func (s *Service) userForApp(ctx context.Context, tx pgx.Tx, ph, app string, terms bool) (string, error) {
@@ -442,3 +464,6 @@ func hashRefresh(tok string) []byte {
 	h := sha256.Sum256([]byte(tok))
 	return h[:]
 }
+
+// ResendIn — через сколько секунд можно снова запросить код (таймер на экране).
+func ResendIn() int { return int(resendCooldown.Seconds()) }
