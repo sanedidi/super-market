@@ -21,7 +21,7 @@ LOADER = f'''
 // Ключ загрузки для Google Play: android/key.properties (не в git, см. docs/release.md).
 // Нет файла — release подписывается debug-ключом, чтобы `flutter run --release` работал локально.
 val keystorePropertiesFile = rootProject.file("key.properties")
-val keystoreProperties = java.util.Properties().apply {{
+val keystoreProperties = Properties().apply {{
     if (keystorePropertiesFile.exists()) keystorePropertiesFile.inputStream().use {{ load(it) }}
 }}
 '''
@@ -63,6 +63,11 @@ def main():
     if MARK in s:
         print('build.gradle.kts: подпись release уже настроена')
         return
+
+    # 0. import java.util.Properties — в начало файла. Полное имя java.util.Properties
+    #    в Kotlin DSL не работает: `java` там — расширение проекта (java { }).
+    if not re.search(r'^import java\.util\.Properties$', s, re.M):
+        s = 'import java.util.Properties\n\n' + s
 
     # 1. Чтение key.properties — сразу после блока plugins { }.
     m = re.search(r'^plugins \{.*?^\}\n', s, re.S | re.M)
