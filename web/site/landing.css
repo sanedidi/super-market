@@ -187,7 +187,6 @@ main > section { overflow-x: clip; }
 .stat strong { font: 700 24px/32px var(--font); letter-spacing: -.3px; color: var(--ink); white-space: nowrap; }
 .stat span { font-size: 14px; line-height: 20px; color: var(--muted); }
 .hero__media { position: relative; width: 100%; max-width: 560px; aspect-ratio: 560 / 640; align-self: center; }
-.hero__media img { position: absolute; left: -2.143%; top: -1.25%; width: 105.714%; height: auto; max-width: none; }
 @media (min-width: 640px) {
   .hero__cta { flex-direction: row; flex-wrap: wrap; width: auto; }
   .hero__stats { gap: 16px 40px; }
@@ -226,7 +225,7 @@ main > section { overflow-x: clip; }
 @media (min-width: 768px) { .features { grid-template-columns: repeat(2, 1fr); gap: 24px; } }
 @media (min-width: 1024px) { .features { grid-template-columns: repeat(3, 1fr); } }
 
-/* ---------- Блоки «текст + картинка» (касса, покупатели, курьеры) ---------- */
+/* ---------- Блоки «текст + макет» (касса, покупатели, курьеры); сами макеты — mockups.css ---------- */
 .split { display: flex; flex-direction: column; gap: 32px; }
 .split__text { display: flex; flex-direction: column; gap: 20px; align-items: flex-start; }
 .split__text .checks { padding-top: 4px; }
@@ -241,7 +240,6 @@ main > section { overflow-x: clip; }
 .pos .checks { gap: 16px; padding-top: 8px; }
 .pos .checks li { color: var(--border); }
 .pos__media { max-width: 656px; aspect-ratio: 656 / 414; align-self: center; }
-.pos__media img { position: absolute; left: -4.116%; top: -3.26%; width: 108.232%; height: auto; max-width: none; }
 @media (min-width: 1024px) {
   .pos .split { gap: 64px; }
   .pos .split__text { flex: 0 1 480px; }
@@ -253,7 +251,6 @@ main > section { overflow-x: clip; }
 .buyers .section-title { color: #fff; }
 .buyers .checks li { color: #fff; }
 .buyers__media { max-width: 540px; aspect-ratio: 540 / 560; align-self: center; }
-.buyers__media img { position: absolute; left: -4.074%; top: 0; width: 109.815%; height: auto; max-width: none; }
 @media (min-width: 1024px) {
   .buyers { padding-top: 88px; }
   .buyers .split { align-items: center; gap: 40px; }

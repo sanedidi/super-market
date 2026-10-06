@@ -1,4 +1,5 @@
-// Сайт super-market.uz: внешние ссылки, мобильное меню, тарифы из API, оглавление документов.
+// Сайт super-market.uz: внешние ссылки, мобильное меню, тарифы из API, оглавление документов,
+// масштаб макетов приложений на лендинге.
 // Подключается на всех страницах сайта (лендинг и документы). Без зависимостей.
 (function () {
   'use strict';
@@ -294,8 +295,26 @@
     update();
   }
 
+  // ---------------------------------------------------------------- макеты приложений (mockups.css)
+
+  // Макет свёрстан в пикселях Figma (--mk-w) и масштабируется под ширину контейнера .mk.
+  // CSS считает масштаб сам (container query units); здесь — то же для браузеров без tan()/atan2().
+  function initMockups() {
+    var boxes = document.querySelectorAll('.mk');
+    if (!boxes.length || !('ResizeObserver' in window)) return;
+    var ro = new ResizeObserver(function (entries) {
+      for (var i = 0; i < entries.length; i++) {
+        var box = entries[i].target;
+        var w = parseFloat(getComputedStyle(box).getPropertyValue('--mk-w'));
+        if (w > 0) box.style.setProperty('--mk-k', String(box.clientWidth / w));
+      }
+    });
+    for (var i = 0; i < boxes.length; i++) ro.observe(boxes[i]);
+  }
+
   applyLinks();
   initMenu();
   loadTariffs();
   initToc();
+  initMockups();
 })();
