@@ -67,6 +67,12 @@ jobs:
             printf '%s\n' "$PROD_ENV"
             if [ -n "$FCM_CREDENTIALS" ]; then printf 'FCM_CREDENTIALS=%s\n' "$(printf '%s' "$FCM_CREDENTIALS" | tr -d '\n\r ')"; fi
             printf 'REVIEW_LOGIN=%s\n' "$REVIEW_LOGIN"
+            # Публичные ссылки для приложений (политика, поддержка): значения из PROD_ENV
+            # главнее, если их там нет — берутся отсюда (это не секреты).
+            for kv in "PRIVACY_URL=https://super-market.uz/privacy" \
+                      "SUPPORT_URL=https://t.me/super_market_support"; do
+              printf '%s\n' "$PROD_ENV" | grep -q "^${kv%%=*}=." || printf '%s\n' "$kv"
+            done
             if [ -n "$ESKIZ_EMAIL" ] && [ -n "$ESKIZ_PASSWORD" ]; then
               printf 'ESKIZ_EMAIL=%s\nESKIZ_PASSWORD=%s\n' "$(printf '%s' "$ESKIZ_EMAIL" | tr -d '\n\r ')" "$(printf '%s' "$ESKIZ_PASSWORD" | tr -d '\n\r ')"
             fi
