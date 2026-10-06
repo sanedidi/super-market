@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Super Market — онлайн-заказы, касса и склад для магазинов у дома</title>
+<meta name="description" content="Подключите продуктовый магазин к Super Market за один день: онлайн-заказы в приложении, касса для Windows и Android, склад и финансы. Без комиссии с заказов — от 15 $ в месяц за магазин.">
+<meta name="theme-color" content="#ffffff">
+<link rel="canonical" href="https://super-market.uz/">
+<link rel="alternate" hreflang="ru" href="https://super-market.uz/">
+<link rel="alternate" hreflang="uz" href="https://super-market.uz/uz">
+<link rel="alternate" hreflang="x-default" href="https://super-market.uz/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Super Market">
+<meta property="og:title" content="Super Market — ваш магазин онлайн за один день">
+<meta property="og:description" content="Касса, склад и онлайн-заказы в одной системе. Покупатели рядом заказывают в приложении Super Market, а вы привозите сами — без комиссии с заказов.">
+<meta property="og:url" content="https://super-market.uz/">
+<meta property="og:locale" content="ru_RU">
+<meta property="og:locale:alternate" content="uz_UZ">
+<meta property="og:image" content="https://super-market.uz/site/img/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/site/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@900&amp;text=Super%20Market&amp;display=swap">
+<link rel="preload" as="image" href="/site/img/hero-phones.webp" type="image/webp" fetchpriority="high">
+<link rel="stylesheet" href="/site/landing.css">
+<script src="/site/landing.js" defer></script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "Super Market",
+  "url": "https://super-market.uz/",
+  "logo": "https://super-market.uz/site/favicon.svg",
+  "description": "Онлайн-заказы, касса и учёт для продуктовых магазинов у дома.",
+  "areaServed": "UZ",
+  "contactPoint": {"@type": "ContactPoint", "telephone": "+998505764723", "contactType": "customer support", "availableLanguage": ["ru", "uz"]},
+  "sameAs": ["https://t.me/super_market_support"]
+}
+</script>
+</head>
+<body>
+<a class="skip-link" href="#main">Перейти к содержанию</a>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-check" viewBox="0 0 22 22"><path d="M18.333 5.5 8.25 15.583 3.667 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 22 22"><path d="M5.5 8.25 11 13.75l5.5-5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="site-header">
+  <div class="container site-header__in">
+    <a class="logo" href="/">Super Market</a>
+    <nav class="site-nav" aria-label="Разделы">
+      <a href="#stores">Магазинам</a>
+      <a href="#buyers">Покупателям</a>
+      <a href="#couriers">Курьерам</a>
+      <a href="#pos">Касса</a>
+      <a href="#pricing">Тарифы</a>
+      <a href="#faq">Вопросы</a>
+    </nav>
+    <div class="site-header__actions">
+      <nav class="lang-switch" aria-label="Язык / Til">
+        <a href="/uz" lang="uz" hreflang="uz">UZ</a><a href="/" lang="ru" hreflang="ru" aria-current="page">RU</a>
+      </nav>
+      <a class="button button--secondary" href="https://store.super-market.uz/" data-link="login">Войти</a>
+      <a class="button button--primary" href="https://store.super-market.uz/" data-link="register">Подключить магазин</a>
+      <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="mobile-menu" aria-label="Меню">
+        <svg class="i-menu" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg class="i-close" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="mobile-menu" id="mobile-menu">
+    <div class="container">
+      <nav aria-label="Разделы">
+        <a href="#stores">Магазинам</a>
+        <a href="#buyers">Покупателям</a>
+        <a href="#couriers">Курьерам</a>
+        <a href="#pos">Касса</a>
+        <a href="#pricing">Тарифы</a>
+        <a href="#faq">Вопросы</a>
+      </nav>
+      <div class="mobile-menu__actions">
+        <a class="button button--lg button--primary" href="https://store.super-market.uz/" data-link="register">Подключить магазин</a>
+        <a class="button button--lg button--secondary" href="https://store.super-market.uz/" data-link="login">Войти</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="container hero__in">
+      <div class="hero__text">
+        <span class="pill">Для продуктовых магазинов у дома</span>
+        <h1 id="hero-title">Ваш магазин —<br>онлайн за один день</h1>
+        <p class="hero__lead">Касса, склад и онлайн-заказы в одной системе. Покупатели рядом заказывают в приложении Super Market, а вы привозите сами — без комиссии с заказов.</p>
+        <div class="hero__cta">
+          <a class="button button--lg button--primary" href="https://store.super-market.uz/" data-link="register">Подключить магазин</a>
+          <a class="button button--lg button--secondary" href="#buyers">Скачать приложение</a>
+        </div>
+        <ul class="hero__stats plain">
+          <li class="stat"><strong>0%</strong><span>комиссии с заказов</span></li>
+          <li class="stat" data-tariff="stat"><strong data-tariff="min-price">от 15 $</strong><span>в месяц за магазин</span></li>
+          <li class="stat"><strong>Payme · Click</strong><span>оплата картой онлайн</span></li>
+        </ul>
+      </div>
+      <div class="hero__media">
+        <img src="/site/img/hero-phones.webp" width="592" height="696" fetchpriority="high" decoding="async"
+             alt="Приложения на телефонах: «SM Магазин» с новыми заказами и выручкой за день и Super Market для покупателя с доставкой за 25 минут">
+      </div>
+    </div>
+  </section>
+
+  <section class="section section--soft" id="stores" aria-labelledby="steps-title">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">Как подключиться</span>
+        <h2 class="section-title" id="steps-title">Начать продавать онлайн — 4 шага</h2>
+        <p class="lead">Первичная настройка занимает около часа. Обязательны только магазин и часы работы — доставку можно включить позже.</p>
+      </div>
+      <ol class="steps">
+        <li class="step"><span class="step__num" aria-hidden="true">1</span><h3>Вход по номеру телефона</h3><p>Код придёт в Telegram или по SMS. Без договоров и поездок в офис.</p></li>
+        <li class="step"><span class="step__num" aria-hidden="true">2</span><h3>Добавьте товары</h3><p>Сфотографируйте полку — Super Market сам найдёт товары. Или сканер штрихкода и общий каталог.</p></li>
+        <li class="step"><span class="step__num" aria-hidden="true">3</span><h3>Часы и доставка</h3><p>Точка на карте, время работы, зона и цена доставки. Доставку делает ваш курьер.</p></li>
+        <li class="step"><span class="step__num" aria-hidden="true">4</span><h3>Принимайте заказы</h3><p>Заказы приходят в панель, в приложение «SM Магазин» и на кассу. Выплаты — раз в неделю.</p></li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="section" id="features" aria-labelledby="features-title">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">Возможности</span>
+        <h2 class="section-title" id="features-title">Всё для магазина в одной системе</h2>
+        <p class="lead">Онлайн-продажи, касса и учёт работают на одних данных: продали на кассе — остаток в приложении сразу обновился.</p>
+      </div>
+      <ul class="features">
+        <li class="feature">
+          <span class="feature__icon" aria-hidden="true"><svg viewBox="0 0 26 26" fill="none" stroke="#e11d2a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.25 3.25h2.167l2.6 13.217a2.17 2.17 0 0 0 2.166 1.95h8.884a2.17 2.17 0 0 0 2.166-1.734L22.75 8.667H6.5M10.833 22.75a1.083 1.083 0 1 0 0-2.167 1.083 1.083 0 0 0 0 2.167ZM19.5 22.75a1.083 1.083 0 1 0 0-2.167 1.083 1.083 0 0 0 0 2.167Z"/></svg></span>
+          <h3>Онлайн-заказы</h3>
+          <p>Покупатели рядом видят ваш магазин в приложении и заказывают с доставкой. Оплата картой через Payme и Click.</p>
+        </li>
+        <li class="feature">
+          <span class="feature__icon" aria-hidden="true"><svg viewBox="0 0 26 26" fill="none" stroke="#e11d2a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.75 7.583h6.5M9.75 11.917h6.5M9.75 16.25h4.333M6.5 2.167h13v21.666l-3.25-2.166L13 23.833l-3.25-2.166L6.5 23.833V2.167Z"/></svg></span>
+          <h3>Касса для Windows и Android</h3>
+          <p>Сканер, весовой товар, чековый принтер и фискальный чек. Продаёт даже без интернета.</p>
+        </li>
+        <li class="feature">
+          <span class="feature__icon" aria-hidden="true"><svg viewBox="0 0 26 26" fill="none" stroke="#e11d2a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.333 4.333h6.5v6.5h-6.5v-6.5Zm10.834 0h6.5v6.5h-6.5v-6.5ZM4.333 15.167h6.5v6.5h-6.5v-6.5Zm10.834 0h6.5v6.5h-6.5v-6.5Z"/></svg></span>
+          <h3>Склад и приход по фото</h3>
+          <p>Остатки по каждому товару, приход по фото накладной, возвраты и долги поставщикам.</p>
+        </li>
+        <li class="feature">
+          <span class="feature__icon" aria-hidden="true"><svg viewBox="0 0 26 26" fill="none" stroke="#e11d2a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.667 6.5 9.75 18.417 4.333 13"/></svg></span>
+          <h3>Финансы и контроль</h3>
+          <p>Выручка за день, сдача кассы, прибыль и убыток, контроль кассиров и смен.</p>
+        </li>
+        <li class="feature">
+          <span class="feature__icon" aria-hidden="true"><svg viewBox="0 0 26 26" fill="none" stroke="#e11d2a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.167 17.333V6.5H3.25v10.833h11.917Zm0 0h7.583v-3.25l-3.25-3.25h-4.333M7.583 20.583a2.167 2.167 0 1 0 0-4.333 2.167 2.167 0 0 0 0 4.333Zm10.834 0a2.167 2.167 0 1 0 0-4.333 2.167 2.167 0 0 0 0 4.333Z"/></svg></span>
+          <h3>Свои курьеры и «по пути»</h3>
+          <p>Доставляет ваш сотрудник или покупатель, который идёт в ту же сторону. Статус заказа видно онлайн.</p>
+        </li>
+        <li class="feature">
+          <span class="feature__icon" aria-hidden="true"><svg viewBox="0 0 26 26" fill="none" stroke="#e11d2a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 22.75s-7.583-6.717-7.583-12.458a7.583 7.583 0 0 1 15.166 0C20.583 16.033 13 22.75 13 22.75Zm0-9.75a2.708 2.708 0 1 0 0-5.417A2.708 2.708 0 0 0 13 13Z"/></svg></span>
+          <h3>Сети магазинов</h3>
+          <p>Несколько точек в одном кабинете: общий каталог, цены сети и магазина, сотрудники с ролями.</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="section pos" id="pos" aria-labelledby="pos-title">
+    <div class="container split">
+      <div class="split__text">
+        <span class="eyebrow">Касса SM POS</span>
+        <h2 class="section-title" id="pos-title">Касса, которая не встанет в час пик</h2>
+        <ul class="checks">
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg>Продаёт без интернета — чеки уйдут в ОФД, когда связь вернётся</li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg>Сканер, весы, экранная клавиатура и плитки частых товаров</li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg>Смена, X- и Z-отчёт, сдача кассы со слепым пересчётом</li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg>Windows и Android: компьютер, планшет или телефон</li>
+        </ul>
+      </div>
+      <div class="split__media pos__media">
+        <img src="/site/img/pos.webp" width="710" height="468" loading="lazy" decoding="async"
+             alt="Экран кассы SM POS: чек с товарами, плитки частых товаров, клавиатура и кнопка «Оплатить»">
+      </div>
+    </div>
+  </section>
+
+  <section class="section buyers" id="buyers" aria-labelledby="buyers-title">
+    <div class="container split">
+      <div class="split__text">
+        <span class="eyebrow">Покупателям</span>
+        <h2 class="section-title" id="buyers-title">Продукты из магазина у дома — с доставкой</h2>
+        <ul class="checks">
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg>Все магазины рядом, в радиусе 10 км — на карте и списком</li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg>Ищите товар сразу во всех магазинах: где есть и почём</li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg>Привозит сам магазин — быстро и без наценки</li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg>Оплата картой Uzcard и Humo через Payme и Click</li>
+        </ul>
+        <div class="store-badges">
+          <a class="store-badge" href="#" data-link="clientAppStore" aria-disabled="true"><small>Скачать в</small><span>App Store</span></a>
+          <a class="store-badge" href="#" data-link="clientGooglePlay" aria-disabled="true"><small>Доступно в</small><span>Google Play</span></a>
+        </div>
+      </div>
+      <div class="split__media buyers__media">
+        <img src="/site/img/buyers-phones.webp" width="593" height="560" loading="lazy" decoding="async"
+             alt="Приложение Super Market: товары раздела «Молоко» с ценами и карточка кефира со скидкой 17%">
+      </div>
+    </div>
+  </section>
+
+  <section class="section section--soft couriers" id="couriers" aria-labelledby="couriers-title">
+    <div class="container split">
+      <div class="split__text">
+        <span class="eyebrow">Курьерам</span>
+        <h2 class="section-title" id="couriers-title">Доставляйте по пути и зарабатывайте</h2>
+        <ul class="checks">
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg>Лента показывает заказы рядом с вашим маршрутом — берёте те, что по пути</li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg>Личность подтверждают в магазине-партнёре — загружать документы не нужно</li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg>Деньги за доставку — на баланс сразу после вручения, выплата каждый понедельник</li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg>Нужно 18 лет и паспорт или ID-карта Узбекистана</li>
+        </ul>
+        <div class="store-badges">
+          <a class="store-badge" href="#" data-link="courierAppStore" aria-disabled="true"><small>Скачать в</small><span>App Store</span></a>
+          <a class="store-badge" href="#" data-link="courierGooglePlay" aria-disabled="true"><small>Доступно в</small><span>Google Play</span></a>
+        </div>
+      </div>
+      <div class="courier-cards" role="img" aria-label="Пример экранов приложения «SM Курьер»: уровень курьера, заказ по пути за 12 000 сум и заработок за неделю">
+        <div class="ccard" aria-hidden="true">
+          <div class="ccard__row">
+            <span class="ccard__avatar">АР</span>
+            <div class="ccard__who">
+              <span class="ccard__name">Азиз Рахимов</span>
+              <span class="verified"><svg viewBox="0 0 24 24" fill="currentColor"><path d="m23 12-2.44-2.79.34-3.69-3.61-.82-1.89-3.2L12 2.96 8.6 1.5 6.71 4.69 3.1 5.5l.34 3.7L1 12l2.44 2.79-.34 3.7 3.61.82L8.6 22.5l3.4-1.47 3.4 1.46 1.89-3.19 3.61-.82-.34-3.69L23 12Zm-12.91 4.72-3.8-3.81 1.48-1.48 2.32 2.33 5.85-5.87 1.48 1.48-7.33 7.35Z"/></svg>Личность подтверждена</span>
+            </div>
+          </div>
+          <div class="ccard__level"><strong>Новичок</strong><span>7 из 20 доставок</span></div>
+          <div class="progress"><span></span></div>
+          <p class="ccard__note">Ещё 13 доставок вовремя — и уровень «Надёжный»: заказы дороже и 2 заказа сразу.</p>
+        </div>
+        <div class="ccard" aria-hidden="true">
+          <div class="ccard__row ccard__row--order">
+            <span class="ccard__shop"><svg viewBox="0 0 24 24" fill="none" stroke="#e11d2a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 4.6 4h14.8L21 9.5M3 9.5c0 1.4 1.1 2.5 2.5 2.5S8 10.9 8 9.5m-5 0h18M8 9.5c0 1.4 1.1 2.5 2.5 2.5h3c1.4 0 2.5-1.1 2.5-2.5m0 0c0 1.4 1.1 2.5 2.5 2.5S21 10.9 21 9.5M5 12v8h14v-8M10 20v-4.5h4V20"/></svg></span>
+            <div class="ccard__order">
+              <small>Заказ по пути</small>
+              <b>Baraka Market → Навои, 24</b>
+              <span>+0,8 км к маршруту · 3 товара</span>
+            </div>
+            <span class="ccard__fee">+12&nbsp;000 сум</span>
+          </div>
+          <span class="ccard__btn">Взять заказ</span>
+        </div>
+        <div class="ccard ccard--earn" aria-hidden="true">
+          <small>Заработок за неделю</small>
+          <div class="ccard__sum"><b>312&nbsp;000</b><span>сум</span></div>
+          <em>Выплата в понедельник</em>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section--soft" id="pricing" aria-labelledby="pricing-title">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">Тарифы</span>
+        <h2 class="section-title" id="pricing-title">Платите только за магазины</h2>
+        <p class="lead">Без комиссии с заказов и без платы за подключение.</p>
+      </div>
+      <!-- Статичные карточки — запасной вариант без JS. landing.js перерисует их по GET /api/v1/public/tariffs. -->
+      <div class="price-cards" id="tariffs" data-count="2" aria-live="polite">
+        <article class="price-card">
+          <div class="price-card__top"><h3 class="price-card__title">1–2 магазина</h3></div>
+          <p class="price-card__price"><span class="price-card__amount">20 $</span><span class="price-card__per">за магазин в месяц</span></p>
+          <hr>
+          <ul class="checks" data-tariff="features">
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Панель магазина и приложение «SM Магазин»</li>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Касса SM POS — Windows и Android</li>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Онлайн-заказы в приложении Super Market</li>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Склад, финансы, сотрудники и курьеры</li>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Выплаты за онлайн-заказы раз в неделю</li>
+          </ul>
+          <a class="button button--lg button--secondary price-card__cta" href="https://store.super-market.uz/" data-link="register">Подключить магазин</a>
+        </article>
+        <article class="price-card price-card--best">
+          <div class="price-card__top"><h3 class="price-card__title">3 и более магазинов</h3><span class="badge">Выгоднее</span></div>
+          <p class="price-card__price"><span class="price-card__amount">15 $</span><span class="price-card__per">за магазин в месяц</span></p>
+          <hr>
+          <ul class="checks">
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Панель магазина и приложение «SM Магазин»</li>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Касса SM POS — Windows и Android</li>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Онлайн-заказы в приложении Super Market</li>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Склад, финансы, сотрудники и курьеры</li>
+            <li><svg aria-hidden="true"><use href="#i-check"/></svg>Выплаты за онлайн-заказы раз в неделю</li>
+          </ul>
+          <a class="button button--lg button--primary price-card__cta" href="https://store.super-market.uz/" data-link="register">Подключить сеть</a>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="faq" aria-labelledby="faq-title">
+    <div class="container faq__in">
+      <div class="faq__head">
+        <span class="eyebrow">Вопросы</span>
+        <h2 class="section-title" id="faq-title">Частые вопросы</h2>
+        <p class="lead">Не нашли ответ? Напишите нам в Telegram — ответим в рабочее время.</p>
+        <a class="button button--lg button--soft" href="https://t.me/super_market_support" data-link="telegram">Написать в Telegram</a>
+      </div>
+      <div class="faq__list">
+        <details class="faq-item" open>
+          <summary>Нужно ли покупать оборудование?<svg aria-hidden="true"><use href="#i-chevron"/></svg></summary>
+          <div class="faq-item__a"><p>Нет. Панель работает в браузере, «SM Магазин» — на телефоне. Для кассы подойдёт компьютер на Windows или планшет на Android; сканер и чековый принтер — по желанию.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Кто доставляет заказы?<svg aria-hidden="true"><use href="#i-chevron"/></svg></summary>
+          <div class="faq-item__a"><p>Ваш курьер или курьеры «по пути» Super Market — покупатели, которым в ту же сторону. Что использовать, магазин включает сам, а зону и цену доставки задаёт в настройках.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Как я получу деньги за онлайн-заказы?<svg aria-hidden="true"><use href="#i-chevron"/></svg></summary>
+          <div class="faq-item__a"><p>Оплата картой Uzcard или Humo через Payme и Click приходит на баланс магазина, выплата на карту или счёт — раз в неделю. Наличные, которые покупатель отдаёт курьеру, сразу остаются у магазина.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Можно подключить сеть магазинов?<svg aria-hidden="true"><use href="#i-chevron"/></svg></summary>
+          <div class="faq-item__a"><p>Да. Несколько магазинов в одном кабинете: общий каталог, свои цены, склады и сотрудники с ролями. <span data-tariff="network">От 3 магазинов — 15 $ за магазин в месяц вместо 20 $.</span></p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Сколько времени занимает подключение?<svg aria-hidden="true"><use href="#i-chevron"/></svg></summary>
+          <div class="faq-item__a"><p>Первичная настройка занимает около часа. Обязательны только магазин и часы работы — доставку можно включить позже.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Как стать курьером «по пути»?<svg aria-hidden="true"><use href="#i-chevron"/></svg></summary>
+          <div class="faq-item__a"><p>Скачайте «SM Курьер», войдите по номеру телефона и подтвердите личность в магазине-партнёре — паспорт или ID-карта, от 18 лет. Затем включите «Ищу заказы». Подробнее — в <a href="/courier-terms">условиях для курьеров</a>.</p></div>
+        </details>
+        <details class="faq-item">
+          <summary>Как удалить аккаунт?<svg aria-hidden="true"><use href="#i-chevron"/></svg></summary>
+          <div class="faq-item__a"><p>В приложении: Профиль → Настройки → Удалить аккаунт. Без приложения — на странице <a href="/delete-account">удаления аккаунта</a>.</p></div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta" aria-labelledby="cta-title">
+    <div class="container">
+      <div class="cta__card">
+        <div>
+          <h2 id="cta-title">Подключите магазин сегодня</h2>
+          <p>Вход по номеру телефона — без договора и визита в офис.</p>
+        </div>
+        <a class="button button--lg button--secondary" href="https://store.super-market.uz/" data-link="register">Подключить магазин</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="site-footer__top">
+      <div class="site-footer__brand">
+        <a class="logo" href="/">Super Market</a>
+        <p>Онлайн-заказы, касса и учёт для продуктовых магазинов у дома.</p>
+      </div>
+      <nav class="site-footer__cols" aria-label="Подвал">
+        <div class="site-footer__col">
+          <h2>Магазинам</h2>
+          <ul>
+            <li><a href="https://store.super-market.uz/" data-link="register">Подключить магазин</a></li>
+            <li><a href="https://store.super-market.uz/" data-link="login">Войти в панель</a></li>
+            <li><a href="#pos">Касса SM POS</a></li>
+            <li><a href="#pricing">Тарифы</a></li>
+          </ul>
+        </div>
+        <div class="site-footer__col">
+          <h2>Покупателям</h2>
+          <ul>
+            <li><a href="#" data-link="clientAppStore" aria-disabled="true">App Store</a></li>
+            <li><a href="#" data-link="clientGooglePlay" aria-disabled="true">Google Play</a></li>
+          </ul>
+        </div>
+        <div class="site-footer__col">
+          <h2>Курьерам</h2>
+          <ul>
+            <li><a href="#couriers">Стать курьером</a></li>
+            <li><a href="#" data-link="courierApp" aria-disabled="true">SM Курьер</a></li>
+          </ul>
+        </div>
+        <div class="site-footer__col">
+          <h2>Документы</h2>
+          <ul>
+            <li><a href="#" data-link="offer" aria-disabled="true">Публичная оферта</a></li>
+            <li><a href="/privacy">Политика конфиденциальности</a></li>
+            <li><a href="/courier-terms">Условия для курьеров</a></li>
+            <li><a href="/delete-account">Удаление аккаунта</a></li>
+          </ul>
+        </div>
+        <div class="site-footer__col">
+          <h2>Связь</h2>
+          <ul>
+            <li><a href="https://t.me/super_market_support" data-link="telegram">Telegram</a></li>
+            <li><a href="tel:+998505764723" data-link="support">+998 50 576 47 23</a></li>
+          </ul>
+        </div>
+      </nav>
+    </div>
+    <div class="site-footer__bottom">
+      <span>© 2026 Super Market</span>
+      <span>super-market.uz</span>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

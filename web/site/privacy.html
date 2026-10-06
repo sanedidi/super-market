@@ -13,24 +13,58 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@900&amp;text=Super%20Market&amp;display=swap">
+<link rel="stylesheet" href="/site/landing.css">
 <link rel="stylesheet" href="/site/site.css">
+<script src="/site/landing.js" defer></script>
 </head>
-<body>
-<a class="skip" href="#main">Перейти к содержанию</a>
-<header class="topbar">
-  <div class="wrap topbar__in">
-    <span class="brand"><span class="brand__logo" aria-hidden="true">SM</span>Super Market</span>
-    <nav class="lang" aria-label="Язык / Til">
-      <a href="/privacy" lang="ru" hreflang="ru" aria-current="page">RU</a><span aria-hidden="true">·</span><a href="/privacy/uz" lang="uz" hreflang="uz">UZ</a>
+<body class="docpage">
+<a class="skip-link" href="#main">Перейти к содержанию</a>
+<header class="site-header">
+  <div class="container site-header__in">
+    <a class="logo" href="/">Super Market</a>
+    <nav class="site-nav" aria-label="Разделы">
+      <a href="/#stores">Магазинам</a>
+      <a href="/#buyers">Покупателям</a>
+      <a href="/#couriers">Курьерам</a>
+      <a href="/#pos">Касса</a>
+      <a href="/#pricing">Тарифы</a>
+      <a href="/#faq">Вопросы</a>
     </nav>
+    <div class="site-header__actions">
+      <nav class="lang-switch" aria-label="Язык / Til">
+        <a href="/privacy/uz" lang="uz" hreflang="uz">UZ</a><a href="/privacy" lang="ru" hreflang="ru" aria-current="page">RU</a>
+      </nav>
+      <a class="button button--secondary" href="https://store.super-market.uz/" data-link="login">Войти</a>
+      <a class="button button--primary" href="https://store.super-market.uz/" data-link="register">Подключить магазин</a>
+      <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="mobile-menu" aria-label="Меню">
+        <svg class="i-menu" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg class="i-close" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="mobile-menu" id="mobile-menu">
+    <div class="container">
+      <nav aria-label="Разделы">
+        <a href="/#stores">Магазинам</a>
+        <a href="/#buyers">Покупателям</a>
+        <a href="/#couriers">Курьерам</a>
+        <a href="/#pos">Касса</a>
+        <a href="/#pricing">Тарифы</a>
+        <a href="/#faq">Вопросы</a>
+      </nav>
+      <div class="mobile-menu__actions">
+        <a class="button button--lg button--primary" href="https://store.super-market.uz/" data-link="register">Подключить магазин</a>
+        <a class="button button--lg button--secondary" href="https://store.super-market.uz/" data-link="login">Войти</a>
+      </div>
+    </div>
   </div>
 </header>
 
-<main id="main">
-  <article class="wrap doc">
-    <h1>Политика конфиденциальности Super Market</h1>
-    <p><strong>Дата вступления в силу: [дата]</strong></p>
-    <nav class="card toc" aria-labelledby="toc-title">
+<main id="main" class="docmain">
+  <div class="container docmain__grid">
+    <aside class="docmain__aside">
+    <nav class="toc" aria-labelledby="toc-title">
       <p class="toc__title" id="toc-title">Содержание</p>
       <ol>
         <li><a href="#s-1">1. Кто мы</a></li>
@@ -51,10 +85,15 @@
         <li><a href="#s-16">16. Контакты</a></li>
       </ol>
     </nav>
+    </aside>
+  <article class="doc doc-card">
+    <p class="crumbs">Документы / Политика конфиденциальности</p>
+    <h1>Политика конфиденциальности</h1>
+    <p class="doc-meta">Действует с 6 октября 2026 · <a href="/privacy" aria-current="page">Русский</a> · <a href="/privacy/uz" lang="uz" hreflang="uz">O‘zbekcha</a></p>
     <p>Эта Политика объясняет, какие персональные данные собирает платформа Super Market, зачем, кому их передаёт, где и сколько хранит и как вы можете ими управлять. Политика составлена в соответствии с Законом Республики Узбекистан «О персональных данных» № ЗРУ-547 от 02.07.2019 (далее — Закон).</p>
     <h2 id="s-1">1. Кто мы</h2>
-    <p>Оператор персональных данных — индивидуальный предприниматель (ЯТТ) <strong>ANVAROV SHAHZODBEK XOJIMUROD O‘G‘LI</strong>, ИНН [ИНН], адрес: [адрес], г. Ташкент, Юнусабадский район (далее — «Super Market», «мы»).</p>
-    <p>Связаться с нами: [email поддержки], [телефон], Telegram: [@бот поддержки].</p>
+    <p>Оператор персональных данных — индивидуальный предприниматель (ЯТТ) <strong>ANVAROV SHAHZODBEK XOJIMUROD O‘G‘LI</strong>, запись в ЕГРСП № 7967982 от 25.08.2026, адрес: г. Ташкент, Юнусабадский район, Регистон, 6-тор кўчаси, 10-уй (далее — «Super Market», «мы»).</p>
+    <p>Связаться с нами: +998 50 576 47 23, Telegram: @super_market_support.</p>
     <h2 id="s-2">2. Где действует Политика</h2>
     <p>Политика распространяется на:</p>
     <ul>
@@ -249,7 +288,7 @@
     <li><strong>Долги (насия)</strong> хранит магазин, пока долг не погашен или не списан, и далее — в сроки учёта магазина.</li>
     <li><strong>Курьеры «по пути»</strong> — пока действует аккаунт; начисления и выплаты — не менее 5 лет; отпечаток документа и сведения о блокировке — до 3 лет после удаления аккаунта, чтобы заблокированный курьер не зарегистрировался повторно.</li>
     <li><strong>Коды входа</strong> действуют 5 минут; сессия — до 30 дней без входа.</li>
-    <li><strong>Технические журналы</strong> — до [срок журналов].</li>
+    <li><strong>Технические журналы</strong> — до 90 дней.</li>
     </ul>
     <h2 id="s-11">11. Удаление аккаунта</h2>
     <p>Покупатель может удалить аккаунт в приложении: <strong>Профиль → Настройки → Удалить аккаунт</strong>. Курьеры и сотрудники, а также все, у кого нет доступа к приложению, могут отправить запрос через веб-форму на странице <a href="/delete-account">https://super-market.uz/delete-account</a> или в поддержку. Подробно о том, что удаляется и что остаётся, — на этой странице.</p>
@@ -262,32 +301,77 @@
     <li>возразить против уведомлений об акциях;</li>
     <li>обжаловать наши действия в уполномоченном государственном органе или в суде.</li>
     </ul>
-    <p>Напишите на [email поддержки] или в Telegram [@бот поддержки] с номера телефона вашего аккаунта. Мы ответим в течение 10 рабочих дней. Для защиты данных мы можем попросить подтвердить номер кодом.</p>
+    <p>Напишите в Telegram @super_market_support с номера телефона вашего аккаунта. Мы ответим в течение 10 рабочих дней. Для защиты данных мы можем попросить подтвердить номер кодом.</p>
     <h2 id="s-13">13. Как мы защищаем данные</h2>
     <p>Соединение с сервером шифруется (HTTPS). Коды входа, токены сессий, пароли и PIN-коды хранятся только в виде хешей. Ключи внешних сервисов шифруются. Доступ сотрудников магазинов ограничен ролями и магазинами. Доступ к серверу есть только у уполномоченных лиц.</p>
     <h2 id="s-14">14. Дети</h2>
-    <p>Приложение покупателя не предназначено для лиц младше [минимальный возраст] лет. Курьером «по пути» можно стать только с 18 лет — возраст проверяется по документу. Если вы узнали, что ребёнок передал нам данные, напишите нам — мы их удалим.</p>
+    <p>Приложение покупателя не предназначено для лиц младше 16 лет. Курьером «по пути» можно стать только с 18 лет — возраст проверяется по документу. Если вы узнали, что ребёнок передал нам данные, напишите нам — мы их удалим.</p>
     <h2 id="s-15">15. Изменения Политики</h2>
     <p>Мы можем обновлять Политику. Новая редакция публикуется на <a href="/privacy">https://super-market.uz/privacy</a> с датой вступления в силу. О существенных изменениях мы сообщим в приложении.</p>
     <h2 id="s-16">16. Контакты</h2>
     <p>ЯТТ ANVAROV SHAHZODBEK XOJIMUROD O‘G‘LI<br>
-    ИНН: [ИНН]<br>
-    Адрес: [адрес]<br>
-    E-mail: [email поддержки]<br>
-    Телефон: [телефон]<br>
-    Telegram: [@бот поддержки]</p>
+    Запись в ЕГРСП: № 7967982 от 25.08.2026<br>
+    Адрес: г. Ташкент, Юнусабадский район, Регистон, 6-тор кўчаси, 10-уй<br>
+    Телефон: +998 50 576 47 23<br>
+    Telegram: @super_market_support</p>
     <a class="back-top" href="#main">↑ Наверх</a>
   </article>
+  </div>
 </main>
 
-<footer class="footer">
-  <div class="wrap">
-    <nav aria-label="Документы">
-      <a href="/privacy" aria-current="page">Политика конфиденциальности</a>
-      <a href="/courier-terms">Условия для курьеров</a>
-      <a href="/delete-account">Удаление аккаунта</a>
-    </nav>
-    <p>© Super Market</p>
+<footer class="site-footer">
+  <div class="container">
+    <div class="site-footer__top">
+      <div class="site-footer__brand">
+        <a class="logo" href="/">Super Market</a>
+        <p>Онлайн-заказы, касса и учёт для продуктовых магазинов у дома.</p>
+      </div>
+      <nav class="site-footer__cols" aria-label="Подвал">
+        <div class="site-footer__col">
+          <h2>Магазинам</h2>
+          <ul>
+            <li><a href="https://store.super-market.uz/" data-link="register">Подключить магазин</a></li>
+            <li><a href="https://store.super-market.uz/" data-link="login">Войти в панель</a></li>
+            <li><a href="/#pos">Касса SM POS</a></li>
+            <li><a href="/#pricing">Тарифы</a></li>
+          </ul>
+        </div>
+        <div class="site-footer__col">
+          <h2>Покупателям</h2>
+          <ul>
+            <li><a href="#" data-link="clientAppStore" aria-disabled="true">App Store</a></li>
+            <li><a href="#" data-link="clientGooglePlay" aria-disabled="true">Google Play</a></li>
+          </ul>
+        </div>
+        <div class="site-footer__col">
+          <h2>Курьерам</h2>
+          <ul>
+            <li><a href="/#couriers">Стать курьером</a></li>
+            <li><a href="#" data-link="courierApp" aria-disabled="true">SM Курьер</a></li>
+          </ul>
+        </div>
+        <div class="site-footer__col">
+          <h2>Документы</h2>
+          <ul>
+            <li><a href="#" data-link="offer" aria-disabled="true">Публичная оферта</a></li>
+            <li><a href="/privacy" aria-current="page">Политика конфиденциальности</a></li>
+            <li><a href="/courier-terms">Условия для курьеров</a></li>
+            <li><a href="/delete-account">Удаление аккаунта</a></li>
+          </ul>
+        </div>
+        <div class="site-footer__col">
+          <h2>Связь</h2>
+          <ul>
+            <li><a href="https://t.me/super_market_support" data-link="telegram">Telegram</a></li>
+            <li><a href="tel:+998505764723" data-link="support">+998 50 576 47 23</a></li>
+          </ul>
+        </div>
+      </nav>
+    </div>
+    <div class="site-footer__bottom">
+      <span>© 2026 Super Market</span>
+      <span>super-market.uz</span>
+    </div>
   </div>
 </footer>
 </body>
