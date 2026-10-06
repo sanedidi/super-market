@@ -1,4 +1,5 @@
-# Сборка двух панелей и nginx, который их раздаёт и проксирует API.
+# Сборка двух панелей и nginx, который их раздаёт (вместе со статическими
+# страницами web/site) и проксирует API.
 FROM node:22-alpine AS build
 WORKDIR /web
 COPY package.json package-lock.json ./
@@ -15,3 +16,7 @@ RUN npm run build
 FROM nginx:1.27-alpine
 COPY --from=build /web/store/dist /usr/share/nginx/html
 COPY --from=build /web/admin/dist /usr/share/nginx/html/admin
+# Публичные страницы (политика, условия курьеров, удаление аккаунта) — без сборки.
+# README — заметки для владельца, наружу не отдаём.
+COPY site /usr/share/nginx/html/site
+RUN rm -f /usr/share/nginx/html/site/README.md

@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Удаление аккаунта — Super Market</title>
+<meta name="description" content="Удалите аккаунт Super Market, Super Market Курьер или SM Магазин без приложения: подтвердите номер кодом из SMS или Telegram.">
+<meta name="theme-color" content="#ffffff">
+<link rel="canonical" href="https://super-market.uz/delete-account">
+<link rel="icon" href="/site/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap">
+<link rel="stylesheet" href="/site/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Перейти к содержанию</a>
+<header class="topbar">
+  <div class="wrap topbar__in">
+    <span class="brand"><span class="brand__logo" aria-hidden="true">SM</span>Super Market</span>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap wrap--narrow">
+
+    <!-- Шаг 1: номер телефона -->
+    <section class="flow" id="step-phone" aria-labelledby="t-phone">
+      <h1 id="t-phone" tabindex="-1">Удаление аккаунта</h1>
+      <p class="intro">Удалите аккаунт Super Market, Super Market Курьер или SM Магазин, если приложение уже не установлено. Подтвердим кодом на ваш номер.</p>
+
+      <div class="card what">
+        <h2>Что удалим</h2>
+        <ul class="checklist">
+          <li>
+            <svg class="ico ico--ok" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="currentColor"/><path d="M6 10.2l2.6 2.6L14 7.4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Имя, телефон, адреса, избранное, семья</span>
+          </li>
+          <li>
+            <svg class="ico ico--ok" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="currentColor"/><path d="M6 10.2l2.6 2.6L14 7.4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Данные курьера «по пути»: документ, геопозиция</span>
+          </li>
+          <li>
+            <svg class="ico ico--wait" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.25" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="M10 5.5V10l3 2" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Аккаунт сотрудника магазина<span class="sub">закроет владелец сети или поддержка — до 30 дней</span></span>
+          </li>
+          <li>
+            <svg class="ico ico--info" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="currentColor"/><path d="M10 9v5" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="6.2" r="1.2" fill="#fff"/></svg>
+            <span>Чеки и документы для налоговой<span class="sub">храним по закону, без вашего имени и номера</span></span>
+          </li>
+        </ul>
+      </div>
+
+      <form id="delete-form" novalidate>
+        <div class="field">
+          <label for="phone">Номер телефона</label>
+          <div class="phone" id="phone-box">
+            <span class="phone__prefix" aria-hidden="true">+998</span>
+            <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel-national"
+                   placeholder="90 123 45 67" required
+                   aria-describedby="phone-help phone-error">
+          </div>
+          <span id="phone-help" class="sr-only">Код страны +998 уже указан, введите 9 цифр номера.</span>
+          <p class="field-error" id="phone-error" role="alert"></p>
+        </div>
+        <button type="submit" class="btn btn--primary" id="send-btn">
+          <span class="spinner" aria-hidden="true"></span><span class="btn__label">Получить код</span>
+        </button>
+        <p class="hint">Код придёт в Telegram, если номер привязан к боту, иначе по SMS. В приложении: Профиль → Настройки → Удалить аккаунт.</p>
+      </form>
+      <noscript>
+        <div class="alert alert--error"><span></span><p>Для формы нужен JavaScript. Без него напишите в поддержку с номера аккаунта — контакты внизу страницы.</p></div>
+      </noscript>
+    </section>
+
+    <!-- Шаг 2: код -->
+    <section class="flow" id="step-code" aria-labelledby="t-code" hidden>
+      <button type="button" class="linkbtn" id="change-phone">
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8H3m4.5-4.5L3 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Изменить номер
+      </button>
+      <h1 id="t-code" tabindex="-1">Введите код</h1>
+      <p class="intro" id="code-sent"></p>
+
+      <form id="code-form" novalidate>
+        <div class="field">
+          <label for="code" class="sr-only">Код из 6 цифр</label>
+          <div class="otp" id="otp">
+            <span class="otp__box" aria-hidden="true"></span><span class="otp__box" aria-hidden="true"></span><span class="otp__box" aria-hidden="true"></span><span class="otp__box" aria-hidden="true"></span><span class="otp__box" aria-hidden="true"></span><span class="otp__box" aria-hidden="true"></span>
+            <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code"
+                   pattern="[0-9]*" maxlength="6" required aria-describedby="code-error">
+          </div>
+          <p class="field-error" id="code-error" role="alert"></p>
+        </div>
+
+        <div class="alert alert--warn" id="warn">
+          <svg class="ico ico--err" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5L18.5 17h-17z" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/><path d="M10 8v4" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/><circle cx="10" cy="14.4" r="1" fill="currentColor"/></svg>
+          <p>После подтверждения аккаунт удалится сразу. Отменить нельзя.</p>
+        </div>
+
+        <div class="alert alert--error" id="blocked" role="alert" hidden>
+          <svg class="ico ico--err" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.25" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="M10 6v4.5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/><circle cx="10" cy="13.6" r="1" fill="currentColor"/></svg>
+          <div><p id="blocked-text"></p><p>Ничего не удалено, а код больше не действует. Когда всё будет готово, запросите новый код.</p></div>
+        </div>
+
+        <button type="submit" class="btn btn--primary" id="confirm-btn">
+          <span class="spinner" aria-hidden="true"></span><span class="btn__label">Удалить аккаунт</span>
+        </button>
+        <button type="button" class="btn btn--secondary" id="restart-btn" hidden>Запросить новый код</button>
+      </form>
+
+      <p class="resend" id="resend" aria-live="polite"></p>
+    </section>
+
+    <!-- Шаг 3: результат -->
+    <section class="flow" id="step-done" aria-labelledby="t-done" hidden>
+      <div class="done-icon" aria-hidden="true">
+        <svg viewBox="0 0 36 36"><path d="M9 18.5l6 6L27 12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <h1 id="t-done" tabindex="-1">Готово</h1>
+      <p class="intro" id="done-text"></p>
+      <div class="card result">
+        <ul class="checklist" id="done-list"></ul>
+      </div>
+      <p class="hint">Вопросы — в Telegram-боте поддержки или на почту из <a href="/privacy">политики конфиденциальности</a>.</p>
+      <p><a class="btn btn--secondary" href="/">На главную</a></p>
+    </section>
+
+  </div>
+
+  <div class="wrap wrap--narrow">
+    <article class="doc" id="about" aria-label="Подробно об удалении аккаунта">
+<!-- doc:start (текст из delete-account.md) -->
+      <h2 id="p-1">Удаление аккаунта Super Market</h2>
+      <p><strong>Дата вступления в силу: [дата]</strong></p>
+      <p>Вы можете удалить аккаунт в любой момент. Ниже — как это сделать и что произойдёт с вашими данными.</p>
+      <h3 id="p-2">Покупатели — в приложении Super Market</h3>
+      <ol>
+      <li>Откройте вкладку <strong>Профиль</strong>.</li>
+      <li>Перейдите в <strong>Настройки</strong>.</li>
+      <li>Нажмите <strong>Удалить аккаунт</strong> и подтвердите.</li>
+      </ol>
+      <p>Аккаунт удаляется сразу. Если у вас есть незавершённый заказ, приложение попросит дождаться его выполнения.</p>
+      <h3 id="p-3">Курьеры «по пути» — в приложении Super Market Курьер</h3>
+      <p>Откройте <strong>Профиль → Удалить аккаунт</strong> и подтвердите. Перед удалением завершите или верните активные заказы. </p>
+      <h3 id="p-4">Сотрудники магазинов и штатные курьеры</h3>
+      <p>Ваш аккаунт создал владелец магазина. Попросите его отключить вас в панели магазина или отправьте запрос через <a href="#delete-form">форму в начале страницы</a>.</p>
+      <h3 id="p-5">Без приложения — веб-форма</h3>
+      <p>Если приложение удалено или недоступно, воспользуйтесь <a href="#delete-form">формой в начале страницы</a>: укажите номер телефона аккаунта и подтвердите его кодом из SMS или Telegram. Аккаунты покупателя и курьера «по пути» удаляются сразу; для сотрудников магазинов и штатных курьеров создаётся запрос.</p>
+      <p>Также можно написать в Telegram [@бот поддержки] или на [email поддержки] с номера телефона аккаунта.</p>
+      <p>Запросы сотрудников и обращения в поддержку выполняются <strong>в течение 30 дней</strong>. Мы сообщим о результате.</p>
+      <h3 id="p-6">Что удаляется</h3>
+      <p><strong>Покупатель</strong> — сразу:</p>
+      <ul>
+      <li>имя и фамилия, дата рождения, пол, город и язык;</li>
+      <li>адреса доставки, избранное, история уведомлений;</li>
+      <li>устройства и push-токены; все сеансы входа завершаются;</li>
+      <li>участие в «Моей семье»;</li>
+      <li>номер телефона отвязывается от аккаунта и от Telegram-бота. Если войти с этим номером снова, будет создан новый, пустой аккаунт.</li>
+      </ul>
+      <p><strong>Курьер «по пути»</strong>: номер телефона, статус, маршрут и местоположение, данные профиля.</p>
+      <p><strong>Сотрудник магазина</strong>: доступ к магазину закрывается.</p>
+      <h3 id="p-7">Что сохраняется и почему</h3>
+      <ul>
+      <li><strong>Заказы и платежи</strong> — для бухгалтерского учёта, фискализации и возвратов (не менее 5 лет). Они остаются у магазинов <strong>обезличенными</strong>: без вашего телефона, адреса и комментариев; точка доставки огрубляется примерно до 1 км.</li>
+      <li><strong>Долги (насия)</strong> в магазинах. Их ведёт сам магазин по номеру телефона; удаление аккаунта не погашает и не удаляет долг. По вопросам долга обращайтесь в магазин.</li>
+      <li><strong>Курьерам</strong>: начисления и выплаты — для учёта (не менее 5 лет); отпечаток документа (без самого документа и его номера) и сведения о нарушениях — до 3 лет, чтобы заблокированный аккаунт нельзя было создать заново. Положительный баланс выплачивается в ближайший день выплат.</li>
+      <li><strong>Сотрудникам</strong>: продажи, смены и документы, которые вы оформляли, — остаются в учёте магазина.</li>
+      <li>Данные, которые мы обязаны хранить по закону или для разрешения споров.</li>
+      </ul>
+      <p>Восстановить удалённый аккаунт нельзя.</p>
+      <p>Подробнее — в <a href="/privacy">Политике конфиденциальности</a>.</p>
+      <p>Контакты: [email поддержки] · [телефон] · Telegram [@бот поддержки]</p>
+<!-- doc:end -->
+    </article>
+  </div>
+</main>
+
+<footer class="footer">
+  <div class="wrap wrap--narrow">
+    <nav aria-label="Документы">
+      <a href="/privacy">Политика конфиденциальности</a>
+      <a href="/courier-terms">Условия для курьеров</a>
+      <a href="/delete-account" aria-current="page">Удаление аккаунта</a>
+    </nav>
+    <p>© Super Market</p>
+  </div>
+</footer>
+
+<script src="/site/delete-account.js" defer></script>
+</body>
+</html>
