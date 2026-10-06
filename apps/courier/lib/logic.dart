@@ -91,3 +91,16 @@ Set<String> newOrderIds(List<CourierOrder> before, List<CourierOrder> after) {
   final old = before.map(idOf).toSet();
   return after.where((c) => statusOf(c) != 'delivered' && !old.contains(idOf(c))).map(idOf).toSet();
 }
+
+/// Документы на сайте (Figma Ц7а, К8а, Ц0).
+const privacyUrl = 'https://super-market.uz/privacy';
+const courierTermsUrl = 'https://super-market.uz/courier-terms';
+
+/// Варианты причины в запросе на удаление аккаунта штатного курьера.
+const deletionReasons = ['Больше здесь не работаю', 'Не пользуюсь приложением', 'Другое'];
+
+/// Тело POST /courier/me/deletion-request: причина необязательна, до 500 символов.
+Map<String, dynamic> deletionRequestBody(String? reason) {
+  final r = (reason ?? '').trim();
+  return {if (r.isNotEmpty) 'reason': r.length > 500 ? r.substring(0, 500) : r};
+}

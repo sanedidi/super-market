@@ -43,4 +43,16 @@ void main() {
     expect(minutesLeft(DateTime(2026, 10, 2, 14, 32), now), 'осталось 12 мин');
     expect(minutesLeft(DateTime(2026, 10, 2, 14, 10), now), 'время вышло');
   });
+
+  test('удалить аккаунт пока нельзя (409)', () {
+    String money(Object? v) => '$v сум';
+    final order = deleteBlocked('active_order', {'account': 'crowd', 'order_number': 1051}, money)!;
+    expect(order.title, 'Сначала завершите заказ');
+    expect(order.text, startsWith('Заказ № 1051 ещё в пути'));
+    final balance = deleteBlocked('unpaid_balance', {'account': 'crowd', 'balance': '86000.00'}, money)!;
+    expect(balance.title, 'Сначала получите выплату');
+    expect(balance.text, contains('К выплате 86000.00 сум'));
+    expect(deleteBlocked('active_order', const {}, money)!.text, startsWith('Заказ ещё в пути'));
+    expect(deleteBlocked('not_found', const {}, money), isNull);
+  });
 }

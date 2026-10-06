@@ -4,6 +4,7 @@ name: apps
 # приложения покупателя (golden) — в артефакте client-screens.
 # Сборки кассы: pos-windows (sm_pos.exe) и pos-android (APK).
 # Приложение курьера для Android: courier-android (APK).
+# Это проверочные APK (подпись debug-ключом). Сборки для Google Play (AAB) — workflow release.
 on:
   push:
     branches: [main, "client-*"]
@@ -11,6 +12,11 @@ on:
   pull_request:
     paths: ["apps/**", ".github/workflows/apps.yml"]
   workflow_dispatch:
+
+env:
+  # Одна версия Flutter для всех сборок: apps/client/pubspec.lock требует Flutter >= 3.44
+  # (Dart >= 3.12). Менять вместе с release.yml.
+  FLUTTER_VERSION: "3.44.x"
 
 jobs:
   analyze:
@@ -20,6 +26,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - name: Versions
         run: flutter --version
@@ -65,6 +72,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - name: Build
         working-directory: apps/pos
@@ -94,6 +102,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - name: Build
         working-directory: apps/pos
@@ -121,6 +130,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - name: Build
         working-directory: apps/courier

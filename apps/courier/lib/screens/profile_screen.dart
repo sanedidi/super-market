@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:sm_core/sm_core.dart' show confirmSheet, formatPhone;
+import 'package:sm_core/sm_core.dart' show confirmSheet, formatPhone, infoSheet, promptSheet;
 
 import '../logic.dart';
 import '../main.dart';
@@ -62,6 +62,14 @@ class ProfileScreen extends StatelessWidget {
               trailing: const Icon(Icons.chevron_right_rounded, color: Color(0xFF8E8E93)),
               onTap: '${s['phone'] ?? ''}'.isEmpty ? null : () => call(context, '${s['phone']}'),
             ),
+          // Figma К8а: политика и запрос на удаление аккаунта.
+          _Item(
+            icon: Icons.policy_rounded,
+            title: 'Политика конфиденциальности',
+            trailing: const Icon(Icons.chevron_right_rounded, color: Color(0xFF8E8E93)),
+            onTap: () => openLink(context, privacyUrl),
+          ),
+          _Item(icon: Icons.person_remove_rounded, title: 'Удалить аккаунт', color: AppColors.primary, onTap: () => _requestDeletion(context, st)),
         ]),
         const SizedBox(height: 18),
         _Group(children: [
@@ -86,6 +94,33 @@ class ProfileScreen extends StatelessWidget {
         Text('Super Market Курьер · версия $appVersion', textAlign: TextAlign.center, style: AppText.small.copyWith(color: AppColors.muted)),
       ]),
     );
+  }
+}
+
+/// Аккаунт штатного курьера создаёт магазин — удаляем по запросу (Figma К8а).
+Future<void> _requestDeletion(BuildContext context, CourierState st) async {
+  final reason = await promptSheet(
+    context,
+    title: 'Удалить аккаунт?',
+    text: 'Ваш аккаунт создал магазин, поэтому удаляем по запросу — в течение 30 дней. Магазин и поддержка получат уведомление.',
+    confirm: 'Отправить запрос',
+    options: deletionReasons,
+    hint: 'Комментарий (необязательно)',
+    requireValue: false,
+    maxLength: 500,
+  );
+  if (reason == null || !context.mounted) return;
+  try {
+    await st.requestDeletion(reason);
+    if (!context.mounted) return;
+    await infoSheet(
+      context,
+      icon: Icons.mark_email_read_rounded,
+      title: 'Запрос отправлен',
+      text: 'Удалим аккаунт в течение 30 дней. Магазин и поддержка получили уведомление.',
+    );
+  } catch (e) {
+    if (context.mounted) showMessage(context, e);
   }
 }
 

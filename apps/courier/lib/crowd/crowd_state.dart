@@ -39,6 +39,16 @@ class CrowdState extends ChangeNotifier {
   Timer? _poll;
   StreamSubscription<Position>? _positions;
 
+  /// Экран «зачем геопозиция» перед системным запросом (Figma Ц0). Ставит
+  /// оболочка режима; true — «Продолжить». Без него система спрашивает сразу.
+  Future<bool> Function()? explainLocation;
+
+  /// Доступ не дали («Не сейчас» или отказ в системном окне) — сами больше не
+  /// спрашиваем (опрос раз в 15 секунд), только после действия курьера:
+  /// «Ищу заказы», «Повторить», «Рядом со мной», «Иду домой».
+  bool _locationDeclined = false;
+  Future<LocationPermission>? _asking;
+
   bool get loggedIn => api.loggedIn;
   String get status => '${me?['status'] ?? ''}';
   bool get verified => status == 'active';
@@ -57,6 +67,7 @@ class CrowdState extends ChangeNotifier {
       orders = [];
       points = [];
       error = null;
+      _locationDeclined = false;
     }
     // Вход и выход меняют экран приложения.
     notifyListeners();
@@ -104,6 +115,7 @@ class CrowdState extends ChangeNotifier {
   }
 
   Future<void> setOnline(bool value) async {
+    if (value) _locationDeclined = false;
     me = await api.put('/crowd/route', {'online': value}) as Map<String, dynamic>;
     notifyListeners();
     await _syncTracking();
@@ -112,6 +124,7 @@ class CrowdState extends ChangeNotifier {
 
   /// Куда иду: точка или null — «просто рядом».
   Future<void> setDest(SavedPlace? p) async {
+    _locationDeclined = false;
     me = await api.put('/crowd/route', {
       'online': true,
       'dest': p == null ? null : {'lat': p.lat, 'lng': p.lng, 'title': p.title},
@@ -151,6 +164,13 @@ class CrowdState extends ChangeNotifier {
 
   Future<Map<String, dynamic>> earnings() async => await api.get('/crowd/earnings') as Map<String, dynamic>;
 
+  /// Удалить аккаунт (Figma Ш5). 204 — забываем токены, приложение вернётся
+  /// ко входу. 409 `active_order` / `unpaid_balance` — ApiError с details (Ш6).
+  Future<void> deleteAccount() async {
+    await api.delete('/crowd/me');
+    await api.forget();
+  }
+
   Future<void> logout() async {
     try {
       if (online) await api.put('/crowd/route', {'online': false});
@@ -175,6 +195,7 @@ class CrowdState extends ChangeNotifier {
 
   /// Запомнить текущее место как «Дом» или «Работа».
   Future<SavedPlace?> saveHere(String key, String title) async {
+    _locationDeclined = false;
     final p = await _currentPosition();
     if (p == null) return null;
     final prefs = await SharedPreferences.getInstance();
@@ -210,7 +231,7 @@ class CrowdState extends ChangeNotifier {
       return false;
     }
     var perm = await Geolocator.checkPermission();
-    if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+    if (perm == LocationPermission.denied) perm = await _askPermission();
     if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
       locationProblem = 'Нет доступа к геопозиции';
       notifyListeners();
@@ -220,7 +241,20 @@ class CrowdState extends ChangeNotifier {
     return true;
   }
 
+  /// Сначала свой экран (Ц0), потом системный запрос. Одновременные вызовы
+  /// (загрузка, опрос, действие курьера) ждут один и тот же запрос.
+  Future<LocationPermission> _askPermission() => _asking ??= _explainAndRequest().whenComplete(() => _asking = null);
+
+  Future<LocationPermission> _explainAndRequest() async {
+    final explain = explainLocation;
+    var perm = LocationPermission.denied;
+    if (!_locationDeclined && (explain == null || await explain())) perm = await Geolocator.requestPermission();
+    _locationDeclined = perm == LocationPermission.denied || perm == LocationPermission.deniedForever;
+    return perm;
+  }
+
   Future<void> retryLocation() async {
+    _locationDeclined = false;
     _stopTracking();
     await _syncTracking();
     await refresh();
@@ -239,6 +273,7 @@ class CrowdState extends ChangeNotifier {
 
   /// Точки для точек проверки — один раз, без постоянного слежения.
   Future<void> locateOnce() async {
+    _locationDeclined = false;
     await _currentPosition();
     await refresh();
   }
@@ -250,6 +285,9 @@ class CrowdState extends ChangeNotifier {
     }
     if (_positions != null) return;
     if (!await _permission()) return;
+    // Пока курьер читал экран Ц0, другой вызов (опрос) мог уже включить слежение
+    // или курьер выключил поиск — не заводим вторую подписку.
+    if (_positions != null || !_needTracking) return;
     final LocationSettings settings = switch (defaultTargetPlatform) {
       TargetPlatform.android => AndroidSettings(
           accuracy: LocationAccuracy.high,

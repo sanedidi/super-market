@@ -3,11 +3,14 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../delivery_time.dart';
+import '../guest.dart';
 import '../main.dart';
 import '../product_tile.dart';
+import '../promo_consent.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
+import 'addresses_screen.dart';
 import 'checkout_sheets.dart';
 import 'order_screen.dart';
 import 'payment_screen.dart';
@@ -39,6 +42,11 @@ Map<String, dynamic> _orderBody(AppState s, {String provider = 'payme', String c
       'comment': comment,
       'delivery_from': slot?.fromRaw,
     };
+
+/// Пересчёт на сервере невозможен: гость (нужен вход) или нет сохранённого
+/// адреса (у гостя только точка на карте). «Оформить» сначала просит войти
+/// и указать адрес.
+bool _needsSetup(AppState s) => s.isGuest || s.address == null || s.address!.isGuestPoint;
 
 /// Текст проблемы заказа для показа.
 String _problemMessage(String pr, Map<String, dynamic>? delivery) => pr == 'min_order_amount' && delivery != null
@@ -115,7 +123,7 @@ class _CartScreenState extends State<CartScreen> {
 
   Future<void> _refresh() async {
     final s = context.read<AppState>();
-    if (s.cartCount == 0 || s.address == null) return;
+    if (s.cartCount == 0 || _needsSetup(s)) return;
     setState(() => _error = null);
     try {
       final p = await context.read<Api>().post('/client/checkout/preview', _orderBody(s, slot: _slot)) as Map<String, dynamic>;
@@ -138,7 +146,26 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   Future<void> _checkout() async {
-    final slot = await Navigator.of(context).push<Slot?>(MaterialPageRoute(builder: (_) => CheckoutScreen(slot: _slot)));
+    final s = context.read<AppState>();
+    final nav = Navigator.of(context);
+    if (!await requireLogin(context, LoginReason.checkout) || !mounted) return;
+    if (_needsSetup(s)) {
+      // Только что вошли: подтянуть сохранённые адреса, а если их нет —
+      // сохранить адрес у точки гостя (подъезд, квартира).
+      try {
+        await s.loadAddresses();
+      } catch (_) {
+        // Ниже попросим добавить адрес.
+      }
+      if (!mounted) return;
+      final a = s.address;
+      if (a == null || a.isGuestPoint) {
+        await openAddressEditor(context, null, a == null ? null : (lat: a.lat, lng: a.lng));
+        if (!mounted || _needsSetup(s)) return;
+      }
+      _refresh();
+    }
+    final slot = await nav.push<Slot?>(MaterialPageRoute(builder: (_) => CheckoutScreen(slot: _slot)));
     if (mounted && slot != _slot) _setSlot(slot);
   }
 
@@ -259,10 +286,13 @@ class _CartScreenState extends State<CartScreen> {
       bottomNavigationBar: s.cartCount == 0
           ? null
           : BottomActionBar(
-              child: AppButton(
-                label: p == null ? 'Считаем…' : 'Оформить · ${money(p['total'])}',
-                onPressed: p == null ? null : _checkout,
-              ),
+              child: p == null && _needsSetup(s)
+                  // Гость: сумма по ценам каталога, «Оформить» попросит войти.
+                  ? AppButton(label: 'Оформить · ${money(s.cartTotal)}', onPressed: _checkout)
+                  : AppButton(
+                      label: p == null ? 'Считаем…' : 'Оформить · ${money(p['total'])}',
+                      onPressed: p == null ? null : _checkout,
+                    ),
             ),
     );
   }
@@ -401,7 +431,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   Future<void> _refresh() async {
     final s = context.read<AppState>();
-    if (s.cartCount == 0 || s.address == null) return;
+    if (s.cartCount == 0 || _needsSetup(s)) return;
     setState(() => _error = null);
     try {
       final p = await context.read<Api>().post('/client/checkout/preview', _body(s)) as Map<String, dynamic>;
@@ -428,6 +458,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (!mounted) return;
       final nav = Navigator.of(context);
       nav.pop(); // оформление
+      // После первого заказа — один раз спросить про акции (Apple 4.5.4).
+      askPromosOnce(nav, s);
       if (url == null || url.isEmpty) {
         // Наличные курьеру: оплачивать онлайн нечего — сразу экран заказа.
         nav.pushReplacement(MaterialPageRoute(builder: (_) => OrderScreen(id: order['id'] as String)));

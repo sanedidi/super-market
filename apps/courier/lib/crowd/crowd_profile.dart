@@ -115,10 +115,21 @@ class CrowdProfileScreen extends StatelessWidget {
               title: Text(formatPhone(me['phone']), style: AppText.body),
               trailing: Text('${me['code'] ?? ''}', style: AppText.body.copyWith(color: AppColors.text2)),
             ),
+          ]),
+        ),
+        const SizedBox(height: 12),
+        // Figma Ц7а: условия, политика, выход, удаление аккаунта.
+        Container(
+          decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20)),
+          clipBehavior: Clip.antiAlias,
+          child: Column(children: [
+            _LinkTile(icon: Icons.description_rounded, title: 'Условия для курьеров', onTap: () => openLink(context, courierTermsUrl)),
             const Divider(height: 1, indent: 56, color: AppColors.line),
-            ListTile(
-              leading: const Icon(Icons.logout_rounded, color: AppColors.primary),
-              title: Text('Выйти', style: AppText.body.copyWith(color: AppColors.primary)),
+            _LinkTile(icon: Icons.policy_rounded, title: 'Политика конфиденциальности', onTap: () => openLink(context, privacyUrl)),
+            const Divider(height: 1, indent: 56, color: AppColors.line),
+            _LinkTile(
+              icon: Icons.logout_rounded,
+              title: 'Выйти',
               onTap: () async {
                 final ok = await confirmSheet(
                   context,
@@ -130,12 +141,41 @@ class CrowdProfileScreen extends StatelessWidget {
                 if (ok) await st.logout();
               },
             ),
+            const Divider(height: 1, indent: 56, color: AppColors.line),
+            _LinkTile(icon: Icons.person_remove_rounded, title: 'Удалить аккаунт', color: AppColors.primary, onTap: () => _delete(context, st)),
           ]),
         ),
         const SizedBox(height: 18),
         Text('Super Market Курьер · версия $appVersion', textAlign: TextAlign.center, style: AppText.small.copyWith(color: AppColors.muted)),
       ]),
     );
+  }
+
+  /// Удаление аккаунта (Figma Ш5), а если пока нельзя — почему (Ш6).
+  Future<void> _delete(BuildContext context, CrowdState st) async {
+    final ok = await confirmSheet(
+      context,
+      icon: Icons.person_remove_rounded,
+      title: 'Удалить аккаунт?',
+      text: 'Удалим имя, данные документа и последнюю геопозицию, выйдем на всех устройствах. '
+          'История доставок останется без ваших данных. Отменить нельзя.',
+      confirm: 'Удалить аккаунт',
+    );
+    if (!ok || !context.mounted) return;
+    try {
+      // После 204 токены забыты — приложение само вернётся ко входу.
+      await st.deleteAccount();
+    } on ApiError catch (e) {
+      if (!context.mounted) return;
+      final blocked = deleteBlocked(e.code, e.details, money);
+      if (blocked == null) {
+        showMessage(context, e);
+      } else {
+        await infoSheet(context, icon: Icons.person_remove_rounded, title: blocked.title, text: blocked.text);
+      }
+    } catch (e) {
+      if (context.mounted) showMessage(context, e);
+    }
   }
 
   Future<void> _vehicle(BuildContext context, CrowdState st) async {
@@ -160,6 +200,24 @@ class CrowdProfileScreen extends StatelessWidget {
     } catch (e) {
       if (context.mounted) showMessage(context, e);
     }
+  }
+}
+
+class _LinkTile extends StatelessWidget {
+  const _LinkTile({required this.icon, required this.title, required this.onTap, this.color});
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: color ?? AppColors.dark),
+      title: Text(title, style: AppText.body.copyWith(color: color)),
+      trailing: color == null ? const Icon(Icons.chevron_right_rounded, color: AppColors.muted) : null,
+      onTap: onTap,
+    );
   }
 }
 

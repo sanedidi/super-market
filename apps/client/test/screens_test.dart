@@ -9,6 +9,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sm_client/guest.dart';
+import 'package:sm_client/promo_consent.dart';
 import 'package:sm_client/screens/auth_screen.dart';
 import 'package:sm_client/screens/cart_screen.dart';
 import 'package:sm_client/screens/debts_screen.dart';
@@ -252,11 +254,21 @@ Future<void> _loadFonts() async {
   }
 }
 
-Future<void> _shot(WidgetTester tester, Widget screen, String name, {AppState? state, void Function(AppState s)? setup, Map<String, dynamic>? home}) async {
+/// Войти: токены в SharedPreferences, как после проверки кода.
+Future<void> _signIn(Api api) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString('sm_client_tokens', jsonEncode({'access_token': 'access', 'refresh_token': 'refresh'}));
+  await api.init();
+}
+
+/// [guest] — без входа (гостевой режим), иначе покупатель вошёл.
+Future<void> _shot(WidgetTester tester, Widget screen, String name,
+    {AppState? state, void Function(AppState s)? setup, Map<String, dynamic>? home, bool guest = false}) async {
   tester.view.physicalSize = const Size(780, 1688);
   tester.view.devicePixelRatio = 2;
   addTearDown(tester.view.reset);
   final api = _api(home: home);
+  if (!guest) await tester.runAsync(() => _signIn(api));
   final st = state ?? AppState(api);
   setup?.call(st);
   await tester.pumpWidget(MultiProvider(
@@ -312,6 +324,62 @@ void main() {
       CodeStep(phone: '+998905764723', resendIn: 54, botUrl: 'https://t.me/bot', onBack: () {}, onResend: () async {}),
       '02_code',
     );
+  });
+
+  testWidgets('02б код по SMS', (t) async {
+    await _shot(
+      t,
+      CodeStep(phone: '+998905764723', channel: 'sms', resendIn: 54, botUrl: 'https://t.me/bot', onBack: () {}, onResend: () async {}),
+      '02b_code_sms',
+      guest: true,
+    );
+  });
+
+  testWidgets('16 главная гостя', (t) => _shot(t, const RootShell(), '16_guest_home', guest: true));
+
+  testWidgets('17 профиль гостя', (t) async {
+    await _shot(
+      t,
+      Scaffold(
+        extendBody: true,
+        body: const ProfileScreen(),
+        bottomNavigationBar: AppTabBar(index: 4, onTap: (_) {}),
+      ),
+      '17_guest_profile',
+      guest: true,
+    );
+  });
+
+  testWidgets('18 шторка входа', (t) async {
+    await _shot(
+      t,
+      const Scaffold(
+        backgroundColor: Color(0x99000000),
+        body: Align(
+          alignment: Alignment.bottomCenter,
+          child: Material(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            child: Padding(padding: EdgeInsets.fromLTRB(20, 24, 20, 20), child: LoginSheet(reason: LoginReason.checkout)),
+          ),
+        ),
+      ),
+      '18_login_sheet',
+      guest: true,
+    );
+  });
+
+  testWidgets('19 согласие на акции', (t) async {
+    await _shot(t, const Scaffold(backgroundColor: Color(0x99000000), body: PromoConsentDialog()), '19_promo_consent');
+  });
+
+  testWidgets('20 настройки гостя', (t) => _shot(t, const SettingsScreen(), '20_guest_settings', guest: true));
+
+  testWidgets('гость: корзина без пересчёта, «Оформить» доступна', (t) async {
+    await _shot(t, const CartScreen(), '21_guest_cart', guest: true, setup: (s) {
+      _fillCart(s);
+      s.setGuestPoint(41.311, 69.279);
+    });
   });
 
   testWidgets('03 как вас зовут', (t) => _shot(t, NameStepScreen(onDone: () {}), '03_name'));

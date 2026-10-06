@@ -5,6 +5,7 @@ import 'package:sm_core/sm_core.dart';
 
 import '../catalog.dart';
 import '../delivery_time.dart';
+import '../guest.dart';
 import '../home_blocks.dart';
 import '../home_tracking.dart';
 import '../main.dart';
@@ -408,14 +409,15 @@ class _AddressPill extends StatelessWidget {
       shape: const StadiumBorder(),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AddressesScreen())),
+        onTap: () => openAddressPicker(context),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             const Icon(Icons.location_on_rounded, size: 22, color: AppColors.white),
             const SizedBox(width: 4),
             Flexible(
-              child: Text(address?.title ?? 'Укажите адрес',
+              // У гостя только точка на карте — просим указать адрес.
+              child: Text(address == null || address!.isGuestPoint ? 'Укажите адрес доставки' : address!.title,
                   maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong.copyWith(color: AppColors.white)),
             ),
             const Icon(Icons.expand_more_rounded, size: 22, color: AppColors.white),
@@ -477,7 +479,11 @@ class _Bell extends StatelessWidget {
         shape: const CircleBorder(),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NotificationsScreen())),
+          onTap: () async {
+            final nav = Navigator.of(context);
+            if (!await requireLogin(context, LoginReason.notifications)) return;
+            await nav.push(MaterialPageRoute(builder: (_) => const NotificationsScreen()));
+          },
           child: const SizedBox(width: 44, height: 44, child: Icon(Icons.notifications_none_rounded, color: AppColors.white)),
         ),
       ),

@@ -53,3 +53,22 @@ String balanceKindTitle(String? kind) => switch (kind) {
       'adjustment' => 'Корректировка',
       _ => kind ?? '',
     };
+
+const _monthsGen = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+
+/// «1 ноября 2026».
+String ruDate(DateTime d) => '${d.day} ${_monthsGen[d.month - 1]} ${d.year}';
+
+/// До какого дня оплачена подписка (null — есть неоплаченный счёт или не знаем).
+/// Сервер может прислать paid_until; иначе: счёт выставляется на текущий месяц
+/// в его начале, поэтому без неоплаченных счетов оплачено до 1-го числа
+/// следующего месяца, а до billing_from (бесплатный период) — до billing_from.
+DateTime? subscriptionPaidUntil(Map<String, dynamic> bill, DateTime today) {
+  final explicit = DateTime.tryParse('${bill['paid_until'] ?? ''}');
+  if (explicit != null) return DateTime(explicit.year, explicit.month, explicit.day);
+  if (n(bill['unpaid_uzs']) > 0 || bill['overdue'] == true) return null;
+  final day = DateTime(today.year, today.month, today.day);
+  final from = DateTime.tryParse('${bill['billing_from'] ?? ''}');
+  if (from != null && from.isAfter(day)) return DateTime(from.year, from.month, from.day);
+  return DateTime(today.year, today.month + 1, 1);
+}

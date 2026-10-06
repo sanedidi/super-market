@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import '../guest.dart';
 import '../main.dart';
+import '../map_view.dart';
 import '../push.dart';
 import '../state.dart';
 import '../ui/theme.dart';
@@ -13,8 +15,9 @@ import 'home_screen.dart';
 import 'map_screen.dart';
 import 'profile_screen.dart';
 
-/// Приложение после входа: вкладки главная, каталог, карта, корзина, профиль.
-/// Корзина открывается на весь экран поверх вкладок.
+/// Приложение: вкладки главная, каталог, карта, корзина, профиль.
+/// Корзина открывается на весь экран поверх вкладок. Работает и без входа
+/// (гость): тогда магазины — рядом с точкой гостя, а не с сохранённым адресом.
 class RootShell extends StatefulWidget {
   const RootShell({super.key});
 
@@ -26,21 +29,51 @@ class _RootShellState extends State<RootShell> {
   /// Вкладки создаются при первом открытии и дальше живут в IndexedStack.
   final _visited = <int>{0};
 
+  late final Api _api = context.read<Api>();
+  late bool _loggedIn;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final state = context.read<AppState>();
-      state.loadFavorites();
-      state.loadProfile().catchError((_) {});
-      state.loadUnread();
-      Push.register(context.read<Api>());
-      try {
-        await state.loadAddresses();
-      } catch (e) {
-        if (mounted) showError(context, e);
-      }
-    });
+    _loggedIn = _api.loggedIn;
+    _api.addListener(_onAuth);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _start());
+  }
+
+  @override
+  void dispose() {
+    _api.removeListener(_onAuth);
+    super.dispose();
+  }
+
+  /// Вошли или вышли (в том числе токен не обновился) — перезапуск данных.
+  void _onAuth() {
+    if (_api.loggedIn == _loggedIn) return;
+    _loggedIn = _api.loggedIn;
+    if (mounted) _start();
+  }
+
+  Future<void> _start() async {
+    final state = context.read<AppState>();
+    if (state.isGuest) return _startGuest(state);
+    state.loadFavorites();
+    state.loadProfile().catchError((_) {});
+    state.loadUnread();
+    state.loadWishes();
+    Push.register(_api);
+    try {
+      await state.loadAddresses();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  /// Гость: точка, выбранная на карте, иначе геолокация, иначе центр Ташкента.
+  Future<void> _startGuest(AppState state) async {
+    state.loadConfig();
+    final p = await savedGuestPoint() ?? await currentLocation() ?? tashkent;
+    if (!mounted || !state.isGuest) return;
+    state.setGuestPoint(p.lat, p.lng);
   }
 
   void _onTab(int i) {

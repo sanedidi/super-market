@@ -12,9 +12,10 @@ class HelpScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.watch<AppState>().profile;
-    final support = '${p?['support_url'] ?? ''}';
-    final privacy = '${p?['privacy_url'] ?? ''}';
+    // Ссылки из профиля, а у гостя — из /client/config.
+    final state = context.watch<AppState>();
+    final support = state.link('support_url');
+    final privacy = state.privacyUrl;
     Widget card(IconData icon, Color color, String title, VoidCallback onTap) => Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: Material(
@@ -55,9 +56,7 @@ class HelpScreen extends StatelessWidget {
                 card(Icons.headset_mic_rounded, AppColors.dark, 'Служба поддержки', () => go(support)),
                 card(Icons.send_rounded, const Color(0xFF2AABEE), 'Телеграм бот', () => go(support)),
               ],
-              if (privacy.isNotEmpty) card(Icons.description_rounded, AppColors.dark, 'Политика конфиденциальности', () => go(privacy)),
-              if (support.isEmpty && privacy.isEmpty)
-                const EmptyState(icon: Icons.help_outline_rounded, title: 'Скоро здесь будет помощь', text: 'Пока напишите нам через магазин или курьера.'),
+              card(Icons.description_rounded, AppColors.dark, 'Политика конфиденциальности', () => go(privacy)),
             ]),
           ),
         ]),

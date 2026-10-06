@@ -14,44 +14,69 @@ import '../ui/widgets.dart';
 
 const _telegramBlue = Color(0xFF2AABEE);
 
-/// Вход: шаг 1 — номер и согласие с офертой, шаг 2 — код из Telegram-бота.
-/// Шаг 3 («Как вас зовут?») показывает [NameStepScreen] после входа.
+/// Код входа отправлен: на какой номер, куда (telegram | sms; пусто — не
+/// знаем) и через сколько секунд можно отправить ещё раз.
+class OtpSent {
+  const OtpSent({required this.phone, required this.channel, required this.resendIn, this.botUrl = ''});
+  final String phone;
+  final String channel;
+  final int resendIn;
+  final String botUrl;
+}
+
+/// Запросить код входа: POST /auth/otp/request → {channel, resend_in, bot_url}.
+/// Сервер шлёт код в Telegram, если номер привязан к боту, иначе по SMS.
+/// too_many_requests — код уже отправлен недавно, просто ждём его.
+/// Остальные ошибки (в том числе telegram_not_linked — SMS тоже не ушло) — ApiError.
+Future<OtpSent> requestOtp(Api api, String phone) async {
+  try {
+    final r = await api.post('/auth/otp/request', {'phone': phone});
+    final m = r is Map<String, dynamic> ? r : const <String, dynamic>{};
+    return OtpSent(
+      phone: phone,
+      channel: '${m['channel'] ?? ''}',
+      resendIn: (m['resend_in'] as num?)?.toInt() ?? 60,
+      botUrl: '${m['bot_url'] ?? ''}',
+    );
+  } on ApiError catch (e) {
+    if (e.code != 'too_many_requests') rethrow;
+    return OtpSent(phone: phone, channel: '', resendIn: (e.details['retry_after'] as num?)?.toInt() ?? 60);
+  }
+}
+
+/// Вход (Figma «Т3», «Т4»): шаг 1 — номер и согласие с офертой и политикой,
+/// шаг 2 — код из SMS или Telegram, шаг 3 — «Как вас зовут?», если имя не указано.
+///
+/// Открывается поверх приложения (openLogin в guest.dart) и закрывается
+/// с true после входа; «Посмотреть магазины без входа» закрывает с false.
+/// [sent] — код уже запрошен из шторки входа, сразу шаг 2.
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key});
+  const AuthScreen({super.key, this.sent});
+  final OtpSent? sent;
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
 }
 
 class _AuthScreenState extends State<AuthScreen> {
-  final _phone = TextEditingController();
-  bool _agree = false;
+  late final _phone = TextEditingController(text: widget.sent == null ? '' : UzPhoneFormatter.format(widget.sent!.phone.substring(4)));
+
+  /// Из шторки код запрошен с согласием («Нажимая «Получить код»…»).
+  late bool _agree = widget.sent != null;
   bool _busy = false;
   String? _error;
 
-  /// Шаг 2: номер, на который отправлен код, и секунды до повторной отправки.
-  String? _sentTo;
-  int _resendIn = 0;
-  String _botUrl = '';
-  String _offerUrl = '';
+  /// Шаг 2: куда отправлен код.
+  late OtpSent? _sent = widget.sent;
+  late String _botUrl = widget.sent?.botUrl ?? '';
+
+  /// Шаг 3 после входа: имя ещё не указано.
+  bool _needName = false;
 
   @override
   void initState() {
     super.initState();
-    _loadConfig();
-  }
-
-  Future<void> _loadConfig() async {
-    try {
-      final c = await context.read<Api>().get('/client/config') as Map<String, dynamic>;
-      if (!mounted) return;
-      setState(() {
-        _offerUrl = '${c['offer_url'] ?? ''}';
-        _botUrl = '${c['bot_url'] ?? ''}';
-      });
-    } catch (_) {
-      // Ссылки необязательны: без них вход работает.
-    }
+    context.read<AppState>().loadConfig();
   }
 
   @override
@@ -64,6 +89,12 @@ class _AuthScreenState extends State<AuthScreen> {
   String get _fullPhone => '+998$_digits';
   bool get _canSend => _digits.length == 9 && _agree && !_busy;
 
+  /// Закрыть экран входа: true — вошли.
+  void _close(bool loggedIn) {
+    final nav = Navigator.of(context);
+    if (nav.canPop()) nav.pop(loggedIn);
+  }
+
   /// Отправить код. [resend] — повторно со второго шага.
   Future<void> _request({bool resend = false}) async {
     FocusScope.of(context).unfocus();
@@ -71,29 +102,25 @@ class _AuthScreenState extends State<AuthScreen> {
       _busy = true;
       _error = null;
     });
+    final api = context.read<Api>();
     try {
-      final r = await context.read<Api>().post('/auth/otp/request', {'phone': _fullPhone});
-      final m = r is Map<String, dynamic> ? r : const <String, dynamic>{};
+      final sent = await requestOtp(api, _fullPhone);
       if (!mounted) return;
+      final prev = _sent;
       setState(() {
-        _sentTo = _fullPhone;
-        _resendIn = (m['resend_in'] as num?)?.toInt() ?? 60;
-        final bot = '${m['bot_url'] ?? ''}';
-        if (bot.isNotEmpty) _botUrl = bot;
+        // Повторный запрос слишком рано: канал прежний.
+        _sent = sent.channel.isEmpty && prev?.phone == sent.phone
+            ? OtpSent(phone: sent.phone, channel: prev!.channel, resendIn: sent.resendIn, botUrl: sent.botUrl)
+            : sent;
+        if (sent.botUrl.isNotEmpty) _botUrl = sent.botUrl;
       });
     } on ApiError catch (e) {
       if (!mounted) return;
-      if (e.code == 'too_many_requests') {
-        // Код уже отправлен недавно — просто ждём его на втором шаге.
-        setState(() {
-          _sentTo = _fullPhone;
-          _resendIn = (e.details['retry_after'] as num?)?.toInt() ?? 60;
-        });
-      } else if (e.code == 'telegram_not_linked') {
-        final bot = '${e.details['bot_url'] ?? _botUrl}';
+      if (e.code == 'telegram_not_linked') {
+        final bot = '${e.details['bot_url'] ?? ''}';
         if (bot.isNotEmpty) _botUrl = bot;
         await _linkTelegram();
-      } else if (resend && mounted) {
+      } else if (resend) {
         showError(context, e);
       } else {
         setState(() => _error = e.message);
@@ -103,8 +130,11 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
-  /// Номер ещё не привязан к боту: открыть бота, поделиться номером и вернуться.
+  String get _bot => _botUrl.isNotEmpty ? _botUrl : context.read<AppState>().link('bot_url');
+
+  /// SMS не ушло, а номер не привязан к боту: открыть бота, поделиться номером и вернуться.
   Future<void> _linkTelegram() async {
+    final bot = _bot;
     final again = await showModalBottomSheet<bool>(
       context: context,
       showDragHandle: true,
@@ -117,11 +147,11 @@ class _AuthScreenState extends State<AuthScreen> {
             const SizedBox(height: 16),
             const Text('Подключите Telegram-бот', textAlign: TextAlign.center, style: AppText.h3),
             const SizedBox(height: 8),
-            Text('Откройте бота Super Market, нажмите «Поделиться номером» и возвращайтесь — код придёт туда.',
+            Text('Не удалось отправить SMS. Откройте бота Super Market, нажмите «Поделиться номером» и возвращайтесь — код придёт туда.',
                 textAlign: TextAlign.center, style: AppText.body.copyWith(color: AppColors.text2)),
             const SizedBox(height: 20),
-            if (_botUrl.isNotEmpty) ...[
-              _TelegramButton(onTap: () => openUrl(_botUrl)),
+            if (bot.isNotEmpty) ...[
+              _TelegramButton(onTap: () => openUrl(bot)),
               const SizedBox(height: 10),
             ],
             StepButton(label: 'Я поделился номером', onPressed: () => Navigator.pop(ctx, true)),
@@ -132,26 +162,60 @@ class _AuthScreenState extends State<AuthScreen> {
     if (again == true && mounted) await _request();
   }
 
+  /// Код подошёл: спросить имя, если его ещё нет, иначе закрыть вход.
+  Future<void> _afterLogin() async {
+    final state = context.read<AppState>();
+    var needName = false;
+    try {
+      await state.loadProfile();
+      needName = '${state.profile?['first_name'] ?? ''}'.trim().isEmpty;
+    } catch (_) {
+      // Нет сети — имя можно указать в профиле.
+    }
+    if (!mounted) return;
+    if (needName) {
+      setState(() => _needName = true);
+    } else {
+      _close(true);
+    }
+  }
+
+  /// «Назад» на шаге 3 — выйти и войти заново другим номером.
+  Future<void> _backFromName() async {
+    await context.read<Api>().logout();
+    if (!mounted) return;
+    setState(() {
+      _needName = false;
+      _sent = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final sent = _sentTo;
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 220),
-      child: sent == null
-          ? _phoneStep()
-          : CodeStep(
-              key: ValueKey(sent),
-              phone: sent,
-              resendIn: _resendIn,
-              botUrl: _botUrl,
-              onBack: () => setState(() => _sentTo = null),
-              onResend: () => _request(resend: true),
-            ),
-    );
+    final sent = _sent;
+    final Widget child;
+    if (_needName) {
+      child = NameStepScreen(key: const ValueKey('name'), onDone: () => _close(true), onBack: _backFromName);
+    } else if (sent == null) {
+      child = _phoneStep();
+    } else {
+      child = CodeStep(
+        key: ValueKey(sent.phone),
+        phone: sent.phone,
+        channel: sent.channel,
+        resendIn: sent.resendIn,
+        botUrl: _bot,
+        onBack: () => setState(() => _sent = null),
+        onResend: () => _request(resend: true),
+        onVerified: _afterLogin,
+      );
+    }
+    return AnimatedSwitcher(duration: const Duration(milliseconds: 220), child: child);
   }
 
   Widget _phoneStep() {
     final top = MediaQuery.paddingOf(context).top;
+    final state = context.watch<AppState>();
     return AnnotatedRegion<SystemUiOverlayStyle>(
       key: const ValueKey('phone'),
       value: SystemUiOverlayStyle.light,
@@ -178,15 +242,20 @@ class _AuthScreenState extends State<AuthScreen> {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   const Text('Вход', style: AppText.h1),
                   const SizedBox(height: 6),
-                  Text('Пришлём код в Telegram-бот Super Market', style: AppText.body.copyWith(color: AppColors.text2)),
+                  Text('Пришлём код по SMS или в Telegram', style: AppText.body.copyWith(color: AppColors.text2)),
                   const SizedBox(height: 24),
-                  _PhoneField(controller: _phone, error: _error != null, onChanged: () => setState(() => _error = null), onSubmit: _canSend ? _request : null),
+                  PhoneField(controller: _phone, error: _error != null, onChanged: () => setState(() => _error = null), onSubmit: _canSend ? _request : null),
                   if (_error != null) ...[
                     const SizedBox(height: 8),
                     Text(_error!, style: AppText.small.copyWith(color: AppColors.primary)),
                   ],
                   const SizedBox(height: 20),
-                  _Consent(value: _agree, offerUrl: _offerUrl, onChanged: (v) => setState(() => _agree = v)),
+                  _Consent(
+                    value: _agree,
+                    offerUrl: state.link('offer_url'),
+                    privacyUrl: state.privacyUrl,
+                    onChanged: (v) => setState(() => _agree = v),
+                  ),
                 ]),
               ),
             ]),
@@ -198,14 +267,21 @@ class _AuthScreenState extends State<AuthScreen> {
             padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               StepButton(label: 'Продолжить', arrow: true, busy: _busy, onPressed: _canSend ? _request : null),
-              const SizedBox(height: 14),
-              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Padding(padding: EdgeInsets.only(top: 1), child: FaGlyph('telegram', size: 18, color: _telegramBlue)),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text('Нет Telegram? Установите его — вход только через бота', style: AppText.small.copyWith(fontSize: 13)),
+              const SizedBox(height: 6),
+              // Вход не обязателен: магазины и товары можно смотреть без него (Apple 5.1.1).
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => _close(false),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    textStyle: AppText.smallStrong.copyWith(fontSize: 14),
+                  ),
+                  icon: const Icon(Icons.storefront_rounded, size: 18),
+                  label: const Text('Посмотреть магазины без входа'),
                 ),
-              ]),
+              ),
             ]),
           ),
         ),
@@ -216,17 +292,19 @@ class _AuthScreenState extends State<AuthScreen> {
 }
 
 /// Поле номера: серая плашка «UZ +998» и 9 цифр «90 000 00 00».
-class _PhoneField extends StatelessWidget {
-  const _PhoneField({required this.controller, required this.error, required this.onChanged, this.onSubmit});
+class PhoneField extends StatelessWidget {
+  const PhoneField({super.key, required this.controller, required this.error, required this.onChanged, this.onSubmit, this.autofocus = false});
   final TextEditingController controller;
   final bool error;
   final VoidCallback onChanged;
   final VoidCallback? onSubmit;
+  final bool autofocus;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
+      autofocus: autofocus,
       keyboardType: TextInputType.phone,
       autofillHints: const [AutofillHints.telephoneNumberNational],
       inputFormatters: [UzPhoneFormatter()],
@@ -256,11 +334,26 @@ class _PhoneField extends StatelessWidget {
   }
 }
 
-/// Флажок «Согласен с условиями оферты…»; «оферты» — ссылка.
+/// Ссылки «офертой» и «политикой конфиденциальности» внутри текста согласия.
+/// Открываются в браузере; пустая ссылка — просто текст.
+List<InlineSpan> legalSpans(TextStyle style, {required String offerUrl, required String privacyUrl}) {
+  InlineSpan link(String text, String url) => WidgetSpan(
+        alignment: PlaceholderAlignment.baseline,
+        baseline: TextBaseline.alphabetic,
+        child: GestureDetector(
+          onTap: url.isEmpty ? null : () => openUrl(url),
+          child: Text(text, style: style.copyWith(color: AppColors.primary)),
+        ),
+      );
+  return [link('офертой', offerUrl), const TextSpan(text: ' и '), link('политикой конфиденциальности', privacyUrl)];
+}
+
+/// Флажок «Согласен с офертой и политикой конфиденциальности»; обе — ссылки.
 class _Consent extends StatelessWidget {
-  const _Consent({required this.value, required this.offerUrl, required this.onChanged});
+  const _Consent({required this.value, required this.offerUrl, required this.privacyUrl, required this.onChanged});
   final bool value;
   final String offerUrl;
+  final String privacyUrl;
   final ValueChanged<bool> onChanged;
 
   @override
@@ -284,16 +377,8 @@ class _Consent extends StatelessWidget {
         ),
         Expanded(
           child: Text.rich(TextSpan(style: style, children: [
-            const TextSpan(text: 'Согласен с условиями '),
-            WidgetSpan(
-              alignment: PlaceholderAlignment.baseline,
-              baseline: TextBaseline.alphabetic,
-              child: GestureDetector(
-                onTap: offerUrl.isEmpty ? null : () => openUrl(offerUrl),
-                child: Text('оферты', style: style.copyWith(color: AppColors.primary)),
-              ),
-            ),
-            const TextSpan(text: ' и обработкой персональных данных'),
+            const TextSpan(text: 'Согласен с '),
+            ...legalSpans(style, offerUrl: offerUrl, privacyUrl: privacyUrl),
           ])),
         ),
       ]),
@@ -326,14 +411,38 @@ class StepProgress extends StatelessWidget {
   }
 }
 
+/// Заголовок и текст шага 2 по каналу из ответа /auth/otp/request.
+(String, String) codeStepText(String channel, String phone) {
+  final number = '+998 ${UzPhoneFormatter.format(phone.substring(4))}';
+  return switch (channel) {
+    'sms' => ('Код из SMS', 'Отправили SMS с 6 цифрами на номер $number. '),
+    'telegram' => ('Код из Telegram', 'Бот Super Market прислал 6 цифр на номер $number. '),
+    _ => ('Введите код', 'Отправили 6 цифр на номер $number по SMS или в Telegram. '),
+  };
+}
+
 /// Шаг 2: шесть цифр кода (3 + 3), кнопка бота и таймер повторной отправки.
+/// [channel] — куда ушёл код: telegram, sms или пусто (не знаем).
 class CodeStep extends StatefulWidget {
-  const CodeStep({super.key, required this.phone, required this.resendIn, required this.botUrl, required this.onBack, required this.onResend});
+  const CodeStep({
+    super.key,
+    required this.phone,
+    required this.resendIn,
+    required this.botUrl,
+    required this.onBack,
+    required this.onResend,
+    this.channel = 'telegram',
+    this.onVerified,
+  });
   final String phone;
   final int resendIn;
   final String botUrl;
   final VoidCallback onBack;
   final Future<void> Function() onResend;
+  final String channel;
+
+  /// Код подошёл, токены сохранены.
+  final VoidCallback? onVerified;
 
   @override
   State<CodeStep> createState() => _CodeStepState();
@@ -393,6 +502,7 @@ class _CodeStepState extends State<CodeStep> {
       await api.verifyCode(widget.phone, _code.text);
       // Флажок на первом шаге обязателен — фиксируем согласие с офертой.
       api.patch('/client/me', {'accept_terms': true}).catchError((_) => null);
+      widget.onVerified?.call();
     } on ApiError catch (e) {
       if (!mounted) return;
       setState(() => _error = e.message);
@@ -414,6 +524,7 @@ class _CodeStepState extends State<CodeStep> {
   @override
   Widget build(BuildContext context) {
     final digits = _code.text;
+    final (title, text) = codeStepText(widget.channel, widget.phone);
     Widget cell(int i) {
       final filled = i < digits.length;
       final current = i == digits.length && _focus.hasFocus;
@@ -448,11 +559,11 @@ class _CodeStepState extends State<CodeStep> {
             const SizedBox(height: 8),
             const StepProgress(step: 2),
             const SizedBox(height: 24),
-            const Text('Код из Telegram', style: AppText.h1),
+            Text(title, style: AppText.h1),
             const SizedBox(height: 8),
             Text.rich(
               TextSpan(style: AppText.body.copyWith(color: AppColors.text2), children: [
-                TextSpan(text: 'Бот Super Market прислал 6 цифр на номер +998 ${UzPhoneFormatter.format(widget.phone.substring(4))}. '),
+                TextSpan(text: text),
                 WidgetSpan(
                   alignment: PlaceholderAlignment.baseline,
                   baseline: TextBaseline.alphabetic,
@@ -509,7 +620,11 @@ class _CodeStepState extends State<CodeStep> {
               const Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5))),
             ],
             const SizedBox(height: 36),
-            if (widget.botUrl.isNotEmpty) _TelegramButton(onTap: () => openUrl(widget.botUrl)),
+            if (widget.botUrl.isNotEmpty)
+              _TelegramButton(
+                label: widget.channel == 'telegram' ? 'Открыть бота в Telegram' : 'Не пришло? Получить код в Telegram',
+                onTap: () => openUrl(widget.botUrl),
+              ),
             const SizedBox(height: 16),
             if (_left > 0)
               Text('Отправить код ещё раз через $_mmss', style: AppText.small.copyWith(fontSize: 14))
@@ -530,8 +645,9 @@ class _CodeStepState extends State<CodeStep> {
 
 /// Голубая кнопка «Открыть бота в Telegram».
 class _TelegramButton extends StatelessWidget {
-  const _TelegramButton({required this.onTap});
+  const _TelegramButton({required this.onTap, this.label = 'Открыть бота в Telegram'});
   final VoidCallback onTap;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
@@ -543,11 +659,17 @@ class _TelegramButton extends StatelessWidget {
         onTap: onTap,
         child: SizedBox(
           height: 56,
-          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            const FaGlyph('telegram', size: 22, color: _telegramBlue),
-            const SizedBox(width: 10),
-            Text('Открыть бота в Telegram', style: AppText.bodyStrong.copyWith(color: const Color(0xFF1E88C8), fontSize: 16)),
-          ]),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              const FaGlyph('telegram', size: 22, color: _telegramBlue),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Text(label,
+                    maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong.copyWith(color: const Color(0xFF1E88C8), fontSize: 16)),
+              ),
+            ]),
+          ),
         ),
       ),
     );
@@ -556,8 +678,11 @@ class _TelegramButton extends StatelessWidget {
 
 /// Шаг 3 после входа: «Как вас зовут?» — имя обязательно, остальное по желанию.
 class NameStepScreen extends StatefulWidget {
-  const NameStepScreen({super.key, required this.onDone});
+  const NameStepScreen({super.key, required this.onDone, this.onBack});
   final VoidCallback onDone;
+
+  /// «Назад»; по умолчанию — выйти и войти заново другим номером.
+  final Future<void> Function()? onBack;
 
   @override
   State<NameStepScreen> createState() => _NameStepScreenState();
@@ -580,7 +705,7 @@ class _NameStepScreenState extends State<NameStepScreen> {
   }
 
   /// «Назад» на шаге 3 — выйти и войти заново другим номером.
-  Future<void> _back() => context.read<Api>().logout();
+  Future<void> _back() => widget.onBack?.call() ?? context.read<Api>().logout();
 
   @override
   Widget build(BuildContext context) {

@@ -14,7 +14,10 @@ apps/
 Код один для iOS и Android — в `lib/`. Папки `android/` и `ios/` — настройки платформ
 (разрешения, ключ карт, иконка), они хранятся в репозитории.
 
-Требуется Flutter 3.27 или новее.
+Требуется Flutter 3.44 или новее (так требует `pubspec.lock`; CI собирает на 3.44.x).
+
+Выпуск в Google Play и App Store (ключ загрузки, секреты GitHub, сборка AAB, манифест конфиденциальности iOS) —
+[docs/release.md](../docs/release.md).
 
 ### Ключ Яндекс MapKit (не хранится в git)
 
@@ -26,6 +29,7 @@ apps/
   ```
   yandex.mapkit.key=ваш-ключ
   ```
+  (в CI ключ берётся из секрета `YANDEX_MAPKIT_KEY` через переменную окружения).
 
 ### Запуск
 
@@ -52,7 +56,8 @@ flutter run
 
 - iOS: включены `aps-environment` (`ios/Runner/Runner.entitlements`) и фоновый режим `remote-notification`.
   Чтобы push доходили на iPhone, в Firebase → Project settings → Cloud Messaging загрузите APNs-ключ (.p8)
-  из Apple Developer. Для выпуска в App Store поменяйте `aps-environment` на `production`.
+  из Apple Developer. В файле `aps-environment = development`; при выгрузке в App Store Xcode переподписывает
+  сборку профилем App Store и ставит `production` сам (см. docs/release.md).
 - Сервер: ключ сервисного аккаунта в `FCM_CREDENTIALS` (base64) в секрете `PROD_ENV`.
 
 ## Касса (apps/pos)
@@ -93,7 +98,8 @@ flutter build windows --release
 Устройство кода: `lib/logic.dart` — подписи, группы заказов, адрес, время (тесты в `test/`); `lib/state.dart` —
 курьер, заказы, смена, геопозиция; `lib/screens/` — экраны; `lib/ui/` — цвета, шрифт Inter, кнопки.
 
-**Android:** готовый APK собирает GitHub Actions → workflow `apps` → артефакт `courier-android`.
+**Android:** проверочный APK собирает GitHub Actions → workflow `apps` → артефакт `courier-android`;
+AAB для Google Play — workflow `release` → артефакт `courier-aab` (см. docs/release.md).
 
 **iPhone (TestFlight)** — один раз создать папки платформ и приложение в App Store Connect
 (bundle id `uz.supermarket.smCourier`), дальше как у приложения покупателя:
@@ -107,26 +113,22 @@ flutter build ipa
 open build/ios/archive/Runner.xcarchive   # Distribute App → App Store Connect
 ```
 
-`branding/apply.sh` добавляет разрешения: геопозиция (в том числе в фоне), фоновая служба Android с
-уведомлением «Вы на смене», вибрация, ссылки на звонок и карты. Логотип — из `branding/`.
+`branding/apply.sh` добавляет разрешения: геопозиция «во время использования» (без
+`ACCESS_BACKGROUND_LOCATION` — точку во время смены отправляет фоновая служба Android с уведомлением
+«Вы на смене»), вибрация, ссылки на звонок и карты; подпись release ключом загрузки и манифест
+конфиденциальности iOS. Логотип — из `branding/`.
 
 ## Настройки платформ
 
-### Сервер пока по HTTP
+### Только HTTPS
 
-Пока у сервера нет домена и HTTPS, разрешите HTTP:
+API и медиа — `https://api.super-market.uz`, поэтому исключения для HTTP убраны: в release-сборках
+нет `android:usesCleartextTraffic` и `NSAllowsArbitraryLoads` (Google Play и App Store к ним придираются).
+Для локального backend по HTTP у приложения покупателя на Android HTTP разрешён только в debug
+(`android/app/src/debug/AndroidManifest.xml`).
 
-- Android — `android/app/src/main/AndroidManifest.xml`, в `<application ...>`:
-  `android:usesCleartextTraffic="true"`
-- iOS/macOS — `Info.plist`:
-  ```xml
-  <key>NSAppTransportSecurity</key>
-  <dict><key>NSAllowsArbitraryLoads</key><true/></dict>
-  ```
-- macOS (POS) — в `macos/Runner/DebugProfile.entitlements` и `Release.entitlements`:
-  `<key>com.apple.security.network.client</key><true/>`
-
-После перехода на HTTPS эти исключения нужно убрать.
+Касса на macOS (не исключение HTTP, а право на сеть вообще) — в `macos/Runner/DebugProfile.entitlements`
+и `Release.entitlements`: `<key>com.apple.security.network.client</key><true/>`
 
 ### Приложение покупателя: Яндекс Карты и геолокация
 
@@ -157,6 +159,8 @@ open build/ios/archive/Runner.xcarchive   # Distribute App → App Store Connect
 ИИ-сервис настраивает супер-админ (раздел «ИИ-сервис»); без него приход по фото недоступен.
 Первый вход владельца новой сети — мастер «Первая настройка» (магазин и точка на карте, часы работы, доставка);
 карта — OpenStreetMap через flutter_map, ключи не нужны, разрешение на геолокацию добавляет `branding/apply.sh`.
+
+**Android:** AAB для Google Play — workflow `release` → артефакт `store-aab` (см. docs/release.md).
 
 **iPhone:** `bash apps/store/branding/build_ios.sh` (создаёт папки платформ, настраивает камеру и подпись,
 проверяет код `flutter analyze`, собирает архив и открывает его в Xcode → Distribute App).

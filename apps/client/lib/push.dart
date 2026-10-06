@@ -1,7 +1,7 @@
 // Push-уведомления: Firebase Cloud Messaging.
 //
 // После входа спрашиваем разрешение, отправляем токен устройства на сервер
-// (POST /client/devices) и обновляем его при смене. Нажатие на уведомление
+// (POST /client/devices; гостю push не регистрируем — токен привязан к аккаунту) и обновляем его при смене. Нажатие на уведомление
 // открывает нужный экран (links.dart): заказ, магазин, товар, раздел…
 import 'dart:async';
 
@@ -22,6 +22,9 @@ class Push {
 
   static bool _ready = false;
   static StreamSubscription<String>? _refresh;
+
+  /// Переходы из уведомлений подключены (register зовётся после каждого входа).
+  static bool _listening = false;
 
   /// Запуск Firebase. Ошибка (например, нет сети при первом запуске) не мешает приложению.
   static Future<void> init() async {
@@ -75,6 +78,8 @@ class Push {
       }
       if (token != null) await send(token);
 
+      if (_listening) return;
+      _listening = true;
       FirebaseMessaging.onMessageOpenedApp.listen(_open);
       final initial = await fm.getInitialMessage();
       if (initial != null) _open(initial);

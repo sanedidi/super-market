@@ -9,8 +9,9 @@ import '../ui/theme.dart';
 import '../ui/widgets.dart';
 
 /// Открыть редактор нового адреса и обновить список после сохранения.
-Future<void> openAddressEditor(BuildContext context, [Address? address]) async {
-  await Navigator.of(context).push(MaterialPageRoute(builder: (_) => AddressEditScreen(address: address)));
+/// [point] — где поставить метку нового адреса (например, точка гостя).
+Future<void> openAddressEditor(BuildContext context, [Address? address, ({double lat, double lng})? point]) async {
+  await Navigator.of(context).push(MaterialPageRoute(builder: (_) => AddressEditScreen(address: address, point: point)));
   if (context.mounted) await context.read<AppState>().loadAddresses();
 }
 
@@ -105,8 +106,11 @@ class _AddressCard extends StatelessWidget {
 
 /// Новый адрес или правка: точка на карте + подъезд, этаж, квартира.
 class AddressEditScreen extends StatefulWidget {
-  const AddressEditScreen({super.key, this.address});
+  const AddressEditScreen({super.key, this.address, this.point});
   final Address? address;
+
+  /// Начальная точка нового адреса; null — геолокация.
+  final ({double lat, double lng})? point;
 
   @override
   State<AddressEditScreen> createState() => _AddressEditScreenState();
@@ -144,6 +148,8 @@ class _AddressEditScreenState extends State<AddressEditScreen> {
     };
     if (widget.address != null) {
       _point = (lat: widget.address!.lat, lng: widget.address!.lng);
+    } else if (widget.point != null) {
+      _point = widget.point;
     } else {
       // Страховка: если геолокация не ответила, показываем карту с центром Ташкента.
       currentLocation().timeout(const Duration(seconds: 8), onTimeout: () => null).then((loc) {
