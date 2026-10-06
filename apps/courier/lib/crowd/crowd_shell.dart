@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../main.dart';
+import '../ui/location_disclosure.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'crowd_profile.dart';
@@ -21,10 +22,26 @@ class _CrowdShellState extends State<CrowdShell> {
   int _tab = 0;
   final _visited = <int>{0};
 
+  late final CrowdState _state;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => context.read<CrowdState>().load());
+    _state = context.read<CrowdState>();
+    _state.explainLocation = _explainLocation;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _state.load());
+  }
+
+  @override
+  void dispose() {
+    if (_state.explainLocation == _explainLocation) _state.explainLocation = null;
+    super.dispose();
+  }
+
+  /// Перед системным запросом геопозиции — экран «зачем» (Figma Ц0).
+  Future<bool> _explainLocation() async {
+    if (!mounted) return false;
+    return showLocationDisclosure(context, LocationAudience.crowd);
   }
 
   @override

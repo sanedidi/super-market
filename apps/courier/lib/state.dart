@@ -38,6 +38,15 @@ class CourierState extends ChangeNotifier {
   Timer? _poll;
   StreamSubscription<Position>? _positions;
 
+  /// Экран «зачем геопозиция» перед системным запросом (Figma Ц0). Ставит
+  /// оболочка; true — «Продолжить». Без него система спрашивает сразу.
+  Future<bool> Function()? explainLocation;
+
+  /// Доступ не дали («Не сейчас» или отказ в системном окне) — при загрузке
+  /// не спрашиваем снова, только после «Выйти на смену» или «Открыть настройки».
+  bool _locationDeclined = false;
+  Future<LocationPermission>? _asking;
+
   void _onAuth() {
     if (!api.loggedIn) {
       _stopTracking();
@@ -49,6 +58,7 @@ class CourierState extends ChangeNotifier {
       error = null;
       fresh = {};
       _loadedOnce = false;
+      _locationDeclined = false;
       notifyListeners();
     }
   }
@@ -101,6 +111,7 @@ class CourierState extends ChangeNotifier {
   }
 
   Future<void> setShift({bool? onShift, String? vehicle}) async {
+    if (onShift == true) _locationDeclined = false;
     me = await api.post('/courier/shift', {
       if (onShift != null) 'on_shift': onShift,
       if (vehicle != null) 'vehicle': vehicle,
@@ -128,6 +139,12 @@ class CourierState extends ChangeNotifier {
 
   Future<Map<String, dynamic>> history(String period) async => await api.get('/courier/history', {'period': period}) as Map<String, dynamic>;
 
+  /// Запрос на удаление аккаунта (Figma К8а): аккаунт создал магазин, удаляет
+  /// поддержка в течение 30 дней. 201 — создан, 200 — уже есть открытый.
+  Future<void> requestDeletion(String? reason) async {
+    await api.post('/courier/me/deletion-request', deletionRequestBody(reason));
+  }
+
   Future<void> logout() async {
     try {
       if (onShift) await setShift(onShift: false);
@@ -139,6 +156,7 @@ class CourierState extends ChangeNotifier {
 
   /// Ещё раз попробовать включить геопозицию (после настроек телефона).
   Future<void> retryLocation() async {
+    _locationDeclined = false;
     _stopTracking();
     if (onShift) await _startTracking();
   }
@@ -163,12 +181,15 @@ class CourierState extends ChangeNotifier {
         return;
       }
       var perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+      if (perm == LocationPermission.denied) perm = await _askPermission();
       if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
         locationProblem = 'Нет доступа к геопозиции';
         notifyListeners();
         return;
       }
+      // Пока курьер читал экран Ц0, другой вызов мог уже включить слежение
+      // или смена закончилась — не заводим вторую подписку.
+      if (_positions != null || !onShift) return;
       locationProblem = null;
       notifyListeners();
       final LocationSettings settings = switch (defaultTargetPlatform) {
@@ -203,6 +224,17 @@ class CourierState extends ChangeNotifier {
       locationProblem = 'Геопозиция недоступна';
       notifyListeners();
     }
+  }
+
+  /// Сначала свой экран (Ц0), потом системный запрос — один на все одновременные вызовы.
+  Future<LocationPermission> _askPermission() => _asking ??= _explainAndRequest().whenComplete(() => _asking = null);
+
+  Future<LocationPermission> _explainAndRequest() async {
+    final explain = explainLocation;
+    var perm = LocationPermission.denied;
+    if (!_locationDeclined && (explain == null || await explain())) perm = await Geolocator.requestPermission();
+    _locationDeclined = perm == LocationPermission.denied || perm == LocationPermission.deniedForever;
+    return perm;
   }
 
   void _stopTracking() {

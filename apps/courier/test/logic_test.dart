@@ -49,4 +49,14 @@ void main() {
     expect(statusTitle('weird'), 'weird');
     expect(vehicleTitles['scooter'], 'Самокат');
   });
+
+  test('запрос на удаление: причина необязательна, до 500 символов', () {
+    expect(deletionRequestBody(null), isEmpty);
+    expect(deletionRequestBody('  '), isEmpty);
+    expect(deletionRequestBody(' Другое: уезжаю '), {'reason': 'Другое: уезжаю'});
+    expect((deletionRequestBody('я' * 600)['reason'] as String).length, 500);
+    expect(deletionReasons, contains('Больше здесь не работаю'));
+    expect(privacyUrl, 'https://super-market.uz/privacy');
+    expect(courierTermsUrl, 'https://super-market.uz/courier-terms');
+  });
 }

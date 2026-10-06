@@ -63,3 +63,22 @@ String minutesLeft(DateTime? until, DateTime now) {
   if (m <= 0) return 'время вышло';
   return 'осталось ${(m / 60).ceil()} мин';
 }
+
+/// Почему аккаунт «по пути» пока нельзя удалить (409 на DELETE /crowd/me, Figma Ш6):
+/// заголовок и пояснение шторки. null — другая ошибка.
+({String title, String text})? deleteBlocked(String code, Map<String, dynamic> details, String Function(Object?) money) {
+  switch (code) {
+    case 'active_order':
+      final n = details['order_number'];
+      return (
+        title: 'Сначала завершите заказ',
+        text: '${n == null ? 'Заказ' : 'Заказ № $n'} ещё в пути. Удалить аккаунт можно после вручения или отмены заказа.',
+      );
+    case 'unpaid_balance':
+      return (
+        title: 'Сначала получите выплату',
+        text: 'К выплате ${money(details['balance'])} (выплата в понедельник). Удалить аккаунт можно после выплаты.',
+      );
+  }
+  return null;
+}

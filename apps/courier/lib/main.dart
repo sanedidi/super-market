@@ -78,6 +78,9 @@ Future<void> _open(BuildContext context, Uri uri) async {
   }
 }
 
+/// Открыть страницу сайта: политика конфиденциальности, условия для курьеров.
+Future<void> openLink(BuildContext context, String url) => _open(context, Uri.parse(url));
+
 /// Позвонить.
 Future<void> call(BuildContext context, String phone) => _open(context, Uri.parse('tel:${phone.replaceAll(RegExp(r'[^+\d]'), '')}'));
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state.dart';
+import '../ui/location_disclosure.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'history_screen.dart';
@@ -20,10 +21,26 @@ class _ShellState extends State<Shell> {
   int _tab = 0;
   final _visited = <int>{0};
 
+  late final CourierState _state;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => context.read<CourierState>().load());
+    _state = context.read<CourierState>();
+    _state.explainLocation = _explainLocation;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _state.load());
+  }
+
+  @override
+  void dispose() {
+    if (_state.explainLocation == _explainLocation) _state.explainLocation = null;
+    super.dispose();
+  }
+
+  /// Перед системным запросом геопозиции — экран «зачем» (Figma Ц0).
+  Future<bool> _explainLocation() async {
+    if (!mounted) return false;
+    return showLocationDisclosure(context, LocationAudience.staff);
   }
 
   @override
