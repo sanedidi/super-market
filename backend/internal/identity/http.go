@@ -25,7 +25,9 @@ func (m *Module) Routes(r chi.Router) {
 	r.Post("/auth/otp/verify", m.verifyCode)
 	r.Post("/auth/refresh", m.refresh)
 	r.With(m.auth.Require(AppClient)).Post("/auth/client/logout", m.logout)
-	r.With(m.auth.Require(AppStore)).Post("/auth/store/logout", m.logout)
+	r.Post("/auth/store/login", m.storeLogin)
+	r.With(m.auth.RequireTempPassword(AppStore)).Post("/auth/store/logout", m.logout)
+	r.With(m.auth.RequireTempPassword(AppStore)).Post("/auth/store/password", m.changePassword)
 	r.With(m.auth.Require(AppAdmin)).Post("/auth/admin/logout", m.logout)
 	r.Post("/auth/courier/login", m.courierLogin)
 	r.With(m.auth.Require(AppCourier)).Post("/auth/courier/logout", m.logout)
@@ -47,6 +49,10 @@ func (m *Module) Routes(r chi.Router) {
 		r.With(m.auth.Allow(PermStaffManage, PermOrdersManage)).Get("/store/couriers/{id}/login", m.getCourierLogin)
 		r.Put("/store/couriers/{id}/login", m.setCourierLogin)
 		r.Delete("/store/couriers/{id}/login", m.deleteCourierLogin)
+		// Логин и временный пароль сотрудника для панели и «SM Магазин».
+		r.With(staff).Get("/store/employees/{id}/login", m.getEmployeeLogin)
+		r.Put("/store/employees/{id}/login", m.setEmployeeLogin)
+		r.Delete("/store/employees/{id}/login", m.deleteEmployeeLogin)
 	})
 }
 
@@ -251,6 +257,65 @@ func (m *Module) deleteCourierLogin(w http.ResponseWriter, r *http.Request) {
 	id, err := httpx.PathID(r, "id")
 	if err == nil {
 		err = m.svc.DeleteCourierLogin(r.Context(), FromContext(r.Context()), id)
+	}
+	if err != nil {
+		m.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ----------------------------------------------------- вход в магазин
+
+func (m *Module) storeLogin(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Login    string `json:"login"`
+		Password string `json:"password"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		m.fail(w, r, err)
+		return
+	}
+	t, err := m.svc.StoreLogin(r.Context(), in.Login, in.Password, r.UserAgent())
+	if err != nil {
+		m.fail(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, t)
+}
+
+func (m *Module) changePassword(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		m.fail(w, r, err)
+		return
+	}
+	if err := m.svc.ChangePassword(r.Context(), FromContext(r.Context()), in.CurrentPassword, in.NewPassword); err != nil {
+		m.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (m *Module) getEmployeeLogin(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (LoginInfo, error) {
+		return m.svc.EmployeeLogin(r.Context(), FromContext(r.Context()), id)
+	})
+}
+
+func (m *Module) setEmployeeLogin(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in LoginInput) (LoginInfo, error) {
+		return m.svc.SetEmployeeLogin(r.Context(), FromContext(r.Context()), id, in)
+	})
+}
+
+func (m *Module) deleteEmployeeLogin(w http.ResponseWriter, r *http.Request) {
+	id, err := httpx.PathID(r, "id")
+	if err == nil {
+		err = m.svc.DeleteEmployeeLogin(r.Context(), FromContext(r.Context()), id)
 	}
 	if err != nil {
 		m.fail(w, r, err)

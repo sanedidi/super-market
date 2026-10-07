@@ -129,12 +129,13 @@ func clean(ctx context.Context, pool *pgxpool.Pool) error {
 }
 
 // cleanReview удаляет то, что создал demo review: логин и запись штатного
-// курьера, сотрудника для проверки, его роль, курьера «по пути», адрес и
+// курьера, сотрудника для проверки и его логин в «SM Магазин», его роль, курьера «по пути», адрес и
 // профиль покупателя. Сам пользователь удаляется, только если его создал
 // review (kind = user).
 func (d *deleter) cleanReview(ids map[string][]string) error {
 	logins := append(append([]string{}, ids["review_courier_login"]...), ids["review_courier"]...)
-	if _, err := d.tx.Exec(d.ctx, `DELETE FROM courier_logins WHERE employee_id::text = ANY($1)`, logins); err != nil {
+	logins = append(append(logins, ids["review_store_login"]...), ids["review_employee"]...)
+	if _, err := d.tx.Exec(d.ctx, `DELETE FROM employee_logins WHERE employee_id::text = ANY($1)`, logins); err != nil {
 		return err
 	}
 	employees := append(append([]string{}, ids["review_employee"]...), ids["review_courier"]...)

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Alert, App, Button, Card, Input, Modal, Popconfirm, Space, Table, Tag, Typography } from 'antd'
 import { CopyOutlined, EnvironmentOutlined, KeyOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import { LoadError, PageTitle, api, dateTime, errorText, formatPhone, useAction, type List } from '@sm/shared'
+import { LoadError, PageTitle, api, dateTime, errorText, formatPhone, generatePassword, suggestLogin, useAction, type List } from '@sm/shared'
 import { useStore } from '../ctx'
 import { NeedStore } from '../ui'
 import type { Courier } from '../types'
@@ -118,33 +118,6 @@ export function CouriersPage() {
       <CourierLoginModal courier={editing} onClose={() => setEditing(null)} />
     </NeedStore>
   )
-}
-
-/** Пароль из 3 групп: «kx7-Lam4-pz9» — легко продиктовать. */
-function generatePassword() {
-  const abc = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  const rnd = new Uint32Array(10)
-  crypto.getRandomValues(rnd)
-  const ch = (i: number) => abc[rnd[i] % abc.length]
-  return `${ch(0)}${ch(1)}${ch(2)}-${ch(3)}${ch(4)}${ch(5)}${ch(6)}-${ch(7)}${ch(8)}${ch(9)}`
-}
-
-/** Логин из имени: «Азиз Каримов» → «aziz.karimov». */
-function suggestLogin(name: string) {
-  const map: Record<string, string> = {
-    а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'yo', ж: 'j', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o',
-    п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'x', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sh', ъ: '', ы: 'i', ь: '', э: 'e', ю: 'yu',
-    я: 'ya', ў: 'o', қ: 'q', ғ: 'g', ҳ: 'h',
-  }
-  const s = name
-    .toLowerCase()
-    .split('')
-    .map((c) => map[c] ?? c)
-    .join('')
-    .replace(/[^a-z0-9]+/g, '.')
-    .replace(/^\.+|\.+$/g, '')
-    .slice(0, 32)
-  return s.length >= 3 ? s : ''
 }
 
 function CourierLoginModal({ courier, onClose }: { courier: Courier | null; onClose: () => void }) {

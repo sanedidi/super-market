@@ -1,16 +1,14 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Alert, Button, Descriptions, Drawer, Form, Input, Popconfirm, Select, Space, Spin, Table, Tag, Typography } from 'antd'
+import { KeyOutlined } from '@ant-design/icons'
 import { CrudPage, PhoneInput, StatusTag, api, date, dateTime, errorText, formatPhone, money, phoneRule, useAction, useItem, useList } from '@sm/shared'
 import { useUrlState } from '../hooks'
+import { CredentialsModal, OwnerLoginFields, OwnerModal, OwnerPasswordState, type Credentials, type OwnerInfo } from './NetworkOwner'
 
-interface Network {
-  id: string
-  name: string
+interface Network extends OwnerInfo {
   kind: 'chain' | 'single'
   status: 'active' | 'blocked'
-  owner_name: string
-  owner_phone: string
   stores_count: number
   created_at: string
 }
@@ -18,6 +16,7 @@ interface Network {
 export function Networks() {
   const [q, setQ] = useState('')
   const [openId, setOpenId] = useUrlState('open')
+  const [creds, setCreds] = useState<Credentials | null>(null)
   const setStatus = useAction((v: { id: string; status: string }) => api.patch(`/admin/networks/${v.id}`, { status: v.status }), {
     success: 'Статус изменён',
   })
@@ -28,7 +27,7 @@ export function Networks() {
         path="/admin/networks"
         params={{ q: q.trim() || undefined }}
         createLabel="Подключить сеть"
-        toolbar={<Input.Search placeholder="Название или телефон" allowClear onSearch={setQ} style={{ width: 260 }} />}
+        toolbar={<Input.Search placeholder="Название, телефон или логин" allowClear onSearch={setQ} style={{ width: 280 }} />}
         columns={[
           {
             title: 'Название',
@@ -44,6 +43,15 @@ export function Networks() {
                 {n.owner_name}
                 <br />
                 <Typography.Text type="secondary">{formatPhone(n.owner_phone)}</Typography.Text>
+                <br />
+                {n.owner_login ? (
+                  <Typography.Text type="secondary">
+                    логин <b>{n.owner_login}</b>
+                    {n.owner_temp_password && <Tag style={{ marginLeft: 6 }}>временный пароль</Tag>}
+                  </Typography.Text>
+                ) : (
+                  <Tag color="red">нет логина</Tag>
+                )}
               </>
             ),
           },
@@ -65,6 +73,13 @@ export function Networks() {
         ]}
         toForm={(n) => ({ name: n.name })}
         toBody={(v, editing) => (editing ? { name: v.name } : v)}
+        modalWidth={560}
+        onSaved={(res, editing, values) => {
+          const n = res as Network
+          if (!editing && n.owner_login && values.owner_password) {
+            setCreds({ title: `Сеть «${n.name}» создана`, login: n.owner_login, password: String(values.owner_password) })
+          }
+        }}
         form={(editing) => (
           <>
             <Form.Item name="name" label="Название" rules={[{ required: true }]}>
@@ -87,16 +102,18 @@ export function Networks() {
                   name="owner_phone"
                   label="Телефон владельца"
                   rules={[phoneRule(true)]}
-                  extra="Владелец входит в панель магазина по этому номеру через Telegram-бота."
+                  extra="Для связи. Номер владельца потом меняет только супер-админ."
                 >
                   <PhoneInput />
                 </Form.Item>
+                <OwnerLoginFields />
               </Space>
             )}
           </>
         )}
       />
       <NetworkCard id={openId ?? null} onClose={() => setOpenId(undefined)} />
+      <CredentialsModal value={creds} onClose={() => setCreds(null)} />
     </>
   )
 }
@@ -128,6 +145,7 @@ function NetworkCard({ id, onClose }: { id: string | null; onClose: () => void }
   const billing = useItem<NetworkBilling>(id ? `/admin/billing/networks/${id}` : null)
   const n = net.data
   const b = billing.data
+  const [owner, setOwner] = useState<Network | null>(null)
   const error = net.error ?? stores.error ?? billing.error
   return (
     <Drawer open={id !== null} onClose={onClose} width={720} title={n ? n.name : 'Сеть'}>
@@ -161,7 +179,20 @@ function NetworkCard({ id, onClose }: { id: string | null; onClose: () => void }
               <StatusTag status={n.status} />
             </Descriptions.Item>
             <Descriptions.Item label="Владелец">
-              {n.owner_name} · {formatPhone(n.owner_phone)}
+              <Space direction="vertical" size={2}>
+                <span>
+                  {n.owner_name} · {formatPhone(n.owner_phone)}
+                </span>
+                {n.owner_login && (
+                  <span>
+                    Логин: <b>{n.owner_login}</b>
+                  </span>
+                )}
+                <OwnerPasswordState n={n} />
+                <Button size="small" icon={<KeyOutlined />} onClick={() => setOwner(n)} style={{ marginTop: 4 }}>
+                  {n.owner_login ? 'Владелец и вход' : 'Выдать логин'}
+                </Button>
+              </Space>
             </Descriptions.Item>
             <Descriptions.Item label="Подключена">{dateTime(n.created_at)}</Descriptions.Item>
             {b && (
@@ -208,6 +239,7 @@ function NetworkCard({ id, onClose }: { id: string | null; onClose: () => void }
           </div>
         </Space>
       )}
+      <OwnerModal network={owner} onClose={() => setOwner(null)} />
     </Drawer>
   )
 }

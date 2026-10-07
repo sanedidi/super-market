@@ -1,9 +1,10 @@
 // Настройки: магазины, роли, сотрудники.
 import { useState } from 'react'
 import { Alert, Button, Card, Checkbox, Form, Input, Modal, Radio, Select, Space, Switch, Table, Tag, Typography } from 'antd'
-import { PlusOutlined } from '@ant-design/icons'
+import { LockOutlined, PlusOutlined } from '@ant-design/icons'
 import { CrudPage, DeleteButton, ImageUpload, MapPointPicker, PageTitle, PhoneInput, RemoteSelect, StatusTag, api, formatPhone, phoneRule, useAction, useList, type LatLng } from '@sm/shared'
 import { useStore } from '../ctx'
+import { EmployeeLoginModal } from './EmployeeLogin'
 import type { Employee, Permission, PriceType, Role, Store, Warehouse } from '../types'
 
 const required = [{ required: true, whitespace: true, message: 'Обязательное поле' }]
@@ -226,7 +227,8 @@ export function RolesPage() {
 // -------------------------------------------------------------- сотрудники
 
 export function EmployeesPage() {
-  const { stores } = useStore()
+  const { stores, can } = useStore()
+  const [loginFor, setLoginFor] = useState<Employee | null>(null)
   const visible = (id: string) => stores.some((s) => s.id === id)
   const storeName = (id: string) => stores.find((s) => s.id === id)?.name
   const storesText = (ids: string[]) => {
@@ -235,47 +237,82 @@ export function EmployeesPage() {
     return [...names, ...(hidden ? [`ещё ${hidden} (нет доступа)`] : [])].join(', ') || '—'
   }
   return (
-    <CrudPage<Employee>
-      title="Сотрудники"
-      path="/store/employees"
-      canDelete={(r) => !r.is_owner}
-      rowName={(r) => r.full_name}
-      deactivate={() => ({ status: 'inactive' })}
-      createLabel="Новый сотрудник"
-      columns={[
-        { title: 'Имя', dataIndex: 'full_name', render: (v: string, r) => (r.is_owner ? <>{v} <Tag color="gold">Владелец</Tag></> : v) },
-        { title: 'Телефон', dataIndex: 'phone', render: (v: string) => formatPhone(v) || '—' },
-        { title: 'Роль', dataIndex: 'role_name' },
-        {
-          title: 'Магазины',
-          key: 'stores',
-          render: (_, r) => (r.all_stores ? 'Все магазины' : storesText(r.store_ids ?? [])),
-        },
-        { title: 'Статус', dataIndex: 'status', render: (v: string) => (v === 'active' ? <StatusTag status="active" /> : <Tag>Отключён</Tag>) },
-      ]}
-      form={(editing) => <EmployeeFields editing={editing} />}
-      toForm={(r) => ({
-        full_name: r.full_name,
-        role_id: r.role_id,
-        all_stores: r.all_stores,
-        // В форме — только видимые магазины; остальные сервер сохранит сам.
-        store_ids: (r.store_ids ?? []).filter(visible),
-        status: r.status,
-      })}
-      toBody={(v, editing) => {
-        // У владельца сервер разрешает менять только имя.
-        if (editing?.is_owner) return { full_name: v.full_name }
-        const body: Record<string, unknown> = {
-          full_name: v.full_name,
-          role_id: v.role_id,
-          all_stores: !!v.all_stores,
-          store_ids: v.all_stores ? [] : (v.store_ids ?? []),
-        }
-        if (editing) body.status = v.status
-        else body.phone = v.phone
-        return body
-      }}
-    />
+    <>
+      <CrudPage<Employee>
+        title="Сотрудники"
+        path="/store/employees"
+        canDelete={(r) => !r.is_owner}
+        rowName={(r) => r.full_name}
+        deactivate={() => ({ status: 'inactive' })}
+        createLabel="Новый сотрудник"
+        columns={[
+          { title: 'Имя', dataIndex: 'full_name', render: (v: string, r) => (r.is_owner ? <>{v} <Tag color="gold">Владелец</Tag></> : v) },
+          { title: 'Телефон', dataIndex: 'phone', render: (v: string) => formatPhone(v) || '—' },
+          { title: 'Роль', dataIndex: 'role_name' },
+          {
+            title: 'Магазины',
+            key: 'stores',
+            render: (_, r) => (r.all_stores ? 'Все магазины' : storesText(r.store_ids ?? [])),
+          },
+          { title: 'Статус', dataIndex: 'status', render: (v: string) => (v === 'active' ? <StatusTag status="active" /> : <Tag>Отключён</Tag>) },
+          {
+            title: 'Вход',
+            key: 'login',
+            render: (_, r) => (
+              <Space direction="vertical" size={2}>
+                {r.login ? (
+                  <span>
+                    <b>{r.login}</b>
+                    {r.temp_password && <Tag style={{ marginLeft: 6 }}>временный пароль</Tag>}
+                  </span>
+                ) : (
+                  <Typography.Text type="secondary">нет входа</Typography.Text>
+                )}
+                {r.is_owner ? (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    меняет Super Market
+                  </Typography.Text>
+                ) : (
+                  can('staff.manage') &&
+                  r.status === 'active' && (
+                    <Button size="small" icon={<LockOutlined />} onClick={() => setLoginFor(r)}>
+                      {r.login ? 'Логин и пароль' : 'Выдать логин'}
+                    </Button>
+                  )
+                )}
+              </Space>
+            ),
+          },
+        ]}
+        onSaved={(res, editing) => {
+          // Новому сотруднику сразу предлагаем выдать логин.
+          if (!editing) setLoginFor(res as Employee)
+        }}
+        form={(editing) => <EmployeeFields editing={editing} />}
+        toForm={(r) => ({
+          full_name: r.full_name,
+          role_id: r.role_id,
+          all_stores: r.all_stores,
+          // В форме — только видимые магазины; остальные сервер сохранит сам.
+          store_ids: (r.store_ids ?? []).filter(visible),
+          status: r.status,
+        })}
+        toBody={(v, editing) => {
+          // У владельца сервер разрешает менять только имя.
+          if (editing?.is_owner) return { full_name: v.full_name }
+          const body: Record<string, unknown> = {
+            full_name: v.full_name,
+            role_id: v.role_id,
+            all_stores: !!v.all_stores,
+            store_ids: v.all_stores ? [] : (v.store_ids ?? []),
+          }
+          if (editing) body.status = v.status
+          else body.phone = v.phone
+          return body
+        }}
+      />
+      <EmployeeLoginModal employee={loginFor} onClose={() => setLoginFor(null)} />
+    </>
   )
 }
 
@@ -289,7 +326,7 @@ function EmployeeFields({ editing }: { editing: Employee | null }) {
   return (
     <>
       {!editing && (
-        <Form.Item name="phone" label="Телефон" rules={[phoneRule(true)]} extra="Сотрудник войдёт по этому номеру через Telegram-бот">
+        <Form.Item name="phone" label="Телефон" rules={[phoneRule(true)]} extra="Для связи. В панель сотрудник входит по логину и паролю — выдадите после сохранения">
           <PhoneInput />
         </Form.Item>
       )}

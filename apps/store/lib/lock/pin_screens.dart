@@ -245,7 +245,7 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
                 const SizedBox(height: 12),
                 TextButton(
                   onPressed: () => signOut(context),
-                  child: Text('Войти по другому номеру', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
+                  child: Text('Войти под другим логином', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
                 ),
               ],
             ]),
@@ -321,7 +321,7 @@ class _LockScreenState extends State<LockScreen> {
       case PinCheck.reset:
         final messenger = ScaffoldMessenger.of(context);
         await signOut(context);
-        messenger.showSnackBar(const SnackBar(content: Text('5 неверных кодов — войдите снова по номеру телефона')));
+        messenger.showSnackBar(const SnackBar(content: Text('5 неверных кодов — войдите снова по логину и паролю')));
     }
   }
 
@@ -330,8 +330,8 @@ class _LockScreenState extends State<LockScreen> {
       context,
       icon: Icons.lock_reset_rounded,
       title: 'Забыли код?',
-      text: 'Войдите снова по номеру телефона и коду из Telegram, затем придумайте новый код.',
-      confirm: 'Войти по номеру',
+      text: 'Войдите снова по логину и паролю, затем придумайте новый код.',
+      confirm: 'Войти по логину',
     );
     if (ok && mounted) await signOut(context);
   }
@@ -377,7 +377,7 @@ class _LockScreenState extends State<LockScreen> {
               const SizedBox(height: 12),
               TextButton(
                 onPressed: _forgot,
-                child: Text('Забыли код? Войти по номеру', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
+                child: Text('Забыли код? Войти по логину', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
               ),
             ]),
           ),

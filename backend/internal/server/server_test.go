@@ -92,8 +92,9 @@ func testConfig() config.Config {
 
 // api — тонкий HTTP-клиент для тестов.
 type api struct {
-	t   *testing.T
-	srv *httptest.Server
+	t    *testing.T
+	srv  *httptest.Server
+	pool *pgxpool.Pool
 }
 
 type resp struct {
@@ -149,14 +150,51 @@ func (a api) expect(r resp, status int, what string) resp {
 	return r
 }
 
-// login проходит вход с фиксированным dev-кодом.
+// testPassword — пароль, который login выдаёт сотрудникам магазина.
+const testPassword = "test-pass-123"
+
+var testPasswordHash = sync.OnceValue(func() string {
+	h, err := identity.HashPassword(testPassword)
+	if err != nil {
+		panic(err)
+	}
+	return h
+})
+
+// login проходит вход с фиксированным dev-кодом. В панель магазина входят
+// по логину и паролю: сотруднику с этим номером выдаётся логин
+// «t<цифры номера>» с постоянным паролем testPassword.
 func (a api) login(phone, app string) (access, refresh string) {
 	a.t.Helper()
+	if app == identity.AppStore {
+		login := a.staffLogin(phone)
+		r := a.expect(a.do("POST", "/auth/store/login", "", map[string]string{"login": login, "password": testPassword}), 200, "store login "+phone)
+		return r.str("access_token"), r.str("refresh_token")
+	}
 	a.expect(a.do("POST", "/auth/otp/request", "", map[string]string{"phone": phone}), 200, "request code "+phone)
 	r := a.expect(a.do("POST", "/auth/otp/verify", "", map[string]string{
 		"phone": phone, "code": "111111", "app": app,
 	}), 200, "verify "+phone)
 	return r.str("access_token"), r.str("refresh_token")
+}
+
+// staffLogin выдаёт сотруднику с номером phone логин с паролем testPassword
+// (не временным) прямо в базе и возвращает логин.
+func (a api) staffLogin(phone string) string {
+	a.t.Helper()
+	if a.pool == nil {
+		a.t.Fatal("api.pool не задан — нужен для входа в магазин")
+	}
+	login := "t" + strings.TrimPrefix(phone, "+")
+	_, err := a.pool.Exec(context.Background(), `
+		INSERT INTO employee_logins (employee_id, network_id, login, password_hash)
+		SELECT e.id, e.network_id, $2, $3 FROM employees e JOIN users u ON u.id = e.user_id WHERE u.phone = $1
+		ON CONFLICT (employee_id) DO UPDATE SET login = EXCLUDED.login, password_hash = EXCLUDED.password_hash,
+			must_change_password = false, failed_attempts = 0, locked_until = NULL`, phone, login, testPasswordHash())
+	if err != nil {
+		a.t.Fatal(err)
+	}
+	return login
 }
 
 func newAPI(t *testing.T, cfg config.Config, pool *pgxpool.Pool, tg identity.Sender) api {
@@ -167,7 +205,7 @@ func newAPI(t *testing.T, cfg config.Config, pool *pgxpool.Pool, tg identity.Sen
 	}
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return api{t: t, srv: srv}
+	return api{t: t, srv: srv, pool: pool}
 }
 
 // ----------------------------------------------------------------- тесты
@@ -420,9 +458,9 @@ func TestTelegramLoginFlow(t *testing.T) {
 }
 
 // TestReviewLogin — демо-аккаунт для проверки в магазинах приложений:
-// фиксированный код без Telegram в приложениях покупателя, магазина
-// (только если номер — активный сотрудник) и курьера «по пути»; в панель
-// супер-админа — нет.
+// фиксированный код без Telegram в приложениях покупателя и курьера
+// «по пути»; в панель супер-админа и в «SM Магазин» — нет (магазин входит
+// по логину и паролю).
 func TestReviewLogin(t *testing.T) {
 	pool := freshDB(t)
 	cfg := testConfig()
@@ -454,9 +492,14 @@ func TestReviewLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Магазин: обычные проверки — номер должен быть у активного сотрудника
-	// (его заводит владелец демо-сети).
-	a.expect(verify("store", false), 403, "store app before employee")
+	// Магазин: только логин и пароль — демо-код в «SM Магазин» не пускает;
+	// проверяющим выдают логин сотрудника демо-сети.
+	if r := a.expect(verify("store", false), 403, "store app by code"); r.str("error", "code") != "password_login_required" {
+		t.Fatalf("store by code = %v", r.Body)
+	}
+	if _, err := pool.Exec(context.Background(), `DELETE FROM auth_codes`); err != nil {
+		t.Fatal(err)
+	}
 	adminTok, _ := dev.login("+998900000001", identity.AppAdmin)
 	ownerTok, _ := setupNetwork(t, dev, adminTok, "+998900000002")
 	role := dev.expect(dev.do("POST", "/store/roles", ownerTok, map[string]any{
@@ -465,10 +508,10 @@ func TestReviewLogin(t *testing.T) {
 	emp := dev.expect(dev.do("POST", "/store/employees", ownerTok, map[string]any{
 		"phone": "+998900000077", "full_name": "App Review", "role_id": role, "all_stores": true,
 	}), 201, "review employee").str("id")
-	st := a.expect(verify("store", false), 200, "store app")
-	a.expect(a.do("GET", "/store/me", st.str("access_token"), nil), 200, "store me")
+	st, _ := dev.login("+998900000077", identity.AppStore)
+	a.expect(a.do("GET", "/store/me", st, nil), 200, "store me")
 	dev.expect(dev.do("PATCH", "/store/employees/"+emp, ownerTok, map[string]any{"status": "inactive"}), 200, "disable employee")
-	a.expect(verify("store", false), 403, "store app after disable")
+	a.expect(a.do("POST", "/auth/store/login", "", map[string]any{"login": "t998900000077", "password": testPassword}), 403, "store app after disable")
 
 	// Курьер «по пути»: обычная регистрация с согласием.
 	a.expect(verify("crowd", false), 422, "crowd without terms")

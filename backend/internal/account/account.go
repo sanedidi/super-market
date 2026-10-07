@@ -177,8 +177,15 @@ func (s *Service) Confirm(ctx context.Context, rawPhone, code string) (Result, e
 			res.Deleted = append(res.Deleted, "client")
 		}
 		if employeeID != nil {
+			// Курьер — сотрудник с правом доставки и логином для приложения
+			// курьера. Логин теперь есть у всех, кто входит в панель, поэтому
+			// смотрим и на роль.
 			var courier bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM courier_logins WHERE employee_id = $1)`, *employeeID).Scan(&courier); err != nil {
+			if err := tx.QueryRow(ctx, `
+				SELECT NOT r.is_owner AND 'orders.deliver' = ANY(r.permissions)
+				       AND EXISTS (SELECT 1 FROM employee_logins el WHERE el.employee_id = e.id)
+				FROM employees e JOIN roles r ON r.id = e.role_id
+				WHERE e.id = $1`, *employeeID).Scan(&courier); err != nil {
 				return err
 			}
 			app := identity.AppStore

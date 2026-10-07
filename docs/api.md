@@ -21,24 +21,44 @@
 | POST | `/auth/refresh` | `{"refresh_token"}` | новая пара токенов; старый refresh больше не действует |
 | POST | `/auth/{client,store,admin}/logout` | — | 204 |
 
-Покупатель регистрируется при первом входе. В `store` можно войти только активному
-сотруднику активной сети, в `admin` — номерам из `SUPER_ADMIN_PHONES`.
+Покупатель регистрируется при первом входе. В `admin` входят номера из `SUPER_ADMIN_PHONES`.
+В `store` (панель магазина и «SM Магазин») по коду войти нельзя — 403 `password_login_required`,
+только по логину и паролю (ниже).
 Access-токен живёт 15 минут, refresh — 30 дней. После 5 неверных кодов код сгорает.
 
 **Демо-вход для проверки в App Store / Google Play** — env `REVIEW_LOGIN=+998XXXXXXXXX:123456`. Для этого
 номера код не отправляется (ни Telegram, ни SMS) и всегда равен указанному. Работает в приложениях
-`client`, `store` и `crowd` с обычными проверками: в `store` номер должен быть у активного сотрудника
-активной сети (владелец демо-сети заводит его в «Сотрудниках», иначе 403), в `crowd` — регистрация с
-`terms_accepted: true` (иначе 422 `terms_required`). В `admin` демо-номер не входит никогда (400).
-Всё это вместе с штатным курьером (логин `review`) заводит команда `demo review` (после `demo seed`;
-в GitHub — Actions → demo-data → review), в конце она печатает текст для заметок проверяющему.
+`client` и `crowd` с обычными проверками: в `crowd` — регистрация с `terms_accepted: true` (иначе 422
+`terms_required`). В `admin` демо-номер не входит никогда (400). Для проверки «SM Магазин» проверяющим
+дают логин и пароль сотрудника демо-сети.
+Всё это вместе с штатным курьером (логин `review`) и логином «SM Магазин» для номера проверки (`review.store`)
+заводит команда `demo review` (после `demo seed`; в GitHub — Actions → demo-data → review), в конце она
+печатает текст для заметок проверяющему.
+
+### Вход в магазин по логину и паролю
+
+Логин и временный пароль владельцу выдаёт супер-админ (при создании сети или позже), сотрудникам —
+владелец или менеджер с правом `staff.manage`. Один логин на сотрудника: им же курьер входит в
+приложение курьера. Логин — латиница, цифры, `.`, `_`, `-`, 3–32 символа, без учёта регистра.
+После 5 неверных паролей подряд вход по логину закрыт на 15 минут (попытка засчитывается до проверки пароля — параллельные запросы лимит не обходят).
+
+Пока пароль временный, токен `store` пускает только на `GET /store/me` (`must_change_password: true`),
+`POST /auth/store/password` и `POST /auth/store/logout`; остальные маршруты — 403
+`password_change_required`.
+
+| Метод | Путь | Тело | Ответ |
+| --- | --- | --- | --- |
+| POST | `/auth/store/login` | `{"login", "password"}` | токены + `password_change_required: true`, если пароль временный · 401 `invalid_credentials` с `details.attempts_left` · 429 `too_many_requests` с `details.retry_after` · 403 — сотрудник или сеть отключены |
+| POST | `/auth/store/password` | `{"current_password"?, "new_password"}` | 204. Новый пароль: 8–72 символа, буквы и цифры, не совпадает с прежним. `current_password` не нужен, пока пароль временный; иначе неверный — 422 `wrong_password`. Остальные сессии сотрудника (панель и курьер) закрываются |
 
 ## Супер-админ (`app=admin`)
 
 | Метод | Путь | Описание |
 | --- | --- | --- |
-| GET | `/admin/networks?q=&limit=&offset=` | сети, поиск по названию и телефону владельца |
-| POST | `/admin/networks` | `{"name", "kind": "chain"\|"single", "owner_phone", "owner_name"}` — сеть + роль «Владелец» + сотрудник-владелец |
+| GET | `/admin/networks?q=&limit=&offset=` | сети, поиск по названию, телефону и логину владельца |
+| POST | `/admin/networks` | `{"name", "kind": "chain"\|"single", "owner_phone", "owner_name", "owner_login", "owner_password"}` — сеть + роль «Владелец» + сотрудник-владелец с логином и временным паролем (пароль 8–72 символа; логин и пароль можно не передавать — выдать позже). 409 `login_taken` |
+| PATCH | `/admin/networks/{id}/owner` | `{"full_name"?, "phone"?}` — имя и телефон владельца меняет только супер-админ. Новый номер — другой пользователь (аккаунт покупателя остаётся у старого номера), сессии владельца закрываются, логин сохраняется. 409 `employee_exists` — номер уже сотрудник |
+| PUT | `/admin/networks/{id}/owner/login` | `{"login", "password"?}` — логин владельца; с паролем — сброс: новый временный пароль, сессии владельца закрываются. Первый логин — только с паролем |
 | GET | `/admin/networks/{id}` | сеть |
 | GET | `/admin/networks/{id}/stores` | магазины сети (все, включая выключенные) |
 | PATCH | `/admin/networks/{id}` | `{"name"?, "status"?: "active"\|"blocked"}` — блокировка сразу закрывает доступ сотрудникам |
@@ -83,7 +103,7 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 | POST | `/auth/courier/login` | `{login, password}` → токены (`access_token`, `refresh_token`). 401 `invalid_credentials` с `details.attempts_left`; 429 `too_many_requests` с `details.retry_after`; 403 — нет права «Курьер» |
 | POST | `/auth/courier/logout` | закрыть сессию |
 | GET | `/store/couriers/{employee_id}/login` | `login`, `password_changed_at`, `last_login_at`, `locked`. 404 — входа нет. Права: `staff.manage` или `orders.manage` |
-| PUT | `/store/couriers/{employee_id}/login` | `{login, password?}` — логин `[a-z0-9._-]`, 3–32; пароль 8–72 (пустой — не менять). 409 `login_taken`; 400 — у роли нет `orders.deliver` |
+| PUT | `/store/couriers/{employee_id}/login` | `{login, password?}` — логин `[a-z0-9._-]`, 3–32; пароль 8–72 (пустой — не менять), не временный. 409 `login_taken`; 400 — у роли нет `orders.deliver`; 403 — владелец, у курьера в роли есть права кроме доставки, а у вас нет `staff.manage`, или курьер работает в магазинах, которых вы не видите. Это тот же логин, что в `/store/employees/{id}/login`: в приложении курьера пароль сразу постоянный, в панель с ним пустят только после смены |
 | DELETE | `/store/couriers/{employee_id}/login` | отключить вход → 204 |
 
 `/store/couriers` отдаёт `login` и `last_login_at`. `/courier/me` — ещё `phone`, `login` и `stores [{id, name, address, phone}]`.
@@ -123,7 +143,7 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 
 | Метод | Путь | Право | Описание |
 | --- | --- | --- | --- |
-| GET | `/store/me` | — | сеть, права, доступные магазины; `full_name`, `phone`, `role_name` сотрудника |
+| GET | `/store/me` | — | сеть, права, доступные магазины; `full_name`, `phone`, `role_name` сотрудника; `must_change_password` — вошёл по временному паролю |
 | GET | `/store/stores` | — | магазины, к которым есть доступ |
 | POST | `/store/stores` | `stores.manage` | `{"name", "address"?, "phone"?, "lat"?, "lng"?}` — создаёт и «Основной склад»; у `single` только один магазин |
 | GET | `/store/stores/{id}` | — | магазин |
@@ -136,6 +156,7 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 | PATCH | `/store/roles/{id}` | `staff.manage` | роль владельца не меняется |
 | GET/POST | `/store/employees` | `staff.manage` | `{"phone", "full_name", "role_id", "all_stores"?, "store_ids"?}` |
 | PATCH | `/store/employees/{id}` | `staff.manage` | `{"full_name"?, "role_id"?, "status"?, "all_stores"?, "store_ids"?}`; блокировка закрывает сессии; у владельца — только `full_name` |
+| GET/PUT/DELETE | `/store/employees/{id}/login` | `staff.manage` | логин сотрудника для панели и «SM Магазин»: `{"login", "password"?}`; пароль временный — при первом входе сотрудник придумает свой; новый пароль или отключение закрывают его сессии. Ответ: `employee_id`, `login`, `must_change_password`, `password_changed_at`, `last_login_at`, `locked`. 403 — логин владельца (меняет только супер-админ) или сотрудник видит магазины, которых не видите вы |
 
 Права читаются из базы на каждый запрос: изменение роли или блокировка действуют сразу.
 

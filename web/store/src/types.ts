@@ -13,6 +13,8 @@ export type Me = {
   store_ids: string[] | null
   full_name?: string
   role_name?: string
+  phone?: string
+  must_change_password?: boolean
 }
 
 export type Store = {
@@ -403,6 +405,10 @@ export type Employee = {
   status: string
   all_stores: boolean
   store_ids: string[] | null
+  /** Логин для панели и «SM Магазин» ('' — входа нет). */
+  login: string
+  temp_password: boolean
+  last_login_at: string | null
 }
 
 export type Balance = { available: string; pending: string; next_payout_at: string | null }

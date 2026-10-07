@@ -28,10 +28,26 @@ func NewAuthenticator(svc *Service, log *slog.Logger) *Authenticator {
 // Require пускает только запросы с токеном одного из приложений apps и живой сессией.
 // Права сотрудника читаются из базы на каждый запрос, поэтому смена роли
 // или блокировка действуют сразу, без перевыпуска токена.
+//
+// Сотрудник с временным паролем в панель магазина не пускается
+// (password_change_required) — только на маршруты под RequireTempPassword.
 func (a *Authenticator) Require(apps ...string) func(http.Handler) http.Handler {
+	return a.require(false, apps...)
+}
+
+// RequireTempPassword — как Require, но пускает и с временным паролем:
+// смена пароля, выход и /store/me.
+func (a *Authenticator) RequireTempPassword(apps ...string) func(http.Handler) http.Handler {
+	return a.require(true, apps...)
+}
+
+func (a *Authenticator) require(allowTemp bool, apps ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			p, err := a.authenticate(r, apps...)
+			if err == nil && p.MustChangePassword && !allowTemp {
+				err = ErrPasswordChangeRequired
+			}
 			if err != nil {
 				httpx.Fail(w, r, a.log, err)
 				return
@@ -118,7 +134,7 @@ func (s *Service) loadPrincipal(ctx context.Context, c token.Claims) (*Principal
 		courier := ""
 		if c.App == AppCourier {
 			courier = `
-			JOIN courier_logins cl ON cl.employee_id = e.id
+			JOIN employee_logins cl ON cl.employee_id = e.id
 			WHERE (r.is_owner OR 'orders.deliver' = ANY(r.permissions)) AND `
 		} else {
 			courier = " WHERE "
@@ -126,12 +142,14 @@ func (s *Service) loadPrincipal(ctx context.Context, c token.Claims) (*Principal
 		err = s.pool.QueryRow(ctx, `
 			SELECT e.id, e.network_id, n.kind, r.permissions, r.is_owner, e.all_stores,
 			       COALESCE((SELECT array_agg(es.store_id::text) FROM employee_stores es
-			                 WHERE es.employee_id = e.id), '{}')
+			                 WHERE es.employee_id = e.id), '{}'),
+			       s.app = 'store' AND COALESCE((SELECT el.must_change_password FROM employee_logins el
+			                 WHERE el.employee_id = e.id), false)
 			FROM sessions s
 			JOIN employees e ON e.user_id = s.user_id AND e.status = 'active'
 			JOIN roles r     ON r.id = e.role_id
 			JOIN networks n  ON n.id = e.network_id AND n.status = 'active'`+courier+live, c.SessionID, c.UserID).Scan(
-			&p.EmployeeID, &p.NetworkID, &p.NetworkKind, &p.Permissions, &p.IsOwner, &p.AllStores, &p.StoreIDs)
+			&p.EmployeeID, &p.NetworkID, &p.NetworkKind, &p.Permissions, &p.IsOwner, &p.AllStores, &p.StoreIDs, &p.MustChangePassword)
 	default:
 		return nil, errSession
 	}

@@ -122,6 +122,10 @@ func TestReviewFlow(t *testing.T) {
 	if first.courierPwd != second.courierPwd || first.courierPwd != reviewPassword(cfg.JWTSecret) || len(first.courierPwd) < 8 {
 		t.Fatalf("пароль курьера: %q / %q", first.courierPwd, second.courierPwd)
 	}
+	if first.storeLogin != reviewStoreLogin || first.storePwd != second.storePwd || first.storePwd != reviewStorePassword(cfg.JWTSecret) ||
+		first.storePwd == first.courierPwd {
+		t.Fatalf("логин «SM Магазин»: %q %q / %q", first.storeLogin, first.storePwd, second.storePwd)
+	}
 	if first.crowdCode == "" || first.crowdCode != second.crowdCode {
 		t.Fatalf("код курьера: %q / %q", first.crowdCode, second.crowdCode)
 	}
@@ -147,10 +151,22 @@ func TestReviewFlow(t *testing.T) {
 	}
 	c := client{h: app.Handler, reviewPhone: testReviewPhone, reviewCode: testReviewCode}
 
-	store, err := c.login(testReviewPhone, identity.AppStore)
-	if err != nil {
-		t.Fatalf("вход в магазин: %v", err)
+	// В «SM Магазин» — только по логину и паролю: код не пускает.
+	if _, err := c.call("POST", "/auth/otp/request", "", obj{"phone": testReviewPhone}, http.StatusOK); err != nil {
+		t.Fatal(err)
 	}
+	out, err := c.call("POST", "/auth/otp/verify", "", obj{"phone": testReviewPhone, "code": testReviewCode, "app": "store"}, http.StatusForbidden)
+	if e, _ := out["error"].(obj); err != nil || e["code"] != "password_login_required" {
+		t.Fatalf("вход в магазин по коду: %v %v", out, err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM auth_codes`); err != nil {
+		t.Fatal(err)
+	}
+	st, err := c.call("POST", "/auth/store/login", "", obj{"login": first.storeLogin, "password": first.storePwd}, http.StatusOK)
+	if err != nil || st["password_change_required"] == true {
+		t.Fatalf("вход в магазин: %v %v", st, err)
+	}
+	store := str(st, "access_token")
 	emps, err := c.call("GET", "/store/employees", store, nil, http.StatusOK)
 	if err != nil || len(items(emps)) < 3 {
 		t.Fatalf("сотрудники сети: %v %v", emps, err)
@@ -189,7 +205,7 @@ func TestReviewFlow(t *testing.T) {
 		`SELECT count(*) FROM crowd_couriers cc JOIN users u ON u.id = cc.user_id WHERE u.phone = '` + testReviewPhone + `'`,
 		`SELECT count(*) FROM customer_addresses a JOIN users u ON u.id = a.user_id WHERE u.phone = '` + testReviewPhone + `'`,
 		`SELECT count(*) FROM customers c JOIN users u ON u.id = c.user_id WHERE u.phone = '` + testReviewPhone + `'`,
-		`SELECT count(*) FROM courier_logins WHERE login = 'review'`,
+		`SELECT count(*) FROM employee_logins WHERE login IN ('review', 'review.store')`,
 		`SELECT count(*) FROM users WHERE phone = '` + reviewCourierPhone + `'`,
 		`SELECT count(*) FROM demo_seed`,
 	} {

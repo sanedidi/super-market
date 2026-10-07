@@ -19,6 +19,9 @@ class StoreState extends ChangeNotifier {
 
   /// Первая настройка магазина (null — сервер не ответил, мастер не показываем).
   SetupState? setup;
+
+  /// Вошли по временному паролю: сначала «Свой пароль», остальное сервер не отдаёт.
+  bool mustChangePassword = false;
   bool loading = false;
   Object? error;
   bool _wasIn = false;
@@ -35,6 +38,7 @@ class StoreState extends ChangeNotifier {
       stores = const [];
       storeId = null;
       setup = null;
+      mustChangePassword = false;
       notifyListeners();
     }
   }
@@ -45,6 +49,8 @@ class StoreState extends ChangeNotifier {
     notifyListeners();
     try {
       me = await api.get('/store/me') as Map<String, dynamic>;
+      mustChangePassword = me!['must_change_password'] == true;
+      if (mustChangePassword) return;
       stores = await api.list('/store/stores');
       try {
         setup = SetupState(await api.get('/store/setup') as Map<String, dynamic>);

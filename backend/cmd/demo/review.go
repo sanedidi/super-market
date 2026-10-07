@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
@@ -24,17 +25,19 @@ import (
 // Демо-доступ для проверки приложений в App Store / Google Play.
 //
 // Номер из REVIEW_LOGIN становится сотрудником «Baraka Market» со всеми
-// правами, курьером «по пути» с подтверждённой личностью и покупателем с
-// адресом рядом с магазинами сети. Для приложения курьера магазина
-// заводится штатный курьер с логином review.
+// правами (в «SM Магазин» он входит по логину review.store), курьером
+// «по пути» с подтверждённой личностью и покупателем с адресом рядом с
+// магазинами сети. Для приложения курьера магазина заводится штатный курьер
+// с логином review.
 //
-// Пароль курьера не случайный: он выводится из JWT_SECRET, поэтому при
-// каждом запуске один и тот же — повторный запуск не ломает данные, уже
+// Пароли не случайные: они выводятся из JWT_SECRET, поэтому при каждом
+// запуске одни и те же — повторный запуск не ломает данные, уже
 // отправленные на проверку. Если пароль сменили в панели, review вернёт его.
 
 const (
 	reviewCourierPhone = "+998900000110" // служебный номер штатного курьера
 	reviewCourierLogin = "review"
+	reviewStoreLogin   = "review.store"
 	reviewCourierName  = "Курьер для проверки"
 	reviewEmployeeName = "Проверка приложений"
 	reviewRoleName     = "Проверка приложений"
@@ -46,14 +49,25 @@ type reviewCreds struct {
 	phone, code              string
 	network                  string
 	courierLogin, courierPwd string
+	storeLogin, storePwd     string // пусто — номер проверки сам владелец сети
 	crowdCode                string
 }
 
-// reviewPassword — запоминающийся пароль, постоянный для данного JWT_SECRET.
+// reviewPassword — пароль курьера магазина, постоянный для данного JWT_SECRET.
 func reviewPassword(secret string) string {
+	return derivedPassword(secret, "demo-review-courier-password")
+}
+
+// reviewStorePassword — пароль сотрудника для «SM Магазин», постоянный для данного JWT_SECRET.
+func reviewStorePassword(secret string) string {
+	return derivedPassword(secret, "demo-review-store-password")
+}
+
+// derivedPassword — запоминающийся пароль из секрета и назначения.
+func derivedPassword(secret, purpose string) string {
 	words := []string{"olma", "anor", "uzum", "qovun", "non", "choy", "asal", "limon", "sabzi", "shaftoli", "gilos", "behi"}
 	m := hmac.New(sha256.New, []byte(secret))
-	m.Write([]byte("demo-review-courier-password"))
+	m.Write([]byte(purpose))
 	sum := m.Sum(nil)
 	a := words[int(sum[0])%len(words)]
 	b := words[int(sum[1])%len(words)]
@@ -132,11 +146,12 @@ func review(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) (reviewC
 	if err != nil {
 		return reviewCreds{}, err
 	}
-	s.c = client{h: app.Handler, code: code, reviewPhone: rph, reviewCode: rcode}
+	s.c = client{h: app.Handler, code: code, reviewPhone: rph, reviewCode: rcode, pool: pool, secret: cfg.JWTSecret}
 	defer s.finish()
 
 	r := &reviewer{seeder: s, networkID: networkID, phone: rph, ownerPhone: ownerPhone}
-	creds := reviewCreds{phone: rph, code: rcode, network: nw.name, courierLogin: reviewCourierLogin, courierPwd: reviewPassword(cfg.JWTSecret)}
+	creds := reviewCreds{phone: rph, code: rcode, network: nw.name, courierLogin: reviewCourierLogin, courierPwd: reviewPassword(cfg.JWTSecret),
+		storeLogin: reviewStoreLogin, storePwd: reviewStorePassword(cfg.JWTSecret)}
 	if err := r.run(&creds); err != nil {
 		return creds, fmt.Errorf("%w\nисправьте причину и запустите demo review снова (повторный запуск безопасен)", err)
 	}
@@ -193,7 +208,7 @@ func (r *reviewer) run(creds *reviewCreds) error {
 	if r.owner, err = r.loginAs(r.ownerPhone, identity.AppStore, false); err != nil {
 		return err
 	}
-	if err := r.staff(); err != nil {
+	if err := r.staff(creds); err != nil {
 		return fmt.Errorf("сотрудник: %w", err)
 	}
 	if err := r.courier(creds); err != nil {
@@ -205,9 +220,15 @@ func (r *reviewer) run(creds *reviewCreds) error {
 	if err := r.customer(); err != nil {
 		return fmt.Errorf("покупатель: %w", err)
 	}
-	// Итоговая проверка: номер входит в приложение магазина.
-	if _, err := r.loginAs(r.phone, identity.AppStore, false); err != nil {
-		return err
+	// Итоговая проверка: проверяющий входит в приложение магазина.
+	if creds.storeLogin != "" {
+		out, err := r.c.call("POST", "/auth/store/login", "", obj{"login": creds.storeLogin, "password": creds.storePwd}, http.StatusOK)
+		if err != nil {
+			return fmt.Errorf("вход в «SM Магазин» по логину %s: %w", creds.storeLogin, err)
+		}
+		if out["password_change_required"] == true {
+			return fmt.Errorf("логин %s с временным паролем — так проверяющий застрянет на смене пароля", creds.storeLogin)
+		}
 	}
 	return nil
 }
@@ -262,15 +283,18 @@ func (r *reviewer) employee(ph string) (*employeeRow, error) {
 	return &e, err
 }
 
-// staff — номер проверки становится сотрудником сети со всеми правами.
-func (r *reviewer) staff() error {
+// staff — номер проверки становится сотрудником сети со всеми правами и
+// получает логин для «SM Магазин».
+func (r *reviewer) staff(creds *reviewCreds) error {
 	e, err := r.employee(r.phone)
 	if err != nil {
 		return err
 	}
 	switch {
 	case e != nil && e.owner:
-		fmt.Printf("магазин: %s — владелец сети, оставлен как есть\n", r.phone)
+		// Логин владельца выдаёт супер-админ — review его пароль не трогает.
+		creds.storeLogin, creds.storePwd = "", ""
+		fmt.Printf("магазин: %s — владелец сети, оставлен как есть (в «SM Магазин» — его логин и пароль)\n", r.phone)
 		return nil
 	case e != nil:
 		if e.status != "active" {
@@ -279,7 +303,7 @@ func (r *reviewer) staff() error {
 			}
 		}
 		fmt.Printf("магазин: %s уже сотрудник сети, оставлен как есть\n", r.phone)
-		return nil
+		return r.storeLogin(e.id, creds)
 	}
 	all := make([]string, 0, len(identity.Permissions))
 	for _, p := range identity.Permissions {
@@ -296,7 +320,57 @@ func (r *reviewer) staff() error {
 		return err
 	}
 	fmt.Printf("магазин: %s — сотрудник сети с ролью «%s»\n", r.phone, reviewRoleName)
-	return r.record("review_employee", str(out, "id"))
+	if err := r.record("review_employee", str(out, "id")); err != nil {
+		return err
+	}
+	return r.storeLogin(str(out, "id"), creds)
+}
+
+// storeLogin — логин сотрудника для проверки в «SM Магазин». Пароль
+// постоянный, не временный: иначе каждый проверяющий застрял бы на смене
+// пароля. Поэтому он пишется в базу напрямую — через панель магазина
+// выдаётся только временный.
+func (r *reviewer) storeLogin(empID string, creds *reviewCreds) error {
+	var (
+		login, hash  string
+		locked, temp bool
+	)
+	err := r.pool.QueryRow(r.ctx, `
+		SELECT login, password_hash, COALESCE(locked_until > now(), false), must_change_password
+		FROM employee_logins WHERE employee_id::text = $1`, empID).Scan(&login, &hash, &locked, &temp)
+	existed := err == nil
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	if existed && login == creds.storeLogin && !locked && !temp && identity.CheckPassword(hash, creds.storePwd) {
+		fmt.Printf("«SM Магазин»: логин %s уже есть, пароль прежний\n", creds.storeLogin)
+		return nil
+	}
+	newHash, err := identity.HashPassword(creds.storePwd)
+	if err != nil {
+		return err
+	}
+	_, err = r.pool.Exec(r.ctx, `
+		INSERT INTO employee_logins (employee_id, network_id, login, password_hash, must_change_password)
+		VALUES ($1::uuid, $2::uuid, $3, $4, false)
+		ON CONFLICT (employee_id) DO UPDATE SET
+			login = EXCLUDED.login, password_hash = EXCLUDED.password_hash, must_change_password = false,
+			password_changed_at = now(), failed_attempts = 0, locked_until = NULL`,
+		empID, r.networkID, creds.storeLogin, newHash)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return fmt.Errorf("логин %q уже занят сотрудником другой сети — освободите его и запустите снова", creds.storeLogin)
+	}
+	if err != nil {
+		return err
+	}
+	if !existed {
+		if err := r.record("review_store_login", empID); err != nil {
+			return err
+		}
+	}
+	fmt.Printf("«SM Магазин»: логин %s, пароль задан\n", creds.storeLogin)
+	return nil
 }
 
 // courier — штатный курьер сети с логином и паролем для приложения курьера.
@@ -335,7 +409,7 @@ func (r *reviewer) courier(creds *reviewCreds) error {
 		login, hash string
 		locked      bool
 	)
-	err = r.pool.QueryRow(r.ctx, `SELECT login, password_hash, COALESCE(locked_until > now(), false) FROM courier_logins WHERE employee_id::text = $1`,
+	err = r.pool.QueryRow(r.ctx, `SELECT login, password_hash, COALESCE(locked_until > now(), false) FROM employee_logins WHERE employee_id::text = $1`,
 		empID).Scan(&login, &hash, &locked)
 	existed := err == nil
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -495,8 +569,7 @@ Super Market (покупатель)
   Код из SMS/Telegram: %[2]s (код не приходит — всегда вводите этот)
 
 SM Магазин (сотрудник сети «%[3]s», все права)
-  Телефон: %[1]s
-  Код: %[2]s
+  %[7]s
 
 SM Курьер — «Курьер по пути» (личность подтверждена, код курьера %[6]s)
   Телефон: %[1]s
@@ -506,5 +579,12 @@ SM Курьер — «Курьер магазина» (вход по логин�
   Логин: %[4]s
   Пароль: %[5]s
 =====================================================================
-`, c.phone, c.code, c.network, c.courierLogin, c.courierPwd, c.crowdCode)
+`, c.phone, c.code, c.network, c.courierLogin, c.courierPwd, c.crowdCode, storeNote(c))
+}
+
+func storeNote(c reviewCreds) string {
+	if c.storeLogin == "" {
+		return "Логин и пароль владельца сети (номер проверки — владелец)"
+	}
+	return fmt.Sprintf("Логин: %s\n  Пароль: %s", c.storeLogin, c.storePwd)
 }

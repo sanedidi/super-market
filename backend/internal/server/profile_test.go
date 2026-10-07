@@ -47,7 +47,7 @@ func TestProfileAndPush(t *testing.T) {
 	}
 	srv := httptest.NewServer(app.Handler)
 	t.Cleanup(srv.Close)
-	a := api{t: t, srv: srv}
+	a := api{t: t, srv: srv, pool: pool}
 	prov := providers{t: t, srv: srv}
 
 	adminTok, _ := a.login("+998900000001", identity.AppAdmin)

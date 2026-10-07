@@ -37,23 +37,35 @@ type Network struct {
 	OwnerPhone  string    `json:"owner_phone"`
 	StoresCount int       `json:"stores_count"`
 	CreatedAt   time.Time `json:"created_at"`
+	// Вход владельца: логин (пусто — логина ещё нет), пароль временный
+	// (владелец ещё не придумал свой), когда входил последний раз.
+	OwnerLogin        string     `json:"owner_login"`
+	OwnerTempPassword bool       `json:"owner_temp_password"`
+	OwnerPasswordAt   *time.Time `json:"owner_password_changed_at"`
+	OwnerLastLoginAt  *time.Time `json:"owner_last_login_at"`
 }
 
 const networkSelect = `
 	SELECT n.id, n.name, n.kind, n.status,
 	       COALESCE(e.full_name, ''), COALESCE(u.phone, ''),
 	       (SELECT count(*) FROM stores s WHERE s.network_id = n.id)::int,
-	       n.created_at
+	       n.created_at,
+	       COALESCE(el.login, ''), COALESCE(el.must_change_password, false),
+	       el.password_changed_at, el.last_login_at
 	FROM networks n
 	LEFT JOIN roles r     ON r.network_id = n.id AND r.is_owner
 	LEFT JOIN employees e ON e.role_id = r.id
-	LEFT JOIN users u     ON u.id = e.user_id`
+	LEFT JOIN users u     ON u.id = e.user_id
+	LEFT JOIN employee_logins el ON el.employee_id = e.id`
 
 type CreateNetworkInput struct {
 	Name       string `json:"name"`
 	Kind       string `json:"kind"`
 	OwnerPhone string `json:"owner_phone"`
 	OwnerName  string `json:"owner_name"`
+	// Логин и временный пароль владельца для панели и «SM Магазин».
+	OwnerLogin    string `json:"owner_login"`
+	OwnerPassword string `json:"owner_password"`
 }
 
 // CreateNetwork создаёт сеть и её владельца (супер-админ).
@@ -65,14 +77,22 @@ func (s *Service) CreateNetwork(ctx context.Context, in CreateNetworkInput) (Net
 	if in.Kind != "chain" && in.Kind != "single" {
 		return Network{}, apperr.Validation("kind: ожидается chain или single")
 	}
+	login, hash, err := identity.PrepareOwnerLogin(identity.LoginInput{Login: in.OwnerLogin, Password: in.OwnerPassword})
+	if err != nil {
+		return Network{}, err
+	}
 	var out Network
-	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		var id string
 		if err := tx.QueryRow(ctx, `INSERT INTO networks (name, kind) VALUES ($1, $2) RETURNING id`,
 			name, in.Kind).Scan(&id); err != nil {
 			return err
 		}
-		if _, err := identity.CreateOwner(ctx, tx, id, in.OwnerPhone, in.OwnerName); err != nil {
+		ownerID, err := identity.CreateOwner(ctx, tx, id, in.OwnerPhone, in.OwnerName)
+		if err != nil {
+			return err
+		}
+		if err := identity.CreateOwnerLogin(ctx, tx, ownerID, id, login, hash); err != nil {
 			return err
 		}
 		if err := catalog.CreateDefaultPriceType(ctx, tx, id); err != nil {
@@ -81,11 +101,26 @@ func (s *Service) CreateNetwork(ctx context.Context, in CreateNetworkInput) (Net
 		if err := finance.CreateMainCashbox(ctx, tx, id); err != nil {
 			return err
 		}
-		var err error
 		out, err = getNetwork(ctx, tx, id)
 		return err
 	})
 	return out, err
+}
+
+// UpdateOwner — супер-админ меняет имя или телефон владельца сети.
+func (s *Service) UpdateOwner(ctx context.Context, id string, in identity.OwnerInput) (Network, error) {
+	if err := identity.UpdateOwner(ctx, s.pool, id, in); err != nil {
+		return Network{}, err
+	}
+	return s.GetNetwork(ctx, id)
+}
+
+// SetOwnerLogin — супер-админ задаёт логин владельца или сбрасывает пароль.
+func (s *Service) SetOwnerLogin(ctx context.Context, id string, in identity.LoginInput) (Network, error) {
+	if _, err := identity.SetOwnerLogin(ctx, s.pool, id, in); err != nil {
+		return Network{}, err
+	}
+	return s.GetNetwork(ctx, id)
 }
 
 func getNetwork(ctx context.Context, q db.Querier, id string) (Network, error) {
@@ -124,7 +159,7 @@ func (s *Service) EmployeeBrief(ctx context.Context, employeeID string) (Employe
 
 func (s *Service) ListNetworks(ctx context.Context, search string, page httpx.Page) ([]Network, error) {
 	rows, err := s.pool.Query(ctx, networkSelect+`
-		WHERE $1 = '' OR n.name ILIKE '%' || $1 || '%' OR u.phone LIKE '%' || $1 || '%'
+		WHERE $1 = '' OR n.name ILIKE '%' || $1 || '%' OR u.phone LIKE '%' || $1 || '%' OR el.login = lower($1)
 		ORDER BY n.created_at DESC, n.id LIMIT $2 OFFSET $3`,
 		strings.TrimSpace(search), page.Limit, page.Offset)
 	if err != nil {

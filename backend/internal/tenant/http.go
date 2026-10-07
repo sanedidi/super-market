@@ -28,11 +28,17 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/admin/networks/{id}", m.getNetwork)
 		r.Patch("/admin/networks/{id}", m.updateNetwork)
 		r.Get("/admin/networks/{id}/stores", m.adminStores)
+		// Владелец: имя и телефон меняет только супер-админ; логин и сброс пароля.
+		r.Patch("/admin/networks/{id}/owner", m.updateOwner)
+		r.Put("/admin/networks/{id}/owner/login", m.setOwnerLogin)
 	})
+
+	// /store/me открыт и с временным паролем: по нему панель понимает,
+	// что сначала нужно придумать свой пароль.
+	r.With(m.auth.RequireTempPassword(identity.AppStore)).Get("/store/me", m.me)
 
 	r.Group(func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppStore))
-		r.Get("/store/me", m.me)
 		r.Get("/store/stores", m.listStores)
 		r.Post("/store/stores", m.createStore)
 		r.Get("/store/stores/{id}", m.getStore)
@@ -120,6 +126,18 @@ func (m *Module) updateNetwork(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (m *Module) updateOwner(w http.ResponseWriter, r *http.Request) {
+	withBody(m, w, r, http.StatusOK, "id", func(id string, in identity.OwnerInput) (Network, error) {
+		return m.svc.UpdateOwner(r.Context(), id, in)
+	})
+}
+
+func (m *Module) setOwnerLogin(w http.ResponseWriter, r *http.Request) {
+	withBody(m, w, r, http.StatusOK, "id", func(id string, in identity.LoginInput) (Network, error) {
+		return m.svc.SetOwnerLogin(r.Context(), id, in)
+	})
+}
+
 // --------------------------------------------------------- панель магазина
 
 type meResponse struct {
@@ -133,6 +151,9 @@ type meResponse struct {
 	FullName    string   `json:"full_name"`
 	Phone       string   `json:"phone"`
 	RoleName    string   `json:"role_name"`
+	// MustChangePassword — вошёл по временному паролю: панель показывает
+	// только экран «Придумайте свой пароль».
+	MustChangePassword bool `json:"must_change_password"`
 }
 
 func (m *Module) me(w http.ResponseWriter, r *http.Request) {
@@ -154,6 +175,7 @@ func (m *Module) me(w http.ResponseWriter, r *http.Request) {
 			UserID: p.UserID, EmployeeID: p.EmployeeID, Network: n, IsOwner: p.IsOwner,
 			Permissions: perms, AllStores: p.SeesAllStores(), StoreIDs: p.StoreIDs,
 			FullName: who.FullName, Phone: who.Phone, RoleName: who.RoleName,
+			MustChangePassword: p.MustChangePassword,
 		}, err
 	})
 }
