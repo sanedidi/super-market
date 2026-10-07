@@ -1080,6 +1080,64 @@ body {
   color: var(--sm-ink-2);
 }
 
+.sm-login-sub {
+  margin: 0 0 20px;
+  font-size: 14px;
+  color: var(--sm-muted);
+}
+
+.sm-login-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  font-size: 22px;
+  color: var(--sm-page);
+  background: #eff4ff;
+}
+
+.sm-login-help {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--sm-text-2);
+  background: var(--sm-bg);
+}
+
+.sm-login-help .anticon {
+  margin-top: 2px;
+  color: var(--sm-muted);
+}
+
+.sm-login-checks {
+  margin: -4px 0 12px;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: var(--sm-text);
+}
+
+.sm-login-checks li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.sm-login-checks .anticon {
+  color: #d0d5dd;
+}
+
+.sm-login-checks li.ok .anticon {
+  color: var(--sm-success);
+}
+
 .sm-login-card .ant-btn-primary {
   height: 50px;
   border-radius: 8px;

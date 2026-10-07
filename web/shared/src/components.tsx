@@ -211,6 +211,8 @@ export interface CrudConfig<T> {
   canDelete?: boolean | ((row: T) => boolean)
   /** Название строки для подтверждения (по умолчанию поле name). */
   rowName?: (row: T) => string
+  /** После успешного сохранения: ответ сервера, редактируемая запись (null — новая) и значения формы. */
+  onSaved?: (result: unknown, editing: T | null, values: Record<string, unknown>) => void
   /** Тело PATCH «Отключить», если запись уже используется (по умолчанию { is_active: false }; null — без кнопки). */
   deactivate?: ((row: T) => Record<string, unknown>) | null
 }
@@ -309,7 +311,18 @@ export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
           width={cfg.modalWidth}
           forceRender
         >
-          <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v, { onSuccess: () => setOpen(false) })}>
+          <Form
+            form={form}
+            layout="vertical"
+            onFinish={(v) =>
+              save.mutate(v, {
+                onSuccess: (res) => {
+                  setOpen(false)
+                  cfg.onSaved?.(res, editing, v)
+                },
+              })
+            }
+          >
             {cfg.form(editing)}
           </Form>
         </Modal>

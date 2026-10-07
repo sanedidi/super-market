@@ -26,7 +26,7 @@ func TestStoreHome(t *testing.T) {
 	}
 	srv := httptest.NewServer(app.Handler)
 	t.Cleanup(srv.Close)
-	a := api{t: t, srv: srv}
+	a := api{t: t, srv: srv, pool: pool}
 
 	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
 	cola, sugar := catalogBasics(t, a, adminTok)
@@ -157,7 +157,7 @@ func TestHomeEditor(t *testing.T) {
 	}
 	srv := httptest.NewServer(app.Handler)
 	t.Cleanup(srv.Close)
-	a := api{t: t, srv: srv}
+	a := api{t: t, srv: srv, pool: pool}
 
 	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
 	cola, sugar := catalogBasics(t, a, adminTok)
@@ -258,7 +258,7 @@ func TestStoreShowcase(t *testing.T) {
 	}
 	srv := httptest.NewServer(app.Handler)
 	t.Cleanup(srv.Close)
-	a := api{t: t, srv: srv}
+	a := api{t: t, srv: srv, pool: pool}
 
 	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
 	cola, sugar := catalogBasics(t, a, adminTok)

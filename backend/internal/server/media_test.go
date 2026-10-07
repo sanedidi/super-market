@@ -80,7 +80,7 @@ func TestMediaUpload(t *testing.T) {
 	}
 	srv := httptest.NewServer(app.Handler)
 	t.Cleanup(srv.Close)
-	a := api{t: t, srv: srv}
+	a := api{t: t, srv: srv, pool: pool}
 	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
 	storeTok, _ := setupNetwork(t, a, adminTok, "+998900000002")
 	clientTok, _ := a.login("+998900000050", identity.AppClient)

@@ -91,6 +91,8 @@ type Principal struct {
 	IsOwner     bool
 	AllStores   bool
 	StoreIDs    []string
+	// MustChangePassword — сотрудник вошёл в панель по временному паролю.
+	MustChangePassword bool
 
 	// Касса, с которой пришёл запрос (только App == AppPOS).
 	DeviceID string

@@ -113,7 +113,7 @@ class MoreScreen extends StatelessWidget {
                   context,
                   icon: Icons.logout_rounded,
                   title: 'Выйти из приложения?',
-                  text: 'Уведомления о заказах перестанут приходить. Войти снова — по номеру и коду из Telegram.',
+                  text: 'Уведомления о заказах перестанут приходить. Войти снова — по логину и паролю.',
                   confirm: 'Выйти',
                 );
                 if (ok && context.mounted) await signOut(context);

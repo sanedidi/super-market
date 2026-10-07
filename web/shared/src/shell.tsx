@@ -8,6 +8,7 @@ import dayjs from 'dayjs'
 import 'dayjs/locale/ru'
 import { ApiError, configureApi, type AppName } from './api'
 import { AuthProvider, LoginPage, useAuth } from './auth'
+import { StorePasswordGate } from './passwordLogin'
 import './theme.css'
 import logo from './logo.png'
 
@@ -87,6 +88,7 @@ function Gate({ app, title, children }: { app: AppName; title: string; children:
     queryClient.clear()
     return <LoginPage app={app} title={title} />
   }
+  if (app === 'store') return <StorePasswordGate title={title}>{children}</StorePasswordGate>
   return <>{children}</>
 }
 

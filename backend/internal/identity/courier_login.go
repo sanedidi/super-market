@@ -14,12 +14,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
-	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 )
 
@@ -80,93 +78,20 @@ func NormalizeLogin(s string) string { return strings.ToLower(strings.TrimSpace(
 
 // CourierLogin — вход в приложение курьера.
 func (s *Service) CourierLogin(ctx context.Context, rawLogin, password, userAgent string) (Tokens, error) {
-	login := NormalizeLogin(rawLogin)
-	if login == "" || password == "" {
-		return Tokens{}, apperr.Validation("введите логин и пароль")
-	}
-	var (
-		employeeID, userID, hash string
-		fails                    int
-		locked                   *time.Time
-		active, courier          bool
-	)
-	err := s.pool.QueryRow(ctx, `
-		SELECT cl.employee_id, e.user_id, cl.password_hash, cl.failed_attempts, cl.locked_until,
-		       e.status = 'active' AND n.status = 'active',
-		       r.is_owner OR 'orders.deliver' = ANY(r.permissions)
-		FROM courier_logins cl
-		JOIN employees e ON e.id = cl.employee_id
-		JOIN roles r ON r.id = e.role_id
-		JOIN networks n ON n.id = e.network_id
-		WHERE cl.login = $1`, login).Scan(&employeeID, &userID, &hash, &fails, &locked, &active, &courier)
-	if errors.Is(err, pgx.ErrNoRows) {
-		CheckPassword(dummyHash, password)
-		return Tokens{}, errBadCredentials
-	}
-	if err != nil {
-		return Tokens{}, err
-	}
-	now := s.now()
-	if locked != nil && now.Before(*locked) {
-		wait := int(locked.Sub(now).Seconds()) + 1
-		return Tokens{}, apperr.New(http.StatusTooManyRequests, "too_many_requests",
-			fmt.Sprintf("слишком много неверных паролей — попробуйте через %d мин", (wait+59)/60)).
-			WithDetails(map[string]any{"retry_after": wait})
-	}
-	if !CheckPassword(hash, password) {
-		fails++
-		var until *time.Time
-		if fails >= courierMaxFails {
-			t := now.Add(courierLockFor)
-			until = &t
-		}
-		// После блокировки счётчик начинается заново.
-		stored := fails
-		if until != nil {
-			stored = 0
-		}
-		if _, err := s.pool.Exec(ctx, `UPDATE courier_logins SET failed_attempts = $2, locked_until = $3 WHERE employee_id = $1`,
-			employeeID, stored, until); err != nil {
-			return Tokens{}, err
-		}
-		if until != nil {
-			return Tokens{}, apperr.New(http.StatusTooManyRequests, "too_many_requests", "слишком много неверных паролей — вход закрыт на 15 минут").
-				WithDetails(map[string]any{"retry_after": int(courierLockFor.Seconds())})
-		}
-		return Tokens{}, errBadCredentials.WithDetails(map[string]any{"attempts_left": courierMaxFails - fails})
-	}
-	if !active || !courier {
-		return Tokens{}, errCourierNoAccess
-	}
-	var sessionID, refresh string
-	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `UPDATE courier_logins SET failed_attempts = 0, locked_until = NULL, last_login_at = now() WHERE employee_id = $1`, employeeID); err != nil {
-			return err
-		}
-		var err error
-		sessionID, refresh, err = s.createSession(ctx, tx, userID, AppCourier, userAgent)
-		return err
-	})
-	if err != nil {
-		return Tokens{}, err
-	}
-	return s.tokens(userID, sessionID, AppCourier, refresh)
+	return s.passwordLogin(ctx, rawLogin, password, AppCourier, userAgent)
 }
 
 // CourierLoginInfo — логин курьера для панели (пароль не показывается).
-type CourierLoginInfo struct {
-	EmployeeID        string     `json:"employee_id"`
-	Login             string     `json:"login"`
-	PasswordChangedAt time.Time  `json:"password_changed_at"`
-	LastLoginAt       *time.Time `json:"last_login_at"`
-	Locked            bool       `json:"locked"`
-}
+type CourierLoginInfo = LoginInfo
 
-type CourierLoginInput struct {
-	Login    string `json:"login"`
-	Password string `json:"password"` // пусто — оставить прежний (только смена логина)
-}
+// CourierLoginInput — логин и пароль курьера.
+type CourierLoginInput = LoginInput
 
+// courierEmployee — курьер сети, которому можно задать вход из раздела
+// «Курьеры». Логин владельца меняет только супер-админ; с одним правом
+// «Онлайн-заказы» можно менять вход только тем, у кого в роли нет ничего,
+// кроме доставки, — иначе через логин курьера можно было бы войти в чужую
+// панель с бо́льшими правами.
 func (s *Service) courierEmployee(ctx context.Context, p *Principal, employeeID string) (string, error) {
 	if err := p.RequireAny(PermStaffManage, PermOrdersManage); err != nil {
 		return "", err
@@ -175,114 +100,58 @@ func (s *Service) courierEmployee(ctx context.Context, p *Principal, employeeID 
 		return "", apperr.NotFound("сотрудник не найден")
 	}
 	var (
-		userID  string
-		courier bool
+		userID                          string
+		owner, courier, only, allStores bool
+		storeIDs                        []string
 	)
 	err := s.pool.QueryRow(ctx, `
-		SELECT e.user_id, r.is_owner OR 'orders.deliver' = ANY(r.permissions)
+		SELECT e.user_id, r.is_owner, 'orders.deliver' = ANY(r.permissions),
+		       r.permissions <@ ARRAY['orders.deliver']::text[], e.all_stores,
+		       COALESCE((SELECT array_agg(es.store_id::text) FROM employee_stores es WHERE es.employee_id = e.id), '{}')
 		FROM employees e JOIN roles r ON r.id = e.role_id
-		WHERE e.id = $1 AND e.network_id = $2 AND e.status = 'active'`, employeeID, p.NetworkID).Scan(&userID, &courier)
+		WHERE e.id = $1 AND e.network_id = $2 AND e.status = 'active'`, employeeID, p.NetworkID).Scan(&userID, &owner, &courier, &only, &allStores, &storeIDs)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", apperr.NotFound("сотрудник не найден")
 	}
 	if err != nil {
 		return "", err
 	}
+	if owner {
+		return "", errOwnerLogin
+	}
 	if !courier {
 		return "", apperr.Validation("у сотрудника нет права «Курьер: доставка заказов» — добавьте его в роли")
+	}
+	if !only && !p.Can(PermStaffManage) {
+		return "", apperr.Forbidden("у сотрудника есть доступ к панели — вход ему меняет тот, у кого право «Роли и сотрудники»")
+	}
+	if err := checkLoginScope(p, allStores, storeIDs); err != nil {
+		return "", err
 	}
 	return userID, nil
 }
 
 // SetCourierLogin задаёт логин и пароль курьера. Старые сессии курьера
-// закрываются — он войдёт заново с новым паролем.
+// закрываются — он войдёт заново с новым паролем. В приложении курьера
+// пароль постоянный, а в панель магазина с ним пустят только после смены
+// (временный): этот логин мог выдать менеджер заказов, а не владелец.
 func (s *Service) SetCourierLogin(ctx context.Context, p *Principal, employeeID string, in CourierLoginInput) (CourierLoginInfo, error) {
 	userID, err := s.courierEmployee(ctx, p, employeeID)
 	if err != nil {
 		return CourierLoginInfo{}, err
 	}
-	login := NormalizeLogin(in.Login)
-	if !loginRe.MatchString(login) {
-		return CourierLoginInfo{}, apperr.Validation("login: латиница, цифры, точка, дефис или _ — от 3 до 32 символов, начинается с буквы или цифры")
-	}
-	var exists bool
-	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM courier_logins WHERE employee_id = $1)`, employeeID).Scan(&exists); err != nil {
-		return CourierLoginInfo{}, err
-	}
-	var hash *string
-	if in.Password != "" || !exists {
-		if n := utf8.RuneCountInString(in.Password); n < 8 || n > 72 {
-			return CourierLoginInfo{}, apperr.Validation("password: от 8 до 72 символов")
-		}
-		h, err := HashPassword(in.Password)
-		if err != nil {
-			return CourierLoginInfo{}, err
-		}
-		hash = &h
-	}
-	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		var err error
-		if exists {
-			_, err = tx.Exec(ctx, `
-				UPDATE courier_logins SET login = $2,
-				       password_hash = COALESCE($3::text, password_hash),
-				       password_changed_at = CASE WHEN $3::text IS NULL THEN password_changed_at ELSE now() END,
-				       failed_attempts = CASE WHEN $3::text IS NULL THEN failed_attempts ELSE 0 END,
-				       locked_until = CASE WHEN $3::text IS NULL THEN locked_until END
-				WHERE employee_id = $1`, employeeID, login, hash)
-		} else {
-			_, err = tx.Exec(ctx, `INSERT INTO courier_logins (employee_id, network_id, login, password_hash) VALUES ($1, $2, $3, $4)`,
-				employeeID, p.NetworkID, login, *hash)
-		}
-		if db.IsUniqueViolation(err, "courier_logins_login_key") {
-			return apperr.Conflict("login_taken", "логин уже занят — придумайте другой")
-		}
-		if err != nil {
-			return err
-		}
-		if hash != nil {
-			_, err = tx.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND app = 'courier' AND revoked_at IS NULL`, userID)
-		}
-		return err
-	})
-	if err != nil {
-		return CourierLoginInfo{}, err
-	}
-	return s.CourierLoginOf(ctx, employeeID)
+	return s.setLogin(ctx, employeeID, p.NetworkID, userID, in, true)
 }
 
 // DeleteCourierLogin отключает вход курьера и закрывает его сессии.
 func (s *Service) DeleteCourierLogin(ctx context.Context, p *Principal, employeeID string) error {
-	if err := p.RequireAny(PermStaffManage, PermOrdersManage); err != nil {
+	userID, err := s.courierEmployee(ctx, p, employeeID)
+	if err != nil {
 		return err
 	}
-	if !httpx.IsUUID(employeeID) {
-		return apperr.NotFound("сотрудник не найден")
-	}
-	return db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		var userID string
-		err := tx.QueryRow(ctx, `
-			DELETE FROM courier_logins cl USING employees e
-			WHERE cl.employee_id = $1 AND e.id = cl.employee_id AND e.network_id = $2
-			RETURNING e.user_id`, employeeID, p.NetworkID).Scan(&userID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return apperr.NotFound("у курьера нет входа")
-		}
-		if err != nil {
-			return err
-		}
-		_, err = tx.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND app = 'courier' AND revoked_at IS NULL`, userID)
-		return err
-	})
+	return deleteLogin(ctx, s.pool, employeeID, userID)
 }
 
 func (s *Service) CourierLoginOf(ctx context.Context, employeeID string) (CourierLoginInfo, error) {
-	i := CourierLoginInfo{EmployeeID: employeeID}
-	err := s.pool.QueryRow(ctx, `
-		SELECT login, password_changed_at, last_login_at, COALESCE(locked_until > now(), false)
-		FROM courier_logins WHERE employee_id = $1`, employeeID).Scan(&i.Login, &i.PasswordChangedAt, &i.LastLoginAt, &i.Locked)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return i, apperr.NotFound("у курьера нет входа")
-	}
-	return i, err
+	return loginOf(ctx, s.pool, employeeID)
 }

@@ -61,7 +61,7 @@ const courierQuery = `
 	JOIN roles r ON r.id = e.role_id
 	JOIN users u ON u.id = e.user_id
 	LEFT JOIN couriers c ON c.employee_id = e.id
-	LEFT JOIN courier_logins cl ON cl.employee_id = e.id
+	LEFT JOIN employee_logins cl ON cl.employee_id = e.id
 	WHERE e.network_id = $1 AND e.status = 'active'
 	  AND ('orders.deliver' = ANY(r.permissions) OR c.employee_id IS NOT NULL)
 	  AND ($2 = '' OR r.is_owner OR e.all_stores OR EXISTS (
@@ -174,7 +174,7 @@ func (s *Service) CourierMe(ctx context.Context, p *identity.Principal) (Courier
 		SELECT e.full_name, u.phone, COALESCE(cl.login, ''), n.name, COALESCE(c.vehicle, 'foot'), COALESCE(c.on_shift, false)
 		FROM employees e JOIN networks n ON n.id = e.network_id JOIN users u ON u.id = e.user_id
 		LEFT JOIN couriers c ON c.employee_id = e.id
-		LEFT JOIN courier_logins cl ON cl.employee_id = e.id
+		LEFT JOIN employee_logins cl ON cl.employee_id = e.id
 		WHERE e.id = $1`, p.EmployeeID).Scan(&me.FullName, &me.Phone, &me.Login, &me.Network, &me.Vehicle, &me.OnShift)
 	if err != nil {
 		return me, err

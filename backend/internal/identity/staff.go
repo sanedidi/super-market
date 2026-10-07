@@ -37,6 +37,10 @@ type Employee struct {
 	AllStores bool      `json:"all_stores"`
 	StoreIDs  []string  `json:"store_ids"`
 	CreatedAt time.Time `json:"created_at"`
+	// Вход в панель: логин (пусто — входа нет), пароль ещё временный, последний вход.
+	Login        string     `json:"login"`
+	TempPassword bool       `json:"temp_password"`
+	LastLoginAt  *time.Time `json:"last_login_at"`
 }
 
 const ownerRoleName = "Владелец"
@@ -184,10 +188,12 @@ const employeeSelect = `
 	SELECT e.id, e.user_id, u.phone, e.full_name, e.role_id, r.name, r.is_owner, e.status, e.all_stores,
 	       COALESCE((SELECT array_agg(es.store_id::text ORDER BY es.store_id) FROM employee_stores es
 	                 WHERE es.employee_id = e.id), '{}'),
-	       e.created_at
+	       e.created_at,
+	       COALESCE(el.login, ''), COALESCE(el.must_change_password, false), el.last_login_at
 	FROM employees e
 	JOIN users u ON u.id = e.user_id
-	JOIN roles r ON r.id = e.role_id`
+	JOIN roles r ON r.id = e.role_id
+	LEFT JOIN employee_logins el ON el.employee_id = e.id`
 
 func (s *Service) ListEmployees(ctx context.Context, p *Principal, limit, offset int) ([]Employee, error) {
 	rows, err := s.pool.Query(ctx, employeeSelect+`

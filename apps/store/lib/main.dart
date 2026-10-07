@@ -3,10 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'lock/app_lock.dart';
 import 'lock/pin_screens.dart';
+import 'login/password_login.dart';
 import 'push.dart';
 import 'screens/shell.dart';
 import 'setup/setup_screens.dart';
@@ -80,20 +80,21 @@ class _StoreAppState extends State<StoreApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    final api = context.read<Api>();
     final loggedIn = context.select<Api, bool>((a) => a.loggedIn);
     final hasPin = context.select<AppLock, bool>((l) => l.hasPin);
     final locked = context.select<AppLock, bool>((l) => l.locked);
+    final mustChange = context.select<StoreState, bool>((s) => s.mustChangePassword);
+    final meReady = context.select<StoreState, bool>((s) => s.me != null);
     final Widget home;
     if (!loggedIn) {
-      home = LoginScreen(
-        api: api,
-        title: 'Вход в магазин',
-        subtitle: 'Введите номер сотрудника — пришлём код в Telegram-бот Super Market.',
-        logo: const IconBox(Icons.storefront_rounded, bg: AppColors.primary, fg: AppColors.white, size: 56, iconSize: 30, radius: 18),
-        note: 'Код из Telegram нужен только при первом входе на телефоне. Дальше — свой код из 4 цифр или Face ID.',
-        onOpenUrl: (url) => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
-      );
+      // Вход по логину и паролю (код из Telegram для магазина отключён).
+      home = const PasswordLoginScreen();
+    } else if (mustChange) {
+      // Временный пароль от Super Market — сначала свой пароль, потом код из 4 цифр.
+      home = const ChangePasswordScreen();
+    } else if (!hasPin && !meReady) {
+      // Ждём профиль: вдруг пароль временный.
+      home = const _Gate();
     } else if (!hasPin) {
       home = const PinSetupScreen();
     } else {

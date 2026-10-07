@@ -1,5 +1,6 @@
 export * from './api'
 export * from './auth'
+export * from './passwordLogin'
 export * from './format'
 export * from './phone'
 export * from './remove'

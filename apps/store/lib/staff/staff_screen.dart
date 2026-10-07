@@ -108,7 +108,12 @@ class _StaffScreenState extends State<StaffScreen> {
                       child: Text(_initials('${e['full_name']}'), style: const TextStyle(fontWeight: FontWeight.w600)),
                     ),
                     title: Text('${e['full_name']}', style: AppText.bodyStrong),
-                    subtitle: Text('${e['role_name']} · ${formatPhone(e['phone'])}', style: AppText.small),
+                    subtitle: Text(
+                      '${e['role_name']} · ${formatPhone(e['phone'])}\n'
+                      '${(e['login'] as String?)?.isNotEmpty == true ? 'логин ${e['login']}' : 'нет входа — выдайте логин в панели'}',
+                      style: AppText.small,
+                    ),
+                    isThreeLine: true,
                     trailing: IconButton(
                       icon: const Icon(Icons.call_rounded, color: AppColors.successInk),
                       onPressed: () => launchUrl(Uri.parse('tel:${e['phone']}')),
@@ -117,7 +122,7 @@ class _StaffScreenState extends State<StaffScreen> {
               ]),
             ),
           const SizedBox(height: 12),
-          const Text('Роли и права настраиваются в панели магазина.', style: AppText.small, textAlign: TextAlign.center),
+          const Text('Роли, права и логины для входа настраиваются в панели магазина.', style: AppText.small, textAlign: TextAlign.center),
         ]),
       ),
     );
@@ -194,7 +199,7 @@ class _EmployeeSheetState extends State<_EmployeeSheet> {
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       Navigator.of(context).pop(true);
-      messenger.showSnackBar(SnackBar(content: Text(e == null ? 'Сотрудник добавлен — он входит по своему номеру' : 'Сохранено')));
+      messenger.showSnackBar(SnackBar(content: Text(e == null ? 'Сотрудник добавлен. Логин и пароль для входа выдайте в панели магазина → Сотрудники' : 'Сохранено')));
     } catch (ex) {
       if (mounted) setState(() => _error = ex.toString());
     } finally {

@@ -42,7 +42,8 @@ type Config struct {
 	DevOTPCode  string
 	BotUsername string
 	// ReviewPhone/ReviewCode — демо-аккаунт для проверки в магазинах приложений:
-	// приложения покупателя, магазина и курьера «по пути» (не супер-админа).
+	// приложения покупателя и курьера «по пути» (не супер-админа и не магазина:
+	// магазин входит по логину и паролю).
 	ReviewPhone string
 	ReviewCode  string
 }
@@ -86,6 +87,9 @@ type Tokens struct {
 	RefreshToken string `json:"refresh_token"`
 	TokenType    string `json:"token_type"`
 	ExpiresIn    int    `json:"expires_in"`
+	// PasswordChangeRequired — вошли по временному паролю: в панели магазина
+	// открыт только экран смены пароля.
+	PasswordChangeRequired bool `json:"password_change_required,omitempty"`
 }
 
 var (
@@ -218,14 +222,17 @@ func (s *Service) VerifyCodeTerms(ctx context.Context, rawPhone, code, app, user
 	if app != AppClient && app != AppStore && app != AppAdmin && app != AppCrowd {
 		return Tokens{}, apperr.Validation("app: ожидается client, store, admin или crowd")
 	}
+	// В панель магазина и «SM Магазин» входят по логину и паролю
+	// (/auth/store/login); вход по коду для них отключён.
+	if app == AppStore {
+		return Tokens{}, errCodeLoginDisabled
+	}
 	ph, err := phone.Normalize(rawPhone)
 	if err != nil {
 		return Tokens{}, apperr.Validation("неверный номер телефона")
 	}
 	// Демо-номер для проверки в магазинах приложений не открывает панель
-	// супер-админа. В приложении магазина действуют обычные проверки:
-	// номер должен быть у активного сотрудника (его заводит владелец
-	// демо-сети); в приложении курьера — обычная регистрация с согласием.
+	// супер-админа; в приложении курьера — обычная регистрация с согласием.
 	if s.cfg.ReviewPhone != "" && ph == s.cfg.ReviewPhone && app == AppAdmin {
 		return Tokens{}, errCodeInvalid
 	}
