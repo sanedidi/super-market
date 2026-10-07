@@ -6,6 +6,7 @@ import '../core/codes.dart';
 import '../core/debts.dart';
 import '../core/journal.dart';
 import '../core/money.dart';
+import '../core/quick.dart';
 import 'pos.dart';
 
 /// Команды быстрого режима — клавиши, которые не печатают символ.
@@ -76,6 +77,172 @@ class SaleController extends ChangeNotifier {
     return _plu!;
   }
 
+  // ------------------------------------------------------ быстрые кнопки
+
+  List<QuickTab>? _tabs;
+  String? _tabsKey;
+
+  /// Вкладки плиток: «Частые» и разделы (пересобираются при смене каталога).
+  List<QuickTab> get quickTabs {
+    final k = '${catalog.version}/${catalog.length}/${catalog.quickPinned.join(',')}/${catalog.quickTop.length}';
+    if (_tabs == null || _tabsKey != k) {
+      _tabs = buildQuickTabs(catalog);
+      _tabsKey = k;
+      if (tab >= _tabs!.length) tab = 0;
+    }
+    return _tabs!;
+  }
+
+  /// Открытая вкладка плиток.
+  int tab = 0;
+
+  void selectTab(int i) {
+    tab = i;
+    notifyListeners();
+  }
+
+  /// Сколько штук товара уже в чеке (для значка на плитке), 0 — нет.
+  int inCart(String productId) {
+    if (mode != SaleMode.sale) return 0;
+    final l = cart.lineOf(productId);
+    return l == null ? 0 : l.qty;
+  }
+
+  /// Нажатие на плитку: +1 в чек; набранное на клавиатуре — количество
+  /// (у весового товара — вес в кг: «1,25»).
+  void tapProduct(Product p) {
+    if (busy || mode == SaleMode.held) return;
+    if (p.marked) {
+      _error('Маркированный товар — сканируйте DataMatrix на упаковке', note: p.name);
+      notifyListeners();
+      return;
+    }
+    final raw = input.trim();
+    var qty = 1000;
+    if (raw.isNotEmpty) {
+      _clearInput();
+      qty = parseQty(raw);
+      if (qty <= 0) {
+        _error('Количество — число больше нуля', note: p.name);
+        notifyListeners();
+        return;
+      }
+    } else if (p.fractional) {
+      _error('Наберите вес и нажмите плитку ещё раз', note: '${p.name} · например 1,25 — это 1 кг 250 г', sound: false);
+      notifyListeners();
+      return;
+    }
+    _add(p, qty: qty);
+    notifyListeners();
+  }
+
+  /// Клавиша экранной цифровой клавиатуры: цифры, «00», «,», ⌫, ×, «Код», «Ввод».
+  Future<void> pad(String k) async {
+    switch (k) {
+      case '⌫':
+        await command(Cmd.backspace);
+      case '×':
+        await command(Cmd.star);
+      case 'Ввод':
+        await command(Cmd.enter);
+      case 'Код':
+        _byCode();
+        notifyListeners();
+      default:
+        typed(k);
+    }
+  }
+
+  /// Ввод с экранной клавиатуры: не сканер, даже если нажимать быстро.
+  void typed(String s) {
+    if (busy) return;
+    if (mode == SaleMode.held) {
+      final n = int.tryParse(s);
+      if (n != null) _unhold(n - 1);
+      return;
+    }
+    if (s == ',' && (input.contains(',') || input.contains('.'))) return;
+    if (input.length >= 12) return;
+    input += s;
+    _scan.reset();
+    notifyListeners();
+  }
+
+  /// «Код»: набранные цифры — короткий код товара без штрихкода.
+  void _byCode() {
+    final raw = input.trim();
+    _clearInput();
+    if (raw.isEmpty || !RegExp(r'^[0-9]+$').hasMatch(raw)) {
+      _error('Наберите код товара и нажмите «Код»', sound: false);
+      return;
+    }
+    final p = catalog.byPlu(int.parse(raw));
+    if (p == null) {
+      _error('Код $raw не найден', note: 'Поиск по названию: F2');
+    } else {
+      _add(p);
+    }
+  }
+
+  // ---------------------------------------------------------- поиск (F2)
+
+  /// Справа вместо плиток — поиск с экранной клавиатурой.
+  bool searching = false;
+  String query = '';
+  int searchSel = 0;
+  List<Product> results = const [];
+
+  void openSearch() {
+    searching = true;
+    query = '';
+    results = const [];
+    searchSel = 0;
+    notifyListeners();
+  }
+
+  void closeSearch() {
+    searching = false;
+    query = '';
+    results = const [];
+    notifyListeners();
+  }
+
+  /// Символ в строку поиска (экранная или обычная клавиатура, сканер).
+  void searchType(String ch) {
+    if (query.length >= 60) return;
+    query += ch;
+    _runSearch();
+  }
+
+  void searchBackspace() {
+    if (query.isEmpty) return;
+    query = query.substring(0, query.length - 1);
+    _runSearch();
+  }
+
+  void searchMove(int d) {
+    if (results.isEmpty) return;
+    searchSel = (searchSel + d).clamp(0, results.length - 1);
+    notifyListeners();
+  }
+
+  void _runSearch() {
+    final q = query.trim();
+    results = q.isEmpty ? const [] : catalog.search(q, limit: 40);
+    searchSel = 0;
+    notifyListeners();
+  }
+
+  /// Товар из поиска — в чек, поиск закрывается.
+  void pickResult([Product? p]) {
+    final pick = p ?? (results.isEmpty ? null : results[searchSel.clamp(0, results.length - 1)]);
+    if (pick == null) return;
+    searching = false;
+    query = '';
+    results = const [];
+    addProduct(pick);
+  }
+
   int get due => cart.total;
 
   /// Можно оплачивать: чек открыт и не пустой.
@@ -130,7 +297,11 @@ class SaleController extends ChangeNotifier {
       case Cmd.orders:
         _error('Онлайн-заказы на кассе — в следующем обновлении');
       case Cmd.search:
-        onNavigate?.call(c);
+        if (searching) {
+          closeSearch();
+        } else {
+          openSearch();
+        }
       case Cmd.returns:
       case Cmd.shiftMenu:
         if (cart.isEmpty || mode == SaleMode.paid) {
@@ -285,6 +456,12 @@ class SaleController extends ChangeNotifier {
     cart = Cart();
     paid = null;
     mode = SaleMode.sale;
+  }
+
+  /// Подсказка над чеком (без звука ошибки).
+  void notice(String text) {
+    _error(text, sound: false);
+    notifyListeners();
   }
 
   void _error(String text, {String note = '', String right = '', bool sound = true}) {
@@ -472,7 +649,8 @@ class SaleController extends ChangeNotifier {
       paid = PaidInfo(rec, label);
       mode = SaleMode.paid;
       rowFocused = false;
-      cart.selected = null;
+      // Чек пробит — список очищается, в заголовке остаются итог и сдача.
+      cart = Cart();
       msg = null;
       onSound?.call(true);
       return null;
@@ -512,7 +690,8 @@ class SaleController extends ChangeNotifier {
       paid = PaidInfo(rec, '$label · долг ${fmtMoney(who.debt + debt)}');
       mode = SaleMode.paid;
       rowFocused = false;
-      cart.selected = null;
+      // Чек пробит — список очищается, в заголовке остаются итог и сдача.
+      cart = Cart();
       msg = null;
       onSound?.call(true);
       return null;

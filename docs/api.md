@@ -31,6 +31,9 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 `client` и `crowd` с обычными проверками: в `crowd` — регистрация с `terms_accepted: true` (иначе 422
 `terms_required`). В `admin` демо-номер не входит никогда (400). Для проверки «SM Магазин» проверяющим
 дают логин и пароль сотрудника демо-сети.
+Всё это вместе с штатным курьером (логин `review`) и логином «SM Магазин» для номера проверки (`review.store`)
+заводит команда `demo review` (после `demo seed`; в GitHub — Actions → demo-data → review), в конце она
+печатает текст для заметок проверяющему.
 
 ### Вход в магазин по логину и паролю
 
@@ -349,6 +352,8 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 | --- | --- | --- |
 | POST | `/pos/activate` | `{code, app_version}` → `{token, device_id, store_id, …}`; без токена |
 | GET | `/pos/catalog?since=<version>` | Товары (цена, штрихкоды, PLU, ИКПУ, НДС, маркировка), кассиры с хешем ПИНа, способы оплаты (`kind`: cash/card/qr/other), настройки чека. Без `since` — целиком, с `since` — изменения (с перекрытием в минуту) |
+| | | Товары общего каталога — только те, что магазин может продать: свои, с ценой сети или магазина, с кодом на кассе или с базовой ценой. У товара `image` (первое фото) и `category` (раздел верхнего уровня). `quick {pinned, top}` — быстрые кнопки: закреплённые и самые продаваемые в магазине за 30 дней (до 200). `epoch` — поколение каталога: касса шлёт своё `?epoch=`, другое — каталог целиком (сейчас 2) |
+| PUT | `/pos/quick-keys` | `{product_ids: [...]}` (до 30, по порядку) — закреплённые товары вкладки «Частые» магазина кассы. Кассир с правом `pos.settings` («Настройка кассы»; у владельца — всегда) → `{pinned, top}` |
 | POST | `/pos/login` | `{employee_id, pin}` — проверка ПИНа онлайн; 5 ошибок → блок на 5 минут (`429 pin_locked`) |
 | GET | `/pos/shifts/current` | Открытая смена кассы с X-отчётом или `{shift: null}` |
 | POST | `/pos/shifts` | Открыть смену `{client_uid, opening_cash, opened_at?}`; 201/200 (повтор), `409 shift_open` |
@@ -457,6 +462,9 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 | GET/PUT | `/admin/billing/settings` | `usd_rate` (курс для счетов), `grace_days` (дней на оплату), `auto_charge_balance` |
 | GET/POST | `/admin/billing/tariffs?limit=&offset=` | `{"name","min_stores","price_per_store"}` — цена за магазин в месяц, USD |
 | PATCH | `/admin/billing/tariffs/{id}` | в т.ч. `is_active` |
+
+Тарифы для сайта, без входа: `GET /public/tariffs` → `{"items": [{"name", "min_stores", "max_stores", "price_per_store", "currency": "USD"}]}` —
+только действующие, по возрастанию `min_stores`; `max_stores` — до следующего тарифа (у последнего `null`). Кэш 5 минут.
 | GET | `/admin/billing/networks?overdue=true` | сети: магазины, цена, баланс, долг |
 | GET/PATCH | `/admin/billing/networks/{id}` | `{"custom_price_per_store"}`, `{"clear_custom_price":true}`, `{"billing_from":"YYYY-MM-01"}` |
 | GET | `/admin/billing/invoices?network_id=&status=` | счета |

@@ -15,6 +15,8 @@ class Product {
     this.vatBp = 1200,
     this.marked = false,
     this.plu,
+    this.image = '',
+    this.category = '',
   });
 
   final String id;
@@ -34,6 +36,10 @@ class Product {
   final bool marked;
   final int? plu;
 
+  /// Первое фото (ссылка) и раздел верхнего уровня — для быстрых кнопок.
+  final String image;
+  final String category;
+
   factory Product.fromJson(Map<String, dynamic> j) => Product(
         id: j['id'] as String,
         name: j['name'] as String? ?? '',
@@ -47,6 +53,8 @@ class Product {
         vatBp: parseMoney(j['vat_rate'] ?? '12'),
         marked: j['marked'] == true,
         plu: (j['plu'] as num?)?.toInt(),
+        image: j['image'] as String? ?? '',
+        category: j['category'] as String? ?? '',
       );
 
   Map<String, dynamic> toJson() => {
@@ -62,6 +70,8 @@ class Product {
         'vat_rate': moneyApi(vatBp),
         'marked': marked,
         'plu': plu,
+        'image': image,
+        'category': category,
       };
 }
 
@@ -91,6 +101,7 @@ class Perm {
   static const discount = 'sales.discount';
   static const returns = 'sales.return';
   static const debtsGive = 'debts.give';
+  static const posSettings = 'pos.settings';
 }
 
 /// Покупатель с долгом в магазине кассы (для продажи в долг без связи).
@@ -212,6 +223,13 @@ class Catalog {
 
   /// Версия с сервера — передаётся как since в следующий раз.
   String? version;
+
+  /// Поколение каталога: сервер присылает каталог целиком, если оно у кассы другое.
+  int epoch = 0;
+
+  /// Быстрые кнопки: закреплённые владельцем и самые продаваемые за 30 дней (id товаров).
+  List<String> quickPinned = const [];
+  List<String> quickTop = const [];
   List<Cashier> cashiers;
   List<PayMethod> methods;
   PosSettings settings;
@@ -298,6 +316,12 @@ class Catalog {
     if (j['settings'] is Map) settings = PosSettings.fromJson(j['settings'] as Map<String, dynamic>);
     openShiftId = j['open_shift_id'] as String?;
     version = j['version'] as String? ?? version;
+    epoch = (j['epoch'] as num?)?.toInt() ?? epoch;
+    if (j['quick'] is Map) {
+      final q = j['quick'] as Map<String, dynamic>;
+      quickPinned = ((q['pinned'] as List?) ?? const []).map((e) => '$e').toList();
+      quickTop = ((q['top'] as List?) ?? const []).map((e) => '$e').toList();
+    }
     if (j['debtors'] is List) {
       debtors = {
         for (final e in (j['debtors'] as List).cast<Map<String, dynamic>>())
@@ -309,6 +333,8 @@ class Catalog {
   Map<String, dynamic> toJson() => {
         'full': true,
         'version': version,
+        'epoch': epoch,
+        'quick': {'pinned': quickPinned, 'top': quickTop},
         'products': [for (final p in _byId.values) p.toJson()],
         'cashiers': [for (final c in cashiers) c.toJson()],
         'payment_methods': [for (final m in methods) m.toJson()],

@@ -1,18 +1,21 @@
 name: demo-data
 
 # Демо-данные на сервере: seed — загрузить (сети, магазины, товары, остатки,
-# продажи, акции, баннеры), clean — удалить всё, что загрузил seed.
+# продажи, акции, баннеры), review — демо-доступ для проверки в App Store /
+# Google Play (нужны REVIEW_LOGIN в .env и загруженный seed; данные для
+# заметок проверяющему — в логе шага Run), clean — удалить всё, что
+# загрузили seed и review.
 # Запускается вручную: Actions → demo-data → Run workflow.
 on:
   workflow_dispatch:
     inputs:
       action:
-        description: "seed — загрузить, clean — удалить"
+        description: "seed — загрузить, review — доступ для App Store / Google Play, clean — удалить"
         type: choice
-        options: [seed, clean]
+        options: [seed, review, clean]
         default: seed
       owner_phone:
-        description: "Телефон владельца Baraka Market (пусто — первый из SUPER_ADMIN_PHONES)"
+        description: "Только для seed: телефон владельца Baraka Market (пусто — первый из SUPER_ADMIN_PHONES)"
         required: false
         default: ""
 
@@ -52,4 +55,7 @@ jobs:
           ACTION: ${{ inputs.action }}
           OWNER_PHONE: ${{ inputs.owner_phone }}
         run: |
-          ssh "$SSH_USER@$SSH_HOST" "cd $APP_DIR && docker compose -f deploy/docker-compose.prod.yml --env-file .env run --rm --no-deps -T api demo $ACTION $OWNER_PHONE"
+          # Телефон владельца нужен только seed.
+          ARGS="$ACTION"
+          if [ "$ACTION" = "seed" ] && [ -n "$OWNER_PHONE" ]; then ARGS="$ACTION $OWNER_PHONE"; fi
+          ssh "$SSH_USER@$SSH_HOST" "cd $APP_DIR && docker compose -f deploy/docker-compose.prod.yml --env-file .env run --rm --no-deps -T api demo $ARGS"

@@ -43,6 +43,7 @@ class FakeServer {
             {'id': 'bread', 'name': 'Хлеб', 'unit': 'шт', 'price': '6000.00', 'barcodes': ['4601234567893'], 'ikpu': '10000000000000000', 'vat_rate': '12.00', 'plu': 1},
             {'id': 'banana', 'name': 'Бананы', 'unit': 'кг', 'fractional': true, 'price': '24000.00', 'barcodes': [], 'plu': 10},
           ],
+          'quick': {'pinned': ['banana'], 'top': ['bread', 'banana']},
           'cashiers': [
             {'id': 'e1', 'name': 'Дилноза', 'pin_hash': pinHash('e1', '1234'), 'permissions': ['sales.pos']},
           ],
@@ -150,6 +151,7 @@ void main() {
     expect(await sale.pay('cash', received: 5000000), isNull);
     expect(sale.mode, SaleMode.paid);
     expect(sale.paid!.record.change, 5000000 - 3588000);
+    expect(sale.cart.isEmpty, isTrue); // чек пробит — список очищен
     expect(pos.queue, 2); // открытие смены + продажа
 
     // Следующий покупатель: код 1 + Enter = хлеб, сразу новый чек; оплата картой.
@@ -266,6 +268,58 @@ void main() {
     await pos.sync();
     await until(() => pos.queue == 0);
     expect(server.sales.length, 1);
+    sale.dispose();
+  });
+
+  test('плитки, экранная клавиатура и поиск', () async {
+    await pos.activate('ABCD2345');
+    expect(pos.login(pos.catalog.cashiers.single, '1234'), isNull);
+    await pos.openShift(0);
+    final sale = SaleController(pos);
+
+    expect(sale.quickTabs.first.products.map((p) => p.id), ['banana', 'bread']);
+    final bread = pos.catalog.byId('bread')!;
+    final banana = pos.catalog.byId('banana')!;
+
+    // Плитка — +1; цифры, потом плитка — столько штук.
+    sale.tapProduct(bread);
+    await sale.pad('3');
+    sale.tapProduct(bread);
+    expect(sale.cart.lines.single.qty, 4000);
+    expect(sale.inCart('bread'), 4000);
+
+    // Весовой без веса — подсказка; «1,25» и плитка — 1,25 кг.
+    sale.tapProduct(banana);
+    expect(sale.msg?.kind, MsgKind.error);
+    expect(sale.cart.count, 1);
+    await sale.pad('1');
+    await sale.pad(',');
+    await sale.pad(',');
+    await sale.pad('2');
+    await sale.pad('5');
+    expect(sale.input, '1,25');
+    sale.tapProduct(banana);
+    expect(sale.cart.lineOf('banana')!.qty, 1250);
+
+    // «Код»: 10 — бананы по коду (весовой — штука по коду, как Enter), неизвестный код — ошибка.
+    await sale.pad('9');
+    await sale.pad('9');
+    await sale.pad('Код');
+    expect(sale.msg?.kind, MsgKind.error);
+    await sale.pad('⌫');
+    expect(sale.input, '');
+
+    // Поиск: буквы — в строку, Enter — в чек, поиск закрывается.
+    await sale.command(Cmd.search);
+    expect(sale.searching, isTrue);
+    for (final ch in ['х', 'л', 'е']) {
+      sale.searchType(ch);
+    }
+    expect(sale.results.map((p) => p.id), ['bread']);
+    sale.pickResult();
+    expect(sale.searching, isFalse);
+    expect(sale.cart.lineOf('bread')!.qty, 5000);
+
     sale.dispose();
   });
 }

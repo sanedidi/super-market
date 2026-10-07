@@ -134,6 +134,9 @@ func TestPOS(t *testing.T) {
 		t.Fatalf("empty delta = %v", d.Body["products"])
 	}
 	a.expect(a.do("PUT", "/admin/pos/products/"+sugar+"/tax", adminTok, map[string]any{"package_code": "1500"}), 200, "touch sugar")
+	if d := a.expect(posDo(a, "GET", "/pos/catalog?epoch=1&since="+ver, dt, "", nil), 200, "old epoch"); d.Body["full"] != true || d.Body["epoch"] != float64(2) {
+		t.Fatalf("old epoch = %v", d.Body["full"])
+	}
 	if d := a.expect(posDo(a, "GET", "/pos/catalog?since="+ver, dt, "", nil), 200, "delta"); len(d.Body["products"].([]any)) != 1 {
 		t.Fatalf("delta after change = %v", d.Body["products"])
 	}
@@ -235,6 +238,39 @@ func TestPOS(t *testing.T) {
 	}
 	if q, _ := stockOf(t, a, tok, wh, cola); q != "0" && q != "0.000" {
 		t.Fatalf("cola stock = %s", q)
+	}
+
+	// Быстрые кнопки: самые продаваемые — по чекам магазина, закрепляет кассир
+	// с правом «Настройка кассы». Товар общего каталога без цены на кассу не идёт.
+	unitID := a.expect(a.do("GET", "/admin/products/"+cola, adminTok, nil), 200, "cola").str("unit_id")
+	catID := a.expect(a.do("GET", "/admin/products/"+cola, adminTok, nil), 200, "cola").str("category_id")
+	noPrice := a.expect(a.do("POST", "/admin/products", adminTok, map[string]any{
+		"name": "Товар без цены", "category_id": catID, "unit_id": unitID, "base_price": 0,
+	}), 201, "no price product").str("id")
+	cat = a.expect(posDo(a, "GET", "/pos/catalog", dt, "", nil), 200, "catalog quick")
+	quick := cat.Body["quick"].(map[string]any)
+	if top := quick["top"].([]any); len(top) == 0 || top[0] != cola || len(quick["pinned"].([]any)) != 0 {
+		t.Fatalf("quick = %v", quick)
+	}
+	for _, x := range cat.Body["products"].([]any) {
+		pm := x.(map[string]any)
+		if pm["id"] == noPrice {
+			t.Fatal("product without price on pos")
+		}
+		if pm["id"] == cola && pm["category"] == "" {
+			t.Fatalf("cola category = %v", pm)
+		}
+	}
+	a.expect(posDo(a, "PUT", "/pos/quick-keys", dt, "", map[string]any{"product_ids": []string{cola}}), 401, "quick keys no cashier")
+	a.expect(posDo(a, "PUT", "/pos/quick-keys", dt, cashier, map[string]any{"product_ids": []string{cola}}), 403, "quick keys no perm")
+	a.expect(posDo(a, "PUT", "/pos/quick-keys", dt, owner, map[string]any{"product_ids": []string{cola, cola}}), 400, "quick keys twice")
+	pinned := a.expect(posDo(a, "PUT", "/pos/quick-keys", dt, owner, map[string]any{"product_ids": []string{sugar, cola}}), 200, "quick keys")
+	if fmt.Sprint(pinned.Body["pinned"]) != fmt.Sprint([]any{sugar, cola}) {
+		t.Fatalf("pinned = %v", pinned.Body)
+	}
+	quick = a.expect(posDo(a, "GET", "/pos/catalog", dt, "", nil), 200, "catalog pinned").Body["quick"].(map[string]any)
+	if fmt.Sprint(quick["pinned"]) != fmt.Sprint([]any{sugar, cola}) {
+		t.Fatalf("catalog pinned = %v", quick)
 	}
 
 	// Изъятие наличных (инкассация); повтор не задваивает.

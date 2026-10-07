@@ -206,7 +206,10 @@ class PosController extends ChangeNotifier {
   /// Каталог: первый раз целиком, дальше — изменения.
   Future<bool> syncCatalog() async {
     try {
-      final q = <String, String>{if (catalog.version != null && catalog.length > 0) 'since': catalog.version!};
+      final q = <String, String>{
+        'epoch': '${catalog.epoch}',
+        if (catalog.version != null && catalog.length > 0) 'since': catalog.version!,
+      };
       final res = await api.get('/pos/catalog', query: q) as Map<String, dynamic>;
       catalog.apply(res);
       catalogAt = _now();
@@ -541,6 +544,31 @@ class PosController extends ChangeNotifier {
 
   /// Принять погашение долга может любой кассир — если магазин даёт в долг
   /// или долги в сети уже есть (магазин мог выключить продажу в долг).
+  /// Быстрые кнопки настраивает кассир с правом «Настройка кассы» (владелец — всегда).
+  bool get canQuickKeys => cashier?.can(Perm.posSettings) ?? false;
+
+  /// Закрепить товары на вкладке «Частые» (порядок — как в списке). Сохраняется
+  /// на сервере для всех касс магазина. Ошибка — текст, успех — null.
+  Future<String?> saveQuickKeys(List<String> productIds) async {
+    if (!canQuickKeys) return 'Нет права «Настройка кассы»';
+    try {
+      final res = await api.send('PUT', '/pos/quick-keys', body: {'product_ids': productIds}, cashier: cashier?.id)
+          as Map<String, dynamic>;
+      catalog.quickPinned = ((res['pinned'] as List?) ?? const []).map((e) => '$e').toList();
+      catalog.quickTop = ((res['top'] as List?) ?? catalog.quickTop).map((e) => '$e').toList();
+      await store.writeJson('catalog.json', {
+        ...catalog.toJson(),
+        if (catalogAt != null) 'saved_at': catalogAt!.toUtc().toIso8601String(),
+      });
+      online = true;
+      notifyListeners();
+      return null;
+    } on ApiError catch (e) {
+      _netError(e);
+      return e.isNetwork ? 'Нет связи с сервером — быстрые кнопки сохраняются на сервере, попробуйте позже' : e.message;
+    }
+  }
+
   bool get canTakeDebtPayment => catalog.settings.debtEnabled || catalog.debtors.isNotEmpty;
 
   /// Долг по номеру из чеков и погашений в очереди (ещё не на сервере).

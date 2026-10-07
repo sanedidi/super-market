@@ -102,7 +102,8 @@ func seed(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, ownerPhone
 	if err != nil {
 		return err
 	}
-	s.c = client{h: app.Handler, code: code}
+	s.c = client{h: app.Handler, code: code, pool: pool, secret: cfg.JWTSecret}
+	s.c.reviewPhone, s.c.reviewCode, _ = cfg.Review() // номер проверки принимает только свой код
 
 	// Что бы ни случилось дальше — забрать права и сессии, записать созданных пользователей.
 	defer s.finish()

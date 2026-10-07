@@ -11,21 +11,58 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@900&amp;text=Super%20Market&amp;display=swap">
+<link rel="stylesheet" href="/site/landing.css">
 <link rel="stylesheet" href="/site/site.css">
+<script src="/site/landing.js" defer></script>
 </head>
-<body>
-<a class="skip" href="#main">Перейти к содержанию</a>
-<header class="topbar">
-  <div class="wrap topbar__in">
-    <span class="brand"><span class="brand__logo" aria-hidden="true">SM</span>Super Market</span>
+<body class="docpage">
+<a class="skip-link" href="#main">Перейти к содержанию</a>
+<header class="site-header">
+  <div class="container site-header__in">
+    <a class="logo" href="/">Super Market</a>
+    <nav class="site-nav" aria-label="Разделы">
+      <a href="/#stores">Магазинам</a>
+      <a href="/#buyers">Покупателям</a>
+      <a href="/#couriers">Курьерам</a>
+      <a href="/#pos">Касса</a>
+      <a href="/#pricing">Тарифы</a>
+      <a href="/#faq">Вопросы</a>
+    </nav>
+    <div class="site-header__actions">
+      <nav class="lang-switch" aria-label="Язык / Til">
+        <a href="/uz" lang="uz" hreflang="uz">UZ</a><a href="/courier-terms" lang="ru" hreflang="ru" aria-current="page">RU</a>
+      </nav>
+      <a class="button button--secondary" href="https://store.super-market.uz/" data-link="login">Войти</a>
+      <a class="button button--primary" href="https://store.super-market.uz/" data-link="register">Подключить магазин</a>
+      <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="mobile-menu" aria-label="Меню">
+        <svg class="i-menu" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg class="i-close" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="mobile-menu" id="mobile-menu">
+    <div class="container">
+      <nav aria-label="Разделы">
+        <a href="/#stores">Магазинам</a>
+        <a href="/#buyers">Покупателям</a>
+        <a href="/#couriers">Курьерам</a>
+        <a href="/#pos">Касса</a>
+        <a href="/#pricing">Тарифы</a>
+        <a href="/#faq">Вопросы</a>
+      </nav>
+      <div class="mobile-menu__actions">
+        <a class="button button--lg button--primary" href="https://store.super-market.uz/" data-link="register">Подключить магазин</a>
+        <a class="button button--lg button--secondary" href="https://store.super-market.uz/" data-link="login">Войти</a>
+      </div>
+    </div>
   </div>
 </header>
 
-<main id="main">
-  <article class="wrap doc">
-    <h1>Условия для курьеров «по пути» Super Market</h1>
-    <p><strong>Дата вступления в силу: [дата]</strong></p>
-    <nav class="card toc" aria-labelledby="toc-title">
+<main id="main" class="docmain">
+  <div class="container docmain__grid">
+    <aside class="docmain__aside">
+    <nav class="toc" aria-labelledby="toc-title">
       <p class="toc__title" id="toc-title">Содержание</p>
       <ol>
         <li><a href="#s-1">1. Что такое «курьер по пути»</a></li>
@@ -45,7 +82,12 @@
         <li><a href="#s-15">15. Контакты</a></li>
       </ol>
     </nav>
-    <p>Эти Условия — публичная оферта ЯТТ <strong>ANVAROV SHAHZODBEK XOJIMUROD O‘G‘LI</strong> (ИНН [ИНН], адрес: [адрес], далее — «Super Market», «мы») для людей, которые доставляют заказы покупателям по пути своих дел (далее — «курьер», «вы»). Отмечая флажок «Я прочитал и согласен с Условиями для курьеров и Политикой конфиденциальности» в приложении <strong>Super Market Курьер</strong>, вы принимаете эти Условия.</p>
+    </aside>
+  <article class="doc doc-card">
+    <p class="crumbs">Документы / Условия для курьеров</p>
+    <h1>Условия для курьеров «по пути»</h1>
+    <p class="doc-meta">Действует с 6 октября 2026 · публичная оферта</p>
+    <p>Эти Условия — публичная оферта ЯТТ <strong>ANVAROV SHAHZODBEK XOJIMUROD O‘G‘LI</strong> (запись в ЕГРСП № 7967982 от 25.08.2026, адрес: г. Ташкент, Юнусабадский район, Регистон, 6-тор кўчаси, 10-уй, далее — «Super Market», «мы») для людей, которые доставляют заказы покупателям по пути своих дел (далее — «курьер», «вы»). Отмечая флажок «Я прочитал и согласен с Условиями для курьеров и Политикой конфиденциальности» в приложении <strong>Super Market Курьер</strong>, вы принимаете эти Условия.</p>
     <h2 id="s-1">1. Что такое «курьер по пути»</h2>
     <p>1.1. Вы сами решаете, когда и какие заказы брать. Минимального числа заказов, графика и смен нет.</p>
     <p>1.2. Вы оказываете услугу доставки самостоятельно, своим транспортом (пешком, на велосипеде, самокате или автомобиле) и на свой риск. Эти Условия не являются трудовым договором; вы не являетесь сотрудником Super Market или магазина.</p>
@@ -85,14 +127,14 @@
     <h2 id="s-8">8. Вознаграждение и выплаты</h2>
     <p>8.1. Вознаграждение за заказ указано в ленте до принятия и фиксируется в момент принятия. Если заказ долго ждал курьера, к вознаграждению может добавляться доплата — она также видна заранее.</p>
     <p>8.2. Вознаграждение начисляется на ваш баланс <strong>после вручения заказа по коду покупателя</strong>. Баланс и история начислений, удержаний и выплат — в разделе «Заработок».</p>
-    <p>8.3. Выплата производится <strong>раз в неделю, по понедельникам</strong>, на [способ выплаты]. Выплачивается весь положительный баланс.</p>
+    <p>8.3. Выплата производится <strong>раз в неделю, по понедельникам</strong>, на банковскую карту курьера (Uzcard или Humo). Выплачивается весь положительный баланс.</p>
     <p>8.4. Из баланса могут удерживаться штрафы, назначенные по разделу 9.</p>
     <p>8.5. Налоги. Вы самостоятельно отвечаете за уплату налогов со своего дохода, если иное не установлено законодательством или отдельным соглашением с нами. </p>
     <h2 id="s-9">9. Нарушения, штрафы и блокировка</h2>
     <p>9.1. Нарушениями считаются, в частности: неявка в магазин в срок; невручение заказа; обоснованные жалобы покупателя или магазина; нарушение раздела 7.</p>
     <p>9.2. Каждую жалобу рассматривает поддержка Super Market. По итогам она может засчитать нарушение (это влияет на уровень), назначить штраф — не больше подтверждённого ущерба — или закрыть жалобу без последствий.</p>
     <p>9.3. При серьёзных или повторных нарушениях, мошенничестве, утрате заказа или использовании чужого документа мы вправе <strong>заблокировать</strong> аккаунт. Причина блокировки показывается в приложении. При блокировке вы выходите из приложения, а заказы, которые вы ещё не забрали, возвращаются в ленту.</p>
-    <p>9.4. Не согласны с решением — напишите в поддержку ([@бот поддержки], [email поддержки]) в течение 14 дней. Мы ответим в течение 10 рабочих дней.</p>
+    <p>9.4. Не согласны с решением — напишите в поддержку (Telegram @super_market_support, телефон +998 50 576 47 23) в течение 14 дней. Мы ответим в течение 10 рабочих дней.</p>
     <h2 id="s-10">10. Ответственность</h2>
     <p>10.1. С момента получения заказа в магазине до вручения вы отвечаете за его сохранность. Если заказ утерян или испорчен по вашей вине, вы возмещаете ущерб в пределах стоимости заказа; сумма может быть удержана из баланса.</p>
     <p>10.2. Вы сами отвечаете за свою безопасность, транспорт, соблюдение законов и за вред, причинённый вами третьим лицам.</p>
@@ -110,21 +152,69 @@
     <h2 id="s-14">14. Прочее</h2>
     <p>Отношения по этим Условиям регулируются законодательством Республики Узбекистан. Споры решаются переговорами, а при недостижении согласия — в суде по месту нахождения Super Market.</p>
     <h2 id="s-15">15. Контакты</h2>
-    <p>ЯТТ ANVAROV SHAHZODBEK XOJIMUROD O‘G‘LI, ИНН [ИНН]<br>
-    Адрес: [адрес]<br>
-    E-mail: [email поддержки] · Телефон: [телефон] · Telegram: [@бот поддержки]</p>
+    <p>ЯТТ ANVAROV SHAHZODBEK XOJIMUROD O‘G‘LI<br>
+    Запись в ЕГРСП: № 7967982 от 25.08.2026<br>
+    Адрес: г. Ташкент, Юнусабадский район, Регистон, 6-тор кўчаси, 10-уй<br>
+    Телефон: +998 50 576 47 23 · Telegram: @super_market_support</p>
     <a class="back-top" href="#main">↑ Наверх</a>
   </article>
+  </div>
 </main>
 
-<footer class="footer">
-  <div class="wrap">
-    <nav aria-label="Документы">
-      <a href="/privacy">Политика конфиденциальности</a>
-      <a href="/courier-terms" aria-current="page">Условия для курьеров</a>
-      <a href="/delete-account">Удаление аккаунта</a>
-    </nav>
-    <p>© Super Market</p>
+<footer class="site-footer">
+  <div class="container">
+    <div class="site-footer__top">
+      <div class="site-footer__brand">
+        <a class="logo" href="/">Super Market</a>
+        <p>Онлайн-заказы, касса и учёт для продуктовых магазинов у дома.</p>
+      </div>
+      <nav class="site-footer__cols" aria-label="Подвал">
+        <div class="site-footer__col">
+          <h2>Магазинам</h2>
+          <ul>
+            <li><a href="https://store.super-market.uz/" data-link="register">Подключить магазин</a></li>
+            <li><a href="https://store.super-market.uz/" data-link="login">Войти в панель</a></li>
+            <li><a href="/#pos">Касса SM POS</a></li>
+            <li><a href="/#pricing">Тарифы</a></li>
+          </ul>
+        </div>
+        <div class="site-footer__col">
+          <h2>Покупателям</h2>
+          <ul>
+            <li><a href="#" data-link="clientAppStore" aria-disabled="true">App Store</a></li>
+            <li><a href="#" data-link="clientGooglePlay" aria-disabled="true">Google Play</a></li>
+          </ul>
+        </div>
+        <div class="site-footer__col">
+          <h2>Курьерам</h2>
+          <ul>
+            <li><a href="/#couriers">Стать курьером</a></li>
+            <li><a href="#" data-link="courierApp" aria-disabled="true">SM Курьер</a></li>
+          </ul>
+        </div>
+        <div class="site-footer__col">
+          <h2>Документы</h2>
+          <ul>
+            <li><a href="/offer">Оферта для покупателей</a></li>
+            <li><a href="/offer/stores">Оферта для магазинов</a></li>
+            <li><a href="/privacy">Политика конфиденциальности</a></li>
+            <li><a href="/courier-terms" aria-current="page">Условия для курьеров</a></li>
+            <li><a href="/delete-account">Удаление аккаунта</a></li>
+          </ul>
+        </div>
+        <div class="site-footer__col">
+          <h2>Связь</h2>
+          <ul>
+            <li><a href="https://t.me/super_market_support" data-link="telegram">Telegram</a></li>
+            <li><a href="tel:+998505764723" data-link="support">+998 50 576 47 23</a></li>
+          </ul>
+        </div>
+      </nav>
+    </div>
+    <div class="site-footer__bottom">
+      <span>© 2026 Super Market</span>
+      <span>super-market.uz</span>
+    </div>
   </div>
 </footer>
 </body>

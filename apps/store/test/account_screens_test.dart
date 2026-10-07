@@ -111,6 +111,10 @@ void main() {
     await _pump(t, _api(unpaid: true), const BalanceScreen());
     expect(find.text('Подписка'), findsOneWidget);
     expect(find.text('Магазинов'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
+    // Без цен на iOS (Apple 3.1.1).
+    expect(find.textContaining('\$'), findsNothing);
+    expect(find.textContaining('в месяц'), findsNothing);
     expect(find.text('Есть неоплаченный счёт'), findsOneWidget);
     expect(find.text('Оплатить с баланса'), findsNothing);
     expect(find.textContaining('Оплатить до'), findsNothing);
@@ -130,6 +134,7 @@ void main() {
     await _pump(t, _api(unpaid: true), const BalanceScreen());
     expect(find.text('Оплатить с баланса'), findsOneWidget);
     expect(find.text('Вывести деньги'), findsOneWidget);
+    expect(find.text('\$30 в месяц'), findsOneWidget);
     await t.pumpWidget(const SizedBox.shrink());
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 }

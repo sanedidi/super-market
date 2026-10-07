@@ -1,0 +1,6 @@
+# super-market.uz (хост-nginx отдаёт этот файл как /robots.txt)
+User-agent: *
+Disallow: /api/
+Allow: /
+
+Sitemap: https://super-market.uz/sitemap.xml

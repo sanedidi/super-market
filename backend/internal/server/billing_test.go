@@ -55,6 +55,12 @@ func TestBillingPayoutsReports(t *testing.T) {
 	if len(tariffs) != 2 || tariffs[0]["price_per_store"] != "20.00" || tariffs[1]["price_per_store"] != "15.00" {
 		t.Fatalf("tariffs = %v", tariffs)
 	}
+	// Тарифы для сайта — без входа, только действующие, с диапазоном магазинов.
+	pub := a.expect(a.do("GET", "/public/tariffs", "", nil), 200, "public tariffs").items()
+	if len(pub) != 2 || pub[0]["min_stores"] != float64(1) || pub[0]["max_stores"] != float64(2) ||
+		pub[0]["price_per_store"] != "20.00" || pub[1]["max_stores"] != nil || pub[1]["currency"] != "USD" {
+		t.Fatalf("public tariffs = %v", pub)
+	}
 	a.expect(a.do("POST", "/admin/billing/tariffs", adminTok, map[string]any{"name": "Дубль", "min_stores": 3, "price_per_store": 10}), 409, "duplicate tariff")
 	a.expect(a.do("POST", "/admin/billing/tariffs", tok, map[string]any{"name": "x", "min_stores": 9, "price_per_store": 1}), 403, "store token on admin billing")
 	st := a.expect(a.do("PUT", "/admin/billing/settings", adminTok, map[string]any{"usd_rate": "12500", "grace_days": 5}), 200, "settings")
