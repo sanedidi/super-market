@@ -56,6 +56,7 @@ var client = &http.Client{Timeout: 150 * time.Second}
 type ErrService struct {
 	Status int
 	Msg    string
+	MsgUz  string // то же по-узбекски; пусто — Msg
 }
 
 func (e *ErrService) Error() string { return e.Msg }
@@ -292,7 +293,7 @@ func ExtractJSON(s string) ([]byte, error) {
 func AsAppErr(err error) error {
 	var se *ErrService
 	if errors.As(err, &se) {
-		return apperr.New(http.StatusBadGateway, "ai_error", se.Msg)
+		return apperr.New(http.StatusBadGateway, "ai_error", se.Msg).Uz(se.MsgUz)
 	}
 	return err
 }

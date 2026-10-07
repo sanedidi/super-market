@@ -12,11 +12,30 @@ import (
 type Error struct {
 	Status  int
 	Code    string
-	Message string
-	Details map[string]any
+	Message string // по-русски
+	// MessageUz — тот же текст по-узбекски (латиница); пусто — отдаётся Message.
+	MessageUz string
+	Details   map[string]any
 }
 
 func (e *Error) Error() string { return fmt.Sprintf("%s: %s", e.Code, e.Message) }
+
+// Uz возвращает копию ошибки с текстом по-узбекски:
+//
+//	apperr.Validation("укажите название").Uz("nomini kiriting")
+func (e *Error) Uz(message string) *Error {
+	c := *e
+	c.MessageUz = message
+	return &c
+}
+
+// Text — текст ошибки на языке lang ("uz" или "ru").
+func (e *Error) Text(lang string) string {
+	if lang == "uz" && e.MessageUz != "" {
+		return e.MessageUz
+	}
+	return e.Message
+}
 
 // WithDetails возвращает копию ошибки с дополнительными полями.
 func (e *Error) WithDetails(d map[string]any) *Error {

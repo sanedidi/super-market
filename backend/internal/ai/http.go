@@ -32,6 +32,8 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/admin/ai/usage", m.usage)
 		r.Put("/admin/ai/prices", m.savePrices)
 	})
+	// Автоперевод двуязычных полей: панель и приложение магазина, супер-админ.
+	r.With(m.auth.Require(identity.AppStore, identity.AppAdmin)).Post("/translate", m.translate)
 }
 
 func (m *Module) get(w http.ResponseWriter, r *http.Request) {

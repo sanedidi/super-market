@@ -24,6 +24,7 @@ import (
 	"github.com/sanedidi/super-market/backend/db/migrations"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/config"
+	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/migrate"
 	"github.com/sanedidi/super-market/backend/internal/platform/telegram"
 	"github.com/sanedidi/super-market/backend/internal/server"
@@ -68,7 +69,12 @@ func freshDB(t *testing.T) *pgxpool.Pool {
 		t.Fatal(err)
 	}
 	u.Path = "/" + name
-	pool, err := pgxpool.New(ctx, u.String())
+	pcfg, err := pgxpool.ParseConfig(u.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetupLang(pcfg)
+	pool, err := pgxpool.NewWithConfig(ctx, pcfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,6 +129,12 @@ func (r resp) items() []map[string]any {
 
 func (a api) do(method, path, bearer string, body any) resp {
 	a.t.Helper()
+	return a.doLang("", method, path, bearer, body)
+}
+
+// doLang — запрос с Accept-Language (lang "" — без заголовка).
+func (a api) doLang(lang, method, path, bearer string, body any) resp {
+	a.t.Helper()
 	var rdr io.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)
@@ -131,6 +143,9 @@ func (a api) do(method, path, bearer string, body any) resp {
 	req, _ := http.NewRequest(method, a.srv.URL+"/api/v1"+path, rdr)
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	if lang != "" {
+		req.Header.Set("Accept-Language", lang)
 	}
 	res, err := a.srv.Client().Do(req)
 	if err != nil {

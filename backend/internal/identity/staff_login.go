@@ -242,6 +242,7 @@ func (s *Service) passwordLogin(ctx context.Context, rawLogin, password, app, us
 	if err != nil {
 		return Tokens{}, err
 	}
+	s.rememberLang(ctx, userID, app)
 	t, err := s.tokens(userID, sessionID, app, refresh)
 	t.PasswordChangeRequired = temp && app == AppStore
 	return t, err

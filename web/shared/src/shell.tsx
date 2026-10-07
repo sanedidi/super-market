@@ -4,15 +4,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { App as AntApp, Button, ConfigProvider, Drawer, Grid, type MenuProps } from 'antd'
 import { CloseOutlined, DeleteOutlined, DownOutlined, LogoutOutlined, MenuOutlined, PushpinOutlined } from '@ant-design/icons'
 import ruRU from 'antd/locale/ru_RU'
+import uzUZ from 'antd/locale/uz_UZ'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ru'
+import 'dayjs/locale/uz-latn'
 import { ApiError, configureApi, type AppName } from './api'
 import { AuthProvider, LoginPage, useAuth } from './auth'
 import { StorePasswordGate } from './passwordLogin'
+import { getLang, i18nEnabled, LangSwitch, tr } from './i18n'
 import './theme.css'
 import logo from './logo.png'
 
-dayjs.locale('ru')
+dayjs.locale(getLang() === 'uz' ? 'uz-latn' : 'ru')
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -66,7 +69,11 @@ const theme = {
 export function AppRoot({ app, basename, title, children }: { app: AppName; basename: string; title: string; children: ReactNode }) {
   configureApi(app)
   return (
-    <ConfigProvider locale={ruRU} theme={theme} renderEmpty={() => <div style={{ padding: 24, color: '#667085', textAlign: 'center' }}>Пока пусто</div>}>
+    <ConfigProvider
+      locale={getLang() === 'uz' ? uzUZ : ruRU}
+      theme={theme}
+      renderEmpty={() => <div style={{ padding: 24, color: '#667085', textAlign: 'center' }}>{tr('Пока пусто', 'Hozircha boʻsh')}</div>}
+    >
       <AntApp>
         <QueryClientProvider client={queryClient}>
           <AuthProvider app={app}>
@@ -313,6 +320,11 @@ function Sidebar({
       </nav>
 
       <div className="sm-user">
+        {i18nEnabled && expanded && (
+          <div className="sm-lang" style={{ display: 'flex', justifyContent: 'center', padding: '0 0 8px' }}>
+            <LangSwitch />
+          </div>
+        )}
         {userMenu && (
           <div className="sm-user-menu">
             <button onClick={() => logout()}>

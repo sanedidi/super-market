@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'i18n.dart';
+
 /// Ошибка API: {"error": {"code", "message", "details"}}.
 class ApiError implements Exception {
   ApiError(this.status, this.code, this.message, [this.details = const {}]);
@@ -97,7 +99,8 @@ class Api extends ChangeNotifier {
     try {
       final res = await _http
           .post(Uri.parse('$baseUrl/auth/refresh'),
-              headers: {'Content-Type': 'application/json'}, body: jsonEncode({'refresh_token': _refresh}))
+              headers: {'Content-Type': 'application/json', 'Accept-Language': Lang.instance.code},
+              body: jsonEncode({'refresh_token': _refresh}))
           .timeout(const Duration(seconds: 20));
       if (res.statusCode != 200) return false;
       await _save(jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>);
@@ -116,7 +119,7 @@ class Api extends ChangeNotifier {
       });
       uri = uri.replace(queryParameters: q.isEmpty ? null : q);
     }
-    final headers = <String, String>{};
+    final headers = <String, String>{'Accept-Language': Lang.instance.code};
     if (_access != null) headers['Authorization'] = 'Bearer $_access';
     if (body != null) headers['Content-Type'] = 'application/json';
 
@@ -126,9 +129,9 @@ class Api extends ChangeNotifier {
       if (body != null) req.body = jsonEncode(body);
       res = await http.Response.fromStream(await _http.send(req).timeout(const Duration(seconds: 30)));
     } on TimeoutException {
-      throw ApiError(0, 'network', 'Сервер не отвечает');
+      throw ApiError(0, 'network', tr('Сервер не отвечает', 'Server javob bermayapti'));
     } catch (_) {
-      throw ApiError(0, 'network', 'Нет связи с сервером');
+      throw ApiError(0, 'network', tr('Нет связи с сервером', 'Server bilan aloqa yoʻq'));
     }
 
     if (res.statusCode == 401 && retry && _refresh != null) {
@@ -154,7 +157,7 @@ class Api extends ChangeNotifier {
       throw ApiError(
         res.statusCode,
         err?['code'] as String? ?? 'http_${res.statusCode}',
-        err?['message'] as String? ?? 'Ошибка ${res.statusCode}',
+        err?['message'] as String? ?? tr('Ошибка ${res.statusCode}', 'Xatolik ${res.statusCode}'),
         (err?['details'] as Map<String, dynamic>?) ?? const {},
       );
     }
@@ -167,12 +170,13 @@ class Api extends ChangeNotifier {
     try {
       final req = http.MultipartRequest('POST', Uri.parse('$baseUrl$path'));
       if (_access != null) req.headers['Authorization'] = 'Bearer $_access';
+      req.headers['Accept-Language'] = Lang.instance.code;
       req.files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
       res = await http.Response.fromStream(await _http.send(req).timeout(const Duration(seconds: 90)));
     } on TimeoutException {
-      throw ApiError(0, 'network', 'Сервер не отвечает');
+      throw ApiError(0, 'network', tr('Сервер не отвечает', 'Server javob bermayapti'));
     } catch (_) {
-      throw ApiError(0, 'network', 'Нет связи с сервером');
+      throw ApiError(0, 'network', tr('Нет связи с сервером', 'Server bilan aloqa yoʻq'));
     }
     if (res.statusCode == 401 && retry && _refresh != null) {
       _refreshing ??= _doRefresh().whenComplete(() => _refreshing = null);
@@ -187,6 +191,13 @@ class Api extends ChangeNotifier {
   Future<dynamic> put(String path, Object body) => _send('PUT', path, body: body);
   Future<dynamic> patch(String path, Object body) => _send('PATCH', path, body: body);
   Future<dynamic> delete(String path) => _send('DELETE', path);
+
+  /// Машинный перевод через AI сервера (кнопка «Перевести» у двуязычных
+  /// полей): POST /translate {"texts", "to"} → {"texts"}. [to] — 'uz' или 'ru'.
+  Future<List<String>> translate(List<String> texts, {required String to}) async {
+    final data = await post('/translate', {'texts': texts, 'to': to}) as Map<String, dynamic>;
+    return ((data['texts'] as List?) ?? const []).map((e) => '$e').toList();
+  }
 
   /// GET списка: {"items": [...]}.
   Future<List<Map<String, dynamic>>> list(String path, [Map<String, dynamic>? query]) async {

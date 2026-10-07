@@ -18,6 +18,7 @@ import (
 
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/phone"
 	"github.com/sanedidi/super-market/backend/internal/platform/telegram"
 	"github.com/sanedidi/super-market/backend/internal/platform/token"
@@ -260,6 +261,7 @@ func (s *Service) VerifyCodeTerms(ctx context.Context, rawPhone, code, app, user
 	if err != nil {
 		return Tokens{}, err
 	}
+	s.rememberLang(ctx, userID, app)
 	return s.tokens(userID, sessionID, app, refresh)
 }
 
@@ -398,7 +400,30 @@ func (s *Service) Refresh(ctx context.Context, refresh string) (Tokens, error) {
 	if err != nil {
 		return Tokens{}, err
 	}
+	s.rememberLang(ctx, userID, app)
 	return s.tokens(userID, sessionID, app, newRefresh)
+}
+
+// rememberLang — язык приложения (Accept-Language) становится языком
+// пользователя для уведомлений. Панель супер-админа всегда на русском и
+// язык не меняет.
+func (s *Service) rememberLang(ctx context.Context, userID, app string) {
+	lang := i18n.Explicit(ctx)
+	if lang == "" || app == AppAdmin {
+		return
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET language = $2 WHERE id = $1 AND language <> $2`, userID, lang); err != nil {
+		s.log.Warn("не удалось сохранить язык пользователя", "user", userID, "err", err)
+	}
+}
+
+// SetLanguage — язык пользователя из настроек приложения (PUT /me/language).
+func (s *Service) SetLanguage(ctx context.Context, userID, lang string) error {
+	if lang != i18n.UZ && lang != i18n.RU {
+		return apperr.Validation("язык: uz или ru").Uz("til: uz yoki ru")
+	}
+	_, err := s.pool.Exec(ctx, `UPDATE users SET language = $2 WHERE id = $1`, userID, lang)
+	return err
 }
 
 // Logout закрывает сессию.

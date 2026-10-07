@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'api.dart';
+import 'i18n.dart';
 import 'phone.dart';
 
 /// Вход по номеру телефона и коду из Telegram-бота
@@ -69,7 +70,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _request() async {
     if (_full.isEmpty) {
-      setState(() => _error = 'Введите номер полностью: 9 цифр после +998');
+      setState(() => _error = tr('Введите номер полностью: 9 цифр после +998', 'Raqamni toʻliq kiriting: +998 dan keyin 9 ta raqam'));
       return;
     }
     setState(() {
@@ -91,7 +92,7 @@ class _LoginScreenState extends State<LoginScreen> {
         if (e.code == 'too_many_requests') _codeStep = true;
       });
     } catch (_) {
-      if (mounted) setState(() => _error = 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз');
+      if (mounted) setState(() => _error = tr('Нет связи с сервером. Проверьте интернет и попробуйте ещё раз', 'Server bilan aloqa yoʻq. Internetni tekshirib, qayta urinib koʻring'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -110,7 +111,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _code.clear();
       setState(() => _error = e.message);
     } catch (_) {
-      if (mounted) setState(() => _error = 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз');
+      if (mounted) setState(() => _error = tr('Нет связи с сервером. Проверьте интернет и попробуйте ещё раз', 'Server bilan aloqa yoʻq. Internetni tekshirib, qayta urinib koʻring'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -135,6 +136,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Widget _phoneView(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const Align(alignment: Alignment.centerRight, child: LangSwitch()),
       if (widget.logo != null) ...[Align(alignment: Alignment.centerLeft, child: widget.logo!), const SizedBox(height: 16)],
       Text(widget.title, style: const TextStyle(fontSize: 28, height: 1.2, fontWeight: FontWeight.w700, color: _ink)),
       if (widget.subtitle != null) ...[
@@ -142,7 +144,7 @@ class _LoginScreenState extends State<LoginScreen> {
         Text(widget.subtitle!, style: const TextStyle(fontSize: 15, height: 1.4, color: _text2)),
       ],
       const SizedBox(height: 24),
-      const Text('Номер телефона', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: _text2)),
+      Text(tr('Номер телефона', 'Telefon raqami'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: _text2)),
       const SizedBox(height: 8),
       PhoneField(
         controller: _phone,
@@ -152,7 +154,7 @@ class _LoginScreenState extends State<LoginScreen> {
         onSubmitted: (_) => _request(),
       ),
       const SizedBox(height: 16),
-      _Button(label: 'Получить код', icon: Icons.send_rounded, busy: _busy, onPressed: _full.isEmpty ? null : _request),
+      _Button(label: tr('Получить код', 'Kodni olish'), icon: Icons.send_rounded, busy: _busy, onPressed: _full.isEmpty ? null : _request),
       ..._errorBlock(context),
       if (widget.note != null) ...[const SizedBox(height: 16), _Note(widget.note!)],
     ]);
@@ -173,15 +175,15 @@ class _LoginScreenState extends State<LoginScreen> {
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Вход', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: _ink)),
+            Text(tr('Вход', 'Kirish'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: _ink)),
             Text(shown, style: const TextStyle(fontSize: 13, color: _text2)),
           ]),
         ),
       ]),
       const SizedBox(height: 24),
-      const Text('Код из Telegram', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: _ink)),
+      Text(tr('Код из Telegram', 'Telegramdagi kod'), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: _ink)),
       const SizedBox(height: 8),
-      Text('Бот Super Market прислал 6 цифр на номер $shown.', style: const TextStyle(fontSize: 15, height: 1.4, color: _text2)),
+      Text(tr('Бот Super Market прислал 6 цифр на номер $shown.', 'Super Market boti $shown raqamiga 6 xonali kod yubordi.'), style: const TextStyle(fontSize: 15, height: 1.4, color: _text2)),
       const SizedBox(height: 20),
       CodeBoxes(
         controller: _code,
@@ -196,11 +198,11 @@ class _LoginScreenState extends State<LoginScreen> {
       Row(children: [
         Expanded(
           child: _resendIn > 0
-              ? Text('Отправить ещё раз через 0:${_resendIn.toString().padLeft(2, '0')}', style: const TextStyle(fontSize: 14, color: _text2))
+              ? Text(tr('Отправить ещё раз через 0:${_resendIn.toString().padLeft(2, '0')}', 'Qayta yuborish 0:${_resendIn.toString().padLeft(2, '0')} dan keyin'), style: const TextStyle(fontSize: 14, color: _text2))
               : TextButton(
                   onPressed: _busy ? null : _request,
                   style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
-                  child: const Text('Отправить код ещё раз'),
+                  child: Text(tr('Отправить код ещё раз', 'Kodni qayta yuborish')),
                 ),
         ),
       ]),
@@ -216,7 +218,7 @@ class _LoginScreenState extends State<LoginScreen> {
           TextButton.icon(
             onPressed: () => widget.onOpenUrl!(_botUrl!),
             icon: const Icon(Icons.send),
-            label: const Text('Открыть бота и поделиться номером'),
+            label: Text(tr('Открыть бота и поделиться номером', 'Botni ochib, raqamni ulashish')),
           ),
       ];
 }
