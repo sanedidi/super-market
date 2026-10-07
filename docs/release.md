@@ -114,6 +114,7 @@ Google Play с 31 августа 2026 требует targetSdk 36. CI собир
 
 ## iOS / App Store
 
+- **Только iPhone**: `TARGETED_DEVICE_FAMILY = 1` (покупатель — в `project.pbxproj`, магазин и курьер — `branding/apply.sh`). iPad не заявлен, поэтому App Store не требует скриншоты и проверку на iPad.
 - **Xcode 26** (iOS 26 SDK) обязателен: с 28 апреля 2026 App Store Connect принимает только сборки на нём.
 - **Сборка:** покупатель — `flutter build ipa` в `apps/client`; магазин и курьер —
   `bash apps/store/branding/build_ios.sh`, `bash apps/courier/branding/build_ios.sh`. Номер сборки — `+N` в `pubspec.yaml`.
