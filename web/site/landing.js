@@ -4,6 +4,10 @@
 (function () {
   'use strict';
 
+  // Язык страницы — из <html lang>: «uz» (по умолчанию) или «ru». Узбекские страницы лежат на
+  // адресах без суффикса (/, /privacy, /offer…), русские — с /ru (/ru, /privacy/ru, /offer/ru…).
+  var lang = (document.documentElement.lang || 'uz').toLowerCase().indexOf('ru') === 0 ? 'ru' : 'uz';
+
   // Все внешние ссылки сайта — здесь (элементы с data-link="<ключ>").
   // Пустая строка — ссылки пока нет: кнопка видна, но ведёт на «#» и помечена aria-disabled.
   var LINKS = {
@@ -11,7 +15,7 @@
     register: 'https://store.super-market.uz/',  // «Подключить магазин», «Подключить сеть» (вход по номеру → мастер настройки)
     telegram: 'https://t.me/super_market_support', // поддержка в Telegram (то же, что SUPPORT_URL)
     support: 'tel:+998505764723',  // телефон поддержки в подвале
-    offer: '/offer',       // оферта для покупателей (то же, что OFFER_URL); в подвале ссылки /offer и /offer/stores прямо в HTML
+    offer: lang === 'ru' ? '/offer/ru' : '/offer', // оферта для покупателей (OFFER_URL — узбекская); в подвале ссылки на оферты прямо в HTML
     clientAppStore: '',    // Super Market (покупатели) в App Store
     clientGooglePlay: '',  // Super Market (покупатели) в Google Play, пакет uz.supermarket.sm_client
     courierAppStore: '',   // «SM Курьер» в App Store
@@ -20,7 +24,6 @@
 
   var TARIFFS_URL = '/api/v1/public/tariffs';
 
-  var lang = (document.documentElement.lang || 'ru').toLowerCase().indexOf('uz') === 0 ? 'uz' : 'ru';
   var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 

@@ -3,10 +3,12 @@
 //   POST /api/v1/public/account-deletion/request {phone}       → {sent, expires_in, resend_in, channel}
 //   POST /api/v1/public/account-deletion/confirm {phone, code} → {deleted: [...], requested: [...]}
 // Ошибки: {"error": {"code", "message", "details"}}.
+// Тексты — на языке страницы (<html lang>): delete-account-uz.html (по умолчанию) и delete-account.html (ru).
 (function () {
   'use strict';
 
   var API = '/api/v1/public/account-deletion/';
+  var LANG = (document.documentElement.lang || 'uz').toLowerCase().indexOf('ru') === 0 ? 'ru' : 'uz';
   var $ = function (id) { return document.getElementById(id); };
 
   var steps = { phone: $('step-phone'), code: $('step-code'), done: $('step-done') };
@@ -31,6 +33,89 @@
   var resend = $('resend');
 
   var state = { digits: '', timer: null };
+
+  // ---------------------------------------------------------------- тексты
+
+  var T = {
+    ru: {
+      network: 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз.',
+      server: 'Что-то пошло не так на сервере. Попробуйте ещё раз через несколько минут.',
+      failed: 'Не получилось. Попробуйте ещё раз.',
+      phone9: 'Введите 9 цифр номера после +998.',
+      notFound: 'Аккаунт с этим номером не найден.',
+      alreadySent: function (wait) {
+        return 'Код уже отправлен на этот номер. Новый можно запросить через ' + wait + '.';
+      },
+      haveCode: 'У меня есть код →',
+      telegramOnly: function (bot) {
+        return 'Код можно получить только через Telegram. Откройте ' + bot +
+          ', поделитесь номером и нажмите «Получить код» ещё раз.';
+      },
+      bot: 'бот Super Market',
+      checkPhone: 'Проверьте номер: 9 цифр после +998.',
+      ttl: function (m) { return ' Код действует ' + m + ' ' + plural(m, 'минуту', 'минуты', 'минут') + '.'; },
+      sentSms: function (phone) { return 'Отправили SMS на ' + phone + '.'; },
+      sentTelegram: 'Отправили код в Telegram-бот Super Market.',
+      sentAny: function (phone) { return 'Код отправлен на ' + phone + ' — в Telegram-бот Super Market или по SMS.'; },
+      resendNow: 'Отправить код ещё раз',
+      resendIn: function (t) { return 'Отправить код ещё раз через ' + t; },
+      code6: 'Введите 6 цифр кода.',
+      activeCrowd: function (n) { return 'Сначала завершите заказ № ' + n + ' в приложении Super Market Курьер: доставьте или отмените его.'; },
+      activeClient: function (n) { return 'Сначала дождитесь завершения заказа № ' + n + ' в приложении Super Market.'; },
+      unpaid: function (sum) {
+        return 'Сначала получите выплату: на балансе курьера «по пути» ' + sum +
+          ' сум. Выплаты — по понедельникам, после этого аккаунт можно удалить.';
+      },
+      badCode: 'Код неверный или устарел. После 5 ошибок запросите новый код.',
+      requestNote: 'владелец сети или поддержка закроют доступ в течение 30 дней',
+      deleted: { client: 'Super Market — аккаунт удалён', crowd: 'Курьер «по пути» — аккаунт удалён' },
+      requested: { store: 'SM Магазин — запрос отправлен', courier: 'SM Курьер — запрос отправлен' },
+      deletedOther: function (k) { return k + ' — аккаунт удалён'; },
+      requestedOther: function (k) { return k + ' — запрос отправлен'; },
+      doneDeleted: function (phone) { return 'Мы вышли из аккаунта на всех устройствах. Что сделано с номером ' + phone + ':'; },
+      doneRequested: function (phone) { return 'Что сделано с номером ' + phone + ':'; },
+      doneNothing: function (phone) { return 'Активных аккаунтов с номером ' + phone + ' не осталось.'; }
+    },
+    uz: {
+      network: 'Server bilan aloqa yo‘q. Internetni tekshiring va qayta urinib ko‘ring.',
+      server: 'Serverda xatolik yuz berdi. Bir necha daqiqadan keyin qayta urinib ko‘ring.',
+      failed: 'Bajarib bo‘lmadi. Qayta urinib ko‘ring.',
+      phone9: '+998 dan keyingi 9 xonali raqamni kiriting.',
+      notFound: 'Bu raqamga bog‘langan akkaunt topilmadi.',
+      alreadySent: function (wait) {
+        return 'Bu raqamga kod allaqachon yuborilgan. Yangisini ' + wait + ' dan keyin so‘rash mumkin.';
+      },
+      haveCode: 'Menda kod bor →',
+      telegramOnly: function (bot) {
+        return 'Kodni faqat Telegram orqali olish mumkin. ' + bot +
+          'ni oching, raqamingizni yuboring va «Kod olish» tugmasini yana bosing.';
+      },
+      bot: 'Super Market boti',
+      checkPhone: 'Raqamni tekshiring: +998 dan keyin 9 ta raqam bo‘lishi kerak.',
+      ttl: function (m) { return ' Kod ' + m + ' daqiqa amal qiladi.'; },
+      sentSms: function (phone) { return phone + ' raqamiga SMS yubordik.'; },
+      sentTelegram: 'Kodni Super Market Telegram-botiga yubordik.',
+      sentAny: function (phone) { return 'Kod ' + phone + ' raqamiga — Super Market Telegram-botiga yoki SMS orqali yuborildi.'; },
+      resendNow: 'Kodni qayta yuborish',
+      resendIn: function (t) { return 'Kodni ' + t + ' dan keyin qayta yuborish mumkin'; },
+      code6: '6 xonali kodni kiriting.',
+      activeCrowd: function (n) { return 'Avval Super Market Kuryer ilovasida № ' + n + ' buyurtmani yakunlang: uni yetkazing yoki bekor qiling.'; },
+      activeClient: function (n) { return 'Avval Super Market ilovasidagi № ' + n + ' buyurtma yakunlanishini kuting.'; },
+      unpaid: function (sum) {
+        return 'Avval pulingizni oling: «yo‘l-yo‘lakay» kuryer balansida ' + sum +
+          ' so‘m bor. To‘lovlar dushanba kunlari amalga oshiriladi, shundan keyin akkauntni o‘chirish mumkin.';
+      },
+      badCode: 'Kod noto‘g‘ri yoki eskirgan. 5 marta xato kiritilgach, yangi kod so‘rang.',
+      requestNote: 'tarmoq egasi yoki qo‘llab-quvvatlash xizmati kirishni 30 kun ichida yopadi',
+      deleted: { client: 'Super Market — akkaunt o‘chirildi', crowd: '«Yo‘l-yo‘lakay» kuryer — akkaunt o‘chirildi' },
+      requested: { store: 'SM Magazin — so‘rov yuborildi', courier: 'SM Kuryer — so‘rov yuborildi' },
+      deletedOther: function (k) { return k + ' — akkaunt o‘chirildi'; },
+      requestedOther: function (k) { return k + ' — so‘rov yuborildi'; },
+      doneDeleted: function (phone) { return 'Barcha qurilmalarda akkauntdan chiqdik. ' + phone + ' raqami bo‘yicha bajarilgan amallar:'; },
+      doneRequested: function (phone) { return phone + ' raqami bo‘yicha bajarilgan amallar:'; },
+      doneNothing: function (phone) { return phone + ' raqamiga bog‘langan faol akkauntlar qolmadi.'; }
+    }
+  }[LANG];
 
   // ---------------------------------------------------------------- утилиты
 
@@ -97,7 +182,8 @@
   function post(path, body) {
     return fetch(API + path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      // Язык ошибок бэкенда (err.message) — как у страницы.
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Accept-Language': LANG },
       credentials: 'omit',
       body: JSON.stringify(body)
     }).then(function (res) {
@@ -112,9 +198,9 @@
   }
 
   function commonError(err) {
-    if (err.status === 0) return 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз.';
-    if (err.status >= 500 && err.code !== 'telegram_unavailable') return 'Что-то пошло не так на сервере. Попробуйте ещё раз через несколько минут.';
-    return capitalize(err.message) || 'Не получилось. Попробуйте ещё раз.';
+    if (err.status === 0) return T.network;
+    if (err.status >= 500 && err.code !== 'telegram_unavailable') return T.server;
+    return capitalize(err.message) || T.failed;
   }
 
   // ---------------------------------------------------------------- шаг 1
@@ -156,7 +242,7 @@
     e.preventDefault();
     var d = nationalDigits(phoneInput.value);
     if (d.length !== 9) {
-      setPhoneError('Введите 9 цифр номера после +998.');
+      setPhoneError(T.phone9);
       phoneInput.focus();
       return;
     }
@@ -167,24 +253,22 @@
       openCodeStep(res.channel, res.expires_in, res.resend_in);
     }, function (err) {
       if (err.code === 'account_not_found') {
-        setPhoneError('Аккаунт с этим номером не найден.');
+        setPhoneError(T.notFound);
       } else if (err.code === 'too_many_requests') {
         // Код уже отправлен недавно — им можно воспользоваться.
         var wait = parseInt(err.details.retry_after, 10) || 60;
         state.digits = d;
         setPhoneError(null,
-          'Код уже отправлен на этот номер. Новый можно запросить через ' + mmss(wait) +
-          '. <button type="button" class="linkbtn" id="have-code" style="margin:0">У меня есть код →</button>');
+          T.alreadySent(mmss(wait)) +
+          ' <button type="button" class="linkbtn" id="have-code" style="margin:0">' + T.haveCode + '</button>');
         $('have-code').addEventListener('click', function () { openCodeStep('', 0, wait); });
       } else if (err.code === 'telegram_not_linked') {
         var url = err.details.bot_url;
         var safe = typeof url === 'string' && /^https:\/\/t\.me\//.test(url);
-        setPhoneError(null,
-          'Код можно получить только через Telegram. Откройте ' +
-          (safe ? '<a href="' + url.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener">бот Super Market</a>' : 'бот Super Market') +
-          ', поделитесь номером и нажмите «Получить код» ещё раз.');
+        setPhoneError(null, T.telegramOnly(
+          safe ? '<a href="' + url.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener">' + T.bot + '</a>' : T.bot));
       } else if (err.code === 'validation') {
-        setPhoneError('Проверьте номер: 9 цифр после +998.');
+        setPhoneError(T.checkPhone);
       } else {
         setPhoneError(commonError(err));
       }
@@ -196,10 +280,10 @@
 
   function sentText(channel, expiresIn) {
     var minutes = Math.round((expiresIn || 0) / 60);
-    var ttl = minutes > 0 ? ' Код действует ' + minutes + ' ' + plural(minutes, 'минуту', 'минуты', 'минут') + '.' : '';
-    if (channel === 'sms') return 'Отправили SMS на ' + maskedPhone(state.digits) + '.' + ttl;
-    if (channel === 'telegram') return 'Отправили код в Telegram-бот Super Market.' + ttl;
-    return 'Код отправлен на ' + maskedPhone(state.digits) + ' — в Telegram-бот Super Market или по SMS.';
+    var ttl = minutes > 0 ? T.ttl(minutes) : '';
+    if (channel === 'sms') return T.sentSms(maskedPhone(state.digits)) + ttl;
+    if (channel === 'telegram') return T.sentTelegram + ttl;
+    return T.sentAny(maskedPhone(state.digits));
   }
 
   function openCodeStep(channel, expiresIn, resendIn) {
@@ -259,11 +343,11 @@
     var tick = function () {
       if (left <= 0) {
         clearInterval(state.timer);
-        resend.innerHTML = '<button type="button" id="resend-btn">Отправить код ещё раз</button>';
+        resend.innerHTML = '<button type="button" id="resend-btn">' + T.resendNow + '</button>';
         $('resend-btn').addEventListener('click', doResend);
         return;
       }
-      resend.textContent = 'Отправить код ещё раз через ' + mmss(left);
+      resend.textContent = T.resendIn(mmss(left));
       left--;
     };
     // aria-live не читает каждую секунду: отключаем на время отсчёта.
@@ -312,7 +396,7 @@
     e.preventDefault();
     var code = codeInput.value;
     if (code.length !== 6) {
-      setCodeError('Введите 6 цифр кода.');
+      setCodeError(T.code6);
       codeInput.focus();
       return;
     }
@@ -323,18 +407,15 @@
     }, function (err) {
       var d = err.details || {};
       if (err.code === 'active_order') {
-        setBlocked(d.account === 'crowd'
-          ? 'Сначала завершите заказ № ' + d.order_number + ' в приложении Super Market Курьер: доставьте или отмените его.'
-          : 'Сначала дождитесь завершения заказа № ' + d.order_number + ' в приложении Super Market.');
+        setBlocked(d.account === 'crowd' ? T.activeCrowd(d.order_number) : T.activeClient(d.order_number));
       } else if (err.code === 'unpaid_balance') {
-        setBlocked('Сначала получите выплату: на балансе курьера «по пути» ' + sum(d.balance) +
-          ' сум. Выплаты — по понедельникам, после этого аккаунт можно удалить.');
+        setBlocked(T.unpaid(sum(d.balance)));
       } else if (err.code === 'account_not_found') {
-        setBlocked('Аккаунт с этим номером не найден.');
+        setBlocked(T.notFound);
       } else if (err.code === 'validation') {
         codeInput.value = '';
         renderBoxes();
-        setCodeError('Код неверный или устарел. После 5 ошибок запросите новый код.');
+        setCodeError(T.badCode);
         codeInput.focus();
       } else {
         setCodeError(commonError(err));
@@ -346,16 +427,9 @@
 
   var ICON_OK = '<svg class="ico ico--ok" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="currentColor"/><path d="M6 10.2l2.6 2.6L14 7.4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   var ICON_WAIT = '<svg class="ico ico--wait" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.25" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="M10 5.5V10l3 2" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  var REQUEST_NOTE = 'владелец сети или поддержка закроют доступ в течение 30 дней';
-
-  var DELETED = {
-    client: 'Super Market — аккаунт удалён',
-    crowd: 'Курьер «по пути» — аккаунт удалён'
-  };
-  var REQUESTED = {
-    store: 'SM Магазин — запрос отправлен',
-    courier: 'SM Курьер — запрос отправлен'
-  };
+  var REQUEST_NOTE = T.requestNote;
+  var DELETED = T.deleted;
+  var REQUESTED = T.requested;
 
   function item(icon, title, sub) {
     var li = document.createElement('li');
@@ -381,16 +455,16 @@
       if (deleted.indexOf(k) >= 0) list.appendChild(item(ICON_OK, DELETED[k]));
     });
     deleted.forEach(function (k) {
-      if (!DELETED[k]) list.appendChild(item(ICON_OK, k + ' — аккаунт удалён'));
+      if (!DELETED[k]) list.appendChild(item(ICON_OK, T.deletedOther(k)));
     });
     requested.forEach(function (k) {
-      list.appendChild(item(ICON_WAIT, REQUESTED[k] || (k + ' — запрос отправлен'), REQUEST_NOTE));
+      list.appendChild(item(ICON_WAIT, REQUESTED[k] || T.requestedOther(k), REQUEST_NOTE));
     });
     var phone = maskedPhone(state.digits);
     var text;
-    if (deleted.length) text = 'Мы вышли из аккаунта на всех устройствах. Что сделано с номером ' + phone + ':';
-    else if (requested.length) text = 'Что сделано с номером ' + phone + ':';
-    else text = 'Активных аккаунтов с номером ' + phone + ' не осталось.';
+    if (deleted.length) text = T.doneDeleted(phone);
+    else if (requested.length) text = T.doneRequested(phone);
+    else text = T.doneNothing(phone);
     $('done-text').textContent = text;
     list.parentNode.hidden = !list.children.length;
     show('done');

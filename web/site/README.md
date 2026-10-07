@@ -5,17 +5,27 @@
 образ не попадает). Макет — Figma «Landing page» (файл `RV7wi3GFa6K8PgshOrW5mP`,
 страница `308:848`).
 
-| Адрес | Файл | Что это |
-|---|---|---|
-| https://super-market.uz/ | `index.html` | Лендинг (RU) |
-| https://super-market.uz/uz | `uz.html` | Лендинг (UZ, латиница) |
-| https://super-market.uz/privacy | `privacy.html` | Политика конфиденциальности (RU) |
-| https://super-market.uz/privacy/uz | `privacy-uz.html` | Maxfiylik siyosati (UZ, латиница) |
-| https://super-market.uz/courier-terms | `courier-terms.html` | Условия для курьеров «по пути» |
-| https://super-market.uz/offer | `offer.html` | Публичная оферта для покупателей (пользовательское соглашение приложения; `OFFER_URL` — ссылка на экране входа) |
-| https://super-market.uz/offer/stores | `offer-stores.html` | Публичная оферта для магазинов (панель, «SM Магазин», SM POS, витрина, тарифы, выплаты) |
-| https://super-market.uz/delete-account | `delete-account.html` + `delete-account.js` | Удаление аккаунта без приложения (ссылка для Google Play) |
-| https://super-market.uz/robots.txt, /sitemap.xml | `robots.txt`, `sitemap.xml` | Для поисковиков |
+Сайт двуязычный: **узбекский (латиница) — по умолчанию**, на адресе без суффикса; русский — тот же
+адрес с `/ru`. У каждой страницы в шапке переключатель UZ | RU на парную страницу, в `<head>` —
+`canonical`, `hreflang` (uz, ru, x-default → uz) и `og:locale`.
+
+| Адрес (UZ) | Файл (UZ) | Адрес (RU) | Файл (RU) | Что это |
+|---|---|---|---|---|
+| https://super-market.uz/ | `uz.html` | /ru | `index.html` | Лендинг |
+| /privacy | `privacy-uz.html` | /privacy/ru | `privacy.html` | Политика конфиденциальности |
+| /courier-terms | `courier-terms-uz.html` | /courier-terms/ru | `courier-terms.html` | Условия для курьеров «по пути» |
+| /offer | `offer-uz.html` | /offer/ru | `offer.html` | Публичная оферта для покупателей (пользовательское соглашение приложения; `OFFER_URL` — ссылка на экране входа) |
+| /offer/stores | `offer-stores-uz.html` | /offer/stores/ru | `offer-stores.html` | Публичная оферта для магазинов (панель, «SM Магазин», SM POS, витрина, тарифы, выплаты) |
+| /delete-account | `delete-account-uz.html` | /delete-account/ru | `delete-account.html` | Удаление аккаунта без приложения (ссылка для Google Play); оба файла — с `delete-account.js` |
+| /robots.txt, /sitemap.xml | `robots.txt`, `sitemap.xml` | | | Для поисковиков |
+
+Старые адреса не ломаются: `/uz` → 301 на `/`, `/privacy/uz` → 301 на `/privacy` (так же
+`/offer/uz`, `/offer/stores/uz`, `/courier-terms/uz`, `/delete-account/uz`). Прежние «русские»
+адреса без суффикса (`/privacy`, `/offer`, … — их знают приложения, App Store и Google Play) теперь
+открывают узбекскую версию с переключателем на русскую.
+
+Имена файлов не менялись (русские — как были, узбекские — с `-uz`): поменялась только
+маршрутизация в nginx. Так меньше риск сломать ссылки на файлы и историю правок.
 
 Общие файлы:
 
@@ -32,34 +42,45 @@
 - `img/og.jpg` — 1200×630 для превью ссылки в мессенджерах.
 
 Шапка и подвал скопированы в каждый HTML-файл (сборки нет). Меняете пункт меню
-или подвала — поправьте во всех восьми файлах (`grep -n "site-footer" *.html`).
-Русский и узбекский лендинги — два отдельных файла с одинаковой разметкой:
-правка текста или вёрстки в `index.html` — такая же правка в `uz.html`.
+или подвала — поправьте во всех двенадцати файлах (`grep -n "site-footer" *.html`).
+Ссылки внутри сайта — на страницы своего языка: на узбекских `/`, `/#pricing`, `/privacy`…,
+на русских `/ru`, `/ru#pricing`, `/privacy/ru`…; ссылка на другой язык — только с атрибутом
+`lang` (переключатель в шапке, «Русский · O‘zbekcha» в строке под заголовком документа).
+Каждая страница — пара файлов с одинаковой разметкой: правка текста или вёрстки в русском
+файле — такая же правка в узбекском (и наоборот). Апострофы в узбекском тексте сайта —
+`‘` (U+2018) в o‘/g‘ и `’` (U+2019) в ma’lumot, Telegram’da; ASCII `'` не используем.
 
 Тексты документов сконвертированы из черновиков `privacy.md`, `privacy_uz.md`,
 `courier-terms.md`, `delete-account.md`. Дальше правьте **HTML напрямую**.
-Если меняете русскую политику — поправьте и узбекскую.
+Меняете русский документ — поправьте и узбекский (и наоборот). Узбекские оферты, условия для
+курьеров и страница удаления аккаунта — перевод русских текстов (октябрь 2026), **нужна проверка
+юристом**, как и для русских.
 
 Оферты (`offer.html`, `offer-stores.html`) написаны сразу в HTML; копии для юриста —
 `offer.md` и `offer-stores.md` рядом с остальными черновиками. В HTML стоят комментарии
 `<!-- ЮРИСТУ: … -->` — вопросы, которые не определяются кодом (агентская схема приёма
 платежей, сроки возвратов и выплат, подсудность и т. п.); на странице они не видны.
-Найти: `grep -n "ЮРИСТУ" offer*.html`. После проверки юристом комментарии уберите.
+Найти: `grep -n "ЮРИСТУ" offer*.html`. В узбекских файлах на тех же местах — короткие метки
+`<!-- ЮРИСТУ: см. offer.html, п. … -->`. После проверки юристом комментарии уберите в обоих.
 
 ## Маршруты
 
 - `deploy/nginx.conf` (nginx в Docker): лендинг лежит на внутренних адресах
-  `/landing` и `/landing/uz` — на `store.super-market.uz` адрес `/` занят
-  панелью магазина. Документы — точные `location` (`/privacy`, …, `/offer`,
-  `/offer/stores`), файлы — `location ^~ /site/`. Новый документ — `location`
-  здесь, адрес в regex документов в `host-nginx.conf` и строка в `sitemap.xml`.
+  `/landing` (UZ, `uz.html`) и `/landing/ru` (RU, `index.html`) — на
+  `store.super-market.uz` адрес `/` занят панелью магазина; `/landing/uz` оставлен
+  на время перехода (его проксировал прежний host-конфиг). Документы — точные
+  `location` (`/privacy` → `privacy-uz.html`, `/privacy/ru` → `privacy.html`, … ,
+  `/offer/stores/ru`), `/…/uz` — 301 на адрес без суффикса, `/…/` — 301 без слэша;
+  файлы — `location ^~ /site/`. Новый документ — пара `location` здесь, имя в regex
+  документов здесь и в `host-nginx.conf`, две строки в `sitemap.xml`.
 - `deploy/host-nginx.conf` (nginx на сервере), блок `super-market.uz`:
-  `/` → `/landing`, `/uz` → `/landing/uz`, `/robots.txt` и `/sitemap.xml` →
-  `/site/…`, документы и `/site/` — как есть, `/api/` — как раньше; всё
-  остальное — 302 на `store.super-market.uz`. `www.super-market.uz` теперь
-  отвечает 301 на `super-market.uz` (кроме `/api/`).
+  `/` → `/landing`, `/ru` → `/landing/ru`, `/uz` → 301 на `/` (с `?utm…`),
+  `/robots.txt` и `/sitemap.xml` → `/site/…`, документы (с `/ru` и старыми `/uz`) и
+  `/site/` — как есть, `/api/` — как раньше; всё остальное — 302 на
+  `store.super-market.uz`. `www.super-market.uz` отвечает 301 на `super-market.uz`
+  (кроме `/api/`).
 - Документы и `/site/` по-прежнему открываются и на `store.super-market.uz`
-  (там проксируется всё), лендинг там — только на `/landing`.
+  (там проксируется всё), лендинг там — только на `/landing` и `/landing/ru`.
 - Кэш: HTML, CSS и JS — `no-cache` (браузер переспрашивает и получает 304, пока
   файл не изменился), картинки в `/site/img/` — неделю. Поменяли картинку —
   дайте ей новое имя (или подождите неделю).
@@ -77,7 +98,7 @@
 | `register` | «Подключить магазин», «Подключить сеть» | `https://store.super-market.uz/` — отдельной страницы регистрации в панели нет: вход по номеру, затем мастер настройки магазина |
 | `telegram` | «Написать в Telegram», подвал «Telegram» | пусто — вписать `https://t.me/<бот>` (то же, что `SUPPORT_URL`) |
 | `support` | подвал «Поддержка» | пусто — `mailto:…` или страница поддержки |
-| `offer` | сейчас не используется в HTML (подвал ссылается на `/offer` и `/offer/stores` напрямую) | `/offer` — то же, что `OFFER_URL` |
+| `offer` | сейчас не используется в HTML (подвал ссылается на оферты напрямую) | `/offer` на узбекских страницах (то же, что `OFFER_URL`), `/offer/ru` — на русских |
 | `clientAppStore`, `clientGooglePlay` | значки в блоке «Покупателям», подвал | пусто (пакет Android: `uz.supermarket.sm_client`) |
 | `courierAppStore`, `courierGooglePlay` | значки в блоке «Курьерам» | пусто |
 
@@ -93,8 +114,11 @@
 
 - Разметка — в `index.html` и `uz.html` между комментариями `<!-- mk:hero -->`,
   `<!-- mk:pos -->`, `<!-- mk:buyers -->` и закрывающими `<!-- /mk:… -->`.
-  Тексты в макетах русские на обеих страницах (как в Figma), поэтому блоки
-  **одинаковые: правите в одном файле — копируете блок целиком в другой**.
+  В `index.html` тексты макетов русские (как в Figma), в `uz.html` — узбекские, теми же
+  словами, что в узбекской версии приложений (`tr('…', '…')`). Вёрстка блоков одинаковая,
+  кроме нескольких `style` в `uz.html`, сдвинутых под более длинные узбекские подписи
+  («Hammasi», строка состояния кассы с «Buyurtmalar 3 · F10»). Правите вёрстку в одном
+  файле — перенесите правку в другой, тексты не копируйте.
   Для скринридеров макет — одна картинка: `role="img"` + `aria-label` на
   обёртке (подпись своя на каждом языке), сама вёрстка `aria-hidden`.
 - Стили — `mockups.css`, все классы с префиксом `mk-`. Координаты и размеры —
@@ -130,7 +154,7 @@
   статичной карточки в HTML (`data-tariff="features"`); меняется в HTML;
 - если API не ответил или ответил ошибкой — остаются статичные карточки из HTML
   (1–2 магазина 20 $, 3 и более 15 $). **Изменились цены — поправьте и эти
-  карточки** (в `index.html` и `uz.html`), а также `description` в `<head>`;
+  карточки** (в `uz.html` и `index.html`), а также `description` в `<head>`;
 - если действующих тарифов нет — вместо карточек «стоимость подскажем в
   поддержке», цифра в первом экране скрывается.
 
@@ -142,11 +166,14 @@ orqali kirish», весь блок «Kuryerlarga» (включая карточ�
 «Qanday qilib «yo‘l-yo‘lakay» kuryer bo‘lish mumkin?» и «Akkauntni qanday
 o‘chirish mumkin?», ответы FAQ кроме первого, колонка подвала «Kuryerlarga»,
 «Kuryerlar uchun shartlar», «Akkauntni o‘chirish», подзаголовок CTA «Telefon
-raqami orqali kirish — shartnomasiz va ofisga bormasdan.», заголовки тарифов.
-Названия приложений «SM Магазин» и «SM Курьер» оставлены кириллицей, как в
-макетах. Условия для курьеров, оферты и удаление аккаунта есть только на русском —
-переключатель UZ на этих страницах ведёт на узбекский лендинг. Подписи в
-узбекском подвале: «Xaridorlar uchun oferta», «Do‘konlar uchun oferta».
+raqami orqali kirish — shartnomasiz va ofisga bormasdan.», заголовки тарифов,
+тексты в макетах приложений на узбекском лендинге.
+Названия приложений «SM Магазин» и «SM Курьер» на лендинге оставлены кириллицей, как в
+макетах и в магазинах приложений; в узбекских документах (как и в `privacy-uz.html`) —
+«SM Magazin» («SM Магазин»), «Super Market Kuryer» / «SM Kuryer». Названия кнопок и
+разделов приложений в документах («Buyurtma qidiryapman», «Ola olmayman», «Profil →
+Sozlamalar → Akkauntni o‘chirish», «Yana → Akkauntni o‘chirish»…) взяты из узбекских строк
+приложений; поменяются строки в приложениях — поправьте документы.
 
 ## Проверка локально
 
@@ -154,11 +181,14 @@ raqami orqali kirish — shartnomasiz va ofisga bormasdan.», заголовки
 к папке, где лежит `site/` (например, симлинк на `web/site`), `resolver`
 уберите, `$api_upstream` направьте на backend или на заглушку, которая отдаёт
 `{"items":[…]}` на `/api/v1/public/tariffs`. Лендинг откроется на
-`http://127.0.0.1:<порт>/landing` и `/landing/uz`.
+`http://127.0.0.1:<порт>/landing` (UZ) и `/landing/ru` (RU).
 
 ## Удаление аккаунта
 
-Форма на `/delete-account` работает в 3 шага и ходит в API того же домена:
+Форма на `/delete-account` (и `/delete-account/ru`) работает в 3 шага и ходит в API того же
+домена. Тексты скрипта — в объекте `T` в начале `delete-account.js`, язык берётся из
+`<html lang>`; запросы уходят с `Accept-Language: uz|ru`, чтобы ошибки бэкенда были на языке
+страницы.
 
 1. `POST /api/v1/public/account-deletion/request` `{phone}` — код в Telegram-бот (если номер к нему привязан) или по SMS.
 2. `POST /api/v1/public/account-deletion/confirm` `{phone, code}` — аккаунты покупателя и курьера «по пути» удаляются сразу; для сотрудников магазина и штатных курьеров создаётся запрос супер-админу.
@@ -209,10 +239,14 @@ PRIVACY_URL=https://super-market.uz/privacy
 OFFER_URL=https://super-market.uz/offer
 ```
 
+Эти адреса теперь открывают узбекскую версию (с переключателем на русскую); русская — тот же
+адрес с `/ru`.
+
 Если в `PROD_ENV` их нет, `.github/workflows/deploy.yml` (шаг «Write .env») сам
 допишет эти значения и `SUPPORT_URL=https://t.me/super_market_support`.
 `OFFER_URL` приложение покупателя показывает ссылкой «офертой» на экране входа.
 
 Эти же адреса указываются в App Store Connect и Google Play Console:
 политика — `https://super-market.uz/privacy`, удаление аккаунта —
-`https://super-market.uz/delete-account`.
+`https://super-market.uz/delete-account` (узбекские; для русской локализации листинга можно
+указать `/privacy/ru` и `/delete-account/ru`).

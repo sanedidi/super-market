@@ -1,45 +1,88 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Узбекская версия — адрес без суффикса (по умолчанию), русская — с /ru. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://super-market.uz/</loc>
-    <lastmod>2026-10-06</lastmod>
-    <xhtml:link rel="alternate" hreflang="ru" href="https://super-market.uz/"/>
-    <xhtml:link rel="alternate" hreflang="uz" href="https://super-market.uz/uz"/>
+    <lastmod>2026-10-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="uz" href="https://super-market.uz/"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://super-market.uz/ru"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://super-market.uz/"/>
   </url>
   <url>
-    <loc>https://super-market.uz/uz</loc>
-    <lastmod>2026-10-06</lastmod>
-    <xhtml:link rel="alternate" hreflang="ru" href="https://super-market.uz/"/>
-    <xhtml:link rel="alternate" hreflang="uz" href="https://super-market.uz/uz"/>
+    <loc>https://super-market.uz/ru</loc>
+    <lastmod>2026-10-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="uz" href="https://super-market.uz/"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://super-market.uz/ru"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://super-market.uz/"/>
   </url>
   <url>
     <loc>https://super-market.uz/privacy</loc>
-    <lastmod>2026-10-06</lastmod>
-    <xhtml:link rel="alternate" hreflang="ru" href="https://super-market.uz/privacy"/>
-    <xhtml:link rel="alternate" hreflang="uz" href="https://super-market.uz/privacy/uz"/>
+    <lastmod>2026-10-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="uz" href="https://super-market.uz/privacy"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://super-market.uz/privacy/ru"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://super-market.uz/privacy"/>
   </url>
   <url>
-    <loc>https://super-market.uz/privacy/uz</loc>
-    <lastmod>2026-10-06</lastmod>
-    <xhtml:link rel="alternate" hreflang="ru" href="https://super-market.uz/privacy"/>
-    <xhtml:link rel="alternate" hreflang="uz" href="https://super-market.uz/privacy/uz"/>
-  </url>
-  <url>
-    <loc>https://super-market.uz/courier-terms</loc>
-    <lastmod>2026-10-06</lastmod>
-  </url>
-  <url>
-    <loc>https://super-market.uz/delete-account</loc>
-    <lastmod>2026-10-06</lastmod>
+    <loc>https://super-market.uz/privacy/ru</loc>
+    <lastmod>2026-10-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="uz" href="https://super-market.uz/privacy"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://super-market.uz/privacy/ru"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://super-market.uz/privacy"/>
   </url>
   <url>
     <loc>https://super-market.uz/offer</loc>
-    <lastmod>2026-10-06</lastmod>
+    <lastmod>2026-10-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="uz" href="https://super-market.uz/offer"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://super-market.uz/offer/ru"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://super-market.uz/offer"/>
+  </url>
+  <url>
+    <loc>https://super-market.uz/offer/ru</loc>
+    <lastmod>2026-10-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="uz" href="https://super-market.uz/offer"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://super-market.uz/offer/ru"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://super-market.uz/offer"/>
   </url>
   <url>
     <loc>https://super-market.uz/offer/stores</loc>
-    <lastmod>2026-10-06</lastmod>
+    <lastmod>2026-10-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="uz" href="https://super-market.uz/offer/stores"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://super-market.uz/offer/stores/ru"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://super-market.uz/offer/stores"/>
+  </url>
+  <url>
+    <loc>https://super-market.uz/offer/stores/ru</loc>
+    <lastmod>2026-10-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="uz" href="https://super-market.uz/offer/stores"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://super-market.uz/offer/stores/ru"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://super-market.uz/offer/stores"/>
+  </url>
+  <url>
+    <loc>https://super-market.uz/courier-terms</loc>
+    <lastmod>2026-10-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="uz" href="https://super-market.uz/courier-terms"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://super-market.uz/courier-terms/ru"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://super-market.uz/courier-terms"/>
+  </url>
+  <url>
+    <loc>https://super-market.uz/courier-terms/ru</loc>
+    <lastmod>2026-10-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="uz" href="https://super-market.uz/courier-terms"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://super-market.uz/courier-terms/ru"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://super-market.uz/courier-terms"/>
+  </url>
+  <url>
+    <loc>https://super-market.uz/delete-account</loc>
+    <lastmod>2026-10-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="uz" href="https://super-market.uz/delete-account"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://super-market.uz/delete-account/ru"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://super-market.uz/delete-account"/>
+  </url>
+  <url>
+    <loc>https://super-market.uz/delete-account/ru</loc>
+    <lastmod>2026-10-07</lastmod>
+    <xhtml:link rel="alternate" hreflang="uz" href="https://super-market.uz/delete-account"/>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://super-market.uz/delete-account/ru"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://super-market.uz/delete-account"/>
   </url>
 </urlset>
