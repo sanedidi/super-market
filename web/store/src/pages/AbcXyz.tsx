@@ -16,6 +16,7 @@ import {
   WalletOutlined,
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
+import { useSearchParams } from 'react-router-dom'
 import { PageTitle, date, errorText, money, qty, useItem, useList } from '@sm/shared'
 import { useReportFilters } from './Reports'
 import type { Range } from '../ui'
@@ -23,18 +24,18 @@ import type { AbcBy, AbcItem, AbcLetter, AbcNoSaleItem, AbcXyz, DictItem } from 
 
 const last12Weeks = (): Range => [dayjs().subtract(83, 'day').startOf('day'), dayjs().startOf('day')]
 
-const GROUP: Record<AbcLetter, { color: string; bg: string; text: string; hint: string; name: string }> = {
+export const GROUP: Record<AbcLetter, { color: string; bg: string; text: string; hint: string; name: string }> = {
   A: { color: '#17b26a', bg: '#ecfdf3', text: '#067647', name: 'Главные товары', hint: 'Главные товары — не допускать отсутствия' },
   B: { color: '#f79009', bg: '#fffaeb', text: '#b54708', name: 'Середина', hint: 'Середина — следить за остатком' },
   C: { color: '#98a2b3', bg: '#f2f4f7', text: '#475467', name: 'Мало денег', hint: 'Мало денег — держать минимум' },
 }
 
-const TONE = {
+export const TONE = {
   green: { bg: '#ecfdf3', fg: '#067647' },
   amber: { bg: '#fffaeb', fg: '#b54708' },
   rose: { bg: '#fef3f2', fg: '#b42318' },
 }
-const CELL: Record<string, { tone: keyof typeof TONE; action: string }> = {
+export const CELL: Record<string, { tone: keyof typeof TONE; action: string }> = {
   AX: { tone: 'green', action: 'Автозаказ, всегда в наличии' },
   AY: { tone: 'green', action: 'Запас с учётом сезона и акций' },
   AZ: { tone: 'amber', action: 'Заказывать вручную, следить' },
@@ -54,6 +55,8 @@ const COLS = [
 const BY_WORD: Record<AbcBy, string> = { revenue: 'выручки', profit: 'прибыли', qty: 'продаж' }
 
 const RED = '#e11d2a'
+/** Товар «заканчивается» — остатка меньше чем на столько дней (как CoverAttentionDays в бэкенде). */
+export const LOW_DAYS = 7
 const MUTED = '#667085'
 
 const pct = (n: number) => n.toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + '%'
@@ -93,8 +96,11 @@ export function AbcXyzPage() {
   const [category, setCategory] = useState<string | undefined>()
   const cats = useList<DictItem>('/store/catalog/categories')
   const { data, isLoading, error } = useItem<AbcXyz>('/store/reports/abc-xyz', { ...params, by, category_id: category })
-  const [view, setView] = useState<View>('all')
-  const [cell, setCell] = useState<string | null>(null)
+  // С главной приходят ссылки: ?cell=CZ, ?view=nosale, ?low=1 (главные товары заканчиваются).
+  const [sp] = useSearchParams()
+  const [view, setView] = useState<View>(() => (['A', 'B', 'C', 'nosale'].includes(sp.get('view') ?? '') ? (sp.get('view') as View) : 'all'))
+  const [cell, setCell] = useState<string | null>(() => (CELL[sp.get('cell') ?? ''] ? sp.get('cell') : null))
+  const [low, setLow] = useState(sp.get('low') === '1')
   const [search, setSearch] = useState('')
   const [help, setHelp] = useState(false)
   useEffect(() => {
@@ -108,9 +114,10 @@ export function AbcXyzPage() {
       (i) =>
         (view === 'all' || view === 'nosale' || i.abc === view) &&
         (!cell || i.abc + (i.xyz ?? '') === cell) &&
+        (!low || (i.abc === 'A' && i.days_cover !== null && i.days_cover < LOW_DAYS)) &&
         (!q || i.name.toLowerCase().includes(q) || i.category.toLowerCase().includes(q)),
     )
-  }, [data, view, cell, search])
+  }, [data, view, cell, search, low])
   const noSale = useMemo(() => {
     const q = search.trim().toLowerCase()
     return (data?.no_sale_items ?? []).filter((i) => !q || i.name.toLowerCase().includes(q) || i.category.toLowerCase().includes(q))
@@ -119,9 +126,11 @@ export function AbcXyzPage() {
   const pick = (v: View) => {
     setView(v)
     setCell(null)
+    setLow(false)
   }
   const pickCell = (c: string) => {
     setView('all')
+    setLow(false)
     setCell(cell === c ? null : c)
   }
 
@@ -273,11 +282,16 @@ export function AbcXyzPage() {
               {cell} · {items.length} <CloseOutlined />
             </Button>
           )}
-          <Chip active={!cell && view === 'all'} onClick={() => pick('all')}>
+          {low && (
+            <Button size="small" shape="round" type="primary" danger onClick={() => setLow(false)}>
+              A · заканчиваются · {items.length} <CloseOutlined />
+            </Button>
+          )}
+          <Chip active={!cell && !low && view === 'all'} onClick={() => pick('all')}>
             Все {data?.totals.products ?? 0}
           </Chip>
           {(['A', 'B', 'C'] as const).map((k) => (
-            <Chip key={k} active={!cell && view === k} onClick={() => pick(k)}>
+            <Chip key={k} active={!cell && !low && view === k} onClick={() => pick(k)}>
               {k} {data?.groups[k].count ?? 0}
             </Chip>
           ))}
@@ -300,8 +314,8 @@ export function AbcXyzPage() {
         )}
         {data && (
           <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: '8px 0 0' }}>
-            Анализ с {date(data.analysis_from)} · полных недель: {data.weeks} · «Остаток · на N дн.» — на сколько дней хватит при среднем
-            спросе за период. Продажи POS и доставленные онлайн-заказы минус возвраты.
+            Анализ с {date(data.analysis_from)} · полных недель: {data.weeks} · «Остаток · на N дн.» — на сколько дней хватит при спросе
+            за последние 14 дней. Продажи POS и доставленные онлайн-заказы минус возвраты.
           </Typography.Paragraph>
         )}
       </Card>
@@ -452,7 +466,7 @@ function ProductCell({ name, category, image }: { name: string; category: string
 
 function StockCell({ r }: { r: AbcItem }) {
   if (Number(r.stock) <= 0) return <b style={{ color: RED }}>нет в наличии</b>
-  const low = r.days_cover !== null && r.days_cover < 7
+  const low = r.days_cover !== null && r.days_cover < LOW_DAYS
   return (
     <span style={{ color: low ? RED : undefined, fontWeight: low ? 700 : undefined, whiteSpace: 'nowrap' }}>
       {qty(r.stock, r.unit)}

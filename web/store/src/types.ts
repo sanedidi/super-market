@@ -567,7 +567,7 @@ export type AbcItem = {
   /** Коэффициент вариации продаж по неделям, %. */
   variation: number | null
   stock: string
-  /** На сколько дней хватит остатка при среднем спросе. */
+  /** На сколько дней хватит остатка при спросе за последние 14 дней; 0 — нет в наличии. */
   days_cover: number | null
 }
 export type AbcNoSaleItem = {
@@ -594,4 +594,62 @@ export type AbcXyz = {
   no_sales: { count: number; stock_value: string }
   items: AbcItem[]
   no_sale_items: AbcNoSaleItem[]
+}
+
+/** /store/reports/sales-series — точка по часу или дню. */
+export type SeriesPoint = {
+  at: string
+  revenue: string
+  pos: string
+  online: string
+  profit: string
+  checks: number
+  orders: number
+}
+export type SeriesTotals = {
+  revenue: string
+  pos: string
+  online: string
+  profit: string
+  margin_pct: number | null
+  checks: number
+  orders: number
+  avg_check: string
+}
+export type SalesSeries = {
+  from: string
+  to: string
+  bucket: 'hour' | 'day' | 'weekday_hour'
+  points: SeriesPoint[]
+  totals: SeriesTotals
+  compare?: 'prev' | 'week'
+  prev_from?: string
+  prev_to?: string
+  prev?: SeriesPoint[]
+  prev_totals?: SeriesTotals
+  change_pct?: number | null
+  heatmap?: { weekday: number; hour: number; checks: number; revenue: string }[]
+}
+
+/** /store/reports/sales-breakdown */
+export type BreakdownItem = {
+  key: string
+  name: string
+  value: string
+  qty?: string
+  unit?: string | null
+  image?: string | null
+  share: number
+  prev_value?: string
+  change_pct?: number | null
+}
+export type SalesBreakdown = {
+  by: 'category' | 'product' | 'payment'
+  from: string
+  to: string
+  total: string
+  items: BreakdownItem[]
+  other: { count: number; value: string; share: number; prev_value?: string } | null
+  prev_total?: string
+  change_pct?: number | null
 }

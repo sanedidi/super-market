@@ -1,6 +1,8 @@
-// Главная: продажи за сегодня, новые заказы, баланс, контроль чеков.
+// Главная: с правом «Отчёты» — выручка, прибыль, графики и ABC/XYZ (dashboard/Analytics),
+// без него — продажи сегодня, новые заказы, баланс и контроль чеков.
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Alert, Button, Card, Col, Flex, Row, Statistic, Table, Typography } from 'antd'
+import { Alert, Button, Card, Col, Flex, Row, Segmented, Statistic, Table, Typography } from 'antd'
 import { EnvironmentOutlined, RocketOutlined, ShoppingOutlined } from '@ant-design/icons'
 import { PageTitle, StatusTag, dateTime, money, periodParams, useItem } from '@sm/shared'
 import { useStore } from '../ctx'
@@ -9,21 +11,49 @@ import { NeedStore, today } from '../ui'
 import type { Balance, FiscalSummary, Order, SalesSummary } from '../types'
 import type { Draft } from './start/api'
 import { SetupChecklist, useSetupState } from './setup/Setup'
+import { Analytics, PERIODS, PeriodNote, type Period } from './dashboard/Analytics'
+
+const PERIOD_KEY = 'sm.dashboard.period'
+function savedPeriod(): Period {
+  try {
+    const v = localStorage.getItem(PERIOD_KEY)
+    if (PERIODS.some((p) => p.value === v)) return v as Period
+  } catch {
+    /* хранилище недоступно */
+  }
+  return 'today'
+}
 
 export function DashboardPage() {
+  const { can, storeId } = useStore()
+  const analytics = can('reports.view')
+  const [period, setPeriod] = useState<Period>(savedPeriod)
+  const pick = (p: Period) => {
+    setPeriod(p)
+    try {
+      localStorage.setItem(PERIOD_KEY, p)
+    } catch {
+      /* хранилище недоступно */
+    }
+  }
   return (
     <>
-      <PageTitle title="Главная" />
+      <PageTitle
+        title="Главная"
+        extra={analytics && storeId ? <Segmented<Period> value={period} onChange={pick} options={PERIODS} /> : undefined}
+      >
+        {analytics && storeId ? <PeriodNote period={period} /> : undefined}
+      </PageTitle>
       <NeedStore>
-        <Blocks />
-        <Widgets />
+        <Blocks analytics={analytics} />
+        {analytics ? <Analytics period={period} /> : <Widgets />}
       </NeedStore>
     </>
   )
 }
 
 /** Чек-лист настройки, «Начало работы» и спрос на доставку. */
-function Blocks() {
+function Blocks({ analytics }: { analytics: boolean }) {
   const { storeId, can } = useStore()
   const setup = useSetupState(storeId, can('stores.manage')).data
   // Пока доставка не выбрана, спрос на неё показывает чек-лист.
@@ -33,7 +63,8 @@ function Blocks() {
       {setup && <SetupChecklist s={setup} />}
       <StartBlock />
       {!(checklist && !setup.steps.delivery) && <WishesBlock />}
-      <DebtsBlock />
+      {/* С аналитикой долги — карточкой внизу главной. */}
+      {!analytics && <DebtsBlock />}
     </>
   )
 }
