@@ -26,6 +26,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppStore))
 		r.Get("/cash-flow", m.cashFlow)
 		r.Get("/profit-loss", m.profitLoss)
+		r.Get("/abc-xyz", m.abcXyz)
 	})
 }
 
@@ -51,5 +52,16 @@ func (m *Module) profitLoss(w http.ResponseWriter, r *http.Request) {
 			return ProfitLoss{}, err
 		}
 		return m.svc.ProfitLoss(r.Context(), identity.FromContext(r.Context()), f)
+	})
+}
+
+func (m *Module) abcXyz(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (AbcXyz, error) {
+		f, err := filter(r)
+		if err != nil {
+			return AbcXyz{}, err
+		}
+		q := r.URL.Query()
+		return m.svc.AbcXyz(r.Context(), identity.FromContext(r.Context()), AbcFilter{Filter: f, CategoryID: q.Get("category_id"), By: q.Get("by")})
 	})
 }

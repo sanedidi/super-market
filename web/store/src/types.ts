@@ -545,3 +545,53 @@ export type StoreCrowdBonuses = {
   max_deliveries: number
   items: StoreCrowdBonus[] | null
 }
+
+// ABC/XYZ-анализ (/store/reports/abc-xyz). Доли — проценты числом.
+export type AbcLetter = 'A' | 'B' | 'C'
+export type XyzLetter = 'X' | 'Y' | 'Z'
+export type AbcBy = 'revenue' | 'profit' | 'qty'
+export type AbcItem = {
+  product_id: string
+  name: string
+  category: string
+  unit: string
+  image: string | null
+  abc: AbcLetter
+  /** null — продаж меньше 4 недель, XYZ ещё не считается. */
+  xyz: XyzLetter | null
+  revenue: string
+  profit: string
+  qty: string
+  share: number
+  cum_share: number
+  /** Коэффициент вариации продаж по неделям, %. */
+  variation: number | null
+  stock: string
+  /** На сколько дней хватит остатка при среднем спросе. */
+  days_cover: number | null
+}
+export type AbcNoSaleItem = {
+  product_id: string
+  name: string
+  category: string
+  unit: string
+  image: string | null
+  stock: string
+  stock_value: string
+}
+export type AbcXyz = {
+  from: string
+  to: string
+  by: AbcBy
+  analysis_from: string
+  weeks: number
+  xyz_available: boolean
+  xyz_days_left: number
+  min_weeks: number
+  totals: { revenue: string; profit: string; qty: string; products: number }
+  groups: Record<AbcLetter, { count: number; share: number; revenue: string; profit: string }>
+  matrix: { cell: string; count: number; share: number; revenue: string }[]
+  no_sales: { count: number; stock_value: string }
+  items: AbcItem[]
+  no_sale_items: AbcNoSaleItem[]
+}

@@ -164,6 +164,7 @@ func TestStoreReadPermissions(t *testing.T) {
 		"/store/billing/invoices":                            identity.PermPayoutsManage,
 		"/store/reports/cash-flow":                           identity.PermReportsView,
 		"/store/reports/profit-loss":                         identity.PermReportsView,
+		"/store/reports/abc-xyz":                             identity.PermReportsView,
 	}
 	for p, perm := range closed {
 		r := a.expect(a.do("GET", p, nobody, nil), 403, "closed "+p)

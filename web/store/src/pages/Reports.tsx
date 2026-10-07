@@ -8,9 +8,9 @@ import { RangeFilter, thisMonth, type Range } from '../ui'
 import type { CashFlow, CashboxFlow, ProfitLoss, ReasonAmount } from '../types'
 
 /** Фильтры отчёта: период и магазин ('' — вся сеть). */
-function useReportFilters() {
+export function useReportFilters(initial: () => Range = thisMonth) {
   const { storeId, stores, me } = useStore()
-  const [range, setRange] = useState<Range | null>(thisMonth)
+  const [range, setRange] = useState<Range | null>(initial)
   const seesAll = !!me && (me.is_owner || me.all_stores)
   // Пока пользователь сам не выбрал — вся сеть (если доступна) или текущий магазин;
   // значение вычисляется, поэтому подхватывает /store/me и магазины после загрузки.
@@ -32,7 +32,7 @@ function useReportFilters() {
       />
     </>
   )
-  return { params, filters }
+  return { params, filters, range }
 }
 
 function Period({ from, to }: { from: string; to: string }) {
