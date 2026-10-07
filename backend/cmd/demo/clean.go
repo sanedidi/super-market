@@ -46,9 +46,22 @@ func clean(ctx context.Context, pool *pgxpool.Pool) error {
 		return err
 	}
 
+	// 0. Курьеры «по пути», проверенные в демо-магазинах, остаются (их
+	// удалит шаг 1б, если их создал review): иначе удаление магазина
+	// потянуло бы за собой курьера и всё, что на него ссылается.
+	if _, err := tx.Exec(ctx, `
+		UPDATE crowd_couriers SET verified_store_id = NULL
+		WHERE verified_store_id IN (SELECT id FROM stores WHERE network_id::text = ANY($1))`, ids["network"]); err != nil {
+		return err
+	}
 	// 1. Сети со всеми зависимыми данными.
 	if err := d.remove("networks", []string{"id"}, ids["network"], nil); err != nil {
 		return fmt.Errorf("сети: %w", err)
+	}
+	// 1б. Что добавил review (сотрудники, роли и логин курьера обычно уже
+	// удалены вместе с сетью).
+	if err := d.cleanReview(ids); err != nil {
+		return fmt.Errorf("review: %w", err)
 	}
 	// 2. Баннеры.
 	if _, err := tx.Exec(ctx, `DELETE FROM banners WHERE id::text = ANY($1)`, ids["banner"]); err != nil {
@@ -106,8 +119,60 @@ func clean(ctx context.Context, pool *pgxpool.Pool) error {
 		return err
 	}
 	fmt.Printf("готово: удалено сетей %d, товаров %d, баннеров %d\n", len(ids["network"]), len(ids["product"])-kept, len(ids["banner"]))
+	if n := len(ids["review_employee"]) + len(ids["review_courier"]) + len(ids["review_crowd"]); n > 0 {
+		fmt.Println("демо-доступ для проверки приложений удалён (сотрудник, курьер магазина, курьер «по пути»)")
+	}
 	if kept > 0 {
 		fmt.Printf("! %d товаров уже есть в настоящих продажах или заказах — они выключены, а не удалены\n", kept)
+	}
+	return nil
+}
+
+// cleanReview удаляет то, что создал demo review: логин и запись штатного
+// курьера, сотрудника для проверки, его роль, курьера «по пути», адрес и
+// профиль покупателя. Сам пользователь удаляется, только если его создал
+// review (kind = user).
+func (d *deleter) cleanReview(ids map[string][]string) error {
+	logins := append(append([]string{}, ids["review_courier_login"]...), ids["review_courier"]...)
+	if _, err := d.tx.Exec(d.ctx, `DELETE FROM courier_logins WHERE employee_id::text = ANY($1)`, logins); err != nil {
+		return err
+	}
+	employees := append(append([]string{}, ids["review_employee"]...), ids["review_courier"]...)
+	if err := d.remove("employees", []string{"id"}, employees, nil); err != nil {
+		return err
+	}
+	if err := d.remove("roles", []string{"id"}, ids["review_role"], nil); err != nil {
+		return err
+	}
+	if _, err := d.tx.Exec(d.ctx, `DELETE FROM customer_addresses WHERE id::text = ANY($1)`, ids["review_address"]); err != nil {
+		return err
+	}
+	for _, id := range ids["review_crowd"] {
+		ok, err := d.try(`DELETE FROM crowd_couriers WHERE user_id::text = $1`, id)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			// Есть настоящие заказы или начисления — обезличить, как при удалении аккаунта.
+			if _, err := d.tx.Exec(d.ctx, `
+				UPDATE crowd_couriers SET deleted_at = now(), full_name = '', birth_date = NULL, doc_hash = NULL,
+				       status = 'unverified', verified_at = NULL, verified_store_id = NULL,
+				       online = false, dest = NULL, dest_title = '', location = NULL, located_at = NULL
+				WHERE user_id::text = $1`, id); err != nil {
+				return err
+			}
+		}
+		if _, err := d.tx.Exec(d.ctx, `UPDATE sessions SET revoked_at = now() WHERE user_id::text = $1 AND app = 'crowd' AND revoked_at IS NULL`, id); err != nil {
+			return err
+		}
+	}
+	for _, id := range ids["review_customer"] {
+		if _, err := d.tx.Exec(d.ctx, `DELETE FROM favorites WHERE user_id::text = $1`, id); err != nil {
+			return err
+		}
+		if _, err := d.try(`DELETE FROM customers WHERE user_id::text = $1`, id); err != nil {
+			return err
+		}
 	}
 	return nil
 }
