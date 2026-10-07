@@ -236,8 +236,8 @@ class _BalanceScreenState extends State<BalanceScreen> {
   }
 }
 
-/// Подписка на iOS (Figma М11а): тариф, магазины × цена, «Оплачено до» и статус —
-/// только просмотр, без кнопок оплаты и без текста о способах оплаты.
+/// Подписка на iOS (Figma М11а): тариф, число магазинов, «Оплачено до» и статус —
+/// только просмотр, без цен, кнопок оплаты и текста о способах оплаты (Apple 3.1.1).
 class SubscriptionInfoCard extends StatelessWidget {
   const SubscriptionInfoCard({super.key, required this.bill, this.today});
 
@@ -262,7 +262,7 @@ class SubscriptionInfoCard extends StatelessWidget {
         ]),
         const SizedBox(height: 8),
         if (tariff.isNotEmpty) _row('Тариф', tariff),
-        _row('Магазинов', '${bill['stores_count'] ?? 0} × \$${money(bill['price_per_store'], suffix: false)} в месяц'),
+        _row('Магазинов', '${bill['stores_count'] ?? 0}'),
         if (paidUntil != null) _row('Оплачено до', ruDate(paidUntil)),
       ]),
     );

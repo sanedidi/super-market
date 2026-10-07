@@ -84,6 +84,8 @@ s = open(p, encoding='utf-8').read()
 if 'DEVELOPMENT_TEAM' not in s:
     s = re.sub(r'(\n(\t+)PRODUCT_BUNDLE_IDENTIFIER = uz\.supermarket\.smCourier;)',
                r'\n\2DEVELOPMENT_TEAM = Z5984ANP34;\1', s)
+# Только iPhone: iPad не поддерживаем (иначе App Store требует скриншоты и проверку на iPad).
+s = s.replace('TARGETED_DEVICE_FAMILY = "1,2";', 'TARGETED_DEVICE_FAMILY = 1;')
 open(p, 'w', encoding='utf-8').write(s)
 PY2
 fi

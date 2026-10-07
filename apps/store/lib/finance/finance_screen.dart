@@ -258,7 +258,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
             Row(children: [
               Expanded(
                 child: Text(
-                  'Подписка: \$${money(bill['monthly_usd'], suffix: false)} в месяц · магазинов ${bill['stores_count'] ?? 0}',
+                  subscriptionReadOnly
+                      ? 'Подписка · магазинов ${bill['stores_count'] ?? 0}'
+                      : 'Подписка: \$${money(bill['monthly_usd'], suffix: false)} в месяц · магазинов ${bill['stores_count'] ?? 0}',
                   style: AppText.body,
                 ),
               ),

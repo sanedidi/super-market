@@ -20,7 +20,7 @@ if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
 fi
 
 # Демо-данные по запросу из репозитория: deploy/demo-request содержит
-# «seed <метка>» или «clean <метка>». Каждый запрос выполняется один раз.
+# «seed <метка>», «review <метка>» или «clean <метка>». Каждый запрос выполняется один раз.
 run_demo_request() {
   local file=deploy/demo-request applied="$HOME/.super-market-demo-applied"
   [ -f "$file" ] || return 0
@@ -29,7 +29,7 @@ run_demo_request() {
   [ -n "$req" ] || return 0
   [ "$req" = "$(cat "$applied" 2>/dev/null)" ] && return 0
   local action=${req%% *}
-  case "$action" in seed|clean) ;; *) echo "!! demo-request: ожидается seed или clean"; return 1 ;; esac
+  case "$action" in seed|review|clean) ;; *) echo "!! demo-request: ожидается seed, review или clean"; return 1 ;; esac
   echo ">> Демо-данные: $action"
   $COMPOSE run --rm --no-deps -T api demo "$action"
   echo "$req" > "$applied"

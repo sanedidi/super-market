@@ -12,6 +12,8 @@ import (
 type client struct {
 	h    http.Handler
 	code string
+	// Номер и код из REVIEW_LOGIN: для него сервер принимает только этот код.
+	reviewPhone, reviewCode string
 }
 
 type obj = map[string]any
@@ -55,10 +57,19 @@ func (c client) call(method, path, tok string, body any, want int) (obj, error) 
 }
 
 func (c client) login(phone, app string) (string, error) {
-	if _, err := c.call("POST", "/auth/otp/request", "", obj{"phone": phone}, http.StatusOK); err != nil {
+	return c.loginTerms(phone, app, false)
+}
+
+// loginTerms — вход с согласием с условиями (регистрация курьера «по пути»).
+func (c client) loginTerms(phone, app string, terms bool) (string, error) {
+	if _, err := c.call("POST", "/auth/otp/request", "", obj{"phone": phone, "app": app}, http.StatusOK); err != nil {
 		return "", err
 	}
-	out, err := c.call("POST", "/auth/otp/verify", "", obj{"phone": phone, "code": c.code, "app": app}, http.StatusOK)
+	code := c.code
+	if c.reviewPhone != "" && phone == c.reviewPhone {
+		code = c.reviewCode
+	}
+	out, err := c.call("POST", "/auth/otp/verify", "", obj{"phone": phone, "code": code, "app": app, "terms_accepted": terms}, http.StatusOK)
 	if err != nil {
 		return "", err
 	}

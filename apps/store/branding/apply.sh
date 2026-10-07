@@ -98,6 +98,8 @@ if 'DEVELOPMENT_TEAM' not in s:
 if 'CODE_SIGN_ENTITLEMENTS' not in s:
     s = re.sub(r'(\n(\t+)PRODUCT_BUNDLE_IDENTIFIER = uz\.supermarket\.smStore;)',
                r'\n\2CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;\1', s)
+# Только iPhone: iPad не поддерживаем (иначе App Store требует скриншоты и проверку на iPad).
+s = s.replace('TARGETED_DEVICE_FAMILY = "1,2";', 'TARGETED_DEVICE_FAMILY = 1;')
 open(p, 'w', encoding='utf-8').write(s)
 PY2
 fi
