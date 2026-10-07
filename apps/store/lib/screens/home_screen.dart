@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import '../dashboard/home_dashboard.dart';
 import '../receipt/capture_screen.dart';
 import '../setup/setup_screens.dart';
 import '../start/start_screen.dart';
@@ -12,6 +13,7 @@ import '../ui/widgets.dart';
 import 'store_picker.dart';
 
 /// М1 · Главная: новые заказы, выручка за сегодня, быстрые действия.
+/// С правом «Отчёты» — Д1: графики, динамика, ABC/XYZ (dashboard/home_dashboard.dart).
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.onTab});
 
@@ -27,6 +29,8 @@ class _HomeScreenState extends State<HomeScreen> {
   int? _newOrders;
   Map<String, dynamic>? _balance;
   String? _loadedFor;
+  // Растёт при «потянуть вниз» — дашборд пересоздаётся и загружается заново.
+  int _gen = 0;
 
   String _day(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
@@ -48,7 +52,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     await Future.wait([
-      if (st.can('sales.pos') || st.can('reports.view'))
+      // С правом «Отчёты» выручку показывает дашборд.
+      if (st.can('sales.pos') && !st.can('reports.view'))
         safe(() async {
           final s = await api.get('/store/sales/summary', {'store_id': storeId, 'from': from, 'to': to}) as Map<String, dynamic>;
           if (mounted) setState(() => _sales = s);
@@ -58,7 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
           final items = await api.list('/store/orders', {'store_id': storeId, 'status': 'paid', 'limit': 100});
           if (mounted) setState(() => _newOrders = items.length);
         }),
-      if (st.can('payouts.manage'))
+      if (st.can('payouts.manage') && !st.can('reports.view'))
         safe(() async {
           final b = await api.get('/store/balance') as Map<String, dynamic>;
           if (mounted) setState(() => _balance = b);
@@ -76,7 +81,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final canIncome = st.can('inventory.manage');
     return SafeArea(
       child: RefreshIndicator(
-        onRefresh: _load,
+        onRefresh: () {
+          setState(() => _gen++);
+          return _load();
+        },
         child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
           Row(children: [
             Expanded(
@@ -115,6 +123,52 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 16),
           ],
+          if (st.can('reports.view') && st.storeId != null)
+            HomeDashboard(
+              key: ValueKey('dash-${st.storeId}-$_gen'),
+              storeId: st.storeId!,
+              canOrders: st.can('orders.manage'),
+              canBalance: st.can('payouts.manage'),
+              actions: _actions(canIncome),
+            )
+          else ...[
+            ..._plain(canIncome),
+          ],
+        ]),
+      ),
+    );
+  }
+
+  /// Быстрые действия одним рядом — на главной с графиками.
+  Widget _actions(bool canIncome) {
+    return Row(children: [
+      Expanded(
+        child: _MiniAction(
+          icon: Icons.document_scanner_rounded,
+          label: 'Приход',
+          bg: AppColors.primarySoft,
+          fg: AppColors.primary,
+          onTap: canIncome ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CaptureScreen())) : null,
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(child: _MiniAction(icon: Icons.inventory_2_rounded, label: 'Склад', bg: AppColors.blueSoft, fg: AppColors.blue, onTap: () => widget.onTab(2))),
+      const SizedBox(width: 8),
+      Expanded(
+        child: _MiniAction(
+          icon: Icons.insights_rounded,
+          label: 'Итоги дня',
+          bg: AppColors.successSoft,
+          fg: AppColors.successInk,
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SummaryScreen())),
+        ),
+      ),
+    ]);
+  }
+
+  /// Прежняя главная — для сотрудников без права «Отчёты».
+  List<Widget> _plain(bool canIncome) {
+    return [
           if (_sales != null) ...[
             AppCard(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -128,23 +182,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(width: 8),
                   Expanded(child: _Kpi('Возвратов', '${_sales!['returns_count'] ?? 0}')),
                 ]),
-              ]),
-            ),
-            const SizedBox(height: 16),
-          ],
-          if (st.can('reports.view')) ...[
-            AppCard(
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SummaryScreen())),
-              child: const Row(children: [
-                IconBox(Icons.insights_rounded, bg: AppColors.primarySoft, fg: AppColors.primary),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Итоги дня', style: AppText.bodyStrong),
-                    Text('Прибыль, магазины, что требует внимания', style: AppText.small),
-                  ]),
-                ),
-                Icon(Icons.chevron_right_rounded, color: AppColors.muted),
               ]),
             ),
             const SizedBox(height: 16),
@@ -181,6 +218,30 @@ class _HomeScreenState extends State<HomeScreen> {
               ]),
             ),
           ],
+    ];
+  }
+}
+
+class _MiniAction extends StatelessWidget {
+  const _MiniAction({required this.icon, required this.label, required this.bg, required this.fg, required this.onTap});
+
+  final IconData icon;
+  final String label;
+  final Color bg;
+  final Color fg;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: onTap == null ? 0.4 : 1,
+      child: AppCard(
+        onTap: onTap,
+        padding: const EdgeInsets.fromLTRB(6, 12, 6, 10),
+        child: Column(children: [
+          IconBox(icon, bg: bg, fg: fg, size: 38, iconSize: 20, radius: 12),
+          const SizedBox(height: 6),
+          Text(label, style: AppText.caption.copyWith(fontSize: 12, color: AppColors.dark), maxLines: 1, overflow: TextOverflow.ellipsis),
         ]),
       ),
     );

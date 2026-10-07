@@ -27,9 +27,9 @@ var tashkent = time.FixedZone("Asia/Tashkent", 5*60*60)
 
 // Пороги «требует внимания».
 const (
-	lowStockDays     = 2  // остатка хватит меньше чем на столько дней продаж
-	lowStockWindow   = 14 // дней продаж для средней
-	lowStockMinSold  = 3  // меньше продаж за окно — товар не считаем ходовым
+	// Остатка хватит меньше чем на столько дней. Окно и минимум продаж —
+	// общие с ABC/XYZ: reports.CoverWindowDays и reports.CoverMinSold.
+	lowStockDays     = 2
 	invoiceSoonDays  = 3
 	orderWaitMinutes = 10
 )
@@ -236,7 +236,7 @@ func (s *Service) alerts(ctx context.Context, p *identity.Principal, day time.Ti
 				SELECT pr.name, trim(trailing '.' FROM trim(trailing '0' FROM low.stock::text)) AS qty, u.short_name AS unit
 				FROM low JOIN products pr ON pr.id = low.product_id JOIN units u ON u.id = pr.unit_id
 				ORDER BY low.stock / NULLIF(low.q, 0) LIMIT 1) top ON true`,
-			append(args, day.AddDate(0, 0, 1-lowStockWindow), day.AddDate(0, 0, 1), lowStockMinSold, lowStockWindow, lowStockDays)...).
+			append(args, day.AddDate(0, 0, 1-reports.CoverWindowDays), day.AddDate(0, 0, 1), reports.CoverMinSold, reports.CoverWindowDays, lowStockDays)...).
 			Scan(&n, &name, &qty, &unit)
 		if err != nil {
 			return nil, err

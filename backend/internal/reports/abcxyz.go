@@ -45,6 +45,9 @@ type AbcFilter struct {
 	Filter
 	CategoryID string // с подкатегориями
 	By         string // revenue (по умолчанию) | profit | qty
+	// Compact — для главной: без списков товаров, только товары A, которых
+	// хватит меньше чем на CoverAttentionDays дней (до пяти, сначала кончающиеся).
+	Compact bool
 }
 
 type AbcGroup struct {
@@ -77,7 +80,7 @@ type AbcItem struct {
 	// Коэффициент вариации продаж по неделям, %; null — XYZ ещё не считается.
 	Variation *float64 `json:"variation"`
 	Stock     string   `json:"stock"`
-	// На сколько дней хватит остатка при среднем спросе за период.
+	// На сколько дней хватит остатка при спросе за последние 14 дней (см. DaysCover).
 	DaysCover *float64 `json:"days_cover"`
 }
 
@@ -147,6 +150,7 @@ type abcRow struct {
 	id, name, category, unit string
 	image                    *string
 	revenue, profit, qty     money.Dec
+	sold14                   money.Dec // продано за последние CoverWindowDays дней
 	weeks                    map[int]float64
 	stock, stockValue        string
 	metric                   float64
@@ -199,36 +203,25 @@ func (s *Service) AbcXyz(ctx context.Context, p *identity.Principal, f AbcFilter
 	}
 
 	// Продажи по товарам и неделям.
+	// Продажи по товарам и неделям; sold14 — продано за последние дни для
+	// «на сколько дней хватит остатка» (то же окно, что в «Итогах дня»).
+	end := s.live(sc)
 	rows, err := s.pool.Query(ctx, `
 		WITH RECURSIVE cats AS (
 			SELECT id FROM categories WHERE $6 <> '' AND id::text = $6
 			UNION ALL SELECT c.id FROM categories c JOIN cats ON c.parent_id = cats.id
-		), lines AS (
-			SELECT si.product_id, s.sold_at AS at, si.qty, si.total AS revenue, si.cost
-			FROM sale_items si JOIN sales s ON s.id = si.sale_id
-			WHERE s.network_id = $1 AND ($2::uuid[] IS NULL OR s.store_id = ANY($2)) AND s.sold_at >= $3 AND s.sold_at < $4
-			UNION ALL
-			SELECT oi.product_id, o.delivered_at, oi.qty, oi.total, COALESCE(oi.cost, 0)
-			FROM order_items oi JOIN orders o ON o.id = oi.order_id
-			WHERE o.network_id = $1 AND ($2::uuid[] IS NULL OR o.store_id = ANY($2)) AND o.status = 'delivered'
-			  AND o.delivered_at >= $3 AND o.delivered_at < $4
-			UNION ALL
-			SELECT si.product_id, r.created_at, -ri.qty, -ri.total, -ri.cost
-			FROM customer_return_items ri
-			JOIN customer_returns r ON r.id = ri.return_id
-			JOIN sale_items si ON si.sale_id = r.sale_id AND si.line = ri.sale_line
-			WHERE r.network_id = $1 AND ($2::uuid[] IS NULL OR r.store_id = ANY($2)) AND r.created_at >= $3 AND r.created_at < $4
-		)
+		), `+salesLinesCTE+`
 		SELECT l.product_id, p.name, COALESCE(c.name, ''), u.short_name, p.images[1],
 		       GREATEST(floor(extract(epoch FROM l.at - $5) / 604800), 0)::int,
-		       sum(l.qty)::text, sum(l.revenue)::numeric(18,2)::text, sum(l.revenue - l.cost)::numeric(18,2)::text
+		       sum(l.qty)::text, sum(l.revenue)::numeric(18,2)::text, sum(l.revenue - l.cost)::numeric(18,2)::text,
+		       COALESCE(sum(l.qty) FILTER (WHERE l.at >= $7), 0)::text
 		FROM lines l
 		JOIN products p ON p.id = l.product_id
 		JOIN units u ON u.id = p.unit_id
 		LEFT JOIN categories c ON c.id = p.category_id
 		WHERE $6 = '' OR p.category_id IN (SELECT id FROM cats)
 		GROUP BY 1, 2, 3, 4, 5, 6`,
-		p.NetworkID, sc.stores, sc.from, sc.to, start, f.CategoryID)
+		p.NetworkID, sc.stores, sc.from, sc.to, start, f.CategoryID, end.AddDate(0, 0, -CoverWindowDays))
 	if err != nil {
 		return out, err
 	}
@@ -237,14 +230,14 @@ func (s *Service) AbcXyz(ctx context.Context, p *identity.Principal, f AbcFilter
 	for rows.Next() {
 		var r abcRow
 		var wk int
-		var qty, rev, profit string
-		if err := rows.Scan(&r.id, &r.name, &r.category, &r.unit, &r.image, &wk, &qty, &rev, &profit); err != nil {
+		var qty, rev, profit, sold string
+		if err := rows.Scan(&r.id, &r.name, &r.category, &r.unit, &r.image, &wk, &qty, &rev, &profit, &sold); err != nil {
 			rows.Close()
 			return out, err
 		}
 		x, ok := byID[r.id]
 		if !ok {
-			r.revenue, r.profit, r.qty = money.D("0"), money.D("0"), money.D("0")
+			r.revenue, r.profit, r.qty, r.sold14 = money.D("0"), money.D("0"), money.D("0"), money.D("0")
 			r.weeks = map[int]float64{}
 			x = &r
 			byID[r.id] = x
@@ -253,6 +246,7 @@ func (s *Service) AbcXyz(ctx context.Context, p *identity.Principal, f AbcFilter
 		x.revenue = x.revenue.Add(money.D(rev))
 		x.profit = x.profit.Add(money.D(profit))
 		x.qty = x.qty.Add(money.D(qty))
+		x.sold14 = x.sold14.Add(money.D(sold))
 		q, _ := strconv.ParseFloat(qty, 64)
 		x.weeks[wk] += q
 	}
@@ -325,7 +319,6 @@ func (s *Service) AbcXyz(ctx context.Context, p *identity.Principal, f AbcFilter
 	})
 	out.Totals = AbcTotals{Revenue: totRev.Money(), Profit: totProfit.Money(), Qty: totQty.Fixed(3), Products: len(items)}
 
-	days := sc.to.Sub(start).Hours() / 24
 	groups := map[string]*struct {
 		n             int
 		share         float64
@@ -367,11 +360,9 @@ func (s *Service) AbcXyz(ctx context.Context, p *identity.Principal, f AbcFilter
 			}
 			it.XYZ = &xyz
 		}
-		if q, _ := r.qty.Float64(); q > 0 && days > 0 {
-			st, _ := strconv.ParseFloat(it.Stock, 64)
-			dc := math.Floor(st / (q / days))
-			it.DaysCover = &dc
-		}
+		st, _ := strconv.ParseFloat(it.Stock, 64)
+		sold, _ := r.sold14.Float64()
+		it.DaysCover = DaysCover(st, sold)
 		out.Items = append(out.Items, it)
 
 		g := groups[abc]
@@ -464,6 +455,9 @@ func (s *Service) AbcXyz(ctx context.Context, p *identity.Principal, f AbcFilter
 	if out.NoSales.StockValue == "" {
 		out.NoSales.StockValue = "0.00"
 	}
+	if f.Compact {
+		out.Items, out.NoSaleItems = attention(out.Items), []AbcNoSale{}
+	}
 	return out, nil
 }
 
@@ -491,3 +485,18 @@ func variation(weeks map[int]float64, n int) (float64, bool) {
 }
 
 func round2(v float64) float64 { return math.Round(v*100) / 100 }
+
+// attention — главные товары (A), которые скоро закончатся.
+func attention(items []AbcItem) []AbcItem {
+	out := []AbcItem{}
+	for _, it := range items {
+		if it.ABC == "A" && it.DaysCover != nil && *it.DaysCover < CoverAttentionDays {
+			out = append(out, it)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return *out[i].DaysCover < *out[j].DaysCover })
+	if len(out) > coverAttentionMax {
+		out = out[:coverAttentionMax]
+	}
+	return out
+}

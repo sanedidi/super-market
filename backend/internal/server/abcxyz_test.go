@@ -112,7 +112,7 @@ func TestAbcXyz(t *testing.T) {
 		}
 	}
 	b := got["Хлеб"]
-	if b["revenue"] != "795000.00" || b["qty"] != "159.000" || b["stock"] != "841.000" || b["days_cover"].(float64) != 296 || b["share"].(float64) != 53.32 {
+	if b["revenue"] != "795000.00" || b["qty"] != "159.000" || b["stock"] != "841.000" || b["days_cover"].(float64) != 301 || b["share"].(float64) != 53.32 {
 		t.Fatalf("bread = %v", b)
 	}
 	if got["Вода"]["variation"].(float64) != 16.67 {

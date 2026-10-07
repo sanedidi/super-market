@@ -3,11 +3,13 @@ package reports
 import (
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/sanedidi/super-market/backend/internal/finance"
 	"github.com/sanedidi/super-market/backend/internal/identity"
+	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 )
 
@@ -27,6 +29,8 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/cash-flow", m.cashFlow)
 		r.Get("/profit-loss", m.profitLoss)
 		r.Get("/abc-xyz", m.abcXyz)
+		r.Get("/sales-series", m.salesSeries)
+		r.Get("/sales-breakdown", m.salesBreakdown)
 	})
 }
 
@@ -62,6 +66,36 @@ func (m *Module) abcXyz(w http.ResponseWriter, r *http.Request) {
 			return AbcXyz{}, err
 		}
 		q := r.URL.Query()
-		return m.svc.AbcXyz(r.Context(), identity.FromContext(r.Context()), AbcFilter{Filter: f, CategoryID: q.Get("category_id"), By: q.Get("by")})
+		return m.svc.AbcXyz(r.Context(), identity.FromContext(r.Context()), AbcFilter{Filter: f, CategoryID: q.Get("category_id"), By: q.Get("by"), Compact: q.Get("compact") == "1"})
+	})
+}
+
+func (m *Module) salesSeries(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (SalesSeries, error) {
+		f, err := filter(r)
+		if err != nil {
+			return SalesSeries{}, err
+		}
+		q := r.URL.Query()
+		return m.svc.SalesSeries(r.Context(), identity.FromContext(r.Context()), SeriesFilter{Filter: f, Bucket: q.Get("bucket"), Compare: q.Get("compare")})
+	})
+}
+
+func (m *Module) salesBreakdown(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (SalesBreakdown, error) {
+		f, err := filter(r)
+		if err != nil {
+			return SalesBreakdown{}, err
+		}
+		q := r.URL.Query()
+		limit := 0
+		if v := q.Get("limit"); v != "" {
+			if limit, err = strconv.Atoi(v); err != nil || limit < 1 {
+				return SalesBreakdown{}, apperr.Validation("limit: от 1 до 50")
+			}
+		}
+		return m.svc.SalesBreakdown(r.Context(), identity.FromContext(r.Context()), BreakdownFilter{
+			Filter: f, By: q.Get("by"), ParentID: q.Get("parent_id"), Compare: q.Get("compare"), Limit: limit,
+		})
 	})
 }
