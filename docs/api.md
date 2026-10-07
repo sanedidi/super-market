@@ -482,7 +482,9 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 | --- | --- | --- |
 | GET | `/store/reports/cash-flow?cashbox_id=` | по кассам: остаток на начало, приход, расход, на конец; строки по статьям (продажи, возвраты, финансовые причины, расчёты с контрагентами, сдача кассы, из кассы в кассу) |
 | GET | `/store/reports/profit-loss` | выручка (POS − возвраты + онлайн + доставка), себестоимость FIFO, валовая прибыль, списания и инвентаризация, прочие доходы и расходы по причинам, подписка платформы, чистая прибыль |
-| GET | `/store/reports/abc-xyz?by=&category_id=` | ABC/XYZ-анализ товаров (см. ниже) |
+| GET | `/store/reports/abc-xyz?by=&category_id=&compact=` | ABC/XYZ-анализ товаров (см. ниже) |
+| GET | `/store/reports/sales-series?bucket=&compare=` | выручка, прибыль, чеки по часам или дням; «Когда покупают» (см. ниже) |
+| GET | `/store/reports/sales-breakdown?by=&parent_id=&limit=&compare=` | выручка по категориям, товарам или способам оплаты (см. ниже) |
 
 `/store/reports/abc-xyz` — период по умолчанию последние 12 недель (не больше года). `by`: `revenue` (по умолчанию),
 `profit`, `qty`; `category_id` — с подкатегориями. Ответ: `analysis_from` (с первой продажи в периоде), `weeks` —
@@ -492,6 +494,29 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 `profit`, `qty`, `share`, `cum_share`, `variation` — коэффициент вариации по неделям в %, `stock`, `days_cover`) и
 `no_sale_items` — остаток есть, продаж нет (`stock`, `stock_value` по себестоимости). Границы: A — накопленная доля
 до товара < 80%, B — < 95%; X — вариация ≤ 10%, Y — ≤ 25%.
+`days_cover` — на сколько полных дней хватит остатка при спросе за последние 14 дней (то же правило, что алерт
+«товары заканчиваются» в `/store/summary`): нет остатка — `0`, за 14 дней не продавался — `null`.
+`compact=1` — для главной: `items` — только товары A, которых хватит меньше чем на 7 дней (до 5, сначала
+кончающиеся), `no_sale_items` пустой; `groups`, `matrix`, `no_sales` — как обычно.
+
+Выручка в `sales-series` и `sales-breakdown` считается так же, как в `profit-loss`: чеки POS по дате продажи,
+возвраты по дате возврата, доставленные онлайн-заказы по дате доставки. Конец периода не позже текущего момента.
+`compare`: `prev` — предыдущий такой же отрезок, `week` — тот же отрезок неделей раньше («сегодня» ↔ «прошлая
+среда»); прошлые итоги — до того же момента, что и текущие.
+
+`/store/reports/sales-series` — `bucket`: `hour` (не больше 3 суток), `day` (по умолчанию, не больше года),
+`weekday_hour`. Ответ: `points` — по часам/дням до текущего момента (`at`, `revenue` = `pos` + `online`, `pos` —
+чеки минус возвраты, `online` — заказы с доставкой, `profit` — валовая, `checks`, `orders`), `totals` (то же +
+`margin_pct`, `avg_check` по чекам POS); с `compare` — `prev_from`, `prev_to`, `prev` (весь прошлый отрезок, для
+линии на графике), `prev_totals`, `change_pct` по выручке. Сумма `points` равна `revenue.total` и `gross_profit` в
+`profit-loss` за тот же период. `bucket=weekday_hour` — «Когда покупают»: период по умолчанию последние 28 дней,
+ответ `heatmap` (`weekday` 1 — пн … 7 — вс, `hour`, `checks` и `revenue` кассы в среднем за один такой день).
+
+`/store/reports/sales-breakdown` — `by`: `category` (разделы верхнего уровня; с `parent_id` — подкатегории этой
+категории), `product` (с `qty`, `unit`, `image`), `payment` (способы оплаты чеков, `debt` — «В долг», онлайн-заказы:
+`online:payme|click|cash`; возвраты не вычитаются). Товары и категории — без платы за доставку, как в ABC/XYZ.
+Ответ: `total`, `items` по убыванию (`key`, `name`, `value`, `share` в %, с `compare` — `prev_value`,
+`change_pct`), `other` — что не вошло в `limit` (по умолчанию 8, для оплат — все; до 50): `count`, `value`, `share`.
 
 ## Витрина приложения (этап приложения 1)
 
