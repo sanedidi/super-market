@@ -628,10 +628,9 @@ Super Market и SM Магазин), `yandex_mapkit` (карта, Super Market), 
 
 Как читать таблицы: «Связаны с пользователем» = Linked to you; «Цели» — Purposes в анкете
 (App Functionality = функциональность приложения: вход, заказы, безопасность, предотвращение мошенничества).
-Строки **без пометки** уже есть в `PrivacyInfo.xcprivacy` (см. release.md). Строки с **⚠** в манифесте нет, но
-сбор следует из кода и политики конфиденциальности — рекомендуем указать в анкете **и** добавить в манифест
-(задача разработчику: `apps/client/ios/Runner/PrivacyInfo.xcprivacy`, `apps/<app>/branding/ios/PrivacyInfo.xcprivacy`),
-чтобы анкета и Privacy Report из Xcode совпадали. Если решите не добавлять — снимите ⚠-строки и в анкете.
+Все строки таблиц ниже объявлены в `PrivacyInfo.xcprivacy` (`apps/client/ios/Runner/PrivacyInfo.xcprivacy`,
+`apps/<app>/branding/ios/PrivacyInfo.xcprivacy`, см. release.md) с теми же флагами и целями — анкета и Privacy
+Report из Xcode должны совпадать. Меняете сбор данных — правьте таблицу, манифест и политику вместе.
 
 ### 4.1. Super Market
 
@@ -642,13 +641,13 @@ Super Market и SM Магазин), `yandex_mapkit` (карта, Super Market), 
 | Contact Info → Physical Address | адреса доставки | Да | Нет | App Functionality |
 | Location → Precise Location | точка адреса на карте, «Хочу доставку» | Да | Нет | App Functionality |
 | Identifiers → User ID | ID аккаунта | Да | Нет | App Functionality |
-| Purchases → Purchase History | заказы | Да | Нет | App Functionality; ⚠ **Developer’s Advertising or Marketing** — пуш об акциях учитывает историю заказов (только с согласия, политика §4) |
-| ⚠ Identifiers → Device ID | push-токен Firebase | Да | Нет | App Functionality |
-| ⚠ Financial Info → Other Financial Info | долги (насия) в магазинах | Да | Нет | App Functionality |
-| ⚠ User Content → Other User Content | комментарии к заказу, списки «Моей семьи», «Это не я» | Да | Нет | App Functionality |
-| ⚠ Usage Data → Advertising Data | факт показа рекламы бренда (1 раз в день на пользователя, `ad_views`) — для расчёта с рекламодателем | Да | Нет | Third-Party Advertising |
-| ⚠ Usage Data → Product Interaction | обезличенные показы и нажатия блоков главной | Нет | Нет | Analytics |
-| ⚠ Other Data → Other Data Types | дата рождения и пол (по желанию) | Да | Нет | App Functionality |
+| Purchases → Purchase History | заказы | Да | Нет | App Functionality; **Developer’s Advertising or Marketing** — пуш об акциях учитывает историю заказов (только с согласия, политика §4) |
+| Identifiers → Device ID | push-токен Firebase | Да | Нет | App Functionality |
+| Financial Info → Other Financial Info | долги (насия) в магазинах | Да | Нет | App Functionality |
+| User Content → Other User Content | комментарии к заказу, списки «Моей семьи», «Это не я» | Да | Нет | App Functionality |
+| Usage Data → Advertising Data | факт показа рекламы бренда (1 раз в день на пользователя, `ad_views`) — для расчёта с рекламодателем | Да | Нет | Third-Party Advertising |
+| Usage Data → Product Interaction | обезличенные показы и нажатия блоков главной | Нет | Нет | Analytics |
+| Other Data → Other Data Types | дата рождения и пол (по желанию) | Да | Нет | App Functionality |
 
 Не собираются: Email, Contacts, Health, Fitness, Payment Info (карту вводят на страницах Payme/Click), Credit Info,
 Photos, Audio, Browsing/Search History, Sensitive Info, Diagnostics.
@@ -665,15 +664,15 @@ Photos, Audio, Browsing/Search History, Sensitive Info, Diagnostics.
 | Location → Precise Location | точка магазина на карте (по кнопке «я здесь») | Да | Нет | App Functionality |
 | User Content → Photos or Videos | фото накладных, полок, товаров | Да | Нет | App Functionality |
 | Identifiers → User ID | ID сотрудника | Да | Нет | App Functionality |
-| ⚠ Identifiers → Device ID | push-токен Firebase | Да | Нет | App Functionality |
-| ⚠ Financial Info → Payment Info | реквизиты для вывода денег (счёт, МФО или карта) | Да | Нет | App Functionality |
-| ⚠ Financial Info → Other Financial Info | выручка, кассы, баланс, долги покупателей и поставщикам | Да | Нет | App Functionality |
-| ⚠ Other Data → Other Data Types | данные проверки курьера «по пути»: ФИО, дата рождения, тип документа (номер — только хеш) | Да | Нет | App Functionality |
+| Identifiers → Device ID | push-токен Firebase | Да | Нет | App Functionality |
+| Financial Info → Payment Info | реквизиты для вывода денег (счёт, МФО или карта) | Да | Нет | App Functionality |
+| Financial Info → Other Financial Info | выручка, кассы, баланс, долги покупателей и поставщикам | Да | Нет | App Functionality |
+| Other Data → Other Data Types | данные проверки курьера «по пути»: ФИО, дата рождения, тип документа (номер — только хеш) | Да | Нет | App Functionality |
 
 Face ID / отпечаток проверяются только на устройстве (`local_auth`) — **не** сбор данных. Тайлы OpenStreetMap и поиск
 адреса Nominatim получают только запрос карты и строку поиска.
 
-⚠ В политике конфиденциальности (раздел 3.3) нет реквизитов для вывода денег — стоит дописать.
+Реквизиты для вывода денег описаны в политике конфиденциальности (раздел 3.3).
 
 ### 4.3. SM Курьер
 
@@ -683,8 +682,8 @@ Face ID / отпечаток проверяются только на устро
 | Contact Info → Phone Number | телефон | Да | Нет | App Functionality |
 | Location → Precise Location | точка во время «Ищу заказы», активного заказа или смены (на сервере только последняя) | Да | Нет | App Functionality |
 | Identifiers → User ID | ID курьера, код KR-… | Да | Нет | App Functionality |
-| ⚠ Financial Info → Other Financial Info | начисления, удержания, выплаты (курьер «по пути») | Да | Нет | App Functionality |
-| ⚠ User Content → Customer Support | сообщение о проблеме с заказом | Да | Нет | App Functionality |
+| Financial Info → Other Financial Info | начисления, удержания, выплаты (курьер «по пути») | Да | Нет | App Functionality |
+| User Content → Customer Support | сообщение о проблеме с заказом | Да | Нет | App Functionality |
 
 Push (Firebase) в приложении курьера нет. Точки «Дом»/«Работа» хранятся только на телефоне — не сбор.
 
@@ -972,8 +971,8 @@ Telegram, сторонних входов нет (4.8).
 > частным лицам. Магазины платят за платформу (панель, кассу, витрину) как бизнес. 3.1.3(f) (бесплатное приложение-
 > компаньон к платному веб-сервису) тоже подходит по смыслу, но требует, чтобы в приложении вообще не было покупок и
 > призывов к ним — у нас так и есть на iOS. Ссылаемся на (c), а описание экрана подписки закрывает (f).
-> ⚠ На iOS карточка подписки показывает «N магазинов × $цена в месяц». Призыва к оплате нет, но если проверяющий
-> придерётся — проще убрать цену из iOS-карточки (оставить тариф, статус и «Оплачено до»).
+> На iOS цен подписки нет: карточка (`SubscriptionInfoCard`) показывает только тариф, «Магазинов: N», «Оплачено до» и
+> статус, сводка во вкладке «Финансы» — «Подписка · магазинов N». Цена в $ и оплата счетов — только на Android.
 
 #### SM Курьер — Notes (≤4000) — 2566 симв.
 ```text
