@@ -11,7 +11,7 @@
     register: 'https://store.super-market.uz/',  // «Подключить магазин», «Подключить сеть» (вход по номеру → мастер настройки)
     telegram: 'https://t.me/super_market_support', // поддержка в Telegram (то же, что SUPPORT_URL)
     support: 'tel:+998505764723',  // телефон поддержки в подвале
-    offer: '',             // публичная оферта (то же, что OFFER_URL)
+    offer: '/offer',       // оферта для покупателей (то же, что OFFER_URL); в подвале ссылки /offer и /offer/stores прямо в HTML
     clientAppStore: '',    // Super Market (покупатели) в App Store
     clientGooglePlay: '',  // Super Market (покупатели) в Google Play, пакет uz.supermarket.sm_client
     courierAppStore: '',   // «SM Курьер» в App Store
