@@ -7,6 +7,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 // DeleteWarehouse — склад без остатков и документов; склад по умолчанию
@@ -15,7 +16,7 @@ func (s *Service) DeleteWarehouse(ctx context.Context, p *identity.Principal, id
 	if err := p.Require(identity.PermStoresManage); err != nil {
 		return err
 	}
-	return db.Remove(ctx, s.pool, "Склад", true, `DELETE FROM warehouses WHERE id = $1 AND network_id = $2`, id, p.NetworkID)
+	return db.Remove(ctx, s.pool, i18n.Text{RU: "Склад", UZ: "Ombor"}, true, `DELETE FROM warehouses WHERE id = $1 AND network_id = $2`, id, p.NetworkID)
 }
 
 func (m *Module) deleteWarehouse(w http.ResponseWriter, r *http.Request) {

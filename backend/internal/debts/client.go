@@ -12,6 +12,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 	"github.com/sanedidi/super-market/backend/internal/push"
 )
@@ -138,7 +139,7 @@ type ClientStoreDebt struct {
 func (s *Service) ClientStoreDebt(ctx context.Context, p *identity.Principal, storeID string) (ClientStoreDebt, error) {
 	var out ClientStoreDebt
 	if !httpx.IsUUID(storeID) {
-		return out, apperr.NotFound("долга в этом магазине нет")
+		return out, apperr.NotFound("долга в этом магазине нет").Uz("bu doʻkonda qarz yoʻq")
 	}
 	ph, err := s.clientPhone(ctx, p)
 	if err != nil {
@@ -148,7 +149,7 @@ func (s *Service) ClientStoreDebt(ctx context.Context, p *identity.Principal, st
 	err = s.pool.QueryRow(ctx, `
 		SELECT d.id FROM debtors d JOIN stores st ON st.network_id = d.network_id AND st.id = $2 WHERE d.phone = $1`, ph, storeID).Scan(&debtorID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return out, apperr.NotFound("долга в этом магазине нет")
+		return out, apperr.NotFound("долга в этом магазине нет").Uz("bu doʻkonda qarz yoʻq")
 	}
 	if err != nil {
 		return out, err
@@ -181,7 +182,7 @@ func (s *Service) ClientStoreDebt(ctx context.Context, p *identity.Principal, st
 				return out, err
 			}
 			rows, err := s.pool.Query(ctx, `
-				SELECT p.name, si.qty::text, u.short_name, si.total::text FROM sale_items si
+				SELECT loc(p.name, p.name_uz), si.qty::text, loc(u.short_name, u.short_name_uz), si.total::text FROM sale_items si
 				JOIN products p ON p.id = si.product_id JOIN units u ON u.id = p.unit_id
 				WHERE si.sale_id = $1 ORDER BY si.line`, e.DocID)
 			if err != nil {
@@ -209,7 +210,7 @@ func (s *Service) ClientDispute(ctx context.Context, p *identity.Principal, entr
 	}
 	in.Comment = strings.TrimSpace(in.Comment)
 	if len([]rune(in.Comment)) > 500 {
-		return ClientEntry{}, apperr.Validation("comment: не длиннее 500 символов")
+		return ClientEntry{}, apperr.Validation("comment: не длиннее 500 символов").Uz("comment: 500 belgidan oshmasin")
 	}
 	var out ClientEntry
 	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -218,13 +219,13 @@ func (s *Service) ClientDispute(ctx context.Context, p *identity.Principal, entr
 			SELECT e.network_id, e.store_id, e.doc_type, e.amount::text FROM debt_entries e JOIN debtors d ON d.id = e.debtor_id
 			WHERE e.id = $1 AND d.phone = $2`, entryID, ph).Scan(&networkID, &storeID, &docType, &amount)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return apperr.NotFound("запись не найдена")
+			return apperr.NotFound("запись не найдена").Uz("yozuv topilmadi")
 		}
 		if err != nil {
 			return err
 		}
 		if docType != DocSale {
-			return apperr.Validation("оспорить можно только покупку в долг")
+			return apperr.Validation("оспорить можно только покупку в долг").Uz("faqat qarzga qilingan xarid ustidan eʼtiroz bildirish mumkin")
 		}
 		tag, err := tx.Exec(ctx, `
 			INSERT INTO debt_disputes (network_id, entry_id, user_id, comment) VALUES ($1, $2, $3, $4)
@@ -233,11 +234,13 @@ func (s *Service) ClientDispute(ctx context.Context, p *identity.Principal, entr
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return apperr.Conflict("already_disputed", "жалоба по этой записи уже отправлена")
+			return apperr.Conflict("already_disputed", "жалоба по этой записи уже отправлена").Uz("bu yozuv boʻyicha shikoyat allaqachon yuborilgan")
 		}
 		out = ClientEntry{ID: entryID, DocType: docType, Amount: amount, Dispute: "open"}
-		return push.EnqueueStaff(ctx, tx, storeID, identity.PermDebtsManage, "debt_dispute", "Покупатель оспаривает долг",
-			push.Sum(amount)+" сум — «Это не я». Проверьте запись", map[string]string{"type": "debt_dispute", "entry_id": itoa(entryID)})
+		return push.EnqueueStaff(ctx, tx, storeID, identity.PermDebtsManage, "debt_dispute",
+			i18n.Text{RU: "Покупатель оспаривает долг", UZ: "Xaridor qarzga eʼtiroz bildirdi"},
+			i18n.Text{RU: push.Sum(amount) + " сум — «Это не я». Проверьте запись", UZ: push.Sum(amount) + " soʻm — «Bu men emasman». Yozuvni tekshiring"},
+			map[string]string{"type": "debt_dispute", "entry_id": itoa(entryID)})
 	})
 	return out, err
 }

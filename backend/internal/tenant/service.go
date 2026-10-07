@@ -16,9 +16,11 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
-const defaultWarehouseName = "Основной склад"
+// defaultWarehouseName — название создаётся на языке того, кто создаёт магазин.
+var defaultWarehouseName = i18n.Text{RU: "Основной склад", UZ: "Asosiy ombor"}
 
 type Service struct {
 	pool *pgxpool.Pool
@@ -72,10 +74,10 @@ type CreateNetworkInput struct {
 func (s *Service) CreateNetwork(ctx context.Context, in CreateNetworkInput) (Network, error) {
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
-		return Network{}, apperr.Validation("name: обязательное поле")
+		return Network{}, apperr.Validation("name: обязательное поле").Uz("name: majburiy maydon")
 	}
 	if in.Kind != "chain" && in.Kind != "single" {
-		return Network{}, apperr.Validation("kind: ожидается chain или single")
+		return Network{}, apperr.Validation("kind: ожидается chain или single").Uz("kind: chain yoki single boʻlishi kerak")
 	}
 	login, hash, err := identity.PrepareOwnerLogin(identity.LoginInput{Login: in.OwnerLogin, Password: in.OwnerPassword})
 	if err != nil {
@@ -130,7 +132,7 @@ func getNetwork(ctx context.Context, q db.Querier, id string) (Network, error) {
 	}
 	n, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[Network])
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Network{}, apperr.NotFound("сеть не найдена")
+		return Network{}, apperr.NotFound("сеть не найдена").Uz("tarmoq topilmadi")
 	}
 	return n, err
 }
@@ -175,10 +177,10 @@ type UpdateNetworkInput struct {
 
 func (s *Service) UpdateNetwork(ctx context.Context, id string, in UpdateNetworkInput) (Network, error) {
 	if in.Name != nil && strings.TrimSpace(*in.Name) == "" {
-		return Network{}, apperr.Validation("name: не может быть пустым")
+		return Network{}, apperr.Validation("name: не может быть пустым").Uz("name: boʻsh boʻlishi mumkin emas")
 	}
 	if in.Status != nil && *in.Status != "active" && *in.Status != "blocked" {
-		return Network{}, apperr.Validation("status: ожидается active или blocked")
+		return Network{}, apperr.Validation("status: ожидается active или blocked").Uz("status: active yoki blocked boʻlishi kerak")
 	}
 	var name *string
 	if in.Name != nil {
@@ -192,7 +194,7 @@ func (s *Service) UpdateNetwork(ctx context.Context, id string, in UpdateNetwork
 		return Network{}, err
 	}
 	if tag.RowsAffected() == 0 {
-		return Network{}, apperr.NotFound("сеть не найдена")
+		return Network{}, apperr.NotFound("сеть не найдена").Uz("tarmoq topilmadi")
 	}
 	return s.GetNetwork(ctx, id)
 }
@@ -235,28 +237,28 @@ type StoreInput struct {
 
 func (in StoreInput) validate() error {
 	if in.Name != nil && strings.TrimSpace(*in.Name) == "" {
-		return apperr.Validation("name: не может быть пустым")
+		return apperr.Validation("name: не может быть пустым").Uz("name: boʻsh boʻlishi mumkin emas")
 	}
 	if (in.Lat == nil) != (in.Lng == nil) {
-		return apperr.Validation("lat и lng задаются вместе")
+		return apperr.Validation("lat и lng задаются вместе").Uz("lat va lng birga kiritiladi")
 	}
 	if in.Lat != nil && (*in.Lat < -90 || *in.Lat > 90 || *in.Lng < -180 || *in.Lng > 180) {
-		return apperr.Validation("lat/lng: координаты вне диапазона")
+		return apperr.Validation("lat/lng: координаты вне диапазона").Uz("lat/lng: koordinatalar ruxsat etilgan oraliqdan tashqarida")
 	}
 	if in.Status != nil && *in.Status != "active" && *in.Status != "inactive" {
-		return apperr.Validation("status: ожидается active или inactive")
+		return apperr.Validation("status: ожидается active или inactive").Uz("status: active yoki inactive boʻlishi kerak")
 	}
 	if in.DefaultWarehouseID != nil && !httpx.IsUUID(*in.DefaultWarehouseID) {
-		return apperr.Validation("default_warehouse_id: склад не найден")
+		return apperr.Validation("default_warehouse_id: склад не найден").Uz("default_warehouse_id: ombor topilmadi")
 	}
 	if in.City != nil && len([]rune(strings.TrimSpace(*in.City))) > 60 {
-		return apperr.Validation("city: не длиннее 60 символов")
+		return apperr.Validation("city: не длиннее 60 символов").Uz("city: 60 belgidan oshmasin")
 	}
 	if in.LogoURL != nil && *in.LogoURL != "" && !strings.HasPrefix(*in.LogoURL, "https://") && !strings.HasPrefix(*in.LogoURL, "http://") {
-		return apperr.Validation("logo_url: ожидается ссылка http(s)")
+		return apperr.Validation("logo_url: ожидается ссылка http(s)").Uz("logo_url: http(s) havola boʻlishi kerak")
 	}
 	if in.OnlinePriceTypeID != nil && *in.OnlinePriceTypeID != "" && !httpx.IsUUID(*in.OnlinePriceTypeID) {
-		return apperr.Validation("online_price_type_id: тип цены не найден")
+		return apperr.Validation("online_price_type_id: тип цены не найден").Uz("online_price_type_id: narx turi topilmadi")
 	}
 	return nil
 }
@@ -285,7 +287,7 @@ func (s *Service) AdminListStores(ctx context.Context, networkID string) ([]Stor
 
 func (s *Service) GetStore(ctx context.Context, p *identity.Principal, id string) (Store, error) {
 	if !p.CanAccessStore(id) {
-		return Store{}, apperr.NotFound("магазин не найден")
+		return Store{}, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	return getStore(ctx, s.pool, p.NetworkID, id)
 }
@@ -297,7 +299,7 @@ func getStore(ctx context.Context, q db.Querier, networkID, id string) (Store, e
 	}
 	st, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[Store])
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Store{}, apperr.NotFound("магазин не найден")
+		return Store{}, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	return st, err
 }
@@ -308,10 +310,10 @@ func (s *Service) CreateStore(ctx context.Context, p *identity.Principal, in Sto
 		return Store{}, err
 	}
 	if in.Name == nil {
-		return Store{}, apperr.Validation("name: обязательное поле")
+		return Store{}, apperr.Validation("name: обязательное поле").Uz("name: majburiy maydon")
 	}
 	if in.DefaultWarehouseID != nil || in.Status != nil || in.OnlinePriceTypeID != nil {
-		return Store{}, apperr.Validation("status, default_warehouse_id и online_price_type_id задаются после создания")
+		return Store{}, apperr.Validation("status, default_warehouse_id и online_price_type_id задаются после создания").Uz("status, default_warehouse_id va online_price_type_id yaratilgandan keyin kiritiladi")
 	}
 	if err := in.validate(); err != nil {
 		return Store{}, err
@@ -331,7 +333,7 @@ func (s *Service) CreateStore(ctx context.Context, p *identity.Principal, in Sto
 				return err
 			}
 			if n > 0 {
-				return apperr.Conflict("store_limit", "у одиночного магазина может быть только один магазин")
+				return apperr.Conflict("store_limit", "у одиночного магазина может быть только один магазин").Uz("yakka doʻkonda faqat bitta doʻkon boʻlishi mumkin")
 			}
 		}
 
@@ -348,7 +350,7 @@ func (s *Service) CreateStore(ctx context.Context, p *identity.Principal, in Sto
 		var whID string
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO warehouses (network_id, store_id, name) VALUES ($1, $2, $3) RETURNING id`,
-			p.NetworkID, id, defaultWarehouseName).Scan(&whID); err != nil {
+			p.NetworkID, id, defaultWarehouseName.Ctx(ctx)).Scan(&whID); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE stores SET default_warehouse_id = $2 WHERE id = $1`, id, whID); err != nil {
@@ -369,7 +371,7 @@ func (s *Service) UpdateStore(ctx context.Context, p *identity.Principal, id str
 		return Store{}, err
 	}
 	if !p.CanAccessStore(id) {
-		return Store{}, apperr.NotFound("магазин не найден")
+		return Store{}, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	if err := in.validate(); err != nil {
 		return Store{}, err
@@ -382,13 +384,13 @@ func (s *Service) UpdateStore(ctx context.Context, p *identity.Principal, id str
 			err := tx.QueryRow(ctx, `SELECT is_active FROM warehouses WHERE id = $1 AND store_id = $2`,
 				*in.DefaultWarehouseID, id).Scan(&active)
 			if errors.Is(err, pgx.ErrNoRows) {
-				return apperr.Validation("default_warehouse_id: склад не найден в этом магазине")
+				return apperr.Validation("default_warehouse_id: склад не найден в этом магазине").Uz("default_warehouse_id: ombor bu doʻkonda topilmadi")
 			}
 			if err != nil {
 				return err
 			}
 			if !active {
-				return apperr.Validation("default_warehouse_id: склад отключён")
+				return apperr.Validation("default_warehouse_id: склад отключён").Uz("default_warehouse_id: ombor oʻchirilgan")
 			}
 		}
 		if in.OnlinePriceTypeID != nil && *in.OnlinePriceTypeID != "" {
@@ -396,7 +398,7 @@ func (s *Service) UpdateStore(ctx context.Context, p *identity.Principal, id str
 			err := tx.QueryRow(ctx, `SELECT is_active FROM price_types WHERE id = $1 AND network_id = $2`,
 				*in.OnlinePriceTypeID, p.NetworkID).Scan(&active)
 			if errors.Is(err, pgx.ErrNoRows) || (err == nil && !active) {
-				return apperr.Validation("online_price_type_id: тип цены не найден или отключён")
+				return apperr.Validation("online_price_type_id: тип цены не найден или отключён").Uz("online_price_type_id: narx turi topilmadi yoki oʻchirilgan")
 			}
 			if err != nil {
 				return err
@@ -426,7 +428,7 @@ func (s *Service) UpdateStore(ctx context.Context, p *identity.Principal, id str
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return apperr.NotFound("магазин не найден")
+			return apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 		}
 		out, err = getStore(ctx, tx, p.NetworkID, id)
 		return err
@@ -476,10 +478,10 @@ func (s *Service) CreateWarehouse(ctx context.Context, p *identity.Principal, in
 		return Warehouse{}, err
 	}
 	if in.StoreID == nil || !httpx.IsUUID(*in.StoreID) || !p.CanAccessStore(*in.StoreID) {
-		return Warehouse{}, apperr.Validation("store_id: магазин не найден")
+		return Warehouse{}, apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
 	}
 	if in.Name == nil || strings.TrimSpace(*in.Name) == "" {
-		return Warehouse{}, apperr.Validation("name: обязательное поле")
+		return Warehouse{}, apperr.Validation("name: обязательное поле").Uz("name: majburiy maydon")
 	}
 	var id string
 	err := s.pool.QueryRow(ctx, `
@@ -487,9 +489,9 @@ func (s *Service) CreateWarehouse(ctx context.Context, p *identity.Principal, in
 		p.NetworkID, *in.StoreID, strings.TrimSpace(*in.Name)).Scan(&id)
 	switch {
 	case db.IsForeignKeyViolation(err):
-		return Warehouse{}, apperr.Validation("store_id: магазин не найден")
+		return Warehouse{}, apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
 	case db.IsUniqueViolation(err, "warehouses_store_id_name_key"):
-		return Warehouse{}, apperr.Conflict("warehouse_exists", "склад с таким названием уже есть в магазине")
+		return Warehouse{}, apperr.Conflict("warehouse_exists", "склад с таким названием уже есть в магазине").Uz("doʻkonda bunday nomli ombor allaqachon bor")
 	case err != nil:
 		return Warehouse{}, err
 	}
@@ -501,23 +503,23 @@ func (s *Service) UpdateWarehouse(ctx context.Context, p *identity.Principal, id
 		return Warehouse{}, err
 	}
 	if in.StoreID != nil {
-		return Warehouse{}, apperr.Validation("store_id: склад нельзя перенести в другой магазин")
+		return Warehouse{}, apperr.Validation("store_id: склад нельзя перенести в другой магазин").Uz("store_id: omborni boshqa doʻkonga koʻchirib boʻlmaydi")
 	}
 	if in.Name != nil && strings.TrimSpace(*in.Name) == "" {
-		return Warehouse{}, apperr.Validation("name: не может быть пустым")
+		return Warehouse{}, apperr.Validation("name: не может быть пустым").Uz("name: boʻsh boʻlishi mumkin emas")
 	}
 	cur, err := s.getWarehouse(ctx, p, id)
 	if err != nil {
 		return Warehouse{}, err
 	}
 	if cur.IsDefault && in.IsActive != nil && !*in.IsActive {
-		return Warehouse{}, apperr.Conflict("default_warehouse", "склад по умолчанию нельзя отключить — сначала выберите другой")
+		return Warehouse{}, apperr.Conflict("default_warehouse", "склад по умолчанию нельзя отключить — сначала выберите другой").Uz("asosiy omborni oʻchirib boʻlmaydi — avval boshqasini tanlang")
 	}
 	_, err = s.pool.Exec(ctx, `
 		UPDATE warehouses SET name = COALESCE($3, name), is_active = COALESCE($4, is_active)
 		WHERE id = $1 AND network_id = $2`, id, p.NetworkID, trimPtr(in.Name), in.IsActive)
 	if db.IsUniqueViolation(err, "warehouses_store_id_name_key") {
-		return Warehouse{}, apperr.Conflict("warehouse_exists", "склад с таким названием уже есть в магазине")
+		return Warehouse{}, apperr.Conflict("warehouse_exists", "склад с таким названием уже есть в магазине").Uz("doʻkonda bunday nomli ombor allaqachon bor")
 	}
 	if err != nil {
 		return Warehouse{}, err
@@ -532,7 +534,7 @@ func (s *Service) getWarehouse(ctx context.Context, p *identity.Principal, id st
 	}
 	w, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[Warehouse])
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !p.CanAccessStore(w.StoreID)) {
-		return Warehouse{}, apperr.NotFound("склад не найден")
+		return Warehouse{}, apperr.NotFound("склад не найден").Uz("ombor topilmadi")
 	}
 	return w, err
 }

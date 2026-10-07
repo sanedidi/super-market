@@ -6,6 +6,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/catalog"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/showcase"
 )
 
@@ -99,23 +100,23 @@ func usage(blocks []HomeBlock, template map[string]bool) Usage {
 // checkPlan — можно ли опубликовать блоки на тарифе.
 func checkPlan(p showcase.Plan, blocks []HomeBlock, template map[string]bool, perStore bool) error {
 	if !p.Custom {
-		return showcase.Limit("custom", p, 0, 0, "своя витрина доступна с тарифа «Бизнес»")
+		return showcase.Limit("custom", p, 0, 0, i18n.Text{RU: "своя витрина доступна с тарифа «Бизнес»", UZ: "oʻz vitrinangiz «Biznes» tarifidan boshlab mavjud"})
 	}
 	if perStore && !p.PerStore {
-		return showcase.Limit("per_store", p, 0, 0, "отдельная витрина для магазина сети — на тарифе «Про»")
+		return showcase.Limit("per_store", p, 0, 0, i18n.Text{RU: "отдельная витрина для магазина сети — на тарифе «Про»", UZ: "tarmoq doʻkoni uchun alohida vitrina — «Pro» tarifida"})
 	}
 	u := usage(blocks, template)
 	if l := showcase.Allowed(p.Shelves); u.Shelves > l {
-		return showcase.Limit("shelves", p, l, u.Shelves, "лимит своих полок на тарифе «"+p.Name+"»")
+		return showcase.Limit("shelves", p, l, u.Shelves, i18n.Text{RU: "лимит своих полок на тарифе «" + p.Name + "»", UZ: "«" + p.Name + "» tarifida oʻz javonlaringiz limiti tugadi"})
 	}
 	if l := showcase.Allowed(p.Promos); u.Promos > l {
-		return showcase.Limit("promos", p, l, u.Promos, "лимит промо-полосок на тарифе «"+p.Name+"»")
+		return showcase.Limit("promos", p, l, u.Promos, i18n.Text{RU: "лимит промо-полосок на тарифе «" + p.Name + "»", UZ: "«" + p.Name + "» tarifida promo-chiziqlar limiti tugadi"})
 	}
 	if u.Manual && !p.Manual {
-		return showcase.Limit("manual", p, 0, 0, "подборка «вручную» недоступна на тарифе «"+p.Name+"»")
+		return showcase.Limit("manual", p, 0, 0, i18n.Text{RU: "подборка «вручную» недоступна на тарифе «" + p.Name + "»", UZ: "«" + p.Name + "» tarifida «qoʻlda» toʻplam mavjud emas"})
 	}
 	if u.Schedule && !p.Schedule {
-		return showcase.Limit("schedule", p, 0, 0, "расписание блоков — на тарифе «Про»")
+		return showcase.Limit("schedule", p, 0, 0, i18n.Text{RU: "расписание блоков — на тарифе «Про»", UZ: "bloklar jadvali — «Pro» tarifida"})
 	}
 	return nil
 }
@@ -168,7 +169,7 @@ type ShowcaseEditor struct {
 
 func storeScope(p *identity.Principal, storeID string) (LayoutScope, error) {
 	if storeID != "" && !p.CanAccessStore(storeID) {
-		return LayoutScope{}, apperr.Forbidden("нет доступа к магазину")
+		return LayoutScope{}, apperr.Forbidden("нет доступа к магазину").Uz("doʻkonga ruxsat yoʻq")
 	}
 	return LayoutScope{NetworkID: p.NetworkID, StoreID: storeID}, nil
 }
@@ -237,10 +238,10 @@ func (s *Service) SaveStoreDraft(ctx context.Context, p *identity.Principal, sto
 		return ShowcaseEditor{}, err
 	}
 	if !plan.Effective.Custom {
-		return ShowcaseEditor{}, showcase.Limit("custom", plan.Effective, 0, 0, "своя витрина доступна с тарифа «Бизнес»")
+		return ShowcaseEditor{}, showcase.Limit("custom", plan.Effective, 0, 0, i18n.Text{RU: "своя витрина доступна с тарифа «Бизнес»", UZ: "oʻz vitrinangiz «Biznes» tarifidan boshlab mavjud"})
 	}
 	if storeID != "" && !plan.Effective.PerStore {
-		return ShowcaseEditor{}, showcase.Limit("per_store", plan.Effective, 0, 0, "отдельная витрина для магазина сети — на тарифе «Про»")
+		return ShowcaseEditor{}, showcase.Limit("per_store", plan.Effective, 0, 0, i18n.Text{RU: "отдельная витрина для магазина сети — на тарифе «Про»", UZ: "tarmoq doʻkoni uchun alohida vitrina — «Pro» tarifida"})
 	}
 	if err := s.checkOwnBanners(ctx, p.NetworkID, blocks); err != nil {
 		return ShowcaseEditor{}, err
@@ -271,7 +272,7 @@ func (s *Service) checkOwnBanners(ctx context.Context, networkID string, blocks 
 		return err
 	}
 	if bad > 0 {
-		return apperr.Validation("баннеры: можно ставить только свои баннеры и баннеры Super Market")
+		return apperr.Validation("баннеры: можно ставить только свои баннеры и баннеры Super Market").Uz("bannerlar: faqat oʻz bannerlaringiz va Super Market bannerlarini qoʻyish mumkin")
 	}
 	return nil
 }

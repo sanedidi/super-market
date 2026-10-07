@@ -13,6 +13,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
@@ -30,14 +31,14 @@ func trim(p *string) *string {
 	return &t
 }
 
-func one[T any](rows pgx.Rows, err error, notFound string) (T, error) {
+func one[T any](rows pgx.Rows, err error, notFound i18n.Text) (T, error) {
 	var zero T
 	if err != nil {
 		return zero, err
 	}
 	v, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[T])
 	if errors.Is(err, pgx.ErrNoRows) {
-		return zero, apperr.NotFound(notFound)
+		return zero, apperr.NotFound(notFound.RU).Uz(notFound.UZ)
 	}
 	return v, err
 }
@@ -67,11 +68,11 @@ func (s *Service) SetRate(ctx context.Context, p *identity.Principal, rate money
 		return Rate{}, err
 	}
 	if rate == "" {
-		return Rate{}, apperr.Validation("rate: обязательное поле")
+		return Rate{}, apperr.Validation("rate: обязательное поле").Uz("rate: majburiy maydon")
 	}
 	rows, err := s.pool.Query(ctx, `INSERT INTO currency_rates (network_id, rate, created_by) VALUES ($1, $2::numeric, $3)
 		RETURNING rate::text, created_at`, p.NetworkID, string(rate), p.EmployeeID)
-	return one[Rate](rows, err, "")
+	return one[Rate](rows, err, i18n.Text{})
 }
 
 // ------------------------------------------------------- типы контрагентов
@@ -98,7 +99,7 @@ func (s *Service) SaveCounterpartyType(ctx context.Context, p *identity.Principa
 	}
 	name := trim(in.Name)
 	if (id == "" && name == nil) || (name != nil && *name == "") {
-		return CounterpartyType{}, apperr.Validation("name: обязательное поле")
+		return CounterpartyType{}, apperr.Validation("name: обязательное поле").Uz("name: majburiy maydon")
 	}
 	var rows pgx.Rows
 	var err error
@@ -109,9 +110,9 @@ func (s *Service) SaveCounterpartyType(ctx context.Context, p *identity.Principa
 		rows, err = s.pool.Query(ctx, `UPDATE counterparty_types SET name = COALESCE($3, name), is_active = COALESCE($4, is_active)
 			WHERE id = $1 AND network_id = $2 RETURNING id, name, is_active`, id, p.NetworkID, name, in.IsActive)
 	}
-	t, err := one[CounterpartyType](rows, err, "тип контрагента не найден")
+	t, err := one[CounterpartyType](rows, err, i18n.Text{RU: "тип контрагента не найден", UZ: "kontragent turi topilmadi"})
 	if db.IsUniqueViolation(err, "") {
-		return t, apperr.Conflict("already_exists", "тип с таким названием уже есть")
+		return t, apperr.Conflict("already_exists", "тип с таким названием уже есть").Uz("bunday nomli tur allaqachon bor")
 	}
 	return t, err
 }
@@ -145,7 +146,7 @@ func (s *Service) ListCounterparties(ctx context.Context, p *identity.Principal,
 
 func (s *Service) GetCounterparty(ctx context.Context, p *identity.Principal, id string) (Counterparty, error) {
 	rows, err := s.pool.Query(ctx, counterpartySelect+` WHERE c.network_id = $1 AND c.id = $2`, p.NetworkID, id)
-	return one[Counterparty](rows, err, "контрагент не найден")
+	return one[Counterparty](rows, err, i18n.Text{RU: "контрагент не найден", UZ: "kontragent topilmadi"})
 }
 
 type CounterpartyInput struct {
@@ -163,10 +164,10 @@ func (s *Service) SaveCounterparty(ctx context.Context, p *identity.Principal, i
 	}
 	name := trim(in.Name)
 	if (id == "" && name == nil) || (name != nil && *name == "") {
-		return Counterparty{}, apperr.Validation("name: обязательное поле")
+		return Counterparty{}, apperr.Validation("name: обязательное поле").Uz("name: majburiy maydon")
 	}
 	if in.TypeID != nil && *in.TypeID != "" && !httpx.IsUUID(*in.TypeID) {
-		return Counterparty{}, apperr.Validation("type_id: тип не найден")
+		return Counterparty{}, apperr.Validation("type_id: тип не найден").Uz("type_id: tur topilmadi")
 	}
 	setType := in.TypeID != nil
 	var typeID *string
@@ -189,11 +190,11 @@ func (s *Service) SaveCounterparty(ctx context.Context, p *identity.Principal, i
 			WHERE id = $1 AND network_id = $2`,
 			id, p.NetworkID, setType, typeID, name, trim(in.Phone), trim(in.INN), trim(in.Note), in.IsActive)
 		if err == nil && tag.RowsAffected() == 0 {
-			return Counterparty{}, apperr.NotFound("контрагент не найден")
+			return Counterparty{}, apperr.NotFound("контрагент не найден").Uz("kontragent topilmadi")
 		}
 	}
 	if db.IsForeignKeyViolation(err) {
-		return Counterparty{}, apperr.Validation("type_id: тип не найден")
+		return Counterparty{}, apperr.Validation("type_id: тип не найден").Uz("type_id: tur topilmadi")
 	}
 	if err != nil {
 		return Counterparty{}, err
@@ -227,26 +228,26 @@ func (s *Service) SaveReason(ctx context.Context, p *identity.Principal, id stri
 	}
 	name := trim(in.Name)
 	if (id == "" && name == nil) || (name != nil && *name == "") {
-		return Reason{}, apperr.Validation("name: обязательное поле")
+		return Reason{}, apperr.Validation("name: обязательное поле").Uz("name: majburiy maydon")
 	}
 	var rows pgx.Rows
 	var err error
 	if id == "" {
 		if in.Kind == nil || (*in.Kind != "income" && *in.Kind != "expense") {
-			return Reason{}, apperr.Validation("kind: ожидается income или expense")
+			return Reason{}, apperr.Validation("kind: ожидается income или expense").Uz("kind: income yoki expense boʻlishi kerak")
 		}
 		rows, err = s.pool.Query(ctx, `INSERT INTO financial_reasons (network_id, name, kind) VALUES ($1, $2, $3)
 			RETURNING id, name, kind, is_active`, p.NetworkID, *name, *in.Kind)
 	} else {
 		if in.Kind != nil {
-			return Reason{}, apperr.Validation("kind: вид причины не меняется")
+			return Reason{}, apperr.Validation("kind: вид причины не меняется").Uz("kind: sabab turi oʻzgarmaydi")
 		}
 		rows, err = s.pool.Query(ctx, `UPDATE financial_reasons SET name = COALESCE($3, name), is_active = COALESCE($4, is_active)
 			WHERE id = $1 AND network_id = $2 RETURNING id, name, kind, is_active`, id, p.NetworkID, name, in.IsActive)
 	}
-	r, err := one[Reason](rows, err, "причина не найдена")
+	r, err := one[Reason](rows, err, i18n.Text{RU: "причина не найдена", UZ: "sabab topilmadi"})
 	if db.IsUniqueViolation(err, "") {
-		return r, apperr.Conflict("already_exists", "причина с таким названием уже есть")
+		return r, apperr.Conflict("already_exists", "причина с таким названием уже есть").Uz("bunday nomli sabab allaqachon bor")
 	}
 	return r, err
 }
@@ -282,7 +283,7 @@ func (s *Service) ListCashboxes(ctx context.Context, p *identity.Principal) ([]C
 func (s *Service) getCashbox(ctx context.Context, q db.Querier, p *identity.Principal, id string) (Cashbox, error) {
 	rows, err := q.Query(ctx, cashboxSelect+` WHERE c.network_id = $1 AND `+cashboxVisible+` AND c.id = $4`,
 		p.NetworkID, p.SeesAllStores(), p.StoreIDs, id)
-	return one[Cashbox](rows, err, "касса не найдена")
+	return one[Cashbox](rows, err, i18n.Text{RU: "касса не найдена", UZ: "kassa topilmadi"})
 }
 
 type CashboxInput struct {
@@ -299,7 +300,7 @@ func (s *Service) SaveCashbox(ctx context.Context, p *identity.Principal, id str
 	}
 	name := trim(in.Name)
 	if (id == "" && name == nil) || (name != nil && *name == "") {
-		return Cashbox{}, apperr.Validation("name: обязательное поле")
+		return Cashbox{}, apperr.Validation("name: обязательное поле").Uz("name: majburiy maydon")
 	}
 	if id == "" {
 		currency := "UZS"
@@ -307,27 +308,27 @@ func (s *Service) SaveCashbox(ctx context.Context, p *identity.Principal, id str
 			currency = *in.Currency
 		}
 		if currency != "UZS" && currency != "USD" {
-			return Cashbox{}, apperr.Validation("currency: ожидается UZS или USD")
+			return Cashbox{}, apperr.Validation("currency: ожидается UZS или USD").Uz("currency: UZS yoki USD boʻlishi kerak")
 		}
 		var err error
 		if in.StoreID == nil {
 			// Главная долларовая касса сети.
 			if !p.SeesAllStores() {
-				return Cashbox{}, apperr.Forbidden("главные кассы доступны только при доступе ко всем магазинам")
+				return Cashbox{}, apperr.Forbidden("главные кассы доступны только при доступе ко всем магазинам").Uz("asosiy kassalar faqat barcha doʻkonlarga ruxsat boʻlganda mavjud")
 			}
 			err = s.pool.QueryRow(ctx, `INSERT INTO cashboxes (network_id, name, currency, is_main) VALUES ($1, $2, $3, true) RETURNING id`,
 				p.NetworkID, *name, currency).Scan(&id)
 			if db.IsUniqueViolation(err, "cashboxes_one_main") {
-				return Cashbox{}, apperr.Conflict("main_exists", "главная касса в этой валюте уже есть")
+				return Cashbox{}, apperr.Conflict("main_exists", "главная касса в этой валюте уже есть").Uz("bu valyutada asosiy kassa allaqachon bor")
 			}
 		} else {
 			if !httpx.IsUUID(*in.StoreID) || !p.CanAccessStore(*in.StoreID) {
-				return Cashbox{}, apperr.Validation("store_id: магазин не найден")
+				return Cashbox{}, apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
 			}
 			err = s.pool.QueryRow(ctx, `INSERT INTO cashboxes (network_id, store_id, name, currency) VALUES ($1, $2, $3, $4) RETURNING id`,
 				p.NetworkID, *in.StoreID, *name, currency).Scan(&id)
 			if db.IsForeignKeyViolation(err) {
-				return Cashbox{}, apperr.Validation("store_id: магазин не найден")
+				return Cashbox{}, apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
 			}
 		}
 		if err != nil {
@@ -337,7 +338,7 @@ func (s *Service) SaveCashbox(ctx context.Context, p *identity.Principal, id str
 	}
 
 	if in.StoreID != nil || in.Currency != nil {
-		return Cashbox{}, apperr.Validation("магазин и валюта кассы не меняются")
+		return Cashbox{}, apperr.Validation("магазин и валюта кассы не меняются").Uz("kassaning doʻkoni va valyutasi oʻzgarmaydi")
 	}
 	if _, err := s.getCashbox(ctx, s.pool, p, id); err != nil {
 		return Cashbox{}, err
@@ -383,20 +384,20 @@ func (s *Service) SavePaymentMethod(ctx context.Context, p *identity.Principal, 
 	}
 	name := trim(in.Name)
 	if (id == "" && name == nil) || (name != nil && *name == "") {
-		return PaymentMethod{}, apperr.Validation("name: обязательное поле")
+		return PaymentMethod{}, apperr.Validation("name: обязательное поле").Uz("name: majburiy maydon")
 	}
 	if in.CashboxID != nil {
 		if !httpx.IsUUID(*in.CashboxID) {
-			return PaymentMethod{}, apperr.Validation("cashbox_id: касса не найдена")
+			return PaymentMethod{}, apperr.Validation("cashbox_id: касса не найдена").Uz("cashbox_id: kassa topilmadi")
 		}
 		if _, err := s.getCashbox(ctx, s.pool, p, *in.CashboxID); err != nil {
-			return PaymentMethod{}, apperr.Validation("cashbox_id: касса не найдена")
+			return PaymentMethod{}, apperr.Validation("cashbox_id: касса не найдена").Uz("cashbox_id: kassa topilmadi")
 		}
 	}
 	var err error
 	if id == "" {
 		if in.CashboxID == nil {
-			return PaymentMethod{}, apperr.Validation("cashbox_id: обязательное поле")
+			return PaymentMethod{}, apperr.Validation("cashbox_id: обязательное поле").Uz("cashbox_id: majburiy maydon")
 		}
 		err = s.pool.QueryRow(ctx, `INSERT INTO payment_methods (network_id, name, cashbox_id) VALUES ($1, $2, $3) RETURNING id`,
 			p.NetworkID, *name, *in.CashboxID).Scan(&id)
@@ -405,17 +406,17 @@ func (s *Service) SavePaymentMethod(ctx context.Context, p *identity.Principal, 
 		tag, err = s.pool.Exec(ctx, `UPDATE payment_methods SET name = COALESCE($3, name), cashbox_id = COALESCE($4, cashbox_id),
 			is_active = COALESCE($5, is_active) WHERE id = $1 AND network_id = $2`, id, p.NetworkID, name, in.CashboxID, in.IsActive)
 		if err == nil && tag.RowsAffected() == 0 {
-			return PaymentMethod{}, apperr.NotFound("способ оплаты не найден")
+			return PaymentMethod{}, apperr.NotFound("способ оплаты не найден").Uz("toʻlov usuli topilmadi")
 		}
 	}
 	if db.IsUniqueViolation(err, "") {
-		return PaymentMethod{}, apperr.Conflict("already_exists", "у кассы уже есть способ оплаты с таким названием")
+		return PaymentMethod{}, apperr.Conflict("already_exists", "у кассы уже есть способ оплаты с таким названием").Uz("kassada bunday nomli toʻlov usuli allaqachon bor")
 	}
 	if err != nil {
 		return PaymentMethod{}, err
 	}
 	rows, err := s.pool.Query(ctx, paymentMethodSelect+` WHERE m.id = $1`, id)
-	return one[PaymentMethod](rows, err, "способ оплаты не найден")
+	return one[PaymentMethod](rows, err, i18n.Text{RU: "способ оплаты не найден", UZ: "toʻlov usuli topilmadi"})
 }
 
 // PaymentMethodCashbox — касса и валюта способа оплаты (для продаж).
@@ -426,7 +427,7 @@ func PaymentMethodCashbox(ctx context.Context, q db.Querier, networkID, methodID
 		FROM payment_methods m JOIN cashboxes c ON c.id = m.cashbox_id
 		WHERE m.id = $1 AND m.network_id = $2`, methodID, networkID).Scan(&cashboxID, &currency, &storeID, &active)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !active) {
-		err = apperr.Validation("payment_method_id: способ оплаты не найден или отключён")
+		err = apperr.Validation("payment_method_id: способ оплаты не найден или отключён").Uz("payment_method_id: toʻlov usuli topilmadi yoki oʻchirilgan")
 	}
 	return
 }

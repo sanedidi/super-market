@@ -21,6 +21,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 	"github.com/sanedidi/super-market/backend/internal/platform/phone"
 )
@@ -121,19 +122,19 @@ func (s *Service) SaveSettings(ctx context.Context, p *identity.Principal, in Se
 	}
 	if in.DefaultLimit != nil {
 		if !in.DefaultLimit.Valid() || money.D(string(*in.DefaultLimit)).Sign() < 0 {
-			return cur, apperr.Validation("default_limit: неверная сумма")
+			return cur, apperr.Validation("default_limit: неверная сумма").Uz("default_limit: summa notoʻgʻri")
 		}
 		cur.DefaultLimit = string(*in.DefaultLimit)
 	}
 	if in.UnverifiedLimit != nil {
 		if !in.UnverifiedLimit.Valid() || money.D(string(*in.UnverifiedLimit)).Sign() < 0 {
-			return cur, apperr.Validation("unverified_limit: неверная сумма")
+			return cur, apperr.Validation("unverified_limit: неверная сумма").Uz("unverified_limit: summa notoʻgʻri")
 		}
 		cur.UnverifiedLimit = string(*in.UnverifiedLimit)
 	}
 	if in.TermDays != nil {
 		if *in.TermDays < 1 || *in.TermDays > 365 {
-			return cur, apperr.Validation("term_days: от 1 до 365 дней")
+			return cur, apperr.Validation("term_days: от 1 до 365 дней").Uz("term_days: 1 dan 365 kungacha")
 		}
 		cur.TermDays = *in.TermDays
 	}
@@ -161,14 +162,14 @@ func (s *Service) SetStoreEnabled(ctx context.Context, p *identity.Principal, st
 		return Settings{}, err
 	}
 	if !httpx.IsUUID(storeID) || !p.CanAccessStore(storeID) {
-		return Settings{}, apperr.NotFound("магазин не найден")
+		return Settings{}, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	tag, err := s.pool.Exec(ctx, `UPDATE stores SET debt_enabled = $3 WHERE id = $1 AND network_id = $2`, storeID, p.NetworkID, enabled)
 	if err != nil {
 		return Settings{}, err
 	}
 	if tag.RowsAffected() == 0 {
-		return Settings{}, apperr.NotFound("магазин не найден")
+		return Settings{}, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	return s.GetSettings(ctx, p)
 }
@@ -255,7 +256,7 @@ func termDays(ctx context.Context, q db.Querier, networkID string) (int, error) 
 func storeScope(p *identity.Principal, storeID string) ([]string, error) {
 	if storeID != "" {
 		if !httpx.IsUUID(storeID) || !p.CanAccessStore(storeID) {
-			return nil, apperr.Validation("store_id: магазин не найден")
+			return nil, apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
 		}
 		return []string{storeID}, nil
 	}
@@ -293,7 +294,7 @@ func (s *Service) balances(ctx context.Context, q db.Querier, networkID string, 
 func normPhone(raw string) (string, error) {
 	ph, err := phone.Normalize(raw)
 	if err != nil {
-		return "", apperr.Validation("phone: неверный номер телефона")
+		return "", apperr.Validation("phone: неверный номер телефона").Uz("phone: telefon raqami notoʻgʻri")
 	}
 	return ph, nil
 }
@@ -302,7 +303,7 @@ func normPhone(raw string) (string, error) {
 func upsertDebtor(ctx context.Context, q db.Querier, networkID, ph, name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if len([]rune(name)) > 120 {
-		return "", apperr.Validation("full_name: не длиннее 120 символов")
+		return "", apperr.Validation("full_name: не длиннее 120 символов").Uz("full_name: 120 belgidan oshmasin")
 	}
 	var id string
 	err := q.QueryRow(ctx, `
@@ -380,8 +381,8 @@ type ChargeResult struct {
 }
 
 var (
-	ErrDisabled = apperr.Conflict("debt_disabled", "магазин не продаёт в долг")
-	ErrBlocked  = apperr.Conflict("debtor_blocked", "покупатель в стоп-листе — в долг не давать")
+	ErrDisabled = apperr.Conflict("debt_disabled", "магазин не продаёт в долг").Uz("doʻkon qarzga sotmaydi")
+	ErrBlocked  = apperr.Conflict("debtor_blocked", "покупатель в стоп-листе — в долг не давать").Uz("xaridor stop-roʻyxatda — qarzga bermang")
 )
 
 // Charge записывает долг по продаже.
@@ -391,11 +392,11 @@ func Charge(ctx context.Context, tx pgx.Tx, p *identity.Principal, in ChargeInpu
 		return res, err
 	}
 	if in.Amount.Sign() <= 0 {
-		return res, apperr.Validation("debt.amount: сумма в долг должна быть больше нуля")
+		return res, apperr.Validation("debt.amount: сумма в долг должна быть больше нуля").Uz("debt.amount: qarz summasi noldan katta boʻlishi kerak")
 	}
 	ph, err := normPhone(in.Phone)
 	if err != nil {
-		return res, apperr.Validation("debt.phone: неверный номер телефона")
+		return res, apperr.Validation("debt.phone: неверный номер телефона").Uz("debt.phone: telefon raqami notoʻgʻri")
 	}
 	var enabled bool
 	if err := tx.QueryRow(ctx, `SELECT debt_enabled FROM stores WHERE id = $1 AND network_id = $2`, in.StoreID, p.NetworkID).Scan(&enabled); err != nil {
@@ -433,7 +434,7 @@ func Charge(ctx context.Context, tx pgx.Tx, p *identity.Principal, in ChargeInpu
 			if avail.Sign() < 0 {
 				avail = money.D("0")
 			}
-			return res, apperr.Conflict("debt_limit", "не хватает лимита: в долг можно "+money.Group(avail.Money())+" сум").
+			return res, apperr.Conflict("debt_limit", "не хватает лимита: в долг можно "+money.Group(avail.Money())+" сум").Uz("limit yetmaydi: qarzga " + money.Group(avail.Money()) + " soʻmgacha berish mumkin").
 				WithDetails(map[string]any{"available": avail.Money(), "limit": limit.Money(), "debt": bal.Money()})
 		}
 		res.OverLimit = true
@@ -442,8 +443,10 @@ func Charge(ctx context.Context, tx pgx.Tx, p *identity.Principal, in ChargeInpu
 		return res, err
 	}
 	total := bal.Add(in.Amount)
+	all := money.Group(total.Money())
 	err = notifyBuyer(ctx, tx, ph, in.StoreID, "debt_added",
-		"Записали в долг · %s", "%s сум. Всего в этом магазине: "+money.Group(total.Money())+" сум", in.Amount)
+		i18n.Text{RU: "Записали в долг · %s", UZ: "Qarzga yozildi · %s"},
+		i18n.Text{RU: "%s сум. Всего в этом магазине: " + all + " сум", UZ: "%s soʻm. Bu doʻkonda jami: " + all + " soʻm"}, in.Amount)
 	return res, err
 }
 

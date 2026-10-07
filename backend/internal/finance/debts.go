@@ -9,6 +9,7 @@ import (
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
@@ -77,7 +78,7 @@ func (s *Service) SupplierDebts(ctx context.Context, p *identity.Principal, side
 	case "all":
 		where = " WHERE b.balance <> 0"
 	default:
-		return out, apperr.Validation("side: we_owe, they_owe или all")
+		return out, apperr.Validation("side: we_owe, they_owe или all").Uz("side: we_owe, they_owe yoki all")
 	}
 	rows, err := s.pool.Query(ctx, debtsSQL+where+` AND ($2 = '' OR b.name ILIKE '%' || $2 || '%' OR b.phone LIKE '%' || $2 || '%')
 		ORDER BY abs(b.balance) DESC, b.name LIMIT 200`, p.NetworkID, strings.TrimSpace(q))
@@ -130,7 +131,7 @@ func (s *Service) CounterpartyStatement(ctx context.Context, p *identity.Princip
 		st.To = now.Add(time.Minute)
 	}
 	if !st.To.After(st.From) {
-		return st, apperr.Validation("to: конец периода позже начала")
+		return st, apperr.Validation("to: конец периода позже начала").Uz("to: davr oxiri boshidan keyin boʻlsin")
 	}
 	if err := s.pool.QueryRow(ctx, `SELECT COALESCE(sum(amount), 0)::numeric(18,2)::text FROM counterparty_entries
 		WHERE counterparty_id = $1 AND created_at < $2`, id, st.From).Scan(&st.Opening); err != nil {
@@ -164,7 +165,7 @@ func (s *Service) CounterpartyStatement(ctx context.Context, p *identity.Princip
 		if err := rows.Scan(&l.At, &l.Amount, &docType, &l.DocID, &dType, &number, &reason, &items, &cashbox, &note); err != nil {
 			return st, err
 		}
-		l.Title, l.Note, l.Kind = statementText(docType, dType, number, reason, items, cashbox, note, money.D(l.Amount).Sign())
+		l.Title, l.Note, l.Kind = statementText(i18n.FromContext(ctx), docType, dType, number, reason, items, cashbox, note, money.D(l.Amount).Sign())
 		bal = bal.Add(money.D(l.Amount))
 		l.Balance = bal.Money()
 		lines = append(lines, l)
@@ -179,22 +180,26 @@ func (s *Service) CounterpartyStatement(ctx context.Context, p *identity.Princip
 	return st, nil
 }
 
-func statementText(docType, dType string, number int64, reason string, items int, cashbox, note string, sign int) (title, sub, kind string) {
+func statementText(lang, docType, dType string, number int64, reason string, items int, cashbox, note string, sign int) (title, sub, kind string) {
 	n := " № " + itoa(number)
+	positions := itoa(int64(items)) + " " + plural(items, "позиция", "позиции", "позиций")
+	if lang == i18n.UZ {
+		positions = itoa(int64(items)) + " ta pozitsiya"
+	}
 	switch {
 	case docType == DocStockDocument && dType == "income":
-		return "Приход" + n, itoa(int64(items)) + " " + plural(items, "позиция", "позиции", "позиций"), "income"
+		return i18n.Pick(lang, "Приход", "Kirim") + n, positions, "income"
 	case docType == DocStockDocument && dType == "supplier_return":
 		if reason == "" {
-			reason = itoa(int64(items)) + " " + plural(items, "позиция", "позиции", "позиций")
+			reason = positions
 		}
-		return "Возврат" + n, reason, "supplier_return"
+		return i18n.Pick(lang, "Возврат", "Qaytarish") + n, reason, "supplier_return"
 	case docType == DocCashOperation && sign < 0:
-		return "Оплата", joinNonEmpty(cashbox, note), "payment"
+		return i18n.Pick(lang, "Оплата", "Toʻlov"), joinNonEmpty(cashbox, note), "payment"
 	case docType == DocCashOperation:
-		return "Получено от поставщика", joinNonEmpty(cashbox, note), "receipt"
+		return i18n.Pick(lang, "Получено от поставщика", "Yetkazib beruvchidan olindi"), joinNonEmpty(cashbox, note), "receipt"
 	}
-	return "Операция", "", "other"
+	return i18n.Pick(lang, "Операция", "Operatsiya"), "", "other"
 }
 
 func itoa(n int64) string {

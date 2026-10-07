@@ -33,8 +33,9 @@ UPDATE units SET name_uz = 'Metr',     short_name_uz = 'm'    WHERE lower(name) 
 
 ALTER TABLE products ADD COLUMN name_uz        text NOT NULL DEFAULT '',
                      ADD COLUMN description_uz text NOT NULL DEFAULT '';
--- Поиск по узбекскому названию — как по русскому.
-CREATE INDEX products_name_uz_idx ON products (lower(name_uz) text_pattern_ops) WHERE name_uz <> '';
+-- Поиск по узбекскому названию — как по русскому: подстрока (LIKE '%…%')
+-- и похожие названия (pg_trgm) при сопоставлении накладных и фото полок.
+CREATE INDEX products_name_uz_trgm_idx ON products USING gin (lower(name_uz) gin_trgm_ops);
 
 ------------------------------------------------------- язык пользователей
 

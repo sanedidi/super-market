@@ -24,6 +24,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 	"github.com/sanedidi/super-market/backend/internal/push"
 )
@@ -116,7 +117,7 @@ func require(p *identity.Principal, storeID string) error {
 		return err
 	}
 	if !httpx.IsUUID(storeID) || !p.CanAccessStore(storeID) {
-		return apperr.NotFound("магазин не найден")
+		return apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	return nil
 }
@@ -134,13 +135,13 @@ func (s *Service) Create(ctx context.Context, p *identity.Principal, in CreateIn
 		return Scan{}, err
 	}
 	if len(in.Images) == 0 || len(in.Images) > 5 {
-		return Scan{}, apperr.Validation("images: от 1 до 5 фото накладной")
+		return Scan{}, apperr.Validation("images: от 1 до 5 фото накладной").Uz("images: yuk xatining 1 dan 5 tagacha rasmi")
 	}
 	keys := make([]string, 0, len(in.Images))
 	for _, u := range in.Images {
 		k, ok := media.KeyFromURL(u)
 		if !ok {
-			return Scan{}, apperr.Validation("images: фото должно быть загружено через /store/uploads")
+			return Scan{}, apperr.Validation("images: фото должно быть загружено через /store/uploads").Uz("images: rasm /store/uploads orqali yuklangan boʻlishi kerak")
 		}
 		keys = append(keys, k)
 	}
@@ -153,12 +154,12 @@ func (s *Service) Create(ctx context.Context, p *identity.Principal, in CreateIn
 		SELECT network_id, id, $3, $4 FROM stores WHERE id = $1 AND network_id = $2
 		RETURNING id`, in.StoreID, p.NetworkID, p.EmployeeID, keys).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Scan{}, apperr.NotFound("магазин не найден")
+		return Scan{}, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	if err != nil {
 		return Scan{}, err
 	}
-	s.start(id, p.NetworkID)
+	s.start(id, p.NetworkID, i18n.FromContext(ctx))
 	return s.Get(ctx, p, id)
 }
 
@@ -169,7 +170,7 @@ func (s *Service) Retry(ctx context.Context, p *identity.Principal, id string) (
 		return sc, err
 	}
 	if sc.Status != StatusFailed {
-		return sc, apperr.Conflict("scan_not_failed", "распознать заново можно только после ошибки")
+		return sc, apperr.Conflict("scan_not_failed", "распознать заново можно только после ошибки").Uz("qayta tanib olish faqat xatolikdan keyin mumkin")
 	}
 	if _, err := s.ai.Conn(ctx); err != nil {
 		return Scan{}, err
@@ -177,33 +178,36 @@ func (s *Service) Retry(ctx context.Context, p *identity.Principal, id string) (
 	if _, err := s.pool.Exec(ctx, `UPDATE invoice_scans SET status = 'processing', error = '' WHERE id = $1`, id); err != nil {
 		return Scan{}, err
 	}
-	s.start(id, p.NetworkID)
+	s.start(id, p.NetworkID, i18n.FromContext(ctx))
 	return s.Get(ctx, p, id)
 }
 
-func (s *Service) start(id, networkID string) {
+// lang — язык того, кто сфотографировал накладную: на нём сохраняется текст ошибки.
+func (s *Service) start(id, networkID, lang string) {
 	s.run(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 		defer cancel()
 		if err := s.process(ctx, id, networkID); err != nil {
 			msg := "не удалось распознать накладную"
+			msgUz := "yuk xatini tanib boʻlmadi"
 			var se *ai.ErrService
 			var ae *apperr.Error
 			switch {
 			case errors.As(err, &se):
-				msg = se.Msg
+				msg, msgUz = se.Msg, se.MsgUz
 			case errors.As(err, &ae):
-				msg = ae.Message
+				msg, msgUz = ae.Message, ae.Text(i18n.UZ)
 			default:
 				s.log.Error("invoice scan", "id", id, "err", err)
 			}
 			if len([]rune(msg)) > 480 {
 				msg = string([]rune(msg)[:480])
 			}
-			if _, err := s.pool.Exec(context.Background(), `UPDATE invoice_scans SET status = 'failed', error = $2 WHERE id = $1 AND status = 'processing'`, id, msg); err != nil {
+			if _, err := s.pool.Exec(context.Background(), `UPDATE invoice_scans SET status = 'failed', error = $2 WHERE id = $1 AND status = 'processing'`, id, i18n.Pick(lang, msg, msgUz)); err != nil {
 				s.log.Error("invoice scan fail", "id", id, "err", err)
 			}
-			if err := s.notifyAuthor(context.Background(), s.pool, id, "invoice_failed", "Не удалось распознать накладную", msg); err != nil {
+			if err := s.notifyAuthor(context.Background(), s.pool, id, "invoice_failed",
+				i18n.Text{RU: "Не удалось распознать накладную", UZ: "Yuk xatini tanib boʻlmadi"}, i18n.Text{RU: msg, UZ: msgUz}); err != nil {
 				s.log.Warn("push накладной", "err", err)
 			}
 		}
@@ -224,7 +228,7 @@ func (s *Service) process(ctx context.Context, id, networkID string) error {
 	for _, k := range keys {
 		data, mime, err := s.media.Read(ctx, k)
 		if err != nil {
-			return apperr.Validation("фото накладной не найдено в хранилище")
+			return apperr.Validation("фото накладной не найдено в хранилище").Uz("yuk xati rasmi serverda topilmadi")
 		}
 		images = append(images, ai.Image{MIME: mime, Data: data})
 	}
@@ -264,12 +268,14 @@ func (s *Service) process(ctx context.Context, id, networkID string) error {
 		if _, err := tx.Exec(ctx, `DELETE FROM invoice_scan_lines WHERE scan_id = $1`, id); err != nil {
 			return err
 		}
-		supplier := inv.SupplierName
+		supplier, supplierUz := inv.SupplierName, inv.SupplierName
 		if supplier == "" {
-			supplier = "Накладная"
+			supplier, supplierUz = "Накладная", "Yuk xati"
 		}
-		if err := s.notifyAuthor(ctx, tx, id, "invoice_ready", "Накладная распознана",
-			fmt.Sprintf("%s: строк %d — проверьте и проведите приход", supplier, len(inv.Lines))); err != nil {
+		if err := s.notifyAuthor(ctx, tx, id, "invoice_ready", i18n.Text{RU: "Накладная распознана", UZ: "Yuk xati tanib olindi"}, i18n.Text{
+			RU: fmt.Sprintf("%s: строк %d — проверьте и проведите приход", supplier, len(inv.Lines)),
+			UZ: fmt.Sprintf("%s: %d ta qator — tekshiring va kirimni oʻtkazing", supplierUz, len(inv.Lines)),
+		}); err != nil {
 			return err
 		}
 		for i, l := range inv.Lines {
@@ -287,7 +293,7 @@ func (s *Service) process(ctx context.Context, id, networkID string) error {
 }
 
 // notifyAuthor — push тому, кто сфотографировал накладную.
-func (s *Service) notifyAuthor(ctx context.Context, q db.Querier, id, kind, title, body string) error {
+func (s *Service) notifyAuthor(ctx context.Context, q db.Querier, id, kind string, title, body i18n.Text) error {
 	var emp string
 	if err := q.QueryRow(ctx, `SELECT created_by FROM invoice_scans WHERE id = $1`, id).Scan(&emp); err != nil {
 		return err
@@ -351,8 +357,9 @@ func matchLine(ctx context.Context, q db.Querier, networkID string, counterparty
 		}
 	}
 	var sim float64
-	err := q.QueryRow(ctx, `SELECT p.id, similarity(lower(p.name), $2) AS s FROM products p
-		WHERE `+visible+` AND lower(p.name) % $2 ORDER BY s DESC, p.name LIMIT 1`, networkID, strings.ToLower(name)).Scan(&id, &sim)
+	// Похожее название — русское или узбекское.
+	err := q.QueryRow(ctx, `SELECT p.id, greatest(similarity(lower(p.name), $2), similarity(lower(p.name_uz), $2)) AS s FROM products p
+		WHERE `+visible+` AND (lower(p.name) % $2 OR lower(p.name_uz) % $2) ORDER BY s DESC, p.name LIMIT 1`, networkID, strings.ToLower(name)).Scan(&id, &sim)
 	if err == nil {
 		return match{productID: &id, match: strp("name"), confidence: int(math.Round(sim * 100))}
 	}
@@ -409,12 +416,12 @@ func scanRow(row pgx.Row, sc *Scan) error {
 
 func (s *Service) Get(ctx context.Context, p *identity.Principal, id string) (Scan, error) {
 	if !httpx.IsUUID(id) {
-		return Scan{}, apperr.NotFound("накладная не найдена")
+		return Scan{}, apperr.NotFound("накладная не найдена").Uz("yuk xati topilmadi")
 	}
 	var sc Scan
 	err := scanRow(s.pool.QueryRow(ctx, `SELECT `+scanCols+scanFrom+` WHERE s.id = $1 AND s.network_id = $2`, id, p.NetworkID), &sc)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return sc, apperr.NotFound("накладная не найдена")
+		return sc, apperr.NotFound("накладная не найдена").Uz("yuk xati topilmadi")
 	}
 	if err != nil {
 		return sc, err
@@ -424,7 +431,7 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, id string) (Sc
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT l.line, l.name, l.barcode, l.unit, l.qty::text, l.price::text, round(l.qty * l.price, 2)::text,
-		       l.product_id, p.name, u.short_name, l.match, l.confidence, l.skipped,
+		       l.product_id, loc(p.name, p.name_uz), loc(u.short_name, u.short_name_uz), l.match, l.confidence, l.skipped,
 		       (SELECT i.price::text FROM stock_document_items i JOIN stock_documents d ON d.id = i.document_id
 		         WHERE d.network_id = $2 AND d.type = 'income' AND d.status = 'posted' AND i.product_id = l.product_id
 		           AND i.price IS NOT NULL AND d.currency = $3
@@ -533,13 +540,13 @@ func (s *Service) List(ctx context.Context, p *identity.Principal, storeID strin
 // editable — накладную ещё можно править (распознана, прихода нет).
 func (s *Service) editable(ctx context.Context, tx pgx.Tx, p *identity.Principal, id string) (storeID string, cp *string, err error) {
 	if !httpx.IsUUID(id) {
-		return "", nil, apperr.NotFound("накладная не найдена")
+		return "", nil, apperr.NotFound("накладная не найдена").Uz("yuk xati topilmadi")
 	}
 	var status string
 	err = tx.QueryRow(ctx, `SELECT store_id, status, counterparty_id FROM invoice_scans WHERE id = $1 AND network_id = $2 FOR UPDATE`,
 		id, p.NetworkID).Scan(&storeID, &status, &cp)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", nil, apperr.NotFound("накладная не найдена")
+		return "", nil, apperr.NotFound("накладная не найдена").Uz("yuk xati topilmadi")
 	}
 	if err != nil {
 		return "", nil, err
@@ -548,7 +555,7 @@ func (s *Service) editable(ctx context.Context, tx pgx.Tx, p *identity.Principal
 		return "", nil, err
 	}
 	if status != StatusReady {
-		return "", nil, apperr.Conflict("scan_not_ready", "накладная ещё распознаётся или приход уже создан")
+		return "", nil, apperr.Conflict("scan_not_ready", "накладная ещё распознаётся или приход уже создан").Uz("yuk xati hali tanib olinmoqda yoki kirim allaqachon yaratilgan")
 	}
 	return storeID, cp, nil
 }
@@ -574,7 +581,7 @@ func (s *Service) SetSupplier(ctx context.Context, p *identity.Principal, id str
 				return err
 			}
 			if strings.TrimSpace(name) == "" {
-				return apperr.Validation("поставщик не распознан — выберите его из списка")
+				return apperr.Validation("поставщик не распознан — выберите его из списка").Uz("yetkazib beruvchi aniqlanmadi — uni roʻyxatdan tanlang")
 			}
 			if err := tx.QueryRow(ctx, `INSERT INTO counterparties (network_id, name, inn) VALUES ($1, $2, $3) RETURNING id`,
 				p.NetworkID, name, inn).Scan(&cp); err != nil {
@@ -583,13 +590,13 @@ func (s *Service) SetSupplier(ctx context.Context, p *identity.Principal, id str
 		case in.CounterpartyID != nil && httpx.IsUUID(*in.CounterpartyID):
 			err := tx.QueryRow(ctx, `SELECT id FROM counterparties WHERE id = $1 AND network_id = $2 AND is_active`, *in.CounterpartyID, p.NetworkID).Scan(&cp)
 			if errors.Is(err, pgx.ErrNoRows) {
-				return apperr.Validation("counterparty_id: поставщик не найден")
+				return apperr.Validation("counterparty_id: поставщик не найден").Uz("counterparty_id: yetkazib beruvchi topilmadi")
 			}
 			if err != nil {
 				return err
 			}
 		default:
-			return apperr.Validation("counterparty_id: выберите поставщика")
+			return apperr.Validation("counterparty_id: выберите поставщика").Uz("counterparty_id: yetkazib beruvchini tanlang")
 		}
 		if _, err := tx.Exec(ctx, `UPDATE invoice_scans SET counterparty_id = $2 WHERE id = $1`, id, cp); err != nil {
 			return err
@@ -643,7 +650,7 @@ func (s *Service) SetLine(ctx context.Context, p *identity.Principal, id string,
 		var name string
 		err = tx.QueryRow(ctx, `SELECT name FROM invoice_scan_lines WHERE scan_id = $1 AND line = $2 FOR UPDATE`, id, line).Scan(&name)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return apperr.NotFound("строка не найдена")
+			return apperr.NotFound("строка не найдена").Uz("qator topilmadi")
 		}
 		if err != nil {
 			return err
@@ -652,7 +659,7 @@ func (s *Service) SetLine(ctx context.Context, p *identity.Principal, id string,
 			var pid string
 			err := tx.QueryRow(ctx, `SELECT p.id FROM products p WHERE p.id::text = $2 AND `+visible, p.NetworkID, *in.ProductID).Scan(&pid)
 			if errors.Is(err, pgx.ErrNoRows) {
-				return apperr.Validation("product_id: товар не найден")
+				return apperr.Validation("product_id: товар не найден").Uz("product_id: mahsulot topilmadi")
 			}
 			if err != nil {
 				return err
@@ -663,7 +670,7 @@ func (s *Service) SetLine(ctx context.Context, p *identity.Principal, id string,
 			}
 			if in.Remember {
 				if cp == nil {
-					return apperr.Validation("remember: сначала выберите поставщика")
+					return apperr.Validation("remember: сначала выберите поставщика").Uz("remember: avval yetkazib beruvchini tanlang")
 				}
 				if alias := NormAlias(name); alias != "" {
 					if _, err := tx.Exec(ctx, `
@@ -677,7 +684,7 @@ func (s *Service) SetLine(ctx context.Context, p *identity.Principal, id string,
 		}
 		if in.Qty != nil {
 			if !in.Qty.Valid() {
-				return apperr.Validation("qty: неверное количество")
+				return apperr.Validation("qty: неверное количество").Uz("qty: miqdor notoʻgʻri")
 			}
 			if _, err := tx.Exec(ctx, `UPDATE invoice_scan_lines SET qty = $3 WHERE scan_id = $1 AND line = $2`, id, line, string(*in.Qty)); err != nil {
 				return err
@@ -685,7 +692,7 @@ func (s *Service) SetLine(ctx context.Context, p *identity.Principal, id string,
 		}
 		if in.Price != nil {
 			if !in.Price.Valid() {
-				return apperr.Validation("price: неверная цена")
+				return apperr.Validation("price: неверная цена").Uz("price: narx notoʻgʻri")
 			}
 			if _, err := tx.Exec(ctx, `UPDATE invoice_scan_lines SET price = $3 WHERE scan_id = $1 AND line = $2`, id, line, string(*in.Price)); err != nil {
 				return err
@@ -730,10 +737,13 @@ func (s *Service) Suggest(ctx context.Context, p *identity.Principal, id string,
 		return []Suggestion{}, nil
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT p.id, p.name, (SELECT min(pb.barcode) FROM product_barcodes pb WHERE pb.product_id = p.id), u.short_name,
-		       round(greatest(similarity(lower(p.name), $2), word_similarity($2, lower(p.name))) * 100)::int AS s
+		SELECT p.id, loc(p.name, p.name_uz), (SELECT min(pb.barcode) FROM product_barcodes pb WHERE pb.product_id = p.id),
+		       loc(u.short_name, u.short_name_uz),
+		       round(greatest(similarity(lower(p.name), $2), word_similarity($2, lower(p.name)),
+		                      similarity(lower(p.name_uz), $2), word_similarity($2, lower(p.name_uz))) * 100)::int AS s
 		FROM products p JOIN units u ON u.id = p.unit_id
 		WHERE `+visible+` AND (lower(p.name) % $2 OR $2 <% lower(p.name) OR lower(p.name) LIKE '%' || $2 || '%'
+		      OR lower(p.name_uz) % $2 OR $2 <% lower(p.name_uz) OR lower(p.name_uz) LIKE '%' || $2 || '%'
 		      OR EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND pb.barcode = $2))
 		ORDER BY s DESC, p.name LIMIT 8`, p.NetworkID, term)
 	if err != nil {
@@ -759,11 +769,11 @@ func (s *Service) CreateDocument(ctx context.Context, p *identity.Principal, id 
 	}
 	switch {
 	case sc.Status != StatusReady:
-		return sc, apperr.Conflict("scan_not_ready", "накладная ещё распознаётся или приход уже создан")
+		return sc, apperr.Conflict("scan_not_ready", "накладная ещё распознаётся или приход уже создан").Uz("yuk xati hali tanib olinmoqda yoki kirim allaqachon yaratilgan")
 	case sc.CounterpartyID == nil:
-		return sc, apperr.Validation("counterparty_id: выберите поставщика")
+		return sc, apperr.Validation("counterparty_id: выберите поставщика").Uz("counterparty_id: yetkazib beruvchini tanlang")
 	case sc.Counts.Missing > 0:
-		return sc, apperr.Conflict("lines_unmatched", fmt.Sprintf("не сопоставлено строк: %d — выберите товар или пропустите строку", sc.Counts.Missing))
+		return sc, apperr.Conflict("lines_unmatched", fmt.Sprintf("не сопоставлено строк: %d — выберите товар или пропустите строку", sc.Counts.Missing)).Uz(fmt.Sprintf("mos kelmagan qatorlar: %d — mahsulotni tanlang yoki qatorni oʻtkazib yuboring", sc.Counts.Missing))
 	}
 	wh := in.WarehouseID
 	if wh == nil {
@@ -772,7 +782,7 @@ func (s *Service) CreateDocument(ctx context.Context, p *identity.Principal, id 
 			return sc, err
 		}
 		if def == nil {
-			return sc, apperr.Validation("warehouse_id: у магазина нет основного склада")
+			return sc, apperr.Validation("warehouse_id: у магазина нет основного склада").Uz("warehouse_id: doʻkonda asosiy ombor yoʻq")
 		}
 		wh = def
 	}
@@ -785,7 +795,7 @@ func (s *Service) CreateDocument(ctx context.Context, p *identity.Principal, id 
 		items = append(items, inventory.ItemInput{ProductID: *l.ProductID, Qty: money.Qty(trimZeros(l.Qty)), Price: &price})
 	}
 	if len(items) == 0 {
-		return sc, apperr.Validation("в накладной нет строк для прихода")
+		return sc, apperr.Validation("в накладной нет строк для прихода").Uz("yuk xatida kirim uchun qator yoʻq")
 	}
 	// Одна накладная — один приход: занимаем её, пока создаём документ.
 	tag, err := s.pool.Exec(ctx, `UPDATE invoice_scans SET status = 'done' WHERE id = $1 AND status = 'ready'`, id)
@@ -793,7 +803,7 @@ func (s *Service) CreateDocument(ctx context.Context, p *identity.Principal, id 
 		return sc, err
 	}
 	if tag.RowsAffected() == 0 {
-		return sc, apperr.Conflict("scan_not_ready", "приход по этой накладной уже создаётся")
+		return sc, apperr.Conflict("scan_not_ready", "приход по этой накладной уже создаётся").Uz("bu yuk xati boʻyicha kirim allaqachon yaratilmoqda")
 	}
 	note := "По фото накладной"
 	if sc.InvoiceNumber != "" {
@@ -834,7 +844,11 @@ func trimZeros(s string) string {
 
 // Tick — зависшие распознавания (перезапуск сервера) считаем неудачными.
 func (s *Service) Tick(ctx context.Context) error {
-	_, err := s.pool.Exec(ctx, `UPDATE invoice_scans SET status = 'failed', error = 'распознавание прервалось — нажмите «Распознать заново»'
+	// Текст — на языке того, кто сфотографировал накладную.
+	_, err := s.pool.Exec(ctx, `UPDATE invoice_scans SET status = 'failed',
+		error = CASE WHEN (SELECT u.language FROM employees e JOIN users u ON u.id = e.user_id WHERE e.id = invoice_scans.created_by) = 'uz'
+		             THEN 'tanib olish toʻxtab qoldi — «Qayta tanib olish» tugmasini bosing'
+		             ELSE 'распознавание прервалось — нажмите «Распознать заново»' END
 		WHERE status = 'processing' AND updated_at < now() - interval '10 minutes'`)
 	return err
 }

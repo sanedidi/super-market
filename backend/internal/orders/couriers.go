@@ -13,6 +13,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 // Курьеры магазина: смена и транспорт, назначение на заказ, геопозиция и
@@ -73,7 +74,7 @@ func (s *Service) StoreCouriers(ctx context.Context, p *identity.Principal, stor
 		return nil, err
 	}
 	if storeID != "" && (!httpx.IsUUID(storeID) || !p.CanAccessStore(storeID)) {
-		return nil, apperr.NotFound("магазин не найден")
+		return nil, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	rows, err := s.pool.Query(ctx, courierQuery+` ORDER BY COALESCE(c.on_shift, false) DESC, e.full_name`, p.NetworkID, storeID)
 	if err != nil {
@@ -97,17 +98,17 @@ func (s *Service) AssignCourier(ctx context.Context, p *identity.Principal, id s
 		return Order{}, err
 	}
 	if in.CourierID != nil && o.CrowdCourierID != nil {
-		return Order{}, apperr.Conflict("crowd_courier", "заказ взял курьер «по пути» — сначала снимите его")
+		return Order{}, apperr.Conflict("crowd_courier", "заказ взял курьер «по пути» — сначала снимите его").Uz("buyurtmani «yoʻl-yoʻlakay» kuryer olgan — avval uni olib tashlang")
 	}
 	var name string
 	if in.CourierID != nil {
 		if !httpx.IsUUID(*in.CourierID) {
-			return Order{}, apperr.Validation("courier_id: курьер не найден")
+			return Order{}, apperr.Validation("courier_id: курьер не найден").Uz("courier_id: kuryer topilmadi")
 		}
 		err := s.pool.QueryRow(ctx, `SELECT full_name FROM (`+courierQuery+`) x (id, full_name, phone, vehicle, on_shift, lat, lng, located_at, active)
 			WHERE id = $3`, p.NetworkID, o.StoreID, *in.CourierID).Scan(&name)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return Order{}, apperr.Validation("courier_id: это не курьер магазина")
+			return Order{}, apperr.Validation("courier_id: это не курьер магазина").Uz("courier_id: bu doʻkon kuryeri emas")
 		}
 		if err != nil {
 			return Order{}, err
@@ -138,7 +139,10 @@ func (s *Service) AssignCourier(ctx context.Context, p *identity.Principal, id s
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			s.notify.Employee(ctx, courier, fmt.Sprintf("🛵 Вам назначен заказ №%d\nМагазин: %s\nАдрес: %s", number, store, addr))
+			s.notify.Employee(ctx, courier, i18n.Text{
+				RU: fmt.Sprintf("🛵 Вам назначен заказ №%d\nМагазин: %s\nАдрес: %s", number, store, addr),
+				UZ: fmt.Sprintf("🛵 Sizga №%d buyurtma biriktirildi\nDoʻkon: %s\nManzil: %s", number, store, addr),
+			})
 		}()
 	}
 	return s.StoreGet(ctx, p, id)
@@ -228,7 +232,7 @@ func (s *Service) CourierHistory(ctx context.Context, p *identity.Principal, per
 	case "week":
 		from = day.AddDate(0, 0, -6)
 	default:
-		return h, apperr.Validation("period: today, yesterday или week")
+		return h, apperr.Validation("period: today, yesterday или week").Uz("period: today, yesterday yoki week")
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT o.id, o.number, s.name, o.address, o.total::text, o.payment_provider = $4, o.picked_up_at, o.delivered_at
@@ -266,7 +270,7 @@ func (s *Service) SetShift(ctx context.Context, p *identity.Principal, in ShiftI
 		return CourierMe{}, err
 	}
 	if in.Vehicle != nil && vehicleSpeed[*in.Vehicle] == 0 {
-		return CourierMe{}, apperr.Validation("vehicle: foot, bike, scooter или car")
+		return CourierMe{}, apperr.Validation("vehicle: foot, bike, scooter или car").Uz("vehicle: foot, bike, scooter yoki car")
 	}
 	if _, err := s.pool.Exec(ctx, `
 		INSERT INTO couriers (employee_id, network_id, vehicle, on_shift)
@@ -328,7 +332,7 @@ func (s *Service) CourierOrders(ctx context.Context, p *identity.Principal) ([]C
 	if err != nil {
 		return nil, err
 	}
-	list, err := pgx.CollectRows(rows, scanOrder)
+	list, err := pgx.CollectRows(rows, scanOrderCtx(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -356,7 +360,7 @@ func (s *Service) courierOrder(ctx context.Context, p *identity.Principal, id st
 		return CourierOrder{}, err
 	}
 	if o.CourierID == nil || *o.CourierID != p.EmployeeID {
-		return CourierOrder{}, apperr.NotFound("заказ не найден")
+		return CourierOrder{}, apperr.NotFound("заказ не найден").Uz("buyurtma topilmadi")
 	}
 	si, err := s.storeInfo(ctx, o.StoreID)
 	if err != nil {
@@ -420,7 +424,7 @@ func (s *Service) Location(ctx context.Context, p *identity.Principal, in Locati
 		return err
 	}
 	if !validCoords(in.Lat, in.Lng) {
-		return apperr.Validation("lat/lng: неверные координаты")
+		return apperr.Validation("lat/lng: неверные координаты").Uz("lat/lng: koordinatalar notoʻgʻri")
 	}
 	if in.Heading != nil && (*in.Heading < 0 || *in.Heading > 359) {
 		in.Heading = nil

@@ -218,7 +218,7 @@ func ParsePeriod(r *http.Request) (from, to *time.Time, err error) {
 				return &t, nil
 			}
 		}
-		return nil, apperr.Validation(name + ": ожидается дата YYYY-MM-DD")
+		return nil, apperr.Validation(name + ": ожидается дата YYYY-MM-DD").Uz(name + ": sana YYYY-MM-DD koʻrinishida boʻlsin")
 	}
 	if from, err = parse("from"); err != nil {
 		return

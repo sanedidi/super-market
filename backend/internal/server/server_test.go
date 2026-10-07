@@ -82,6 +82,15 @@ func freshDB(t *testing.T) *pgxpool.Pool {
 	if _, err := migrate.Up(ctx, pool, migrations.FS, quietLog()); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+	// Тесты ходят без Accept-Language и ждут русских текстов — в том числе в
+	// уведомлениях. Уведомления идут на языке получателя (users.language,
+	// customers.language), а новым пользователям по умолчанию — 'uz'. Здесь
+	// получатели по умолчанию русские, как пользователи до миграции 0039;
+	// узбекские уведомления проверяет i18n_text_test.go, ставя язык явно.
+	if _, err := pool.Exec(ctx, `ALTER TABLE users ALTER COLUMN language SET DEFAULT 'ru';
+		ALTER TABLE customers ALTER COLUMN language SET DEFAULT 'ru'`); err != nil {
+		t.Fatalf("test language defaults: %v", err)
+	}
 	return pool
 }
 

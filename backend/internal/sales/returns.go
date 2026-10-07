@@ -58,13 +58,13 @@ func (s *Service) getReturn(ctx context.Context, q db.Querier, p *identity.Princ
 	}
 	r, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[CustomerReturn])
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !p.CanAccessStore(r.StoreID)) {
-		return CustomerReturn{}, apperr.NotFound("возврат не найден")
+		return CustomerReturn{}, apperr.NotFound("возврат не найден").Uz("qaytarish topilmadi")
 	}
 	if err != nil {
 		return CustomerReturn{}, err
 	}
 	rows, err = q.Query(ctx, `
-		SELECT ri.sale_line, p.name, ri.qty::text, ri.total::text
+		SELECT ri.sale_line, loc(p.name, p.name_uz), ri.qty::text, ri.total::text
 		FROM customer_return_items ri
 		JOIN sale_items si ON si.sale_id = $2 AND si.line = ri.sale_line
 		JOIN products p ON p.id = si.product_id
@@ -114,10 +114,10 @@ func (s *Service) CreateReturn(ctx context.Context, p *identity.Principal, in Re
 		return CustomerReturn{}, err
 	}
 	if !httpx.IsUUID(in.SaleID) || !httpx.IsUUID(in.PaymentMethodID) {
-		return CustomerReturn{}, apperr.Validation("укажите sale_id и payment_method_id")
+		return CustomerReturn{}, apperr.Validation("укажите sale_id и payment_method_id").Uz("sale_id va payment_method_id ni kiriting")
 	}
 	if len(in.Items) == 0 {
-		return CustomerReturn{}, apperr.Validation("items: что возвращаем")
+		return CustomerReturn{}, apperr.Validation("items: что возвращаем").Uz("items: nima qaytariladi")
 	}
 
 	var id string
@@ -127,7 +127,7 @@ func (s *Service) CreateReturn(ctx context.Context, p *identity.Principal, in Re
 		err := tx.QueryRow(ctx, `SELECT store_id, warehouse_id FROM sales WHERE id = $1 AND network_id = $2 FOR UPDATE`,
 			in.SaleID, p.NetworkID).Scan(&storeID, &warehouseID)
 		if errors.Is(err, pgx.ErrNoRows) || (err == nil && !p.CanAccessStore(storeID)) {
-			return apperr.NotFound("продажа не найдена")
+			return apperr.NotFound("продажа не найдена").Uz("sotuv topilmadi")
 		}
 		if err != nil {
 			return err
@@ -137,12 +137,12 @@ func (s *Service) CreateReturn(ctx context.Context, p *identity.Principal, in Re
 			return err
 		}
 		if methodStore == nil || *methodStore != storeID || currency != "UZS" {
-			return apperr.Validation("payment_method_id: способ оплаты не относится к кассе этого магазина")
+			return apperr.Validation("payment_method_id: способ оплаты не относится к кассе этого магазина").Uz("payment_method_id: toʻlov usuli bu doʻkon kassasiga tegishli emas")
 		}
 		lockCashboxForReturn(ctx, tx, cashboxID)
 		if p.DeviceID != "" {
 			if in.ShiftID == nil || !httpx.IsUUID(*in.ShiftID) {
-				return apperr.Validation("shift_id: возврат с кассы — только в смене")
+				return apperr.Validation("shift_id: возврат с кассы — только в смене").Uz("shift_id: kassadan qaytarish — faqat smena ochiq boʻlganda")
 			}
 			if err := CheckShiftTime(ctx, tx, *in.ShiftID, p.DeviceID, s.now()); err != nil {
 				return err
@@ -169,7 +169,7 @@ func (s *Service) CreateReturn(ctx context.Context, p *identity.Principal, in Re
 		for _, it := range in.Items {
 			ls := strconv.Itoa(it.SaleLine)
 			if seen[it.SaleLine] {
-				return apperr.Validation("items: строка чека " + ls + " повторяется")
+				return apperr.Validation("items: строка чека " + ls + " повторяется").Uz("items: chekning " + ls + "-qatori takrorlanadi")
 			}
 			seen[it.SaleLine] = true
 			var productID, soldQty, lineTotal, returned string
@@ -181,21 +181,21 @@ func (s *Service) CreateReturn(ctx context.Context, p *identity.Principal, in Re
 				FROM sale_items i JOIN products p ON p.id = i.product_id JOIN units u ON u.id = p.unit_id
 				WHERE i.sale_id = $1 AND i.line = $2`, in.SaleID, it.SaleLine).Scan(&productID, &soldQty, &lineTotal, &fractional, &returned)
 			if errors.Is(err, pgx.ErrNoRows) {
-				return apperr.Validation("items: нет строки чека " + ls)
+				return apperr.Validation("items: нет строки чека " + ls).Uz("items: chekda " + ls + "-qator yoʻq")
 			}
 			if err != nil {
 				return err
 			}
 			if !it.Qty.Valid() || money.D(string(it.Qty)).Sign() <= 0 {
-				return apperr.Validation("items: количество должно быть больше нуля (строка " + ls + ")")
+				return apperr.Validation("items: количество должно быть больше нуля (строка " + ls + ")").Uz("items: miqdor noldan katta boʻlishi kerak (" + ls + "-qator)")
 			}
 			qty := money.D(string(it.Qty))
 			if !fractional && qty.Cmp(money.D(qty.Fixed(0))) != 0 {
-				return apperr.Validation("items: штучный товар возвращается целым количеством (строка " + ls + ")")
+				return apperr.Validation("items: штучный товар возвращается целым количеством (строка " + ls + ")").Uz("items: donali mahsulot butun miqdorda qaytariladi (" + ls + "-qator)")
 			}
 			left := money.D(soldQty).Sub(money.D(returned))
 			if qty.Cmp(left) > 0 {
-				return apperr.Conflict("return_exceeds_sale", "нельзя вернуть больше, чем продано").
+				return apperr.Conflict("return_exceeds_sale", "нельзя вернуть больше, чем продано").Uz("sotilganidan koʻp qaytarib boʻlmaydi").
 					WithDetails(map[string]any{"sale_line": it.SaleLine, "available": left.Fixed(3)})
 			}
 

@@ -19,6 +19,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
@@ -85,7 +86,7 @@ func (o *OptInt) UnmarshalJSON(b []byte) error {
 	}
 	var v int
 	if err := json.Unmarshal(b, &v); err != nil {
-		return errors.New("ожидается целое число или null")
+		return i18n.NewError("ожидается целое число или null", "butun son yoki null boʻlishi kerak")
 	}
 	o.Value = &v
 	return nil
@@ -93,7 +94,7 @@ func (o *OptInt) UnmarshalJSON(b []byte) error {
 
 func checkStore(p *identity.Principal, storeID string) error {
 	if !httpx.IsUUID(storeID) || !p.CanAccessStore(storeID) {
-		return apperr.NotFound("магазин не найден")
+		return apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	return nil
 }
@@ -110,7 +111,7 @@ func getSettings(ctx context.Context, q db.Querier, networkID, storeID string) (
 	err := q.QueryRow(ctx, `SELECT accepts_online, min_order_amount::text, delivery_radius_m, eta_min, eta_max FROM stores
 		WHERE id = $1 AND network_id = $2`, storeID, networkID).Scan(&st.AcceptsOnline, &st.MinOrderAmount, &st.DeliveryRadiusM, &st.EtaMin, &st.EtaMax)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return st, apperr.NotFound("магазин не найден")
+		return st, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	if err != nil {
 		return st, err
@@ -148,25 +149,25 @@ func parseRule(r Rule) (ruleParams, error) {
 		dec := json.NewDecoder(strings.NewReader(string(r.Params)))
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&p); err != nil {
-			return p, fmt.Errorf("неверные параметры правила %s: %w", r.Type, err)
+			return p, apperr.Validation(fmt.Sprintf("rules: неверные параметры правила %s: %s", r.Type, err)).Uz(fmt.Sprintf("rules: %s qoidasining parametrlari notoʻgʻri: %s", r.Type, err))
 		}
 	}
 	switch r.Type {
 	case "fixed":
 		if p.Price == nil {
-			return p, errors.New("fixed: нужен price")
+			return p, apperr.Validation("rules: fixed: нужен price").Uz("rules: fixed: price kerak")
 		}
 	case "distance":
 		if p.Base == nil || p.PerKm == nil {
-			return p, errors.New("distance: нужны base и per_km")
+			return p, apperr.Validation("rules: distance: нужны base и per_km").Uz("rules: distance: base va per_km kerak")
 		}
 	case "zone":
 	case "free_from":
 		if p.Amount == nil {
-			return p, errors.New("free_from: нужен amount")
+			return p, apperr.Validation("rules: free_from: нужен amount").Uz("rules: free_from: amount kerak")
 		}
 	default:
-		return p, errors.New("type: ожидается fixed, distance, zone или free_from")
+		return p, apperr.Validation("rules: type: ожидается fixed, distance, zone или free_from").Uz("rules: type: fixed, distance, zone yoki free_from boʻlishi kerak")
 	}
 	return p, nil
 }
@@ -188,27 +189,27 @@ func (s *Service) SaveSettings(ctx context.Context, p *identity.Principal, store
 		return Settings{}, err
 	}
 	if in.DeliveryRadiusM != nil && (*in.DeliveryRadiusM < 0 || *in.DeliveryRadiusM > 100_000) {
-		return Settings{}, apperr.Validation("delivery_radius_m: от 0 до 100 000 метров")
+		return Settings{}, apperr.Validation("delivery_radius_m: от 0 до 100 000 метров").Uz("delivery_radius_m: 0 dan 100 000 metrgacha")
 	}
 	for _, v := range []*int{in.EtaMin.Value, in.EtaMax.Value} {
 		if v != nil && (*v < 5 || *v > 600) {
-			return Settings{}, apperr.Validation("eta_min/eta_max: от 5 до 600 минут")
+			return Settings{}, apperr.Validation("eta_min/eta_max: от 5 до 600 минут").Uz("eta_min/eta_max: 5 dan 600 daqiqagacha")
 		}
 	}
 	if in.EtaMin.Value != nil && in.EtaMax.Value != nil && *in.EtaMin.Value > *in.EtaMax.Value {
-		return Settings{}, apperr.Validation("eta_min: не больше eta_max")
+		return Settings{}, apperr.Validation("eta_min: не больше eta_max").Uz("eta_min: eta_max dan katta boʻlmasin")
 	}
 	if in.WorkingHours != nil {
 		days := map[int]bool{}
 		for _, h := range *in.WorkingHours {
 			if h.Weekday < 0 || h.Weekday > 6 || days[h.Weekday] {
-				return Settings{}, apperr.Validation("working_hours: день недели 0–6, без повторов")
+				return Settings{}, apperr.Validation("working_hours: день недели 0–6, без повторов").Uz("working_hours: hafta kuni 0–6, takrorlanmasin")
 			}
 			days[h.Weekday] = true
 			o, err1 := parseClock(h.Opens)
 			c, err2 := parseClock(h.Closes)
 			if err1 != nil || err2 != nil || o == c {
-				return Settings{}, apperr.Validation("working_hours: время ЧЧ:ММ, открытие и закрытие различаются")
+				return Settings{}, apperr.Validation("working_hours: время ЧЧ:ММ, открытие и закрытие различаются").Uz("working_hours: vaqt HH:MM, ochilish va yopilish vaqti har xil boʻlsin")
 			}
 		}
 	}
@@ -220,7 +221,7 @@ func (s *Service) SaveSettings(ctx context.Context, p *identity.Principal, store
 	if in.Rules != nil {
 		for _, r := range *in.Rules {
 			if _, err := parseRule(r); err != nil {
-				return Settings{}, apperr.Validation("rules: " + err.Error())
+				return Settings{}, err // apperr с префиксом rules:
 			}
 		}
 	}
@@ -238,7 +239,7 @@ func (s *Service) SaveSettings(ctx context.Context, p *identity.Principal, store
 				return err
 			}
 			if !hasLocation {
-				return apperr.Validation("accepts_online: сначала укажите точку магазина на карте (lat, lng)")
+				return apperr.Validation("accepts_online: сначала укажите точку магазина на карте (lat, lng)").Uz("accepts_online: avval xaritada doʻkon joyini belgilang (lat, lng)")
 			}
 		}
 		if _, err := tx.Exec(ctx, `
@@ -250,7 +251,7 @@ func (s *Service) SaveSettings(ctx context.Context, p *identity.Principal, store
 			WHERE id = $1 AND network_id = $2`, storeID, p.NetworkID, in.AcceptsOnline, minOrder, in.DeliveryRadiusM,
 			in.EtaMin.Set, in.EtaMin.Value, in.EtaMax.Set, in.EtaMax.Value); err != nil {
 			if db.IsCheckViolation(err) {
-				return apperr.Validation("eta_min: не больше eta_max")
+				return apperr.Validation("eta_min: не больше eta_max").Uz("eta_min: eta_max dan katta boʻlmasin")
 			}
 			return err
 		}
@@ -314,7 +315,7 @@ type ZoneInput struct {
 
 func polygonWKT(pts [][2]float64) (string, error) {
 	if len(pts) < 3 || len(pts) > 500 {
-		return "", errors.New("polygon: от 3 до 500 точек [lng, lat]")
+		return "", apperr.Validation("polygon: от 3 до 500 точек [lng, lat]").Uz("polygon: 3 dan 500 tagacha nuqta [lng, lat]")
 	}
 	ring := append([][2]float64{}, pts...)
 	if ring[0] != ring[len(ring)-1] {
@@ -323,7 +324,7 @@ func polygonWKT(pts [][2]float64) (string, error) {
 	parts := make([]string, len(ring))
 	for i, p := range ring {
 		if p[0] < -180 || p[0] > 180 || p[1] < -90 || p[1] > 90 {
-			return "", errors.New("polygon: координаты вне диапазона")
+			return "", apperr.Validation("polygon: координаты вне диапазона").Uz("polygon: koordinatalar ruxsat etilgan oraliqdan tashqarida")
 		}
 		parts[i] = fmt.Sprintf("%f %f", p[0], p[1])
 	}
@@ -361,13 +362,13 @@ func (s *Service) SaveZone(ctx context.Context, p *identity.Principal, storeID, 
 		return Zone{}, err
 	}
 	if in.Name != nil && strings.TrimSpace(*in.Name) == "" {
-		return Zone{}, apperr.Validation("name: не может быть пустым")
+		return Zone{}, apperr.Validation("name: не может быть пустым").Uz("name: boʻsh boʻlishi mumkin emas")
 	}
 	var wkt *string
 	if in.Polygon != nil {
 		w, err := polygonWKT(*in.Polygon)
 		if err != nil {
-			return Zone{}, apperr.Validation(err.Error())
+			return Zone{}, err
 		}
 		wkt = &w
 	}
@@ -379,7 +380,7 @@ func (s *Service) SaveZone(ctx context.Context, p *identity.Principal, storeID, 
 	var err error
 	if id == "" {
 		if in.Name == nil || wkt == nil {
-			return Zone{}, apperr.Validation("name и polygon обязательны")
+			return Zone{}, apperr.Validation("name и polygon обязательны").Uz("name va polygon majburiy")
 		}
 		err = s.pool.QueryRow(ctx, `
 			INSERT INTO delivery_zones (network_id, store_id, name, area, price)
@@ -394,12 +395,12 @@ func (s *Service) SaveZone(ctx context.Context, p *identity.Principal, storeID, 
 			WHERE id = $1 AND store_id = $2 AND network_id = $3`,
 			id, storeID, p.NetworkID, trimPtr(in.Name), price, in.IsActive, wkt)
 		if err == nil && tag.RowsAffected() == 0 {
-			return Zone{}, apperr.NotFound("зона не найдена")
+			return Zone{}, apperr.NotFound("зона не найдена").Uz("hudud topilmadi")
 		}
 	}
 	if err != nil {
 		if strings.Contains(err.Error(), "geometry") || strings.Contains(err.Error(), "parse") {
-			return Zone{}, apperr.Validation("polygon: неверный многоугольник")
+			return Zone{}, apperr.Validation("polygon: неверный многоугольник").Uz("polygon: koʻpburchak notoʻgʻri")
 		}
 		return Zone{}, err
 	}
@@ -419,7 +420,7 @@ func (s *Service) DeleteZone(ctx context.Context, p *identity.Principal, storeID
 	}
 	tag, err := s.pool.Exec(ctx, `DELETE FROM delivery_zones WHERE id = $1 AND store_id = $2 AND network_id = $3`, id, storeID, p.NetworkID)
 	if err == nil && tag.RowsAffected() == 0 {
-		return apperr.NotFound("зона не найдена")
+		return apperr.NotFound("зона не найдена").Uz("hudud topilmadi")
 	}
 	return err
 }
@@ -444,7 +445,7 @@ type Quote struct {
 	IsOpen   bool    `json:"is_open"`
 }
 
-var ErrNotDeliverable = apperr.Conflict("not_deliverable", "магазин не доставляет по этому адресу")
+var ErrNotDeliverable = apperr.Conflict("not_deliverable", "магазин не доставляет по этому адресу").Uz("doʻkon bu manzilga yetkazib bermaydi")
 
 // QuoteFor считает доставку из магазина в точку для суммы товаров subtotal.
 func (s *Service) QuoteFor(ctx context.Context, q db.Querier, storeID string, lat, lng float64, subtotal string) (Quote, error) {
@@ -465,13 +466,13 @@ func (s *Service) QuoteFor(ctx context.Context, q db.Querier, storeID string, la
 		FROM stores s JOIN networks n ON n.id = s.network_id, pt
 		WHERE s.id = $1`, storeID, lat, lng).Scan(&accepts, &out.MinOrderAmount, &radius, &dist, &hasZones, &inRadius, &zonePrice)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return out, apperr.NotFound("магазин не найден")
+		return out, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	if err != nil {
 		return out, err
 	}
 	if !accepts {
-		return out, apperr.Conflict("store_not_accepting", "магазин сейчас не принимает онлайн-заказы")
+		return out, apperr.Conflict("store_not_accepting", "магазин сейчас не принимает онлайн-заказы").Uz("doʻkon hozir onlayn buyurtmalarni qabul qilmayapti")
 	}
 	if (hasZones && zonePrice == nil) || (!hasZones && !inRadius) {
 		return out, ErrNotDeliverable
@@ -580,7 +581,7 @@ type NearbyStore struct {
 // Три ближайших открытых отмечены recommended.
 func (s *Service) Nearby(ctx context.Context, lat, lng float64) ([]NearbyStore, error) {
 	if lat < -90 || lat > 90 || lng < -180 || lng > 180 {
-		return nil, apperr.Validation("lat/lng: координаты вне диапазона")
+		return nil, apperr.Validation("lat/lng: координаты вне диапазона").Uz("lat/lng: koordinatalar ruxsat etilgan oraliqdan tashqarida")
 	}
 	rows, err := s.pool.Query(ctx, `
 		WITH pt AS (SELECT ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography AS g)

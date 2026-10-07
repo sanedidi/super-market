@@ -29,7 +29,7 @@ type WishState struct {
 // Wish — «Хочу доставку» (повторно — обновляет точку адреса).
 func (s *Service) Wish(ctx context.Context, p *identity.Principal, storeID string, in WishInput) (WishState, error) {
 	if in.Lat < -90 || in.Lat > 90 || in.Lng < -180 || in.Lng > 180 || (in.Lat == 0 && in.Lng == 0) {
-		return WishState{}, apperr.Validation("lat/lng: укажите адрес")
+		return WishState{}, apperr.Validation("lat/lng: укажите адрес").Uz("lat/lng: manzilni kiriting")
 	}
 	if _, err := s.storeForBrowse(ctx, s.pool, storeID); err != nil {
 		return WishState{}, err
@@ -45,7 +45,7 @@ func (s *Service) Wish(ctx context.Context, p *identity.Principal, storeID strin
 // Unwish — снять «Хочу доставку».
 func (s *Service) Unwish(ctx context.Context, p *identity.Principal, storeID string) (WishState, error) {
 	if !httpx.IsUUID(storeID) {
-		return WishState{}, apperr.NotFound("магазин не найден")
+		return WishState{}, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	_, err := s.pool.Exec(ctx, `DELETE FROM delivery_wishes WHERE store_id = $1 AND user_id = $2`, storeID, p.UserID)
 	return WishState{StoreID: storeID, Wished: false}, err
@@ -88,7 +88,7 @@ func (s *Service) StoreWishStats(ctx context.Context, p *identity.Principal, sto
 		return out, err
 	}
 	if !httpx.IsUUID(storeID) || !p.CanAccessStore(storeID) {
-		return out, apperr.NotFound("магазин не найден")
+		return out, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	err := s.pool.QueryRow(ctx, `
 		SELECT s.accepts_online,
@@ -105,7 +105,7 @@ func (s *Service) StoreWishStats(ctx context.Context, p *identity.Principal, sto
 		GROUP BY s.id`, storeID, p.NetworkID).
 		Scan(&out.AcceptsOnline, &out.Total, &out.Week, &out.Month, &out.NearestM, &out.FarthestM, &out.OutOfZone, &out.OutOfZoneWeek)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return out, apperr.NotFound("магазин не найден")
+		return out, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	return out, err
 }

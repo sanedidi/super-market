@@ -51,7 +51,7 @@ type Taken struct {
 
 // ErrInsufficient — на складе меньше, чем нужно.
 func errInsufficient(productID, available, need string) error {
-	return apperr.New(http.StatusConflict, "insufficient_stock", "недостаточно товара на складе").
+	return apperr.New(http.StatusConflict, "insufficient_stock", "недостаточно товара на складе").Uz("omborda mahsulot yetarli emas").
 		WithDetails(map[string]any{"product_id": productID, "available": available, "required": need})
 }
 

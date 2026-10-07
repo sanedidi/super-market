@@ -128,7 +128,7 @@ func (m *Module) setStore(w http.ResponseWriter, r *http.Request) {
 		DebtEnabled *bool `json:"debt_enabled"`
 	}) (Settings, error) {
 		if in.DebtEnabled == nil {
-			return Settings{}, apperr.Validation("debt_enabled: true или false")
+			return Settings{}, apperr.Validation("debt_enabled: true или false").Uz("debt_enabled: true yoki false")
 		}
 		return m.svc.SetStoreEnabled(r.Context(), pr(r), id, *in.DebtEnabled)
 	})
@@ -147,7 +147,7 @@ func (m *Module) clientStore(w http.ResponseWriter, r *http.Request) {
 func (m *Module) clientDispute(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || id <= 0 {
-		httpx.Fail(w, r, m.log, apperr.NotFound("запись не найдена"))
+		httpx.Fail(w, r, m.log, apperr.NotFound("запись не найдена").Uz("yozuv topilmadi"))
 		return
 	}
 	var in DisputeInput

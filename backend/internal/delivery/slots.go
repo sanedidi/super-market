@@ -33,17 +33,17 @@ type SlotSettingsInput struct {
 var defaultSlots = SlotSettings{SlotMinutes: 60, DaysAhead: 1, LeadMinutes: 60, Capacity: 5}
 
 func (in SlotSettingsInput) validate() error {
-	check := func(v *int, lo, hi int, msg string) error {
+	check := func(v *int, lo, hi int, msg, msgUz string) error {
 		if v != nil && (*v < lo || *v > hi) {
-			return apperr.Validation(msg)
+			return apperr.Validation(msg).Uz(msgUz)
 		}
 		return nil
 	}
 	return errors.Join(
-		check(in.SlotMinutes, 30, 240, "slots.slot_minutes: от 30 до 240 минут"),
-		check(in.DaysAhead, 0, 6, "slots.days_ahead: от 0 до 6 дней"),
-		check(in.LeadMinutes, 0, 720, "slots.lead_minutes: от 0 до 720 минут"),
-		check(in.Capacity, 1, 500, "slots.capacity: от 1 до 500 заказов"),
+		check(in.SlotMinutes, 30, 240, "slots.slot_minutes: от 30 до 240 минут", "slots.slot_minutes: 30 dan 240 daqiqagacha"),
+		check(in.DaysAhead, 0, 6, "slots.days_ahead: от 0 до 6 дней", "slots.days_ahead: 0 dan 6 kungacha"),
+		check(in.LeadMinutes, 0, 720, "slots.lead_minutes: от 0 до 720 минут", "slots.lead_minutes: 0 dan 720 daqiqagacha"),
+		check(in.Capacity, 1, 500, "slots.capacity: от 1 до 500 заказов", "slots.capacity: 1 dan 500 tagacha buyurtma"),
 	)
 }
 
@@ -204,8 +204,8 @@ func (s *Service) Slots(ctx context.Context, storeID string) (SlotsView, error) 
 }
 
 var (
-	ErrSlotUnavailable = apperr.Conflict("slot_unavailable", "это время доставки недоступно, выберите другое")
-	ErrSlotFull        = apperr.Conflict("slot_full", "на это время заказов больше не принимаем, выберите другое")
+	ErrSlotUnavailable = apperr.Conflict("slot_unavailable", "это время доставки недоступно, выберите другое").Uz("bu yetkazib berish vaqti mavjud emas, boshqasini tanlang")
+	ErrSlotFull        = apperr.Conflict("slot_full", "на это время заказов больше не принимаем, выберите другое").Uz("bu vaqtga boshqa buyurtma qabul qilinmaydi, boshqa vaqtni tanlang")
 )
 
 // CheckSlot проверяет окно, которое начинается в from, и возвращает его конец.

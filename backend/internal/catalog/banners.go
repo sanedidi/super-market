@@ -12,6 +12,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/showcase"
 )
 
@@ -65,29 +66,29 @@ var colorRe = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 
 func (in BannerInput) validate(create bool) error {
 	if create && in.Title == nil {
-		return apperr.Validation("title: обязательное поле")
+		return apperr.Validation("title: обязательное поле").Uz("title: majburiy maydon")
 	}
 	if in.Title != nil && strings.TrimSpace(*in.Title) == "" {
-		return apperr.Validation("title: не может быть пустым")
+		return apperr.Validation("title: не может быть пустым").Uz("title: boʻsh boʻlishi mumkin emas")
 	}
 	if in.Color != nil && !colorRe.MatchString(*in.Color) {
-		return apperr.Validation("color: ожидается #RRGGBB")
+		return apperr.Validation("color: ожидается #RRGGBB").Uz("color: #RRGGBB koʻrinishida boʻlsin")
 	}
 	if in.ImageURL != nil && *in.ImageURL != "" && !strings.HasPrefix(*in.ImageURL, "https://") && !strings.HasPrefix(*in.ImageURL, "http://") {
-		return apperr.Validation("image_url: ожидается ссылка http(s)")
+		return apperr.Validation("image_url: ожидается ссылка http(s)").Uz("image_url: http(s) havola boʻlishi kerak")
 	}
 	if in.LinkType != nil {
 		switch *in.LinkType {
 		case "none", "promotion", "category", "product", "store":
 		default:
-			return apperr.Validation("link_type: none, promotion, category, product или store")
+			return apperr.Validation("link_type: none, promotion, category, product или store").Uz("link_type: none, promotion, category, product yoki store")
 		}
 		if *in.LinkType != "none" && (in.LinkID == nil || !httpx.IsUUID(*in.LinkID)) {
-			return apperr.Validation("link_id: укажите, куда ведёт баннер")
+			return apperr.Validation("link_id: укажите, куда ведёт баннер").Uz("link_id: banner qayerga olib borishini koʻrsating")
 		}
 	}
 	if in.NetworkID != nil && *in.NetworkID != "" && !httpx.IsUUID(*in.NetworkID) {
-		return apperr.Validation("network_id: сеть не найдена")
+		return apperr.Validation("network_id: сеть не найдена").Uz("network_id: tarmoq topilmadi")
 	}
 	return nil
 }
@@ -96,7 +97,7 @@ func (in BannerInput) validate(create bool) error {
 // статусом (очередь модерации — pending).
 func (s *Service) ListBanners(ctx context.Context, moderation string, page httpx.Page) ([]Banner, error) {
 	if moderation != "" && moderation != "pending" && moderation != "approved" && moderation != "rejected" {
-		return nil, apperr.Validation("moderation: pending, approved или rejected")
+		return nil, apperr.Validation("moderation: pending, approved или rejected").Uz("moderation: pending, approved yoki rejected")
 	}
 	rows, err := s.pool.Query(ctx, bannerSelect+` WHERE ($3 = '' OR moderation = $3)
 		ORDER BY moderation = 'pending' DESC, is_active DESC, sort, created_at DESC, id LIMIT $1 OFFSET $2`,
@@ -114,7 +115,7 @@ func (s *Service) getBanner(ctx context.Context, q db.Querier, id string) (Banne
 	}
 	b, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[Banner])
 	if errors.Is(err, pgx.ErrNoRows) {
-		return b, apperr.NotFound("баннер не найден")
+		return b, apperr.NotFound("баннер не найден").Uz("banner topilmadi")
 	}
 	return b, err
 }
@@ -155,10 +156,10 @@ func (s *Service) CreateBanner(ctx context.Context, in BannerInput) (Banner, err
 		str(in.Title, ""), str(in.Subtitle, ""), str(in.ImageURL, ""), str(in.Color, "#155EEF"), str(in.LinkType, "none"),
 		emptyToNil(in.LinkID), emptyToNil(in.NetworkID), in.StartsAt.Or(), in.EndsAt.Or(), sort, active, showText).Scan(&id)
 	if db.IsCheckViolation(err) {
-		return Banner{}, apperr.Validation("баннер: проверьте даты и ссылку")
+		return Banner{}, apperr.Validation("баннер: проверьте даты и ссылку").Uz("banner: sanalar va havolani tekshiring")
 	}
 	if db.IsForeignKeyViolation(err) {
-		return Banner{}, apperr.Validation("network_id: сеть не найдена")
+		return Banner{}, apperr.Validation("network_id: сеть не найдена").Uz("network_id: tarmoq topilmadi")
 	}
 	if err != nil {
 		return Banner{}, err
@@ -193,16 +194,16 @@ func (s *Service) UpdateBanner(ctx context.Context, id string, in BannerInput) (
 		setLink, emptyToNil(in.LinkID), setNetwork, emptyToNil(in.NetworkID),
 		in.StartsAt.Set, in.StartsAt.Value, in.EndsAt.Set, in.EndsAt.Value, in.Sort, in.IsActive, in.ShowText)
 	if db.IsCheckViolation(err) {
-		return Banner{}, apperr.Validation("баннер: проверьте даты и ссылку")
+		return Banner{}, apperr.Validation("баннер: проверьте даты и ссылку").Uz("banner: sanalar va havolani tekshiring")
 	}
 	if db.IsForeignKeyViolation(err) {
-		return Banner{}, apperr.Validation("network_id: сеть не найдена")
+		return Banner{}, apperr.Validation("network_id: сеть не найдена").Uz("network_id: tarmoq topilmadi")
 	}
 	if err != nil {
 		return Banner{}, err
 	}
 	if tag.RowsAffected() == 0 {
-		return Banner{}, apperr.NotFound("баннер не найден")
+		return Banner{}, apperr.NotFound("баннер не найден").Uz("banner topilmadi")
 	}
 	return s.getBanner(ctx, s.pool, id)
 }
@@ -272,10 +273,10 @@ func (s *Service) CreateNetworkBanner(ctx context.Context, networkID string, in 
 	}
 	if limit := showcase.Allowed(plan.Effective.Banners); used >= limit {
 		return Banner{}, showcase.Limit("banners", plan.Effective, limit, used,
-			"лимит своих баннеров на тарифе «"+plan.Effective.Name+"»")
+			i18n.Text{RU: "лимит своих баннеров на тарифе «" + plan.Effective.Name + "»", UZ: "«" + plan.Effective.Name + "» tarifida oʻz bannerlaringiz limiti tugadi"})
 	}
 	if in.LinkType != nil && *in.LinkType == "store" {
-		return Banner{}, apperr.Validation("link_type: баннер сети не ведёт в другой магазин")
+		return Banner{}, apperr.Validation("link_type: баннер сети не ведёт в другой магазин").Uz("link_type: tarmoq banneri boshqa doʻkonga olib bormaydi")
 	}
 	in.NetworkID = &networkID
 	b, err := s.CreateBanner(ctx, in)
@@ -297,10 +298,10 @@ func (s *Service) UpdateNetworkBanner(ctx context.Context, networkID, id string,
 		return b, err
 	}
 	if b.Owner != "network" || b.NetworkID == nil || *b.NetworkID != networkID {
-		return Banner{}, apperr.NotFound("баннер не найден")
+		return Banner{}, apperr.NotFound("баннер не найден").Uz("banner topilmadi")
 	}
 	if in.LinkType != nil && *in.LinkType == "store" {
-		return Banner{}, apperr.Validation("link_type: баннер сети не ведёт в другой магазин")
+		return Banner{}, apperr.Validation("link_type: баннер сети не ведёт в другой магазин").Uz("link_type: tarmoq banneri boshqa doʻkonga olib bormaydi")
 	}
 	if in.IsActive != nil && *in.IsActive && !b.IsActive {
 		plan, err := showcase.ForNetwork(ctx, s.pool, networkID)
@@ -312,7 +313,7 @@ func (s *Service) UpdateNetworkBanner(ctx context.Context, networkID, id string,
 			return Banner{}, err
 		}
 		if limit := showcase.Allowed(plan.Effective.Banners); used >= limit {
-			return Banner{}, showcase.Limit("banners", plan.Effective, limit, used, "лимит своих баннеров на тарифе «"+plan.Effective.Name+"»")
+			return Banner{}, showcase.Limit("banners", plan.Effective, limit, used, i18n.Text{RU: "лимит своих баннеров на тарифе «" + plan.Effective.Name + "»", UZ: "«" + plan.Effective.Name + "» tarifida oʻz bannerlaringiz limiti tugadi"})
 		}
 	}
 	in.NetworkID = nil
@@ -332,7 +333,7 @@ func (s *Service) UpdateNetworkBanner(ctx context.Context, networkID, id string,
 func (s *Service) ModerateBanner(ctx context.Context, id string, approve bool, reason string) (Banner, error) {
 	reason = strings.TrimSpace(reason)
 	if !approve && reason == "" {
-		return Banner{}, apperr.Validation("reason: укажите причину, сеть её увидит")
+		return Banner{}, apperr.Validation("reason: укажите причину, сеть её увидит").Uz("reason: sababini kiriting, tarmoq uni koʻradi")
 	}
 	status := "approved"
 	if !approve {
@@ -344,7 +345,7 @@ func (s *Service) ModerateBanner(ctx context.Context, id string, approve bool, r
 		return Banner{}, err
 	}
 	if tag.RowsAffected() == 0 {
-		return Banner{}, apperr.NotFound("баннер сети не найден")
+		return Banner{}, apperr.NotFound("баннер сети не найден").Uz("tarmoq banneri topilmadi")
 	}
 	return s.getBanner(ctx, s.pool, id)
 }

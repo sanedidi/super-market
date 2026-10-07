@@ -77,7 +77,7 @@ func scanDevice(r pgx.CollectableRow) (Device, error) {
 
 func (s *Service) ListDevices(ctx context.Context, p *identity.Principal, storeID string) ([]Device, error) {
 	if storeID != "" && !httpx.IsUUID(storeID) {
-		return nil, apperr.Validation("store_id: неверный id")
+		return nil, apperr.Validation("store_id: неверный id").Uz("store_id: id notoʻgʻri")
 	}
 	rows, err := s.pool.Query(ctx, deviceSelect+`
 		WHERE d.network_id = $1 AND ($2 OR d.store_id = ANY($3::uuid[])) AND ($4 = '' OR d.store_id::text = $4)
@@ -96,7 +96,7 @@ func (s *Service) ListDevices(ctx context.Context, p *identity.Principal, storeI
 
 func (s *Service) getDevice(ctx context.Context, p *identity.Principal, id string) (Device, error) {
 	if !httpx.IsUUID(id) {
-		return Device{}, apperr.NotFound("касса не найдена")
+		return Device{}, apperr.NotFound("касса не найдена").Uz("kassa topilmadi")
 	}
 	rows, err := s.pool.Query(ctx, deviceSelect+` WHERE d.id = $1 AND d.network_id = $2`, id, p.NetworkID)
 	if err != nil {
@@ -104,7 +104,7 @@ func (s *Service) getDevice(ctx context.Context, p *identity.Principal, id strin
 	}
 	d, err := pgx.CollectExactlyOneRow(rows, scanDevice)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !p.CanAccessStore(d.StoreID)) {
-		return Device{}, apperr.NotFound("касса не найдена")
+		return Device{}, apperr.NotFound("касса не найдена").Uz("kassa topilmadi")
 	}
 	return d, err
 }
@@ -121,10 +121,10 @@ func (s *Service) CreateDevice(ctx context.Context, p *identity.Principal, in De
 	}
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Name == "" || len([]rune(in.Name)) > 60 {
-		return Device{}, apperr.Validation("name: название кассы, до 60 символов")
+		return Device{}, apperr.Validation("name: название кассы, до 60 символов").Uz("name: kassa nomi, 60 belgigacha")
 	}
 	if !httpx.IsUUID(in.StoreID) || !p.CanAccessStore(in.StoreID) {
-		return Device{}, apperr.Validation("store_id: магазин не найден")
+		return Device{}, apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
 	}
 	var ok bool
 	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM stores WHERE id = $1 AND network_id = $2)`,
@@ -132,7 +132,7 @@ func (s *Service) CreateDevice(ctx context.Context, p *identity.Principal, in De
 		return Device{}, err
 	}
 	if !ok {
-		return Device{}, apperr.Validation("store_id: магазин не найден")
+		return Device{}, apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
 	}
 	var id string
 	if err := s.pool.QueryRow(ctx, `INSERT INTO pos_devices (network_id, store_id, name) VALUES ($1, $2, $3) RETURNING id`,
@@ -153,7 +153,7 @@ func (s *Service) NewCode(ctx context.Context, p *identity.Principal, id string)
 		return Device{}, err
 	}
 	if d.Status == "revoked" {
-		return Device{}, apperr.Conflict("device_revoked", "касса отключена — создайте новую")
+		return Device{}, apperr.Conflict("device_revoked", "касса отключена — создайте новую").Uz("kassa oʻchirilgan — yangisini yarating")
 	}
 	code, err := newActivationCode()
 	if err != nil {
@@ -203,7 +203,7 @@ type Activation struct {
 func (s *Service) Activate(ctx context.Context, in ActivateInput) (Activation, error) {
 	code := normalizeCode(in.Code)
 	if len(code) != codeLen {
-		return Activation{}, apperr.Validation("code: введите код из панели магазина")
+		return Activation{}, apperr.Validation("code: введите код из панели магазина").Uz("code: doʻkon panelidagi kodni kiriting")
 	}
 	token, err := randomToken()
 	if err != nil {
@@ -220,7 +220,7 @@ func (s *Service) Activate(ctx context.Context, in ActivateInput) (Activation, e
 		hashSecret(code), hashSecret(token), strings.TrimSpace(in.AppVersion)).Scan(
 		&a.DeviceID, &a.DeviceName, &a.StoreID, &a.StoreName, &a.NetworkName)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Activation{}, apperr.New(400, "activation_invalid", "код неверный или устарел — создайте новый в панели магазина")
+		return Activation{}, apperr.New(400, "activation_invalid", "код неверный или устарел — создайте новый в панели магазина").Uz("kod notoʻgʻri yoki eskirgan — doʻkon panelida yangisini yarating")
 	}
 	a.Token = token
 	return a, err

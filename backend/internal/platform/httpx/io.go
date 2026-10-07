@@ -25,9 +25,9 @@ func Decode(r *http.Request, dst any) error {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
 		if errors.Is(err, io.EOF) {
-			return apperr.Validation("пустое тело запроса")
+			return apperr.Validation("пустое тело запроса").Uz("soʻrov tanasi boʻsh")
 		}
-		return apperr.Validation("неверный JSON: " + err.Error())
+		return apperr.Validation("неверный JSON: " + err.Error()).Uz("JSON notoʻgʻri: " + i18n.ErrorText(err, i18n.UZ))
 	}
 	return nil
 }

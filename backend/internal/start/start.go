@@ -24,6 +24,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
@@ -59,7 +60,7 @@ func require(p *identity.Principal, storeID string) error {
 		return err
 	}
 	if !httpx.IsUUID(storeID) || !p.CanAccessStore(storeID) {
-		return apperr.NotFound("магазин не найден")
+		return apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	return nil
 }
@@ -86,13 +87,13 @@ func (s *Service) store(ctx context.Context, q db.Querier, p *identity.Principal
 		LEFT JOIN warehouses w ON w.id = s.default_warehouse_id AND w.is_active
 		WHERE s.id = $1 AND s.network_id = $2`, storeID, p.NetworkID).Scan(&st.ID, &st.Name, &wh, &whName, &st.PriceTypeID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return st, apperr.NotFound("магазин не найден")
+		return st, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	if err != nil {
 		return st, err
 	}
 	if wh == nil || whName == nil {
-		return st, apperr.Conflict("no_warehouse", "у магазина нет основного склада — выберите его в настройках магазина")
+		return st, apperr.Conflict("no_warehouse", "у магазина нет основного склада — выберите его в настройках магазина").Uz("doʻkonda asosiy ombor yoʻq — uni doʻkon sozlamalarida tanlang")
 	}
 	st.WarehouseID, st.WarehouseName = *wh, *whName
 	return st, nil
@@ -161,7 +162,7 @@ func openDraft(ctx context.Context, q db.Querier, warehouseID string) (*string, 
 }
 
 const lineSelect = `
-	SELECT l.product_id, p.name, p.images[1], u.short_name, u.is_fractional,
+	SELECT l.product_id, loc(p.name, p.name_uz), p.images[1], loc(u.short_name, u.short_name_uz), u.is_fractional,
 	       (SELECT min(pb.barcode) FROM product_barcodes pb WHERE pb.product_id = p.id),
 	       trim_scale(l.qty)::text, trim_scale(l.cost)::text, l.price::text,
 	       COALESCE(sp.price, np.price, p.base_price)::text,
@@ -222,8 +223,8 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, storeID string
 	args := []any{*id, st.PriceTypeID, st.ID}
 	if q := strings.ToLower(strings.TrimSpace(f.Query)); q != "" {
 		args = append(args, q)
-		where += fmt.Sprintf(` AND (lower(p.name) LIKE '%%' || $%d || '%%'
-			OR EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND pb.barcode = $%d))`, len(args), len(args))
+		where += fmt.Sprintf(` AND (lower(p.name) LIKE '%%' || $%[1]d || '%%' OR lower(p.name_uz) LIKE '%%' || $%[1]d || '%%'
+			OR EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND pb.barcode = $%[1]d))`, len(args))
 	}
 	switch f.Only {
 	case "":
@@ -232,13 +233,13 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, storeID string
 	case "new":
 		where += ` AND p.network_id IS NOT NULL`
 	default:
-		return d, apperr.Validation("only: ожидается no_cost или new")
+		return d, apperr.Validation("only: ожидается no_cost или new").Uz("only: no_cost yoki new boʻlishi kerak")
 	}
 	limit := f.Limit
 	if limit <= 0 {
 		limit = 200
 	}
-	rows, err := s.pool.Query(ctx, lineSelect+where+fmt.Sprintf(` ORDER BY l.added_at DESC, p.name LIMIT %d OFFSET %d`, min(limit, 1000), max(f.Offset, 0)), args...)
+	rows, err := s.pool.Query(ctx, lineSelect+where+fmt.Sprintf(` ORDER BY l.added_at DESC, loc(p.name, p.name_uz) LIMIT %d OFFSET %d`, min(limit, 1000), max(f.Offset, 0)), args...)
 	if err != nil {
 		return d, err
 	}
@@ -275,7 +276,7 @@ type LinesResult struct {
 // SetLines — добавить или изменить строки черновика (черновик создаётся сам).
 func (s *Service) SetLines(ctx context.Context, p *identity.Principal, in LinesInput) (LinesResult, error) {
 	if len(in.Items) == 0 || len(in.Items) > 500 {
-		return LinesResult{}, apperr.Validation("items: от 1 до 500 товаров")
+		return LinesResult{}, apperr.Validation("items: от 1 до 500 товаров").Uz("items: 1 dan 500 tagacha mahsulot")
 	}
 	var out LinesResult
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -291,7 +292,7 @@ func (s *Service) SetLines(ctx context.Context, p *identity.Principal, in LinesI
 		for i, it := range in.Items {
 			if err := s.setLine(ctx, tx, p, id, it); err != nil {
 				if ae, ok := apperr.As(err); ok && len(in.Items) > 1 && ae.Status == 400 {
-					return apperr.Validation(fmt.Sprintf("товар %d: %s", i+1, ae.Message))
+					return apperr.Validation(fmt.Sprintf("товар %d: %s", i+1, ae.Message)).Uz(fmt.Sprintf("%d-mahsulot: %s", i+1, ae.Text(i18n.UZ)))
 				}
 				return err
 			}
@@ -322,7 +323,7 @@ func (s *Service) ensureDraft(ctx context.Context, tx pgx.Tx, p *identity.Princi
 	}
 	if id != nil {
 		if status == StatusPosting {
-			return "", apperr.Conflict("draft_posting", "черновик сейчас проводится — подождите несколько секунд")
+			return "", apperr.Conflict("draft_posting", "черновик сейчас проводится — подождите несколько секунд").Uz("qoralama hozir oʻtkazilmoqda — bir necha soniya kuting")
 		}
 		return *id, nil
 	}
@@ -335,25 +336,25 @@ func (s *Service) ensureDraft(ctx context.Context, tx pgx.Tx, p *identity.Princi
 
 func (s *Service) setLine(ctx context.Context, tx pgx.Tx, p *identity.Principal, draftID string, in LineInput) error {
 	if !httpx.IsUUID(in.ProductID) {
-		return apperr.Validation("product_id: товар не найден")
+		return apperr.Validation("product_id: товар не найден").Uz("product_id: mahsulot topilmadi")
 	}
 	var fractional, active bool
 	err := tx.QueryRow(ctx, `
 		SELECT u.is_fractional, p.is_active FROM products p JOIN units u ON u.id = p.unit_id
 		WHERE p.id = $1 AND (p.network_id IS NULL OR p.network_id = $2)`, in.ProductID, p.NetworkID).Scan(&fractional, &active)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return apperr.Validation("product_id: товар не найден")
+		return apperr.Validation("product_id: товар не найден").Uz("product_id: mahsulot topilmadi")
 	}
 	if err != nil {
 		return err
 	}
 	if !active {
-		return apperr.Validation("product_id: товар отключён")
+		return apperr.Validation("product_id: товар отключён").Uz("product_id: mahsulot oʻchirilgan")
 	}
 	source := "manual"
 	if in.Source != nil {
 		if !sources[*in.Source] {
-			return apperr.Validation("source: photo, barcode, catalog, search, new или manual")
+			return apperr.Validation("source: photo, barcode, catalog, search, new или manual").Uz("source: photo, barcode, catalog, search, new yoki manual")
 		}
 		source = *in.Source
 	}
@@ -365,7 +366,7 @@ func (s *Service) setLine(ctx context.Context, tx pgx.Tx, p *identity.Principal,
 	qty := ""
 	switch {
 	case in.Qty != nil && !in.Qty.Valid():
-		return apperr.Validation("qty: неверное количество")
+		return apperr.Validation("qty: неверное количество").Uz("qty: miqdor notoʻgʻri")
 	case in.Add:
 		add := "1"
 		if in.Qty != nil {
@@ -378,25 +379,25 @@ func (s *Service) setLine(ctx context.Context, tx pgx.Tx, p *identity.Principal,
 	case in.Qty != nil:
 		qty = string(*in.Qty)
 	case curQty == nil:
-		return apperr.Validation("qty: укажите количество")
+		return apperr.Validation("qty: укажите количество").Uz("qty: miqdorni kiriting")
 	}
 	if qty != "" {
 		q := money.D(qty)
 		if q.Sign() <= 0 {
-			return apperr.Validation("qty: количество должно быть больше нуля")
+			return apperr.Validation("qty: количество должно быть больше нуля").Uz("qty: miqdor noldan katta boʻlishi kerak")
 		}
 		if !fractional && q.Cmp(money.D(q.Fixed(0))) != 0 {
-			return apperr.Validation("qty: товар штучный — количество целое")
+			return apperr.Validation("qty: товар штучный — количество целое").Uz("qty: mahsulot donali — miqdor butun son boʻlsin")
 		}
 		if q.Cmp(money.D("99999999")) > 0 {
-			return apperr.Validation("qty: слишком большое количество")
+			return apperr.Validation("qty: слишком большое количество").Uz("qty: miqdor juda katta")
 		}
 	}
 	if in.Price.Set && in.Price.Value != nil && (!in.Price.Value.Valid() || money.D(string(*in.Price.Value)).Sign() <= 0) {
-		return apperr.Validation("price: цена продажи должна быть больше нуля")
+		return apperr.Validation("price: цена продажи должна быть больше нуля").Uz("price: sotish narxi noldan katta boʻlishi kerak")
 	}
 	if in.Cost.Set && in.Cost.Value != nil && !in.Cost.Value.Valid() {
-		return apperr.Validation("cost: неверная закупочная цена")
+		return apperr.Validation("cost: неверная закупочная цена").Uz("cost: xarid narxi notoʻgʻri")
 	}
 	if in.Barcode != nil && strings.TrimSpace(*in.Barcode) != "" {
 		if err := bindBarcode(ctx, tx, p, in.ProductID, strings.TrimSpace(*in.Barcode)); err != nil {
@@ -440,7 +441,7 @@ func nilIfEmpty(s string) *string {
 // Штрихкод уникален на всю платформу: чужой штрихкод — 409.
 func bindBarcode(ctx context.Context, tx pgx.Tx, p *identity.Principal, productID, code string) error {
 	if !barcodeRe.MatchString(code) {
-		return apperr.Validation("barcode: неверный штрихкод")
+		return apperr.Validation("barcode: неверный штрихкод").Uz("barcode: shtrix-kod notoʻgʻri")
 	}
 	var owner string
 	err := tx.QueryRow(ctx, `SELECT product_id FROM product_barcodes WHERE barcode = $1`, code).Scan(&owner)
@@ -448,7 +449,7 @@ func bindBarcode(ctx context.Context, tx pgx.Tx, p *identity.Principal, productI
 		if owner == productID {
 			return nil
 		}
-		return apperr.Conflict("barcode_exists", "штрихкод "+code+" уже есть у другого товара").
+		return apperr.Conflict("barcode_exists", "штрихкод "+code+" уже есть у другого товара").Uz(code + " shtrix-kodi boshqa mahsulotda allaqachon bor").
 			WithDetails(map[string]any{"product_id": owner})
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -462,11 +463,11 @@ func bindBarcode(ctx context.Context, tx pgx.Tx, p *identity.Principal, productI
 		return err
 	}
 	if n >= 10 {
-		return apperr.Validation("barcode: у товара уже 10 штрихкодов")
+		return apperr.Validation("barcode: у товара уже 10 штрихкодов").Uz("barcode: mahsulotda allaqachon 10 ta shtrix-kod bor")
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO product_barcodes (barcode, product_id) VALUES ($1, $2)`, code, productID)
 	if db.IsCheckViolation(err) {
-		return apperr.Validation("barcode: неверный штрихкод")
+		return apperr.Validation("barcode: неверный штрихкод").Uz("barcode: shtrix-kod notoʻgʻri")
 	}
 	return err
 }
@@ -484,17 +485,17 @@ func (s *Service) DeleteLine(ctx context.Context, p *identity.Principal, storeID
 			return err
 		}
 		if id == nil {
-			return apperr.NotFound("товара нет в черновике")
+			return apperr.NotFound("товара нет в черновике").Uz("mahsulot qoralamada yoʻq")
 		}
 		if status == StatusPosting {
-			return apperr.Conflict("draft_posting", "черновик сейчас проводится")
+			return apperr.Conflict("draft_posting", "черновик сейчас проводится").Uz("qoralama hozir oʻtkazilmoqda")
 		}
 		tag, err := tx.Exec(ctx, `DELETE FROM start_lines WHERE draft_id = $1 AND product_id = $2`, *id, productID)
 		if err != nil {
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return apperr.NotFound("товара нет в черновике")
+			return apperr.NotFound("товара нет в черновике").Uz("mahsulot qoralamada yoʻq")
 		}
 		t, err = s.totals(ctx, tx, *id, st)
 		return err
@@ -545,9 +546,9 @@ func (s *Service) Post(ctx context.Context, p *identity.Principal, storeID strin
 	if errors.Is(err, pgx.ErrNoRows) {
 		id, status, gerr := openDraft(ctx, s.pool, st.WarehouseID)
 		if gerr == nil && id != nil && status == StatusPosting {
-			return PostResult{}, apperr.Conflict("draft_posting", "черновик уже проводится")
+			return PostResult{}, apperr.Conflict("draft_posting", "черновик уже проводится").Uz("qoralama allaqachon oʻtkazilmoqda")
 		}
-		return PostResult{}, apperr.Conflict("draft_empty", "добавьте товары, которые есть в магазине")
+		return PostResult{}, apperr.Conflict("draft_empty", "добавьте товары, которые есть в магазине").Uz("doʻkonda bor mahsulotlarni qoʻshing")
 	}
 	if err != nil {
 		return PostResult{}, err
@@ -583,7 +584,7 @@ func (s *Service) post(ctx context.Context, p *identity.Principal, st store, dra
 		return res, err
 	}
 	if len(lines) == 0 {
-		return res, apperr.Conflict("draft_empty", "добавьте товары, которые есть в магазине")
+		return res, apperr.Conflict("draft_empty", "добавьте товары, которые есть в магазине").Uz("doʻkonda bor mahsulotlarni qoʻshing")
 	}
 
 	// 1. Цены: только изменённые относительно действующих.
@@ -599,7 +600,7 @@ func (s *Service) post(ctx context.Context, p *identity.Principal, st store, dra
 	}
 	if len(prices) > 0 {
 		if err := p.Require(identity.PermPricesManage); err != nil {
-			return res, apperr.Forbidden("нет права «Установка цен» — уберите свои цены продажи или попросите владельца провести")
+			return res, apperr.Forbidden("нет права «Установка цен» — уберите свои цены продажи или попросите владельца провести").Uz("«Narxlarni belgilash» huquqi yoʻq — oʻz sotish narxlaringizni olib tashlang yoki egasidan oʻtkazishni soʻrang")
 		}
 		note := "Начало работы"
 		doc, err := s.cat.CreatePriceDoc(ctx, p, catalog.PriceDocInput{PriceTypeID: &st.PriceTypeID, StoreID: &st.ID, Note: &note,

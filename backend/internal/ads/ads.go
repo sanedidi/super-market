@@ -83,7 +83,7 @@ func (s *Service) SaveSettings(ctx context.Context, in SettingsInput) (Settings,
 	if in.NetworkSharePct != nil {
 		d := money.D(string(*in.NetworkSharePct))
 		if d.Sign() < 0 || d.Cmp(money.D("100")) > 0 {
-			return Settings{}, apperr.Validation("network_share_pct: от 0 до 100")
+			return Settings{}, apperr.Validation("network_share_pct: от 0 до 100").Uz("network_share_pct: 0 dan 100 gacha")
 		}
 		v := string(*in.NetworkSharePct)
 		pct = &v
@@ -143,7 +143,7 @@ func (s *Service) Advertisers(ctx context.Context, q string, page httpx.Page) ([
 
 func (s *Service) advertiser(ctx context.Context, q db.Querier, id string) (Advertiser, error) {
 	if !httpx.IsUUID(id) {
-		return Advertiser{}, apperr.NotFound("рекламодатель не найден")
+		return Advertiser{}, apperr.NotFound("рекламодатель не найден").Uz("reklama beruvchi topilmadi")
 	}
 	rows, err := q.Query(ctx, advertiserSelect+` WHERE id = $1`, id)
 	if err != nil {
@@ -151,7 +151,7 @@ func (s *Service) advertiser(ctx context.Context, q db.Querier, id string) (Adve
 	}
 	a, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[Advertiser])
 	if errors.Is(err, pgx.ErrNoRows) {
-		return a, apperr.NotFound("рекламодатель не найден")
+		return a, apperr.NotFound("рекламодатель не найден").Uz("reklama beruvchi topilmadi")
 	}
 	return a, err
 }
@@ -165,14 +165,14 @@ func contractDate(p *string) (*time.Time, bool, error) {
 	}
 	t, err := time.Parse("2006-01-02", *p)
 	if err != nil {
-		return nil, false, apperr.Validation("contract_date: дата YYYY-MM-DD")
+		return nil, false, apperr.Validation("contract_date: дата YYYY-MM-DD").Uz("contract_date: sana YYYY-MM-DD koʻrinishida boʻlsin")
 	}
 	return &t, true, nil
 }
 
 func (s *Service) SaveAdvertiser(ctx context.Context, id string, in AdvertiserInput) (Advertiser, error) {
 	if in.Name != nil && strings.TrimSpace(*in.Name) == "" {
-		return Advertiser{}, apperr.Validation("name: укажите юрлицо бренда")
+		return Advertiser{}, apperr.Validation("name: укажите юрлицо бренда").Uz("name: brendning yuridik shaxsini kiriting")
 	}
 	cd, cdSet, err := contractDate(in.ContractDate)
 	if err != nil {
@@ -180,7 +180,7 @@ func (s *Service) SaveAdvertiser(ctx context.Context, id string, in AdvertiserIn
 	}
 	if id == "" {
 		if in.Name == nil {
-			return Advertiser{}, apperr.Validation("name: укажите юрлицо бренда")
+			return Advertiser{}, apperr.Validation("name: укажите юрлицо бренда").Uz("name: brendning yuridik shaxsini kiriting")
 		}
 		str := func(p *string) string {
 			if p == nil {

@@ -94,14 +94,14 @@ type Tokens struct {
 }
 
 var (
-	errCodeInvalid = apperr.Validation("код неверный или устарел")
-	errNoAccess    = apperr.Forbidden("нет доступа к этому приложению")
+	errCodeInvalid = apperr.Validation("код неверный или устарел").Uz("kod notoʻgʻri yoki eskirgan")
+	errNoAccess    = apperr.Forbidden("нет доступа к этому приложению").Uz("bu ilovaga ruxsat yoʻq")
 	// ErrCustomerBlocked — покупателя заблокировал супер-админ.
-	ErrCustomerBlocked = apperr.New(http.StatusForbidden, "customer_blocked", "аккаунт заблокирован, обратитесь в поддержку")
+	ErrCustomerBlocked = apperr.New(http.StatusForbidden, "customer_blocked", "аккаунт заблокирован, обратитесь в поддержку").Uz("akkaunt bloklangan, qoʻllab-quvvatlash xizmatiga murojaat qiling")
 	// ErrCrowdBlocked — курьера «по пути» заблокировал супер-админ.
-	ErrCrowdBlocked  = apperr.New(http.StatusForbidden, "crowd_blocked", "вход для курьера заблокирован, обратитесь в поддержку")
-	errTermsRequired = apperr.New(http.StatusUnprocessableEntity, "terms_required", "примите условия для курьеров и политику конфиденциальности")
-	errRefresh       = apperr.Unauthorized("сессия недействительна, войдите заново")
+	ErrCrowdBlocked  = apperr.New(http.StatusForbidden, "crowd_blocked", "вход для курьера заблокирован, обратитесь в поддержку").Uz("kuryer uchun kirish bloklangan, qoʻllab-quvvatlash xizmatiga murojaat qiling")
+	errTermsRequired = apperr.New(http.StatusUnprocessableEntity, "terms_required", "примите условия для курьеров и политику конфиденциальности").Uz("kuryerlar uchun shartlar va maxfiylik siyosatini qabul qiling")
+	errRefresh       = apperr.Unauthorized("сессия недействительна, войдите заново").Uz("sessiya yaroqsiz, qaytadan kiring")
 )
 
 func (s *Service) botURL() string {
@@ -129,7 +129,7 @@ const SMSCodeText = "Super Market ilovasiga kirish uchun kod: %s. Kodni hech kim
 func (s *Service) RequestCodeVia(ctx context.Context, rawPhone, app string) (int, string, error) {
 	ph, err := phone.Normalize(rawPhone)
 	if err != nil {
-		return 0, "", apperr.Validation("неверный номер телефона")
+		return 0, "", apperr.Validation("неверный номер телефона").Uz("telefon raqami notoʻgʻri")
 	}
 	now := s.now()
 
@@ -138,7 +138,7 @@ func (s *Service) RequestCodeVia(ctx context.Context, rawPhone, app string) (int
 	switch {
 	case err == nil:
 		if wait := resendCooldown - now.Sub(sentAt); wait > 0 {
-			return 0, "", apperr.New(http.StatusTooManyRequests, "too_many_requests", "код уже отправлен, попробуйте позже").
+			return 0, "", apperr.New(http.StatusTooManyRequests, "too_many_requests", "код уже отправлен, попробуйте позже").Uz("kod allaqachon yuborilgan, keyinroq urinib koʻring").
 				WithDetails(map[string]any{"retry_after": int(wait.Seconds()) + 1})
 		}
 	case !errors.Is(err, pgx.ErrNoRows):
@@ -146,7 +146,7 @@ func (s *Service) RequestCodeVia(ctx context.Context, rawPhone, app string) (int
 	}
 
 	notLinked := apperr.Conflict("telegram_not_linked",
-		"откройте бота в Telegram и поделитесь номером, чтобы получать коды").
+		"откройте бота в Telegram и поделитесь номером, чтобы получать коды").Uz("kodlarni olish uchun Telegramda botni oching va raqamingizni ulashing").
 		WithDetails(map[string]any{"bot_url": s.botURL()})
 
 	code := s.cfg.DevOTPCode
@@ -174,7 +174,7 @@ func (s *Service) RequestCodeVia(ctx context.Context, rawPhone, app string) (int
 	send := code == ""
 	if send {
 		if channel == "telegram" && s.tg == nil {
-			return 0, "", apperr.New(http.StatusServiceUnavailable, "telegram_unavailable", "отправка кодов временно недоступна")
+			return 0, "", apperr.New(http.StatusServiceUnavailable, "telegram_unavailable", "отправка кодов временно недоступна").Uz("kod yuborish vaqtincha ishlamayapti")
 		}
 		if code, err = randomCode(); err != nil {
 			return 0, "", err
@@ -199,14 +199,16 @@ func (s *Service) RequestCodeVia(ctx context.Context, rawPhone, app string) (int
 				// Без Telegram и без SMS — по-старому: привязать номер к боту.
 				return 0, "", notLinked
 			}
-			return 0, "", apperr.New(http.StatusBadGateway, "sms_send_failed", "не удалось отправить SMS, попробуйте ещё раз")
+			return 0, "", apperr.New(http.StatusBadGateway, "sms_send_failed", "не удалось отправить SMS, попробуйте ещё раз").Uz("SMS yuborib boʻlmadi, qayta urinib koʻring")
 		}
 	} else if send {
-		text := fmt.Sprintf("Код для входа: %s\n\nНикому не сообщайте этот код.", code)
+		// Язык — приложения, из которого просят код (Accept-Language).
+		text := i18n.T(ctx, fmt.Sprintf("Код для входа: %s\n\nНикому не сообщайте этот код.", code),
+			fmt.Sprintf("Kirish kodi: %s\n\nBu kodni hech kimga aytmang.", code))
 		if err := s.tg.SendMessage(ctx, chatID, text, nil); err != nil {
 			_, _ = s.pool.Exec(ctx, `DELETE FROM auth_codes WHERE phone = $1`, ph)
 			s.log.Error("не удалось отправить код в Telegram", "err", err)
-			return 0, "", apperr.New(http.StatusBadGateway, "telegram_send_failed", "не удалось отправить код, попробуйте ещё раз")
+			return 0, "", apperr.New(http.StatusBadGateway, "telegram_send_failed", "не удалось отправить код, попробуйте ещё раз").Uz("kodni yuborib boʻlmadi, qayta urinib koʻring")
 		}
 	}
 	return int(s.cfg.OTPTTL.Seconds()), channel, nil
@@ -221,7 +223,7 @@ func (s *Service) VerifyCode(ctx context.Context, rawPhone, code, app, userAgent
 // пути» не регистрируется.
 func (s *Service) VerifyCodeTerms(ctx context.Context, rawPhone, code, app, userAgent string, terms bool) (Tokens, error) {
 	if app != AppClient && app != AppStore && app != AppAdmin && app != AppCrowd {
-		return Tokens{}, apperr.Validation("app: ожидается client, store, admin или crowd")
+		return Tokens{}, apperr.Validation("app: ожидается client, store, admin или crowd").Uz("app: client, store, admin yoki crowd boʻlishi kerak")
 	}
 	// В панель магазина и «SM Магазин» входят по логину и паролю
 	// (/auth/store/login); вход по коду для них отключён.
@@ -230,7 +232,7 @@ func (s *Service) VerifyCodeTerms(ctx context.Context, rawPhone, code, app, user
 	}
 	ph, err := phone.Normalize(rawPhone)
 	if err != nil {
-		return Tokens{}, apperr.Validation("неверный номер телефона")
+		return Tokens{}, apperr.Validation("неверный номер телефона").Uz("telefon raqami notoʻgʻri")
 	}
 	// Демо-номер для проверки в магазинах приложений не открывает панель
 	// супер-админа; в приложении курьера — обычная регистрация с согласием.
@@ -311,7 +313,7 @@ func (s *Service) checkCode(ctx context.Context, ph, code string) error {
 func (s *Service) ConsumeCode(ctx context.Context, rawPhone, code string) (string, error) {
 	ph, err := phone.Normalize(rawPhone)
 	if err != nil {
-		return "", apperr.Validation("неверный номер телефона")
+		return "", apperr.Validation("неверный номер телефона").Uz("telefon raqami notoʻgʻri")
 	}
 	return ph, s.checkCode(ctx, ph, code)
 }

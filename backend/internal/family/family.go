@@ -18,6 +18,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/phone"
 	"github.com/sanedidi/super-market/backend/internal/push"
 )
@@ -37,7 +38,7 @@ func NewService(pool *pgxpool.Pool, o *orders.Service, d *delivery.Service, botU
 const inviteTTL = 7 * 24 * time.Hour
 
 // Имя в семье: имя в профиле, иначе подпись («Жена»), иначе хвост номера.
-const nameSQL = `COALESCE(NULLIF(u.full_name, ''), NULLIF(fm.label, ''), 'Номер …' || right(u.phone, 4))`
+const nameSQL = `COALESCE(NULLIF(u.full_name, ''), NULLIF(fm.label, ''), loc('Номер …', 'Raqam …') || right(u.phone, 4))`
 
 type Member struct {
 	UserID string `json:"user_id"`
@@ -64,7 +65,7 @@ func membership(ctx context.Context, q db.Querier, userID string) (familyID, rol
 	return
 }
 
-var errNoFamily = apperr.NotFound("вы пока не в семье")
+var errNoFamily = apperr.NotFound("вы пока не в семье").Uz("siz hozircha oilada emassiz")
 
 func (s *Service) mustFamily(ctx context.Context, userID string) (string, string, error) {
 	id, role, err := membership(ctx, s.pool, userID)
@@ -110,14 +111,14 @@ type CreateInput struct {
 func (s *Service) Create(ctx context.Context, userID string, in CreateInput) (*Family, error) {
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
-		name = "Моя семья"
+		name = i18n.T(ctx, "Моя семья", "Mening oilam")
 	}
 	if len([]rune(name)) > 40 {
-		return nil, apperr.Validation("name: не длиннее 40 символов")
+		return nil, apperr.Validation("name: не длиннее 40 символов").Uz("name: 40 belgidan oshmasin")
 	}
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		if _, _, err := membership(ctx, tx, userID); err == nil {
-			return apperr.Conflict("already_in_family", "вы уже в семье")
+			return apperr.Conflict("already_in_family", "вы уже в семье").Uz("siz allaqachon oiladasiz")
 		} else if !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
@@ -127,7 +128,7 @@ func (s *Service) Create(ctx context.Context, userID string, in CreateInput) (*F
 		}
 		_, err := tx.Exec(ctx, `INSERT INTO family_members (family_id, user_id, role) VALUES ($1, $2, 'owner')`, id, userID)
 		if db.IsUniqueViolation(err, "") {
-			return apperr.Conflict("already_in_family", "вы уже в семье")
+			return apperr.Conflict("already_in_family", "вы уже в семье").Uz("siz allaqachon oiladasiz")
 		}
 		return err
 	})
@@ -168,7 +169,7 @@ func (s *Service) CreateInvite(ctx context.Context, userID string) (Invite, erro
 		return Invite{}, err
 	}
 	if n >= 10 {
-		return Invite{}, apperr.Conflict("family_full", "в семье уже 10 человек")
+		return Invite{}, apperr.Conflict("family_full", "в семье уже 10 человек").Uz("oilada allaqachon 10 kishi bor")
 	}
 	code, err := newCode()
 	if err != nil {
@@ -195,7 +196,7 @@ func (s *Service) Join(ctx context.Context, userID string, in JoinInput) (*Famil
 	code := strings.ToUpper(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(in.Code), "fam_")))
 	label := strings.TrimSpace(in.Label)
 	if len([]rune(label)) > 40 {
-		return nil, apperr.Validation("label: не длиннее 40 символов")
+		return nil, apperr.Validation("label: не длиннее 40 символов").Uz("label: 40 belgidan oshmasin")
 	}
 	var familyID, familyName string
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -206,7 +207,7 @@ func (s *Service) Join(ctx context.Context, userID string, in JoinInput) (*Famil
 				familyID = fid
 				return nil // уже в этой семье — повторный переход по ссылке
 			}
-			return apperr.Conflict("already_in_family", "вы уже в другой семье — сначала выйдите из неё")
+			return apperr.Conflict("already_in_family", "вы уже в другой семье — сначала выйдите из неё").Uz("siz allaqachon boshqa oiladasiz — avval undan chiqing")
 		} else if !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
@@ -216,7 +217,7 @@ func (s *Service) Join(ctx context.Context, userID string, in JoinInput) (*Famil
 			FROM family_invites i JOIN families f ON f.id = i.family_id WHERE i.code = $1 FOR UPDATE OF i`, code).
 			Scan(&familyID, &familyName, &used, &expires)
 		if errors.Is(err, pgx.ErrNoRows) || (err == nil && (used || s.now().After(expires))) {
-			return apperr.Validation("code: приглашение не найдено или устарело — попросите новое")
+			return apperr.Validation("code: приглашение не найдено или устарело — попросите новое").Uz("code: taklif topilmadi yoki eskirgan — yangisini soʻrang")
 		}
 		if err != nil {
 			return err
@@ -232,7 +233,9 @@ func (s *Service) Join(ctx context.Context, userID string, in JoinInput) (*Famil
 		if err := tx.QueryRow(ctx, `SELECT `+nameSQL+` FROM family_members fm JOIN users u ON u.id = fm.user_id WHERE fm.user_id = $1`, userID).Scan(&name); err != nil {
 			return err
 		}
-		return notifyFamily(ctx, tx, familyID, userID, "family_joined", "В семье пополнение", name+" теперь в «"+familyName+"»",
+		return notifyFamily(ctx, tx, familyID, userID, "family_joined",
+			i18n.Text{RU: "В семье пополнение", UZ: "Oilaga yangi aʼzo qoʻshildi"},
+			i18n.Text{RU: name + " теперь в «" + familyName + "»", UZ: name + " endi «" + familyName + "» aʼzosi"},
 			map[string]string{"type": "family"})
 	})
 	if err != nil {
@@ -312,15 +315,15 @@ func (s *Service) RemoveMember(ctx context.Context, userID, memberID string) err
 		return err
 	}
 	if role != "owner" {
-		return apperr.Forbidden("убрать участника может только владелец семьи")
+		return apperr.Forbidden("убрать участника может только владелец семьи").Uz("aʼzoni faqat oila egasi chiqarishi mumkin")
 	}
 	if memberID == userID {
-		return apperr.Validation("чтобы выйти из семьи, используйте «Выйти»")
+		return apperr.Validation("чтобы выйти из семьи, используйте «Выйти»").Uz("oiladan chiqish uchun «Chiqish» tugmasidan foydalaning")
 	}
 	return db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		fid, _, err := membership(ctx, tx, memberID)
 		if errors.Is(err, pgx.ErrNoRows) || (err == nil && fid != familyID) {
-			return apperr.NotFound("участник не найден")
+			return apperr.NotFound("участник не найден").Uz("aʼzo topilmadi")
 		}
 		if err != nil {
 			return err
@@ -340,24 +343,24 @@ func (s *Service) UpdateMember(ctx context.Context, userID, memberID string, in 
 		return nil, err
 	}
 	if role != "owner" && memberID != userID {
-		return nil, apperr.Forbidden("подпись другого участника меняет владелец семьи")
+		return nil, apperr.Forbidden("подпись другого участника меняет владелец семьи").Uz("boshqa aʼzoning nomini oila egasi oʻzgartiradi")
 	}
 	label := strings.TrimSpace(in.Label)
 	if len([]rune(label)) > 40 {
-		return nil, apperr.Validation("label: не длиннее 40 символов")
+		return nil, apperr.Validation("label: не длиннее 40 символов").Uz("label: 40 belgidan oshmasin")
 	}
 	tag, err := s.pool.Exec(ctx, `UPDATE family_members SET label = $3 WHERE family_id = $1 AND user_id = $2`, familyID, memberID, label)
 	if err != nil {
 		return nil, err
 	}
 	if tag.RowsAffected() == 0 {
-		return nil, apperr.NotFound("участник не найден")
+		return nil, apperr.NotFound("участник не найден").Uz("aʼzo topilmadi")
 	}
 	return s.Get(ctx, userID)
 }
 
 // notifyFamily — уведомление всем в семье, кроме except.
-func notifyFamily(ctx context.Context, q db.Querier, familyID, except, kind, title, body string, data map[string]string) error {
+func notifyFamily(ctx context.Context, q db.Querier, familyID, except, kind string, title, body i18n.Text, data map[string]string) error {
 	rows, err := q.Query(ctx, `SELECT user_id FROM family_members WHERE family_id = $1 AND user_id <> $2`, familyID, except)
 	if err != nil {
 		return err
@@ -376,7 +379,7 @@ func notifyFamily(ctx context.Context, q db.Querier, familyID, except, kind, tit
 
 func validUUID(id string) error {
 	if !httpx.IsUUID(id) {
-		return apperr.NotFound("не найдено")
+		return apperr.NotFound("не найдено").Uz("topilmadi")
 	}
 	return nil
 }

@@ -28,12 +28,12 @@ import (
 // После 5 неверных паролей подряд вход по логину закрывается на 15 минут.
 
 var (
-	errStoreNoAccess = apperr.Forbidden("нет доступа к панели магазина — обратитесь к владельцу или в поддержку Super Market")
+	errStoreNoAccess = apperr.Forbidden("нет доступа к панели магазина — обратитесь к владельцу или в поддержку Super Market").Uz("doʻkon paneliga ruxsat yoʻq — egasiga yoki Super Market qoʻllab-quvvatlash xizmatiga murojaat qiling")
 	// ErrPasswordChangeRequired — пароль временный: сначала смените его.
-	ErrPasswordChangeRequired = apperr.New(http.StatusForbidden, "password_change_required", "придумайте свой пароль — временный пароль нужно сменить")
-	errCodeLoginDisabled      = apperr.New(http.StatusForbidden, "password_login_required", "вход в магазин — по логину и паролю")
-	errWrongCurrentPassword   = apperr.New(http.StatusUnprocessableEntity, "wrong_password", "текущий пароль неверный")
-	errOwnerLogin             = apperr.Forbidden("логин и пароль владельца меняет Super Market — напишите в поддержку")
+	ErrPasswordChangeRequired = apperr.New(http.StatusForbidden, "password_change_required", "придумайте свой пароль — временный пароль нужно сменить").Uz("oʻz parolingizni oʻylab toping — vaqtinchalik parolni almashtirish kerak")
+	errCodeLoginDisabled      = apperr.New(http.StatusForbidden, "password_login_required", "вход в магазин — по логину и паролю").Uz("doʻkonga kirish — login va parol orqali")
+	errWrongCurrentPassword   = apperr.New(http.StatusUnprocessableEntity, "wrong_password", "текущий пароль неверный").Uz("joriy parol notoʻgʻri")
+	errOwnerLogin             = apperr.Forbidden("логин и пароль владельца меняет Super Market — напишите в поддержку").Uz("egasining login va parolini Super Market oʻzgartiradi — qoʻllab-quvvatlash xizmatiga yozing")
 )
 
 // LoginInfo — логин сотрудника для панели (пароль не показывается).
@@ -55,7 +55,7 @@ type LoginInput struct {
 // validTempPassword — пароль, который задаёт супер-админ или магазин.
 func validTempPassword(pw string) error {
 	if n := utf8.RuneCountInString(pw); n < 8 || n > 72 {
-		return apperr.Validation("password: от 8 до 72 символов")
+		return apperr.Validation("password: от 8 до 72 символов").Uz("password: 8 dan 72 tagacha belgi")
 	}
 	return nil
 }
@@ -63,7 +63,7 @@ func validTempPassword(pw string) error {
 // validOwnPassword — пароль, который сотрудник придумывает себе сам.
 func validOwnPassword(pw string) error {
 	if n := utf8.RuneCountInString(pw); n < 8 || n > 72 {
-		return apperr.Validation("new_password: от 8 до 72 символов")
+		return apperr.Validation("new_password: от 8 до 72 символов").Uz("new_password: 8 dan 72 tagacha belgi")
 	}
 	var letter, digit bool
 	for _, r := range pw {
@@ -75,7 +75,7 @@ func validOwnPassword(pw string) error {
 		}
 	}
 	if !letter || !digit {
-		return apperr.Validation("new_password: нужны и буквы, и цифры")
+		return apperr.Validation("new_password: нужны и буквы, и цифры").Uz("new_password: harflar ham, raqamlar ham boʻlishi kerak")
 	}
 	return nil
 }
@@ -83,7 +83,7 @@ func validOwnPassword(pw string) error {
 func validLogin(raw string) (string, error) {
 	login := NormalizeLogin(raw)
 	if !loginRe.MatchString(login) {
-		return "", apperr.Validation("login: латиница, цифры, точка, дефис или _ — от 3 до 32 символов, начинается с буквы или цифры")
+		return "", apperr.Validation("login: латиница, цифры, точка, дефис или _ — от 3 до 32 символов, начинается с буквы или цифры").Uz("login: lotin harflari, raqamlar, nuqta, defis yoki _ — 3 dan 32 tagacha belgi, harf yoki raqam bilan boshlanadi")
 	}
 	return login, nil
 }
@@ -96,7 +96,7 @@ func upsertLogin(ctx context.Context, q db.Querier, employeeID, networkID, login
 	if hash == nil {
 		tag, e := q.Exec(ctx, `UPDATE employee_logins SET login = $2 WHERE employee_id = $1`, employeeID, login)
 		if err = e; err == nil && tag.RowsAffected() == 0 {
-			return apperr.Validation("password: обязательное поле")
+			return apperr.Validation("password: обязательное поле").Uz("password: majburiy maydon")
 		}
 	} else {
 		_, err = q.Exec(ctx, `
@@ -109,7 +109,7 @@ func upsertLogin(ctx context.Context, q db.Querier, employeeID, networkID, login
 			employeeID, networkID, login, *hash, mustChange)
 	}
 	if db.IsUniqueViolation(err, "employee_logins_login_key") {
-		return apperr.Conflict("login_taken", "логин уже занят — придумайте другой")
+		return apperr.Conflict("login_taken", "логин уже занят — придумайте другой").Uz("login band — boshqasini oʻylab toping")
 	}
 	return err
 }
@@ -151,7 +151,7 @@ func loginOf(ctx context.Context, q db.Querier, employeeID string) (LoginInfo, e
 		FROM employee_logins WHERE employee_id = $1`, employeeID).Scan(
 		&i.Login, &i.MustChangePassword, &i.PasswordChangedAt, &i.LastLoginAt, &i.Locked)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return i, apperr.NotFound("у сотрудника нет логина")
+		return i, apperr.NotFound("у сотрудника нет логина").Uz("xodimning logini yoʻq")
 	}
 	return i, err
 }
@@ -162,7 +162,7 @@ func loginOf(ctx context.Context, q db.Querier, employeeID string) (LoginInfo, e
 func (s *Service) passwordLogin(ctx context.Context, rawLogin, password, app, userAgent string) (Tokens, error) {
 	login := NormalizeLogin(rawLogin)
 	if login == "" || password == "" {
-		return Tokens{}, apperr.Validation("введите логин и пароль")
+		return Tokens{}, apperr.Validation("введите логин и пароль").Uz("login va parolni kiriting")
 	}
 	var (
 		employeeID, userID, hash string
@@ -204,7 +204,7 @@ func (s *Service) passwordLogin(ctx context.Context, rawLogin, password, app, us
 		}
 		wait := int(until.Sub(now).Seconds()) + 1
 		return Tokens{}, apperr.New(http.StatusTooManyRequests, "too_many_requests",
-			fmt.Sprintf("слишком много неверных паролей — попробуйте через %d мин", (wait+59)/60)).
+			fmt.Sprintf("слишком много неверных паролей — попробуйте через %d мин", (wait+59)/60)).Uz(fmt.Sprintf("notoʻgʻri parol juda koʻp kiritildi — %d daqiqadan keyin urinib koʻring", (wait+59)/60)).
 			WithDetails(map[string]any{"retry_after": wait})
 	}
 	if err != nil {
@@ -212,7 +212,7 @@ func (s *Service) passwordLogin(ctx context.Context, rawLogin, password, app, us
 	}
 	if !CheckPassword(hash, password) {
 		if fails >= courierMaxFails {
-			return Tokens{}, apperr.New(http.StatusTooManyRequests, "too_many_requests", "слишком много неверных паролей — вход закрыт на 15 минут").
+			return Tokens{}, apperr.New(http.StatusTooManyRequests, "too_many_requests", "слишком много неверных паролей — вход закрыт на 15 минут").Uz("notoʻgʻri parol juda koʻp kiritildi — kirish 15 daqiqaga yopildi").
 				WithDetails(map[string]any{"retry_after": int(courierLockFor.Seconds())})
 		}
 		return Tokens{}, errBadCredentials.WithDetails(map[string]any{"attempts_left": courierMaxFails - fails})
@@ -272,7 +272,7 @@ func (s *Service) ChangePassword(ctx context.Context, p *Principal, current, nex
 		err := tx.QueryRow(ctx, `SELECT password_hash, must_change_password FROM employee_logins WHERE employee_id = $1 FOR UPDATE`,
 			p.EmployeeID).Scan(&hash, &temp)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return apperr.NotFound("у вас нет логина")
+			return apperr.NotFound("у вас нет логина").Uz("sizda login yoʻq")
 		}
 		if err != nil {
 			return err
@@ -281,7 +281,7 @@ func (s *Service) ChangePassword(ctx context.Context, p *Principal, current, nex
 			return errWrongCurrentPassword
 		}
 		if CheckPassword(hash, next) {
-			return apperr.Validation("new_password: совпадает с прежним — придумайте другой")
+			return apperr.Validation("new_password: совпадает с прежним — придумайте другой").Uz("new_password: avvalgisi bilan bir xil — boshqasini oʻylab toping")
 		}
 		if _, err := tx.Exec(ctx, `
 			UPDATE employee_logins SET password_hash = $2, must_change_password = false,
@@ -302,7 +302,7 @@ func (s *Service) staffEmployee(ctx context.Context, p *Principal, employeeID st
 		return "", err
 	}
 	if !httpx.IsUUID(employeeID) {
-		return "", apperr.NotFound("сотрудник не найден")
+		return "", apperr.NotFound("сотрудник не найден").Uz("xodim topilmadi")
 	}
 	var (
 		userID    string
@@ -316,7 +316,7 @@ func (s *Service) staffEmployee(ctx context.Context, p *Principal, employeeID st
 		FROM employees e JOIN roles r ON r.id = e.role_id
 		WHERE e.id = $1 AND e.network_id = $2 AND e.status = 'active'`, employeeID, p.NetworkID).Scan(&userID, &owner, &allStores, &storeIDs)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", apperr.NotFound("сотрудник не найден")
+		return "", apperr.NotFound("сотрудник не найден").Uz("xodim topilmadi")
 	}
 	if err != nil {
 		return "", err
@@ -338,11 +338,11 @@ func checkLoginScope(p *Principal, allStores bool, storeIDs []string) error {
 		return nil
 	}
 	if allStores {
-		return apperr.Forbidden("у сотрудника доступ ко всем магазинам — его вход меняет тот, кто сам видит все магазины")
+		return apperr.Forbidden("у сотрудника доступ ко всем магазинам — его вход меняет тот, кто сам видит все магазины").Uz("xodimda barcha doʻkonlarga ruxsat bor — uning kirish maʼlumotlarini oʻzi barcha doʻkonlarni koʻradigan xodim oʻzgartiradi")
 	}
 	for _, id := range storeIDs {
 		if !p.CanAccessStore(id) {
-			return apperr.Forbidden("сотрудник работает и в магазинах, к которым у вас нет доступа — его вход меняет владелец")
+			return apperr.Forbidden("сотрудник работает и в магазинах, к которым у вас нет доступа — его вход меняет владелец").Uz("xodim sizga ruxsat boʻlmagan doʻkonlarda ham ishlaydi — uning kirish maʼlumotlarini ega oʻzgartiradi")
 		}
 	}
 	return nil
@@ -351,7 +351,7 @@ func checkLoginScope(p *Principal, allStores bool, storeIDs []string) error {
 // EmployeeLogin — логин сотрудника (для панели).
 func (s *Service) EmployeeLogin(ctx context.Context, p *Principal, employeeID string) (LoginInfo, error) {
 	if !httpx.IsUUID(employeeID) {
-		return LoginInfo{}, apperr.NotFound("сотрудник не найден")
+		return LoginInfo{}, apperr.NotFound("сотрудник не найден").Uz("xodim topilmadi")
 	}
 	var ok bool
 	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM employees WHERE id = $1 AND network_id = $2)`,
@@ -359,7 +359,7 @@ func (s *Service) EmployeeLogin(ctx context.Context, p *Principal, employeeID st
 		return LoginInfo{}, err
 	}
 	if !ok {
-		return LoginInfo{}, apperr.NotFound("сотрудник не найден")
+		return LoginInfo{}, apperr.NotFound("сотрудник не найден").Uz("xodim topilmadi")
 	}
 	return loginOf(ctx, s.pool, employeeID)
 }
@@ -390,7 +390,7 @@ func deleteLogin(ctx context.Context, pool *pgxpool.Pool, employeeID, userID str
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return apperr.NotFound("у сотрудника нет логина")
+			return apperr.NotFound("у сотрудника нет логина").Uz("xodimning logini yoʻq")
 		}
 		return revokeSessions(ctx, tx, userID, "")
 	})
@@ -438,10 +438,10 @@ func PrepareOwnerLogin(in LoginInput) (login string, hash *string, err error) {
 		return "", nil, nil
 	}
 	if login, err = validLogin(in.Login); err != nil {
-		return "", nil, apperr.Validation("owner_login: латиница, цифры, точка, дефис или _ — от 3 до 32 символов")
+		return "", nil, apperr.Validation("owner_login: латиница, цифры, точка, дефис или _ — от 3 до 32 символов").Uz("owner_login: lotin harflari, raqamlar, nuqta, defis yoki _ — 3 dan 32 tagacha belgi")
 	}
 	if err := validTempPassword(in.Password); err != nil {
-		return "", nil, apperr.Validation("owner_password: от 8 до 72 символов")
+		return "", nil, apperr.Validation("owner_password: от 8 до 72 символов").Uz("owner_password: 8 dan 72 tagacha belgi")
 	}
 	h, err := HashPassword(in.Password)
 	if err != nil {
@@ -464,7 +464,7 @@ func ownerOf(ctx context.Context, q db.Querier, networkID string) (employeeID, u
 		SELECT e.id, e.user_id FROM employees e JOIN roles r ON r.id = e.role_id AND r.is_owner
 		WHERE e.network_id = $1`, networkID).Scan(&employeeID, &userID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		err = apperr.NotFound("сеть не найдена")
+		err = apperr.NotFound("сеть не найдена").Uz("tarmoq topilmadi")
 	}
 	return
 }
@@ -473,7 +473,7 @@ func ownerOf(ctx context.Context, q db.Querier, networkID string) (employeeID, u
 // сброс: новый временный пароль, все сессии владельца закрываются.
 func SetOwnerLogin(ctx context.Context, pool *pgxpool.Pool, networkID string, in LoginInput) (LoginInfo, error) {
 	if !httpx.IsUUID(networkID) {
-		return LoginInfo{}, apperr.NotFound("сеть не найдена")
+		return LoginInfo{}, apperr.NotFound("сеть не найдена").Uz("tarmoq topilmadi")
 	}
 	employeeID, userID, err := ownerOf(ctx, pool, networkID)
 	if err != nil {
@@ -494,13 +494,13 @@ type OwnerInput struct {
 // покупателя); сессии владельца в панели закрываются, логин сохраняется.
 func UpdateOwner(ctx context.Context, pool *pgxpool.Pool, networkID string, in OwnerInput) error {
 	if !httpx.IsUUID(networkID) {
-		return apperr.NotFound("сеть не найдена")
+		return apperr.NotFound("сеть не найдена").Uz("tarmoq topilmadi")
 	}
 	var name *string
 	if in.FullName != nil {
 		n := strings.TrimSpace(*in.FullName)
 		if n == "" {
-			return apperr.Validation("full_name: не может быть пустым")
+			return apperr.Validation("full_name: не может быть пустым").Uz("full_name: boʻsh boʻlishi mumkin emas")
 		}
 		name = &n
 	}
@@ -508,7 +508,7 @@ func UpdateOwner(ctx context.Context, pool *pgxpool.Pool, networkID string, in O
 	if in.Phone != nil {
 		var err error
 		if ph, err = phone.Normalize(*in.Phone); err != nil {
-			return apperr.Validation("phone: неверный номер телефона")
+			return apperr.Validation("phone: неверный номер телефона").Uz("phone: telefon raqami notoʻgʻri")
 		}
 	}
 	return db.InTx(ctx, pool, func(tx pgx.Tx) error {
@@ -537,7 +537,7 @@ func UpdateOwner(ctx context.Context, pool *pgxpool.Pool, networkID string, in O
 		}
 		_, err = tx.Exec(ctx, `UPDATE employees SET user_id = $2 WHERE id = $1`, employeeID, newUser)
 		if db.IsUniqueViolation(err, "employees_user_id_key") {
-			return apperr.Conflict("employee_exists", "этот номер уже работает в сети — сначала уберите его оттуда")
+			return apperr.Conflict("employee_exists", "этот номер уже работает в сети — сначала уберите его оттуда").Uz("bu raqam allaqachon tarmoqda ishlaydi — avval uni u yerdan olib tashlang")
 		}
 		if err != nil {
 			return err

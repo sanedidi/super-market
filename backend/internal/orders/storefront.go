@@ -46,8 +46,10 @@ var catalogBase = `
 	), reserved AS (
 		SELECT product_id, sum(qty) AS qty FROM stock_reservations WHERE warehouse_id = $2 GROUP BY product_id
 	)
-	SELECT p.id, p.name, p.description, br.name AS brand_name, p.brand_id, p.category_id,
-	       u.short_name, u.is_fractional, p.images, p.created_at, p.attributes,
+	SELECT p.id, loc(p.name, p.name_uz) AS name, loc(p.description, p.description_uz) AS description,
+	       br.name AS brand_name, p.brand_id, p.category_id,
+	       loc(u.short_name, u.short_name_uz) AS short_name, u.is_fractional, p.images, p.created_at, p.attributes,
+	       p.name AS name_ru, p.name_uz,
 	       COALESCE(sp.price, np.price, p.base_price) AS regular,
 	       ` + catalog.PromoPriceExpr("$1") + ` AS promo,
 	       st.qty - COALESCE(r.qty, 0) AS available,
@@ -103,7 +105,7 @@ func (s *Service) StoreCatalog(ctx context.Context, storeID string, f CatalogFil
 	}
 	for _, id := range append([]string{f.CategoryID, f.BrandID}, f.IDs...) {
 		if id != "" && !httpx.IsUUID(id) {
-			return nil, apperr.Validation("неверный id в фильтре")
+			return nil, apperr.Validation("неверный id в фильтре").Uz("filtrda id notoʻgʻri")
 		}
 	}
 	order, ok := catalogSorts[f.Sort]
@@ -111,14 +113,14 @@ func (s *Service) StoreCatalog(ctx context.Context, storeID string, f CatalogFil
 		order, ok = catalogSorts["popular"], true
 	}
 	if !ok {
-		return nil, apperr.Validation("sort: popular, price_asc, price_desc, new, name или discount")
+		return nil, apperr.Validation("sort: popular, price_asc, price_desc, new, name или discount").Uz("sort: popular, price_asc, price_desc, new, name yoki discount")
 	}
 	ids := f.IDs
 	if ids == nil {
 		ids = []string{}
 	}
 	rows, err := s.pool.Query(ctx, `SELECT `+catalogCols+` FROM (`+catalogBase+`) c
-		WHERE ($4 = '' OR lower(c.name) LIKE '%' || lower($4) || '%')
+		WHERE ($4 = '' OR lower(c.name_ru) LIKE '%' || lower($4) || '%' OR lower(c.name_uz) LIKE '%' || lower($4) || '%')
 		  AND ($5 = '' OR c.category_id IN (
 			WITH RECURSIVE sub AS (SELECT id FROM categories WHERE id::text = $5
 			                       UNION SELECT cc.id FROM categories cc JOIN sub ON cc.parent_id = sub.id)
@@ -161,10 +163,10 @@ func (s *Service) StoreCategories(ctx context.Context, storeID string) ([]Catalo
 			UNION SELECT p.id FROM categories p JOIN categories ch ON ch.parent_id = p.id JOIN tree t ON t.id = ch.id
 			WHERE p.is_active
 		)
-		SELECT cat.id, cat.parent_id, cat.name, COALESCE(d.n, 0), cat.image_url
+		SELECT cat.id, cat.parent_id, loc(cat.name, cat.name_uz), COALESCE(d.n, 0), cat.image_url
 		FROM categories cat JOIN (SELECT DISTINCT id FROM tree) t ON t.id = cat.id
 		LEFT JOIN direct d ON d.id = cat.id
-		ORDER BY cat.sort, cat.name`,
+		ORDER BY cat.sort, loc(cat.name, cat.name_uz)`,
 		storeID, st.WarehouseID, st.PriceTypeID)
 	if err != nil {
 		return nil, err
@@ -188,16 +190,16 @@ func (s *Service) StoreProduct(ctx context.Context, storeID, productID string) (
 		return out, err
 	}
 	if !httpx.IsUUID(productID) {
-		return out, apperr.NotFound("товар не найден")
+		return out, apperr.NotFound("товар не найден").Uz("mahsulot topilmadi")
 	}
-	row := s.pool.QueryRow(ctx, `SELECT `+catalogCols+`, cat.name, c.attributes FROM (`+catalogBase+`) c
+	row := s.pool.QueryRow(ctx, `SELECT `+catalogCols+`, loc(cat.name, cat.name_uz), c.attributes FROM (`+catalogBase+`) c
 		JOIN categories cat ON cat.id = c.category_id WHERE c.id = $4`,
 		storeID, st.WarehouseID, st.PriceTypeID, productID)
 	p := &out.CatalogProduct
 	err = row.Scan(&p.ID, &p.Name, &p.Description, &p.BrandName, &p.CategoryID, &p.UnitShort, &p.IsFractional, &p.Images,
 		&p.Price, &p.Available, &p.OldPrice, &p.DiscountPercent, &p.IsNew, &p.CreatedAt, &out.CategoryName, &out.Attributes)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return out, apperr.NotFound("товара нет в наличии в этом магазине")
+		return out, apperr.NotFound("товара нет в наличии в этом магазине").Uz("mahsulot bu doʻkonda mavjud emas")
 	}
 	out.StoreID, out.StoreName = storeID, st.Name
 	return out, err
@@ -212,7 +214,7 @@ func (s *Service) RelatedProducts(ctx context.Context, storeID, productID string
 		return nil, err
 	}
 	if !httpx.IsUUID(productID) {
-		return nil, apperr.NotFound("товар не найден")
+		return nil, apperr.NotFound("товар не найден").Uz("mahsulot topilmadi")
 	}
 	if limit <= 0 || limit > 30 {
 		limit = 10
@@ -323,14 +325,14 @@ func (s *Service) FavoriteIDs(ctx context.Context, p *identity.Principal) ([]str
 
 func (s *Service) AddFavorite(ctx context.Context, p *identity.Principal, productID string) error {
 	if !httpx.IsUUID(productID) {
-		return apperr.Validation("product_id: товар не найден")
+		return apperr.Validation("product_id: товар не найден").Uz("product_id: mahsulot topilmadi")
 	}
 	var n int
 	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM favorites WHERE user_id = $1`, p.UserID).Scan(&n); err != nil {
 		return err
 	}
 	if n >= 500 {
-		return apperr.Validation("в избранном не больше 500 товаров")
+		return apperr.Validation("в избранном не больше 500 товаров").Uz("sevimlilarda koʻpi bilan 500 ta mahsulot")
 	}
 	tag, err := s.pool.Exec(ctx, `
 		INSERT INTO favorites (user_id, product_id)
@@ -346,7 +348,7 @@ func (s *Service) AddFavorite(ctx context.Context, p *identity.Principal, produc
 			return err
 		}
 		if !exists {
-			return apperr.Validation("product_id: товар не найден")
+			return apperr.Validation("product_id: товар не найден").Uz("product_id: mahsulot topilmadi")
 		}
 	}
 	return nil

@@ -42,7 +42,7 @@ func (c Conn) RecognizeShelf(ctx context.Context, images []Image) ([]ShelfItem, 
 func ParseShelf(text string) ([]ShelfItem, error) {
 	raw, err := ExtractJSON(text)
 	if err != nil {
-		return nil, &ErrService{Msg: "не удалось разобрать товары на фото"}
+		return nil, &ErrService{Msg: "не удалось разобрать товары на фото", MsgUz: "rasmdagi mahsulotlarni aniqlab boʻlmadi"}
 	}
 	var loose struct {
 		Items []struct {
@@ -53,7 +53,7 @@ func ParseShelf(text string) ([]ShelfItem, error) {
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(raw, &loose); err != nil {
-		return nil, &ErrService{Msg: "не удалось разобрать товары на фото"}
+		return nil, &ErrService{Msg: "не удалось разобрать товары на фото", MsgUz: "rasmdagi mahsulotlarni aniqlab boʻlmadi"}
 	}
 	var out []ShelfItem
 	seen := map[string]int{}
@@ -84,7 +84,7 @@ func ParseShelf(text string) ([]ShelfItem, error) {
 		}
 	}
 	if len(out) == 0 {
-		return nil, &ErrService{Msg: "на фото не найдено товаров — снимите полку ближе и при хорошем свете"}
+		return nil, &ErrService{Msg: "на фото не найдено товаров — снимите полку ближе и при хорошем свете", MsgUz: "rasmda mahsulot topilmadi — javonni yaqinroqdan va yaxshi yorugʻlikda suratga oling"}
 	}
 	return out, nil
 }

@@ -46,6 +46,9 @@ type SaleItem struct {
 	PackageCode  string   `json:"package_code"`
 	VatRate      string   `json:"vat_rate"`
 	MarkingCodes []string `json:"marking_codes"`
+	// FiscalName — название для фискального чека: всегда основное (русское),
+	// как в чеке продажи; product_name — на языке запроса.
+	FiscalName string `json:"fiscal_name"`
 }
 
 type SalePayment struct {
@@ -111,16 +114,16 @@ func (s *Service) getSale(ctx context.Context, q db.Querier, p *identity.Princip
 	}
 	sale, err := pgx.CollectExactlyOneRow(rows, scanSale)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !p.CanAccessStore(sale.StoreID)) {
-		return Sale{}, apperr.NotFound("продажа не найдена")
+		return Sale{}, apperr.NotFound("продажа не найдена").Uz("sotuv topilmadi")
 	}
 	if err != nil {
 		return Sale{}, err
 	}
 	rows, err = q.Query(ctx, `
-		SELECT i.line, i.product_id, p.name, i.qty::text, i.price::text, i.discount::text, i.total::text,
+		SELECT i.line, i.product_id, loc(p.name, p.name_uz), i.qty::text, i.price::text, i.discount::text, i.total::text,
 		       COALESCE((SELECT sum(ri.qty) FROM customer_return_items ri JOIN customer_returns r ON r.id = ri.return_id
 		                 WHERE r.sale_id = i.sale_id AND ri.sale_line = i.line), 0)::text,
-		       p.ikpu, p.package_code, p.vat_rate::text, i.marking_codes
+		       p.ikpu, p.package_code, p.vat_rate::text, i.marking_codes, p.name
 		FROM sale_items i JOIN products p ON p.id = i.product_id
 		WHERE i.sale_id = $1 ORDER BY i.line`, id)
 	if err != nil {
@@ -243,38 +246,38 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 		// Касса продаёт только в своём магазине и только в смене.
 		in.StoreID = p.StoreIDs[0]
 		if in.ShiftID == nil || !httpx.IsUUID(*in.ShiftID) {
-			return Sale{}, false, apperr.Validation("shift_id: продажа с кассы — только в смене")
+			return Sale{}, false, apperr.Validation("shift_id: продажа с кассы — только в смене").Uz("shift_id: kassadan sotish — faqat smena ochiq boʻlganda")
 		}
 		if in.Fiscal != nil {
 			f := in.Fiscal
 			f.Number, f.Sign, f.QR, f.Module = strings.TrimSpace(f.Number), strings.TrimSpace(f.Sign), strings.TrimSpace(f.QR), strings.TrimSpace(f.Module)
 			if f.Number == "" || f.Sign == "" || len(f.Number) > 64 || len(f.Sign) > 128 || len(f.QR) > 500 || len(f.Module) > 64 {
-				return Sale{}, false, apperr.Validation("fiscal: номер и признак чека обязательны")
+				return Sale{}, false, apperr.Validation("fiscal: номер и признак чека обязательны").Uz("fiscal: chek raqami va belgisi majburiy")
 			}
 		}
 	} else if in.ShiftID != nil || in.Fiscal != nil {
-		return Sale{}, false, apperr.Validation("shift_id и fiscal передаёт только касса")
+		return Sale{}, false, apperr.Validation("shift_id и fiscal передаёт только касса").Uz("shift_id va fiscal ni faqat kassa yuboradi")
 	} else {
 		for _, it := range in.Items {
 			if it.Price != nil {
-				return Sale{}, false, apperr.Validation("items: цену строки передаёт только касса")
+				return Sale{}, false, apperr.Validation("items: цену строки передаёт только касса").Uz("items: qator narxini faqat kassa yuboradi")
 			}
 		}
 	}
 	if len(in.ClientUID) < 8 || len(in.ClientUID) > 64 {
-		return Sale{}, false, apperr.Validation("client_uid: 8–64 символа, генерируется кассой (например, UUID)")
+		return Sale{}, false, apperr.Validation("client_uid: 8–64 символа, генерируется кассой (например, UUID)").Uz("client_uid: 8–64 belgi, kassa tomonidan yaratiladi (masalan, UUID)")
 	}
 	if !httpx.IsUUID(in.StoreID) || !p.CanAccessStore(in.StoreID) {
-		return Sale{}, false, apperr.Validation("store_id: магазин не найден")
+		return Sale{}, false, apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
 	}
 	if len(in.Items) == 0 || len(in.Items) > 500 {
-		return Sale{}, false, apperr.Validation("items: от 1 до 500 строк")
+		return Sale{}, false, apperr.Validation("items: от 1 до 500 строк").Uz("items: 1 dan 500 tagacha qator")
 	}
 	if len(in.Payments) == 0 && in.Debt == nil {
-		return Sale{}, false, apperr.Validation("payments: укажите оплату")
+		return Sale{}, false, apperr.Validation("payments: укажите оплату").Uz("payments: toʻlovni kiriting")
 	}
 	if in.Debt != nil && (!in.Debt.Amount.Valid() || money.D(string(in.Debt.Amount)).Sign() <= 0) {
-		return Sale{}, false, apperr.Validation("debt.amount: сумма в долг должна быть больше нуля")
+		return Sale{}, false, apperr.Validation("debt.amount: сумма в долг должна быть больше нуля").Uz("debt.amount: qarz summasi noldan katta boʻlishi kerak")
 	}
 
 	// Повторная отправка — отдаём уже проведённую продажу.
@@ -292,7 +295,7 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 	if in.SoldAt != nil {
 		// Офлайн-продажа: время кассы, но не из будущего и не старше 7 дней.
 		if in.SoldAt.After(soldAt.Add(5*time.Minute)) || in.SoldAt.Before(soldAt.Add(-7*24*time.Hour)) {
-			return Sale{}, false, apperr.Validation("sold_at: время продажи вне допустимого окна")
+			return Sale{}, false, apperr.Validation("sold_at: время продажи вне допустимого окна").Uz("sold_at: sotuv vaqti ruxsat etilgan oraliqdan tashqarida")
 		}
 		soldAt = *in.SoldAt
 	}
@@ -303,12 +306,12 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 		var warehouseID string
 		if in.WarehouseID != nil {
 			if !httpx.IsUUID(*in.WarehouseID) {
-				return apperr.Validation("warehouse_id: склад не найден")
+				return apperr.Validation("warehouse_id: склад не найден").Uz("warehouse_id: ombor topilmadi")
 			}
 			err := tx.QueryRow(ctx, `SELECT id FROM warehouses WHERE id = $1 AND store_id = $2 AND is_active`,
 				*in.WarehouseID, in.StoreID).Scan(&warehouseID)
 			if errors.Is(err, pgx.ErrNoRows) {
-				return apperr.Validation("warehouse_id: склад не найден в этом магазине")
+				return apperr.Validation("warehouse_id: склад не найден в этом магазине").Uz("warehouse_id: ombor bu doʻkonda topilmadi")
 			}
 			if err != nil {
 				return err
@@ -318,13 +321,13 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 			err := tx.QueryRow(ctx, `SELECT default_warehouse_id, status FROM stores WHERE id = $1 AND network_id = $2`,
 				in.StoreID, p.NetworkID).Scan(&warehouseID, &status)
 			if errors.Is(err, pgx.ErrNoRows) {
-				return apperr.Validation("store_id: магазин не найден")
+				return apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
 			}
 			if err != nil {
 				return err
 			}
 			if status != "active" {
-				return apperr.Validation("store_id: магазин не работает")
+				return apperr.Validation("store_id: магазин не работает").Uz("store_id: doʻkon ishlamayapti")
 			}
 		}
 
@@ -337,7 +340,7 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 		priceTypeID := ""
 		if in.PriceTypeID != nil {
 			if !httpx.IsUUID(*in.PriceTypeID) {
-				return apperr.Validation("price_type_id: тип цены не найден")
+				return apperr.Validation("price_type_id: тип цены не найден").Uz("price_type_id: narx turi topilmadi")
 			}
 			if err := catalog.CheckPriceType(ctx, tx, p.NetworkID, *in.PriceTypeID); err != nil {
 				return err
@@ -373,33 +376,33 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 			line := i + 1
 			ls := strconv.Itoa(line)
 			if !httpx.IsUUID(it.ProductID) {
-				return apperr.Validation("items: неверный product_id в строке " + ls)
+				return apperr.Validation("items: неверный product_id в строке " + ls).Uz("items: " + ls + "-qatorda product_id notoʻgʻri")
 			}
 			if seen[it.ProductID] {
-				return apperr.Validation("items: товар повторяется в строке " + ls + " — объедините количество")
+				return apperr.Validation("items: товар повторяется в строке " + ls + " — объедините количество").Uz("items: " + ls + "-qatorda mahsulot takrorlanadi — miqdorni birlashtiring")
 			}
 			seen[it.ProductID] = true
 			if !it.Qty.Valid() || money.D(string(it.Qty)).Sign() <= 0 {
-				return apperr.Validation("items: количество должно быть больше нуля в строке " + ls)
+				return apperr.Validation("items: количество должно быть больше нуля в строке " + ls).Uz("items: " + ls + "-qatorda miqdor noldan katta boʻlishi kerak")
 			}
 			prod, err := catalog.EffectivePrice(ctx, tx, p.NetworkID, in.StoreID, priceTypeID, it.ProductID)
 			if err != nil {
-				return apperr.Validation("items: товар не найден в строке " + ls)
+				return apperr.Validation("items: товар не найден в строке " + ls).Uz("items: " + ls + "-qatorda mahsulot topilmadi")
 			}
 			// Касса могла продать офлайн товар, который тем временем сняли с продажи.
 			if !prod.IsActive && !pos {
-				return apperr.Validation("items: товар «" + prod.Name + "» снят с продажи")
+				return apperr.Validation("items: товар «" + prod.Name + "» снят с продажи").Uz("items: «" + prod.Name + "» mahsuloti sotuvdan olingan")
 			}
 			price := prod.Price
 			if it.Price != nil {
 				if !it.Price.Valid() || money.D(string(*it.Price)).Sign() < 0 {
-					return apperr.Validation("items: неверная цена в строке " + ls)
+					return apperr.Validation("items: неверная цена в строке " + ls).Uz("items: " + ls + "-qatorda narx notoʻgʻri")
 				}
 				price = money.D(string(*it.Price)).Money()
 			}
 			qty := money.D(string(it.Qty))
 			if !prod.IsFractional && qty.Cmp(money.D(qty.Fixed(0))) != 0 {
-				return apperr.Validation("items: «" + prod.Name + "» продаётся только целым количеством")
+				return apperr.Validation("items: «" + prod.Name + "» продаётся только целым количеством").Uz("items: «" + prod.Name + "» faqat butun miqdorda sotiladi")
 			}
 			lineSum := money.D(price).Mul(qty).Round2()
 			lineDiscount := money.D("0")
@@ -411,7 +414,7 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 					}
 				}
 				if lineDiscount.Cmp(lineSum) > 0 {
-					return apperr.Validation("items: скидка больше суммы строки " + ls)
+					return apperr.Validation("items: скидка больше суммы строки " + ls).Uz("items: chegirma " + ls + "-qator summasidan katta")
 				}
 			}
 			codes, err := markingCodes(it.MarkingCodes, qty, prod.Name, seenCodes)
@@ -459,18 +462,18 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 		methods := map[string]bool{}
 		for _, pay := range in.Payments {
 			if !httpx.IsUUID(pay.PaymentMethodID) || methods[pay.PaymentMethodID] {
-				return apperr.Validation("payments: неверный или повторяющийся способ оплаты")
+				return apperr.Validation("payments: неверный или повторяющийся способ оплаты").Uz("payments: toʻlov usuli notoʻgʻri yoki takrorlangan")
 			}
 			methods[pay.PaymentMethodID] = true
 			if !pay.Amount.Valid() || money.D(string(pay.Amount)).Sign() <= 0 {
-				return apperr.Validation("payments: сумма оплаты должна быть больше нуля")
+				return apperr.Validation("payments: сумма оплаты должна быть больше нуля").Uz("payments: toʻlov summasi noldan katta boʻlishi kerak")
 			}
 			cashboxID, currency, storeID, err := finance.PaymentMethodCashbox(ctx, tx, p.NetworkID, pay.PaymentMethodID)
 			if err != nil {
 				return err
 			}
 			if storeID == nil || *storeID != in.StoreID || currency != "UZS" {
-				return apperr.Validation("payments: способ оплаты не относится к кассе этого магазина")
+				return apperr.Validation("payments: способ оплаты не относится к кассе этого магазина").Uz("payments: toʻlov usuli bu doʻkon kassasiga tegishli emas")
 			}
 			if _, err := tx.Exec(ctx, `INSERT INTO sale_payments (sale_id, payment_method_id, cashbox_id, amount)
 				VALUES ($1, $2, $3, $4::numeric)`, id, pay.PaymentMethodID, cashboxID, string(pay.Amount)); err != nil {
@@ -496,7 +499,7 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 			paid = paid.Add(debt)
 		}
 		if paid.Cmp(total.Round2()) != 0 {
-			return apperr.Validation("payments: сумма оплат " + paid.Money() + " не равна итогу " + total.Money()).
+			return apperr.Validation("payments: сумма оплат " + paid.Money() + " не равна итогу " + total.Money()).Uz("payments: toʻlovlar summasi " + paid.Money() + " jami " + total.Money() + " ga teng emas").
 				WithDetails(map[string]any{"total": total.Money(), "paid": paid.Money()})
 		}
 
@@ -531,16 +534,16 @@ func markingCodes(raw []string, qty money.Dec, name string, seen map[string]bool
 		return []string{}, nil
 	}
 	if qty.Cmp(money.D(strconv.Itoa(len(raw)))) != 0 {
-		return nil, apperr.Validation("marking_codes: «" + name + "» — нужен код на каждую штуку")
+		return nil, apperr.Validation("marking_codes: «" + name + "» — нужен код на каждую штуку").Uz("marking_codes: «" + name + "» — har bir dona uchun kod kerak")
 	}
 	out := make([]string, 0, len(raw))
 	for _, c := range raw {
 		c = strings.TrimSpace(c)
 		if len(c) < 10 || len(c) > 200 {
-			return nil, apperr.Validation("marking_codes: неверный код маркировки у «" + name + "»")
+			return nil, apperr.Validation("marking_codes: неверный код маркировки у «" + name + "»").Uz("marking_codes: «" + name + "» markirovka kodi notoʻgʻri")
 		}
 		if seen[c] {
-			return nil, apperr.Validation("marking_codes: код маркировки повторяется в чеке")
+			return nil, apperr.Validation("marking_codes: код маркировки повторяется в чеке").Uz("marking_codes: markirovka kodi chekda takrorlanadi")
 		}
 		seen[c] = true
 		out = append(out, c)
@@ -565,14 +568,14 @@ func (s *Service) RegisterFiscal(ctx context.Context, p *identity.Principal, tab
 	}
 	in.FiscalNumber, in.FiscalSign = strings.TrimSpace(in.FiscalNumber), strings.TrimSpace(in.FiscalSign)
 	if in.FiscalNumber == "" || in.FiscalSign == "" || len(in.FiscalNumber) > 64 || len(in.FiscalSign) > 128 {
-		return apperr.Validation("укажите fiscal_number и fiscal_sign из чека")
+		return apperr.Validation("укажите fiscal_number и fiscal_sign из чека").Uz("chekdagi fiscal_number va fiscal_sign ni kiriting")
 	}
 	if table != "sales" && table != "customer_returns" {
-		return apperr.NotFound("документ не найден")
+		return apperr.NotFound("документ не найден").Uz("hujjat topilmadi")
 	}
 	in.FiscalQR, in.FiscalModule = strings.TrimSpace(in.FiscalQR), strings.TrimSpace(in.FiscalModule)
 	if len(in.FiscalQR) > 500 || len(in.FiscalModule) > 64 {
-		return apperr.Validation("fiscal_qr, fiscal_module: слишком длинные")
+		return apperr.Validation("fiscal_qr, fiscal_module: слишком длинные").Uz("fiscal_qr, fiscal_module: juda uzun")
 	}
 	var storeID, status string
 	var deviceID *string
@@ -583,13 +586,13 @@ func (s *Service) RegisterFiscal(ctx context.Context, p *identity.Principal, tab
 		err = pgx.ErrNoRows
 	}
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !p.CanAccessStore(storeID)) {
-		return apperr.NotFound("документ не найден")
+		return apperr.NotFound("документ не найден").Uz("hujjat topilmadi")
 	}
 	if err != nil {
 		return err
 	}
 	if status == "registered" {
-		return apperr.Conflict("already_registered", "чек уже зарегистрирован")
+		return apperr.Conflict("already_registered", "чек уже зарегистрирован").Uz("chek allaqachon roʻyxatdan oʻtgan")
 	}
 	_, err = s.pool.Exec(ctx, `UPDATE `+table+` SET fiscal_status = 'registered', fiscal_number = $2, fiscal_sign = $3, fiscal_at = now(),
 		fiscal_qr = CASE WHEN $4 = '' THEN fiscal_qr ELSE $4 END, fiscal_module = CASE WHEN $5 = '' THEN fiscal_module ELSE $5 END
@@ -612,7 +615,7 @@ type Summary struct {
 // списки (магазин, период, только непробитые). Возвраты — по дате возврата.
 func (s *Service) Summary(ctx context.Context, p *identity.Principal, f SaleFilter) (Summary, error) {
 	if f.StoreID != "" && !httpx.IsUUID(f.StoreID) {
-		return Summary{}, apperr.Validation("store_id: неверный id")
+		return Summary{}, apperr.Validation("store_id: неверный id").Uz("store_id: id notoʻgʻri")
 	}
 	var out Summary
 	err := s.pool.QueryRow(ctx, `
@@ -668,13 +671,13 @@ func CheckShiftTime(ctx context.Context, q db.Querier, shiftID, deviceID string,
 	var opened time.Time
 	err := q.QueryRow(ctx, `SELECT opened_at FROM pos_shifts WHERE id = $1 AND device_id = $2`, shiftID, deviceID).Scan(&opened)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return apperr.Validation("shift_id: смена не найдена на этой кассе")
+		return apperr.Validation("shift_id: смена не найдена на этой кассе").Uz("shift_id: bu kassada smena topilmadi")
 	}
 	if err != nil {
 		return err
 	}
 	if at.Sub(opened) > ShiftMaxDuration {
-		return apperr.Conflict("shift_expired", "смена идёт больше 24 часов — закройте её (Z-отчёт) и откройте новую")
+		return apperr.Conflict("shift_expired", "смена идёт больше 24 часов — закройте её (Z-отчёт) и откройте новую").Uz("smena 24 soatdan koʻp davom etmoqda — uni yoping (Z-hisobot) va yangisini oching")
 	}
 	return nil
 }

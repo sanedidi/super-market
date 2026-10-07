@@ -16,6 +16,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 	"github.com/sanedidi/super-market/backend/internal/push"
 )
@@ -95,23 +96,32 @@ type CrowdStats struct {
 	RecentViolations int `json:"recent_violations"`
 }
 
-func crowdLevel(cs CrowdSettings, status string, st CrowdStats) CrowdLevel {
+// crowdLevelTitles — названия уровней курьера «по пути».
+var crowdLevelTitles = map[string]i18n.Text{
+	"none":     {RU: "Не проверен", UZ: "Tekshirilmagan"},
+	"newbie":   {RU: "Новичок", UZ: "Yangi boshlovchi"},
+	"reliable": {RU: "Надёжный", UZ: "Ishonchli"},
+	"trusted":  {RU: "Проверенный", UZ: "Tekshirilgan"},
+}
+
+func crowdLevel(cs CrowdSettings, status string, st CrowdStats, lang string) CrowdLevel {
+	title := func(key string) string { return crowdLevelTitles[key].In(lang) }
 	if status != "active" {
-		return CrowdLevel{Key: "none", Title: "Не проверен", Limit: "0.00"}
+		return CrowdLevel{Key: "none", Title: title("none"), Limit: "0.00"}
 	}
 	clean := st.RecentViolations == 0
 	trusted := st.Delivered >= cs.TrustedAfter && st.OntimePct >= cs.TrustedOntime && clean
 	reliable := st.Delivered >= cs.ReliableAfter && st.OntimePct >= cs.ReliableOntime && clean
 	switch {
 	case trusted:
-		return CrowdLevel{Key: "trusted", Title: "Проверенный", Limit: cs.TrustedLimit, Parallel: cs.TrustedParallel}
+		return CrowdLevel{Key: "trusted", Title: title("trusted"), Limit: cs.TrustedLimit, Parallel: cs.TrustedParallel}
 	case reliable:
-		return CrowdLevel{Key: "reliable", Title: "Надёжный", Limit: cs.ReliableLimit, Parallel: cs.ReliableParallel,
-			Next: &CrowdNextLevel{Title: "Проверенный", After: cs.TrustedAfter, Ontime: cs.TrustedOntime,
+		return CrowdLevel{Key: "reliable", Title: title("reliable"), Limit: cs.ReliableLimit, Parallel: cs.ReliableParallel,
+			Next: &CrowdNextLevel{Title: title("trusted"), After: cs.TrustedAfter, Ontime: cs.TrustedOntime,
 				Remaining: max(0, cs.TrustedAfter-st.Delivered), Limit: cs.TrustedLimit, Parallel: cs.TrustedParallel}}
 	default:
-		return CrowdLevel{Key: "newbie", Title: "Новичок", Limit: cs.NewbieLimit, Parallel: cs.NewbieParallel,
-			Next: &CrowdNextLevel{Title: "Надёжный", After: cs.ReliableAfter, Ontime: cs.ReliableOntime,
+		return CrowdLevel{Key: "newbie", Title: title("newbie"), Limit: cs.NewbieLimit, Parallel: cs.NewbieParallel,
+			Next: &CrowdNextLevel{Title: title("reliable"), After: cs.ReliableAfter, Ontime: cs.ReliableOntime,
 				Remaining: max(0, cs.ReliableAfter-st.Delivered), Limit: cs.ReliableLimit, Parallel: cs.ReliableParallel}}
 	}
 }
@@ -171,7 +181,7 @@ type CrowdMe struct {
 
 func crowdOnly(p *identity.Principal) error {
 	if p == nil || p.App != identity.AppCrowd {
-		return apperr.Forbidden("только для курьеров «по пути»")
+		return apperr.Forbidden("только для курьеров «по пути»").Uz("faqat «yoʻl-yoʻlakay» kuryerlar uchun")
 	}
 	return nil
 }
@@ -202,7 +212,7 @@ func (s *Service) CrowdMe(ctx context.Context, p *identity.Principal) (CrowdMe, 
 		&me.Code, &me.Status, &me.FullName, &me.Phone, &me.Vehicle, &me.Online, &dlat, &dlng, &dtitle, &me.BlockedReason,
 		&me.Balance, &me.ActiveOrders)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return me, apperr.NotFound("профиль курьера не найден")
+		return me, apperr.NotFound("профиль курьера не найден").Uz("kuryer profili topilmadi")
 	}
 	if err != nil {
 		return me, err
@@ -227,7 +237,7 @@ func (s *Service) CrowdMe(ctx context.Context, p *identity.Principal) (CrowdMe, 
 	if err != nil {
 		return me, err
 	}
-	me.Level = crowdLevel(cs, me.Status, me.Stats)
+	me.Level = crowdLevel(cs, me.Status, me.Stats, i18n.FromContext(ctx))
 	me.NextPayoutOn = nextMonday(s.now())
 	return me, nil
 }
@@ -241,7 +251,7 @@ func (s *Service) CrowdUpdateMe(ctx context.Context, p *identity.Principal, in C
 		return CrowdMe{}, err
 	}
 	if in.Vehicle != nil && vehicleSpeed[*in.Vehicle] == 0 {
-		return CrowdMe{}, apperr.Validation("vehicle: foot, bike, scooter или car")
+		return CrowdMe{}, apperr.Validation("vehicle: foot, bike, scooter или car").Uz("vehicle: foot, bike, scooter yoki car")
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE crowd_couriers SET vehicle = COALESCE($2, vehicle) WHERE user_id = $1`, p.UserID, in.Vehicle); err != nil {
 		return CrowdMe{}, err
@@ -269,11 +279,11 @@ func (s *Service) CrowdSetRoute(ctx context.Context, p *identity.Principal, in C
 		} else {
 			d := *in.Dest.Value
 			if !validCoords(d.Lat, d.Lng) {
-				return CrowdMe{}, apperr.Validation("dest: неверные координаты")
+				return CrowdMe{}, apperr.Validation("dest: неверные координаты").Uz("dest: koordinatalar notoʻgʻri")
 			}
 			title = strings.TrimSpace(d.Title)
 			if len([]rune(title)) > 120 {
-				return CrowdMe{}, apperr.Validation("dest.title: не длиннее 120 символов")
+				return CrowdMe{}, apperr.Validation("dest.title: не длиннее 120 символов").Uz("dest.title: 120 belgidan oshmasin")
 			}
 			setDest, lat, lng = true, d.Lat, d.Lng
 		}
@@ -294,7 +304,7 @@ func (s *Service) CrowdLocation(ctx context.Context, p *identity.Principal, in L
 		return err
 	}
 	if !validCoords(in.Lat, in.Lng) {
-		return apperr.Validation("lat/lng: неверные координаты")
+		return apperr.Validation("lat/lng: неверные координаты").Uz("lat/lng: koordinatalar notoʻgʻri")
 	}
 	return db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `
@@ -353,7 +363,7 @@ func (s *Service) CrowdPoints(ctx context.Context, p *identity.Principal, lat, l
 		return nil, err
 	}
 	if lat != nil && lng != nil && !validCoords(*lat, *lng) {
-		return nil, apperr.Validation("lat/lng: неверные координаты")
+		return nil, apperr.Validation("lat/lng: неверные координаты").Uz("lat/lng: koordinatalar notoʻgʻri")
 	}
 	rows, err := s.pool.Query(ctx, `
 		WITH me AS (SELECT COALESCE(CASE WHEN $1::float8 IS NOT NULL THEN ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography END,
@@ -433,7 +443,7 @@ func (s *Service) CrowdOffers(ctx context.Context, p *identity.Principal, lat, l
 	}
 	if lat != nil && lng != nil {
 		if !validCoords(*lat, *lng) {
-			return feed, apperr.Validation("lat/lng: неверные координаты")
+			return feed, apperr.Validation("lat/lng: неверные координаты").Uz("lat/lng: koordinatalar notoʻgʻri")
 		}
 		if _, err := s.pool.Exec(ctx, `UPDATE crowd_couriers SET location = ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography, located_at = now()
 			WHERE user_id = $1`, p.UserID, *lat, *lng); err != nil {
@@ -517,7 +527,7 @@ func randomPickup() (string, error) {
 	return string(b), nil
 }
 
-var errOfferGone = apperr.Conflict("offer_gone", "заказ уже взяли или он больше недоступен")
+var errOfferGone = apperr.Conflict("offer_gone", "заказ уже взяли или он больше недоступен").Uz("buyurtmani allaqachon olishgan yoki u endi mavjud emas")
 
 // CrowdAccept — курьер берёт заказ из ленты.
 func (s *Service) CrowdAccept(ctx context.Context, p *identity.Principal, id string) (CrowdOrder, error) {
@@ -526,11 +536,11 @@ func (s *Service) CrowdAccept(ctx context.Context, p *identity.Principal, id str
 		return CrowdOrder{}, err
 	}
 	if me.Status != "active" {
-		return CrowdOrder{}, apperr.Forbidden("сначала подтвердите личность в магазине")
+		return CrowdOrder{}, apperr.Forbidden("сначала подтвердите личность в магазине").Uz("avval doʻkonda shaxsingizni tasdiqlang")
 	}
 	if me.ActiveOrders >= me.Level.Parallel {
 		return CrowdOrder{}, apperr.Conflict("too_many_orders",
-			fmt.Sprintf("на вашем уровне можно везти не больше %d заказ(а) сразу", me.Level.Parallel))
+			fmt.Sprintf("на вашем уровне можно везти не больше %d заказ(а) сразу", me.Level.Parallel)).Uz(fmt.Sprintf("sizning darajangizda bir vaqtda koʻpi bilan %d ta buyurtma olib borish mumkin", me.Level.Parallel))
 	}
 	if _, err := s.getOrder(ctx, s.pool, id); err != nil {
 		return CrowdOrder{}, err
@@ -590,8 +600,14 @@ func (s *Service) CrowdAccept(ctx context.Context, p *identity.Principal, id str
 			return err
 		}
 		return push.EnqueueStaff(ctx, tx, storeID, identity.PermOrdersManage, "crowd_taken",
-			fmt.Sprintf("Курьер по пути взял заказ №%d", number),
-			fmt.Sprintf("%s заберёт до %s. Выдайте заказ по QR курьера", name, until.In(tashkent).Format("15:04")),
+			i18n.Text{
+				RU: fmt.Sprintf("Курьер по пути взял заказ №%d", number),
+				UZ: fmt.Sprintf("Yoʻl-yoʻlakay kuryer №%d buyurtmani oldi", number),
+			},
+			i18n.Text{
+				RU: fmt.Sprintf("%s заберёт до %s. Выдайте заказ по QR курьера", name, until.In(tashkent).Format("15:04")),
+				UZ: fmt.Sprintf("%s uni %s gacha olib ketadi. Buyurtmani kuryerning QR kodi boʻyicha bering", name, until.In(tashkent).Format("15:04")),
+			},
 			map[string]string{"type": "order", "order_id": id})
 	})
 	if err != nil {
@@ -622,7 +638,7 @@ func (s *Service) crowdOrder(ctx context.Context, p *identity.Principal, id stri
 		return CrowdOrder{}, err
 	}
 	if o.CrowdCourierID == nil || *o.CrowdCourierID != p.UserID {
-		return CrowdOrder{}, apperr.NotFound("заказ не найден")
+		return CrowdOrder{}, apperr.NotFound("заказ не найден").Uz("buyurtma topilmadi")
 	}
 	si, err := s.storeInfo(ctx, o.StoreID)
 	if err != nil {
@@ -746,12 +762,12 @@ func (s *Service) CrowdDeliver(ctx context.Context, p *identity.Principal, id st
 			return err
 		}
 		if attempts >= maxHandoffAttempts {
-			verdict = apperr.New(429, "too_many_attempts", "слишком много неверных кодов — позвоните в поддержку")
+			verdict = apperr.New(429, "too_many_attempts", "слишком много неверных кодов — позвоните в поддержку").Uz("notoʻgʻri kod juda koʻp kiritildi — qoʻllab-quvvatlash xizmatiga qoʻngʻiroq qiling")
 			return nil
 		}
 		if want == nil || code != *want {
 			left := maxHandoffAttempts - attempts - 1
-			verdict = apperr.Validation(fmt.Sprintf("неверный код, осталось попыток: %d", left)).
+			verdict = apperr.Validation(fmt.Sprintf("неверный код, осталось попыток: %d", left)).Uz(fmt.Sprintf("kod notoʻgʻri, qolgan urinishlar: %d", left)).
 				WithDetails(map[string]any{"attempts_left": left})
 			_, err := tx.Exec(ctx, `UPDATE orders SET handoff_attempts = handoff_attempts + 1 WHERE id = $1`, id)
 			return err
@@ -828,11 +844,11 @@ func (s *Service) CrowdProblem(ctx context.Context, p *identity.Principal, id st
 		return CrowdOrder{}, err
 	}
 	if in.Kind != "no_handoff" && in.Kind != "other" {
-		return CrowdOrder{}, apperr.Validation("kind: no_handoff или other")
+		return CrowdOrder{}, apperr.Validation("kind: no_handoff или other").Uz("kind: no_handoff yoki other")
 	}
 	note := strings.TrimSpace(in.Note)
 	if len([]rune(note)) > 500 {
-		return CrowdOrder{}, apperr.Validation("note: не длиннее 500 символов")
+		return CrowdOrder{}, apperr.Validation("note: не длиннее 500 символов").Uz("note: 500 belgidan oshmasin")
 	}
 	var open bool
 	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM courier_incidents WHERE order_id = $1 AND kind = $2 AND status = 'open')`,
@@ -902,12 +918,12 @@ func (s *Service) notCrowd(ctx context.Context, id string) error {
 	var crowd bool
 	if err := s.pool.QueryRow(ctx, `SELECT crowd_courier_id IS NOT NULL FROM orders WHERE id = $1`, id).Scan(&crowd); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return apperr.NotFound("заказ не найден")
+			return apperr.NotFound("заказ не найден").Uz("buyurtma topilmadi")
 		}
 		return err
 	}
 	if crowd {
-		return apperr.Conflict("crowd_courier", "заказ везёт курьер «по пути»: выдайте его по коду курьера")
+		return apperr.Conflict("crowd_courier", "заказ везёт курьер «по пути»: выдайте его по коду курьера").Uz("buyurtmani «yoʻl-yoʻlakay» kuryer olib boradi: uni kuryer kodi boʻyicha bering")
 	}
 	return nil
 }

@@ -9,6 +9,24 @@
 Защищённые маршруты требуют `Authorization: Bearer <access_token>`. Токен выдаётся
 на одно приложение: `client` (покупатель), `store` (панель магазина и POS), `admin` (супер-админ).
 
+### Языки данных (uz / ru)
+
+Язык ответа — заголовок `Accept-Language: uz|ru` (без заголовка — русский, как раньше; подробнее — `docs/i18n.md`).
+Названия категорий, цветов, единиц и товаров (и описание товара) хранятся на двух языках.
+
+- **Во всех ответах** существующие поля (`name`, `description`, `category_name`, `parent_name`, `unit_short`,
+  `short_name`, `unit`, `category`, `product_name`, …) — на языке запроса; нет узбекского перевода — русский.
+- **Ответы для правки** дополнительно отдают оба языка как есть:
+  справочники `categories`/`colors`/`units` (`/admin/catalog/{kind}`, `/store/catalog/{kind}`, POST/PATCH) —
+  `name_ru`, `name_uz`, у единиц ещё `short_name_ru`, `short_name_uz`;
+  товары (`/admin/products…`, `/store/products…`) — `name_ru`, `name_uz`, `description_ru`, `description_uz`.
+- **Запись**: `name`/`description`/`short_name` — по-русски, `name_uz`/`description_uz`/`short_name_uz` — по-узбекски.
+  Если русское поле не передано при создании или пустое, а перевод есть — перевод пишется и в русское поле.
+  В PATCH поле без значения не меняется, как и остальные поля. Бренды не переводятся.
+- **Поиск** по названию (`q`) ищет и по русскому, и по узбекскому названию: товары (покупатель, панель,
+  супер-админ, остатки, «Начало работы»), категории в справочнике; сопоставление строк накладной и фото полок —
+  тоже по обоим.
+
 ## Вход (этап 1)
 
 Код входа приходит в Telegram-бот. Перед первым входом человек открывает бота
@@ -203,15 +221,26 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 | Метод | Путь | Тело |
 | --- | --- | --- |
 | GET | `/admin/catalog/{kind}?q=&limit=&offset=` | записи по страницам (по умолчанию 50, максимум 200); `q` — поиск по названию. Для категорий: `exclude_tree={id}` — без этой категории и её потомков (варианты родителя), в ответе есть `parent_name` |
-| POST | `/admin/catalog/{kind}` | brands: `{"name"}` · categories: `{"name", "parent_id"?, "sort"?}` · colors: `{"name", "hex"?: "#FF0000"}` · units: `{"name", "short_name", "is_fractional"?}` |
+| POST | `/admin/catalog/{kind}` | brands: `{"name"}` · categories: `{"name", "name_uz"?, "parent_id"?, "sort"?}` · colors: `{"name", "name_uz"?, "hex"?: "#FF0000"}` · units: `{"name", "name_uz"?, "short_name", "short_name_uz"?, "is_fractional"?}`. Вместо `name` можно передать только `name_uz` (и `short_name_uz` вместо `short_name`) |
 | PATCH | `/admin/catalog/{kind}/{id}` | любые поля + `is_active`. Категорию нельзя вложить в саму себя или в свою подкатегорию — 400 `validation` |
 | GET | `/store/catalog/{kind}` | только активные |
 
-Единицы «шт», «кг», «л», «уп» создаются миграцией.
+Единицы «шт», «кг», «л», «уп» создаются миграцией (с узбекскими `dona`, `kg`, `l`, `qadoq`).
+
+В ответе `name` (у единиц и `short_name`) — на языке запроса, плюс `name_ru`, `name_uz` (`short_name_ru`, `short_name_uz`).
+
+#### Узбекские переводы (супер-админ)
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET | `/admin/i18n/stats` | `{items: [{entity, total, missing}]}` для `categories`, `units`, `colors`, `products`. `missing` — записи без перевода: пустой `name_uz` (у единиц — или `short_name_uz`; у товаров — или пустой `description_uz` при непустом `description`) |
+| POST | `/admin/i18n/translate-missing` | `{entity, limit?: 1..200 (50)}` → `{translated, remaining}`. Переводит ИИ-сервисом до `limit` записей без перевода (пачками до 50 строк / 4000 символов, расход — `ai_usage.kind = translate`). Заполняет только пустые поля — повтор безопасен. Укладывается в ~30 с: что не успело — остаётся в `remaining`, вызывайте, пока `remaining > 0` и `translated > 0`. ИИ не настроен — 409 `ai_not_configured` |
 
 ### Товары
 
-Товар: `name`, `description`, `brand_id`, `category_id`, `unit_id`, `color_id`, `base_price`, `images` (ссылки), `barcodes`, `is_active`.
+Товар: `name`, `name_uz`, `description`, `description_uz`, `brand_id`, `category_id`, `unit_id`, `color_id`, `base_price`, `images` (ссылки), `barcodes`, `is_active`.
+В ответе `name`, `description`, `category_name`, `unit_short` — на языке запроса, плюс `name_ru`, `name_uz`, `description_ru`, `description_uz` для формы.
+Переводы сохраняются при модерации (одобрение, правка супер-админом).
 Штрихкод уникален на всю платформу — при совпадении ответ 409 `barcode_exists` с `details.product_id`.
 В PATCH `brand_id`/`color_id`: нет поля или `null` — не менять, `""` — убрать бренд/цвет.
 
@@ -352,7 +381,7 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 | --- | --- | --- |
 | POST | `/pos/activate` | `{code, app_version}` → `{token, device_id, store_id, …}`; без токена |
 | GET | `/pos/catalog?since=<version>` | Товары (цена, штрихкоды, PLU, ИКПУ, НДС, маркировка), кассиры с хешем ПИНа, способы оплаты (`kind`: cash/card/qr/other), настройки чека. Без `since` — целиком, с `since` — изменения (с перекрытием в минуту) |
-| | | Товары общего каталога — только те, что магазин может продать: свои, с ценой сети или магазина, с кодом на кассе или с базовой ценой. У товара `image` (первое фото) и `category` (раздел верхнего уровня). `quick {pinned, top}` — быстрые кнопки: закреплённые и самые продаваемые в магазине за 30 дней (до 200). `epoch` — поколение каталога: касса шлёт своё `?epoch=`, другое — каталог целиком (сейчас 2) |
+| | | Товары общего каталога — только те, что магазин может продать: свои, с ценой сети или магазина, с кодом на кассе или с базовой ценой. У товара `image` (первое фото) и `category` (раздел верхнего уровня). `name`, `unit`, `category` — на языке запроса; `name_ru`, `name_uz` — для поиска на кассе по обоим языкам; **в фискальный чек идёт `name_ru`** (как раньше). Сменили язык кассы — загрузите каталог целиком (без `since`). `quick {pinned, top}` — быстрые кнопки: закреплённые и самые продаваемые в магазине за 30 дней (до 200). `epoch` — поколение каталога: касса шлёт своё `?epoch=`, другое — каталог целиком (сейчас 2) |
 | PUT | `/pos/quick-keys` | `{product_ids: [...]}` (до 30, по порядку) — закреплённые товары вкладки «Частые» магазина кассы. Кассир с правом `pos.settings` («Настройка кассы»; у владельца — всегда) → `{pinned, top}` |
 | POST | `/pos/login` | `{employee_id, pin}` — проверка ПИНа онлайн; 5 ошибок → блок на 5 минут (`429 pin_locked`) |
 | GET | `/pos/shifts/current` | Открытая смена кассы с X-отчётом или `{shift: null}` |
@@ -362,7 +391,7 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 | POST | `/pos/shifts/{id}/close` | `{counted_cash, diff_reason}` — расхождение без причины → 400; повтор → та же смена |
 | POST | `/pos/sales` | Как `/store/sales` + `shift_id`, `fiscal: {number, sign, qr, module}`, `items[].marking_codes`, `items[].price` (цена, по которой касса пробила чек — офлайн могла быть старая). Магазин — кассы; нехватка остатка и снятый с продажи товар не отклоняют продажу, недостача — в `sale_items.short_qty` |
 | GET | `/pos/sales?q=` | Поиск чека для возврата: номер или `client_uid` (QR на чеке кассы) |
-| GET | `/pos/sales/{id}` | Чек; в строках для чека возврата — `ikpu`, `package_code`, `vat_rate`, `marking_codes`, в чеке — `fiscal_module` |
+| GET | `/pos/sales/{id}` | Чек; в строках для чека возврата — `ikpu`, `package_code`, `vat_rate`, `marking_codes`, `fiscal_name` (название для фискального чека — русское, `product_name` — на языке запроса), в чеке — `fiscal_module` |
 | POST | `/pos/returns` | Как `/store/sales/returns` + `shift_id` |
 | POST | `/pos/returns/{id}/fiscal` | `{fiscal_number, fiscal_sign, fiscal_qr?, fiscal_module?}` — касса пробила чек возврата на фискальном модуле (только свои возвраты) |
 
@@ -911,7 +940,7 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 
 | Метод | Путь | Описание |
 |---|---|---|
-| POST | `/admin/catalog-import` | `{source: "tasnif", items: [{barcode, name, brand, category: ["Раздел", "Подкатегория"], unit: "шт"\|"кг", description, attributes, ikpu, attach_to?}]}` (1–500) → `{created, attached, skipped, errors [{barcode, message}]}`. Бренд и категории находятся по названию без учёта регистра или создаются. `attach_to` — точное название существующего товара общего каталога: ему добавляются штрихкод и атрибуты, новый не создаётся. Штрихкод уже есть — `skipped` (товару дописывается `ikpu`). В `attributes` пишутся `ikpu`, `ikpu_name`, `package`, `marked`, `source` |
+| POST | `/admin/catalog-import` | `{source: "tasnif", items: [{barcode, name, name_uz?, brand, category: ["Раздел", "Подкатегория"], category_uz?: ["Boʻlim", "Kichik kategoriya"], unit: "шт"\|"кг", description, description_uz?, attributes, ikpu, attach_to?}]}` (1–500). Переводы заполняют пустые `name_uz`/`description_uz` товара (и у найденного по штрихкоду или `attach_to`) и пустые `name_uz` категорий; без `name` берётся `name_uz`; `unit` ищется и по узбекскому названию → `{created, attached, skipped, errors [{barcode, message}]}`. Бренд и категории находятся по названию без учёта регистра или создаются. `attach_to` — точное название существующего товара общего каталога: ему добавляются штрихкод и атрибуты, новый не создаётся. Штрихкод уже есть — `skipped` (товару дописывается `ikpu`). В `attributes` пишутся `ikpu`, `ikpu_name`, `package`, `marked`, `source` |
 | GET | `/admin/catalog-import/status` | `{products, with_photo, without_photo, photo_jobs {pending, working, done, none, failed}, last_photo_error}` — по общему каталогу |
 | POST | `/admin/catalog-import/retry-photos` | вернуть в очередь задачи фото с ошибкой → `{requeued}` |
 | GET | `/admin/products?photo=with\|without` | фильтр «с фото / без фото» (и в `/admin/products/groups`) |

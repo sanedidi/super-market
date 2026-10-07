@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 // Дерево «бренд → категория» для списка товаров в панелях: сколько товаров
@@ -35,7 +36,7 @@ type ProductGroups struct {
 	Total  int          `json:"total"`
 }
 
-func collectGroups(rows pgx.Rows) (ProductGroups, error) {
+func collectGroups(ctx context.Context, rows pgx.Rows) (ProductGroups, error) {
 	defer rows.Close()
 	g := ProductGroups{Brands: []GroupBrand{}}
 	for rows.Next() {
@@ -51,7 +52,7 @@ func collectGroups(rows pgx.Rows) (ProductGroups, error) {
 		same := n > 0 && ((g.Brands[n-1].BrandID == nil && brandID == nil) ||
 			(g.Brands[n-1].BrandID != nil && brandID != nil && *g.Brands[n-1].BrandID == *brandID))
 		if !same {
-			name := "Без бренда"
+			name := i18n.T(ctx, "Без бренда", "Brendsiz")
 			if brand != nil {
 				name = *brand
 			}
@@ -68,14 +69,14 @@ func collectGroups(rows pgx.Rows) (ProductGroups, error) {
 }
 
 // Бренды по алфавиту, «Без бренда» — в конце; категории внутри — по алфавиту.
-const groupSelect = `SELECT p.brand_id, b.name, p.category_id, c.name, count(*)::int, %s
+const groupSelect = `SELECT p.brand_id, b.name, p.category_id, loc(c.name, c.name_uz), count(*)::int, %s
 	FROM products p
 	LEFT JOIN brands b ON b.id = p.brand_id
 	JOIN categories c  ON c.id = p.category_id`
 
 const groupOrder = `
-	GROUP BY p.brand_id, b.name, p.category_id, c.name
-	ORDER BY b.name IS NULL, lower(b.name), p.brand_id, lower(c.name), p.category_id`
+	GROUP BY p.brand_id, b.name, p.category_id, c.name, c.name_uz
+	ORDER BY b.name IS NULL, lower(b.name), p.brand_id, lower(loc(c.name, c.name_uz)), p.category_id`
 
 func (s *Service) AdminProductGroups(ctx context.Context, f ProductFilter) (ProductGroups, error) {
 	if err := f.validate(); err != nil {
@@ -88,7 +89,7 @@ func (s *Service) AdminProductGroups(ctx context.Context, f ProductFilter) (Prod
 	if err != nil {
 		return ProductGroups{}, err
 	}
-	return collectGroups(rows)
+	return collectGroups(ctx, rows)
 }
 
 func (s *Service) StoreProductGroups(ctx context.Context, pr *identity.Principal, f ProductFilter) (ProductGroups, error) {
@@ -101,7 +102,7 @@ func (s *Service) StoreProductGroups(ctx context.Context, pr *identity.Principal
 	if err != nil {
 		return ProductGroups{}, err
 	}
-	return collectGroups(rows)
+	return collectGroups(ctx, rows)
 }
 
 func adminOrder(sort string) string {

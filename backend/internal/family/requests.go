@@ -14,6 +14,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 	"github.com/sanedidi/super-market/backend/internal/push"
 )
@@ -55,15 +56,15 @@ type Request struct {
 
 const requestSelect = `
 	SELECT r.id, r.title, r.comment, r.status, r.author_id,
-	       COALESCE((SELECT COALESCE(NULLIF(u.full_name, ''), NULLIF(fm.label, ''), 'Номер …' || right(u.phone, 4))
-	                 FROM users u LEFT JOIN family_members fm ON fm.user_id = u.id WHERE u.id = r.author_id), 'Бывший участник'),
+	       COALESCE((SELECT COALESCE(NULLIF(u.full_name, ''), NULLIF(fm.label, ''), loc('Номер …', 'Raqam …') || right(u.phone, 4))
+	                 FROM users u LEFT JOIN family_members fm ON fm.user_id = u.id WHERE u.id = r.author_id), loc('Бывший участник', 'Sobiq aʼzo')),
 	       r.assignee_id,
-	       COALESCE((SELECT COALESCE(NULLIF(u.full_name, ''), NULLIF(fm.label, ''), 'Номер …' || right(u.phone, 4))
-	                 FROM users u LEFT JOIN family_members fm ON fm.user_id = u.id WHERE u.id = r.assignee_id), 'Любой из семьи'),
+	       COALESCE((SELECT COALESCE(NULLIF(u.full_name, ''), NULLIF(fm.label, ''), loc('Номер …', 'Raqam …') || right(u.phone, 4))
+	                 FROM users u LEFT JOIN family_members fm ON fm.user_id = u.id WHERE u.id = r.assignee_id), loc('Любой из семьи', 'Oiladan istalgan kishi')),
 	       r.remind_at, r.remind_at_store, r.deliver_offer_at, r.order_id,
 	       (SELECT count(*) FROM shopping_request_items i WHERE i.request_id = r.id)::int,
 	       (SELECT count(*) FROM shopping_request_items i WHERE i.request_id = r.id AND i.bought)::int,
-	       COALESCE((SELECT string_agg(COALESCE(p.name, i.text) || CASE WHEN i.qty <> 1 THEN ' ×' || trim_scale(i.qty)::text ELSE '' END, ', ' ORDER BY i.line)
+	       COALESCE((SELECT string_agg(COALESCE(loc(p.name, p.name_uz), i.text) || CASE WHEN i.qty <> 1 THEN ' ×' || trim_scale(i.qty)::text ELSE '' END, ', ' ORDER BY i.line)
 	                 FROM shopping_request_items i LEFT JOIN products p ON p.id = i.product_id WHERE i.request_id = r.id), ''),
 	       r.created_at,
 	       r.status IN ('pending', 'partial') AND (r.assignee_id IS NOT DISTINCT FROM $2 OR (r.assignee_id IS NULL AND r.author_id IS DISTINCT FROM $2))
@@ -94,7 +95,7 @@ func (s *Service) Requests(ctx context.Context, userID string, active bool, page
 
 func (s *Service) getRequest(ctx context.Context, q db.Querier, userID, id string) (Request, string, error) {
 	if err := validUUID(id); err != nil {
-		return Request{}, "", apperr.NotFound("просьба не найдена")
+		return Request{}, "", apperr.NotFound("просьба не найдена").Uz("soʻrov topilmadi")
 	}
 	familyID, _, err := membership(ctx, q, userID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -109,14 +110,14 @@ func (s *Service) getRequest(ctx context.Context, q db.Querier, userID, id strin
 	}
 	r, err := pgx.CollectExactlyOneRow(rows, scanRequest)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return r, "", apperr.NotFound("просьба не найдена")
+		return r, "", apperr.NotFound("просьба не найдена").Uz("soʻrov topilmadi")
 	}
 	if err != nil {
 		return r, "", err
 	}
 	rows, err = q.Query(ctx, `
-		SELECT i.id, i.line, i.product_id, p.name, un.short_name, p.images[1], i.text, trim_scale(i.qty)::text, i.bought,
-		       (SELECT COALESCE(NULLIF(u.full_name, ''), 'кто-то из семьи') FROM users u WHERE u.id = i.bought_by)
+		SELECT i.id, i.line, i.product_id, loc(p.name, p.name_uz), loc(un.short_name, un.short_name_uz), p.images[1], i.text, trim_scale(i.qty)::text, i.bought,
+		       (SELECT COALESCE(NULLIF(u.full_name, ''), loc('кто-то из семьи', 'oiladan kimdir')) FROM users u WHERE u.id = i.bought_by)
 		FROM shopping_request_items i
 		LEFT JOIN products p ON p.id = i.product_id
 		LEFT JOIN units un ON un.id = p.unit_id
@@ -158,25 +159,25 @@ func (s *Service) CreateRequest(ctx context.Context, userID string, in RequestIn
 	}
 	in.Title = strings.TrimSpace(in.Title)
 	if in.Title == "" {
-		in.Title = "Купить по дороге домой"
+		in.Title = i18n.T(ctx, "Купить по дороге домой", "Uyga qaytishda sotib olish")
 	}
 	in.Comment = strings.TrimSpace(in.Comment)
 	switch {
 	case len([]rune(in.Title)) > 80:
-		return Request{}, apperr.Validation("title: не длиннее 80 символов")
+		return Request{}, apperr.Validation("title: не длиннее 80 символов").Uz("title: 80 belgidan oshmasin")
 	case len([]rune(in.Comment)) > 500:
-		return Request{}, apperr.Validation("comment: не длиннее 500 символов")
+		return Request{}, apperr.Validation("comment: не длиннее 500 символов").Uz("comment: 500 belgidan oshmasin")
 	case len(in.Items) == 0 || len(in.Items) > 50:
-		return Request{}, apperr.Validation("items: от 1 до 50 товаров")
+		return Request{}, apperr.Validation("items: от 1 до 50 товаров").Uz("items: 1 dan 50 tagacha mahsulot")
 	case in.DeliverOfferAt != nil && !in.DeliverOfferAt.After(s.now()):
-		return Request{}, apperr.Validation("deliver_offer_at: время уже прошло")
+		return Request{}, apperr.Validation("deliver_offer_at: время уже прошло").Uz("deliver_offer_at: vaqt allaqachon oʻtgan")
 	case in.RemindAt != nil && in.RemindAt.After(s.now().Add(7*24*time.Hour)):
-		return Request{}, apperr.Validation("remind_at: не дальше недели")
+		return Request{}, apperr.Validation("remind_at: не дальше недели").Uz("remind_at: bir haftadan uzoq boʻlmasin")
 	}
 	if in.AssigneeID != nil {
 		fid, _, err := membership(ctx, s.pool, *in.AssigneeID)
 		if !httpx.IsUUID(*in.AssigneeID) || errors.Is(err, pgx.ErrNoRows) || (err == nil && fid != familyID) {
-			return Request{}, apperr.Validation("assignee_id: такого человека нет в семье")
+			return Request{}, apperr.Validation("assignee_id: такого человека нет в семье").Uz("assignee_id: oilada bunday odam yoʻq")
 		}
 		if err != nil {
 			return Request{}, err
@@ -188,16 +189,16 @@ func (s *Service) CreateRequest(ctx context.Context, userID string, in RequestIn
 		if it.Qty == "" {
 			in.Items[i].Qty = "1"
 		} else if !it.Qty.Valid() || money.D(string(it.Qty)).Sign() <= 0 {
-			return Request{}, apperr.Validation(fmt.Sprintf("items[%d].qty: больше нуля", i))
+			return Request{}, apperr.Validation(fmt.Sprintf("items[%d].qty: больше нуля", i)).Uz(fmt.Sprintf("items[%d].qty: noldan katta boʻlsin", i))
 		}
 		if it.ProductID == nil && it.Text == "" {
-			return Request{}, apperr.Validation(fmt.Sprintf("items[%d]: товар или текст", i))
+			return Request{}, apperr.Validation(fmt.Sprintf("items[%d]: товар или текст", i)).Uz(fmt.Sprintf("items[%d]: mahsulot yoki matn", i))
 		}
 		if len([]rune(it.Text)) > 100 {
-			return Request{}, apperr.Validation(fmt.Sprintf("items[%d].text: не длиннее 100 символов", i))
+			return Request{}, apperr.Validation(fmt.Sprintf("items[%d].text: не длиннее 100 символов", i)).Uz(fmt.Sprintf("items[%d].text: 100 belgidan oshmasin", i))
 		}
 		if it.ProductID != nil && !httpx.IsUUID(*it.ProductID) {
-			return Request{}, apperr.Validation(fmt.Sprintf("items[%d].product_id: товар не найден", i))
+			return Request{}, apperr.Validation(fmt.Sprintf("items[%d].product_id: товар не найден", i)).Uz(fmt.Sprintf("items[%d].product_id: mahsulot topilmadi", i))
 		}
 	}
 	now := s.now()
@@ -218,7 +219,7 @@ func (s *Service) CreateRequest(ctx context.Context, userID string, in RequestIn
 			if _, err := tx.Exec(ctx, `INSERT INTO shopping_request_items (request_id, line, product_id, text, qty)
 				VALUES ($1, $2, $3, $4, $5::numeric)`, id, i+1, it.ProductID, it.Text, string(it.Qty)); err != nil {
 				if db.IsForeignKeyViolation(err) {
-					return apperr.Validation(fmt.Sprintf("items[%d].product_id: товар не найден", i))
+					return apperr.Validation(fmt.Sprintf("items[%d].product_id: товар не найден", i)).Uz(fmt.Sprintf("items[%d].product_id: mahsulot topilmadi", i))
 				}
 				return err
 			}
@@ -227,10 +228,12 @@ func (s *Service) CreateRequest(ctx context.Context, userID string, in RequestIn
 		if err != nil {
 			return err
 		}
-		title := r.AuthorName + " просит купить"
-		body := r.Summary
+		title := i18n.Text{RU: r.AuthorName + " просит купить", UZ: r.AuthorName + " xarid qilishni soʻramoqda"}
+		body := i18n.Text{RU: r.Summary, UZ: r.Summary}
 		if !remindNow {
-			body += " · напомним в " + in.RemindAt.In(delivery.Tashkent).Format("15:04")
+			at := in.RemindAt.In(delivery.Tashkent).Format("15:04")
+			body.RU += " · напомним в " + at
+			body.UZ += " · soat " + at + " da eslatamiz"
 		}
 		return s.notifyAssignees(ctx, tx, r, familyID, "family_request", title, body)
 	})
@@ -241,7 +244,7 @@ func (s *Service) CreateRequest(ctx context.Context, userID string, in RequestIn
 }
 
 // notifyAssignees — исполнителю или всем, кроме автора.
-func (s *Service) notifyAssignees(ctx context.Context, q db.Querier, r Request, familyID, kind, title, body string) error {
+func (s *Service) notifyAssignees(ctx context.Context, q db.Querier, r Request, familyID, kind string, title, body i18n.Text) error {
 	data := map[string]string{"type": "family_request", "request_id": r.ID}
 	if r.AssigneeID != nil {
 		return push.Enqueue(ctx, q, *r.AssigneeID, kind, title, body, data)
@@ -263,7 +266,7 @@ func (s *Service) lockRequest(ctx context.Context, tx pgx.Tx, userID, id string)
 		return r, familyID, err
 	}
 	if r.Status != "pending" && r.Status != "partial" {
-		return r, familyID, apperr.Conflict("request_closed", "просьба уже выполнена или отменена")
+		return r, familyID, apperr.Conflict("request_closed", "просьба уже выполнена или отменена").Uz("soʻrov allaqachon bajarilgan yoki bekor qilingan")
 	}
 	return r, familyID, nil
 }
@@ -275,7 +278,7 @@ type BoughtInput struct {
 // MarkItem — отметить товар купленным. Когда куплено всё, автору уходит push.
 func (s *Service) MarkItem(ctx context.Context, userID, id, itemID string, in BoughtInput) (Request, error) {
 	if err := validUUID(itemID); err != nil {
-		return Request{}, apperr.NotFound("товар не найден")
+		return Request{}, apperr.NotFound("товар не найден").Uz("mahsulot topilmadi")
 	}
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		r, _, err := s.lockRequest(ctx, tx, userID, id)
@@ -289,7 +292,7 @@ func (s *Service) MarkItem(ctx context.Context, userID, id, itemID string, in Bo
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return apperr.NotFound("товар не найден")
+			return apperr.NotFound("товар не найден").Uz("mahsulot topilmadi")
 		}
 		var total, bought int
 		if err := tx.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE bought) FROM shopping_request_items WHERE request_id = $1`, id).Scan(&total, &bought); err != nil {
@@ -307,11 +310,13 @@ func (s *Service) MarkItem(ctx context.Context, userID, id, itemID string, in Bo
 		}
 		if status == "bought" && r.AuthorID != nil && *r.AuthorID != userID {
 			var name string
-			if err := tx.QueryRow(ctx, `SELECT COALESCE(NULLIF(u.full_name, ''), NULLIF(fm.label, ''), 'Кто-то из семьи')
+			if err := tx.QueryRow(ctx, `SELECT COALESCE(NULLIF(u.full_name, ''), NULLIF(fm.label, ''), loc('Кто-то из семьи', 'Oiladan kimdir'))
 				FROM users u LEFT JOIN family_members fm ON fm.user_id = u.id WHERE u.id = $1`, userID).Scan(&name); err != nil {
 				return err
 			}
-			return push.Enqueue(ctx, tx, *r.AuthorID, "family_done", name+" всё купил(а)", r.Title+": "+r.Summary,
+			return push.Enqueue(ctx, tx, *r.AuthorID, "family_done",
+				i18n.Text{RU: name + " всё купил(а)", UZ: name + " hammasini sotib oldi"},
+				i18n.Text{RU: r.Title + ": " + r.Summary, UZ: r.Title + ": " + r.Summary},
 				map[string]string{"type": "family_request", "request_id": id})
 		}
 		return nil
@@ -332,7 +337,7 @@ func (s *Service) Snooze(ctx context.Context, userID, id string, in SnoozeInput)
 		in.Minutes = 60
 	}
 	if in.Minutes < 5 || in.Minutes > 24*60 {
-		return Request{}, apperr.Validation("minutes: от 5 минут до суток")
+		return Request{}, apperr.Validation("minutes: от 5 минут до суток").Uz("minutes: 5 daqiqadan bir sutkagacha")
 	}
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		if _, _, err := s.lockRequest(ctx, tx, userID, id); err != nil {
@@ -360,7 +365,7 @@ func (s *Service) Cancel(ctx context.Context, userID, id string) (Request, error
 			return err
 		}
 		if (r.AuthorID == nil || *r.AuthorID != userID) && role != "owner" {
-			return apperr.Forbidden("отменить просьбу может её автор или владелец семьи")
+			return apperr.Forbidden("отменить просьбу может её автор или владелец семьи").Uz("soʻrovni uning muallifi yoki oila egasi bekor qilishi mumkin")
 		}
 		_, err = tx.Exec(ctx, `UPDATE shopping_requests SET status = 'cancelled', updated_at = now() WHERE id = $1`, id)
 		return err
@@ -378,7 +383,7 @@ type OrderedInput struct {
 // Ordered — «заказал домой»: просьба закрыта заказом покупателя.
 func (s *Service) Ordered(ctx context.Context, userID, id string, in OrderedInput) (Request, error) {
 	if !httpx.IsUUID(in.OrderID) {
-		return Request{}, apperr.Validation("order_id: заказ не найден")
+		return Request{}, apperr.Validation("order_id: заказ не найден").Uz("order_id: buyurtma topilmadi")
 	}
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		r, _, err := s.lockRequest(ctx, tx, userID, id)
@@ -388,7 +393,7 @@ func (s *Service) Ordered(ctx context.Context, userID, id string, in OrderedInpu
 		var number int64
 		err = tx.QueryRow(ctx, `SELECT number FROM orders WHERE id = $1 AND customer_id = $2`, in.OrderID, userID).Scan(&number)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return apperr.Validation("order_id: заказ не найден")
+			return apperr.Validation("order_id: заказ не найден").Uz("order_id: buyurtma topilmadi")
 		}
 		if err != nil {
 			return err
@@ -397,8 +402,9 @@ func (s *Service) Ordered(ctx context.Context, userID, id string, in OrderedInpu
 			return err
 		}
 		if r.AuthorID != nil && *r.AuthorID != userID {
-			return push.Enqueue(ctx, tx, *r.AuthorID, "family_ordered", "Заказали домой",
-				fmt.Sprintf("%s: заказ №%d привезут курьером", r.Title, number),
+			return push.Enqueue(ctx, tx, *r.AuthorID, "family_ordered",
+				i18n.Text{RU: "Заказали домой", UZ: "Uyga buyurtma berildi"},
+				i18n.Text{RU: fmt.Sprintf("%s: заказ №%d привезут курьером", r.Title, number), UZ: fmt.Sprintf("%s: №%d buyurtmani kuryer olib keladi", r.Title, number)},
 				map[string]string{"type": "family_request", "request_id": id})
 		}
 		return nil
@@ -444,7 +450,7 @@ func (s *Service) ToCart(ctx context.Context, userID, id string, lat, lng float6
 		return Quote{}, err
 	}
 	if len(stores) == 0 {
-		return Quote{Lines: []QuoteLine{}, Total: "0.00", Message: "По этому адресу пока никто не доставляет"}, nil
+		return Quote{Lines: []QuoteLine{}, Total: "0.00", Message: i18n.T(ctx, "По этому адресу пока никто не доставляет", "Bu manzilga hozircha hech kim yetkazib bermaydi")}, nil
 	}
 	var best Quote
 	for i, st := range stores {
@@ -497,14 +503,14 @@ func (s *Service) Suggestions(ctx context.Context, userID string) ([]Suggestion,
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT oi.product_id, p.name, count(DISTINCT o.id)::int
+		SELECT oi.product_id, loc(p.name, p.name_uz), count(DISTINCT o.id)::int
 		FROM orders o
 		JOIN order_items oi ON oi.order_id = o.id
 		JOIN products p ON p.id = oi.product_id
 		WHERE o.customer_id IN (SELECT user_id FROM family_members WHERE family_id = $1)
 		  AND o.status = 'delivered' AND o.created_at > now() - interval '90 days' AND p.is_active
-		GROUP BY oi.product_id, p.name
-		ORDER BY 3 DESC, p.name LIMIT 12`, familyID)
+		GROUP BY oi.product_id, p.name, p.name_uz
+		ORDER BY 3 DESC, 2 LIMIT 12`, familyID)
 	if err != nil {
 		return nil, err
 	}
@@ -583,12 +589,12 @@ func (s *Service) remindOne(ctx context.Context, id, familyID, authorID string, 
 	if err != nil {
 		return err
 	}
-	title := r.AuthorName + " просит купить по дороге 🛒"
-	body := r.Summary
+	title := i18n.Text{RU: r.AuthorName + " просит купить по дороге 🛒", UZ: r.AuthorName + " yoʻl-yoʻlakay xarid qilishni soʻramoqda 🛒"}
+	body := i18n.Text{RU: r.Summary, UZ: r.Summary}
 	kind := "family_remind"
 	if offer {
-		title = "Не успеваете купить?"
-		body = "Закажите домой — привезёт курьер: " + r.Summary
+		title = i18n.Text{RU: "Не успеваете купить?", UZ: "Xarid qilishga ulgurmayapsizmi?"}
+		body = i18n.Text{RU: "Закажите домой — привезёт курьер: " + r.Summary, UZ: "Uyga buyurtma bering — kuryer olib keladi: " + r.Summary}
 		kind = "family_offer"
 	}
 	return s.notifyAssignees(ctx, s.pool, r, familyID, kind, title, body)

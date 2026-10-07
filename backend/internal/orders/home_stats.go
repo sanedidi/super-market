@@ -10,6 +10,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 	"github.com/sanedidi/super-market/backend/internal/showcase"
 )
@@ -33,15 +34,15 @@ type HomeEventsInput struct {
 // день на кампанию).
 func (s *Service) RecordHomeEvents(ctx context.Context, in HomeEventsInput, userID string) error {
 	if !httpx.IsUUID(in.StoreID) {
-		return apperr.NotFound("магазин не найден")
+		return apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	if len(in.Items) > 60 {
-		return apperr.Validation("не больше 60 блоков в пачке")
+		return apperr.Validation("не больше 60 блоков в пачке").Uz("bir paketda koʻpi bilan 60 ta blok")
 	}
 	ids, views, clicks := []string{}, []int{}, []int{}
 	for _, it := range in.Items {
 		if !httpx.IsUUID(it.BlockID) || it.Views < 0 || it.Clicks < 0 || it.Views > 1000 || it.Clicks > 1000 {
-			return apperr.Validation("неверное событие")
+			return apperr.Validation("неверное событие").Uz("hodisa notoʻgʻri")
 		}
 		if it.Views == 0 && it.Clicks == 0 {
 			continue
@@ -64,7 +65,7 @@ func (s *Service) RecordHomeEvents(ctx context.Context, in HomeEventsInput, user
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return apperr.NotFound("магазин не найден")
+		return apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	seen := []string{}
 	for i, id := range ids {
@@ -120,7 +121,28 @@ type statsFilter struct {
 }
 
 // blockTitle — название блока для таблицы.
-func blockTitle(b HomeBlock) string {
+func blockTitle(b HomeBlock, lang string) string {
+	if lang == i18n.UZ {
+		switch b.Type {
+		case BlockShelf:
+			return "«" + b.Title + "» javoni"
+		case BlockBanners:
+			if b.Size == "strip" {
+				return "«" + b.Title + "» tor lentasi"
+			}
+			return "Bannerlar"
+		case BlockPromo:
+			if b.Kind == "free_delivery" {
+				return "«Bepul yetkazib berishgacha» promo-chizigʻi"
+			}
+			return "«" + b.Title + "» promo-chizigʻi"
+		case BlockCategoryIcons:
+			return "Boʻlim ikonkalari"
+		case BlockCatalogSections:
+			return "Boʻlimlar boʻyicha katalog"
+		}
+		return "Blok"
+	}
 	switch b.Type {
 	case BlockShelf:
 		return "Полка «" + b.Title + "»"
@@ -258,9 +280,9 @@ func (s *Service) homeStats(ctx context.Context, f statsFilter, full bool) (Home
 		}
 	}
 	for id, a := range byBlock {
-		st := BlockStat{BlockID: id, Views: a.views, Clicks: a.clicks, Orders: a.orders, Revenue: a.revenue, Title: "Удалённый блок"}
+		st := BlockStat{BlockID: id, Views: a.views, Clicks: a.clicks, Orders: a.orders, Revenue: a.revenue, Title: i18n.T(ctx, "Удалённый блок", "Oʻchirilgan blok")}
 		if b, ok := names[id]; ok {
-			st.Type, st.Title = b.Type, blockTitle(b)
+			st.Type, st.Title = b.Type, blockTitle(b, i18n.FromContext(ctx))
 		}
 		if a.views > 0 {
 			st.CTR = float64(a.clicks) / float64(a.views)
@@ -292,9 +314,9 @@ func (s *Service) homeStats(ctx context.Context, f statsFilter, full bool) (Home
 	if len(out.Blocks) > 0 && out.Blocks[0].Type != "" {
 		top := out.Blocks[0]
 		if full && top.Orders > 0 {
-			out.Hint = fmt.Sprintf("%s приносит больше всего заказов", top.Title)
+			out.Hint = i18n.T(ctx, fmt.Sprintf("%s приносит больше всего заказов", top.Title), fmt.Sprintf("%s eng koʻp buyurtma keltiradi", top.Title))
 		} else if top.Clicks > 0 {
-			out.Hint = fmt.Sprintf("%s нажимают чаще всего", top.Title)
+			out.Hint = i18n.T(ctx, fmt.Sprintf("%s нажимают чаще всего", top.Title), fmt.Sprintf("%s eng koʻp bosiladi", top.Title))
 		}
 	}
 	return out, nil
@@ -304,7 +326,7 @@ func (s *Service) homeStats(ctx context.Context, f statsFilter, full bool) (Home
 // «Старт» — нет, «Бизнес» — показы и нажатия за 7 дней, «Про» — всё.
 func (s *Service) StoreHomeStats(ctx context.Context, p *identity.Principal, storeID string, days int) (HomeStats, error) {
 	if storeID != "" && !p.CanAccessStore(storeID) {
-		return HomeStats{}, apperr.Forbidden("нет доступа к магазину")
+		return HomeStats{}, apperr.Forbidden("нет доступа к магазину").Uz("doʻkonga ruxsat yoʻq")
 	}
 	plan, err := showcase.ForNetwork(ctx, s.pool, p.NetworkID)
 	if err != nil {
@@ -312,7 +334,7 @@ func (s *Service) StoreHomeStats(ctx context.Context, p *identity.Principal, sto
 	}
 	switch plan.Effective.Stats {
 	case "none":
-		return HomeStats{}, showcase.Limit("stats", plan.Effective, 0, 0, "статистика витрины — с тарифа «Бизнес»")
+		return HomeStats{}, showcase.Limit("stats", plan.Effective, 0, 0, i18n.Text{RU: "статистика витрины — с тарифа «Бизнес»", UZ: "vitrina statistikasi — «Biznes» tarifidan boshlab"})
 	case "basic":
 		days = 7
 	}
@@ -322,7 +344,7 @@ func (s *Service) StoreHomeStats(ctx context.Context, p *identity.Principal, sto
 // AdminHomeStats — статистика для супер-админа: все сети или одна.
 func (s *Service) AdminHomeStats(ctx context.Context, networkID string, days int) (HomeStats, error) {
 	if networkID != "" && !httpx.IsUUID(networkID) {
-		return HomeStats{}, apperr.NotFound("сеть не найдена")
+		return HomeStats{}, apperr.NotFound("сеть не найдена").Uz("tarmoq topilmadi")
 	}
 	return s.homeStats(ctx, statsFilter{networkID: networkID, days: days}, true)
 }

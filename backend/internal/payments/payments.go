@@ -86,7 +86,7 @@ func (s *Service) Enabled(provider string) bool {
 // CheckoutURL — ссылка на страницу оплаты провайдера для заказа.
 func (s *Service) CheckoutURL(provider, orderID, amount string) (string, error) {
 	if !s.Enabled(provider) {
-		return "", apperr.Validation("payment_provider: способ оплаты недоступен")
+		return "", apperr.Validation("payment_provider: способ оплаты недоступен").Uz("payment_provider: toʻlov usuli mavjud emas")
 	}
 	returnURL := s.cfg.ReturnURL
 	switch provider {
@@ -112,7 +112,7 @@ func (s *Service) CheckoutURL(provider, orderID, amount string) (string, error) 
 		}
 		return "https://my.click.uz/services/pay?" + v.Encode(), nil
 	}
-	return "", apperr.Validation("payment_provider: ожидается payme или click")
+	return "", apperr.Validation("payment_provider: ожидается payme или click").Uz("payment_provider: payme yoki click boʻlishi kerak")
 }
 
 // logEvent сохраняет сырой запрос и ответ провайдера.
@@ -179,7 +179,7 @@ func (s *Service) MarkRefunded(ctx context.Context, id string) error {
 		err := tx.QueryRow(ctx, `UPDATE payments SET status = 'refunded', refunded_at = now()
 			WHERE id = $1 AND status = 'refund_pending' RETURNING order_id`, id).Scan(&orderID)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return apperr.Conflict("not_refund_pending", "платёж не ждёт возврата")
+			return apperr.Conflict("not_refund_pending", "платёж не ждёт возврата").Uz("toʻlov qaytarishni kutmayapti")
 		}
 		if err != nil {
 			return err

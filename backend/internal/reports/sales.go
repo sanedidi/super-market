@@ -12,6 +12,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
@@ -80,7 +81,7 @@ func comparison(v string, sc scope) (time.Duration, error) {
 	case "week":
 		return week, nil
 	}
-	return 0, apperr.Validation("compare: prev или week")
+	return 0, apperr.Validation("compare: prev или week").Uz("compare: prev yoki week")
 }
 
 // live — конец периода, но не позже текущего момента: «сегодня» сравнивается
@@ -252,7 +253,7 @@ func (s *Service) SalesSeries(ctx context.Context, p *identity.Principal, f Seri
 		return s.heatmap(ctx, p, f)
 	}
 	if f.Bucket != "hour" && f.Bucket != "day" {
-		return SalesSeries{}, apperr.Validation("bucket: hour, day или weekday_hour")
+		return SalesSeries{}, apperr.Validation("bucket: hour, day или weekday_hour").Uz("bucket: hour, day yoki weekday_hour")
 	}
 	sc, err := s.scope(p, f.Filter)
 	if err != nil {
@@ -263,10 +264,10 @@ func (s *Service) SalesSeries(ctx context.Context, p *identity.Principal, f Seri
 		return SalesSeries{}, err
 	}
 	if f.Bucket == "hour" && sc.to.Sub(sc.from) > seriesMaxHours*time.Hour {
-		return SalesSeries{}, apperr.Validation("period: по часам — не больше трёх суток")
+		return SalesSeries{}, apperr.Validation("period: по часам — не больше трёх суток").Uz("period: soatlar boʻyicha — uch sutkadan oshmasin")
 	}
 	if sc.to.Sub(sc.from) > seriesMaxDays*24*time.Hour {
-		return SalesSeries{}, apperr.Validation("period: не больше года")
+		return SalesSeries{}, apperr.Validation("period: не больше года").Uz("period: bir yildan oshmasin")
 	}
 	out := SalesSeries{From: sc.from, To: sc.to, Bucket: f.Bucket, Compare: f.Compare}
 	end := s.live(sc)
@@ -316,7 +317,7 @@ func (s *Service) docsTotal(ctx context.Context, network string, stores []string
 // такой день недели и час. По умолчанию — последние 4 полные недели.
 func (s *Service) heatmap(ctx context.Context, p *identity.Principal, f SeriesFilter) (SalesSeries, error) {
 	if f.Compare != "" {
-		return SalesSeries{}, apperr.Validation("compare: для weekday_hour не используется")
+		return SalesSeries{}, apperr.Validation("compare: для weekday_hour не используется").Uz("compare: weekday_hour uchun ishlatilmaydi")
 	}
 	if f.From == nil {
 		to := f.To
@@ -333,7 +334,7 @@ func (s *Service) heatmap(ctx context.Context, p *identity.Principal, f SeriesFi
 		return SalesSeries{}, err
 	}
 	if sc.to.Sub(sc.from) > seriesMaxDays*24*time.Hour {
-		return SalesSeries{}, apperr.Validation("period: не больше года")
+		return SalesSeries{}, apperr.Validation("period: не больше года").Uz("period: bir yildan oshmasin")
 	}
 	out := SalesSeries{From: sc.from, To: sc.to, Bucket: "weekday_hour", Points: []SeriesPoint{}, Heatmap: []HeatCell{}}
 	end := s.live(sc)
@@ -436,7 +437,7 @@ type part struct {
 }
 
 // Названия способов оплаты онлайн-заказов (payment_provider).
-var onlinePay = map[string]string{"payme": "Payme", "click": "Click", "cash": "Наличные курьеру"}
+var onlinePay = map[string]i18n.Text{"payme": {RU: "Payme"}, "click": {RU: "Click"}, "cash": {RU: "Наличные курьеру", UZ: "Kuryerga naqd pul"}}
 
 func (s *Service) parts(ctx context.Context, network string, stores []string, from, to time.Time, f BreakdownFilter) (map[string]*part, error) {
 	var q string
@@ -456,13 +457,13 @@ func (s *Service) parts(ctx context.Context, network string, stores []string, fr
 				CROSS JOIN parent pr
 				WHERE pr.id IS NULL OR pr.id = ANY(t.path)
 			)
-			SELECT COALESCE(k::text, $5), COALESCE(c.name, 'Без подкатегории'), sum(revenue)::numeric(18,2)::text, '0', NULL::text, NULL::text
+			SELECT COALESCE(k::text, $5), COALESCE(loc(c.name, c.name_uz), loc('Без подкатегории', 'Ichki kategoriyasiz')), sum(revenue)::numeric(18,2)::text, '0', NULL::text, NULL::text
 			FROM keyed LEFT JOIN categories c ON c.id = k
 			GROUP BY 1, 2`
 		args = append(args, f.ParentID)
 	case "product":
 		q = `WITH ` + salesLinesCTE + `
-			SELECT p.id::text, p.name, sum(l.revenue)::numeric(18,2)::text, sum(l.qty)::text, u.short_name, p.images[1]
+			SELECT p.id::text, loc(p.name, p.name_uz), sum(l.revenue)::numeric(18,2)::text, sum(l.qty)::text, loc(u.short_name, u.short_name_uz), p.images[1]
 			FROM lines l JOIN products p ON p.id = l.product_id JOIN units u ON u.id = p.unit_id
 			GROUP BY 1, 2, 5, 6`
 	case "payment":
@@ -473,7 +474,7 @@ func (s *Service) parts(ctx context.Context, network string, stores []string, fr
 			WHERE s.network_id = $1 AND ($2::uuid[] IS NULL OR s.store_id = ANY($2)) AND s.sold_at >= $3 AND s.sold_at < $4
 			GROUP BY 1, 2
 			UNION ALL
-			SELECT 'debt', 'В долг', sum(debt_amount)::numeric(18,2)::text, '0', NULL, NULL
+			SELECT 'debt', loc('В долг', 'Qarzga'), sum(debt_amount)::numeric(18,2)::text, '0', NULL, NULL
 			FROM sales WHERE network_id = $1 AND ($2::uuid[] IS NULL OR store_id = ANY($2)) AND sold_at >= $3 AND sold_at < $4
 			HAVING sum(debt_amount) > 0
 			UNION ALL
@@ -495,7 +496,7 @@ func (s *Service) parts(ctx context.Context, network string, stores []string, fr
 			return nil, err
 		}
 		if n, ok := onlinePay[name]; ok && len(key) > 7 && key[:7] == "online:" {
-			name = n
+			name = n.Ctx(ctx)
 		}
 		x := out[key]
 		if x == nil {
@@ -512,10 +513,10 @@ func (s *Service) SalesBreakdown(ctx context.Context, p *identity.Principal, f B
 	switch f.By {
 	case "category", "product", "payment":
 	default:
-		return SalesBreakdown{}, apperr.Validation("by: category, product или payment")
+		return SalesBreakdown{}, apperr.Validation("by: category, product или payment").Uz("by: category, product yoki payment")
 	}
 	if f.ParentID != "" && (f.By != "category" || !httpx.IsUUID(f.ParentID)) {
-		return SalesBreakdown{}, apperr.Validation("parent_id: неверный id категории")
+		return SalesBreakdown{}, apperr.Validation("parent_id: неверный id категории").Uz("parent_id: kategoriya id notoʻgʻri")
 	}
 	if f.Limit == 0 {
 		f.Limit = breakdownLimit
@@ -524,14 +525,14 @@ func (s *Service) SalesBreakdown(ctx context.Context, p *identity.Principal, f B
 		}
 	}
 	if f.Limit < 1 || f.Limit > breakdownMaxLim {
-		return SalesBreakdown{}, apperr.Validation("limit: от 1 до 50")
+		return SalesBreakdown{}, apperr.Validation("limit: от 1 до 50").Uz("limit: 1 dan 50 gacha")
 	}
 	sc, err := s.scope(p, f.Filter)
 	if err != nil {
 		return SalesBreakdown{}, err
 	}
 	if sc.to.Sub(sc.from) > seriesMaxDays*24*time.Hour {
-		return SalesBreakdown{}, apperr.Validation("period: не больше года")
+		return SalesBreakdown{}, apperr.Validation("period: не больше года").Uz("period: bir yildan oshmasin")
 	}
 	shift, err := comparison(f.Compare, sc)
 	if err != nil {

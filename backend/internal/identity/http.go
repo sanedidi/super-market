@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 // Module — HTTP-маршруты identity.
@@ -147,8 +148,8 @@ func (m *Module) logout(w http.ResponseWriter, r *http.Request) {
 
 // ------------------------------------------------------ роли и сотрудники
 
-func (m *Module) listPermissions(w http.ResponseWriter, _ *http.Request) {
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": Permissions})
+func (m *Module) listPermissions(w http.ResponseWriter, r *http.Request) {
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": PermissionsIn(i18n.FromContext(r.Context()))})
 }
 
 func (m *Module) listRoles(w http.ResponseWriter, r *http.Request) {

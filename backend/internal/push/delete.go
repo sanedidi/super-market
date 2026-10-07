@@ -21,9 +21,9 @@ func (s *Service) DeleteCampaign(ctx context.Context, id string) error {
 			return err
 		}
 		if exists {
-			return apperr.Conflict("campaign_sent", "Рассылка уже отправлена — она остаётся в журнале доставки")
+			return apperr.Conflict("campaign_sent", "Рассылка уже отправлена — она остаётся в журнале доставки").Uz("Ommaviy xabar allaqachon yuborilgan — u yetkazish jurnalida qoladi")
 		}
-		return apperr.NotFound("рассылка не найдена")
+		return apperr.NotFound("рассылка не найдена").Uz("ommaviy xabar topilmadi")
 	}
 	return nil
 }

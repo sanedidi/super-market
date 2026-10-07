@@ -78,7 +78,7 @@ const dayBounds = `(c.starts_at AT TIME ZONE 'Asia/Tashkent')::date AS sd,
 
 const campaignSelect = `
 	SELECT c.id, c.advertiser_id, a.name, c.brand_id, br.name, c.format, c.title, c.subtitle, c.image_url,
-	       COALESCE((SELECT json_agg(json_build_object('id', p.id, 'name', p.name) ORDER BY array_position(c.product_ids, p.id))
+	       COALESCE((SELECT json_agg(json_build_object('id', p.id, 'name', loc(p.name, p.name_uz)) ORDER BY array_position(c.product_ids, p.id))
 	                 FROM products p WHERE p.id = ANY(c.product_ids)), '[]'),
 	       COALESCE((SELECT json_agg(json_build_object('id', n.id, 'name', n.name) ORDER BY n.name)
 	                 FROM networks n WHERE n.id = ANY(c.network_ids)), '[]'),
@@ -122,7 +122,7 @@ func (s *Service) Campaigns(ctx context.Context, status string, page httpx.Page)
 
 func (s *Service) Campaign(ctx context.Context, id string) (Campaign, error) {
 	if !httpx.IsUUID(id) {
-		return Campaign{}, apperr.NotFound("кампания не найдена")
+		return Campaign{}, apperr.NotFound("кампания не найдена").Uz("kampaniya topilmadi")
 	}
 	rows, err := s.pool.Query(ctx, campaignSelect+` WHERE c.id = $1`, id)
 	if err != nil {
@@ -130,7 +130,7 @@ func (s *Service) Campaign(ctx context.Context, id string) (Campaign, error) {
 	}
 	c, err := pgx.CollectExactlyOneRow(rows, scanCampaign)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return c, apperr.NotFound("кампания не найдена")
+		return c, apperr.NotFound("кампания не найдена").Uz("kampaniya topilmadi")
 	}
 	return c, err
 }
@@ -198,7 +198,7 @@ func (s *Service) SaveCampaign(ctx context.Context, id string, in CampaignInput)
 		c.cities = []string{}
 	}
 	if len(c.cities) > 30 {
-		return Campaign{}, apperr.Validation("cities: не больше 30 городов")
+		return Campaign{}, apperr.Validation("cities: не больше 30 городов").Uz("cities: koʻpi bilan 30 ta shahar")
 	}
 	if in.StartsAt != nil {
 		c.starts = *in.StartsAt
@@ -218,31 +218,31 @@ func (s *Service) SaveCampaign(ctx context.Context, id string, in CampaignInput)
 	}
 	switch {
 	case !httpx.IsUUID(c.advertiser):
-		return Campaign{}, apperr.Validation("advertiser_id: выберите рекламодателя")
+		return Campaign{}, apperr.Validation("advertiser_id: выберите рекламодателя").Uz("advertiser_id: reklama beruvchini tanlang")
 	case !httpx.IsUUID(c.brand):
-		return Campaign{}, apperr.Validation("brand_id: выберите бренд")
+		return Campaign{}, apperr.Validation("brand_id: выберите бренд").Uz("brand_id: brendni tanlang")
 	case !oneOf(c.format, "shelf", "banner"):
-		return Campaign{}, apperr.Validation("format: shelf или banner")
+		return Campaign{}, apperr.Validation("format: shelf или banner").Uz("format: shelf yoki banner")
 	case c.title == "" || len([]rune(c.title)) > 60:
-		return Campaign{}, apperr.Validation("title: от 1 до 60 символов")
+		return Campaign{}, apperr.Validation("title: от 1 до 60 символов").Uz("title: 1 dan 60 tagacha belgi")
 	case len([]rune(c.subtitle)) > 80:
-		return Campaign{}, apperr.Validation("subtitle: не длиннее 80 символов")
+		return Campaign{}, apperr.Validation("subtitle: не длиннее 80 символов").Uz("subtitle: 80 belgidan oshmasin")
 	case c.format == "banner" && !strings.HasPrefix(c.image, "https://") && !strings.HasPrefix(c.image, "http://"):
-		return Campaign{}, apperr.Validation("image_url: загрузите фото баннера")
+		return Campaign{}, apperr.Validation("image_url: загрузите фото баннера").Uz("image_url: banner rasmini yuklang")
 	case len(c.products) == 0 || len(c.products) > 20:
-		return Campaign{}, apperr.Validation("product_ids: от 1 до 20 товаров бренда")
+		return Campaign{}, apperr.Validation("product_ids: от 1 до 20 товаров бренда").Uz("product_ids: brendning 1 dan 20 tagacha mahsuloti")
 	case !oneOf(c.place, "after_platform", "end"):
-		return Campaign{}, apperr.Validation("place: after_platform или end")
+		return Campaign{}, apperr.Validation("place: after_platform или end").Uz("place: after_platform yoki end")
 	case c.starts.IsZero() || c.ends.IsZero() || !c.ends.After(c.starts):
-		return Campaign{}, apperr.Validation("даты: окончание позже начала")
+		return Campaign{}, apperr.Validation("даты: окончание позже начала").Uz("sanalar: tugash sanasi boshlanishidan keyin boʻlsin")
 	case !oneOf(c.pricing, "period", "cpm"):
-		return Campaign{}, apperr.Validation("pricing: period или cpm")
+		return Campaign{}, apperr.Validation("pricing: period или cpm").Uz("pricing: period yoki cpm")
 	case money.D(c.price).Sign() <= 0:
-		return Campaign{}, apperr.Validation("price: больше нуля")
+		return Campaign{}, apperr.Validation("price: больше нуля").Uz("price: noldan katta boʻlsin")
 	}
 	for _, x := range append(append([]string{}, c.products...), c.networks...) {
 		if !httpx.IsUUID(x) {
-			return Campaign{}, apperr.Validation("неверный id товара или сети")
+			return Campaign{}, apperr.Validation("неверный id товара или сети").Uz("mahsulot yoki tarmoq id notoʻgʻri")
 		}
 	}
 	// Товары — только этого бренда.
@@ -252,7 +252,7 @@ func (s *Service) SaveCampaign(ctx context.Context, id string, in CampaignInput)
 		return Campaign{}, err
 	}
 	if foreign > 0 {
-		return Campaign{}, apperr.Validation("product_ids: в кампании только товары выбранного бренда")
+		return Campaign{}, apperr.Validation("product_ids: в кампании только товары выбранного бренда").Uz("product_ids: kampaniyada faqat tanlangan brend mahsulotlari boʻladi")
 	}
 	if _, err := s.advertiser(ctx, s.pool, c.advertiser); err != nil {
 		return Campaign{}, err

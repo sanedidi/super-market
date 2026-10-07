@@ -35,6 +35,10 @@ type CatalogProduct struct {
 	// Первое фото и раздел верхнего уровня — для быстрых кнопок кассы.
 	Image    string `json:"image"`
 	Category string `json:"category"`
+	// Name — на языке запроса; для поиска на кассе — оба языка как есть.
+	// В фискальный чек идёт name_ru (основное название, как и раньше).
+	NameRu string `json:"name_ru"`
+	NameUz string `json:"name_uz"`
 }
 
 type CatalogCashier struct {
@@ -130,12 +134,14 @@ func (s *Service) Catalog(ctx context.Context, p *identity.Principal, since *tim
 		from = &t
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT p.id, p.name, u.short_name, u.is_fractional,
+		SELECT p.id, loc(p.name, p.name_uz), loc(u.short_name, u.short_name_uz), u.is_fractional,
 		       p.is_active AND (p.moderation_status = 'approved' OR p.network_id = $1),
 		       COALESCE(sp.price, np.price, p.base_price)::text,
 		       COALESCE((SELECT array_agg(b.barcode ORDER BY b.barcode) FROM product_barcodes b WHERE b.product_id = p.id), '{}'),
 		       p.ikpu, p.package_code, p.vat_rate::text, p.is_marked, pl.plu,
-		       COALESCE(p.images[1], ''), COALESCE(c2.name, c1.name, c.name, '')
+		       COALESCE(p.images[1], ''),
+		       COALESCE(loc(c2.name, c2.name_uz), loc(c1.name, c1.name_uz), loc(c.name, c.name_uz), ''),
+		       p.name, p.name_uz
 		FROM products p
 		JOIN units u ON u.id = p.unit_id
 		LEFT JOIN categories c ON c.id = p.category_id
@@ -151,7 +157,7 @@ func (s *Service) Catalog(ctx context.Context, p *identity.Principal, since *tim
 		  AND (p.network_id = $1 OR sp.price IS NOT NULL OR np.price IS NOT NULL OR pl.plu IS NOT NULL OR p.base_price > 0)
 		  AND ($4::timestamptz IS NULL OR p.updated_at > $4 OR u.updated_at > $4 OR sp.updated_at > $4
 		       OR np.updated_at > $4 OR pl.updated_at > $4)
-		ORDER BY p.name`, p.NetworkID, storeID, priceType, from)
+		ORDER BY loc(p.name, p.name_uz)`, p.NetworkID, storeID, priceType, from)
 	if err != nil {
 		return out, err
 	}
@@ -226,21 +232,21 @@ type QuickKeysInput struct {
 // Нужен кассир с правом «Настройка кассы» (у владельца — всегда).
 func (s *Service) SetQuickKeys(ctx context.Context, p *identity.Principal, in QuickKeysInput) (QuickKeys, error) {
 	if p.EmployeeID == "" {
-		return QuickKeys{}, apperr.New(http.StatusUnauthorized, "cashier_required", "войдите кассиром по ПИНу")
+		return QuickKeys{}, apperr.New(http.StatusUnauthorized, "cashier_required", "войдите кассиром по ПИНу").Uz("PIN-kod bilan kassir sifatida kiring")
 	}
 	if err := p.Require(identity.PermPOSSettings); err != nil {
 		return QuickKeys{}, err
 	}
 	if len(in.ProductIDs) > quickPinnedMax {
-		return QuickKeys{}, apperr.Validation(fmt.Sprintf("product_ids: не больше %d товаров", quickPinnedMax))
+		return QuickKeys{}, apperr.Validation(fmt.Sprintf("product_ids: не больше %d товаров", quickPinnedMax)).Uz(fmt.Sprintf("product_ids: koʻpi bilan %d ta mahsulot", quickPinnedMax))
 	}
 	seen := map[string]bool{}
 	for _, id := range in.ProductIDs {
 		if !httpx.IsUUID(id) {
-			return QuickKeys{}, apperr.Validation("product_ids: неверный id товара")
+			return QuickKeys{}, apperr.Validation("product_ids: неверный id товара").Uz("product_ids: mahsulot id notoʻgʻri")
 		}
 		if seen[id] {
-			return QuickKeys{}, apperr.Validation("product_ids: товар указан дважды")
+			return QuickKeys{}, apperr.Validation("product_ids: товар указан дважды").Uz("product_ids: mahsulot ikki marta koʻrsatilgan")
 		}
 		seen[id] = true
 	}
@@ -253,7 +259,7 @@ func (s *Service) SetQuickKeys(ctx context.Context, p *identity.Principal, in Qu
 			return err
 		}
 		if n != len(in.ProductIDs) {
-			return apperr.Validation("product_ids: товар не найден")
+			return apperr.Validation("product_ids: товар не найден").Uz("product_ids: mahsulot topilmadi")
 		}
 		if _, err := tx.Exec(ctx, `DELETE FROM pos_quick_keys WHERE store_id = $1`, storeID); err != nil {
 			return err

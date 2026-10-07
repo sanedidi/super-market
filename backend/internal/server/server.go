@@ -20,6 +20,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/delivery"
 	"github.com/sanedidi/super-market/backend/internal/family"
 	"github.com/sanedidi/super-market/backend/internal/finance"
+	"github.com/sanedidi/super-market/backend/internal/i18nadmin"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/inventory"
 	"github.com/sanedidi/super-market/backend/internal/invoices"
@@ -130,6 +131,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		push.NewModule(push.NewService(pool, fcm), auth, log),
 		media.NewModule(mediaSvc, auth, log),
 		ai.NewModule(aiSvc, auth, log),
+		i18nadmin.NewModule(i18nadmin.NewService(pool, aiSvc), auth, log),
 		invoices.NewModule(scans, mediaSvc, auth, log),
 		start.NewModule(startSvc, mediaSvc, auth, log),
 		summary.NewModule(summary.NewService(pool, log), auth, log),

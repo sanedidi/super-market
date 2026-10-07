@@ -70,14 +70,14 @@ func (m *Module) usage(w http.ResponseWriter, r *http.Request) {
 			if v := q.Get(p.name); v != "" {
 				t, err := time.ParseInLocation("2006-01-02", v, tashkent)
 				if err != nil {
-					return UsageReport{}, apperr.Validation(p.name + ": ожидается дата YYYY-MM-DD")
+					return UsageReport{}, apperr.Validation(p.name + ": ожидается дата YYYY-MM-DD").Uz(p.name + ": sana YYYY-MM-DD koʻrinishida boʻlsin")
 				}
 				*p.dst = t
 			}
 		}
 		if f.NetworkID != "" {
 			if !httpx.IsUUID(f.NetworkID) {
-				return UsageReport{}, apperr.Validation("network_id: неверный id")
+				return UsageReport{}, apperr.Validation("network_id: неверный id").Uz("network_id: id notoʻgʻri")
 			}
 		}
 		return m.svc.Usage(r.Context(), f)

@@ -90,7 +90,7 @@ type Report struct {
 
 func (s *Service) shift(ctx context.Context, q db.Querier, p *identity.Principal, id string) (Shift, error) {
 	if !httpx.IsUUID(id) {
-		return Shift{}, apperr.NotFound("смена не найдена")
+		return Shift{}, apperr.NotFound("смена не найдена").Uz("smena topilmadi")
 	}
 	rows, err := q.Query(ctx, shiftSelect+` WHERE sh.id = $1 AND sh.network_id = $2`, id, p.NetworkID)
 	if err != nil {
@@ -98,7 +98,7 @@ func (s *Service) shift(ctx context.Context, q db.Querier, p *identity.Principal
 	}
 	sh, err := pgx.CollectExactlyOneRow(rows, scanShift)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (!p.CanAccessStore(sh.StoreID) || (p.DeviceID != "" && sh.DeviceID != p.DeviceID))) {
-		return Shift{}, apperr.NotFound("смена не найдена")
+		return Shift{}, apperr.NotFound("смена не найдена").Uz("smena topilmadi")
 	}
 	return sh, err
 }
@@ -161,7 +161,7 @@ func (s *Service) eventTime(at *time.Time) (time.Time, error) {
 		return now, nil
 	}
 	if at.After(now.Add(5*time.Minute)) || at.Before(now.Add(-7*24*time.Hour)) {
-		return time.Time{}, apperr.Validation("время действия на кассе вне допустимого окна")
+		return time.Time{}, apperr.Validation("время действия на кассе вне допустимого окна").Uz("kassadagi amal vaqti ruxsat etilgan oraliqdan tashqarida")
 	}
 	return *at, nil
 }
@@ -179,13 +179,13 @@ func (s *Service) OpenShift(ctx context.Context, p *identity.Principal, in OpenI
 	}
 	in.ClientUID = strings.TrimSpace(in.ClientUID)
 	if len(in.ClientUID) < 8 || len(in.ClientUID) > 64 {
-		return Shift{}, false, apperr.Validation("client_uid: 8–64 символа")
+		return Shift{}, false, apperr.Validation("client_uid: 8–64 символа").Uz("client_uid: 8–64 belgi")
 	}
 	if in.OpeningCash == "" {
 		in.OpeningCash = "0"
 	}
 	if !in.OpeningCash.Valid() || money.D(string(in.OpeningCash)).Sign() < 0 {
-		return Shift{}, false, apperr.Validation("opening_cash: размен не может быть отрицательным")
+		return Shift{}, false, apperr.Validation("opening_cash: размен не может быть отрицательным").Uz("opening_cash: maydalik manfiy boʻlishi mumkin emas")
 	}
 	at, err := s.eventTime(in.OpenedAt)
 	if err != nil {
@@ -204,7 +204,7 @@ func (s *Service) OpenShift(ctx context.Context, p *identity.Principal, in OpenI
 		var open string
 		err = tx.QueryRow(ctx, `SELECT id FROM pos_shifts WHERE device_id = $1 AND closed_at IS NULL`, p.DeviceID).Scan(&open)
 		if err == nil {
-			return apperr.Conflict("shift_open", "на кассе уже открыта смена — закройте её").WithDetails(map[string]any{"shift_id": open})
+			return apperr.Conflict("shift_open", "на кассе уже открыта смена — закройте её").Uz("kassada smena allaqachon ochiq — uni yoping").WithDetails(map[string]any{"shift_id": open})
 		}
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
@@ -249,16 +249,16 @@ func (s *Service) CashMove(ctx context.Context, p *identity.Principal, shiftID s
 	}
 	in.ClientUID, in.Reason = strings.TrimSpace(in.ClientUID), strings.TrimSpace(in.Reason)
 	if len(in.ClientUID) < 8 || len(in.ClientUID) > 64 {
-		return CashMove{}, apperr.Validation("client_uid: 8–64 символа")
+		return CashMove{}, apperr.Validation("client_uid: 8–64 символа").Uz("client_uid: 8–64 belgi")
 	}
 	if in.Kind != "in" && in.Kind != "out" {
-		return CashMove{}, apperr.Validation("kind: in — внесение, out — изъятие")
+		return CashMove{}, apperr.Validation("kind: in — внесение, out — изъятие").Uz("kind: in — kiritish, out — olish")
 	}
 	if !in.Amount.Valid() || money.D(string(in.Amount)).Sign() <= 0 {
-		return CashMove{}, apperr.Validation("amount: сумма больше нуля")
+		return CashMove{}, apperr.Validation("amount: сумма больше нуля").Uz("amount: summa noldan katta boʻlsin")
 	}
 	if len([]rune(in.Reason)) > 200 {
-		return CashMove{}, apperr.Validation("reason: до 200 символов")
+		return CashMove{}, apperr.Validation("reason: до 200 символов").Uz("reason: 200 belgigacha")
 	}
 	at, err := s.eventTime(in.At)
 	if err != nil {
@@ -296,11 +296,11 @@ func (s *Service) CloseShift(ctx context.Context, p *identity.Principal, shiftID
 		return Shift{}, err
 	}
 	if !in.CountedCash.Valid() || money.D(string(in.CountedCash)).Sign() < 0 {
-		return Shift{}, apperr.Validation("counted_cash: посчитанная сумма в ящике")
+		return Shift{}, apperr.Validation("counted_cash: посчитанная сумма в ящике").Uz("counted_cash: qutidagi sanalgan summa")
 	}
 	in.DiffReason = strings.TrimSpace(in.DiffReason)
 	if len([]rune(in.DiffReason)) > 300 {
-		return Shift{}, apperr.Validation("diff_reason: до 300 символов")
+		return Shift{}, apperr.Validation("diff_reason: до 300 символов").Uz("diff_reason: 300 belgigacha")
 	}
 	at, err := s.eventTime(in.ClosedAt)
 	if err != nil {
@@ -326,7 +326,7 @@ func (s *Service) CloseShift(ctx context.Context, p *identity.Principal, shiftID
 		}
 		diff := money.D(string(in.CountedCash)).Sub(money.D(r.ExpectedCash))
 		if diff.Sign() != 0 && in.DiffReason == "" {
-			return apperr.Validation("diff_reason: укажите причину расхождения").
+			return apperr.Validation("diff_reason: укажите причину расхождения").Uz("diff_reason: farq sababini kiriting").
 				WithDetails(map[string]any{"expected_cash": r.ExpectedCash, "diff": diff.Money()})
 		}
 		_, err = tx.Exec(ctx, `UPDATE pos_shifts SET closed_by = $2, closed_at = $3, expected_cash = $4::numeric,
@@ -360,7 +360,7 @@ func (s *Service) ListShifts(ctx context.Context, p *identity.Principal, storeID
 		return nil, err
 	}
 	if storeID != "" && !httpx.IsUUID(storeID) {
-		return nil, apperr.Validation("store_id: неверный id")
+		return nil, apperr.Validation("store_id: неверный id").Uz("store_id: id notoʻgʻri")
 	}
 	rows, err := s.pool.Query(ctx, shiftSelect+`
 		WHERE sh.network_id = $1 AND ($2 OR sh.store_id = ANY($3::uuid[])) AND ($4 = '' OR sh.store_id::text = $4)

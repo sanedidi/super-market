@@ -15,6 +15,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
@@ -28,13 +29,13 @@ const (
 	TypeInventory      = "inventory"
 )
 
-var typeTitles = map[string]string{
-	TypeIncome:         "Приход товара",
-	TypeSupplierReturn: "Возврат поставщику",
-	TypeTransfer:       "Перемещение",
-	TypeWriteOff:       "Списание",
-	TypePosting:        "Оприходование",
-	TypeInventory:      "Инвентаризация",
+var typeTitles = map[string]i18n.Text{
+	TypeIncome:         {RU: "Приход товара", UZ: "Mahsulot kirimi"},
+	TypeSupplierReturn: {RU: "Возврат поставщику", UZ: "Yetkazib beruvchiga qaytarish"},
+	TypeTransfer:       {RU: "Перемещение", UZ: "Koʻchirish"},
+	TypeWriteOff:       {RU: "Списание", UZ: "Hisobdan chiqarish"},
+	TypePosting:        {RU: "Оприходование", UZ: "Kirim qilish"},
+	TypeInventory:      {RU: "Инвентаризация", UZ: "Inventarizatsiya"},
 }
 
 // У каких документов в строках есть цена.
@@ -99,8 +100,18 @@ func scanDoc(row pgx.CollectableRow) (Document, error) {
 	err := row.Scan(&d.ID, &d.Type, &d.Number, &d.Status, &d.WarehouseID, &d.WarehouseName, &d.StoreID,
 		&d.ToWarehouseID, &d.ToWarehouseName, &d.CounterpartyID, &d.CounterpartyName, &d.Currency, &d.Rate,
 		&d.Reason, &d.Note, &d.Total, &d.CreatedBy, &d.PostedAt, &d.CreatedAt, &d.ItemsCount)
-	d.TypeTitle = typeTitles[d.Type]
+	d.TypeTitle = typeTitles[d.Type].RU
 	return d, err
+}
+
+// scanDocCtx — scanDoc с названием вида документа на языке запроса.
+func scanDocCtx(ctx context.Context) pgx.RowToFunc[Document] {
+	lang := i18n.FromContext(ctx)
+	return func(row pgx.CollectableRow) (Document, error) {
+		d, err := scanDoc(row)
+		d.TypeTitle = typeTitles[d.Type].In(lang)
+		return d, err
+	}
 }
 
 // Документ виден, если есть доступ к магазину склада-источника
@@ -118,11 +129,11 @@ type Filter struct {
 }
 
 func (s *Service) List(ctx context.Context, p *identity.Principal, f Filter) ([]Document, error) {
-	if f.Type != "" && typeTitles[f.Type] == "" {
-		return nil, apperr.Validation("type: неизвестный вид документа")
+	if f.Type != "" && typeTitles[f.Type].RU == "" {
+		return nil, apperr.Validation("type: неизвестный вид документа").Uz("type: nomaʼlum hujjat turi")
 	}
 	if f.StoreID != "" && !httpx.IsUUID(f.StoreID) {
-		return nil, apperr.Validation("store_id: неверный id")
+		return nil, apperr.Validation("store_id: неверный id").Uz("store_id: id notoʻgʻri")
 	}
 	rows, err := s.pool.Query(ctx, docSelect+`
 		WHERE d.network_id = $1 AND `+docVisible+`
@@ -135,7 +146,7 @@ func (s *Service) List(ctx context.Context, p *identity.Principal, f Filter) ([]
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, scanDoc)
+	return pgx.CollectRows(rows, scanDocCtx(ctx))
 }
 
 func (s *Service) Get(ctx context.Context, p *identity.Principal, id string) (Document, error) {
@@ -148,15 +159,15 @@ func (s *Service) get(ctx context.Context, q db.Querier, p *identity.Principal, 
 	if err != nil {
 		return Document{}, err
 	}
-	d, err := pgx.CollectExactlyOneRow(rows, scanDoc)
+	d, err := pgx.CollectExactlyOneRow(rows, scanDocCtx(ctx))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Document{}, apperr.NotFound("документ не найден")
+		return Document{}, apperr.NotFound("документ не найден").Uz("hujjat topilmadi")
 	}
 	if err != nil {
 		return Document{}, err
 	}
 	rows, err = q.Query(ctx, `
-		SELECT i.line, i.product_id, p.name, u.short_name, i.qty::text, i.price::text, i.expected_qty::text
+		SELECT i.line, i.product_id, loc(p.name, p.name_uz), loc(u.short_name, u.short_name_uz), i.qty::text, i.price::text, i.expected_qty::text
 		FROM stock_document_items i
 		JOIN products p ON p.id = i.product_id
 		JOIN units u    ON u.id = p.unit_id
@@ -190,18 +201,18 @@ func (s *Service) Create(ctx context.Context, p *identity.Principal, in Input) (
 	if err := p.Require(identity.PermInventoryManage); err != nil {
 		return Document{}, err
 	}
-	if typeTitles[in.Type] == "" {
-		return Document{}, apperr.Validation("type: ожидается income, supplier_return, transfer, write_off, posting или inventory")
+	if typeTitles[in.Type].RU == "" {
+		return Document{}, apperr.Validation("type: ожидается income, supplier_return, transfer, write_off, posting или inventory").Uz("type: income, supplier_return, transfer, write_off, posting yoki inventory boʻlishi kerak")
 	}
 	if in.WarehouseID == nil || !httpx.IsUUID(*in.WarehouseID) {
-		return Document{}, apperr.Validation("warehouse_id: обязательное поле")
+		return Document{}, apperr.Validation("warehouse_id: обязательное поле").Uz("warehouse_id: majburiy maydon")
 	}
 	currency := "UZS"
 	if in.Currency != nil {
 		currency = *in.Currency
 	}
 	if currency != "UZS" && currency != "USD" {
-		return Document{}, apperr.Validation("currency: ожидается UZS или USD")
+		return Document{}, apperr.Validation("currency: ожидается UZS или USD").Uz("currency: UZS yoki USD boʻlishi kerak")
 	}
 
 	var id string
@@ -247,35 +258,35 @@ func (s *Service) checkHeader(ctx context.Context, tx pgx.Tx, p *identity.Princi
 	switch in.Type {
 	case TypeIncome, TypeSupplierReturn:
 		if in.CounterpartyID == nil || !httpx.IsUUID(*in.CounterpartyID) {
-			return apperr.Validation("counterparty_id: укажите поставщика")
+			return apperr.Validation("counterparty_id: укажите поставщика").Uz("counterparty_id: yetkazib beruvchini tanlang")
 		}
 		if err := finance.CheckCounterparty(ctx, tx, p.NetworkID, *in.CounterpartyID); err != nil {
 			return err
 		}
 	case TypeTransfer:
 		if in.ToWarehouseID == nil || !httpx.IsUUID(*in.ToWarehouseID) {
-			return apperr.Validation("to_warehouse_id: укажите склад-получатель")
+			return apperr.Validation("to_warehouse_id: укажите склад-получатель").Uz("to_warehouse_id: qabul qiluvchi omborni tanlang")
 		}
 		if *in.ToWarehouseID == *in.WarehouseID {
-			return apperr.Validation("to_warehouse_id: склады должны быть разными")
+			return apperr.Validation("to_warehouse_id: склады должны быть разными").Uz("to_warehouse_id: omborlar har xil boʻlishi kerak")
 		}
 		// Получатель — любой склад сети, даже в магазине без доступа (перемещение между магазинами).
 		if err := s.checkWarehouse(ctx, tx, p, *in.ToWarehouseID, false); err != nil {
-			return apperr.Validation("to_warehouse_id: склад не найден")
+			return apperr.Validation("to_warehouse_id: склад не найден").Uz("to_warehouse_id: ombor topilmadi")
 		}
 	case TypeWriteOff:
 		if in.Reason == nil || strings.TrimSpace(*in.Reason) == "" {
-			return apperr.Validation("reason: укажите причину списания")
+			return apperr.Validation("reason: укажите причину списания").Uz("reason: hisobdan chiqarish sababini kiriting")
 		}
 	}
 	if in.Type != TypeTransfer && in.ToWarehouseID != nil {
-		return apperr.Validation("to_warehouse_id: только для перемещения")
+		return apperr.Validation("to_warehouse_id: только для перемещения").Uz("to_warehouse_id: faqat koʻchirish uchun")
 	}
 	if in.Type != TypeIncome && in.Type != TypeSupplierReturn && in.CounterpartyID != nil {
-		return apperr.Validation("counterparty_id: только для прихода и возврата поставщику")
+		return apperr.Validation("counterparty_id: только для прихода и возврата поставщику").Uz("counterparty_id: faqat kirim va yetkazib beruvchiga qaytarish uchun")
 	}
 	if in.Currency != nil && *in.Currency != "UZS" && !hasPrice(in.Type) {
-		return apperr.Validation("currency: только для документов с ценами")
+		return apperr.Validation("currency: только для документов с ценами").Uz("currency: faqat narxli hujjatlar uchun")
 	}
 	return nil
 }
@@ -286,7 +297,7 @@ func (s *Service) checkWarehouse(ctx context.Context, q db.Querier, p *identity.
 	err := q.QueryRow(ctx, `SELECT store_id, is_active FROM warehouses WHERE id = $1 AND network_id = $2`, id, p.NetworkID).
 		Scan(&storeID, &active)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (!active || (needAccess && !p.CanAccessStore(storeID)))) {
-		return apperr.Validation("warehouse_id: склад не найден или отключён")
+		return apperr.Validation("warehouse_id: склад не найден или отключён").Uz("warehouse_id: ombor topilmadi yoki oʻchirilgan")
 	}
 	return err
 }
@@ -296,35 +307,35 @@ func (s *Service) replaceItems(ctx context.Context, tx pgx.Tx, p *identity.Princ
 		return err
 	}
 	if len(items) > 1000 {
-		return apperr.Validation("items: не больше 1000 строк")
+		return apperr.Validation("items: не больше 1000 строк").Uz("items: koʻpi bilan 1000 ta qator")
 	}
 	seen := map[string]bool{}
 	for i, it := range items {
 		line := strconv.Itoa(i + 1)
 		if !httpx.IsUUID(it.ProductID) {
-			return apperr.Validation("items: неверный product_id в строке " + line)
+			return apperr.Validation("items: неверный product_id в строке " + line).Uz("items: " + line + "-qatorda product_id notoʻgʻri")
 		}
 		if seen[it.ProductID] {
-			return apperr.Validation("items: товар повторяется в строке " + line)
+			return apperr.Validation("items: товар повторяется в строке " + line).Uz("items: " + line + "-qatorda mahsulot takrorlanadi")
 		}
 		seen[it.ProductID] = true
 		if !it.Qty.Valid() {
-			return apperr.Validation("items: не указано количество в строке " + line)
+			return apperr.Validation("items: не указано количество в строке " + line).Uz("items: " + line + "-qatorda miqdor koʻrsatilmagan")
 		}
 		if docType != TypeInventory && strings.Trim(string(it.Qty), "0.") == "" {
-			return apperr.Validation("items: количество должно быть больше нуля в строке " + line)
+			return apperr.Validation("items: количество должно быть больше нуля в строке " + line).Uz("items: " + line + "-qatorda miqdor noldan katta boʻlishi kerak")
 		}
 		var price *string
 		if hasPrice(docType) {
 			if docType != TypeSupplierReturn && (it.Price == nil || !it.Price.Valid()) {
-				return apperr.Validation("items: не указана цена в строке " + line)
+				return apperr.Validation("items: не указана цена в строке " + line).Uz("items: " + line + "-qatorda narx koʻrsatilmagan")
 			}
 			if it.Price != nil {
 				v := string(*it.Price)
 				price = &v
 			}
 		} else if it.Price != nil {
-			return apperr.Validation("items: у этого документа нет цен (строка " + line + ")")
+			return apperr.Validation("items: у этого документа нет цен (строка " + line + ")").Uz("items: bu hujjatda narxlar yoʻq (" + line + "-qator)")
 		}
 		tag, err := tx.Exec(ctx, `
 			INSERT INTO stock_document_items (document_id, line, product_id, qty, price)
@@ -337,7 +348,7 @@ func (s *Service) replaceItems(ctx context.Context, tx pgx.Tx, p *identity.Princ
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return apperr.Validation("items: товар не найден или количество дробное для штучного товара (строка " + line + ")")
+			return apperr.Validation("items: товар не найден или количество дробное для штучного товара (строка " + line + ")").Uz("items: mahsulot topilmadi yoki donali mahsulot miqdori kasr son (" + line + "-qator)")
 		}
 	}
 	return nil
@@ -349,7 +360,7 @@ func (s *Service) Update(ctx context.Context, p *identity.Principal, id string, 
 		return Document{}, err
 	}
 	if in.Type != "" || in.WarehouseID != nil || in.ToWarehouseID != nil {
-		return Document{}, apperr.Validation("вид документа и склады не меняются — создайте новый документ")
+		return Document{}, apperr.Validation("вид документа и склады не меняются — создайте новый документ").Uz("hujjat turi va omborlar oʻzgarmaydi — yangi hujjat yarating")
 	}
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		d, err := s.lockDraft(ctx, tx, p, id)
@@ -364,7 +375,7 @@ func (s *Service) Update(ctx context.Context, p *identity.Principal, id string, 
 		if in.Currency != nil {
 			merged.Currency = in.Currency
 			if *in.Currency != "UZS" && *in.Currency != "USD" {
-				return apperr.Validation("currency: ожидается UZS или USD")
+				return apperr.Validation("currency: ожидается UZS или USD").Uz("currency: UZS yoki USD boʻlishi kerak")
 			}
 		}
 		if in.Reason != nil {
@@ -412,10 +423,10 @@ func (s *Service) lockDraft(ctx context.Context, tx pgx.Tx, p *identity.Principa
 		return Document{}, err
 	}
 	if !p.CanAccessStore(d.StoreID) {
-		return Document{}, apperr.NotFound("документ не найден")
+		return Document{}, apperr.NotFound("документ не найден").Uz("hujjat topilmadi")
 	}
 	if d.Status != "draft" {
-		return Document{}, apperr.Conflict("document_posted", "документ уже проведён")
+		return Document{}, apperr.Conflict("document_posted", "документ уже проведён").Uz("hujjat allaqachon oʻtkazilgan")
 	}
 	return d, nil
 }
@@ -431,7 +442,7 @@ func (s *Service) Post(ctx context.Context, p *identity.Principal, id string) (D
 			return err
 		}
 		if len(d.Items) == 0 {
-			return apperr.Validation("в документе нет строк")
+			return apperr.Validation("в документе нет строк").Uz("hujjatda qator yoʻq")
 		}
 		// Повторная проверка шапки: контрагент или склад могли отключить.
 		if err := s.checkHeader(ctx, tx, p, Input{Type: d.Type, WarehouseID: &d.WarehouseID,
@@ -654,7 +665,7 @@ type StockFilter struct {
 
 func (s *Service) Stock(ctx context.Context, p *identity.Principal, f StockFilter) ([]StockRow, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT w.id, w.name, w.store_id, pr.id, pr.name, u.short_name,
+		SELECT w.id, w.name, w.store_id, pr.id, loc(pr.name, pr.name_uz), loc(u.short_name, u.short_name_uz),
 		       sum(b.qty_remaining)::text,
 		       round(sum(b.qty_remaining * b.unit_cost) / sum(b.qty_remaining), 2)::text,
 		       round(sum(b.qty_remaining * b.unit_cost), 2)::text,
@@ -666,9 +677,9 @@ func (s *Service) Stock(ctx context.Context, p *identity.Principal, f StockFilte
 		WHERE b.network_id = $1 AND b.qty_remaining > 0
 		  AND ($2 OR w.store_id = ANY($3::uuid[]))
 		  AND ($4 = '' OR w.id::text = $4) AND ($5 = '' OR w.store_id::text = $5) AND ($6 = '' OR pr.id::text = $6)
-		  AND ($7 = '' OR lower(pr.name) LIKE '%' || lower($7) || '%')
-		GROUP BY w.id, w.name, w.store_id, pr.id, pr.name, u.short_name
-		ORDER BY w.name, pr.name LIMIT $8 OFFSET $9`,
+		  AND ($7 = '' OR lower(pr.name) LIKE '%' || lower($7) || '%' OR lower(pr.name_uz) LIKE '%' || lower($7) || '%')
+		GROUP BY w.id, w.name, w.store_id, pr.id, pr.name, pr.name_uz, u.short_name, u.short_name_uz
+		ORDER BY w.name, loc(pr.name, pr.name_uz) LIMIT $8 OFFSET $9`,
 		p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.WarehouseID, f.StoreID, f.ProductID, strings.TrimSpace(f.Query),
 		f.Page.Limit, f.Page.Offset)
 	if err != nil {
@@ -703,7 +714,7 @@ func (s *Service) StockSummary(ctx context.Context, p *identity.Principal, f Sto
 		WHERE b.network_id = $1 AND b.qty_remaining > 0
 		  AND ($2 OR w.store_id = ANY($3::uuid[]))
 		  AND ($4 = '' OR w.id::text = $4) AND ($5 = '' OR w.store_id::text = $5) AND ($6 = '' OR pr.id::text = $6)
-		  AND ($7 = '' OR lower(pr.name) LIKE '%' || lower($7) || '%')`,
+		  AND ($7 = '' OR lower(pr.name) LIKE '%' || lower($7) || '%' OR lower(pr.name_uz) LIKE '%' || lower($7) || '%')`,
 		p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.WarehouseID, f.StoreID, f.ProductID, strings.TrimSpace(f.Query)).
 		Scan(&out.Positions, &out.Products, &cost)
 	if err == nil && SeesCost(p) {
@@ -730,7 +741,7 @@ type Movement struct {
 // Movements — история движения товара по складу (product_id необязателен).
 func (s *Service) Movements(ctx context.Context, p *identity.Principal, warehouseID, productID string, page httpx.Page) ([]Movement, error) {
 	if !httpx.IsUUID(warehouseID) || (productID != "" && !httpx.IsUUID(productID)) {
-		return nil, apperr.Validation("укажите warehouse_id (и при необходимости product_id)")
+		return nil, apperr.Validation("укажите warehouse_id (и при необходимости product_id)").Uz("warehouse_id ni kiriting (kerak boʻlsa, product_id ni ham)")
 	}
 	if err := s.checkWarehouse(ctx, s.pool, p, warehouseID, true); err != nil {
 		return nil, err
@@ -745,7 +756,7 @@ func (s *Service) Movements(ctx context.Context, p *identity.Principal, warehous
 			WHERE m.warehouse_id = $1 AND ($2 = '' OR m.product_id::text = $2)
 			ORDER BY m.created_at DESC, m.id DESC LIMIT $3 OFFSET $4
 		)
-		SELECT m.product_id, pr.name, m.qty::text, m.unit_cost::text, m.doc_type, COALESCE(d.type, ''), m.doc_id,
+		SELECT m.product_id, loc(pr.name, pr.name_uz), m.qty::text, m.unit_cost::text, m.doc_type, COALESCE(d.type, ''), m.doc_id,
 		       COALESCE(d.number, sa.number, cr.number, o.number), m.created_at, m.after::text
 		FROM mv m
 		JOIN products pr ON pr.id = m.product_id

@@ -32,8 +32,8 @@ const (
 
 var (
 	loginRe            = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{2,31}$`)
-	errBadCredentials  = apperr.New(http.StatusUnauthorized, "invalid_credentials", "неверный логин или пароль")
-	errCourierNoAccess = apperr.Forbidden("вход курьера отключён — обратитесь к менеджеру магазина")
+	errBadCredentials  = apperr.New(http.StatusUnauthorized, "invalid_credentials", "неверный логин или пароль").Uz("login yoki parol notoʻgʻri")
+	errCourierNoAccess = apperr.Forbidden("вход курьера отключён — обратитесь к менеджеру магазина").Uz("kuryer kirishi oʻchirilgan — doʻkon menejeriga murojaat qiling")
 )
 
 // HashPassword — PBKDF2-SHA256: «pbkdf2-sha256$итерации$соль$хэш».
@@ -97,7 +97,7 @@ func (s *Service) courierEmployee(ctx context.Context, p *Principal, employeeID 
 		return "", err
 	}
 	if !httpx.IsUUID(employeeID) {
-		return "", apperr.NotFound("сотрудник не найден")
+		return "", apperr.NotFound("сотрудник не найден").Uz("xodim topilmadi")
 	}
 	var (
 		userID                          string
@@ -111,7 +111,7 @@ func (s *Service) courierEmployee(ctx context.Context, p *Principal, employeeID 
 		FROM employees e JOIN roles r ON r.id = e.role_id
 		WHERE e.id = $1 AND e.network_id = $2 AND e.status = 'active'`, employeeID, p.NetworkID).Scan(&userID, &owner, &courier, &only, &allStores, &storeIDs)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", apperr.NotFound("сотрудник не найден")
+		return "", apperr.NotFound("сотрудник не найден").Uz("xodim topilmadi")
 	}
 	if err != nil {
 		return "", err
@@ -120,10 +120,10 @@ func (s *Service) courierEmployee(ctx context.Context, p *Principal, employeeID 
 		return "", errOwnerLogin
 	}
 	if !courier {
-		return "", apperr.Validation("у сотрудника нет права «Курьер: доставка заказов» — добавьте его в роли")
+		return "", apperr.Validation("у сотрудника нет права «Курьер: доставка заказов» — добавьте его в роли").Uz("xodimda «Kuryer: buyurtmalarni yetkazish» huquqi yoʻq — uni rolga qoʻshing")
 	}
 	if !only && !p.Can(PermStaffManage) {
-		return "", apperr.Forbidden("у сотрудника есть доступ к панели — вход ему меняет тот, у кого право «Роли и сотрудники»")
+		return "", apperr.Forbidden("у сотрудника есть доступ к панели — вход ему меняет тот, у кого право «Роли и сотрудники»").Uz("xodimda panelga ruxsat bor — uning kirish maʼlumotlarini «Rollar va xodimlar» huquqiga ega xodim oʻzgartiradi")
 	}
 	if err := checkLoginScope(p, allStores, storeIDs); err != nil {
 		return "", err

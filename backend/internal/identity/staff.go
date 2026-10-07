@@ -12,6 +12,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/phone"
 )
 
@@ -43,24 +44,25 @@ type Employee struct {
 	LastLoginAt  *time.Time `json:"last_login_at"`
 }
 
-const ownerRoleName = "Владелец"
+// ownerRoleName — название роли создаётся на языке того, кто создаёт сеть.
+var ownerRoleName = i18n.Text{RU: "Владелец", UZ: "Egasi"}
 
 // CreateOwner создаёт роль «Владелец» и сотрудника-владельца новой сети.
 // Вызывается модулем tenant внутри транзакции создания сети.
 func CreateOwner(ctx context.Context, q db.Querier, networkID, rawPhone, fullName string) (string, error) {
 	ph, err := phone.Normalize(rawPhone)
 	if err != nil {
-		return "", apperr.Validation("owner_phone: неверный номер телефона")
+		return "", apperr.Validation("owner_phone: неверный номер телефона").Uz("owner_phone: telefon raqami notoʻgʻri")
 	}
 	fullName = strings.TrimSpace(fullName)
 	if fullName == "" {
-		return "", apperr.Validation("owner_name: обязательное поле")
+		return "", apperr.Validation("owner_name: обязательное поле").Uz("owner_name: majburiy maydon")
 	}
 
 	var roleID string
 	if err := q.QueryRow(ctx, `
 		INSERT INTO roles (network_id, name, is_owner) VALUES ($1, $2, true) RETURNING id`,
-		networkID, ownerRoleName).Scan(&roleID); err != nil {
+		networkID, ownerRoleName.Ctx(ctx)).Scan(&roleID); err != nil {
 		return "", err
 	}
 	userID, err := upsertUser(ctx, q, ph, fullName)
@@ -73,7 +75,7 @@ func CreateOwner(ctx context.Context, q db.Querier, networkID, rawPhone, fullNam
 		VALUES ($1, $2, $3, $4, true) RETURNING id`,
 		networkID, userID, roleID, fullName).Scan(&employeeID)
 	if db.IsUniqueViolation(err, "employees_user_id_key") {
-		return "", apperr.Conflict("employee_exists", "этот номер уже работает в другой сети")
+		return "", apperr.Conflict("employee_exists", "этот номер уже работает в другой сети").Uz("bu raqam allaqachon boshqa tarmoqda ishlaydi")
 	}
 	return employeeID, err
 }
@@ -110,7 +112,7 @@ func validPermissions(perms []string) ([]string, error) {
 	out := make([]string, 0, len(perms))
 	for _, code := range perms {
 		if !knownPermission(code) {
-			return nil, apperr.Validation("permissions: неизвестное право " + code)
+			return nil, apperr.Validation("permissions: неизвестное право " + code).Uz("permissions: nomaʼlum huquq " + code)
 		}
 		if !slices.Contains(out, code) {
 			out = append(out, code)
@@ -125,7 +127,7 @@ func (s *Service) CreateRole(ctx context.Context, p *Principal, in RoleInput) (R
 		return Role{}, err
 	}
 	if in.Name == nil || strings.TrimSpace(*in.Name) == "" {
-		return Role{}, apperr.Validation("name: обязательное поле")
+		return Role{}, apperr.Validation("name: обязательное поле").Uz("name: majburiy maydon")
 	}
 	perms := []string{}
 	if in.Permissions != nil {
@@ -140,7 +142,7 @@ func (s *Service) CreateRole(ctx context.Context, p *Principal, in RoleInput) (R
 		RETURNING id, name, permissions, is_owner, created_at`,
 		p.NetworkID, strings.TrimSpace(*in.Name), perms).Scan(&r.ID, &r.Name, &r.Permissions, &r.IsOwner, &r.CreatedAt)
 	if db.IsUniqueViolation(err, "roles_network_id_name_key") {
-		return Role{}, apperr.Conflict("role_exists", "роль с таким названием уже есть")
+		return Role{}, apperr.Conflict("role_exists", "роль с таким названием уже есть").Uz("bunday nomli rol allaqachon bor")
 	}
 	return r, err
 }
@@ -153,7 +155,7 @@ func (s *Service) UpdateRole(ctx context.Context, p *Principal, id string, in Ro
 	if in.Name != nil {
 		n := strings.TrimSpace(*in.Name)
 		if n == "" {
-			return Role{}, apperr.Validation("name: не может быть пустым")
+			return Role{}, apperr.Validation("name: не может быть пустым").Uz("name: boʻsh boʻlishi mumkin emas")
 		}
 		name = &n
 	}
@@ -175,9 +177,9 @@ func (s *Service) UpdateRole(ctx context.Context, p *Principal, id string, in Ro
 		id, p.NetworkID, name, in.Permissions != nil, perms).Scan(&r.ID, &r.Name, &r.Permissions, &r.IsOwner, &r.CreatedAt)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return Role{}, apperr.NotFound("роль не найдена или это роль владельца")
+		return Role{}, apperr.NotFound("роль не найдена или это роль владельца").Uz("rol topilmadi yoki bu ega roli")
 	case db.IsUniqueViolation(err, "roles_network_id_name_key"):
-		return Role{}, apperr.Conflict("role_exists", "роль с таким названием уже есть")
+		return Role{}, apperr.Conflict("role_exists", "роль с таким названием уже есть").Uz("bunday nomli rol allaqachon bor")
 	}
 	return r, err
 }
@@ -212,7 +214,7 @@ func (s *Service) getEmployee(ctx context.Context, q db.Querier, networkID, id s
 	}
 	e, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[Employee])
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Employee{}, apperr.NotFound("сотрудник не найден")
+		return Employee{}, apperr.NotFound("сотрудник не найден").Uz("xodim topilmadi")
 	}
 	return e, err
 }
@@ -232,17 +234,17 @@ func (s *Service) CreateEmployee(ctx context.Context, p *Principal, in EmployeeI
 		return Employee{}, err
 	}
 	if in.Phone == nil {
-		return Employee{}, apperr.Validation("phone: обязательное поле")
+		return Employee{}, apperr.Validation("phone: обязательное поле").Uz("phone: majburiy maydon")
 	}
 	ph, err := phone.Normalize(*in.Phone)
 	if err != nil {
-		return Employee{}, apperr.Validation("phone: неверный номер телефона")
+		return Employee{}, apperr.Validation("phone: неверный номер телефона").Uz("phone: telefon raqami notoʻgʻri")
 	}
 	if in.FullName == nil || strings.TrimSpace(*in.FullName) == "" {
-		return Employee{}, apperr.Validation("full_name: обязательное поле")
+		return Employee{}, apperr.Validation("full_name: обязательное поле").Uz("full_name: majburiy maydon")
 	}
 	if in.RoleID == nil {
-		return Employee{}, apperr.Validation("role_id: обязательное поле")
+		return Employee{}, apperr.Validation("role_id: обязательное поле").Uz("role_id: majburiy maydon")
 	}
 	fullName := strings.TrimSpace(*in.FullName)
 	allStores := in.AllStores != nil && *in.AllStores
@@ -272,7 +274,7 @@ func (s *Service) CreateEmployee(ctx context.Context, p *Principal, in EmployeeI
 			VALUES ($1, $2, $3, $4, $5) RETURNING id`,
 			p.NetworkID, userID, *in.RoleID, fullName, allStores).Scan(&id)
 		if db.IsUniqueViolation(err, "employees_user_id_key") {
-			return apperr.Conflict("employee_exists", "этот номер уже работает в сети")
+			return apperr.Conflict("employee_exists", "этот номер уже работает в сети").Uz("bu raqam allaqachon tarmoqda ishlaydi")
 		}
 		if err != nil {
 			return err
@@ -293,16 +295,16 @@ func (s *Service) UpdateEmployee(ctx context.Context, p *Principal, id string, i
 		return Employee{}, err
 	}
 	if in.Phone != nil {
-		return Employee{}, apperr.Validation("phone: номер сотрудника менять нельзя")
+		return Employee{}, apperr.Validation("phone: номер сотрудника менять нельзя").Uz("phone: xodim raqamini oʻzgartirib boʻlmaydi")
 	}
 	if in.Status != nil && *in.Status != "active" && *in.Status != "inactive" {
-		return Employee{}, apperr.Validation("status: ожидается active или inactive")
+		return Employee{}, apperr.Validation("status: ожидается active или inactive").Uz("status: active yoki inactive boʻlishi kerak")
 	}
 	var fullName *string
 	if in.FullName != nil {
 		n := strings.TrimSpace(*in.FullName)
 		if n == "" {
-			return Employee{}, apperr.Validation("full_name: не может быть пустым")
+			return Employee{}, apperr.Validation("full_name: не может быть пустым").Uz("full_name: boʻsh boʻlishi mumkin emas")
 		}
 		fullName = &n
 	}
@@ -314,7 +316,7 @@ func (s *Service) UpdateEmployee(ctx context.Context, p *Principal, id string, i
 			return err
 		}
 		if cur.IsOwner && (in.RoleID != nil || in.Status != nil || in.AllStores != nil || in.StoreIDs != nil) {
-			return apperr.Forbidden("у владельца можно менять только имя")
+			return apperr.Forbidden("у владельца можно менять только имя").Uz("egasining faqat ismini oʻzgartirish mumkin")
 		}
 		if in.RoleID != nil {
 			if err := s.checkAssignableRole(ctx, tx, p.NetworkID, *in.RoleID); err != nil {
@@ -366,7 +368,7 @@ func (s *Service) UpdateEmployee(ctx context.Context, p *Principal, id string, i
 // кто сам видит все магазины.
 func checkStoreGrant(p *Principal, allStores, was bool) error {
 	if allStores != was && !p.SeesAllStores() {
-		return apperr.Forbidden("доступ ко всем магазинам меняет только сотрудник, который сам видит все магазины")
+		return apperr.Forbidden("доступ ко всем магазинам меняет только сотрудник, который сам видит все магазины").Uz("barcha doʻkonlarga ruxsatni faqat oʻzi barcha doʻkonlarni koʻradigan xodim oʻzgartiradi")
 	}
 	return nil
 }
@@ -382,7 +384,7 @@ func mergeStoreIDs(p *Principal, current, requested []string) ([]string, error) 
 	out := make([]string, 0, len(requested)+len(current))
 	for _, id := range uniq(requested) {
 		if !p.CanAccessStore(id) && !slices.Contains(current, id) {
-			return nil, apperr.Forbidden("store_ids: нет доступа к магазину").WithDetails(map[string]any{"store_id": id})
+			return nil, apperr.Forbidden("store_ids: нет доступа к магазину").Uz("store_ids: doʻkonga ruxsat yoʻq").WithDetails(map[string]any{"store_id": id})
 		}
 		out = append(out, id)
 	}
@@ -396,18 +398,18 @@ func mergeStoreIDs(p *Principal, current, requested []string) ([]string, error) 
 
 func (s *Service) checkAssignableRole(ctx context.Context, q db.Querier, networkID, roleID string) error {
 	if !httpx.IsUUID(roleID) {
-		return apperr.Validation("role_id: роль не найдена")
+		return apperr.Validation("role_id: роль не найдена").Uz("role_id: rol topilmadi")
 	}
 	var isOwner bool
 	err := q.QueryRow(ctx, `SELECT is_owner FROM roles WHERE id = $1 AND network_id = $2`, roleID, networkID).Scan(&isOwner)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return apperr.Validation("role_id: роль не найдена")
+		return apperr.Validation("role_id: роль не найдена").Uz("role_id: rol topilmadi")
 	}
 	if err != nil {
 		return err
 	}
 	if isOwner {
-		return apperr.Validation("role_id: роль владельца назначить нельзя")
+		return apperr.Validation("role_id: роль владельца назначить нельзя").Uz("role_id: ega rolini berib boʻlmaydi")
 	}
 	return nil
 }
@@ -421,7 +423,7 @@ func setEmployeeStores(ctx context.Context, q db.Querier, networkID, employeeID 
 	}
 	for _, id := range storeIDs {
 		if !httpx.IsUUID(id) {
-			return apperr.Validation("store_ids: магазин не найден в сети")
+			return apperr.Validation("store_ids: магазин не найден в сети").Uz("store_ids: doʻkon tarmoqda topilmadi")
 		}
 	}
 	tag, err := q.Exec(ctx, `
@@ -433,7 +435,7 @@ func setEmployeeStores(ctx context.Context, q db.Querier, networkID, employeeID 
 		return err
 	}
 	if int(tag.RowsAffected()) != len(uniq(storeIDs)) {
-		return apperr.Validation("store_ids: магазин не найден в сети")
+		return apperr.Validation("store_ids: магазин не найден в сети").Uz("store_ids: doʻkon tarmoqda topilmadi")
 	}
 	return nil
 }

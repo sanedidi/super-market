@@ -18,13 +18,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 //go:embed testdata_invoice.png
 var testInvoice []byte
 
 // ErrNotConfigured — ИИ ещё не подключён.
-var ErrNotConfigured = apperr.Conflict("ai_not_configured", "ИИ-сервис не подключён: супер-админ настраивает его в разделе «ИИ-сервис»")
+var ErrNotConfigured = apperr.Conflict("ai_not_configured", "ИИ-сервис не подключён: супер-админ настраивает его в разделе «ИИ-сервис»").Uz("SI xizmati ulanmagan — uni super-admin sozlaydi")
 
 type Service struct {
 	pool *pgxpool.Pool
@@ -57,13 +58,22 @@ func (s *Service) seal(key string) []byte {
 func (s *Service) open(b []byte) (string, error) {
 	n := s.aead.NonceSize()
 	if len(b) < n {
-		return "", errors.New("ai: повреждённый ключ")
+		return "", &ErrService{Msg: "ai: повреждённый ключ", MsgUz: "ai: kalit buzilgan"}
 	}
 	out, err := s.aead.Open(nil, b[:n], b[n:], nil)
 	if err != nil {
-		return "", errors.New("ai: ключ не расшифровывается (сменился JWT_SECRET?) — введите ключ заново")
+		return "", &ErrService{Msg: "ai: ключ не расшифровывается (сменился JWT_SECRET?) — введите ключ заново", MsgUz: "ai: kalitni ochib boʻlmadi (JWT_SECRET oʻzgarganmi?) — kalitni qaytadan kiriting"}
 	}
 	return string(out), nil
+}
+
+// keyErrText — текст ошибки open() на двух языках.
+func keyErrText(err error) i18n.Text {
+	var se *ErrService
+	if errors.As(err, &se) {
+		return i18n.Text{RU: se.Msg, UZ: se.MsgUz}
+	}
+	return i18n.Text{RU: err.Error()}
 }
 
 // Settings — для супер-админа; ключ не отдаётся.
@@ -124,7 +134,8 @@ func (s *Service) Conn(ctx context.Context) (Conn, error) {
 	}
 	key, err := s.open(r.keyEnc)
 	if err != nil {
-		return Conn{}, apperr.Conflict("ai_not_configured", err.Error())
+		msg := keyErrText(err)
+		return Conn{}, apperr.Conflict("ai_not_configured", msg.RU).Uz(msg.UZ)
 	}
 	return Conn{Provider: r.Provider, BaseURL: r.BaseURL, Key: key, Model: r.Model}, nil
 }
@@ -140,7 +151,7 @@ type Input struct {
 func checkURL(raw string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return "", apperr.Validation("base_url: адрес вида https://api.openai.com/v1")
+		return "", apperr.Validation("base_url: адрес вида https://api.openai.com/v1").Uz("base_url: https://api.openai.com/v1 koʻrinishidagi manzil")
 	}
 	return strings.TrimRight(u.String(), "/"), nil
 }
@@ -157,7 +168,7 @@ func (s *Service) conn(ctx context.Context, in Input) (Conn, row, error) {
 		c.Provider = r.Provider
 	}
 	if c.Provider != ProviderOpenAI && c.Provider != ProviderAnthropic {
-		return c, r, apperr.Validation("provider: openai или anthropic")
+		return c, r, apperr.Validation("provider: openai или anthropic").Uz("provider: openai yoki anthropic")
 	}
 	if c.BaseURL == "" {
 		switch {
@@ -174,20 +185,21 @@ func (s *Service) conn(ctx context.Context, in Input) (Conn, row, error) {
 	}
 	if c.Key == "" {
 		if !r.HasKey || c.Provider != r.Provider || c.BaseURL != r.BaseURL {
-			return c, r, apperr.Validation("api_key: вставьте ключ из личного кабинета сервиса")
+			return c, r, apperr.Validation("api_key: вставьте ключ из личного кабинета сервиса").Uz("api_key: xizmatning shaxsiy kabinetidagi kalitni qoʻying")
 		}
 		if c.Key, err = s.open(r.keyEnc); err != nil {
-			return c, r, apperr.Validation("api_key: " + err.Error())
+			msg := keyErrText(err)
+			return c, r, apperr.Validation("api_key: " + msg.RU).Uz("api_key: " + msg.UZ)
 		}
 	}
 	if len(c.Key) > 500 || strings.ContainsAny(c.Key, " \n\t") {
-		return c, r, apperr.Validation("api_key: неверный ключ")
+		return c, r, apperr.Validation("api_key: неверный ключ").Uz("api_key: kalit notoʻgʻri")
 	}
 	if c.Model == "" && c.Provider == r.Provider {
 		c.Model = r.Model
 	}
 	if len(c.Model) > 200 {
-		return c, r, apperr.Validation("model: слишком длинное название")
+		return c, r, apperr.Validation("model: слишком длинное название").Uz("model: nomi juda uzun")
 	}
 	return c, r, nil
 }
@@ -206,7 +218,7 @@ func (s *Service) Save(ctx context.Context, adminID string, in Input) (Settings,
 		return Settings{}, err
 	}
 	if c.Model == "" {
-		return Settings{}, apperr.Validation("model: выберите модель")
+		return Settings{}, apperr.Validation("model: выберите модель").Uz("model: modelni tanlang")
 	}
 	keyEnc := s.seal(c.Key)
 	changed := c.Provider != r.Provider || c.BaseURL != r.BaseURL || c.Model != r.Model || strings.TrimSpace(in.APIKey) != ""
@@ -249,7 +261,7 @@ func (s *Service) Test(ctx context.Context, in Input) (TestResult, error) {
 		return TestResult{}, err
 	}
 	if c.Model == "" {
-		return TestResult{}, apperr.Validation("model: выберите модель")
+		return TestResult{}, apperr.Validation("model: выберите модель").Uz("model: modelni tanlang")
 	}
 	ctx2, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()

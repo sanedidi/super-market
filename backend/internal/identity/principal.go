@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 // Приложения, в которые можно войти. Токен выдаётся на одно приложение.
@@ -51,28 +52,39 @@ const (
 type PermissionInfo struct {
 	Code  string `json:"code"`
 	Title string `json:"title"`
+	// TitleUz — название по-узбекски; в ответе Title уже на языке запроса.
+	TitleUz string `json:"-"`
+}
+
+// PermissionsIn — права с названиями на языке lang.
+func PermissionsIn(lang string) []PermissionInfo {
+	out := make([]PermissionInfo, len(Permissions))
+	for i, p := range Permissions {
+		out[i] = PermissionInfo{Code: p.Code, Title: i18n.Pick(lang, p.Title, p.TitleUz)}
+	}
+	return out
 }
 
 // Permissions — все права системы. Новые модули добавляют сюда свои.
 var Permissions = []PermissionInfo{
-	{PermStoresManage, "Магазины и склады"},
-	{PermStaffManage, "Роли и сотрудники"},
-	{PermCatalogManage, "Товары и типы цен"},
-	{PermPricesManage, "Установка цен"},
-	{PermCounterpartiesManage, "Контрагенты"},
-	{PermFinanceManage, "Финансы: кассы, операции, курс"},
-	{PermInventoryManage, "Склад: приход, перемещения, списания, инвентаризация"},
-	{PermSalesPOS, "Продажа на кассе (POS)"},
-	{PermSalesDiscount, "Скидки на кассе"},
-	{PermSalesReturn, "Возврат от клиента"},
-	{PermReportsView, "Отчёты"},
-	{PermOrdersManage, "Онлайн-заказы"},
-	{PermPayoutsManage, "Вывод денег с платформы"},
-	{PermOrdersDeliver, "Курьер: доставка заказов"},
-	{PermShowcaseManage, "Витрина в приложении"},
-	{PermDebtsGive, "Продажа в долг на кассе"},
-	{PermDebtsManage, "Долги покупателей: оплата, лимиты, списание"},
-	{PermPOSSettings, "Настройка кассы: быстрые кнопки"},
+	{PermStoresManage, "Магазины и склады", "Doʻkonlar va omborlar"},
+	{PermStaffManage, "Роли и сотрудники", "Rollar va xodimlar"},
+	{PermCatalogManage, "Товары и типы цен", "Mahsulotlar va narx turlari"},
+	{PermPricesManage, "Установка цен", "Narxlarni belgilash"},
+	{PermCounterpartiesManage, "Контрагенты", "Kontragentlar"},
+	{PermFinanceManage, "Финансы: кассы, операции, курс", "Moliya: kassalar, operatsiyalar, kurs"},
+	{PermInventoryManage, "Склад: приход, перемещения, списания, инвентаризация", "Ombor: kirim, koʻchirish, hisobdan chiqarish, inventarizatsiya"},
+	{PermSalesPOS, "Продажа на кассе (POS)", "Kassada sotish (POS)"},
+	{PermSalesDiscount, "Скидки на кассе", "Kassada chegirmalar"},
+	{PermSalesReturn, "Возврат от клиента", "Mijozdan qaytarish"},
+	{PermReportsView, "Отчёты", "Hisobotlar"},
+	{PermOrdersManage, "Онлайн-заказы", "Onlayn buyurtmalar"},
+	{PermPayoutsManage, "Вывод денег с платформы", "Platformadan pul yechib olish"},
+	{PermOrdersDeliver, "Курьер: доставка заказов", "Kuryer: buyurtmalarni yetkazish"},
+	{PermShowcaseManage, "Витрина в приложении", "Ilovadagi vitrina"},
+	{PermDebtsGive, "Продажа в долг на кассе", "Kassada qarzga sotish"},
+	{PermDebtsManage, "Долги покупателей: оплата, лимиты, списание", "Xaridorlar qarzlari: toʻlov, limitlar, hisobdan chiqarish"},
+	{PermPOSSettings, "Настройка кассы: быстрые кнопки", "Kassa sozlamalari: tezkor tugmalar"},
 }
 
 func knownPermission(code string) bool {
@@ -108,7 +120,7 @@ func (p *Principal) Can(perm string) bool {
 // Require возвращает 403, если права нет.
 func (p *Principal) Require(perm string) error {
 	if !p.Can(perm) {
-		return apperr.Forbidden("недостаточно прав").WithDetails(map[string]any{"permission": perm})
+		return apperr.Forbidden("недостаточно прав").Uz("huquqlar yetarli emas").WithDetails(map[string]any{"permission": perm})
 	}
 	return nil
 }
@@ -121,7 +133,7 @@ func (p *Principal) CanAny(perms ...string) bool {
 // RequireAny возвращает 403, если нет ни одного из прав.
 func (p *Principal) RequireAny(perms ...string) error {
 	if !p.CanAny(perms...) {
-		return apperr.Forbidden("недостаточно прав").WithDetails(map[string]any{"permission": perms[0], "any_of": perms})
+		return apperr.Forbidden("недостаточно прав").Uz("huquqlar yetarli emas").WithDetails(map[string]any{"permission": perms[0], "any_of": perms})
 	}
 	return nil
 }

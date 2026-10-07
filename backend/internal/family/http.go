@@ -151,7 +151,7 @@ func (m *Module) toCart(w http.ResponseWriter, r *http.Request) {
 		lat, err1 := strconv.ParseFloat(r.URL.Query().Get("lat"), 64)
 		lng, err2 := strconv.ParseFloat(r.URL.Query().Get("lng"), 64)
 		if err1 != nil || err2 != nil {
-			return Quote{}, apperr.Validation("lat/lng: укажите адрес доставки")
+			return Quote{}, apperr.Validation("lat/lng: укажите адрес доставки").Uz("lat/lng: yetkazib berish manzilini kiriting")
 		}
 		return m.svc.ToCart(r.Context(), uid(r), id, lat, lng)
 	})

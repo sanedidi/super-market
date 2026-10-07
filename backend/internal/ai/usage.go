@@ -38,11 +38,11 @@ func (s *Service) SavePrices(ctx context.Context, adminID string, in Prices) (Pr
 	}
 	switch {
 	case in.Currency != "USD" && in.Currency != "RUB" && in.Currency != "UZS":
-		return Prices{}, apperr.Validation("currency: USD, RUB или UZS")
+		return Prices{}, apperr.Validation("currency: USD, RUB или UZS").Uz("currency: USD, RUB yoki UZS")
 	case in.PriceIn < 0 || in.PriceOut < 0 || in.PriceIn > 1e7 || in.PriceOut > 1e7 || math.IsNaN(in.PriceIn) || math.IsNaN(in.PriceOut):
-		return Prices{}, apperr.Validation("price: цена за 1 млн токенов — число от 0")
+		return Prices{}, apperr.Validation("price: цена за 1 млн токенов — число от 0").Uz("price: 1 mln token narxi — 0 yoki undan katta son")
 	case !(in.RateUZS > 0) || in.RateUZS > 1e7:
-		return Prices{}, apperr.Validation("rate_uzs: курс — сколько сумов в 1 единице валюты")
+		return Prices{}, apperr.Validation("rate_uzs: курс — сколько сумов в 1 единице валюты").Uz("rate_uzs: kurs — 1 birlik valyutada necha soʻm")
 	}
 	_, err := s.pool.Exec(ctx, `UPDATE ai_settings SET price_in = $1, price_out = $2, price_currency = $3, rate_uzs = $4, updated_by = $5, updated_at = now()`,
 		in.PriceIn, in.PriceOut, in.Currency, in.RateUZS, adminID)
@@ -146,7 +146,7 @@ func (s *Service) Usage(ctx context.Context, f UsageFilter) (UsageReport, error)
 		f.To = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, tashkent).AddDate(0, 0, 1)
 	}
 	if f.To.Sub(f.From) > 400*24*time.Hour {
-		return UsageReport{}, apperr.Validation("period: не больше года")
+		return UsageReport{}, apperr.Validation("period: не больше года").Uz("period: bir yildan oshmasin")
 	}
 	rep := UsageReport{From: f.From, To: f.To, Days: []UsageDay{}, Items: []UsageItem{}}
 	var err error
@@ -206,7 +206,7 @@ func (s *Service) Usage(ctx context.Context, f UsageFilter) (UsageReport, error)
 		name = "COALESCE(e.full_name, 'Проверки подключения')"
 		sub = "COALESCE(n.name, 'Супер-админ')"
 	default:
-		return rep, apperr.Validation("group: network, store или employee")
+		return rep, apperr.Validation("group: network, store или employee").Uz("group: network, store yoki employee")
 	}
 	rows, err = s.pool.Query(ctx, `
 		SELECT COALESCE(`+key+`::text, ''), min(`+name+`), min(`+sub+`), COALESCE(min(u.network_id::text), ''),

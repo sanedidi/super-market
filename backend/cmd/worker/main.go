@@ -23,6 +23,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/notify"
 	"github.com/sanedidi/super-market/backend/internal/platform/config"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/logger"
 	"github.com/sanedidi/super-market/backend/internal/platform/telegram"
 	"github.com/sanedidi/super-market/backend/internal/push"
@@ -155,6 +156,9 @@ func familyDeeplink(pool *pgxpool.Pool, cfg config.Config, api notify.Sender, lo
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("Вы в семье «%s»! Откройте приложение Super Market — там общие списки покупок.", name), nil
+		// Язык — из Telegram пользователя (бот кладёт его в ctx).
+		return i18n.T(ctx,
+			fmt.Sprintf("Вы в семье «%s»! Откройте приложение Super Market — там общие списки покупок.", name),
+			fmt.Sprintf("Siz «%s» oilasidasiz! Super Market ilovasini oching — u yerda umumiy xarid roʻyxatlari.", name)), nil
 	}
 }

@@ -128,15 +128,15 @@ func getPromotion(ctx context.Context, q db.Querier, networkID, id string) (Prom
 	}
 	p, err := pgx.CollectExactlyOneRow(rows, scanPromotion)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return p, apperr.NotFound("акция не найдена")
+		return p, apperr.NotFound("акция не найдена").Uz("aksiya topilmadi")
 	}
 	if err != nil {
 		return p, err
 	}
 	rows, err = q.Query(ctx, `
-		SELECT pi.product_id, p.name, pi.price::text, p.base_price::text
+		SELECT pi.product_id, loc(p.name, p.name_uz), pi.price::text, p.base_price::text
 		FROM promotion_items pi JOIN products p ON p.id = pi.product_id
-		WHERE pi.promotion_id = $1 ORDER BY p.name`, id)
+		WHERE pi.promotion_id = $1 ORDER BY loc(p.name, p.name_uz)`, id)
 	if err != nil {
 		return p, err
 	}
@@ -146,30 +146,30 @@ func getPromotion(ctx context.Context, q db.Querier, networkID, id string) (Prom
 
 func (in PromotionInput) validate(create bool) error {
 	if create && (in.Name == nil || in.StartsAt == nil || in.EndsAt == nil) {
-		return apperr.Validation("name, starts_at и ends_at: обязательные поля")
+		return apperr.Validation("name, starts_at и ends_at: обязательные поля").Uz("name, starts_at va ends_at: majburiy maydonlar")
 	}
 	if in.Name != nil && strings.TrimSpace(*in.Name) == "" {
-		return apperr.Validation("name: не может быть пустым")
+		return apperr.Validation("name: не может быть пустым").Uz("name: boʻsh boʻlishi mumkin emas")
 	}
 	if in.StoreIDs != nil {
 		for _, id := range *in.StoreIDs {
 			if !httpx.IsUUID(id) {
-				return apperr.Validation("store_ids: магазин не найден")
+				return apperr.Validation("store_ids: магазин не найден").Uz("store_ids: doʻkon topilmadi")
 			}
 		}
 	}
 	if in.Items != nil {
 		if len(*in.Items) > 1000 {
-			return apperr.Validation("items: не больше 1000 товаров в акции")
+			return apperr.Validation("items: не больше 1000 товаров в акции").Uz("items: aksiyada koʻpi bilan 1000 ta mahsulot")
 		}
 		seen := map[string]bool{}
 		for _, it := range *in.Items {
 			if !httpx.IsUUID(it.ProductID) || seen[it.ProductID] {
-				return apperr.Validation("items: неверный или повторяющийся товар")
+				return apperr.Validation("items: неверный или повторяющийся товар").Uz("items: mahsulot notoʻgʻri yoki takrorlangan")
 			}
 			seen[it.ProductID] = true
 			if !it.Price.Valid() || money.D(string(it.Price)).Sign() <= 0 {
-				return apperr.Validation("items: цена должна быть больше нуля")
+				return apperr.Validation("items: цена должна быть больше нуля").Uz("items: narx noldan katta boʻlishi kerak")
 			}
 		}
 	}
@@ -202,7 +202,7 @@ func (s *Service) CreatePromotion(ctx context.Context, pr *identity.Principal, i
 			VALUES ($1, $2, $3, $4, $5::uuid[], $6, $7) RETURNING id`,
 			pr.NetworkID, strings.TrimSpace(*in.Name), *in.StartsAt, *in.EndsAt, stores, active, pr.UserID).Scan(&id)
 		if db.IsCheckViolation(err) {
-			return apperr.Validation("ends_at: окончание акции должно быть позже начала")
+			return apperr.Validation("ends_at: окончание акции должно быть позже начала").Uz("ends_at: aksiya tugashi boshlanishidan keyin boʻlishi kerak")
 		}
 		if err != nil {
 			return err
@@ -248,13 +248,13 @@ func (s *Service) UpdatePromotion(ctx context.Context, pr *identity.Principal, i
 			WHERE id = $1 AND network_id = $2`,
 			id, pr.NetworkID, name, in.StartsAt, in.EndsAt, in.StoreIDs, in.IsActive)
 		if db.IsCheckViolation(err) {
-			return apperr.Validation("ends_at: окончание акции должно быть позже начала")
+			return apperr.Validation("ends_at: окончание акции должно быть позже начала").Uz("ends_at: aksiya tugashi boshlanishidan keyin boʻlishi kerak")
 		}
 		if err != nil {
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return apperr.NotFound("акция не найдена")
+			return apperr.NotFound("акция не найдена").Uz("aksiya topilmadi")
 		}
 		if in.Items != nil {
 			if err := setPromoItems(ctx, tx, pr.NetworkID, id, *in.Items); err != nil {
@@ -272,13 +272,13 @@ func (s *Service) UpdatePromotion(ctx context.Context, pr *identity.Principal, i
 func checkPromoStores(ctx context.Context, q db.Querier, pr *identity.Principal, ids []string) error {
 	if len(ids) == 0 {
 		if !pr.SeesAllStores() {
-			return apperr.Validation("store_ids: выберите свои магазины")
+			return apperr.Validation("store_ids: выберите свои магазины").Uz("store_ids: oʻz doʻkonlaringizni tanlang")
 		}
 		return nil
 	}
 	for _, id := range ids {
 		if !pr.CanAccessStore(id) {
-			return apperr.Validation("store_ids: магазин не найден")
+			return apperr.Validation("store_ids: магазин не найден").Uz("store_ids: doʻkon topilmadi")
 		}
 	}
 	var n int
@@ -287,7 +287,7 @@ func checkPromoStores(ctx context.Context, q db.Querier, pr *identity.Principal,
 		return err
 	}
 	if n != len(ids) {
-		return apperr.Validation("store_ids: магазин не найден")
+		return apperr.Validation("store_ids: магазин не найден").Uz("store_ids: doʻkon topilmadi")
 	}
 	return nil
 }
@@ -304,7 +304,7 @@ func setPromoItems(ctx context.Context, tx pgx.Tx, networkID, promoID string, it
 			return err
 		}
 		if !ok {
-			return apperr.Validation("items: товар не найден или не активен")
+			return apperr.Validation("items: товар не найден или не активен").Uz("items: mahsulot topilmadi yoki faol emas")
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO promotion_items (promotion_id, product_id, price) VALUES ($1, $2, $3::numeric)`,
 			promoID, it.ProductID, string(it.Price)); err != nil {
