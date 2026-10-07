@@ -33,6 +33,7 @@ import { StockDocEditor, StockDocsPage, docPaths } from './pages/StockDocs'
 import { MovementsPage, StockPage } from './pages/Stock'
 import { CashboxesPage, OperationsPage, RatesPage, TransfersPage } from './pages/Finance'
 import { CashFlowPage, ProfitLossPage } from './pages/Reports'
+import { AbcXyzPage } from './pages/AbcXyz'
 import {
   CounterpartiesPage,
   CounterpartyTypesPage,
@@ -130,6 +131,7 @@ const MENU: Item[] = [
     children: [
       { key: '/reports/cash-flow', label: 'Денежный поток', perm: 'reports.view' },
       { key: '/reports/profit-loss', label: 'Прибыль и убыток', perm: 'reports.view' },
+      { key: '/reports/abc-xyz', label: 'ABC/XYZ-анализ', perm: 'reports.view' },
     ],
   },
   {
@@ -273,6 +275,7 @@ export function StoreRoutes() {
 
         <Route path="reports/cash-flow" element={<CashFlowPage />} />
         <Route path="reports/profit-loss" element={<ProfitLossPage />} />
+        <Route path="reports/abc-xyz" element={<AbcXyzPage />} />
 
         <Route path="dirs/counterparties" element={<CounterpartiesPage />} />
         <Route path="dirs/counterparty-types" element={<CounterpartyTypesPage />} />
