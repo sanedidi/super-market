@@ -8,6 +8,7 @@ import { api, ApiError, type Tokens } from './api'
 import { useAuth } from './auth'
 import { useItem } from './hooks'
 import { LoginLayout } from './loginLayout'
+import { tr } from './i18n'
 
 /** Контакты поддержки Super Market — для «Забыли пароль?». */
 export const SUPPORT_TELEGRAM = '@super_market_support'
@@ -84,7 +85,10 @@ function SupportNote() {
     <div className="sm-login-help">
       <QuestionCircleFilled />
       <span>
-        Забыли пароль? Напишите в поддержку Super Market — сбросим и пришлём новый.
+        {tr(
+          'Забыли пароль? Напишите в поддержку Super Market — сбросим и пришлём новый.',
+          'Parolni unutdingizmi? Super Market qoʻllab-quvvatlash xizmatiga yozing — parolni tiklab, yangisini yuboramiz.',
+        )}
         <br />
         Telegram {SUPPORT_TELEGRAM} · {SUPPORT_PHONE}
       </span>
@@ -107,9 +111,12 @@ export function PasswordLoginPage({ title }: { title: string }) {
       if (e instanceof ApiError && e.code === 'invalid_credentials' && typeof e.details.attempts_left === 'number') {
         setError(
           <>
-            Неверный логин или пароль. Осталось попыток: {e.details.attempts_left}.
+            {tr(
+              `Неверный логин или пароль. Осталось попыток: ${e.details.attempts_left}.`,
+              `Login yoki parol notoʻgʻri. Qolgan urinishlar: ${e.details.attempts_left}.`,
+            )}
             <br />
-            После 5 неверных паролей вход закроется на 15 минут.
+            {tr('После 5 неверных паролей вход закроется на 15 минут.', '5 marta notoʻgʻri parol kiritilsa, kirish 15 daqiqaga yopiladi.')}
           </>,
         )
       } else {
@@ -122,18 +129,20 @@ export function PasswordLoginPage({ title }: { title: string }) {
 
   return (
     <LoginLayout title={title}>
-      <h1 style={{ marginBottom: 8 }}>Вход</h1>
-      <p className="sm-login-sub">Логин и пароль выдаёт Super Market при подключении магазина</p>
+      <h1 style={{ marginBottom: 8 }}>{tr('Вход', 'Kirish')}</h1>
+      <p className="sm-login-sub">
+        {tr('Логин и пароль выдаёт Super Market при подключении магазина', 'Login va parolni doʻkon ulanganda Super Market beradi')}
+      </p>
       {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
       <Form layout="vertical" onFinish={submit} requiredMark={false}>
-        <Form.Item name="login" label="Логин" rules={[{ required: true, whitespace: true, message: 'Введите логин' }]}>
+        <Form.Item name="login" label={tr('Логин', 'Login')} rules={[{ required: true, whitespace: true, message: tr('Введите логин', 'Loginni kiriting') }]}>
           <Input prefix={<UserOutlined />} autoFocus autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={32} />
         </Form.Item>
-        <Form.Item name="password" label="Пароль" rules={[{ required: true, message: 'Введите пароль' }]}>
+        <Form.Item name="password" label={tr('Пароль', 'Parol')} rules={[{ required: true, message: tr('Введите пароль', 'Parolni kiriting') }]}>
           <Input.Password prefix={<LockOutlined />} autoComplete="current-password" maxLength={72} />
         </Form.Item>
         <Button type="primary" htmlType="submit" block loading={busy} style={{ marginTop: 8 }}>
-          Войти
+          {tr('Войти', 'Kirish')}
         </Button>
       </Form>
       <SupportNote />
@@ -144,9 +153,9 @@ export function PasswordLoginPage({ title }: { title: string }) {
 /** Правила нового пароля — те же, что на сервере. */
 export function passwordChecks(pw: string, repeat: string) {
   return [
-    { ok: pw.length >= 8 && pw.length <= 72, text: 'Не меньше 8 символов' },
-    { ok: /\p{L}/u.test(pw) && /\d/.test(pw), text: 'Есть буквы и цифры' },
-    { ok: pw.length > 0 && pw === repeat, text: 'Пароли совпадают' },
+    { ok: pw.length >= 8 && pw.length <= 72, text: tr('Не меньше 8 символов', 'Kamida 8 ta belgi') },
+    { ok: /\p{L}/u.test(pw) && /\d/.test(pw), text: tr('Есть буквы и цифры', 'Harf va raqamlar bor') },
+    { ok: pw.length > 0 && pw === repeat, text: tr('Пароли совпадают', 'Parollar mos keladi') },
   ]
 }
 
@@ -183,11 +192,16 @@ export function ChangePasswordPage({ title }: { title: string }) {
       <div className="sm-login-icon">
         <LockOutlined />
       </div>
-      <h1 style={{ marginBottom: 8 }}>Придумайте свой пароль</h1>
-      <p className="sm-login-sub">Вы вошли по временному паролю от Super Market. Придумайте новый — его будете знать только вы.</p>
+      <h1 style={{ marginBottom: 8 }}>{tr('Придумайте свой пароль', 'Oʻz parolingizni oʻylab toping')}</h1>
+      <p className="sm-login-sub">
+        {tr(
+          'Вы вошли по временному паролю от Super Market. Придумайте новый — его будете знать только вы.',
+          'Siz Super Market bergan vaqtinchalik parol bilan kirdingiz. Yangisini oʻylab toping — uni faqat siz bilasiz.',
+        )}
+      </p>
       {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
       <Form layout="vertical" onFinish={submit} requiredMark={false}>
-        <Form.Item label="Новый пароль" htmlFor="sm-new-password">
+        <Form.Item label={tr('Новый пароль', 'Yangi parol')} htmlFor="sm-new-password">
           <Input.Password
             id="sm-new-password"
             prefix={<LockOutlined />}
@@ -198,7 +212,7 @@ export function ChangePasswordPage({ title }: { title: string }) {
             onChange={(e) => setPw(e.target.value)}
           />
         </Form.Item>
-        <Form.Item label="Повторите пароль" htmlFor="sm-repeat-password">
+        <Form.Item label={tr('Повторите пароль', 'Parolni takrorlang')} htmlFor="sm-repeat-password">
           <Input.Password
             id="sm-repeat-password"
             prefix={<LockOutlined />}
@@ -216,10 +230,10 @@ export function ChangePasswordPage({ title }: { title: string }) {
           ))}
         </ul>
         <Button type="primary" htmlType="submit" block loading={busy} disabled={!ready} style={{ marginTop: 8 }}>
-          Сохранить и войти
+          {tr('Сохранить и войти', 'Saqlash va kirish')}
         </Button>
         <Button type="link" block onClick={() => void logout()} style={{ marginTop: 8 }}>
-          Выйти
+          {tr('Выйти', 'Chiqish')}
         </Button>
       </Form>
     </LoginLayout>

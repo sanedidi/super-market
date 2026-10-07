@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { App, Button, Tooltip } from 'antd'
 import { BellFilled, BellOutlined } from '@ant-design/icons'
-import { api, type List } from '@sm/shared'
+import { api, tr, type List } from '@sm/shared'
 import { useStore } from './ctx'
 import type { Order } from './types'
 
@@ -67,7 +67,10 @@ function beep() {
 
 function showNotification(orders: Order[]) {
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
-  const title = orders.length === 1 ? `Новый заказ № ${orders[0].number}` : `Новых заказов: ${orders.length}`
+  const title =
+    orders.length === 1
+      ? tr(`Новый заказ № ${orders[0].number}`, `Yangi buyurtma № ${orders[0].number}`)
+      : tr(`Новых заказов: ${orders.length}`, `Yangi buyurtmalar: ${orders.length}`)
   const body = orders
     .slice(0, 3)
     .map((o) => `№ ${o.number} — ${o.address}`)
@@ -116,16 +119,16 @@ export function OrderAlerts() {
     saveEnabled(next)
     if (next && typeof Notification !== 'undefined' && Notification.permission === 'default') {
       const p = await Notification.requestPermission()
-      if (p !== 'granted') message.info('Уведомления браузера запрещены — будет только звук')
+      if (p !== 'granted') message.info(tr('Уведомления браузера запрещены — будет только звук', 'Brauzer bildirishnomalari taqiqlangan — faqat ovoz boʻladi'))
     }
     if (next) beep()
   }
 
   return (
-    <Tooltip title={enabled ? 'Звук и уведомления о новых заказах включены' : 'Включить звук и уведомления о новых заказах'}>
+    <Tooltip title={enabled ? tr('Звук и уведомления о новых заказах включены', 'Yangi buyurtmalar haqida ovoz va bildirishnomalar yoqilgan') : tr('Включить звук и уведомления о новых заказах', 'Yangi buyurtmalar haqida ovoz va bildirishnomalarni yoqish')}>
       <Button
         type="text"
-        aria-label="Уведомления о новых заказах"
+        aria-label={tr('Уведомления о новых заказах', 'Yangi buyurtmalar haqida bildirishnomalar')}
         icon={enabled ? <BellFilled style={{ color: '#17b26a' }} /> : <BellOutlined />}
         onClick={() => void toggle()}
       />

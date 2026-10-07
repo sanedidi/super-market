@@ -15,6 +15,7 @@ import {
 } from '@ant-design/icons'
 import { api, type List } from './api'
 import { LoadError } from './components'
+import { tr } from './i18n'
 
 type Params = Record<string, string | number | boolean | undefined | null>
 
@@ -51,7 +52,7 @@ export function plural(n: number, one: string, few: string, many: string) {
   if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few
   return many
 }
-const goods = (n: number) => `${n} ${plural(n, 'товар', 'товара', 'товаров')}`
+const goods = (n: number) => tr(`${n} ${plural(n, 'товар', 'товара', 'товаров')}`, `${n} ta mahsulot`)
 
 export type ProductView = 'tree' | 'list'
 
@@ -81,8 +82,8 @@ export function ProductViewSwitch({ value, onChange }: { value: ProductView; onC
       value={value}
       onChange={onChange}
       options={[
-        { value: 'tree', label: 'По брендам', icon: <ApartmentOutlined /> },
-        { value: 'list', label: 'Списком', icon: <UnorderedListOutlined /> },
+        { value: 'tree', label: tr('По брендам', 'Brendlar boʻyicha'), icon: <ApartmentOutlined /> },
+        { value: 'list', label: tr('Списком', 'Roʻyxat'), icon: <UnorderedListOutlined /> },
       ]}
     />
   )
@@ -96,7 +97,7 @@ export function ProductTree<T extends { id: string }>({
   itemsPath,
   params,
   columns,
-  pendingText = (n) => `${n} на модерации`,
+  pendingText = (n) => tr(`${n} на модерации`, `${n} ta moderatsiyada`),
   pageSize = 20,
 }: {
   groupsPath: string
@@ -217,7 +218,11 @@ export function ProductTree<T extends { id: string }>({
               </Typography.Text>
               <div>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {goods(b.count)} · {b.categories.length} {plural(b.categories.length, 'категория', 'категории', 'категорий')}
+                  {goods(b.count)} ·{' '}
+                  {tr(
+                    `${b.categories.length} ${plural(b.categories.length, 'категория', 'категории', 'категорий')}`,
+                    `${b.categories.length} ta kategoriya`,
+                  )}
                 </Typography.Text>
               </div>
             </div>
@@ -261,8 +266,8 @@ export function ProductTree<T extends { id: string }>({
             setLimits((l) => ({ ...l, [k]: (l[k] ?? pageSize) + pageSize }))
           }}
         >
-          Показать ещё {goods(Math.min(r.left ?? 0, pageSize))}
-          {(r.left ?? 0) > pageSize ? ` из ${r.left}` : ''}
+          {tr('Показать ещё', 'Yana koʻrsatish:')} {goods(Math.min(r.left ?? 0, pageSize))}
+          {(r.left ?? 0) > pageSize ? tr(` из ${r.left}`, ` (${r.left} tadan)`) : ''}
         </Button>
       )
     }
@@ -310,7 +315,7 @@ export function ProductTree<T extends { id: string }>({
               ? () => (
                   <Flex justify="flex-end">
                     <Button size="small" type="text" icon={<NodeCollapseOutlined />} onClick={() => setExpanded([])}>
-                      Свернуть всё
+                      {tr('Свернуть всё', 'Hammasini yigʻish')}
                     </Button>
                   </Flex>
                 )
@@ -320,10 +325,10 @@ export function ProductTree<T extends { id: string }>({
             pageSize: 20,
             hideOnSinglePage: true,
             showSizeChanger: false,
-            showTotal: () => `Брендов: ${brands.length} · ${goods(groups.data?.total ?? 0)}`,
+            showTotal: () => tr(`Брендов: ${brands.length}`, `Brendlar: ${brands.length}`) + ` · ${goods(groups.data?.total ?? 0)}`,
           }}
-          locale={{ emptyText: 'Товары не найдены' }}
-          footer={brands.length && brands.length <= 20 ? () => `Брендов: ${brands.length} · ${goods(groups.data?.total ?? 0)}` : undefined}
+          locale={{ emptyText: tr('Товары не найдены', 'Mahsulotlar topilmadi') }}
+          footer={brands.length && brands.length <= 20 ? () => tr(`Брендов: ${brands.length}`, `Brendlar: ${brands.length}`) + ` · ${goods(groups.data?.total ?? 0)}` : undefined}
         />
       </Card>
     </>

@@ -12,6 +12,7 @@ import {
   dateTime,
   money,
   periodParams,
+  tr,
   useAction,
   useList,
   usePaged,
@@ -34,11 +35,11 @@ export function EntriesTable({ path }: { path: string }) {
         loading={list.isLoading || list.isFetching}
         dataSource={list.items}
         pagination={list.pagination}
-        locale={{ emptyText: 'Движений нет' }}
+        locale={{ emptyText: tr('Движений нет', 'Harakatlar yoʻq') }}
         columns={[
-          { title: 'Дата', dataIndex: 'created_at', render: dateTime },
-          { title: 'Документ', dataIndex: 'doc_type', render: (v: string) => docTypeTitles[v] ?? v },
-          { title: 'Сумма', dataIndex: 'amount', align: 'right', render: (v: string) => <Signed v={v} /> },
+          { title: tr('Дата', 'Sana'), dataIndex: 'created_at', render: dateTime },
+          { title: tr('Документ', 'Hujjat'), dataIndex: 'doc_type', render: (v: string) => docTypeTitles[v] ?? v },
+          { title: tr('Сумма', 'Summa'), dataIndex: 'amount', align: 'right', render: (v: string) => <Signed v={v} /> },
         ]}
       />
     </>
@@ -49,40 +50,58 @@ export function CashboxesPage() {
   const { stores, me } = useStore()
   return (
     <CrudPage<Cashbox>
-      title="Кассы"
+      title={tr('Кассы', 'Kassalar')}
       path="/store/finance/cashboxes"
       canDelete={(r) => !r.is_main}
-      createLabel="Новая касса"
+      createLabel={tr('Новая касса', 'Yangi kassa')}
       columns={[
-        { title: 'Касса', dataIndex: 'name', render: (v: string, r) => (r.is_main ? <b>{v}</b> : v) },
-        { title: 'Магазин', dataIndex: 'store_name', render: (v: string | null, r) => v ?? (r.is_main ? 'Главная касса сети' : '—') },
-        { title: 'Валюта', dataIndex: 'currency' },
-        { title: 'Остаток', dataIndex: 'balance', align: 'right', render: (v: string, r) => <b>{money(v, r.currency === 'USD' ? '$' : '')}</b> },
-        { title: 'Статус', dataIndex: 'is_active', render: (v: boolean) => <ActiveTag active={v} /> },
+        { title: tr('Касса', 'Kassa'), dataIndex: 'name', render: (v: string, r) => (r.is_main ? <b>{v}</b> : v) },
+        {
+          title: tr('Магазин', 'Doʻkon'),
+          dataIndex: 'store_name',
+          render: (v: string | null, r) => v ?? (r.is_main ? tr('Главная касса сети', 'Tarmoqning asosiy kassasi') : '—'),
+        },
+        { title: tr('Валюта', 'Valyuta'), dataIndex: 'currency' },
+        { title: tr('Остаток', 'Qoldiq'), dataIndex: 'balance', align: 'right', render: (v: string, r) => <b>{money(v, r.currency === 'USD' ? '$' : '')}</b> },
+        { title: tr('Статус', 'Holat'), dataIndex: 'is_active', render: (v: boolean) => <ActiveTag active={v} /> },
       ]}
       expandable={{ expandedRowRender: (r) => <EntriesTable path={`/store/finance/cashboxes/${r.id}/entries`} /> }}
       form={(editing) => (
         <>
-          <Form.Item name="name" label="Название" rules={[{ required: true, message: 'Обязательное поле' }]}>
+          <Form.Item name="name" label={tr('Название', 'Nomi')} rules={[{ required: true, message: tr('Обязательное поле', 'Majburiy maydon') }]}>
             <Input />
           </Form.Item>
           {!editing && (
             <>
-              <Form.Item name="currency" label="Валюта" initialValue="UZS">
-                <Select options={[{ value: 'UZS', label: 'UZS (сум)' }, { value: 'USD', label: 'USD' }]} />
+              <Form.Item name="currency" label={tr('Валюта', 'Valyuta')} initialValue="UZS">
+                <Select
+                  options={[
+                    { value: 'UZS', label: tr('UZS (сум)', 'UZS (soʻm)') },
+                    { value: 'USD', label: 'USD' },
+                  ]}
+                />
               </Form.Item>
-              <Form.Item name="store_id" label="Магазин" extra="Без магазина — главная касса сети (например, долларовая)">
+              <Form.Item
+                name="store_id"
+                label={tr('Магазин', 'Doʻkon')}
+                extra={tr('Без магазина — главная касса сети (например, долларовая)', 'Doʻkonsiz — tarmoqning asosiy kassasi (masalan, dollar kassasi)')}
+              >
                 <Select
                   allowClear
                   options={stores.map((s) => ({ value: s.id, label: s.name }))}
-                  placeholder={me?.all_stores ? 'Главная касса' : 'Выберите магазин'}
+                  placeholder={me?.all_stores ? tr('Главная касса', 'Asosiy kassa') : tr('Выберите магазин', 'Doʻkonni tanlang')}
                 />
               </Form.Item>
             </>
           )}
           {editing && (
-            <Form.Item name="is_active" label="Статус">
-              <Radio.Group options={[{ value: true, label: 'Активна' }, { value: false, label: 'Отключена' }]} />
+            <Form.Item name="is_active" label={tr('Статус', 'Holat')}>
+              <Radio.Group
+                options={[
+                  { value: true, label: tr('Активна', 'Faol') },
+                  { value: false, label: tr('Отключена', 'Oʻchirilgan') },
+                ]}
+              />
             </Form.Item>
           )}
         </>
@@ -106,15 +125,15 @@ export function OperationsPage() {
   return (
     <>
       <PageTitle
-        title="Кассовые операции"
+        title={tr('Кассовые операции', 'Kassa operatsiyalari')}
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>
-            Новая операция
+            {tr('Новая операция', 'Yangi operatsiya')}
           </Button>
         }
       >
         <RangeFilter value={range} onChange={setRange} allowClear />
-        <RemoteSelect<Cashbox> path="/store/finance/cashboxes" label={cashboxLabel} value={cashboxId} onChange={setCashboxId} allowClear placeholder="Все кассы" />
+        <RemoteSelect<Cashbox> path="/store/finance/cashboxes" label={cashboxLabel} value={cashboxId} onChange={setCashboxId} allowClear placeholder={tr('Все кассы', 'Barcha kassalar')} />
       </PageTitle>
       <LoadError error={list.error} retry={() => list.refetch()} />
       <Card styles={{ body: { padding: 0 } }}>
@@ -126,27 +145,27 @@ export function OperationsPage() {
           pagination={list.pagination}
           columns={[
             { title: '№', dataIndex: 'number', width: 70 },
-            { title: 'Дата', dataIndex: 'created_at', render: dateTime },
+            { title: tr('Дата', 'Sana'), dataIndex: 'created_at', render: dateTime },
             {
-              title: 'Вид',
+              title: tr('Вид', 'Turi'),
               dataIndex: 'kind',
               render: (v: string) => <Tag color={v === 'income' ? 'green' : 'red'}>{kindTitles[v] ?? v}</Tag>,
             },
-            { title: 'Касса', dataIndex: 'cashbox_name' },
+            { title: tr('Касса', 'Kassa'), dataIndex: 'cashbox_name' },
             {
-              title: 'Статья',
+              title: tr('Статья', 'Modda'),
               key: 'what',
-              render: (_, r) => r.reason_name ?? (r.counterparty_name ? `Контрагент: ${r.counterparty_name}` : '—'),
+              render: (_, r) => r.reason_name ?? (r.counterparty_name ? tr(`Контрагент: ${r.counterparty_name}`, `Kontragent: ${r.counterparty_name}`) : '—'),
             },
             {
-              title: 'Сумма',
+              title: tr('Сумма', 'Summa'),
               dataIndex: 'amount',
               align: 'right',
               render: (v: string, r) => <Signed v={r.kind === 'expense' ? -Number(v) : v} />,
             },
-            { title: 'Валюта', dataIndex: 'currency' },
-            { title: 'Примечание', dataIndex: 'note' },
-            { title: 'Автор', dataIndex: 'created_by' },
+            { title: tr('Валюта', 'Valyuta'), dataIndex: 'currency' },
+            { title: tr('Примечание', 'Izoh'), dataIndex: 'note' },
+            { title: tr('Автор', 'Muallif'), dataIndex: 'created_by' },
           ]}
         />
       </Card>
@@ -178,13 +197,13 @@ function OperationModal({ open, onClose }: { open: boolean; onClose: () => void 
         note: v.note ?? '',
         ...(v.source === 'reason' ? { reason_id: v.reason_id } : { counterparty_id: v.counterparty_id }),
       }),
-    { success: 'Операция проведена' },
+    { success: tr('Операция проведена', 'Operatsiya oʻtkazildi') },
   )
   return (
     <Modal
       open={open}
-      title="Кассовая операция"
-      okText="Провести"
+      title={tr('Кассовая операция', 'Kassa operatsiyasi')}
+      okText={tr('Провести', 'Oʻtkazish')}
       onOk={() => form.submit()}
       confirmLoading={save.isPending}
       onCancel={onClose}
@@ -206,41 +225,44 @@ function OperationModal({ open, onClose }: { open: boolean; onClose: () => void 
             optionType="button"
             buttonStyle="solid"
             options={[
-              { value: 'income', label: 'Приход' },
-              { value: 'expense', label: 'Расход' },
+              { value: 'income', label: tr('Приход', 'Kirim') },
+              { value: 'expense', label: tr('Расход', 'Chiqim') },
             ]}
           />
         </Form.Item>
-        <Form.Item name="cashbox_id" label="Касса" rules={[{ required: true, message: 'Выберите кассу' }]}>
+        <Form.Item name="cashbox_id" label={tr('Касса', 'Kassa')} rules={[{ required: true, message: tr('Выберите кассу', 'Kassani tanlang') }]}>
           <RemoteSelect<Cashbox> path="/store/finance/cashboxes" label={cashboxLabel} filter={(c) => c.is_active} />
         </Form.Item>
-        <Form.Item name="amount" label="Сумма" rules={[{ required: true, message: 'Укажите сумму' }]}>
+        <Form.Item name="amount" label={tr('Сумма', 'Summa')} rules={[{ required: true, message: tr('Укажите сумму', 'Summani kiriting') }]}>
           <Num min="0.01" />
         </Form.Item>
-        <Form.Item name="source" label="Основание">
+        <Form.Item name="source" label={tr('Основание', 'Asos')}>
           <Radio.Group
             options={[
-              { value: 'reason', label: 'Финансовая причина' },
-              { value: 'counterparty', label: kind === 'income' ? 'От контрагента' : 'Оплата контрагенту' },
+              { value: 'reason', label: tr('Финансовая причина', 'Moliyaviy sabab') },
+              {
+                value: 'counterparty',
+                label: kind === 'income' ? tr('От контрагента', 'Kontragentdan') : tr('Оплата контрагенту', 'Kontragentga toʻlov'),
+              },
             ]}
           />
         </Form.Item>
         {source === 'reason' ? (
-          <Form.Item name="reason_id" label="Причина" rules={[{ required: true, message: 'Выберите причину' }]}>
+          <Form.Item name="reason_id" label={tr('Причина', 'Sabab')} rules={[{ required: true, message: tr('Выберите причину', 'Sababni tanlang') }]}>
             <RemoteSelect<Reason> path="/store/finance/reasons" filter={(r) => r.is_active && r.kind === kind} />
           </Form.Item>
         ) : (
-          <Form.Item name="counterparty_id" label="Контрагент" rules={[{ required: true, message: 'Выберите контрагента' }]}>
+          <Form.Item name="counterparty_id" label={tr('Контрагент', 'Kontragent')} rules={[{ required: true, message: tr('Выберите контрагента', 'Kontragentni tanlang') }]}>
             <RemoteSelect<Counterparty>
               path="/store/finance/counterparties"
               search
-              placeholder="Поиск по названию или телефону"
+              placeholder={tr('Поиск по названию или телефону', 'Nomi yoki telefon boʻyicha qidirish')}
               filter={(c) => c.is_active}
-              label={(c) => `${c.name} · сальдо ${money(c.balance)}`}
+              label={(c) => `${c.name} · ${tr('сальдо', 'saldo')} ${money(c.balance)}`}
             />
           </Form.Item>
         )}
-        <Form.Item name="note" label="Примечание">
+        <Form.Item name="note" label={tr('Примечание', 'Izoh')}>
           <Input />
         </Form.Item>
       </Form>
@@ -252,11 +274,11 @@ function OperationModal({ open, onClose }: { open: boolean; onClose: () => void 
 
 export function TransfersPage({ kind }: { kind: 'handover' | 'transfer' }) {
   const path = kind === 'handover' ? '/store/finance/handovers' : '/store/finance/transfers'
-  const title = kind === 'handover' ? 'Сдача кассы' : 'Из кассы в кассу'
+  const title = kind === 'handover' ? tr('Сдача кассы', 'Kassani topshirish') : tr('Из кассы в кассу', 'Kassadan kassaga')
   const [open, setOpen] = useState(false)
   const list = usePaged<CashTransfer>(path)
   const [form] = Form.useForm()
-  const save = useAction((v: Record<string, unknown>) => api.post(path, { ...v, note: v.note ?? '' }), { success: 'Проведено' })
+  const save = useAction((v: Record<string, unknown>) => api.post(path, { ...v, note: v.note ?? '' }), { success: tr('Проведено', 'Oʻtkazildi') })
   const cashboxes = useList<Cashbox>('/store/finance/cashboxes')
   const fromId = Form.useWatch('from_id', form)
   const from = (cashboxes.data ?? []).find((c) => c.id === fromId)
@@ -269,7 +291,7 @@ export function TransfersPage({ kind }: { kind: 'handover' | 'transfer' }) {
         title={title}
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>
-            {kind === 'handover' ? 'Сдать кассу' : 'Перевести'}
+            {kind === 'handover' ? tr('Сдать кассу', 'Kassani topshirish') : tr('Перевести', 'Oʻtkazish')}
           </Button>
         }
       />
@@ -283,47 +305,51 @@ export function TransfersPage({ kind }: { kind: 'handover' | 'transfer' }) {
           pagination={list.pagination}
           columns={[
             { title: '№', dataIndex: 'number', width: 70 },
-            { title: 'Дата', dataIndex: 'created_at', render: dateTime },
-            { title: 'Откуда', dataIndex: 'from_name' },
-            { title: 'Сумма', dataIndex: 'amount_from', align: 'right', render: (v: string, r) => `${money(v)} ${r.from_currency}` },
-            { title: 'Куда', dataIndex: 'to_name' },
-            { title: 'Зачислено', dataIndex: 'amount_to', align: 'right', render: (v: string, r) => `${money(v)} ${r.to_currency}` },
-            { title: 'Курс', dataIndex: 'rate', render: (v: string | null) => (v ? money(v) : '—') },
-            { title: 'Примечание', dataIndex: 'note' },
-            { title: 'Автор', dataIndex: 'created_by' },
+            { title: tr('Дата', 'Sana'), dataIndex: 'created_at', render: dateTime },
+            { title: tr('Откуда', 'Qayerdan'), dataIndex: 'from_name' },
+            { title: tr('Сумма', 'Summa'), dataIndex: 'amount_from', align: 'right', render: (v: string, r) => `${money(v)} ${r.from_currency}` },
+            { title: tr('Куда', 'Qayerga'), dataIndex: 'to_name' },
+            { title: tr('Зачислено', 'Tushdi'), dataIndex: 'amount_to', align: 'right', render: (v: string, r) => `${money(v)} ${r.to_currency}` },
+            { title: tr('Курс', 'Kurs'), dataIndex: 'rate', render: (v: string | null) => (v ? money(v) : '—') },
+            { title: tr('Примечание', 'Izoh'), dataIndex: 'note' },
+            { title: tr('Автор', 'Muallif'), dataIndex: 'created_by' },
           ]}
         />
       </Card>
       <Modal
         open={open}
         title={title}
-        okText="Провести"
+        okText={tr('Провести', 'Oʻtkazish')}
         onOk={() => form.submit()}
         confirmLoading={save.isPending}
         onCancel={() => setOpen(false)}
         destroyOnHidden
       >
         <Form form={form} layout="vertical" preserve={false} onFinish={(v) => save.mutate(v, { onSuccess: () => setOpen(false) })}>
-          <Form.Item name="from_id" label="Из кассы" rules={[{ required: true, message: 'Выберите кассу' }]}>
+          <Form.Item name="from_id" label={tr('Из кассы', 'Qaysi kassadan')} rules={[{ required: true, message: tr('Выберите кассу', 'Kassani tanlang') }]}>
             <Select options={opts((c) => (kind === 'handover' ? !c.is_main : true))} />
           </Form.Item>
           {kind === 'transfer' && (
             <Form.Item
               name="to_id"
-              label="В кассу"
-              rules={[{ required: true, message: 'Выберите кассу' }]}
-              extra={from ? 'Между разными валютами — по текущему курсу' : undefined}
+              label={tr('В кассу', 'Qaysi kassaga')}
+              rules={[{ required: true, message: tr('Выберите кассу', 'Kassani tanlang') }]}
+              extra={from ? tr('Между разными валютами — по текущему курсу', 'Turli valyutalar oʻrtasida — joriy kurs boʻyicha') : undefined}
             >
               <Select options={opts((c) => c.id !== fromId)} />
             </Form.Item>
           )}
           {kind === 'handover' && (
-            <Typography.Paragraph type="secondary">Деньги поступят в главную кассу сети в той же валюте.</Typography.Paragraph>
+            <Typography.Paragraph type="secondary">
+              {tr('Деньги поступят в главную кассу сети в той же валюте.', 'Pul tarmoqning asosiy kassasiga xuddi shu valyutada tushadi.')}
+            </Typography.Paragraph>
           )}
-          <Form.Item name="amount" label={`Сумма${from ? ', ' + from.currency : ''}`} rules={[{ required: true, message: 'Укажите сумму' }]}>
+          <Form.Item name="amount" label={tr('Сумма', 'Summa') + (from ? ', ' + from.currency : '')}
+            rules={[{ required: true, message: tr('Укажите сумму', 'Summani kiriting') }]}
+          >
             <Num min="0.01" max={from?.balance} />
           </Form.Item>
-          <Form.Item name="note" label="Примечание">
+          <Form.Item name="note" label={tr('Примечание', 'Izoh')}>
             <Input />
           </Form.Item>
         </Form>
@@ -338,34 +364,34 @@ export function RatesPage() {
   const list = usePaged<Rate>('/store/finance/rates', undefined, 20)
   const latest = useList<Rate>('/store/finance/rates', { limit: 1 })
   const [form] = Form.useForm<{ rate: string }>()
-  const save = useAction((v: { rate: string }) => api.post('/store/finance/rates', v), { success: 'Курс установлен' })
+  const save = useAction((v: { rate: string }) => api.post('/store/finance/rates', v), { success: tr('Курс установлен', 'Kurs belgilandi') })
   const current = latest.data?.[0]
   return (
     <>
-      <PageTitle title="Курс валюты" />
+      <PageTitle title={tr('Курс валюты', 'Valyuta kursi')} />
       <Card style={{ marginBottom: 16 }}>
         <Space size={48} wrap align="end">
-          <Statistic title="Текущий курс, сум за 1 USD" value={current ? money(current.rate) : '—'} />
+          <Statistic title={tr('Текущий курс, сум за 1 USD', 'Joriy kurs, 1 USD uchun soʻm')} value={current ? money(current.rate) : '—'} />
           <Form form={form} layout="inline" onFinish={(v) => save.mutate(v, { onSuccess: () => form.resetFields() })}>
-            <Form.Item name="rate" rules={[{ required: true, message: 'Укажите курс' }]}>
-              <Num min="1" placeholder="Новый курс" style={{ width: 180 }} />
+            <Form.Item name="rate" rules={[{ required: true, message: tr('Укажите курс', 'Kursni kiriting') }]}>
+              <Num min="1" placeholder={tr('Новый курс', 'Yangi kurs')} style={{ width: 180 }} />
             </Form.Item>
             <Button type="primary" htmlType="submit" loading={save.isPending}>
-              Установить
+              {tr('Установить', 'Belgilash')}
             </Button>
           </Form>
         </Space>
       </Card>
       <LoadError error={list.error ?? latest.error} retry={() => void list.refetch()} />
-      <Card title="История" styles={{ body: { padding: 0 } }}>
+      <Card title={tr('История', 'Tarix')} styles={{ body: { padding: 0 } }}>
         <Table<Rate>
           rowKey={(r) => r.created_at}
           loading={list.isLoading || list.isFetching}
           dataSource={list.items}
           pagination={list.pagination}
           columns={[
-            { title: 'Дата', dataIndex: 'created_at', render: dateTime },
-            { title: 'Курс', dataIndex: 'rate', align: 'right', render: (v: string) => money(v) },
+            { title: tr('Дата', 'Sana'), dataIndex: 'created_at', render: dateTime },
+            { title: tr('Курс', 'Kurs'), dataIndex: 'rate', align: 'right', render: (v: string) => money(v) },
           ]}
         />
       </Card>

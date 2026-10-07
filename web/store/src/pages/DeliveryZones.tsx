@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Button, Card, Empty, Form, Input, Modal, Popconfirm, Radio, Space, Spin, Tooltip, Typography } from 'antd'
 import { CheckOutlined, CloseOutlined, DeleteOutlined, EditOutlined, FormOutlined, PlusOutlined } from '@ant-design/icons'
-import { api, money, useAction, useFitMap, useList, useYmaps } from '@sm/shared'
+import { api, money, tr, useAction, useFitMap, useList, useYmaps } from '@sm/shared'
 import { Num } from '../ui'
 import type { Zone } from '../types'
 
@@ -77,16 +77,16 @@ export function DeliveryZones({ storeId, storeName, lat, lng, radiusM, onZonesCh
 
   const save = useAction(
     (v: { id?: string; body: Record<string, unknown> }) => (v.id ? api.patch(`${path}/${v.id}`, v.body) : api.post(path, v.body)),
-    { success: 'Зона сохранена', invalidate: [[path]] },
+    { success: tr('Зона сохранена', 'Hudud saqlandi'), invalidate: [[path]] },
   )
-  const remove = useAction((id: string) => api.del(`${path}/${id}`), { success: 'Зона удалена', invalidate: [[path]] })
+  const remove = useAction((id: string) => api.del(`${path}/${id}`), { success: tr('Зона удалена', 'Hudud oʻchirildi'), invalidate: [[path]] })
 
   // Карта
   useEffect(() => {
     if (!ymaps || !box.current) return
     const center = lat !== null && lng !== null ? [lat, lng] : [41.311, 69.279]
     const m = new ymaps.Map(box.current, { center, zoom: 13, controls: ['zoomControl', 'searchControl', 'fullscreenControl'] }, { suppressMapOpenBlock: true })
-    m.controls.get('searchControl')?.options.set({ placeholderContent: 'Поиск адреса', size: 'small' })
+    m.controls.get('searchControl')?.options.set({ placeholderContent: tr('Поиск адреса', 'Manzilni qidirish'), size: 'small' })
     const col = new ymaps.GeoObjectCollection()
     m.geoObjects.add(col)
     layer.current = col
@@ -111,7 +111,7 @@ export function DeliveryZones({ storeId, storeName, lat, lng, radiusM, onZonesCh
     if (lat !== null && lng !== null) {
       if (!hasActive && radiusM) {
         col.add(
-          new ymaps.Circle([[lat, lng], radiusM], { hintContent: `Радиус доставки ${radiusM} м` }, {
+          new ymaps.Circle([[lat, lng], radiusM], { hintContent: tr(`Радиус доставки ${radiusM} м`, `Yetkazib berish radiusi ${radiusM} m`) }, {
             fillColor: '#3761e91a',
             strokeColor: '#3761e9',
             strokeStyle: 'dash',
@@ -120,14 +120,14 @@ export function DeliveryZones({ storeId, storeName, lat, lng, radiusM, onZonesCh
           }),
         )
       }
-      col.add(new ymaps.Placemark([lat, lng], { hintContent: storeName ?? 'Магазин' }, { preset: 'islands#darkBlueShoppingIcon' }))
+      col.add(new ymaps.Placemark([lat, lng], { hintContent: storeName ?? tr('Магазин', 'Doʻkon') }, { preset: 'islands#darkBlueShoppingIcon' }))
     }
     // Большие зоны добавляются первыми, чтобы внутренние были сверху и кликались.
     for (const z of [...sorted].reverse()) {
       const c = colorOf.get(z.id) ?? COLORS[0]
       const p = new ymaps.Polygon(
         [toRing(z.polygon)],
-        { hintContent: `${z.name} — ${money(z.price)} сум${z.is_active ? '' : ' (отключена)'}` },
+        { hintContent: `${z.name} — ${money(z.price)} ${tr('сум', 'soʻm')}${z.is_active ? '' : tr(' (отключена)', ' (oʻchirilgan)')}` },
         {
           fillColor: c + (z.is_active ? '33' : '12'),
           strokeColor: c,
@@ -175,7 +175,7 @@ export function DeliveryZones({ storeId, storeName, lat, lng, radiusM, onZonesCh
     if (pts.length < 3) return
     p.editor.stopDrawing()
     formRef.resetFields()
-    formRef.setFieldsValue({ name: `Зона ${zones.length + 1}`, price: null, is_active: true })
+    formRef.setFieldsValue({ name: tr(`Зона ${zones.length + 1}`, `Hudud ${zones.length + 1}`), price: null, is_active: true })
     setForm({ zone: null, polygon: pts })
   }
 
@@ -240,30 +240,30 @@ export function DeliveryZones({ storeId, storeName, lat, lng, radiusM, onZonesCh
 
   return (
     <Card
-      title="Зоны доставки"
+      title={tr('Зоны доставки', 'Yetkazib berish hududlari')}
       className="sm-zones"
       extra={
         mode.kind === 'draw' ? (
           <Space>
             <Button icon={<CloseOutlined />} onClick={cancelDraw}>
-              Отмена
+              {tr('Отмена', 'Bekor qilish')}
             </Button>
             <Button className="sm-btn-blue" icon={<CheckOutlined />} disabled={points < 3} onClick={finishDraw}>
-              Готово ({points} {points === 1 ? 'точка' : points >= 2 && points <= 4 ? 'точки' : 'точек'})
+              {tr('Готово', 'Tayyor')} ({points} {tr(points === 1 ? 'точка' : points >= 2 && points <= 4 ? 'точки' : 'точек', 'ta nuqta')})
             </Button>
           </Space>
         ) : mode.kind === 'edit' ? (
           <Space>
             <Button icon={<CloseOutlined />} onClick={() => finishEdit(false)}>
-              Отмена
+              {tr('Отмена', 'Bekor qilish')}
             </Button>
             <Button className="sm-btn-blue" icon={<CheckOutlined />} loading={save.isPending} onClick={() => finishEdit(true)}>
-              Сохранить границы
+              {tr('Сохранить границы', 'Chegaralarni saqlash')}
             </Button>
           </Space>
         ) : (
           <Button type="primary" icon={<PlusOutlined />} disabled={!map} onClick={startDraw}>
-            Нарисовать зону
+            {tr('Нарисовать зону', 'Hudud chizish')}
           </Button>
         )
       }
@@ -273,13 +273,16 @@ export function DeliveryZones({ storeId, storeName, lat, lng, radiusM, onZonesCh
           type="info"
           showIcon
           style={{ marginBottom: 12 }}
-          message="Кликайте по карте, чтобы поставить вершины зоны. Когда контур готов (минимум 3 точки) — нажмите «Готово»."
+          message={tr(
+            'Кликайте по карте, чтобы поставить вершины зоны. Когда контур готов (минимум 3 точки) — нажмите «Готово».',
+            'Hudud uchlarini belgilash uchun xaritani bosing. Kontur tayyor boʻlgach (kamida 3 ta nuqta) — «Tayyor» tugmasini bosing.',
+          )}
         />
       )}
       {mode.kind === 'edit' && (
-        <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Перетаскивайте вершины. Клик по вершине — удалить или добавить точку." />
+        <Alert type="info" showIcon style={{ marginBottom: 12 }} message={tr('Перетаскивайте вершины. Клик по вершине — удалить или добавить точку.', 'Uchlarni suring. Uchni bosib — nuqtani oʻchirish yoki qoʻshish mumkin.')} />
       )}
-      {noPoint && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="Точка магазина не указана — поставьте её в разделе «Магазины»." />}
+      {noPoint && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={tr('Точка магазина не указана — поставьте её в разделе «Магазины».', 'Doʻkon joylashuvi koʻrsatilmagan — uni «Doʻkonlar» boʻlimida belgilang.')} />}
       <div className="sm-zones-body">
         <div className="sm-zones-list">
           {isLoading ? (
@@ -289,9 +292,12 @@ export function DeliveryZones({ storeId, storeName, lat, lng, radiusM, onZonesCh
               image={Empty.PRESENTED_IMAGE_SIMPLE}
               description={
                 <>
-                  Зон нет — доставка в радиусе{radiusM ? ` ${radiusM} м` : ''}.
+                  {tr(
+                    `Зон нет — доставка в радиусе${radiusM ? ` ${radiusM} м` : ''}.`,
+                    `Hududlar yoʻq — yetkazib berish radius boʻyicha${radiusM ? ` (${radiusM} m)` : ''}.`,
+                  )}
                   <br />
-                  Нарисуйте зону, чтобы доставлять только в неё и по своей цене.
+                  {tr('Нарисуйте зону, чтобы доставлять только в неё и по своей цене.', 'Faqat unga va oʻz narxingizda yetkazish uchun hudud chizing.')}
                 </>
               }
             />
@@ -309,16 +315,16 @@ export function DeliveryZones({ storeId, storeName, lat, lng, radiusM, onZonesCh
                 <span className="sm-zone-dot" style={{ background: colorOf.get(z.id) }} />
                 <div className="sm-zone-text">
                   <b>{z.name}</b>
-                  <span>{z.is_active ? `${money(z.price)} сум` : 'отключена'}</span>
+                  <span>{z.is_active ? `${money(z.price)} ${tr('сум', 'soʻm')}` : tr('отключена', 'oʻchirilgan')}</span>
                 </div>
                 <Space size={2} onClick={(e) => e.stopPropagation()}>
-                  <Tooltip title="Название и цена">
+                  <Tooltip title={tr('Название и цена', 'Nomi va narxi')}>
                     <Button size="small" type="text" icon={<FormOutlined />} disabled={busy} onClick={() => openProps(z)} />
                   </Tooltip>
-                  <Tooltip title="Изменить границы">
+                  <Tooltip title={tr('Изменить границы', 'Chegaralarni oʻzgartirish')}>
                     <Button size="small" type="text" icon={<EditOutlined />} disabled={busy} onClick={() => startEdit(z)} />
                   </Tooltip>
-                  <Popconfirm title="Удалить зону?" onConfirm={() => remove.mutate(z.id)}>
+                  <Popconfirm title={tr('Удалить зону?', 'Hudud oʻchirilsinmi?')} onConfirm={() => remove.mutate(z.id)}>
                     <Button size="small" type="text" danger icon={<DeleteOutlined />} disabled={busy} />
                   </Popconfirm>
                 </Space>
@@ -327,7 +333,10 @@ export function DeliveryZones({ storeId, storeName, lat, lng, radiusM, onZonesCh
           )}
           {zones.length > 1 && (
             <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 12, marginBottom: 0 }}>
-              Если адрес попадает в несколько зон, действует самая маленькая — внутренняя. Так можно сделать центр дешевле, а окраины дороже.
+              {tr(
+                'Если адрес попадает в несколько зон, действует самая маленькая — внутренняя. Так можно сделать центр дешевле, а окраины дороже.',
+                'Agar manzil bir nechta hududga tushsa, eng kichigi — ichkisi amal qiladi. Shunday qilib markazni arzonroq, chekkalarni qimmatroq qilish mumkin.',
+              )}
             </Typography.Paragraph>
           )}
         </div>
@@ -340,25 +349,28 @@ export function DeliveryZones({ storeId, storeName, lat, lng, radiusM, onZonesCh
 
       <Modal
         open={!!form}
-        title={form?.zone ? 'Зона доставки' : 'Новая зона'}
-        okText="Сохранить"
+        title={form?.zone ? tr('Зона доставки', 'Yetkazib berish hududi') : tr('Новая зона', 'Yangi hudud')}
+        okText={tr('Сохранить', 'Saqlash')}
         onOk={() => formRef.submit()}
         confirmLoading={save.isPending}
         onCancel={closeForm}
         forceRender
       >
         <Form form={formRef} layout="vertical" onFinish={submit}>
-          <Form.Item name="name" label="Название" rules={[{ required: true, whitespace: true, message: 'Обязательное поле' }]}>
-            <Input placeholder="Например: Центр" />
+          <Form.Item name="name" label={tr('Название', 'Nomi')} rules={[{ required: true, whitespace: true, message: tr('Обязательное поле', 'Majburiy maydon') }]}>
+            <Input placeholder={tr('Например: Центр', 'Masalan: Markaz')} />
           </Form.Item>
-          <Form.Item name="price" label="Цена доставки, сум" rules={[{ required: true, message: 'Укажите цену' }]} extra="0 — бесплатная доставка в этой зоне">
+          <Form.Item name="price" label={tr('Цена доставки, сум', 'Yetkazib berish narxi, soʻm')}
+            rules={[{ required: true, message: tr('Укажите цену', 'Narxni kiriting') }]}
+            extra={tr('0 — бесплатная доставка в этой зоне', '0 — bu hududda yetkazib berish bepul')}
+          >
             <Num step="1000" />
           </Form.Item>
-          <Form.Item name="is_active" label="Статус">
+          <Form.Item name="is_active" label={tr('Статус', 'Holat')}>
             <Radio.Group
               options={[
-                { value: true, label: 'Доставляем' },
-                { value: false, label: 'Отключена' },
+                { value: true, label: tr('Доставляем', 'Yetkazamiz') },
+                { value: false, label: tr('Отключена', 'Oʻchirilgan') },
               ]}
             />
           </Form.Item>

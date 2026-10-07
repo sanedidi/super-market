@@ -8,6 +8,7 @@ import { api } from '../api'
 import { money } from '../format'
 import { COLORS, iconOf, typeMeta } from './meta'
 import type { HomeBlock, PreviewProduct } from './types'
+import { tr } from '../i18n'
 
 interface Category {
   id: string
@@ -36,7 +37,7 @@ function Product({ p, width }: { p: PreviewProduct; width?: number }) {
         {p.discount_percent ? <span className="smh-prod-badge">−{p.discount_percent}%</span> : null}
         <span className="smh-prod-add">+</span>
       </div>
-      <div className="smh-prod-price">{money(p.price)} сум</div>
+      <div className="smh-prod-price">{money(p.price)} {tr('сум', 'soʻm')}</div>
       {p.old_price && <div className="smh-prod-old">{money(p.old_price)}</div>}
       <div className="smh-prod-name">{p.name}</div>
     </div>
@@ -53,10 +54,10 @@ function Block({ b, cats }: { b: HomeBlock; cats: Category[] }) {
         <div className="smh-block">
           <div className="smh-head">
             <span>{b.title}</span>
-            {b.show_all !== false && b.source !== 'manual' && <a>Все</a>}
+            {b.show_all !== false && b.source !== 'manual' && <a>{tr('Все', 'Hammasi')}</a>}
           </div>
           {items.length === 0 ? (
-            <div className="smh-empty">Нет товаров — в приложении блок скрыт</div>
+            <div className="smh-empty">{tr('Нет товаров — в приложении блок скрыт', 'Mahsulot yoʻq — ilovada blok yashirilgan')}</div>
           ) : b.view === 'row' ? (
             <div className="smh-row">{items.map((p) => <Product key={p.id} p={p} width={92} />)}</div>
           ) : (
@@ -79,7 +80,7 @@ function Block({ b, cats }: { b: HomeBlock; cats: Category[] }) {
         )
       }
       const list = b.banners ?? []
-      if (list.length === 0) return <div className="smh-block"><div className="smh-empty">Нет активных баннеров — в приложении блок скрыт</div></div>
+      if (list.length === 0) return <div className="smh-block"><div className="smh-empty">{tr('Нет активных баннеров — в приложении блок скрыт', 'Faol bannerlar yoʻq — ilovada blok yashirilgan')}</div></div>
       const first = list[0]
       return (
         <div className="smh-block">
@@ -105,7 +106,10 @@ function Block({ b, cats }: { b: HomeBlock; cats: Category[] }) {
         return (
           <div className="smh-promo" style={{ background: COLORS.yellow.bg }}>
             <GiftFilled style={{ color: COLORS.yellow.icon }} />
-            <div><b>Доставка 0 сум от 150 000 сум</b><span>Ещё 150 000 сум до бесплатной</span></div>
+            <div>
+              <b>{tr('Доставка 0 сум от 150 000 сум', '150 000 soʻmdan yetkazib berish 0 soʻm')}</b>
+              <span>{tr('Ещё 150 000 сум до бесплатной', 'Bepul yetkazishgacha yana 150 000 soʻm')}</span>
+            </div>
             <RightOutlined />
           </div>
         )
@@ -121,7 +125,7 @@ function Block({ b, cats }: { b: HomeBlock; cats: Category[] }) {
     }
     case 'category_icons': {
       const list = b.mode === 'manual' ? (b.category_ids ?? []).map((id) => cats.find((c) => c.id === id)).filter((c): c is Category => !!c) : roots
-      const items = [...(b.show_deals !== false ? [{ id: 'deals', name: 'Скидки', image_url: null as string | null | undefined }] : []), ...list]
+      const items = [...(b.show_deals !== false ? [{ id: 'deals', name: tr('Скидки', 'Chegirmalar'), image_url: null as string | null | undefined }] : []), ...list]
       const shape = b.shape ?? 'circle'
       return (
         <div className={`smh-icons smh-icons-${shape}`}>
@@ -141,12 +145,12 @@ function Block({ b, cats }: { b: HomeBlock; cats: Category[] }) {
         .filter((r) => cats.some((c) => c.parent_id === r.id))
         .map((r) => ({ id: r.id, title: r.name, tiles: cats.filter((c) => c.parent_id === r.id) }))
       const leaves = roots.filter((r) => !cats.some((c) => c.parent_id === r.id))
-      if (leaves.length) sections.push({ id: 'all', title: 'Каталог', tiles: leaves })
+      if (leaves.length) sections.push({ id: 'all', title: tr('Каталог', 'Katalog'), tiles: leaves })
       if (b.mode === 'selected') sections = (b.category_ids ?? []).flatMap((id) => sections.filter((s) => s.id === id))
       const cols = b.view === 'tiles2' ? 2 : 3
       return (
         <div className="smh-block">
-          {sections.length === 0 && <div className="smh-empty">Разделы появятся, когда в магазине будут товары</div>}
+          {sections.length === 0 && <div className="smh-empty">{tr('Разделы появятся, когда в магазине будут товары', 'Doʻkonda mahsulotlar paydo boʻlganda boʻlimlar chiqadi')}</div>}
           {sections.map((s) => (
             <div key={s.id} style={{ marginBottom: 10 }}>
               <div className="smh-head"><span>{s.title}</span></div>
@@ -197,15 +201,15 @@ export function PhonePreview({
       <div className="smh-screen">
         <div className="smh-header">
           <div className="smh-status"><span>{platform === 'ios' ? '9:41' : '12:30'}</span><i /></div>
-          <div className="smh-addr"><span><EnvironmentFilled /> ул. Амира Темура, 12</span><BellOutlined /></div>
+          <div className="smh-addr"><span><EnvironmentFilled /> {tr('ул. Амира Темура, 12', 'Amir Temur koʻchasi, 12')}</span><BellOutlined /></div>
           <div className="smh-eta">
-            <div><small>Привезём за</small><b>25 мин</b></div>
-            <span className="smh-store"><ShopFilled /> {storeName ?? 'Магазин'}</span>
+            <div><small>{tr('Привезём за', 'Yetkazamiz')}</small><b>{tr('25 мин', '25 daqiqada')}</b></div>
+            <span className="smh-store"><ShopFilled /> {storeName ?? tr('Магазин', 'Doʻkon')}</span>
           </div>
-          <div className="smh-search"><SearchOutlined /> Найти в Super Market</div>
+          <div className="smh-search"><SearchOutlined /> {tr('Найти в Super Market', 'Super Marketda qidirish')}</div>
         </div>
         <div className={`smh-body${loading ? ' smh-loading' : ''}`}>
-          {blocks.length === 0 && <div className="smh-empty" style={{ margin: 24 }}>Добавьте блоки — здесь появится главная</div>}
+          {blocks.length === 0 && <div className="smh-empty" style={{ margin: 24 }}>{tr('Добавьте блоки — здесь появится главная', 'Bloklar qoʻshing — bu yerda bosh sahifa paydo boʻladi')}</div>}
           {blocks.map((b) => (
             <div
               key={b.id}

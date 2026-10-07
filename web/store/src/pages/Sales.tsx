@@ -18,14 +18,14 @@ import {
   Typography,
 } from 'antd'
 import { PlusOutlined, RollbackOutlined } from '@ant-design/icons'
-import { LoadError, PageTitle, RemoteSelect, api, dateTime, formatPhone, money, periodParams, qty, useAction, useItem, useList, usePaged } from '@sm/shared'
+import { LoadError, PageTitle, RemoteSelect, api, dateTime, formatPhone, money, periodParams, qty, tr, useAction, useItem, useList, usePaged } from '@sm/shared'
 import { useStore } from '../ctx'
 import { NeedStore, Num, RangeFilter, today, type Range } from '../ui'
 import { FiscalModal } from './Orders'
 import type { CustomerReturn, PaymentMethod, Sale, SaleItem, SalesSummary } from '../types'
 
 function FiscalTag({ status }: { status: string }) {
-  return status === 'registered' ? <Tag color="green">Пробит</Tag> : <Tag color="orange">Не пробит</Tag>
+  return status === 'registered' ? <Tag color="green">{tr('Пробит', 'Urilgan')}</Tag> : <Tag color="orange">{tr('Не пробит', 'Urilmagan')}</Tag>
 }
 
 export function SalesPage() {
@@ -42,24 +42,24 @@ export function SalesPage() {
 
   return (
     <NeedStore>
-      <PageTitle title="Продажи POS">
+      <PageTitle title={tr('Продажи POS', 'POS sotuvlari')}>
         <RangeFilter value={range} onChange={setRange} allowClear />
-        <Input.Search placeholder="№ чека или телефон" allowClear onSearch={(v) => setQ(v.trim())} style={{ width: 220 }} />
+        <Input.Search placeholder={tr('№ чека или телефон', 'Chek № yoki telefon')} allowClear onSearch={(v) => setQ(v.trim())} style={{ width: 220 }} />
         <Space>
           <Switch checked={pending} onChange={setPending} />
-          Только непробитые
+          {tr('Только непробитые', 'Faqat urilmaganlar')}
         </Space>
       </PageTitle>
       <LoadError error={summary.error} retry={() => summary.refetch()} />
       <Card style={{ marginBottom: 16 }} loading={summary.isLoading}>
         <Space size={48} wrap>
-          <Statistic title="Чеков" value={t?.sales_count ?? 0} />
-          <Statistic title="Выручка, сум" value={money(t?.revenue)} />
-          <Statistic title="Скидки, сум" value={money(t?.discount)} />
-          <Statistic title={`Возвраты (${t?.returns_count ?? 0}), сум`} value={money(t?.returns)} />
-          <Statistic title="За вычетом возвратов, сум" value={money(t?.net)} />
+          <Statistic title={tr('Чеков', 'Cheklar')} value={t?.sales_count ?? 0} />
+          <Statistic title={tr('Выручка, сум', 'Tushum, soʻm')} value={money(t?.revenue)} />
+          <Statistic title={tr('Скидки, сум', 'Chegirmalar, soʻm')} value={money(t?.discount)} />
+          <Statistic title={tr(`Возвраты (${t?.returns_count ?? 0}), сум`, `Qaytarishlar (${t?.returns_count ?? 0}), soʻm`)} value={money(t?.returns)} />
+          <Statistic title={tr('За вычетом возвратов, сум', 'Qaytarishlarsiz, soʻm')} value={money(t?.net)} />
         </Space>
-        {q && <Typography.Paragraph type="secondary" style={{ margin: '12px 0 0' }}>Итоги — за весь период, без учёта поиска.</Typography.Paragraph>}
+        {q && <Typography.Paragraph type="secondary" style={{ margin: '12px 0 0' }}>{tr('Итоги — за весь период, без учёта поиска.', 'Jami — butun davr uchun, qidiruvni hisobga olmagan holda.')}</Typography.Paragraph>}
       </Card>
       <LoadError error={list.error} retry={() => list.refetch()} />
       <Card styles={{ body: { padding: 0 } }}>
@@ -72,12 +72,12 @@ export function SalesPage() {
           onRow={(r) => ({ onClick: () => setOpenId(r.id), style: { cursor: 'pointer' } })}
           columns={[
             { title: '№', dataIndex: 'number', width: 70 },
-            { title: 'Время', dataIndex: 'sold_at', render: dateTime },
-            { title: 'Кассир', dataIndex: 'cashier' },
-            { title: 'Покупатель', dataIndex: 'customer_phone', render: (v: string) => formatPhone(v) || '—' },
-            { title: 'Скидка', dataIndex: 'discount', align: 'right', render: (v: string) => money(v) },
-            { title: 'Сумма', dataIndex: 'total', align: 'right', render: (v: string) => money(v) },
-            { title: 'Чек', dataIndex: 'fiscal_status', render: (v: string) => <FiscalTag status={v} /> },
+            { title: tr('Время', 'Vaqt'), dataIndex: 'sold_at', render: dateTime },
+            { title: tr('Кассир', 'Kassir'), dataIndex: 'cashier' },
+            { title: tr('Покупатель', 'Xaridor'), dataIndex: 'customer_phone', render: (v: string) => formatPhone(v) || '—' },
+            { title: tr('Скидка', 'Chegirma'), dataIndex: 'discount', align: 'right', render: (v: string) => money(v) },
+            { title: tr('Сумма', 'Summa'), dataIndex: 'total', align: 'right', render: (v: string) => money(v) },
+            { title: tr('Чек', 'Chek'), dataIndex: 'fiscal_status', render: (v: string) => <FiscalTag status={v} /> },
           ]}
         />
       </Card>
@@ -101,15 +101,15 @@ function SaleDrawer({ id, onClose }: { id: string | null; onClose: () => void })
       open={!!id}
       onClose={onClose}
       width={screens.md ? 720 : '100%'}
-      title={s ? `Чек № ${s.number}` : 'Чек'}
+      title={s ? tr(`Чек № ${s.number}`, `Chek № ${s.number}`) : tr('Чек', 'Chek')}
       loading={isLoading}
       extra={
         s && (
           <Space>
-            {s.fiscal_status !== 'registered' && can('sales.pos') && <Button onClick={() => setFiscal(true)}>Пробить чек</Button>}
+            {s.fiscal_status !== 'registered' && can('sales.pos') && <Button onClick={() => setFiscal(true)}>{tr('Пробить чек', 'Chekni urish')}</Button>}
             {canReturn && (
               <Button icon={<RollbackOutlined />} onClick={() => setRet(true)}>
-                Возврат
+                {tr('Возврат', 'Qaytarish')}
               </Button>
             )}
           </Space>
@@ -119,15 +119,15 @@ function SaleDrawer({ id, onClose }: { id: string | null; onClose: () => void })
       {s && (
         <>
           <Descriptions size="small" bordered column={{ xs: 1, sm: 2, md: 2, lg: 2, xl: 2, xxl: 2 }} style={{ marginBottom: 16 }}>
-            <Descriptions.Item label="Время">{dateTime(s.sold_at)}</Descriptions.Item>
-            <Descriptions.Item label="Магазин">{s.store_name}</Descriptions.Item>
-            <Descriptions.Item label="Кассир">{s.cashier}</Descriptions.Item>
-            <Descriptions.Item label="Покупатель">{formatPhone(s.customer_phone) || '—'}</Descriptions.Item>
-            <Descriptions.Item label="Чек">
+            <Descriptions.Item label={tr('Время', 'Vaqt')}>{dateTime(s.sold_at)}</Descriptions.Item>
+            <Descriptions.Item label={tr('Магазин', 'Doʻkon')}>{s.store_name}</Descriptions.Item>
+            <Descriptions.Item label={tr('Кассир', 'Kassir')}>{s.cashier}</Descriptions.Item>
+            <Descriptions.Item label={tr('Покупатель', 'Xaridor')}>{formatPhone(s.customer_phone) || '—'}</Descriptions.Item>
+            <Descriptions.Item label={tr('Чек', 'Chek')}>
               <FiscalTag status={s.fiscal_status} />
               {s.fiscal_number && `№ ${s.fiscal_number} · ${s.fiscal_sign}`}
             </Descriptions.Item>
-            {s.note && <Descriptions.Item label="Примечание">{s.note}</Descriptions.Item>}
+            {s.note && <Descriptions.Item label={tr('Примечание', 'Izoh')}>{s.note}</Descriptions.Item>}
           </Descriptions>
           <Table<SaleItem>
             rowKey="line"
@@ -137,13 +137,13 @@ function SaleDrawer({ id, onClose }: { id: string | null; onClose: () => void })
             scroll={{ x: true }}
             style={{ marginBottom: 16 }}
             columns={[
-              { title: 'Товар', dataIndex: 'product_name' },
-              { title: 'Кол-во', dataIndex: 'qty', align: 'right', render: (v: string) => qty(v) },
-              { title: 'Цена', dataIndex: 'price', align: 'right', render: (v: string) => money(v) },
-              { title: 'Скидка', dataIndex: 'discount', align: 'right', render: (v: string) => money(v) },
-              { title: 'Сумма', dataIndex: 'total', align: 'right', render: (v: string) => money(v) },
+              { title: tr('Товар', 'Mahsulot'), dataIndex: 'product_name' },
+              { title: tr('Кол-во', 'Miqdor'), dataIndex: 'qty', align: 'right', render: (v: string) => qty(v) },
+              { title: tr('Цена', 'Narx'), dataIndex: 'price', align: 'right', render: (v: string) => money(v) },
+              { title: tr('Скидка', 'Chegirma'), dataIndex: 'discount', align: 'right', render: (v: string) => money(v) },
+              { title: tr('Сумма', 'Summa'), dataIndex: 'total', align: 'right', render: (v: string) => money(v) },
               {
-                title: 'Возвращено',
+                title: tr('Возвращено', 'Qaytarilgan'),
                 dataIndex: 'returned_qty',
                 align: 'right',
                 render: (v: string) => (Number(v) > 0 ? <Typography.Text type="danger">{qty(v)}</Typography.Text> : '—'),
@@ -152,7 +152,11 @@ function SaleDrawer({ id, onClose }: { id: string | null; onClose: () => void })
             summary={() => (
               <Table.Summary.Row>
                 <Table.Summary.Cell index={0} colSpan={4}>
-                  <b>Итого</b> (без скидки {money(s.subtotal)}, скидка {money(s.discount)})
+                  <b>{tr('Итого', 'Jami')}</b>{' '}
+                  {tr(
+                    `(без скидки ${money(s.subtotal)}, скидка ${money(s.discount)})`,
+                    `(chegirmasiz ${money(s.subtotal)}, chegirma ${money(s.discount)})`,
+                  )}
                 </Table.Summary.Cell>
                 <Table.Summary.Cell index={1} align="right">
                   <b>{money(s.total)}</b>
@@ -161,7 +165,7 @@ function SaleDrawer({ id, onClose }: { id: string | null; onClose: () => void })
               </Table.Summary.Row>
             )}
           />
-          <Typography.Title level={5}>Оплата</Typography.Title>
+          <Typography.Title level={5}>{tr('Оплата', 'Toʻlov')}</Typography.Title>
           <Table
             rowKey="payment_method_id"
             size="small"
@@ -169,23 +173,23 @@ function SaleDrawer({ id, onClose }: { id: string | null; onClose: () => void })
             dataSource={s.payments}
             style={{ marginBottom: 16 }}
             columns={[
-              { title: 'Способ', dataIndex: 'name' },
-              { title: 'Сумма', dataIndex: 'amount', align: 'right', render: (v: string) => money(v) },
+              { title: tr('Способ', 'Usul'), dataIndex: 'name' },
+              { title: tr('Сумма', 'Summa'), dataIndex: 'amount', align: 'right', render: (v: string) => money(v) },
             ]}
           />
-          <Typography.Title level={5}>Возвраты</Typography.Title>
+          <Typography.Title level={5}>{tr('Возвраты', 'Qaytarishlar')}</Typography.Title>
           <Table<CustomerReturn>
             rowKey="id"
             size="small"
             pagination={false}
             dataSource={saleReturns}
             loading={returns.isLoading}
-            locale={{ emptyText: 'Возвратов нет' }}
+            locale={{ emptyText: tr('Возвратов нет', 'Qaytarishlar yoʻq') }}
             columns={[
               { title: '№', dataIndex: 'number' },
-              { title: 'Дата', dataIndex: 'created_at', render: dateTime },
-              { title: 'Причина', dataIndex: 'reason' },
-              { title: 'Сумма', dataIndex: 'total', align: 'right', render: (v: string) => money(v) },
+              { title: tr('Дата', 'Sana'), dataIndex: 'created_at', render: dateTime },
+              { title: tr('Причина', 'Sabab'), dataIndex: 'reason' },
+              { title: tr('Сумма', 'Summa'), dataIndex: 'total', align: 'right', render: (v: string) => money(v) },
             ]}
           />
           <FiscalModal path={`/store/sales/${s.id}/fiscal`} open={fiscal} onClose={() => setFiscal(false)} />
@@ -212,11 +216,11 @@ export function ReturnsPage() {
   return (
     <NeedStore>
       <PageTitle
-        title="Возвраты"
+        title={tr('Возвраты', 'Qaytarishlar')}
         extra={
           can('sales.return') && (
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>
-              Оформить возврат
+              {tr('Оформить возврат', 'Qaytarishni rasmiylashtirish')}
             </Button>
           )
         }
@@ -224,7 +228,7 @@ export function ReturnsPage() {
         <RangeFilter value={range} onChange={setRange} allowClear />
         <Space>
           <Switch checked={pending} onChange={setPending} />
-          Только непробитые
+          {tr('Только непробитые', 'Faqat urilmaganlar')}
         </Space>
       </PageTitle>
       <LoadError error={list.error} retry={() => list.refetch()} />
@@ -238,13 +242,13 @@ export function ReturnsPage() {
           onRow={(r) => ({ onClick: () => setOpenId(r.id), style: { cursor: 'pointer' } })}
           columns={[
             { title: '№', dataIndex: 'number', width: 70 },
-            { title: 'Дата', dataIndex: 'created_at', render: dateTime },
-            { title: 'Чек продажи', dataIndex: 'sale_number', render: (v: number) => `№ ${v}` },
-            { title: 'Способ возврата', dataIndex: 'payment_method' },
-            { title: 'Причина', dataIndex: 'reason' },
-            { title: 'Кто оформил', dataIndex: 'created_by' },
-            { title: 'Сумма', dataIndex: 'total', align: 'right', render: (v: string) => money(v) },
-            { title: 'Чек', dataIndex: 'fiscal_status', render: (v: string) => <FiscalTag status={v} /> },
+            { title: tr('Дата', 'Sana'), dataIndex: 'created_at', render: dateTime },
+            { title: tr('Чек продажи', 'Sotuv cheki'), dataIndex: 'sale_number', render: (v: number) => `№ ${v}` },
+            { title: tr('Способ возврата', 'Qaytarish usuli'), dataIndex: 'payment_method' },
+            { title: tr('Причина', 'Sabab'), dataIndex: 'reason' },
+            { title: tr('Кто оформил', 'Kim rasmiylashtirgan'), dataIndex: 'created_by' },
+            { title: tr('Сумма', 'Summa'), dataIndex: 'total', align: 'right', render: (v: string) => money(v) },
+            { title: tr('Чек', 'Chek'), dataIndex: 'fiscal_status', render: (v: string) => <FiscalTag status={v} /> },
           ]}
         />
       </Card>
@@ -263,19 +267,19 @@ function ReturnDrawer({ id, onClose }: { id: string | null; onClose: () => void 
       open={!!id}
       onClose={onClose}
       width={560}
-      title={r ? `Возврат № ${r.number}` : 'Возврат'}
+      title={r ? tr(`Возврат № ${r.number}`, `Qaytarish № ${r.number}`) : tr('Возврат', 'Qaytarish')}
       loading={isLoading}
-      extra={r && r.fiscal_status !== 'registered' && can('sales.pos') && <Button onClick={() => setFiscal(true)}>Пробить чек</Button>}
+      extra={r && r.fiscal_status !== 'registered' && can('sales.pos') && <Button onClick={() => setFiscal(true)}>{tr('Пробить чек', 'Chekni urish')}</Button>}
     >
       {r && (
         <>
           <Descriptions size="small" bordered column={1} style={{ marginBottom: 16 }}>
-            <Descriptions.Item label="Дата">{dateTime(r.created_at)}</Descriptions.Item>
-            <Descriptions.Item label="Чек продажи">№ {r.sale_number}</Descriptions.Item>
-            <Descriptions.Item label="Способ возврата">{r.payment_method}</Descriptions.Item>
-            <Descriptions.Item label="Причина">{r.reason || '—'}</Descriptions.Item>
-            <Descriptions.Item label="Кто оформил">{r.created_by}</Descriptions.Item>
-            <Descriptions.Item label="Чек">
+            <Descriptions.Item label={tr('Дата', 'Sana')}>{dateTime(r.created_at)}</Descriptions.Item>
+            <Descriptions.Item label={tr('Чек продажи', 'Sotuv cheki')}>№ {r.sale_number}</Descriptions.Item>
+            <Descriptions.Item label={tr('Способ возврата', 'Qaytarish usuli')}>{r.payment_method}</Descriptions.Item>
+            <Descriptions.Item label={tr('Причина', 'Sabab')}>{r.reason || '—'}</Descriptions.Item>
+            <Descriptions.Item label={tr('Кто оформил', 'Kim rasmiylashtirgan')}>{r.created_by}</Descriptions.Item>
+            <Descriptions.Item label={tr('Чек', 'Chek')}>
               <FiscalTag status={r.fiscal_status} />
             </Descriptions.Item>
           </Descriptions>
@@ -285,14 +289,14 @@ function ReturnDrawer({ id, onClose }: { id: string | null; onClose: () => void 
             pagination={false}
             dataSource={r.items}
             columns={[
-              { title: 'Товар', dataIndex: 'product_name' },
-              { title: 'Кол-во', dataIndex: 'qty', align: 'right', render: (v: string) => qty(v) },
-              { title: 'Сумма', dataIndex: 'total', align: 'right', render: (v: string) => money(v) },
+              { title: tr('Товар', 'Mahsulot'), dataIndex: 'product_name' },
+              { title: tr('Кол-во', 'Miqdor'), dataIndex: 'qty', align: 'right', render: (v: string) => qty(v) },
+              { title: tr('Сумма', 'Summa'), dataIndex: 'total', align: 'right', render: (v: string) => money(v) },
             ]}
             summary={() => (
               <Table.Summary.Row>
                 <Table.Summary.Cell index={0} colSpan={2}>
-                  <b>Итого</b>
+                  <b>{tr('Итого', 'Jami')}</b>
                 </Table.Summary.Cell>
                 <Table.Summary.Cell index={1} align="right">
                   <b>{money(r.total)}</b>
@@ -332,7 +336,7 @@ function ReturnModal({ open, onClose, saleId }: { open: boolean; onClose: () => 
           .filter(([, q]) => q && Number(q) > 0)
           .map(([line, q]) => ({ sale_line: Number(line), qty: q })),
       }),
-    { success: 'Возврат оформлен' },
+    { success: tr('Возврат оформлен', 'Qaytarish rasmiylashtirildi') },
   )
   const chosen = Object.values(amounts).some((q) => q && Number(q) > 0)
   const estimate = (s?.items ?? []).reduce((acc, i) => {
@@ -343,8 +347,8 @@ function ReturnModal({ open, onClose, saleId }: { open: boolean; onClose: () => 
   return (
     <Modal
       open={open}
-      title="Возврат по чеку"
-      okText="Оформить возврат"
+      title={tr('Возврат по чеку', 'Chek boʻyicha qaytarish')}
+      okText={tr('Оформить возврат', 'Qaytarishni rasmiylashtirish')}
       okButtonProps={{ disabled: !chosen }}
       onOk={() => form.submit()}
       confirmLoading={save.isPending}
@@ -354,7 +358,7 @@ function ReturnModal({ open, onClose, saleId }: { open: boolean; onClose: () => 
     >
       {!saleId && (
         <div style={{ marginBottom: 16 }}>
-          <Typography.Paragraph style={{ marginBottom: 8 }}>Чек продажи</Typography.Paragraph>
+          <Typography.Paragraph style={{ marginBottom: 8 }}>{tr('Чек продажи', 'Sotuv cheki')}</Typography.Paragraph>
           <RemoteSelect<Sale>
             path="/store/sales"
             params={{ store_id: storeId }}
@@ -366,12 +370,12 @@ function ReturnModal({ open, onClose, saleId }: { open: boolean; onClose: () => 
             }}
             label={(x) => `№ ${x.number} — ${dateTime(x.sold_at)} — ${money(x.total)}`}
             selectedLabel={s ? `№ ${s.number} — ${dateTime(s.sold_at)} — ${money(s.total)}` : undefined}
-            placeholder="Номер чека или телефон покупателя"
-            notFoundContent="Чек не найден"
+            placeholder={tr('Номер чека или телефон покупателя', 'Chek raqami yoki xaridor telefoni')}
+            notFoundContent={tr('Чек не найден', 'Chek topilmadi')}
             style={{ width: '100%' }}
           />
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            Без поиска — последние чеки магазина
+            {tr('Без поиска — последние чеки магазина', 'Qidiruvsiz — doʻkonning soʻnggi cheklari')}
           </Typography.Text>
         </div>
       )}
@@ -385,12 +389,12 @@ function ReturnModal({ open, onClose, saleId }: { open: boolean; onClose: () => 
             scroll={{ x: true }}
             style={{ marginBottom: 16 }}
             columns={[
-              { title: 'Товар', dataIndex: 'product_name' },
-              { title: 'Продано', dataIndex: 'qty', align: 'right', render: (v: string) => qty(v) },
-              { title: 'Возвращено', dataIndex: 'returned_qty', align: 'right', render: (v: string) => qty(v) },
-              { title: 'Сумма', dataIndex: 'total', align: 'right', render: (v: string) => money(v) },
+              { title: tr('Товар', 'Mahsulot'), dataIndex: 'product_name' },
+              { title: tr('Продано', 'Sotilgan'), dataIndex: 'qty', align: 'right', render: (v: string) => qty(v) },
+              { title: tr('Возвращено', 'Qaytarilgan'), dataIndex: 'returned_qty', align: 'right', render: (v: string) => qty(v) },
+              { title: tr('Сумма', 'Summa'), dataIndex: 'total', align: 'right', render: (v: string) => money(v) },
               {
-                title: 'Вернуть',
+                title: tr('Вернуть', 'Qaytarish'),
                 key: 'ret',
                 width: 130,
                 render: (_, i) => {
@@ -404,9 +408,12 @@ function ReturnModal({ open, onClose, saleId }: { open: boolean; onClose: () => 
               },
             ]}
           />
-          <Alert type="info" showIcon message={`К возврату примерно: ${money(estimate)} сум (точная сумма — с учётом скидки по строке)`} style={{ marginBottom: 16 }} />
+          <Alert type="info" showIcon message={tr(
+              `К возврату примерно: ${money(estimate)} сум (точная сумма — с учётом скидки по строке)`,
+              `Qaytariladigan summa taxminan: ${money(estimate)} soʻm (aniq summa — qatordagi chegirma hisobga olingan holda)`,
+            )} style={{ marginBottom: 16 }} />
           <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v, { onSuccess: onClose })}>
-            <Form.Item name="payment_method_id" label="Способ возврата денег" rules={[{ required: true, message: 'Выберите способ' }]}>
+            <Form.Item name="payment_method_id" label={tr('Способ возврата денег', 'Pulni qaytarish usuli')} rules={[{ required: true, message: tr('Выберите способ', 'Usulni tanlang') }]}>
               <RemoteSelect<PaymentMethod>
                 path="/store/finance/payment-methods"
                 params={{ store_id: s.store_id }}
@@ -414,13 +421,13 @@ function ReturnModal({ open, onClose, saleId }: { open: boolean; onClose: () => 
                 label={(m) => `${m.name} (${m.cashbox_name})`}
               />
             </Form.Item>
-            <Form.Item name="reason" label="Причина">
-              <Input placeholder="Брак, не подошло…" />
+            <Form.Item name="reason" label={tr('Причина', 'Sabab')}>
+              <Input placeholder={tr('Брак, не подошло…', 'Nuqsonli, mos kelmadi…')} />
             </Form.Item>
           </Form>
         </>
       )}
-      {!s && sale && detail.isLoading && <Typography.Text type="secondary">Загрузка чека…</Typography.Text>}
+      {!s && sale && detail.isLoading && <Typography.Text type="secondary">{tr('Загрузка чека…', 'Chek yuklanmoqda…')}</Typography.Text>}
     </Modal>
   )
 }

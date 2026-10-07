@@ -17,7 +17,7 @@ import {
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useSearchParams } from 'react-router-dom'
-import { PageTitle, date, errorText, money, qty, useItem, useList } from '@sm/shared'
+import { PageTitle, date, errorText, money, qty, tr, useItem, useList } from '@sm/shared'
 import { useReportFilters } from './Reports'
 import type { Range } from '../ui'
 import type { AbcBy, AbcItem, AbcLetter, AbcNoSaleItem, AbcXyz, DictItem } from '../types'
@@ -25,9 +25,9 @@ import type { AbcBy, AbcItem, AbcLetter, AbcNoSaleItem, AbcXyz, DictItem } from 
 const last12Weeks = (): Range => [dayjs().subtract(83, 'day').startOf('day'), dayjs().startOf('day')]
 
 export const GROUP: Record<AbcLetter, { color: string; bg: string; text: string; hint: string; name: string }> = {
-  A: { color: '#17b26a', bg: '#ecfdf3', text: '#067647', name: 'Главные товары', hint: 'Главные товары — не допускать отсутствия' },
-  B: { color: '#f79009', bg: '#fffaeb', text: '#b54708', name: 'Середина', hint: 'Середина — следить за остатком' },
-  C: { color: '#98a2b3', bg: '#f2f4f7', text: '#475467', name: 'Мало денег', hint: 'Мало денег — держать минимум' },
+  A: { color: '#17b26a', bg: '#ecfdf3', text: '#067647', name: tr('Главные товары', 'Asosiy mahsulotlar'), hint: tr('Главные товары — не допускать отсутствия', 'Asosiy mahsulotlar — tugab qolishiga yoʻl qoʻymang') },
+  B: { color: '#f79009', bg: '#fffaeb', text: '#b54708', name: tr('Середина', 'Oʻrtacha'), hint: tr('Середина — следить за остатком', 'Oʻrtacha — qoldiqni kuzatib boring') },
+  C: { color: '#98a2b3', bg: '#f2f4f7', text: '#475467', name: tr('Мало денег', 'Kam pul'), hint: tr('Мало денег — держать минимум', 'Kam pul — minimal miqdorda saqlang') },
 }
 
 export const TONE = {
@@ -36,23 +36,23 @@ export const TONE = {
   rose: { bg: '#fef3f2', fg: '#b42318' },
 }
 export const CELL: Record<string, { tone: keyof typeof TONE; action: string }> = {
-  AX: { tone: 'green', action: 'Автозаказ, всегда в наличии' },
-  AY: { tone: 'green', action: 'Запас с учётом сезона и акций' },
-  AZ: { tone: 'amber', action: 'Заказывать вручную, следить' },
-  BX: { tone: 'green', action: 'Автозаказ' },
-  BY: { tone: 'amber', action: 'Средний запас' },
-  BZ: { tone: 'rose', action: 'Небольшой запас' },
-  CX: { tone: 'amber', action: 'Минимальный запас' },
-  CY: { tone: 'rose', action: 'Под заказ' },
-  CZ: { tone: 'rose', action: 'Кандидаты на вывод' },
+  AX: { tone: 'green', action: tr('Автозаказ, всегда в наличии', 'Avtobuyurtma, doim mavjud') },
+  AY: { tone: 'green', action: tr('Запас с учётом сезона и акций', 'Mavsum va aksiyalarni hisobga olgan zaxira') },
+  AZ: { tone: 'amber', action: tr('Заказывать вручную, следить', 'Qoʻlda buyurtma qilish, kuzatish') },
+  BX: { tone: 'green', action: tr('Автозаказ', 'Avtobuyurtma') },
+  BY: { tone: 'amber', action: tr('Средний запас', 'Oʻrtacha zaxira') },
+  BZ: { tone: 'rose', action: tr('Небольшой запас', 'Kichik zaxira') },
+  CX: { tone: 'amber', action: tr('Минимальный запас', 'Minimal zaxira') },
+  CY: { tone: 'rose', action: tr('Под заказ', 'Buyurtma asosida') },
+  CZ: { tone: 'rose', action: tr('Кандидаты на вывод', 'Olib tashlashga nomzodlar') },
 }
-const ROWS: Record<AbcLetter, string> = { A: 'много денег', B: 'середина', C: 'мало денег' }
+const ROWS: Record<AbcLetter, string> = { A: tr('много денег', 'koʻp pul'), B: tr('середина', 'oʻrtacha'), C: tr('мало денег', 'kam pul') }
 const COLS = [
-  { k: 'X', d: 'стабильный спрос · вариация до 10%' },
-  { k: 'Y', d: 'колеблется · 10–25%' },
-  { k: 'Z', d: 'случайный · больше 25%' },
+  { k: 'X', d: tr('стабильный спрос · вариация до 10%', 'barqaror talab · variatsiya 10% gacha') },
+  { k: 'Y', d: tr('колеблется · 10–25%', 'oʻzgarib turadi · 10–25%') },
+  { k: 'Z', d: tr('случайный · больше 25%', 'tasodifiy · 25% dan koʻp') },
 ]
-const BY_WORD: Record<AbcBy, string> = { revenue: 'выручки', profit: 'прибыли', qty: 'продаж' }
+const BY_WORD: Record<AbcBy, string> = { revenue: tr('выручки', 'tushum'), profit: tr('прибыли', 'foyda'), qty: tr('продаж', 'sotuv') }
 
 const RED = '#e11d2a'
 /** Товар «заканчивается» — остатка меньше чем на столько дней (как CoverAttentionDays в бэкенде). */
@@ -67,8 +67,8 @@ const plural = (n: number, one: string, few: string, many: string) => {
   if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return `${n} ${few}`
   return `${n} ${many}`
 }
-const products = (n: number) => plural(n, 'товар', 'товара', 'товаров')
-const days = (n: number) => plural(n, 'день', 'дня', 'дней')
+const products = (n: number) => tr(plural(n, 'товар', 'товара', 'товаров'), `${n} ta mahsulot`)
+const days = (n: number) => tr(plural(n, 'день', 'дня', 'дней'), `${n} kun`)
 
 // Окно справки само открывается, пока не отмечено «Не открывать автоматически».
 const HELP_KEY = 'sm.abcXyz.helpHidden'
@@ -139,9 +139,9 @@ export function AbcXyzPage() {
       <PageTitle
         title={
           <Space size={12} wrap>
-            ABC/XYZ-анализ
+            {tr('ABC/XYZ-анализ', 'ABC/XYZ tahlili')}
             <Button size="small" shape="round" icon={<QuestionCircleOutlined />} onClick={() => setHelp(true)} style={{ color: RED, background: '#fff1f2', borderColor: '#fff1f2', fontWeight: 700 }}>
-              Что это и как пользоваться?
+              {tr('Что это и как пользоваться?', 'Bu nima va undan qanday foydalaniladi?')}
             </Button>
           </Space>
         }
@@ -151,7 +151,7 @@ export function AbcXyzPage() {
           allowClear
           showSearch
           treeNodeFilterProp="title"
-          placeholder="Все категории"
+          placeholder={tr('Все категории', 'Barcha kategoriyalar')}
           value={category}
           onChange={(v) => setCategory(v || undefined)}
           treeData={tree}
@@ -159,14 +159,14 @@ export function AbcXyzPage() {
           popupMatchSelectWidth={false}
         />
         <Space size={6}>
-          <Typography.Text type="secondary">ABC по:</Typography.Text>
+          <Typography.Text type="secondary">{tr('ABC по:', 'ABC boʻyicha:')}</Typography.Text>
           <Segmented<AbcBy>
             value={by}
             onChange={setBy}
             options={[
-              { value: 'revenue', label: 'Выручке' },
-              { value: 'profit', label: 'Прибыли' },
-              { value: 'qty', label: 'Количеству' },
+              { value: 'revenue', label: tr('Выручке', 'Tushum') },
+              { value: 'profit', label: tr('Прибыли', 'Foyda') },
+              { value: 'qty', label: tr('Количеству', 'Miqdor') },
             ]}
           />
         </Space>
@@ -175,8 +175,10 @@ export function AbcXyzPage() {
         </Button>
       </PageTitle>
       <Typography.Paragraph type="secondary" style={{ marginTop: -4 }}>
-        Какие товары приносят деньги (ABC) и насколько стабильно они продаются (XYZ). Подсказывает, что держать всегда, что заказывать
-        осторожно и что убрать.
+        {tr(
+          'Какие товары приносят деньги (ABC) и насколько стабильно они продаются (XYZ). Подсказывает, что держать всегда, что заказывать осторожно и что убрать.',
+          'Qaysi mahsulotlar pul keltiradi (ABC) va ular qanchalik barqaror sotiladi (XYZ). Nimani doim saqlash, nimani ehtiyotkorlik bilan buyurtma qilish va nimani olib tashlashni maslahat beradi.',
+        )}
       </Typography.Paragraph>
 
       {error && <Alert type="error" showIcon message={errorText(error)} style={{ marginBottom: 16 }} />}
@@ -187,13 +189,19 @@ export function AbcXyzPage() {
           style={{ marginBottom: 16 }}
           message={
             data.weeks === 0 && data.totals.products === 0
-              ? 'За этот период продаж нет'
-              : `Продажи есть только за ${plural(data.weeks, 'неделю', 'недели', 'недель')} — XYZ появится через ${days(data.xyz_days_left)}`
+              ? tr('За этот период продаж нет', 'Bu davrda sotuvlar yoʻq')
+              : tr(
+                  `Продажи есть только за ${plural(data.weeks, 'неделю', 'недели', 'недель')} — XYZ появится через ${days(data.xyz_days_left)}`,
+                  `Sotuvlar faqat ${data.weeks} haftalik — XYZ ${days(data.xyz_days_left)}dan keyin paydo boʻladi`,
+                )
           }
           description={
             data.weeks === 0 && data.totals.products === 0
-              ? 'Выберите другой период или магазин. Анализ появится, когда на кассе или в приложении пройдут продажи.'
-              : `ABC уже считается. Для XYZ нужно минимум ${data.min_weeks} полные недели продаж, чтобы увидеть, насколько спрос скачет. Пока в колонке «Вариация» — «—», а матрица 3×3 скрыта.`
+              ? tr('Выберите другой период или магазин. Анализ появится, когда на кассе или в приложении пройдут продажи.', 'Boshqa davr yoki doʻkonni tanlang. Kassada yoki ilovada sotuvlar boʻlganda tahlil paydo boʻladi.')
+              : tr(
+                  `ABC уже считается. Для XYZ нужно минимум ${data.min_weeks} полные недели продаж, чтобы увидеть, насколько спрос скачет. Пока в колонке «Вариация» — «—», а матрица 3×3 скрыта.`,
+                  `ABC allaqachon hisoblanmoqda. Talab qanchalik oʻzgarishini koʻrish uchun XYZ ga kamida ${data.min_weeks} ta toʻliq hafta sotuv kerak. Hozircha «Variatsiya» ustunida «—», 3×3 matritsa esa yashirilgan.`,
+                )
           }
         />
       )}
@@ -208,14 +216,16 @@ export function AbcXyzPage() {
                 <Space size={10}>
                   <Letter v={k} />
                   <Typography.Text type="secondary" strong>
-                    Группа {k} · {products(g?.count ?? 0)} · {pct(total ? ((g?.count ?? 0) / total) * 100 : 0)}
+                    {tr('Группа', 'Guruh')} {k} · {products(g?.count ?? 0)} · {pct(total ? ((g?.count ?? 0) / total) * 100 : 0)}
                   </Typography.Text>
                 </Space>
                 <div style={{ margin: '6px 0 0' }}>
                   <span style={{ fontSize: 24, fontWeight: 800 }}>{pct(g?.share ?? 0)}</span> <Typography.Text type="secondary">{BY_WORD[by]}</Typography.Text>
                 </div>
                 <div style={{ fontWeight: 600, marginBottom: 2 }}>
-                  {by === 'profit' ? `${money(g?.profit ?? 0)} сум прибыли` : `${money(g?.revenue ?? 0)} сум`}
+                  {by === 'profit'
+                    ? tr(`${money(g?.profit ?? 0)} сум прибыли`, `${money(g?.profit ?? 0)} soʻm foyda`)
+                    : `${money(g?.revenue ?? 0)} ${tr('сум', 'soʻm')}`}
                 </div>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {GROUP[k].hint}
@@ -237,12 +247,15 @@ export function AbcXyzPage() {
                 <StopOutlined />
               </span>
               <Typography.Text type="secondary" strong>
-                Без продаж за период
+                {tr('Без продаж за период', 'Davr ichida sotuvsiz')}
               </Typography.Text>
             </Space>
             <div style={{ margin: '6px 0 2px', fontSize: 24, fontWeight: 800, color: RED }}>{products(data?.no_sales.count ?? 0)}</div>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              На складе на {money(data?.no_sales.stock_value ?? 0)} сум по закупке
+              {tr(
+                `На складе на ${money(data?.no_sales.stock_value ?? 0)} сум по закупке`,
+                `Omborda xarid narxida ${money(data?.no_sales.stock_value ?? 0)} soʻmlik`,
+              )}
             </Typography.Text>
           </Card>
         </Col>
@@ -252,9 +265,9 @@ export function AbcXyzPage() {
         <Card style={{ marginBottom: 16 }} styles={{ body: { padding: '18px 20px 20px' } }}>
           <Space size={10} align="baseline" wrap style={{ marginBottom: 14 }}>
             <Typography.Text strong style={{ fontSize: 16 }}>
-              Матрица ABC × XYZ
+              {tr('Матрица ABC × XYZ', 'ABC × XYZ matritsasi')}
             </Typography.Text>
-            <Typography.Text type="secondary">Нажмите на клетку — в таблице останутся её товары</Typography.Text>
+            <Typography.Text type="secondary">{tr('Нажмите на клетку — в таблице останутся её товары', 'Katakni bosing — jadvalda faqat uning mahsulotlari qoladi')}</Typography.Text>
           </Space>
           <div style={{ overflowX: 'auto' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '110px repeat(3, minmax(170px, 1fr))', gap: 8, minWidth: 640 }}>
@@ -275,7 +288,7 @@ export function AbcXyzPage() {
       <Card styles={{ body: { padding: '18px 20px' } }}>
         <Space wrap size={8} style={{ marginBottom: 12, width: '100%' }}>
           <Typography.Text strong style={{ fontSize: 16, marginRight: 4 }}>
-            Товары
+            {tr('Товары', 'Mahsulotlar')}
           </Typography.Text>
           {cell && (
             <Button size="small" shape="round" type="primary" onClick={() => setCell(null)}>
@@ -284,11 +297,11 @@ export function AbcXyzPage() {
           )}
           {low && (
             <Button size="small" shape="round" type="primary" danger onClick={() => setLow(false)}>
-              A · заканчиваются · {items.length} <CloseOutlined />
+              A · {tr('заканчиваются', 'tugayapti')} · {items.length} <CloseOutlined />
             </Button>
           )}
           <Chip active={!cell && !low && view === 'all'} onClick={() => pick('all')}>
-            Все {data?.totals.products ?? 0}
+            {tr('Все', 'Hammasi')} {data?.totals.products ?? 0}
           </Chip>
           {(['A', 'B', 'C'] as const).map((k) => (
             <Chip key={k} active={!cell && !low && view === k} onClick={() => pick(k)}>
@@ -296,13 +309,13 @@ export function AbcXyzPage() {
             </Chip>
           ))}
           <Chip active={view === 'nosale'} onClick={() => pick('nosale')} danger>
-            Без продаж {data?.no_sales.count ?? 0}
+            {tr('Без продаж', 'Sotuvsiz')} {data?.no_sales.count ?? 0}
           </Chip>
         </Space>
         <Input
           allowClear
           prefix={<SearchOutlined />}
-          placeholder="Поиск товара"
+          placeholder={tr('Поиск товара', 'Mahsulotni qidirish')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{ maxWidth: 280, marginBottom: 12 }}
@@ -314,8 +327,10 @@ export function AbcXyzPage() {
         )}
         {data && (
           <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: '8px 0 0' }}>
-            Анализ с {date(data.analysis_from)} · полных недель: {data.weeks} · «Остаток · на N дн.» — на сколько дней хватит при спросе
-            за последние 14 дней. Продажи POS и доставленные онлайн-заказы минус возвраты.
+            {tr(
+              `Анализ с ${date(data.analysis_from)} · полных недель: ${data.weeks} · «Остаток · на N дн.» — на сколько дней хватит при спросе за последние 14 дней. Продажи POS и доставленные онлайн-заказы минус возвраты.`,
+              `Tahlil ${date(data.analysis_from)} dan · toʻliq haftalar: ${data.weeks} · «Qoldiq · N kunga» — soʻnggi 14 kundagi talab boʻyicha necha kunga yetishi. POS sotuvlari va yetkazilgan onlayn buyurtmalar, qaytarishlarsiz.`,
+            )}
           </Typography.Paragraph>
         )}
       </Card>
@@ -373,17 +388,17 @@ function MatrixRow({ r, data, by, cell, onPick }: { r: AbcLetter; data: AbcXyz; 
 function ItemsTable({ rows, loading, xyz }: { rows: AbcItem[]; loading: boolean; xyz: boolean }) {
   const num = (k: keyof AbcItem) => (a: AbcItem, b: AbcItem) => Number(a[k] ?? -1) - Number(b[k] ?? -1)
   const columns: ColumnsType<AbcItem> = [
-    { title: 'Товар', key: 'name', render: (_, r) => <ProductCell name={r.name} category={r.category} image={r.image} />, sorter: (a, b) => a.name.localeCompare(b.name) },
-    { title: 'Группа', key: 'group', width: 80, render: (_, r) => <GroupTag abc={r.abc} xyz={r.xyz} /> },
-    { title: 'Выручка', dataIndex: 'revenue', align: 'right', render: (v) => <b>{money(v)}</b>, sorter: num('revenue') },
-    { title: 'Доля', dataIndex: 'share', align: 'right', render: pct, sorter: num('share') },
-    { title: 'Накопл.', dataIndex: 'cum_share', align: 'right', render: (v) => <Typography.Text type="secondary">{pct(v)}</Typography.Text> },
-    { title: 'Прибыль', dataIndex: 'profit', align: 'right', render: (v) => money(v), sorter: num('profit') },
-    { title: 'Продано', dataIndex: 'qty', align: 'right', render: (v, r) => qty(v, r.unit), sorter: num('qty') },
+    { title: tr('Товар', 'Mahsulot'), key: 'name', render: (_, r) => <ProductCell name={r.name} category={r.category} image={r.image} />, sorter: (a, b) => a.name.localeCompare(b.name) },
+    { title: tr('Группа', 'Guruh'), key: 'group', width: 80, render: (_, r) => <GroupTag abc={r.abc} xyz={r.xyz} /> },
+    { title: tr('Выручка', 'Tushum'), dataIndex: 'revenue', align: 'right', render: (v) => <b>{money(v)}</b>, sorter: num('revenue') },
+    { title: tr('Доля', 'Ulush'), dataIndex: 'share', align: 'right', render: pct, sorter: num('share') },
+    { title: tr('Накопл.', 'Jamlangan'), dataIndex: 'cum_share', align: 'right', render: (v) => <Typography.Text type="secondary">{pct(v)}</Typography.Text> },
+    { title: tr('Прибыль', 'Foyda'), dataIndex: 'profit', align: 'right', render: (v) => money(v), sorter: num('profit') },
+    { title: tr('Продано', 'Sotildi'), dataIndex: 'qty', align: 'right', render: (v, r) => qty(v, r.unit), sorter: num('qty') },
     {
       title: (
-        <Tooltip title="Насколько скачут продажи по неделям: до 10% — X, 10–25% — Y, больше — Z">
-          Вариация
+        <Tooltip title={tr('Насколько скачут продажи по неделям: до 10% — X, 10–25% — Y, больше — Z', 'Sotuvlar haftalar boʻyicha qanchalik oʻzgaradi: 10% gacha — X, 10–25% — Y, undan koʻp — Z')}>
+          {tr('Вариация', 'Variatsiya')}
         </Tooltip>
       ),
       dataIndex: 'variation',
@@ -392,7 +407,7 @@ function ItemsTable({ rows, loading, xyz }: { rows: AbcItem[]; loading: boolean;
       sorter: num('variation'),
       hidden: !xyz,
     },
-    { title: 'Остаток', key: 'stock', align: 'right', render: (_, r) => <StockCell r={r} />, sorter: num('days_cover') },
+    { title: tr('Остаток', 'Qoldiq'), key: 'stock', align: 'right', render: (_, r) => <StockCell r={r} />, sorter: num('days_cover') },
   ]
   return (
     <Table<AbcItem>
@@ -404,7 +419,7 @@ function ItemsTable({ rows, loading, xyz }: { rows: AbcItem[]; loading: boolean;
       scroll={{ x: 900 }}
       pagination={{ pageSize: 50, hideOnSinglePage: true, showSizeChanger: false }}
       onRow={(r) => (Number(r.stock) <= 0 ? { style: { background: '#fff1f2' } } : {})}
-      locale={{ emptyText: <Empty description="Нет товаров" /> }}
+      locale={{ emptyText: <Empty description={tr('Нет товаров', 'Mahsulotlar yoʻq')} /> }}
     />
   )
 }
@@ -416,8 +431,8 @@ function NoSaleTable({ rows, loading }: { rows: AbcNoSaleItem[]; loading: boolea
         type="warning"
         showIcon
         style={{ marginBottom: 12 }}
-        message="Эти товары лежат на складе и за период не продались ни разу"
-        description="Это деньги на полке: их можно продать по акции, вернуть поставщику или больше не закупать."
+        message={tr('Эти товары лежат на складе и за период не продались ни разу', 'Bu mahsulotlar omborda turibdi va davr ichida bir marta ham sotilmagan')}
+        description={tr('Это деньги на полке: их можно продать по акции, вернуть поставщику или больше не закупать.', 'Bu javondagi pul: ularni aksiya bilan sotish, yetkazib beruvchiga qaytarish yoki boshqa xarid qilmaslik mumkin.')}
       />
       <Table<AbcNoSaleItem>
         rowKey="product_id"
@@ -426,12 +441,12 @@ function NoSaleTable({ rows, loading }: { rows: AbcNoSaleItem[]; loading: boolea
         dataSource={rows}
         scroll={{ x: 600 }}
         pagination={{ pageSize: 50, hideOnSinglePage: true, showSizeChanger: false }}
-        locale={{ emptyText: <Empty description="Всё на складе продавалось" /> }}
+        locale={{ emptyText: <Empty description={tr('Всё на складе продавалось', 'Ombordagi hamma narsa sotilgan')} /> }}
         columns={[
-          { title: 'Товар', key: 'name', render: (_, r) => <ProductCell name={r.name} category={r.category} image={r.image} /> },
-          { title: 'Остаток', dataIndex: 'stock', align: 'right', render: (v, r) => qty(v, r.unit) },
+          { title: tr('Товар', 'Mahsulot'), key: 'name', render: (_, r) => <ProductCell name={r.name} category={r.category} image={r.image} /> },
+          { title: tr('Остаток', 'Qoldiq'), dataIndex: 'stock', align: 'right', render: (v, r) => qty(v, r.unit) },
           {
-            title: 'По закупке, сум',
+            title: tr('По закупке, сум', 'Xarid narxida, soʻm'),
             dataIndex: 'stock_value',
             align: 'right',
             render: (v) => <b>{money(v)}</b>,
@@ -465,12 +480,12 @@ function ProductCell({ name, category, image }: { name: string; category: string
 }
 
 function StockCell({ r }: { r: AbcItem }) {
-  if (Number(r.stock) <= 0) return <b style={{ color: RED }}>нет в наличии</b>
+  if (Number(r.stock) <= 0) return <b style={{ color: RED }}>{tr('нет в наличии', 'mavjud emas')}</b>
   const low = r.days_cover !== null && r.days_cover < LOW_DAYS
   return (
     <span style={{ color: low ? RED : undefined, fontWeight: low ? 700 : undefined, whiteSpace: 'nowrap' }}>
       {qty(r.stock, r.unit)}
-      {r.days_cover !== null && ` · ${r.days_cover > 999 ? '999+' : r.days_cover} дн.`}
+      {r.days_cover !== null && ` · ${r.days_cover > 999 ? '999+' : r.days_cover} ${tr('дн.', 'kun')}`}
     </span>
   )
 }
@@ -525,7 +540,22 @@ function categoryTree(list: DictItem[]): TreeNode[] {
 
 function downloadCsv(d: AbcXyz) {
   const n = (v: string | number | null) => (v === null ? '' : String(v).replace('.', ','))
-  const head = ['Товар', 'Категория', 'ABC', 'XYZ', 'Выручка, сум', 'Прибыль, сум', 'Продано', 'Ед.', 'Доля, %', 'Накопл., %', 'Вариация, %', 'Остаток', 'Хватит на, дн.', 'Что делать']
+  const head = [
+    tr('Товар', 'Mahsulot'),
+    tr('Категория', 'Kategoriya'),
+    'ABC',
+    'XYZ',
+    tr('Выручка, сум', 'Tushum, soʻm'),
+    tr('Прибыль, сум', 'Foyda, soʻm'),
+    tr('Продано', 'Sotildi'),
+    tr('Ед.', 'Birlik'),
+    tr('Доля, %', 'Ulush, %'),
+    tr('Накопл., %', 'Jamlangan, %'),
+    tr('Вариация, %', 'Variatsiya, %'),
+    tr('Остаток', 'Qoldiq'),
+    tr('Хватит на, дн.', 'Yetadi, kun'),
+    tr('Что делать', 'Nima qilish kerak'),
+  ]
   const rows = d.items.map((i) => [
     i.name,
     i.category,
@@ -542,13 +572,18 @@ function downloadCsv(d: AbcXyz) {
     n(i.days_cover),
     i.xyz ? CELL[i.abc + i.xyz].action : GROUP[i.abc].hint,
   ])
-  const none = d.no_sale_items.map((i) => [i.name, i.category, '', '', '', '', '', i.unit, '', '', '', n(i.stock), '', `Без продаж, по закупке ${n(i.stock_value)} сум`])
+  const none = d.no_sale_items.map((i) => [i.name, i.category, '', '', '', '', '', i.unit, '', '', '', n(i.stock), '', tr(`Без продаж, по закупке ${n(i.stock_value)} сум`, `Sotuvsiz, xarid narxida ${n(i.stock_value)} soʻm`)])
   const esc = (v: unknown) => `"${String(v).replace(/"/g, '""')}"`
   const lines = [
-    [`ABC/XYZ-анализ ${date(d.from)} — ${date(dayjs(d.to).subtract(1, 'second').toISOString())}, ABC по ${BY_WORD[d.by]}`],
+    [
+      tr(
+        `ABC/XYZ-анализ ${date(d.from)} — ${date(dayjs(d.to).subtract(1, 'second').toISOString())}, ABC по ${BY_WORD[d.by]}`,
+        `ABC/XYZ tahlili ${date(d.from)} — ${date(dayjs(d.to).subtract(1, 'second').toISOString())}, ABC: ${BY_WORD[d.by]} boʻyicha`,
+      ),
+    ],
     head,
     ...rows,
-    ...(none.length ? [[], ['Без продаж за период'], ...none] : []),
+    ...(none.length ? [[], [tr('Без продаж за период', 'Davr ichida sotuvsiz')], ...none] : []),
   ].map((r) => r.map(esc).join(';'))
   const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
   const a = document.createElement('a')
@@ -574,20 +609,22 @@ export function AbcHelpModal({ open, onClose }: { open: boolean; onClose: () => 
         </span>
         <div>
           <Typography.Title level={4} style={{ margin: 0 }}>
-            ABC/XYZ-анализ — что это и зачем
+            {tr('ABC/XYZ-анализ — что это и зачем', 'ABC/XYZ tahlili — bu nima va nima uchun')}
           </Typography.Title>
           <Typography.Text type="secondary">
-            Помогает понять, на каких товарах магазин зарабатывает, какие нужно держать всегда, а какие просто занимают полку и
-            замораживают деньги.
+            {tr(
+              'Помогает понять, на каких товарах магазин зарабатывает, какие нужно держать всегда, а какие просто занимают полку и замораживают деньги.',
+              'Doʻkon qaysi mahsulotlardan daromad qilishini, qaysilarini doim saqlash kerakligini va qaysilari shunchaki javonni egallab, pulni muzlatib turganini tushunishga yordam beradi.',
+            )}
           </Typography.Text>
         </div>
       </Space>
 
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         {[
-          { icon: <InboxOutlined />, t: 'Нужный товар не кончается', d: 'Видно, какие товары приносят больше всего денег — их нельзя упускать с полки.' },
-          { icon: <WalletOutlined />, t: 'Деньги не стоят на полке', d: 'Видно, что продаётся редко — такого товара не нужно закупать много.' },
-          { icon: <DeleteOutlined />, t: 'Понятно, что убрать', d: 'Товары, которые почти не продаются, можно заменить на те, что продаются.' },
+          { icon: <InboxOutlined />, t: tr('Нужный товар не кончается', 'Kerakli mahsulot tugamaydi'), d: tr('Видно, какие товары приносят больше всего денег — их нельзя упускать с полки.', 'Qaysi mahsulotlar eng koʻp pul keltirishi koʻrinadi — ular javondan yoʻqolmasligi kerak.') },
+          { icon: <WalletOutlined />, t: tr('Деньги не стоят на полке', 'Pul javonda turib qolmaydi'), d: tr('Видно, что продаётся редко — такого товара не нужно закупать много.', 'Nima kam sotilishi koʻrinadi — bunday mahsulotni koʻp xarid qilish shart emas.') },
+          { icon: <DeleteOutlined />, t: tr('Понятно, что убрать', 'Nimani olib tashlash aniq'), d: tr('Товары, которые почти не продаются, можно заменить на те, что продаются.', 'Deyarli sotilmaydigan mahsulotlarni sotiladiganlari bilan almashtirish mumkin.') },
         ].map((x) => (
           <Col key={x.t} xs={24} md={8}>
             <div style={{ ...box, background: '#f9fafb', height: '100%' }}>
@@ -602,24 +639,24 @@ export function AbcHelpModal({ open, onClose }: { open: boolean; onClose: () => 
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} md={12}>
           <div style={{ ...box, height: '100%' }}>
-            <b style={{ fontSize: 16 }}>ABC — сколько товар приносит денег</b>
-            <div style={hint}>Super Market складывает выручку каждого товара за период и выстраивает товары от самого денежного к самому слабому.</div>
-            <ShareBar label="Товары" parts={[15, 25, 60]} />
-            <ShareBar label="Выручка" parts={[80, 15, 5]} />
-            <div style={{ ...hint, fontSize: 12 }}>Обычно 15–20% товаров дают 80% всех денег магазина</div>
-            <HelpItem letter="A" tone={GROUP.A} title="Главные товары" text="Вместе дают 80% выручки. Например: хлеб, молоко, вода, масло." />
-            <HelpItem letter="B" tone={GROUP.B} title="Середина" text="Следующие 15% выручки. Продаются, но не решают всё." />
-            <HelpItem letter="C" tone={GROUP.C} title="Мало денег" text="Последние 5% выручки, хотя таких товаров больше половины. Например: специи, редкие соусы." />
+            <b style={{ fontSize: 16 }}>{tr('ABC — сколько товар приносит денег', 'ABC — mahsulot qancha pul keltiradi')}</b>
+            <div style={hint}>{tr('Super Market складывает выручку каждого товара за период и выстраивает товары от самого денежного к самому слабому.', 'Super Market har bir mahsulotning davr ichidagi tushumini qoʻshib, mahsulotlarni eng daromadlisidan eng kuchsiziga qarab tartiblaydi.')}</div>
+            <ShareBar label={tr('Товары', 'Mahsulotlar')} parts={[15, 25, 60]} />
+            <ShareBar label={tr('Выручка', 'Tushum')} parts={[80, 15, 5]} />
+            <div style={{ ...hint, fontSize: 12 }}>{tr('Обычно 15–20% товаров дают 80% всех денег магазина', 'Odatda mahsulotlarning 15–20 foizi doʻkon pulining 80 foizini beradi')}</div>
+            <HelpItem letter="A" tone={GROUP.A} title={tr('Главные товары', 'Asosiy mahsulotlar')} text={tr('Вместе дают 80% выручки. Например: хлеб, молоко, вода, масло.', 'Birgalikda tushumning 80 foizini beradi. Masalan: non, sut, suv, yogʻ.')} />
+            <HelpItem letter="B" tone={GROUP.B} title={tr('Середина', 'Oʻrtacha')} text={tr('Следующие 15% выручки. Продаются, но не решают всё.', 'Tushumning keyingi 15 foizi. Sotiladi, lekin hamma narsani hal qilmaydi.')} />
+            <HelpItem letter="C" tone={GROUP.C} title={tr('Мало денег', 'Kam pul')} text={tr('Последние 5% выручки, хотя таких товаров больше половины. Например: специи, редкие соусы.', 'Tushumning oxirgi 5 foizi, garchi bunday mahsulotlar yarmidan koʻp boʻlsa ham. Masalan: ziravorlar, kam uchraydigan souslar.')} />
           </div>
         </Col>
         <Col xs={24} md={12}>
           <div style={{ ...box, height: '100%' }}>
-            <b style={{ fontSize: 16 }}>XYZ — насколько ровно продаётся</b>
-            <div style={hint}>Super Market смотрит продажи товара по неделям: каждую неделю примерно одинаково или то густо, то пусто.</div>
-            <HelpItem letter="X" tone={GROUP.A} title="Стабильный спрос" text="Каждую неделю продаётся почти одинаково — легко понять, сколько заказать. Например: молоко, хлеб." weeks={[12, 13, 12, 13, 12, 12, 13, 12]} />
-            <HelpItem letter="Y" tone={GROUP.B} title="Спрос колеблется" text="То больше, то меньше: зависит от сезона, погоды, акций. Например: мороженое, вода летом." weeks={[8, 12, 17, 10, 6, 14, 16, 9]} />
-            <HelpItem letter="Z" tone={GROUP.C} title="Случайный спрос" text="Продаётся редко и непредсказуемо — то неделю ничего, то сразу много. Например: торт на заказ." weeks={[2, 15, 0, 5, 18, 1, 0, 11]} />
-            <div style={{ ...hint, fontSize: 12, fontWeight: 600 }}>Для XYZ нужно минимум 4 недели продаж</div>
+            <b style={{ fontSize: 16 }}>{tr('XYZ — насколько ровно продаётся', 'XYZ — qanchalik bir tekis sotiladi')}</b>
+            <div style={hint}>{tr('Super Market смотрит продажи товара по неделям: каждую неделю примерно одинаково или то густо, то пусто.', 'Super Market mahsulot sotuvlarini haftalar boʻyicha koʻradi: har hafta taxminan bir xil yoki goh koʻp, goh yoʻq.')}</div>
+            <HelpItem letter="X" tone={GROUP.A} title={tr('Стабильный спрос', 'Barqaror talab')} text={tr('Каждую неделю продаётся почти одинаково — легко понять, сколько заказать. Например: молоко, хлеб.', 'Har hafta deyarli bir xil sotiladi — qancha buyurtma qilishni tushunish oson. Masalan: sut, non.')} weeks={[12, 13, 12, 13, 12, 12, 13, 12]} />
+            <HelpItem letter="Y" tone={GROUP.B} title={tr('Спрос колеблется', 'Talab oʻzgarib turadi')} text={tr('То больше, то меньше: зависит от сезона, погоды, акций. Например: мороженое, вода летом.', 'Goh koʻp, goh kam: mavsum, ob-havo, aksiyalarga bogʻliq. Masalan: muzqaymoq, yozda suv.')} weeks={[8, 12, 17, 10, 6, 14, 16, 9]} />
+            <HelpItem letter="Z" tone={GROUP.C} title={tr('Случайный спрос', 'Tasodifiy talab')} text={tr('Продаётся редко и непредсказуемо — то неделю ничего, то сразу много. Например: торт на заказ.', 'Kam va oldindan aytib boʻlmaydigan darajada sotiladi — goh bir hafta hech narsa, goh birdan koʻp. Masalan: buyurtma tort.')} weeks={[2, 15, 0, 5, 18, 1, 0, 11]} />
+            <div style={{ ...hint, fontSize: 12, fontWeight: 600 }}>{tr('Для XYZ нужно минимум 4 недели продаж', 'XYZ uchun kamida 4 hafta sotuv kerak')}</div>
           </div>
         </Col>
       </Row>
@@ -627,12 +664,12 @@ export function AbcHelpModal({ open, onClose }: { open: boolean; onClose: () => 
       <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
         <Col xs={24} md={12}>
           <div style={{ ...box, height: '100%' }}>
-            <b style={{ fontSize: 16 }}>Две буквы вместе — что делать с товаром</b>
-            <div style={hint}>Каждый товар получает две буквы, например AX. В матрице 9 клеток, цвет клетки подсказывает действие.</div>
+            <b style={{ fontSize: 16 }}>{tr('Две буквы вместе — что делать с товаром', 'Ikki harf birga — mahsulot bilan nima qilish kerak')}</b>
+            <div style={hint}>{tr('Каждый товар получает две буквы, например AX. В матрице 9 клеток, цвет клетки подсказывает действие.', 'Har bir mahsulot ikki harf oladi, masalan AX. Matritsada 9 ta katak bor, katak rangi nima qilishni koʻrsatadi.')}</div>
             {[
-              { tone: TONE.green, cells: 'AX · AY · BX', t: 'Держите всегда', d: 'Приносят много и продаются ровно. Заказывайте регулярно, не допускайте, чтобы закончились.' },
-              { tone: TONE.amber, cells: 'AZ · BY · CX', t: 'Следите', d: 'Заказывайте небольшими партиями и чаще. AZ — дорогие для магазина, но спрос скачет.' },
-              { tone: TONE.rose, cells: 'BZ · CY · CZ', t: 'Не держите большой запас', d: 'Продаются мало и случайно. CZ — подумайте, не убрать ли с полки и поставить то, что продаётся.' },
+              { tone: TONE.green, cells: 'AX · AY · BX', t: tr('Держите всегда', 'Doim saqlang'), d: tr('Приносят много и продаются ровно. Заказывайте регулярно, не допускайте, чтобы закончились.', 'Koʻp daromad keltiradi va bir tekis sotiladi. Muntazam buyurtma qiling, tugab qolishiga yoʻl qoʻymang.') },
+              { tone: TONE.amber, cells: 'AZ · BY · CX', t: tr('Следите', 'Kuzatib boring'), d: tr('Заказывайте небольшими партиями и чаще. AZ — дорогие для магазина, но спрос скачет.', 'Kichik partiyalarda va tez-tez buyurtma qiling. AZ — doʻkon uchun muhim, lekin talab oʻzgarib turadi.') },
+              { tone: TONE.rose, cells: 'BZ · CY · CZ', t: tr('Не держите большой запас', 'Katta zaxira saqlamang'), d: tr('Продаются мало и случайно. CZ — подумайте, не убрать ли с полки и поставить то, что продаётся.', 'Kam va tasodifiy sotiladi. CZ — javondan olib, oʻrniga sotiladigan mahsulot qoʻyishni oʻylab koʻring.') },
             ].map((x) => (
               <div key={x.cells} style={{ background: x.tone.bg, borderRadius: 10, padding: '10px 14px' }}>
                 <b style={{ color: x.tone.fg }}>{x.cells}</b> <b>— {x.t}</b>
@@ -643,12 +680,12 @@ export function AbcHelpModal({ open, onClose }: { open: boolean; onClose: () => 
         </Col>
         <Col xs={24} md={12}>
           <div style={{ ...box, height: '100%' }}>
-            <b style={{ fontSize: 16 }}>Как пользоваться — 4 шага</b>
+            <b style={{ fontSize: 16 }}>{tr('Как пользоваться — 4 шага', 'Qanday foydalanish — 4 qadam')}</b>
             {[
-              ['Выберите период', 'Лучше 8–12 недель: так видно и праздники, и обычные недели. Смотрите раз в месяц, перед закупкой.'],
-              ['Нажмите на клетку матрицы', 'В таблице останутся только её товары. Начните с AX — это самое важное.'],
-              ['Проверьте «Остаток · на N дн.»', 'Красным — то, что закончится меньше чем за неделю. Это нужно заказать в первую очередь.'],
-              ['Загляните в «Без продаж»', 'Товары, которые лежат и ни разу не продались. Это деньги на полке — их можно продать по акции или вернуть поставщику.'],
+              [tr('Выберите период', 'Davrni tanlang'), tr('Лучше 8–12 недель: так видно и праздники, и обычные недели. Смотрите раз в месяц, перед закупкой.', 'Yaxshisi 8–12 hafta: shunda bayramlar ham, oddiy haftalar ham koʻrinadi. Oyda bir marta, xariddan oldin koʻring.')],
+              [tr('Нажмите на клетку матрицы', 'Matritsa katagini bosing'), tr('В таблице останутся только её товары. Начните с AX — это самое важное.', 'Jadvalda faqat uning mahsulotlari qoladi. AX dan boshlang — bu eng muhimi.')],
+              [tr('Проверьте «Остаток · на N дн.»', '«Qoldiq · N kunga» ni tekshiring'), tr('Красным — то, что закончится меньше чем за неделю. Это нужно заказать в первую очередь.', 'Qizil rangda — bir haftadan kamroq vaqtda tugaydiganlar. Ularni birinchi navbatda buyurtma qilish kerak.')],
+              [tr('Загляните в «Без продаж»', '«Sotuvsiz» boʻlimiga qarang'), tr('Товары, которые лежат и ни разу не продались. Это деньги на полке — их можно продать по акции или вернуть поставщику.', 'Turgan va bir marta ham sotilmagan mahsulotlar. Bu javondagi pul — ularni aksiya bilan sotish yoki yetkazib beruvchiga qaytarish mumkin.')],
             ].map(([t, d], i) => (
               <div key={t} style={{ display: 'flex', gap: 12 }}>
                 <span style={{ flex: 'none', width: 26, height: 26, borderRadius: 999, background: RED, color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 13 }}>
@@ -666,13 +703,13 @@ export function AbcHelpModal({ open, onClose }: { open: boolean; onClose: () => 
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <Checkbox checked={hide} onChange={(e) => setHide(e.target.checked)}>
-          Не открывать автоматически
+          {tr('Не открывать автоматически', 'Avtomatik ochilmasin')}
         </Checkbox>
         <Typography.Text type="secondary" style={{ fontSize: 12, flex: 1 }}>
-          · окно всегда можно открыть снова кнопкой «Что это и как пользоваться?»
+          {tr('· окно всегда можно открыть снова кнопкой «Что это и как пользоваться?»', '· oynani «Bu nima va undan qanday foydalaniladi?» tugmasi bilan istalgan vaqtda qayta ochish mumkin')}
         </Typography.Text>
         <Button type="primary" size="large" onClick={close}>
-          Понятно
+          {tr('Понятно', 'Tushunarli')}
         </Button>
       </div>
     </Modal>

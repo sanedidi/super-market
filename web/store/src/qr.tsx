@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Input, Modal, Space, Typography } from 'antd'
 import { CameraOutlined } from '@ant-design/icons'
+import { tr } from '@sm/shared'
 
 type Detector = { detect: (src: HTMLVideoElement) => Promise<{ rawValue: string }[]> }
 type DetectorCtor = new (opts: { formats: string[] }) => Detector
@@ -58,7 +59,7 @@ function Scanner({ onCode }: { onCode: (code: string) => void }) {
         }
         void tick()
       })
-      .catch(() => setError('Нет доступа к камере — введите код вручную'))
+      .catch(() => setError(tr('Нет доступа к камере — введите код вручную', 'Kameraga ruxsat yoʻq — kodni qoʻlda kiriting')))
     return () => {
       stopped = true
       window.clearTimeout(timer)
@@ -137,7 +138,7 @@ export function QrCodeModal({
         ) : (
           canScanQr() && (
             <Button icon={<CameraOutlined />} block onClick={() => setScan(true)}>
-              Сканировать QR камерой
+              {tr('Сканировать QR камерой', 'QR kodni kamera bilan skanerlash')}
             </Button>
           )
         )}

@@ -14,6 +14,7 @@ import {
   errorText,
   money,
   qty as fmtQty,
+  tr,
   useAction,
   useItem,
   useList,
@@ -48,41 +49,52 @@ interface TypeSpec {
 
 const specs: Record<StockDocType, TypeSpec> = {
   income: {
-    title: 'Приход товара',
-    one: 'Приход',
+    title: tr('Приход товара', 'Mahsulot kirimi'),
+    one: tr('Приход', 'Kirim'),
     counterparty: true,
     currency: true,
     price: 'required',
-    priceTitle: 'Цена закупки',
-    hint: 'Проведение создаёт партии товара и увеличивает долг поставщику.',
+    priceTitle: tr('Цена закупки', 'Xarid narxi'),
+    hint: tr('Проведение создаёт партии товара и увеличивает долг поставщику.', 'Oʻtkazish mahsulot partiyalarini yaratadi va yetkazib beruvchiga qarzni oshiradi.'),
   },
   supplier_return: {
-    title: 'Возврат поставщику',
-    one: 'Возврат поставщику',
+    title: tr('Возврат поставщику', 'Yetkazib beruvchiga qaytarish'),
+    one: tr('Возврат поставщику', 'Yetkazib beruvchiga qaytarish'),
     counterparty: true,
     price: 'optional',
-    priceTitle: 'Цена возврата',
-    hint: 'Товар списывается по FIFO, долг поставщику уменьшается. Без цены — по себестоимости.',
+    priceTitle: tr('Цена возврата', 'Qaytarish narxi'),
+    hint: tr(
+      'Товар списывается по FIFO, долг поставщику уменьшается. Без цены — по себестоимости.',
+      'Mahsulot FIFO boʻyicha hisobdan chiqariladi, yetkazib beruvchiga qarz kamayadi. Narxsiz — tannarx boʻyicha.',
+    ),
   },
   transfer: {
-    title: 'Перемещение между складами',
-    one: 'Перемещение',
+    title: tr('Перемещение между складами', 'Omborlar oʻrtasida koʻchirish'),
+    one: tr('Перемещение', 'Koʻchirish'),
     toWarehouse: true,
-    hint: 'Партии переезжают на другой склад со своей себестоимостью.',
+    hint: tr('Партии переезжают на другой склад со своей себестоимостью.', 'Partiyalar oʻz tannarxi bilan boshqa omborga koʻchiriladi.'),
   },
   inventory: {
-    title: 'Инвентаризация',
-    one: 'Инвентаризация',
-    qtyTitle: 'Факт',
-    hint: 'Укажите фактическое количество. Излишек приходуется по последней себестоимости, недостача списывается FIFO.',
+    title: tr('Инвентаризация', 'Inventarizatsiya'),
+    one: tr('Инвентаризация', 'Inventarizatsiya'),
+    qtyTitle: tr('Факт', 'Haqiqiy'),
+    hint: tr(
+      'Укажите фактическое количество. Излишек приходуется по последней себестоимости, недостача списывается FIFO.',
+      'Haqiqiy miqdorni kiriting. Ortiqcha oxirgi tannarx boʻyicha kirim qilinadi, kamomad FIFO boʻyicha hisobdan chiqariladi.',
+    ),
   },
-  write_off: { title: 'Списание', one: 'Списание', reason: true, hint: 'Товар списывается по FIFO.' },
+  write_off: {
+    title: tr('Списание', 'Hisobdan chiqarish'),
+    one: tr('Списание', 'Hisobdan chiqarish'),
+    reason: true,
+    hint: tr('Товар списывается по FIFO.', 'Mahsulot FIFO boʻyicha hisobdan chiqariladi.'),
+  },
   posting: {
-    title: 'Оприходование',
-    one: 'Оприходование',
+    title: tr('Оприходование', 'Kirimga olish'),
+    one: tr('Оприходование', 'Kirimga olish'),
     price: 'required',
-    priceTitle: 'Себестоимость',
-    hint: 'Начальные остатки и находки: товар приходуется по указанной себестоимости.',
+    priceTitle: tr('Себестоимость', 'Tannarx'),
+    hint: tr('Начальные остатки и находки: товар приходуется по указанной себестоимости.', 'Boshlangʻich qoldiqlar va topilmalar: mahsulot koʻrsatilgan tannarx boʻyicha kirim qilinadi.'),
   },
 }
 
@@ -110,7 +122,7 @@ export function StockDocsPage({ type }: { type: StockDocType }) {
         extra={
           can('inventory.manage') && (
             <Button type="primary" icon={<PlusOutlined />} onClick={() => nav(`${docPaths[type]}/new`)}>
-              Создать
+              {tr('Создать', 'Yaratish')}
             </Button>
           )
         }
@@ -119,9 +131,9 @@ export function StockDocsPage({ type }: { type: StockDocType }) {
           value={status}
           onChange={(v) => setStatus(String(v))}
           options={[
-            { value: '', label: 'Все' },
-            { value: 'draft', label: 'Черновики' },
-            { value: 'posted', label: 'Проведённые' },
+            { value: '', label: tr('Все', 'Hammasi') },
+            { value: 'draft', label: tr('Черновики', 'Qoralamalar') },
+            { value: 'posted', label: tr('Проведённые', 'Oʻtkazilganlar') },
           ]}
         />
         <RemoteSelect<Warehouse>
@@ -130,7 +142,7 @@ export function StockDocsPage({ type }: { type: StockDocType }) {
           value={warehouseId}
           onChange={setWarehouseId}
           allowClear
-          placeholder="Все склады"
+          placeholder={tr('Все склады', 'Barcha omborlar')}
         />
       </PageTitle>
       <LoadError error={list.error} retry={() => list.refetch()} />
@@ -144,29 +156,29 @@ export function StockDocsPage({ type }: { type: StockDocType }) {
           onRow={(r) => ({ onClick: () => nav(`${docPaths[type]}/${r.id}`), style: { cursor: 'pointer' } })}
           columns={[
             { title: '№', dataIndex: 'number', width: 70 },
-            { title: 'Дата', dataIndex: 'created_at', render: dateTime },
-            { title: 'Склад', dataIndex: 'warehouse_name' },
-            ...(spec.toWarehouse ? [{ title: 'Куда', dataIndex: 'to_warehouse_name' }] : []),
-            ...(spec.counterparty ? [{ title: 'Контрагент', dataIndex: 'counterparty_name' }] : []),
-            ...(spec.reason ? [{ title: 'Причина', dataIndex: 'reason' }] : []),
-            { title: 'Строк', dataIndex: 'items_count', align: 'right' as const },
+            { title: tr('Дата', 'Sana'), dataIndex: 'created_at', render: dateTime },
+            { title: tr('Склад', 'Ombor'), dataIndex: 'warehouse_name' },
+            ...(spec.toWarehouse ? [{ title: tr('Куда', 'Qayerga'), dataIndex: 'to_warehouse_name' }] : []),
+            ...(spec.counterparty ? [{ title: tr('Контрагент', 'Kontragent'), dataIndex: 'counterparty_name' }] : []),
+            ...(spec.reason ? [{ title: tr('Причина', 'Sabab'), dataIndex: 'reason' }] : []),
+            { title: tr('Строк', 'Qatorlar'), dataIndex: 'items_count', align: 'right' as const },
             ...(spec.price
               ? [
                   {
-                    title: 'Сумма',
+                    title: tr('Сумма', 'Summa'),
                     dataIndex: 'total',
                     align: 'right' as const,
                     render: (v: string, r: StockDocument) => money(v, r.currency === 'USD' ? '$' : ''),
                   },
                 ]
               : []),
-            { title: 'Статус', dataIndex: 'status', render: (s: string) => <StatusTag status={s} /> },
-            { title: 'Автор', dataIndex: 'created_by' },
+            { title: tr('Статус', 'Holat'), dataIndex: 'status', render: (s: string) => <StatusTag status={s} /> },
+            { title: tr('Автор', 'Muallif'), dataIndex: 'created_by' },
             {
               key: 'del',
               align: 'right' as const,
               render: (_: unknown, r: StockDocument) =>
-                r.status === 'draft' && <DeleteButton path={`/store/inventory/documents/${r.id}`} name={`Черновик № ${r.number}`} />,
+                r.status === 'draft' && <DeleteButton path={`/store/inventory/documents/${r.id}`} name={tr(`Черновик № ${r.number}`, `Qoralama № ${r.number}`)} />,
             },
           ]}
         />
@@ -244,7 +256,7 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
   const warehouseId = Form.useWatch('warehouse_id', form)
   const currency = Form.useWatch('currency', form)
   const storeWarehouses = (allWarehouses.data ?? []).filter((w) => w.store_id === (d?.store_id ?? storeId) && w.is_active)
-  const storeName = (sid: string) => (sid === store?.id ? '' : ' (другой магазин)')
+  const storeName = (sid: string) => (sid === store?.id ? '' : tr(' (другой магазин)', ' (boshqa doʻkon)'))
 
   const total = useMemo(() => lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0), [lines])
 
@@ -259,11 +271,11 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
   const body = async () => {
     const h = await form.validateFields()
     const items = lines.filter((l) => l.product_id)
-    if (!items.length) throw new Error('Добавьте хотя бы один товар')
+    if (!items.length) throw new Error(tr('Добавьте хотя бы один товар', 'Kamida bitta mahsulot qoʻshing'))
     for (const l of items) {
       if (!l.qty || Number(l.qty) < 0 || (type !== 'inventory' && Number(l.qty) === 0))
-        throw new Error(`Укажите количество: ${l.product_name}`)
-      if (spec.price === 'required' && (l.price === null || l.price === '')) throw new Error(`Укажите цену: ${l.product_name}`)
+        throw new Error(tr(`Укажите количество: ${l.product_name}`, `Miqdorni kiriting: ${l.product_name}`))
+      if (spec.price === 'required' && (l.price === null || l.price === '')) throw new Error(tr(`Укажите цену: ${l.product_name}`, `Narxni kiriting: ${l.product_name}`))
     }
     return {
       type,
@@ -296,9 +308,9 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
       docId = await saveDraft()
       if (post && docId) {
         await api.post(`/store/inventory/documents/${docId}/post`)
-        message.success('Документ проведён')
+        message.success(tr('Документ проведён', 'Hujjat oʻtkazildi'))
       } else {
-        message.success('Черновик сохранён')
+        message.success(tr('Черновик сохранён', 'Qoralama saqlandi'))
       }
       if (isNew && docId) nav(`${docPaths[type]}/${docId}`, { replace: true })
       else void doc.refetch()
@@ -312,7 +324,7 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
     }
   }
 
-  const remove = useAction(() => api.del(`/store/inventory/documents/${id}`), { success: 'Черновик удалён' })
+  const remove = useAction(() => api.del(`/store/inventory/documents/${id}`), { success: tr('Черновик удалён', 'Qoralama oʻchirildi') })
 
   if (!isNew && doc.error) return <Alert type="error" showIcon message={errorText(doc.error)} />
 
@@ -324,7 +336,7 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
       <PageTitle
         title={
           isNew ? (
-            `${spec.one}: новый документ`
+            `${spec.one}: ${tr('новый документ', 'yangi hujjat')}`
           ) : (
             <>
               {spec.one} № {d?.number ?? ''} {d && <StatusTag status={d.status} />}
@@ -336,18 +348,20 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
             {!readOnly && (
               <>
                 {!isNew && (
-                  <Popconfirm title="Удалить черновик?" onConfirm={() => remove.mutate(undefined, { onSuccess: () => nav(docPaths[type]) })}>
+                  <Popconfirm title={tr('Удалить черновик?', 'Qoralama oʻchirilsinmi?')} onConfirm={() => remove.mutate(undefined, { onSuccess: () => nav(docPaths[type]) })}>
                     <Button danger loading={remove.isPending}>
-                      Удалить черновик
+                      {tr('Удалить черновик', 'Qoralamani oʻchirish')}
                     </Button>
                   </Popconfirm>
                 )}
                 <Button type="primary" icon={<SaveOutlined />} loading={busy} onClick={() => run(false)}>
-                  Сохранить черновик
+                  {tr('Сохранить черновик', 'Qoralamani saqlash')}
                 </Button>
-                <Popconfirm title="Провести документ? После проведения изменить его нельзя." onConfirm={() => run(true)}>
+                <Popconfirm
+                  title={tr('Провести документ? После проведения изменить его нельзя.', 'Hujjat oʻtkazilsinmi? Oʻtkazilgandan keyin uni oʻzgartirib boʻlmaydi.')}
+                  onConfirm={() => run(true)}>
                   <Button className="sm-btn-blue" icon={<CheckOutlined />} loading={busy}>
-                    Провести
+                    {tr('Провести', 'Oʻtkazish')}
                   </Button>
                 </Popconfirm>
               </>
@@ -355,29 +369,31 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
           </Space>
         }
       >
-        <Button type="text" icon={<CloseOutlined />} onClick={() => nav(docPaths[type])} title="Закрыть" aria-label="Закрыть" />
+        <Button type="text" icon={<CloseOutlined />} onClick={() => nav(docPaths[type])} title={tr('Закрыть', 'Yopish')} aria-label={tr('Закрыть', 'Yopish')} />
       </PageTitle>
       {spec.hint && !readOnly && <Alert type="info" showIcon message={spec.hint} style={{ marginBottom: 16 }} />}
       <Card style={{ marginBottom: 16 }} loading={!isNew && doc.isLoading}>
         <Form form={form} layout="vertical" disabled={readOnly}>
           <Row gutter={16}>
             <Col xs={24} md={12} lg={8}>
-              <Form.Item name="warehouse_id" label={spec.toWarehouse ? 'Со склада' : 'Склад'} rules={[{ required: true, message: 'Выберите склад' }]}>
+              <Form.Item name="warehouse_id" label={spec.toWarehouse ? tr('Со склада', 'Qaysi ombordan') : tr('Склад', 'Ombor')}
+                rules={[{ required: true, message: tr('Выберите склад', 'Omborni tanlang') }]}
+              >
                 <Select
                   disabled={!isNew || readOnly}
-                  placeholder="Склад"
+                  placeholder={tr('Склад', 'Ombor')}
                   options={(isNew ? storeWarehouses : (allWarehouses.data ?? [])).map((w) => ({ value: w.id, label: w.name }))}
                 />
               </Form.Item>
             </Col>
             {spec.toWarehouse && (
               <Col xs={24} md={12} lg={8}>
-                <Form.Item name="to_warehouse_id" label="На склад" rules={[{ required: true, message: 'Выберите склад' }]}>
+                <Form.Item name="to_warehouse_id" label={tr('На склад', 'Qaysi omborga')} rules={[{ required: true, message: tr('Выберите склад', 'Omborni tanlang') }]}>
                   <Select
                     disabled={!isNew || readOnly}
                     showSearch
                     optionFilterProp="label"
-                    placeholder="Склад любого магазина сети"
+                    placeholder={tr('Склад любого магазина сети', 'Tarmoqdagi istalgan doʻkon ombori')}
                     options={(allWarehouses.data ?? [])
                       .filter((w) => w.id !== warehouseId && (w.is_active || !isNew))
                       .map((w) => ({ value: w.id, label: w.name + storeName(w.store_id) }))}
@@ -387,47 +403,52 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
             )}
             {spec.counterparty && (
               <Col xs={24} md={12} lg={8}>
-                <Form.Item name="counterparty_id" label="Поставщик" rules={[{ required: true, message: 'Выберите поставщика' }]}>
+                <Form.Item name="counterparty_id" label={tr('Поставщик', 'Yetkazib beruvchi')} rules={[{ required: true, message: tr('Выберите поставщика', 'Yetkazib beruvchini tanlang') }]}>
                   <RemoteSelect<Counterparty>
                     path="/store/finance/counterparties"
                     search
                     filter={(c) => c.is_active || c.id === d?.counterparty_id}
                     selectedLabel={d?.counterparty_name ?? undefined}
-                    placeholder="Поиск по названию или телефону"
+                    placeholder={tr('Поиск по названию или телефону', 'Nomi yoki telefon boʻyicha qidirish')}
                   />
                 </Form.Item>
               </Col>
             )}
             {spec.currency && (
               <Col xs={12} md={6} lg={4}>
-                <Form.Item name="currency" label="Валюта" rules={[{ required: true }]}>
-                  <Select options={[{ value: 'UZS', label: 'UZS (сум)' }, { value: 'USD', label: 'USD' }]} />
+                <Form.Item name="currency" label={tr('Валюта', 'Valyuta')} rules={[{ required: true }]}>
+                  <Select
+                    options={[
+                      { value: 'UZS', label: tr('UZS (сум)', 'UZS (soʻm)') },
+                      { value: 'USD', label: 'USD' },
+                    ]}
+                  />
                 </Form.Item>
               </Col>
             )}
             {spec.reason && (
               <Col xs={24} md={12} lg={8}>
-                <Form.Item name="reason" label="Причина" rules={[{ required: true, message: 'Укажите причину' }]}>
-                  <Input placeholder="Порча, истёк срок…" />
+                <Form.Item name="reason" label={tr('Причина', 'Sabab')} rules={[{ required: true, message: tr('Укажите причину', 'Sababni kiriting') }]}>
+                  <Input placeholder={tr('Порча, истёк срок…', 'Buzilgan, muddati oʻtgan…')} />
                 </Form.Item>
               </Col>
             )}
             <Col xs={24} lg={spec.toWarehouse || spec.reason ? 8 : 12}>
-              <Form.Item name="note" label="Примечание">
+              <Form.Item name="note" label={tr('Примечание', 'Izoh')}>
                 <Input />
               </Form.Item>
             </Col>
           </Row>
           {d && (
             <Typography.Text type="secondary">
-              Создан {dateTime(d.created_at)} · {d.created_by}
-              {d.posted_at && ` · проведён ${dateTime(d.posted_at)}`}
-              {d.rate && ` · курс ${money(d.rate)}`}
+              {tr('Создан', 'Yaratilgan')} {dateTime(d.created_at)} · {d.created_by}
+              {d.posted_at && ` · ${tr('проведён', 'oʻtkazilgan')} ${dateTime(d.posted_at)}`}
+              {d.rate && ` · ${tr('курс', 'kurs')} ${money(d.rate)}`}
             </Typography.Text>
           )}
         </Form>
       </Card>
-      <Card title="Товары" styles={{ body: { padding: 0 } }}>
+      <Card title={tr('Товары', 'Mahsulotlar')} styles={{ body: { padding: 0 } }}>
         <Table<Line>
           rowKey="key"
           dataSource={lines}
@@ -436,7 +457,7 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
           columns={[
             { title: '№', key: 'n', width: 50, render: (_, __, i) => i + 1 },
             {
-              title: 'Товар',
+              title: tr('Товар', 'Mahsulot'),
               key: 'product',
               render: (_, l) =>
                 readOnly ? (
@@ -448,7 +469,7 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
                     style={{ minWidth: 260, width: '100%' }}
                     onChange={(pid, p) => {
                       if (productOf(pid) && productOf(pid)!.key !== l.key) {
-                        message.warning('Этот товар уже есть в документе')
+                        message.warning(tr('Этот товар уже есть в документе', 'Bu mahsulot hujjatda allaqachon bor'))
                         return
                       }
                       update(l.key, { product_id: pid, product_name: p?.name ?? '', unit_short: p?.unit_short ?? '' })
@@ -457,10 +478,10 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
                 ),
             },
             ...(type === 'inventory' && readOnly
-              ? [{ title: 'Учёт', key: 'exp', align: 'right' as const, render: (_: unknown, l: Line) => fmtQty(l.expected_qty) }]
+              ? [{ title: tr('Учёт', 'Hisobda'), key: 'exp', align: 'right' as const, render: (_: unknown, l: Line) => fmtQty(l.expected_qty) }]
               : []),
             {
-              title: spec.qtyTitle ?? 'Количество',
+              title: spec.qtyTitle ?? tr('Количество', 'Miqdor'),
               key: 'qty',
               width: 150,
               render: (_, l) =>
@@ -473,7 +494,7 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
             ...(type === 'inventory' && readOnly
               ? [
                   {
-                    title: 'Разница',
+                    title: tr('Разница', 'Farq'),
                     key: 'diff',
                     align: 'right' as const,
                     render: (_: unknown, l: Line) => {
@@ -494,11 +515,11 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
                       readOnly ? (
                         unitPrice(l.price, priceSuffix)
                       ) : (
-                        <Num value={l.price} onChange={(v) => update(l.key, { price: v })} placeholder={spec.price === 'optional' ? 'себестоимость' : ''} />
+                        <Num value={l.price} onChange={(v) => update(l.key, { price: v })} placeholder={spec.price === 'optional' ? tr('себестоимость', 'tannarx') : ''} />
                       ),
                   },
                   {
-                    title: 'Сумма',
+                    title: tr('Сумма', 'Summa'),
                     key: 'sum',
                     align: 'right' as const,
                     render: (_: unknown, l: Line) => (l.price ? money((Number(l.qty) || 0) * Number(l.price), priceSuffix) : '—'),
@@ -522,7 +543,7 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
             spec.price ? (
               <Table.Summary.Row>
                 <Table.Summary.Cell index={0} colSpan={4}>
-                  <Typography.Text strong>Итого</Typography.Text>
+                  <Typography.Text strong>{tr('Итого', 'Jami')}</Typography.Text>
                 </Table.Summary.Cell>
                 <Table.Summary.Cell index={1} align="right">
                   <Typography.Text strong>{money(readOnly && d ? d.total : total, priceSuffix)}</Typography.Text>

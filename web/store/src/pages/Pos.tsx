@@ -23,7 +23,7 @@ import {
 } from 'antd'
 import { KeyOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import { DeleteButton, LoadError, PageTitle, api, dateTime, money, useAction, useItem, useList, usePaged } from '@sm/shared'
+import { DeleteButton, LoadError, PageTitle, api, dateTime, money, tr, useAction, useItem, useList, usePaged } from '@sm/shared'
 import { useStore } from '../ctx'
 import { NeedStore } from '../ui'
 
@@ -107,12 +107,15 @@ function CodeView({ device }: { device: Device }) {
   const code = device.activation_code ?? ''
   return (
     <Flex vertical align="center" gap={12} style={{ padding: '8px 0' }}>
-      <Typography.Text type="secondary">Введите этот код на кассе «{device.name}»</Typography.Text>
+      <Typography.Text type="secondary">{tr(`Введите этот код на кассе «${device.name}»`, `Bu kodni «${device.name}» kassasida kiriting`)}</Typography.Text>
       <Typography.Text copyable={{ text: code }} style={{ fontSize: 40, fontWeight: 700, letterSpacing: 6, fontFamily: 'monospace' }}>
         {code.length === 8 ? code.slice(0, 4) + '-' + code.slice(4) : code}
       </Typography.Text>
       <Typography.Text type="secondary">
-        Действует до {device.activation_expires ? dateTime(device.activation_expires) : 'завтра'} · подключить можно один раз
+        {tr(
+          `Действует до ${device.activation_expires ? dateTime(device.activation_expires) : 'завтра'} · подключить можно один раз`,
+          `${device.activation_expires ? dateTime(device.activation_expires) : 'ertaga'} gacha amal qiladi · faqat bir marta ulash mumkin`,
+        )}
       </Typography.Text>
     </Flex>
   )
@@ -121,7 +124,7 @@ function CodeView({ device }: { device: Device }) {
 function lastSeen(d: Device) {
   if (!d.last_seen_at) return null
   const min = dayjs().diff(dayjs(d.last_seen_at), 'minute')
-  return min < 5 ? 'на связи' : `была на связи ${dateTime(d.last_seen_at)}`
+  return min < 5 ? tr('на связи', 'aloqada') : tr(`была на связи ${dateTime(d.last_seen_at)}`, `oxirgi aloqa: ${dateTime(d.last_seen_at)}`)
 }
 
 function DevicesCard() {
@@ -131,20 +134,20 @@ function DevicesCard() {
   const [creating, setCreating] = useState(false)
   const [form] = Form.useForm<{ name: string }>()
   const inv = { invalidate: [['/store/pos/devices']] }
-  const showCode = (d: Device) => modal.info({ title: 'Код подключения кассы', width: 520, icon: null, content: <CodeView device={d} /> })
+  const showCode = (d: Device) => modal.info({ title: tr('Код подключения кассы', 'Kassani ulash kodi'), width: 520, icon: null, content: <CodeView device={d} /> })
   const create = useAction((v: { name: string }) => api.post<Device>('/store/pos/devices', { store_id: storeId, name: v.name }), inv)
   const newCode = useAction((id: string) => api.post<Device>(`/store/pos/devices/${id}/code`), inv)
-  const revoke = useAction((id: string) => api.post<Device>(`/store/pos/devices/${id}/revoke`), { ...inv, success: 'Касса отключена' })
+  const revoke = useAction((id: string) => api.post<Device>(`/store/pos/devices/${id}/revoke`), { ...inv, success: tr('Касса отключена', 'Kassa oʻchirildi') })
   const manage = can('stores.manage')
   const items = list.data ?? []
 
   return (
     <Card
-      title={`Кассы · ${items.filter((d) => d.status !== 'revoked').length}`}
+      title={`${tr('Кассы', 'Kassalar')} · ${items.filter((d) => d.status !== 'revoked').length}`}
       extra={
         manage && (
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>
-            Новая касса
+            {tr('Новая касса', 'Yangi kassa')}
           </Button>
         )
       }
@@ -156,34 +159,37 @@ function DevicesCard() {
         loading={list.isLoading}
         dataSource={items}
         pagination={false}
-        locale={{ emptyText: 'Касс ещё нет — нажмите «Новая касса», затем введите код на компьютере или планшете' }}
+        locale={{ emptyText: tr(
+            'Касс ещё нет — нажмите «Новая касса», затем введите код на компьютере или планшете',
+            'Hali kassalar yoʻq — «Yangi kassa» tugmasini bosing, soʻng kodni kompyuter yoki planshetda kiriting',
+          ), }}
         columns={[
           {
-            title: 'Касса',
+            title: tr('Касса', 'Kassa'),
             dataIndex: 'name',
             render: (v: string, d) => (
               <Space direction="vertical" size={0}>
                 <b>{v}</b>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {[d.app_version && 'версия ' + d.app_version, d.activated_at && 'подключена ' + dateTime(d.activated_at)]
+                  {[d.app_version && tr('версия ', 'versiya ') + d.app_version, d.activated_at && tr('подключена ', 'ulangan ') + dateTime(d.activated_at)]
                     .filter(Boolean)
-                    .join(' · ') || 'создана ' + dateTime(d.created_at)}
+                    .join(' · ') || tr('создана ', 'yaratilgan ') + dateTime(d.created_at)}
                 </Typography.Text>
               </Space>
             ),
           },
           {
-            title: 'Статус',
+            title: tr('Статус', 'Holat'),
             key: 'status',
             render: (_, d) =>
               d.status === 'revoked' ? (
-                <Tag>Отключена</Tag>
+                <Tag>{tr('Отключена', 'Oʻchirilgan')}</Tag>
               ) : d.status === 'waiting' ? (
-                <Tag color="orange">Ждёт подключения</Tag>
+                <Tag color="orange">{tr('Ждёт подключения', 'Ulanishni kutmoqda')}</Tag>
               ) : (
                 <Space size={4} wrap>
-                  <Tag color="green">Подключена</Tag>
-                  {d.open_shift_id && <Tag color="blue">Смена открыта</Tag>}
+                  <Tag color="green">{tr('Подключена', 'Ulangan')}</Tag>
+                  {d.open_shift_id && <Tag color="blue">{tr('Смена открыта', 'Smena ochiq')}</Tag>}
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                     {lastSeen(d)}
                   </Typography.Text>
@@ -204,18 +210,21 @@ function DevicesCard() {
                     loading={newCode.isPending && newCode.variables === d.id}
                     onClick={() => newCode.mutate(d.id, { onSuccess: showCode })}
                   >
-                    {d.status === 'waiting' ? 'Показать код' : 'Новый код'}
+                    {d.status === 'waiting' ? tr('Показать код', 'Kodni koʻrsatish') : tr('Новый код', 'Yangi kod')}
                   </Button>
                   {d.status === 'waiting' && <DeleteButton path={`/store/pos/devices/${d.id}`} name={d.name} />}
                   <Popconfirm
-                    title="Отключить кассу?"
-                    description="Она перестанет продавать и отправлять чеки. Неотправленные чеки останутся на ней."
-                    okText="Отключить"
+                    title={tr('Отключить кассу?', 'Kassa oʻchirilsinmi?')}
+                    description={tr(
+                      'Она перестанет продавать и отправлять чеки. Неотправленные чеки останутся на ней.',
+                      'U sotish va cheklarni yuborishni toʻxtatadi. Yuborilmagan cheklar unda qoladi.',
+                    )}
+                    okText={tr('Отключить', 'Oʻchirish')}
                     okButtonProps={{ danger: true }}
                     onConfirm={() => revoke.mutate(d.id)}
                   >
                     <Button size="small" danger>
-                      Отключить
+                      {tr('Отключить', 'Oʻchirish')}
                     </Button>
                   </Popconfirm>
                 </Space>
@@ -225,8 +234,8 @@ function DevicesCard() {
       />
       <Modal
         open={creating}
-        title="Новая касса"
-        okText="Создать и показать код"
+        title={tr('Новая касса', 'Yangi kassa')}
+        okText={tr('Создать и показать код', 'Yaratish va kodni koʻrsatish')}
         confirmLoading={create.isPending}
         onCancel={() => setCreating(false)}
         onOk={() =>
@@ -242,12 +251,15 @@ function DevicesCard() {
         }
         destroyOnClose
       >
-        <Form form={form} layout="vertical" preserve={false} initialValues={{ name: `Касса ${items.length + 1}` }}>
-          <Form.Item name="name" label="Название" rules={[{ required: true, whitespace: true, message: 'Например, «Касса 1 · Windows»' }]}>
+        <Form form={form} layout="vertical" preserve={false} initialValues={{ name: tr(`Касса ${items.length + 1}`, `Kassa ${items.length + 1}`) }}>
+          <Form.Item name="name" label={tr('Название', 'Nomi')} rules={[{ required: true, whitespace: true, message: tr('Например, «Касса 1 · Windows»', 'Masalan, «Kassa 1 · Windows»') }]}>
             <Input maxLength={60} autoFocus />
           </Form.Item>
           <Typography.Text type="secondary">
-            Касса привязывается к выбранному сейчас магазину. После создания появится код — введите его в программе кассы.
+            {tr(
+              'Касса привязывается к выбранному сейчас магазину. После создания появится код — введите его в программе кассы.',
+              'Kassa hozir tanlangan doʻkonga bogʻlanadi. Yaratilgandan soʻng kod chiqadi — uni kassa dasturida kiriting.',
+            )}
           </Typography.Text>
         </Form>
       </Modal>
@@ -261,17 +273,19 @@ function PinsCard() {
   const [editing, setEditing] = useState<PinRow | null>(null)
   const [pin, setPin] = useState('')
   const inv = { invalidate: [['/store/pos/pins']] }
-  const save = useAction((v: { id: string; pin: string }) => api.put(`/store/pos/pins/${v.id}`, { pin: v.pin }), { ...inv, success: 'ПИН сохранён' })
-  const clear = useAction((id: string) => api.del(`/store/pos/pins/${id}`), { ...inv, success: 'ПИН убран' })
+  const save = useAction((v: { id: string; pin: string }) => api.put(`/store/pos/pins/${v.id}`, { pin: v.pin }), { ...inv, success: tr('ПИН сохранён', 'PIN-kod saqlandi') })
+  const clear = useAction((id: string) => api.del(`/store/pos/pins/${id}`), { ...inv, success: tr('ПИН убран', 'PIN-kod olib tashlandi') })
   if (!can('staff.manage')) return null
   const items = list.data ?? []
   const valid = /^[0-9]{4,6}$/.test(pin)
 
   return (
-    <Card title="ПИНы кассиров" styles={{ body: { paddingTop: 8 } }}>
+    <Card title={tr('ПИНы кассиров', 'Kassirlar PIN-kodlari')} styles={{ body: { paddingTop: 8 } }}>
       <Typography.Paragraph type="secondary" style={{ fontSize: 13 }}>
-        Кассир входит на кассе по ПИНу (4–6 цифр). Без ПИНа сотрудника нет в списке на кассе. Права (скидки, возвраты) — в
-        «Настройки → Роли».
+        {tr(
+          'Кассир входит на кассе по ПИНу (4–6 цифр). Без ПИНа сотрудника нет в списке на кассе. Права (скидки, возвраты) — в «Настройки → Роли».',
+          'Kassir kassaga PIN-kod (4–6 raqam) bilan kiradi. PIN-kodsiz xodim kassadagi roʻyxatda boʻlmaydi. Huquqlar (chegirmalar, qaytarishlar) — «Sozlamalar → Rollar» boʻlimida.',
+        )}
       </Typography.Paragraph>
       <LoadError error={list.error} retry={() => list.refetch()} />
       <Flex vertical gap={8}>
@@ -283,12 +297,22 @@ function PinsCard() {
               </Typography.Text>
               <Space size={4} wrap>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {r.is_owner ? 'Владелец' : r.role_name}
+                  {r.is_owner ? tr('Владелец', 'Egasi') : r.role_name}
                 </Typography.Text>
-                {!r.can_pos && <Tag style={{ fontSize: 11 }}>нет права продавать</Tag>}
-                {r.can_pos && r.can_return && <Tag color="purple" style={{ fontSize: 11 }}>старший: возвраты</Tag>}
-                {r.has_pin ? <Tag color="green" style={{ fontSize: 11 }}>ПИН задан</Tag> : <Tag style={{ fontSize: 11 }}>без ПИНа</Tag>}
-                {r.locked && <Tag color="red" style={{ fontSize: 11 }}>заблокирован 5 мин</Tag>}
+                {!r.can_pos && <Tag style={{ fontSize: 11 }}>{tr('нет права продавать', 'sotish huquqi yoʻq')}</Tag>}
+                {r.can_pos && r.can_return && <Tag color="purple" style={{ fontSize: 11 }}>
+                    {tr('старший: возвраты', 'katta: qaytarishlar')}
+                  </Tag>}
+                {r.has_pin ? (
+                  <Tag color="green" style={{ fontSize: 11 }}>
+                    {tr('ПИН задан', 'PIN-kod bor')}
+                  </Tag>
+                ) : (
+                  <Tag style={{ fontSize: 11 }}>{tr('без ПИНа', 'PIN-kodsiz')}</Tag>
+                )}
+                {r.locked && <Tag color="red" style={{ fontSize: 11 }}>
+                    {tr('заблокирован 5 мин', '5 daqiqaga bloklangan')}
+                  </Tag>}
               </Space>
             </Flex>
             <Button
@@ -299,23 +323,26 @@ function PinsCard() {
                 setEditing(r)
               }}
             >
-              {r.has_pin ? 'Сменить ПИН' : 'Задать ПИН'}
+              {r.has_pin ? tr('Сменить ПИН', 'PIN-kodni almashtirish') : tr('Задать ПИН', 'PIN-kod berish')}
             </Button>
             {r.has_pin && (
-              <Popconfirm title="Убрать ПИН?" description="Сотрудник не сможет войти на кассе." onConfirm={() => clear.mutate(r.employee_id)}>
+              <Popconfirm
+                title={tr('Убрать ПИН?', 'PIN-kod olib tashlansinmi?')}
+                description={tr('Сотрудник не сможет войти на кассе.', 'Xodim kassaga kira olmaydi.')}
+                onConfirm={() => clear.mutate(r.employee_id)}>
                 <Button size="small" type="text" danger>
-                  Убрать
+                  {tr('Убрать', 'Olib tashlash')}
                 </Button>
               </Popconfirm>
             )}
           </Flex>
         ))}
-        {!list.isLoading && items.length === 0 && <Typography.Text type="secondary">Сотрудников в этом магазине нет</Typography.Text>}
+        {!list.isLoading && items.length === 0 && <Typography.Text type="secondary">{tr('Сотрудников в этом магазине нет', 'Bu doʻkonda xodimlar yoʻq')}</Typography.Text>}
       </Flex>
       <Modal
         open={!!editing}
-        title={`ПИН · ${editing?.name ?? ''}`}
-        okText="Сохранить"
+        title={`${tr('ПИН', 'PIN-kod')} · ${editing?.name ?? ''}`}
+        okText={tr('Сохранить', 'Saqlash')}
         okButtonProps={{ disabled: !valid }}
         confirmLoading={save.isPending}
         onCancel={() => setEditing(null)}
@@ -327,13 +354,16 @@ function PinsCard() {
           value={pin}
           inputMode="numeric"
           maxLength={6}
-          placeholder="4–6 цифр"
+          placeholder={tr('4–6 цифр', '4–6 raqam')}
           onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
           onPressEnter={() => editing && valid && save.mutate({ id: editing.employee_id, pin }, { onSuccess: () => setEditing(null) })}
           style={{ fontSize: 24, letterSpacing: 8 }}
         />
         <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
-          Сообщите ПИН кассиру лично. На кассе он появится после обновления каталога — в течение минуты.
+          {tr(
+            'Сообщите ПИН кассиру лично. На кассе он появится после обновления каталога — в течение минуты.',
+            'PIN-kodni kassirga shaxsan ayting. U katalog yangilangach kassada paydo boʻladi — bir daqiqa ichida.',
+          )}
         </Typography.Paragraph>
       </Modal>
     </Card>
@@ -346,12 +376,12 @@ function SettingsCard() {
   const [form] = Form.useForm<{ weight_prefixes: string[]; receipt_header: string; receipt_footer: string }>()
   const save = useAction((v: PosSettings) => api.put<PosSettings>('/store/pos/settings', v), {
     invalidate: [['/store/pos/settings']],
-    success: 'Настройки кассы сохранены',
+    success: tr('Настройки кассы сохранены', 'Kassa sozlamalari saqlandi'),
   })
   if (!settings.data) return <LoadError error={settings.error} retry={() => settings.refetch()} />
   const readOnly = !can('stores.manage')
   return (
-    <Card title="Чек и весы (для всей сети)">
+    <Card title={tr('Чек и весы (для всей сети)', 'Chek va tarozi (butun tarmoq uchun)')}>
       <Form
         form={form}
         layout="vertical"
@@ -361,24 +391,27 @@ function SettingsCard() {
       >
         <Form.Item
           name="receipt_header"
-          label="Шапка чека"
-          extra="Название ЯТТ/ООО, ИНН, адрес — как в регистрации"
+          label={tr('Шапка чека', 'Chek sarlavhasi')}
+          extra={tr('Название ЯТТ/ООО, ИНН, адрес — как в регистрации', 'YaTT/MChJ nomi, STIR, manzil — roʻyxatdan oʻtgandagidek')}
         >
-          <Input.TextArea rows={3} maxLength={500} placeholder={'ЯТТ «Baraka Market»\nИНН 123456789\nг. Ташкент, Чиланзар 1'} />
+          <Input.TextArea rows={3} maxLength={500} placeholder={tr('ЯТТ «Baraka Market»\nИНН 123456789\nг. Ташкент, Чиланзар 1', 'YaTT «Baraka Market»\nSTIR 123456789\nToshkent sh., Chilonzor 1')} />
         </Form.Item>
-        <Form.Item name="receipt_footer" label="Текст внизу чека">
-          <Input.TextArea rows={2} maxLength={500} placeholder="Спасибо за покупку!" />
+        <Form.Item name="receipt_footer" label={tr('Текст внизу чека', 'Chek pastidagi matn')}>
+          <Input.TextArea rows={2} maxLength={500} placeholder={tr('Спасибо за покупку!', 'Xaridingiz uchun rahmat!')} />
         </Form.Item>
         <Form.Item
           name="weight_prefixes"
-          label="Префиксы весовых этикеток"
-          extra="Первые 2 цифры штрихкода, который печатают весы (обычно 22). Код товара на этикетке = короткий код (PLU)."
+          label={tr('Префиксы весовых этикеток', 'Tarozi yorliqlari prefikslari')}
+          extra={tr(
+            'Первые 2 цифры штрихкода, который печатают весы (обычно 22). Код товара на этикетке = короткий код (PLU).',
+            'Tarozi chop etadigan shtrix-kodning birinchi 2 raqami (odatda 22). Yorliqdagi mahsulot kodi = qisqa kod (PLU).',
+          )}
         >
           <Select mode="tags" tokenSeparators={[',', ' ']} options={['20', '21', '22', '23', '24', '25', '26', '27', '28', '29'].map((v) => ({ value: v }))} />
         </Form.Item>
         {!readOnly && (
           <Button type="primary" htmlType="submit" loading={save.isPending}>
-            Сохранить
+            {tr('Сохранить', 'Saqlash')}
           </Button>
         )}
       </Form>
@@ -389,9 +422,12 @@ function SettingsCard() {
 export function PosDevicesPage() {
   return (
     <NeedStore>
-      <PageTitle title="Кассы и ПИНы">
+      <PageTitle title={tr('Кассы и ПИНы', 'Kassalar va PIN-kodlar')}>
         <Typography.Text type="secondary">
-          1) Создайте кассу и введите код в программе. 2) Задайте ПИН кассиру. 3) На кассе: выбрать себя → ПИН → размен.
+          {tr(
+            '1) Создайте кассу и введите код в программе. 2) Задайте ПИН кассиру. 3) На кассе: выбрать себя → ПИН → размен.',
+            '1) Kassa yarating va kodni dasturda kiriting. 2) Kassirga PIN-kod bering. 3) Kassada: oʻzini tanlash → PIN-kod → mayda pul.',
+          )}
         </Typography.Text>
       </PageTitle>
       <Row gutter={[16, 16]}>
@@ -416,41 +452,43 @@ function ShiftDrawer({ id, onClose }: { id: string | null; onClose: () => void }
   const s = sh.data
   const r = s?.report
   return (
-    <Drawer open={!!id} onClose={onClose} width={520} title={s ? `Смена №${s.number} · ${s.device_name}` : 'Смена'}>
+    <Drawer open={!!id} onClose={onClose} width={520} title={s ? tr(`Смена №${s.number} · ${s.device_name}`, `Smena №${s.number} · ${s.device_name}`) : tr('Смена', 'Smena')}>
       <LoadError error={sh.error} retry={() => sh.refetch()} />
       {s && (
         <Flex vertical gap={16}>
           <Descriptions column={1} size="small" bordered>
-            <Descriptions.Item label="Магазин">{s.store_name}</Descriptions.Item>
-            <Descriptions.Item label="Открыл">
+            <Descriptions.Item label={tr('Магазин', 'Doʻkon')}>{s.store_name}</Descriptions.Item>
+            <Descriptions.Item label={tr('Открыл', 'Ochgan')}>
               {s.opened_by_name} · {dateTime(s.opened_at)}
             </Descriptions.Item>
-            <Descriptions.Item label="Закрыл">{s.closed_at ? `${s.closed_by_name ?? ''} · ${dateTime(s.closed_at)}` : 'Смена открыта'}</Descriptions.Item>
-            <Descriptions.Item label="Размен">{money(s.opening_cash)}</Descriptions.Item>
+            <Descriptions.Item label={tr('Закрыл', 'Yopgan')}>
+              {s.closed_at ? `${s.closed_by_name ?? ''} · ${dateTime(s.closed_at)}` : tr('Смена открыта', 'Smena ochiq')}
+            </Descriptions.Item>
+            <Descriptions.Item label={tr('Размен', 'Mayda pul')}>{money(s.opening_cash)}</Descriptions.Item>
           </Descriptions>
           {r && (
             <>
-              <Descriptions column={1} size="small" bordered title="Продажи">
-                <Descriptions.Item label="Чеков">{r.sales_count}</Descriptions.Item>
-                <Descriptions.Item label="Выручка">{money(r.sales_total)}</Descriptions.Item>
-                <Descriptions.Item label="Скидки">{money(r.discounts)}</Descriptions.Item>
-                <Descriptions.Item label="Возвраты">
+              <Descriptions column={1} size="small" bordered title={tr('Продажи', 'Sotuvlar')}>
+                <Descriptions.Item label={tr('Чеков', 'Cheklar')}>{r.sales_count}</Descriptions.Item>
+                <Descriptions.Item label={tr('Выручка', 'Tushum')}>{money(r.sales_total)}</Descriptions.Item>
+                <Descriptions.Item label={tr('Скидки', 'Chegirmalar')}>{money(r.discounts)}</Descriptions.Item>
+                <Descriptions.Item label={tr('Возвраты', 'Qaytarishlar')}>
                   {r.returns_count} · {money(r.returns_total)}
                 </Descriptions.Item>
                 {r.by_method.map((m) => (
                   <Descriptions.Item key={m.payment_method_id} label={m.name}>
                     {money(m.sales)}
-                    {Number(m.returns) > 0 && ` · возвраты ${money(m.returns)}`}
+                    {Number(m.returns) > 0 && ` · ${tr('возвраты', 'qaytarishlar')} ${money(m.returns)}`}
                   </Descriptions.Item>
                 ))}
               </Descriptions>
-              <Descriptions column={1} size="small" bordered title="Наличные в ящике">
-                <Descriptions.Item label="Внесения">{money(r.cash_in)}</Descriptions.Item>
-                <Descriptions.Item label="Изъятия">{money(r.cash_out)}</Descriptions.Item>
-                <Descriptions.Item label="Должно быть">{money(s.expected_cash ?? r.expected_cash)}</Descriptions.Item>
-                {s.counted_cash !== null && <Descriptions.Item label="Посчитано">{money(s.counted_cash)}</Descriptions.Item>}
+              <Descriptions column={1} size="small" bordered title={tr('Наличные в ящике', 'Gʻaladondagi naqd pul')}>
+                <Descriptions.Item label={tr('Внесения', 'Kiritishlar')}>{money(r.cash_in)}</Descriptions.Item>
+                <Descriptions.Item label={tr('Изъятия', 'Olishlar')}>{money(r.cash_out)}</Descriptions.Item>
+                <Descriptions.Item label={tr('Должно быть', 'Boʻlishi kerak')}>{money(s.expected_cash ?? r.expected_cash)}</Descriptions.Item>
+                {s.counted_cash !== null && <Descriptions.Item label={tr('Посчитано', 'Sanaldi')}>{money(s.counted_cash)}</Descriptions.Item>}
                 {s.diff !== null && (
-                  <Descriptions.Item label="Расхождение">
+                  <Descriptions.Item label={tr('Расхождение', 'Farq')}>
                     <Typography.Text type={Number(s.diff) === 0 ? 'success' : 'danger'}>
                       {money(s.diff)}
                       {s.diff_reason && ` · ${s.diff_reason}`}
@@ -459,7 +497,7 @@ function ShiftDrawer({ id, onClose }: { id: string | null; onClose: () => void }
                 )}
               </Descriptions>
               {r.fiscal_pending > 0 && (
-                <Alert type="warning" showIcon message={`Чеков без фискального признака: ${r.fiscal_pending}`} />
+                <Alert type="warning" showIcon message={tr(`Чеков без фискального признака: ${r.fiscal_pending}`, `Fiskal belgisiz cheklar: ${r.fiscal_pending}`)} />
               )}
             </>
           )}
@@ -476,14 +514,19 @@ export function PosShiftsPage() {
   return (
     <NeedStore>
       <PageTitle
-        title="Смены касс"
+        title={tr('Смены касс', 'Kassa smenalari')}
         extra={
           <Button icon={<ReloadOutlined spin={paged.isFetching} />} onClick={() => paged.refetch()}>
-            Обновить
+            {tr('Обновить', 'Yangilash')}
           </Button>
         }
       >
-        <Typography.Text type="secondary">Выручка по способам оплаты и расхождения наличных на закрытии. Нажмите на смену — откроется отчёт.</Typography.Text>
+        <Typography.Text type="secondary">
+          {tr(
+            'Выручка по способам оплаты и расхождения наличных на закрытии. Нажмите на смену — откроется отчёт.',
+            'Toʻlov usullari boʻyicha tushum va yopilishdagi naqd pul farqlari. Smenani bosing — hisobot ochiladi.',
+          )}
+        </Typography.Text>
       </PageTitle>
       <LoadError error={paged.error} retry={() => paged.refetch()} />
       <Card styles={{ body: { padding: 0 } }}>
@@ -494,21 +537,21 @@ export function PosShiftsPage() {
           pagination={paged.pagination}
           scroll={{ x: true }}
           onRow={(r) => ({ onClick: () => setOpen(r.id), style: { cursor: 'pointer' } })}
-          locale={{ emptyText: 'Смен ещё не было' }}
+          locale={{ emptyText: tr('Смен ещё не было', 'Hali smenalar boʻlmagan') }}
           columns={[
-            { title: 'Смена', key: 'n', render: (_, r) => <b>№{r.number}</b> },
-            { title: 'Касса', dataIndex: 'device_name' },
-            { title: 'Открыл', key: 'o', render: (_, r) => `${r.opened_by_name} · ${dateTime(r.opened_at)}` },
+            { title: tr('Смена', 'Smena'), key: 'n', render: (_, r) => <b>№{r.number}</b> },
+            { title: tr('Касса', 'Kassa'), dataIndex: 'device_name' },
+            { title: tr('Открыл', 'Ochgan'), key: 'o', render: (_, r) => `${r.opened_by_name} · ${dateTime(r.opened_at)}` },
             {
-              title: 'Закрыта',
+              title: tr('Закрыта', 'Yopilgan'),
               key: 'c',
-              render: (_, r) => (r.closed_at ? dateTime(r.closed_at) : <Tag color="blue">Открыта</Tag>),
+              render: (_, r) => (r.closed_at ? dateTime(r.closed_at) : <Tag color="blue">{tr('Открыта', 'Ochiq')}</Tag>),
             },
-            { title: 'Размен', dataIndex: 'opening_cash', align: 'right', render: (v: string) => money(v) },
-            { title: 'Должно быть', dataIndex: 'expected_cash', align: 'right', render: (v: string | null) => (v === null ? '—' : money(v)) },
-            { title: 'Посчитано', dataIndex: 'counted_cash', align: 'right', render: (v: string | null) => (v === null ? '—' : money(v)) },
+            { title: tr('Размен', 'Mayda pul'), dataIndex: 'opening_cash', align: 'right', render: (v: string) => money(v) },
+            { title: tr('Должно быть', 'Boʻlishi kerak'), dataIndex: 'expected_cash', align: 'right', render: (v: string | null) => (v === null ? '—' : money(v)) },
+            { title: tr('Посчитано', 'Sanaldi'), dataIndex: 'counted_cash', align: 'right', render: (v: string | null) => (v === null ? '—' : money(v)) },
             {
-              title: 'Расхождение',
+              title: tr('Расхождение', 'Farq'),
               key: 'd',
               align: 'right',
               render: (_, r) =>

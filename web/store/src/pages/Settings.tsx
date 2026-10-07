@@ -2,12 +2,12 @@
 import { useState } from 'react'
 import { Alert, Button, Card, Checkbox, Form, Input, Modal, Radio, Select, Space, Switch, Table, Tag, Typography } from 'antd'
 import { LockOutlined, PlusOutlined } from '@ant-design/icons'
-import { CrudPage, DeleteButton, ImageUpload, MapPointPicker, PageTitle, PhoneInput, RemoteSelect, StatusTag, api, formatPhone, phoneRule, useAction, useList, type LatLng } from '@sm/shared'
+import { CrudPage, DeleteButton, ImageUpload, MapPointPicker, PageTitle, PhoneInput, RemoteSelect, StatusTag, api, formatPhone, phoneRule, tr, useAction, useList, type LatLng } from '@sm/shared'
 import { useStore } from '../ctx'
 import { EmployeeLoginModal } from './EmployeeLogin'
 import type { Employee, Permission, PriceType, Role, Store, Warehouse } from '../types'
 
-const required = [{ required: true, whitespace: true, message: 'Обязательное поле' }]
+const required = [{ required: true, whitespace: true, message: tr('Обязательное поле', 'Majburiy maydon') }]
 
 // ---------------------------------------------------------------- магазины
 
@@ -35,60 +35,82 @@ export function StoresPage() {
   return (
     <>
       {single && stores.length > 0 && (
-        <Alert type="info" showIcon style={{ marginBottom: 16 }} message="Сеть с одним магазином: создать второй магазин нельзя." />
+        <Alert type="info" showIcon style={{ marginBottom: 16 }} message={tr('Сеть с одним магазином: создать второй магазин нельзя.', 'Bitta doʻkonli tarmoq: ikkinchi doʻkon yaratib boʻlmaydi.')} />
       )}
       <CrudPage<Store>
-        title="Магазины"
+        title={tr('Магазины', 'Doʻkonlar')}
         path="/store/stores"
         modalWidth={640}
-        createLabel="Новый магазин"
+        createLabel={tr('Новый магазин', 'Yangi doʻkon')}
         canCreate={canCreate}
         columns={[
-          { title: 'Название', dataIndex: 'name' },
-          { title: 'Адрес', dataIndex: 'address' },
-          { title: 'Телефон', dataIndex: 'phone', render: (v: string) => formatPhone(v) || '—' },
+          { title: tr('Название', 'Nomi'), dataIndex: 'name' },
+          { title: tr('Адрес', 'Manzil'), dataIndex: 'address' },
+          { title: tr('Телефон', 'Telefon'), dataIndex: 'phone', render: (v: string) => formatPhone(v) || '—' },
           {
-            title: 'Точка',
+            title: tr('Точка', 'Joylashuv'),
             key: 'geo',
-            render: (_, r) => (r.lat !== null && r.lng !== null ? <Tag color="green">На карте</Tag> : <Tag color="orange">Не указана</Tag>),
+            render: (_, r) => (r.lat !== null && r.lng !== null ? <Tag color="green">{tr('На карте', 'Xaritada')}</Tag> : <Tag color="orange">{tr('Не указана', 'Koʻrsatilmagan')}</Tag>),
           },
-          { title: 'Статус', dataIndex: 'status', render: (v: string) => (v === 'active' ? <StatusTag status="active" /> : <Tag>Закрыт</Tag>) },
+          {
+            title: tr('Статус', 'Holat'),
+            dataIndex: 'status',
+            render: (v: string) => (v === 'active' ? <StatusTag status="active" /> : <Tag>{tr('Закрыт', 'Yopilgan')}</Tag>),
+          },
         ]}
         form={(editing) => (
           <>
-            <Form.Item name="name" label="Название" rules={required}>
+            <Form.Item name="name" label={tr('Название', 'Nomi')} rules={required}>
               <Input />
             </Form.Item>
-            <Form.Item name="address" label="Адрес">
+            <Form.Item name="address" label={tr('Адрес', 'Manzil')}>
               <Input />
             </Form.Item>
-            <Form.Item name="city" label="Город" extra="Заполняется по точке на карте. Нужен, чтобы бренды могли рекламироваться в вашем городе.">
-              <Input placeholder="Ташкент" />
+            <Form.Item
+              name="city"
+              label={tr('Город', 'Shahar')}
+              extra={tr(
+                'Заполняется по точке на карте. Нужен, чтобы бренды могли рекламироваться в вашем городе.',
+                'Xaritadagi joylashuv boʻyicha toʻldiriladi. Brendlar shahringizda reklama qila olishi uchun kerak.',
+              )}
+            >
+              <Input placeholder={tr('Ташкент', 'Toshkent')} />
             </Form.Item>
-            <Form.Item name="phone" label="Телефон" rules={[phoneRule()]}>
+            <Form.Item name="phone" label={tr('Телефон', 'Telefon')} rules={[phoneRule()]}>
               <PhoneInput />
             </Form.Item>
             {editing && (
-              <Form.Item name="logo_url" label="Логотип для приложения" extra="Квадратная картинка, JPG или PNG">
-                <ImageUpload hint="Логотип" />
+              <Form.Item name="logo_url" label={tr('Логотип для приложения', 'Ilova uchun logotip')} extra={tr('Квадратная картинка, JPG или PNG', 'Kvadrat rasm, JPG yoki PNG')}>
+                <ImageUpload hint={tr('Логотип', 'Logotip')} />
               </Form.Item>
             )}
-            <Form.Item name="geo" label="Точка магазина на карте" extra="Нажмите на карту, найдите адрес через поиск или перетащите метку. Нужна для онлайн-заказов">
+            <Form.Item
+              name="geo"
+              label={tr('Точка магазина на карте', 'Doʻkonning xaritadagi joylashuvi')}
+              extra={tr(
+                'Нажмите на карту, найдите адрес через поиск или перетащите метку. Нужна для онлайн-заказов',
+                'Xaritani bosing, manzilni qidiruv orqali toping yoki belgini suring. Onlayn buyurtmalar uchun kerak',
+              )}
+            >
               <StorePoint />
             </Form.Item>
             {editing && (
               <>
-                <Form.Item name="default_warehouse_id" label="Склад по умолчанию">
+                <Form.Item name="default_warehouse_id" label={tr('Склад по умолчанию', 'Standart ombor')}>
                   <RemoteSelect<Warehouse> path="/store/warehouses" params={{ store_id: editing.id }} filter={(w) => w.is_active} />
                 </Form.Item>
-                <Form.Item name="online_price_type_id" label="Тип цены для приложения" extra="Если не выбран — тип цены сети по умолчанию">
+                <Form.Item
+                  name="online_price_type_id"
+                  label={tr('Тип цены для приложения', 'Ilova uchun narx turi')}
+                  extra={tr('Если не выбран — тип цены сети по умолчанию', 'Tanlanmasa — tarmoqning standart narx turi')}
+                >
                   <RemoteSelect<PriceType> path="/store/price-types" filter={(t) => t.is_active} allowClear />
                 </Form.Item>
-                <Form.Item name="status" label="Статус">
+                <Form.Item name="status" label={tr('Статус', 'Holat')}>
                   <Radio.Group
                     options={[
-                      { value: 'active', label: 'Работает' },
-                      { value: 'inactive', label: 'Закрыт' },
+                      { value: 'active', label: tr('Работает', 'Ishlamoqda') },
+                      { value: 'inactive', label: tr('Закрыт', 'Yopilgan') },
                     ]}
                   />
                 </Form.Item>
@@ -138,7 +160,7 @@ export function RolesPage() {
   const save = useAction(
     (v: { name: string; permissions: string[] }) =>
       editing ? api.patch(`/store/roles/${editing.id}`, v) : api.post('/store/roles', { ...v, permissions: v.permissions ?? [] }),
-    { success: 'Роль сохранена' },
+    { success: tr('Роль сохранена', 'Rol saqlandi') },
   )
   const openForm = (r: Role | null) => {
     setEditing(r)
@@ -149,10 +171,10 @@ export function RolesPage() {
   return (
     <>
       <PageTitle
-        title="Роли"
+        title={tr('Роли', 'Rollar')}
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openForm(null)}>
-            Новая роль
+            {tr('Новая роль', 'Yangi rol')}
           </Button>
         }
       />
@@ -164,13 +186,13 @@ export function RolesPage() {
           scroll={{ x: true }}
           pagination={false}
           columns={[
-            { title: 'Роль', dataIndex: 'name', render: (v: string, r) => (r.is_owner ? <>{v} <Tag color="gold">Владелец</Tag></> : v) },
+            { title: tr('Роль', 'Rol'), dataIndex: 'name', render: (v: string, r) => (r.is_owner ? <>{v} <Tag color="gold">{tr('Владелец', 'Egasi')}</Tag></> : v) },
             {
-              title: 'Права',
+              title: tr('Права', 'Huquqlar'),
               dataIndex: 'permissions',
               render: (v: string[] | null, r) =>
                 r.is_owner ? (
-                  <Typography.Text type="secondary">Все права</Typography.Text>
+                  <Typography.Text type="secondary">{tr('Все права', 'Barcha huquqlar')}</Typography.Text>
                 ) : (
                   (v ?? []).map((c) => (
                     <Tag key={c} style={{ marginBottom: 4 }}>
@@ -187,7 +209,7 @@ export function RolesPage() {
                 !r.is_owner && (
                   <Space size={8}>
                     <Button size="small" onClick={() => openForm(r)}>
-                      Изменить
+                      {tr('Изменить', 'Tahrirlash')}
                     </Button>
                     <DeleteButton path={`/store/roles/${r.id}`} name={r.name} />
                   </Space>
@@ -198,18 +220,18 @@ export function RolesPage() {
       </Card>
       <Modal
         open={open}
-        title={editing ? 'Изменить роль' : 'Новая роль'}
-        okText="Сохранить"
+        title={editing ? tr('Изменить роль', 'Rolni tahrirlash') : tr('Новая роль', 'Yangi rol')}
+        okText={tr('Сохранить', 'Saqlash')}
         onOk={() => form.submit()}
         confirmLoading={save.isPending}
         onCancel={() => setOpen(false)}
         width={560}
       >
         <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v, { onSuccess: () => setOpen(false) })}>
-          <Form.Item name="name" label="Название" rules={required}>
-            <Input placeholder="Кассир, кладовщик…" />
+          <Form.Item name="name" label={tr('Название', 'Nomi')} rules={required}>
+            <Input placeholder={tr('Кассир, кладовщик…', 'Kassir, omborchi…')} />
           </Form.Item>
-          <Form.Item name="permissions" label="Права">
+          <Form.Item name="permissions" label={tr('Права', 'Huquqlar')}>
             <Checkbox.Group style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {(perms.data ?? []).map((p) => (
                 <Checkbox key={p.code} value={p.code}>
@@ -234,49 +256,53 @@ export function EmployeesPage() {
   const storesText = (ids: string[]) => {
     const names = ids.map(storeName).filter(Boolean)
     const hidden = ids.length - names.length
-    return [...names, ...(hidden ? [`ещё ${hidden} (нет доступа)`] : [])].join(', ') || '—'
+    return [...names, ...(hidden ? [tr(`ещё ${hidden} (нет доступа)`, `yana ${hidden} ta (ruxsat yoʻq)`)] : [])].join(', ') || '—'
   }
   return (
     <>
       <CrudPage<Employee>
-        title="Сотрудники"
+        title={tr('Сотрудники', 'Xodimlar')}
         path="/store/employees"
         canDelete={(r) => !r.is_owner}
         rowName={(r) => r.full_name}
         deactivate={() => ({ status: 'inactive' })}
-        createLabel="Новый сотрудник"
+        createLabel={tr('Новый сотрудник', 'Yangi xodim')}
         columns={[
-          { title: 'Имя', dataIndex: 'full_name', render: (v: string, r) => (r.is_owner ? <>{v} <Tag color="gold">Владелец</Tag></> : v) },
-          { title: 'Телефон', dataIndex: 'phone', render: (v: string) => formatPhone(v) || '—' },
-          { title: 'Роль', dataIndex: 'role_name' },
+          { title: tr('Имя', 'Ism'), dataIndex: 'full_name', render: (v: string, r) => (r.is_owner ? <>{v} <Tag color="gold">{tr('Владелец', 'Egasi')}</Tag></> : v) },
+          { title: tr('Телефон', 'Telefon'), dataIndex: 'phone', render: (v: string) => formatPhone(v) || '—' },
+          { title: tr('Роль', 'Rol'), dataIndex: 'role_name' },
           {
-            title: 'Магазины',
+            title: tr('Магазины', 'Doʻkonlar'),
             key: 'stores',
-            render: (_, r) => (r.all_stores ? 'Все магазины' : storesText(r.store_ids ?? [])),
+            render: (_, r) => (r.all_stores ? tr('Все магазины', 'Barcha doʻkonlar') : storesText(r.store_ids ?? [])),
           },
-          { title: 'Статус', dataIndex: 'status', render: (v: string) => (v === 'active' ? <StatusTag status="active" /> : <Tag>Отключён</Tag>) },
           {
-            title: 'Вход',
+            title: tr('Статус', 'Holat'),
+            dataIndex: 'status',
+            render: (v: string) => (v === 'active' ? <StatusTag status="active" /> : <Tag>{tr('Отключён', 'Oʻchirilgan')}</Tag>),
+          },
+          {
+            title: tr('Вход', 'Kirish'),
             key: 'login',
             render: (_, r) => (
               <Space direction="vertical" size={2}>
                 {r.login ? (
                   <span>
                     <b>{r.login}</b>
-                    {r.temp_password && <Tag style={{ marginLeft: 6 }}>временный пароль</Tag>}
+                    {r.temp_password && <Tag style={{ marginLeft: 6 }}>{tr('временный пароль', 'vaqtinchalik parol')}</Tag>}
                   </span>
                 ) : (
-                  <Typography.Text type="secondary">нет входа</Typography.Text>
+                  <Typography.Text type="secondary">{tr('нет входа', 'kirish yoʻq')}</Typography.Text>
                 )}
                 {r.is_owner ? (
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    меняет Super Market
+                    {tr('меняет Super Market', 'Super Market oʻzgartiradi')}
                   </Typography.Text>
                 ) : (
                   can('staff.manage') &&
                   r.status === 'active' && (
                     <Button size="small" icon={<LockOutlined />} onClick={() => setLoginFor(r)}>
-                      {r.login ? 'Логин и пароль' : 'Выдать логин'}
+                      {r.login ? tr('Логин и пароль', 'Login va parol') : tr('Выдать логин', 'Login berish')}
                     </Button>
                   )
                 )}
@@ -326,35 +352,47 @@ function EmployeeFields({ editing }: { editing: Employee | null }) {
   return (
     <>
       {!editing && (
-        <Form.Item name="phone" label="Телефон" rules={[phoneRule(true)]} extra="Для связи. В панель сотрудник входит по логину и паролю — выдадите после сохранения">
+        <Form.Item
+          name="phone"
+          label={tr('Телефон', 'Telefon')}
+          rules={[phoneRule(true)]}
+          extra={tr(
+            'Для связи. В панель сотрудник входит по логину и паролю — выдадите после сохранения',
+            'Aloqa uchun. Xodim panelga login va parol bilan kiradi — ularni saqlagandan keyin berasiz',
+          )}
+        >
           <PhoneInput />
         </Form.Item>
       )}
-      <Form.Item name="full_name" label="Имя" rules={required}>
+      <Form.Item name="full_name" label={tr('Имя', 'Ism')} rules={required}>
         <Input />
       </Form.Item>
-      <Form.Item name="role_id" label="Роль" rules={[{ required: true, message: 'Выберите роль' }]}>
+      <Form.Item name="role_id" label={tr('Роль', 'Rol')} rules={[{ required: true, message: tr('Выберите роль', 'Rolni tanlang') }]}>
         <RemoteSelect<Role> path="/store/roles" disabled={editing?.is_owner} filter={(r) => !r.is_owner || !!editing?.is_owner} />
       </Form.Item>
-      <Form.Item name="all_stores" label="Доступ ко всем магазинам" valuePropName="checked" initialValue={false}>
+      <Form.Item name="all_stores" label={tr('Доступ ко всем магазинам', 'Barcha doʻkonlarga ruxsat')} valuePropName="checked" initialValue={false}>
         <Switch disabled={editing?.is_owner || !seesAll} />
       </Form.Item>
       {!all && !editing?.is_owner && (
         <Form.Item
           name="store_ids"
-          label="Магазины"
-          rules={[{ required: !hidden, message: 'Выберите магазины' }]}
-          extra={hidden ? `Ещё магазинов, к которым у вас нет доступа: ${hidden}. Они сохранятся.` : undefined}
+          label={tr('Магазины', 'Doʻkonlar')}
+          rules={[{ required: !hidden, message: tr('Выберите магазины', 'Doʻkonlarni tanlang') }]}
+          extra={
+            hidden
+              ? tr(`Ещё магазинов, к которым у вас нет доступа: ${hidden}. Они сохранятся.`, `Sizda ruxsat boʻlmagan yana ${hidden} ta doʻkon bor. Ular saqlanib qoladi.`)
+              : undefined
+          }
         >
           <Select mode="multiple" options={stores.map((s) => ({ value: s.id, label: s.name }))} />
         </Form.Item>
       )}
       {editing && !editing.is_owner && (
-        <Form.Item name="status" label="Статус">
+        <Form.Item name="status" label={tr('Статус', 'Holat')}>
           <Radio.Group
             options={[
-              { value: 'active', label: 'Активен' },
-              { value: 'inactive', label: 'Отключён' },
+              { value: 'active', label: tr('Активен', 'Faol') },
+              { value: 'inactive', label: tr('Отключён', 'Oʻchirilgan') },
             ]}
           />
         </Form.Item>

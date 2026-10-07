@@ -11,6 +11,7 @@ import {
   DollarOutlined,
   ShopOutlined,
   ShoppingCartOutlined,
+  TranslationOutlined,
   UserOutlined,
 } from '@ant-design/icons'
 import { Dashboard } from './pages/Dashboard'
@@ -26,6 +27,7 @@ import { Customers } from './pages/Customers'
 import { Crowd } from './pages/Crowd'
 import { Wishes } from './pages/Wishes'
 import { AISettings } from './pages/AI'
+import { Translations } from './pages/Translations'
 import { Notifications, PushCampaign, PushNew } from './pages/Push'
 
 const menu: MenuItem[] = [
@@ -75,6 +77,7 @@ const menu: MenuItem[] = [
   { key: '/customers', icon: <UserOutlined />, label: 'Покупатели' },
   { key: '/notifications', icon: <BellOutlined />, label: 'Уведомления' },
   { key: '/ai', icon: <BulbOutlined />, label: 'ИИ-сервис' },
+  { key: '/translations', icon: <TranslationOutlined />, label: 'Переводы' },
 ]
 
 export function AdminRoutes() {
@@ -103,6 +106,7 @@ export function AdminRoutes() {
         <Route path="customers" element={<Customers />} />
         <Route path="notifications" element={<Notifications />} />
         <Route path="ai" element={<AISettings />} />
+        <Route path="translations" element={<Translations />} />
         <Route path="notifications/new" element={<PushNew />} />
         <Route path="notifications/:id" element={<PushCampaign />} />
         <Route path="*" element={<Navigate to="/" replace />} />

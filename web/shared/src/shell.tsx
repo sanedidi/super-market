@@ -126,10 +126,10 @@ function labelFor(nav: NavItem[], path: string): string {
       }
     })
   walk(nav)
-  if (!best) return 'Страница'
+  if (!best) return tr('Страница', 'Sahifa')
   if (path !== best.key && best.key !== '/') {
     const last = path.slice(best.key.length + 1).split('/').pop() ?? ''
-    return `${best.label} / ${last === 'new' ? 'Создать' : 'Документ'}`
+    return `${best.label} / ${last === 'new' ? tr('Создать', 'Yaratish') : tr('Документ', 'Hujjat')}`
   }
   return best.label
 }
@@ -252,7 +252,7 @@ function Sidebar({
               <button
                 className={`sm-pin ${pinned ? 'on' : ''}`}
                 onClick={() => setPinned((p) => !p)}
-                title={pinned ? 'Открепить меню' : 'Закрепить меню'}
+                title={pinned ? tr('Открепить меню', 'Menyuni boʻshatish') : tr('Закрепить меню', 'Menyuni qadash')}
               >
                 <PushpinOutlined style={{ fontSize: 13 }} />
               </button>
@@ -328,7 +328,7 @@ function Sidebar({
         {userMenu && (
           <div className="sm-user-menu">
             <button onClick={() => logout()}>
-              <LogoutOutlined /> Выйти
+              <LogoutOutlined /> {tr('Выйти', 'Chiqish')}
             </button>
           </div>
         )}
@@ -374,7 +374,8 @@ function useOpenTabs(storageKey: string, nav: NavItem[]) {
     setTabs((list) => {
       const i = list.findIndex((t) => base(t.path) === current)
       const tab = { path: current + search, label }
-      const next = i >= 0 ? list.map((t, j) => (j === i ? tab : t)) : [...list, tab].slice(-12)
+      // Подписи остальных вкладок — заново: после смены языка в sessionStorage остались старые.
+      const next = i >= 0 ? list.map((t, j) => (j === i ? tab : { ...t, label: labelFor(nav, base(t.path)) })) : [...list, tab].slice(-12)
       return next
     })
   }, [current, search, nav])
@@ -426,7 +427,7 @@ function TabsBar({ nav, storageKey, onMenu }: { nav: NavItem[]; storageKey: stri
                 <span
                   className="sm-tab-close"
                   role="button"
-                  aria-label="Закрыть вкладку"
+                  aria-label={tr('Закрыть вкладку', 'Varaqni yopish')}
                   onClick={(e) => {
                     e.stopPropagation()
                     close(t.path)
@@ -440,8 +441,8 @@ function TabsBar({ nav, storageKey, onMenu }: { nav: NavItem[]; storageKey: stri
         })}
       </div>
       {tabs.length > 1 && (
-        <button className="sm-tabs-clear" onClick={() => setTabs(tabs.filter((t) => base(t.path) === current))} title="Закрыть остальные вкладки">
-          Все <DeleteOutlined style={{ fontSize: 12 }} />
+        <button className="sm-tabs-clear" onClick={() => setTabs(tabs.filter((t) => base(t.path) === current))} title={tr('Закрыть остальные вкладки', 'Boshqa varaqlarni yopish')}>
+          {tr('Все', 'Hammasi')} <DeleteOutlined style={{ fontSize: 12 }} />
         </button>
       )}
     </div>

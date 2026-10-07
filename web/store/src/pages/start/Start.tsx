@@ -7,7 +7,7 @@ import { Link } from 'react-router-dom'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Alert, App, AutoComplete, Button, Card, Col, Flex, Input, InputNumber, Modal, Result, Row, Segmented, Space, Table, Typography, type InputRef } from 'antd'
 import { CameraOutlined, CheckCircleOutlined, DeleteOutlined, PlusOutlined, ScanOutlined } from '@ant-design/icons'
-import { LoadError, PageTitle, api, errorText, money, plural, qty as fmtQty, useDebounced, useList, type List } from '@sm/shared'
+import { LoadError, PageTitle, api, errorText, money, plural, qty as fmtQty, tr, getLang, useDebounced, useList, type List } from '@sm/shared'
 import { useStore } from '../../ctx'
 import { NeedStore } from '../../ui'
 import { docPaths } from '../StockDocs'
@@ -17,7 +17,7 @@ import { CatalogTree, Thumb } from './CatalogTree'
 import { BarcodeModal, NewProductModal, PhotoModal, sum } from './Modals'
 
 const PAGE = 50
-const goods = (n: number) => `${n} ${plural(n, 'товар', 'товара', 'товаров')}`
+const goods = (n: number) => tr(`${n} ${plural(n, 'товар', 'товара', 'товаров')}`, `${n} ta mahsulot`)
 
 export function StartPage() {
   return (
@@ -50,26 +50,38 @@ function Start() {
   const post = () => {
     if (!d || !t) return
     modal.confirm({
-      title: `Провести ${goods(t.products)}?`,
+      title: tr(`Провести ${goods(t.products)}?`, `${goods(t.products)} oʻtkazilsinmi?`),
       width: 520,
-      okText: 'Провести',
-      cancelText: 'Отмена',
+      okText: tr('Провести', 'Oʻtkazish'),
+      cancelText: tr('Отмена', 'Bekor qilish'),
       content: (
         <div>
           <Typography.Paragraph>
-            Будут созданы <b>оприходование</b> на склад «{d.warehouse_name}» по закупочным ценам и <b>установка цен</b> магазина «{d.store_name}» —
-            для товаров, где цена продажи изменена.
+            {getLang() === 'uz' ? (
+              <>
+                «{d.warehouse_name}» omboriga xarid narxlarida <b>kirim qilish</b> va «{d.store_name}» doʻkoni uchun <b>narxlarni belgilash</b>{' '}
+                hujjatlari yaratiladi — sotuv narxi oʻzgargan mahsulotlar uchun.
+              </>
+            ) : (
+              <>
+                Будут созданы <b>оприходование</b> на склад «{d.warehouse_name}» по закупочным ценам и <b>установка цен</b> магазина «{d.store_name}» —
+                для товаров, где цена продажи изменена.
+              </>
+            )}
           </Typography.Paragraph>
           <Typography.Paragraph style={{ marginBottom: 0 }}>
-            {fmtQty(t.qty)} шт · по закупке {sum(t.cost_total)} · по цене продажи {sum(t.price_total)}
+            {tr(
+              `${fmtQty(t.qty)} шт · по закупке ${sum(t.cost_total)} · по цене продажи ${sum(t.price_total)}`,
+              `${fmtQty(t.qty)} dona · xarid narxida ${sum(t.cost_total)} · sotuv narxida ${sum(t.price_total)}`,
+            )}
           </Typography.Paragraph>
           {t.no_cost > 0 && (
             <Alert
               style={{ marginTop: 12 }}
               type="warning"
               showIcon
-              message={`Без закупочной цены: ${goods(t.no_cost)}`}
-              description="Их себестоимость будет 0 — прибыль по ним в отчётах будет завышена. Можно провести сейчас и поправить позже."
+              message={tr(`Без закупочной цены: ${goods(t.no_cost)}`, `Xarid narxisiz: ${goods(t.no_cost)}`)}
+              description={tr('Их себестоимость будет 0 — прибыль по ним в отчётах будет завышена. Можно провести сейчас и поправить позже.', 'Ularning tannarxi 0 boʻladi — hisobotlarda ular boʻyicha foyda oshirib koʻrsatiladi. Hozir oʻtkazib, keyinroq tuzatish mumkin.')}
             />
           )}
           {t.pending > 0 && (
@@ -77,8 +89,8 @@ function Start() {
               style={{ marginTop: 12 }}
               type="info"
               showIcon
-              message={`Новых товаров на проверке: ${t.pending}`}
-              description="Они встанут на склад сразу, а покупатели увидят их после проверки."
+              message={tr(`Новых товаров на проверке: ${t.pending}`, `Tekshiruvdagi yangi mahsulotlar: ${t.pending}`)}
+              description={tr('Они встанут на склад сразу, а покупатели увидят их после проверки.', 'Ular darhol omborga tushadi, xaridorlar esa ularni tekshiruvdan keyin koʻradi.')}
             />
           )}
         </div>
@@ -98,25 +110,28 @@ function Start() {
   }
 
   const subtitle = d
-    ? `Товары, которые уже есть в магазине «${d.store_name}» · склад «${d.warehouse_name}» · список общий с приложением «SM Магазин»`
+    ? tr(
+        `Товары, которые уже есть в магазине «${d.store_name}» · склад «${d.warehouse_name}» · список общий с приложением «SM Магазин»`,
+        `«${d.store_name}» doʻkonida allaqachon bor mahsulotlar · «${d.warehouse_name}» ombori · roʻyxat «SM Магазин» ilovasi bilan umumiy`,
+      )
     : ''
 
   return (
     <>
       <PageTitle
-        title="Начало работы"
+        title={tr('Начало работы', 'Ishni boshlash')}
         extra={
           <Space wrap>
             <Button icon={<CameraOutlined />} onClick={() => setPhotoOpen(true)} disabled={!d}>
-              Фото полок
+              {tr('Фото полок', 'Javon rasmlari')}
             </Button>
             {can('catalog.manage') && (
               <Button icon={<PlusOutlined />} onClick={() => setNewOpen(true)} disabled={!d}>
-                Новый товар
+                {tr('Новый товар', 'Yangi mahsulot')}
               </Button>
             )}
             <Button type="primary" icon={<CheckCircleOutlined />} disabled={!t || t.products === 0 || d?.status !== 'open'} onClick={post}>
-              Проверить и провести
+              {tr('Проверить и провести', 'Tekshirish va oʻtkazish')}
             </Button>
           </Space>
         }
@@ -132,18 +147,18 @@ function Start() {
           type="success"
           showIcon
           style={{ marginBottom: 16 }}
-          message={`На складе уже ${goods(d.stock_products)}`}
-          description="Начальные остатки заведены. Если нашлись ещё товары — добавьте их сюда и проведите снова. Новые поставки оформляйте через «Приход товара»."
+          message={tr(`На складе уже ${goods(d.stock_products)}`, `Omborda allaqachon ${goods(d.stock_products)} bor`)}
+          description={tr('Начальные остатки заведены. Если нашлись ещё товары — добавьте их сюда и проведите снова. Новые поставки оформляйте через «Приход товара».', 'Boshlangʻich qoldiqlar kiritilgan. Yana mahsulotlar topilsa — ularni shu yerga qoʻshing va qayta oʻtkazing. Yangi yetkazib berishlarni «Mahsulot kirimi» orqali rasmiylashtiring.')}
         />
       )}
-      {d?.status === 'posting' && <Alert type="info" showIcon style={{ marginBottom: 16 }} message="Список проводится — подождите несколько секунд" />}
+      {d?.status === 'posting' && <Alert type="info" showIcon style={{ marginBottom: 16 }} message={tr('Список проводится — подождите несколько секунд', 'Roʻyxat oʻtkazilmoqda — bir necha soniya kuting')} />}
 
       {t && (
         <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-          <Stat title="Добавлено" value={`${goods(t.products)} · ${fmtQty(t.qty)} шт`} />
-          <Stat title="По закупке" value={sum(t.cost_total)} />
-          <Stat title="По цене продажи" value={sum(t.price_total)} />
-          <Stat title="Без закупочной цены" value={goods(t.no_cost)} warn={t.no_cost > 0} />
+          <Stat title={tr('Добавлено', 'Qoʻshildi')} value={`${goods(t.products)} · ${fmtQty(t.qty)} ${tr('шт', 'dona')}`} />
+          <Stat title={tr('По закупке', 'Xarid narxida')} value={sum(t.cost_total)} />
+          <Stat title={tr('По цене продажи', 'Sotuv narxida')} value={sum(t.price_total)} />
+          <Stat title={tr('Без закупочной цены', 'Xarid narxisiz')} value={goods(t.no_cost)} warn={t.no_cost > 0} />
         </Row>
       )}
 
@@ -249,7 +264,7 @@ function Scanner() {
               ref={ref}
               variant="borderless"
               autoFocus
-              placeholder="Сканируйте штрихкод или введите название"
+              placeholder={tr('Сканируйте штрихкод или введите название', 'Shtrix-kodni skanerlang yoki nomini kiriting')}
               style={{ paddingLeft: 0, fontWeight: 600 }}
               onKeyDown={(e) => {
                 const v = text.trim()
@@ -262,7 +277,7 @@ function Scanner() {
             />
           </AutoComplete>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            USB-сканер работает как клавиатура: товар сразу встанет в список, повторный скан — +1 шт
+            {tr('USB-сканер работает как клавиатура: товар сразу встанет в список, повторный скан — +1 шт', 'USB-skaner klaviatura kabi ishlaydi: mahsulot darhol roʻyxatga tushadi, qayta skanerlash — +1 dona')}
           </Typography.Text>
         </div>
       </Flex>
@@ -324,10 +339,10 @@ function NumCell({
 }
 
 function sourceText(l: Line) {
-  if (!l.own) return { text: 'общий каталог' }
-  if (l.moderation === 'approved') return { text: 'свой товар' }
-  if (l.moderation === 'rejected') return { text: 'новый · отклонён', color: '#D92D20' }
-  return { text: 'новый · на модерации', color: '#C4320A' }
+  if (!l.own) return { text: tr('общий каталог', 'umumiy katalog') }
+  if (l.moderation === 'approved') return { text: tr('свой товар', 'oʻz mahsulotingiz') }
+  if (l.moderation === 'rejected') return { text: tr('новый · отклонён', 'yangi · rad etilgan'), color: '#D92D20' }
+  return { text: tr('новый · на модерации', 'yangi · moderatsiyada'), color: '#C4320A' }
 }
 
 function Lines({
@@ -357,16 +372,16 @@ function Lines({
 
   return (
     <Card
-      title={`Мои товары · ${t?.products ?? 0}`}
+      title={`${tr('Мои товары', 'Mahsulotlarim')} · ${t?.products ?? 0}`}
       extra={
         <Segmented
           size="small"
           value={only}
           onChange={(v) => setOnly(v as typeof only)}
           options={[
-            { value: '', label: 'Все' },
-            { value: 'no_cost', label: `Без закупки · ${t?.no_cost ?? 0}` },
-            { value: 'new', label: 'Новые' },
+            { value: '', label: tr('Все', 'Hammasi') },
+            { value: 'no_cost', label: `${tr('Без закупки', 'Xarid narxisiz')} · ${t?.no_cost ?? 0}` },
+            { value: 'new', label: tr('Новые', 'Yangilar') },
           ]}
         />
       }
@@ -391,12 +406,12 @@ function Lines({
         scroll={{ x: 700 }}
         locale={{
           emptyText: only
-            ? 'Таких товаров нет'
-            : 'Список пуст — отсканируйте штрихкод, загрузите фото полок или отметьте товары в каталоге слева',
+            ? tr('Таких товаров нет', 'Bunday mahsulotlar yoʻq')
+            : tr('Список пуст — отсканируйте штрихкод, загрузите фото полок или отметьте товары в каталоге слева', 'Roʻyxat boʻsh — shtrix-kodni skanerlang, javon rasmlarini yuklang yoki chapdagi katalogda mahsulotlarni belgilang'),
         }}
         columns={[
           {
-            title: 'Товар',
+            title: tr('Товар', 'Mahsulot'),
             key: 'name',
             render: (_, l) => {
               const s = sourceText(l)
@@ -416,19 +431,19 @@ function Lines({
             },
           },
           {
-            title: 'Кол-во',
+            title: tr('Кол-во', 'Miqdor'),
             key: 'qty',
             width: 84,
             render: (_, l) => <NumCell value={l.qty} min="0.001" onSave={(v) => v && save(l, { qty: v })} />,
           },
           {
-            title: 'Закупка',
+            title: tr('Закупка', 'Xarid'),
             key: 'cost',
             width: 112,
             render: (_, l) => <NumCell value={l.cost} placeholder="—" warn={l.cost === null} onSave={(v) => save(l, { cost: v })} />,
           },
           {
-            title: 'Продажа',
+            title: tr('Продажа', 'Sotuv'),
             key: 'price',
             width: 112,
             render: (_, l) => (
@@ -436,7 +451,7 @@ function Lines({
             ),
           },
           {
-            title: 'Штрихкод',
+            title: tr('Штрихкод', 'Shtrix-kod'),
             key: 'barcode',
             width: 136,
             render: (_, l) =>
@@ -446,7 +461,7 @@ function Lines({
                 </Typography.Text>
               ) : can('catalog.manage') ? (
                 <Button type="link" danger size="small" icon={<ScanOutlined />} style={{ padding: 0 }} onClick={() => setBind(l)}>
-                  Привязать
+                  {tr('Привязать', 'Bogʻlash')}
                 </Button>
               ) : (
                 '—'
@@ -456,7 +471,7 @@ function Lines({
             key: 'del',
             width: 40,
             render: (_, l) => (
-              <Button type="text" size="small" icon={<DeleteOutlined />} disabled={locked} aria-label="Убрать" onClick={() => deleteLine(l.product_id).catch(() => {})} />
+              <Button type="text" size="small" icon={<DeleteOutlined />} disabled={locked} aria-label={tr('Убрать', 'Olib tashlash')} onClick={() => deleteLine(l.product_id).catch(() => {})} />
             ),
           },
         ]}
@@ -465,9 +480,14 @@ function Lines({
             ? () => (
                 <Flex justify="space-between" wrap gap={8}>
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    Показано {(page - 1) * PAGE + 1}–{(page - 1) * PAGE + lines.length} · последние добавленные сверху
+                    {tr(
+                      `Показано ${(page - 1) * PAGE + 1}–${(page - 1) * PAGE + lines.length} · последние добавленные сверху`,
+                      `Koʻrsatilgan: ${(page - 1) * PAGE + 1}–${(page - 1) * PAGE + lines.length} · oxirgi qoʻshilganlar yuqorida`,
+                    )}
                   </Typography.Text>
-                  <Typography.Text strong>Итого по закупке {sum(t?.cost_total)}</Typography.Text>
+                  <Typography.Text strong>
+                    {tr('Итого по закупке', 'Xarid narxida jami')} {sum(t?.cost_total)}
+                  </Typography.Text>
                 </Flex>
               )
             : undefined
@@ -498,9 +518,9 @@ function BindModal({ line, onClose }: { line: Line | null; onClose: () => void }
     }
   }
   return (
-    <Modal open={!!line} title="Привязать штрихкод" okText="Привязать" onOk={ok} confirmLoading={saving} okButtonProps={{ disabled: !code.trim() }} onCancel={onClose} destroyOnHidden>
+    <Modal open={!!line} title={tr('Привязать штрихкод', 'Shtrix-kodni bogʻlash')} okText={tr('Привязать', 'Bogʻlash')} onOk={ok} confirmLoading={saving} okButtonProps={{ disabled: !code.trim() }} onCancel={onClose} destroyOnHidden>
       <Typography.Paragraph type="secondary">{line?.name}</Typography.Paragraph>
-      <Input autoFocus value={code} onChange={(e) => setCode(e.target.value)} onPressEnter={ok} placeholder="Отсканируйте или введите штрихкод" prefix={<ScanOutlined />} />
+      <Input autoFocus value={code} onChange={(e) => setCode(e.target.value)} onPressEnter={ok} placeholder={tr('Отсканируйте или введите штрихкод', 'Shtrix-kodni skanerlang yoki kiriting')} prefix={<ScanOutlined />} />
     </Modal>
   )
 }
@@ -511,27 +531,32 @@ function Posted({ r, onClose }: { r: PostResult; onClose: () => void }) {
   return (
     <Result
       status="success"
-      title="Товары на складе"
-      subTitle={`${goods(r.products)} · ${fmtQty(r.qty)} шт · по закупке ${sum(r.cost_total)}`}
+      title={tr('Товары на складе', 'Mahsulotlar omborda')}
+      subTitle={tr(
+        `${goods(r.products)} · ${fmtQty(r.qty)} шт · по закупке ${sum(r.cost_total)}`,
+        `${goods(r.products)} · ${fmtQty(r.qty)} dona · xarid narxida ${sum(r.cost_total)}`,
+      )}
       extra={
         <Button type="primary" onClick={onClose}>
-          Готово
+          {tr('Готово', 'Tayyor')}
         </Button>
       }
     >
       <Space direction="vertical" size={6}>
         {r.documents.map((doc) => (
           <Link key={doc.id} to={`${docPaths.posting}/${doc.id}`}>
-            Оприходование №{doc.number}
+            {tr('Оприходование', 'Kirim qilish')} №{doc.number}
           </Link>
         ))}
-        {r.price_document && <Link to={`/sales/prices/${r.price_document.id}`}>Установка цен №{r.price_document.number}</Link>}
+        {r.price_document && <Link to={`/sales/prices/${r.price_document.id}`}>
+            {tr('Установка цен', 'Narxlarni belgilash')} №{r.price_document.number}
+          </Link>}
         <Typography.Text>
-          Покупатели видят {goods(r.visible)}
-          {r.pending > 0 && ` · ещё ${r.pending} — после проверки новых товаров`}
+          {tr(`Покупатели видят ${goods(r.visible)}`, `Xaridorlar ${goods(r.visible)}ni koʻradi`)}
+          {r.pending > 0 && tr(` · ещё ${r.pending} — после проверки новых товаров`, ` · yana ${r.pending} ta — yangi mahsulotlar tekshirilgandan keyin`)}
         </Typography.Text>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          В приложении товары появятся, если магазин принимает онлайн-заказы и сейчас открыт.
+          {tr('В приложении товары появятся, если магазин принимает онлайн-заказы и сейчас открыт.', 'Doʻkon onlayn buyurtmalarni qabul qilsa va hozir ochiq boʻlsa, mahsulotlar ilovada paydo boʻladi.')}
         </Typography.Text>
       </Space>
     </Result>

@@ -18,7 +18,7 @@ import {
 } from 'antd'
 import { ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
-import { LoadError, PageTitle, api, useAction, useItem } from '@sm/shared'
+import { LoadError, PageTitle, api, tr, useAction, useItem } from '@sm/shared'
 import { useStore } from '../ctx'
 import { NeedStore, Num } from '../ui'
 import type { DeliveryRule, DeliverySettings, SlotSettings } from '../types'
@@ -26,30 +26,30 @@ import { DeliveryZones } from './DeliveryZones'
 
 // Порядок дней как в жизни: пн … вс (в API 0 — воскресенье).
 const DAYS: [number, string][] = [
-  [1, 'Понедельник'],
-  [2, 'Вторник'],
-  [3, 'Среда'],
-  [4, 'Четверг'],
-  [5, 'Пятница'],
-  [6, 'Суббота'],
-  [0, 'Воскресенье'],
+  [1, tr('Понедельник', 'Dushanba')],
+  [2, tr('Вторник', 'Seshanba')],
+  [3, tr('Среда', 'Chorshanba')],
+  [4, tr('Четверг', 'Payshanba')],
+  [5, tr('Пятница', 'Juma')],
+  [6, tr('Суббота', 'Shanba')],
+  [0, tr('Воскресенье', 'Yakshanba')],
 ]
 
 const ruleTitles: Record<DeliveryRule['type'], string> = {
-  fixed: 'Фиксированная цена',
-  distance: 'По расстоянию',
-  zone: 'Цена зоны',
-  free_from: 'Бесплатно от суммы',
+  fixed: tr('Фиксированная цена', 'Qatʼiy narx'),
+  distance: tr('По расстоянию', 'Masofaga qarab'),
+  zone: tr('Цена зоны', 'Hudud narxi'),
+  free_from: tr('Бесплатно от суммы', 'Summadan boshlab bepul'),
 }
 
 const ruleFields: Record<DeliveryRule['type'], [string, string][]> = {
-  fixed: [['price', 'Цена']],
+  fixed: [['price', tr('Цена', 'Narx')]],
   distance: [
-    ['base', 'Базовая цена'],
-    ['per_km', 'За каждый км'],
+    ['base', tr('Базовая цена', 'Asosiy narx')],
+    ['per_km', tr('За каждый км', 'Har bir km uchun')],
   ],
   zone: [],
-  free_from: [['amount', 'Сумма заказа от']],
+  free_from: [['amount', tr('Сумма заказа от', 'Buyurtma summasi, dan')]],
 }
 
 interface DayRow {
@@ -137,7 +137,7 @@ function DeliveryInner() {
           params: Object.fromEntries(ruleFields[r.type].map(([k]) => [k, r.params[k] ?? '0'])),
         })),
       }),
-    { success: 'Настройки доставки сохранены' },
+    { success: tr('Настройки доставки сохранены', 'Yetkazib berish sozlamalari saqlandi') },
   )
 
   const setDay = (wd: number, patch: Partial<DayRow>) => setDays((ds) => ds.map((d) => (d.weekday === wd ? { ...d, ...patch } : d)))
@@ -154,10 +154,10 @@ function DeliveryInner() {
   return (
     <>
       <PageTitle
-        title={`Доставка${store ? ' — ' + store.name : ''}`}
+        title={tr('Доставка', 'Yetkazib berish') + (store ? ' — ' + store.name : '')}
         extra={
           <Button type="primary" loading={save.isPending} disabled={isLoading || !data} onClick={() => save.mutate(undefined)}>
-            Сохранить
+            {tr('Сохранить', 'Saqlash')}
           </Button>
         }
       />
@@ -169,7 +169,12 @@ function DeliveryInner() {
           style={{ marginBottom: 16 }}
           message={
             <>
-              Чтобы принимать онлайн-заказы, поставьте точку магазина на карте в разделе <Link to="/settings/stores">Магазины</Link>.
+              {tr(
+                'Чтобы принимать онлайн-заказы, поставьте точку магазина на карте в разделе',
+                'Onlayn buyurtmalarni qabul qilish uchun',
+              )}{' '}
+              <Link to="/settings/stores">{tr('Магазины', 'Doʻkonlar')}</Link>
+              {tr('.', ' boʻlimida doʻkon joylashuvini xaritada belgilang.')}
             </>
           }
         />
@@ -184,28 +189,38 @@ function DeliveryInner() {
       />
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={12}>
-          <Card title="Приём заказов" loading={isLoading} style={{ marginBottom: 16 }}>
+          <Card title={tr('Приём заказов', 'Buyurtmalarni qabul qilish')} loading={isLoading} style={{ marginBottom: 16 }}>
             <Form layout="vertical">
-              <Form.Item label="Принимать онлайн-заказы">
+              <Form.Item label={tr('Принимать онлайн-заказы', 'Onlayn buyurtmalarni qabul qilish')}>
                 <Switch checked={accepts} onChange={setAccepts} />
               </Form.Item>
               <Row gutter={16}>
                 <Col span={12}>
-                  <Form.Item label="Минимальная сумма заказа">
+                  <Form.Item label={tr('Минимальная сумма заказа', 'Minimal buyurtma summasi')}>
                     <Num value={minOrder} onChange={setMinOrder} />
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  <Form.Item label="Радиус доставки, м" extra={zoneCount > 0 ? 'Не действует: есть зоны на карте, доставка только в них' : 'Действует, пока на карте нет зон'}>
+                  <Form.Item
+                    label={tr('Радиус доставки, м', 'Yetkazib berish radiusi, m')}
+                    extra={
+                      zoneCount > 0
+                        ? tr('Не действует: есть зоны на карте, доставка только в них', 'Amal qilmaydi: xaritada hududlar bor, yetkazib berish faqat ularga')
+                        : tr('Действует, пока на карте нет зон', 'Xaritada hududlar boʻlmaguncha amal qiladi')
+                    }
+                  >
                     <InputNumber value={radius} onChange={setRadius} min={0} max={100000} step={500} style={{ width: '100%' }} />
                   </Form.Item>
                 </Col>
               </Row>
-              <Form.Item label="Время доставки в приложении, минут" extra="Покупатель увидит «25–35 мин». Пустые поля — время не показывается">
+              <Form.Item
+                label={tr('Время доставки в приложении, минут', 'Ilovadagi yetkazib berish vaqti, daqiqa')}
+                extra={tr('Покупатель увидит «25–35 мин». Пустые поля — время не показывается', 'Xaridor «25–35 daq» deb koʻradi. Maydonlar boʻsh boʻlsa — vaqt koʻrsatilmaydi')}
+              >
                 <Space>
-                  <InputNumber value={etaMin} onChange={setEtaMin} min={5} max={600} placeholder="от" />
+                  <InputNumber value={etaMin} onChange={setEtaMin} min={5} max={600} placeholder={tr('от', 'dan')} />
                   —
-                  <InputNumber value={etaMax} onChange={setEtaMax} min={5} max={600} placeholder="до" />
+                  <InputNumber value={etaMax} onChange={setEtaMax} min={5} max={600} placeholder={tr('до', 'gacha')} />
                   {(etaMin !== null || etaMax !== null) && (
                     <Button
                       type="link"
@@ -214,22 +229,25 @@ function DeliveryInner() {
                         setEtaMax(null)
                       }}
                     >
-                      Не показывать
+                      {tr('Не показывать', 'Koʻrsatmaslik')}
                     </Button>
                   )}
                 </Space>
               </Form.Item>
             </Form>
           </Card>
-          <Card title="Доставка ко времени" loading={isLoading} style={{ marginBottom: 16 }}>
+          <Card title={tr('Доставка ко времени', 'Belgilangan vaqtga yetkazish')} loading={isLoading} style={{ marginBottom: 16 }}>
             <Form layout="vertical">
-              <Form.Item label="Покупатель может выбрать время" extra="Иначе — только «как можно скорее»">
+              <Form.Item
+                label={tr('Покупатель может выбрать время', 'Xaridor vaqtni tanlashi mumkin')}
+                extra={tr('Иначе — только «как можно скорее»', 'Aks holda — faqat «imkon qadar tezroq»')}
+              >
                 <Switch checked={slots.enabled} onChange={(v) => setSlots((s) => ({ ...s, enabled: v }))} />
               </Form.Item>
               {slots.enabled && (
                 <Row gutter={16}>
                   <Col xs={12} md={6}>
-                    <Form.Item label="Окно, минут">
+                    <Form.Item label={tr('Окно, минут', 'Oraliq, daqiqa')}>
                       <Select
                         value={slots.slot_minutes}
                         onChange={(v) => setSlots((s) => ({ ...s, slot_minutes: v }))}
@@ -238,26 +256,31 @@ function DeliveryInner() {
                     </Form.Item>
                   </Col>
                   <Col xs={12} md={6}>
-                    <Form.Item label="Дней вперёд" extra="0 — только сегодня">
+                    <Form.Item label={tr('Дней вперёд', 'Necha kun oldinga')} extra={tr('0 — только сегодня', '0 — faqat bugun')}>
                       <InputNumber value={slots.days_ahead} min={0} max={6} onChange={(v) => setSlots((s) => ({ ...s, days_ahead: v ?? 0 }))} style={{ width: '100%' }} />
                     </Form.Item>
                   </Col>
                   <Col xs={12} md={6}>
-                    <Form.Item label="Запас, минут" extra="Не раньше чем через">
+                    <Form.Item label={tr('Запас, минут', 'Zaxira, daqiqa')} extra={tr('Не раньше чем через', 'Kamida shuncha vaqtdan keyin')}>
                       <InputNumber value={slots.lead_minutes} min={0} max={720} step={15} onChange={(v) => setSlots((s) => ({ ...s, lead_minutes: v ?? 0 }))} style={{ width: '100%' }} />
                     </Form.Item>
                   </Col>
                   <Col xs={12} md={6}>
-                    <Form.Item label="Заказов в окно">
+                    <Form.Item label={tr('Заказов в окно', 'Bir oraliqdagi buyurtmalar')}>
                       <InputNumber value={slots.capacity} min={1} max={500} onChange={(v) => setSlots((s) => ({ ...s, capacity: v ?? 1 }))} style={{ width: '100%' }} />
                     </Form.Item>
                   </Col>
                 </Row>
               )}
-              <Typography.Text type="secondary">Окна строятся по часам работы магазина. Заказ ко времени нужно принять не позже чем за час до окна.</Typography.Text>
+              <Typography.Text type="secondary">
+                {tr(
+                  'Окна строятся по часам работы магазина. Заказ ко времени нужно принять не позже чем за час до окна.',
+                  'Oraliqlar doʻkonning ish vaqtiga qarab tuziladi. Vaqtga belgilangan buyurtmani oraliqdan kamida bir soat oldin qabul qilish kerak.',
+                )}
+              </Typography.Text>
             </Form>
           </Card>
-          <Card title="Часы работы" loading={isLoading}>
+          <Card title={tr('Часы работы', 'Ish vaqti')} loading={isLoading}>
             {days.map((d) => (
               <Row key={d.weekday} gutter={8} align="middle" style={{ marginBottom: 8 }}>
                 <Col flex="150px">
@@ -273,22 +296,24 @@ function DeliveryInner() {
                       <TimePicker format="HH:mm" minuteStep={5} value={d.closes} onChange={(v) => setDay(d.weekday, { closes: v })} allowClear={false} />
                     </Space>
                   ) : (
-                    <Typography.Text type="secondary">Выходной</Typography.Text>
+                    <Typography.Text type="secondary">{tr('Выходной', 'Dam olish kuni')}</Typography.Text>
                   )}
                 </Col>
               </Row>
             ))}
-            <Typography.Text type="secondary">Закрытие раньше открытия — работа после полуночи.</Typography.Text>
+            <Typography.Text type="secondary">
+              {tr('Закрытие раньше открытия — работа после полуночи.', 'Yopilish ochilishdan oldin boʻlsa — yarim tundan keyin ham ishlaydi.')}
+            </Typography.Text>
           </Card>
         </Col>
         <Col xs={24} xl={12}>
           <Card
-            title="Правила цены доставки"
+            title={tr('Правила цены доставки', 'Yetkazib berish narxi qoidalari')}
             loading={isLoading}
             style={{ marginBottom: 16 }}
             extra={
               <Button icon={<PlusOutlined />} onClick={() => setRules((rs) => [...rs, { key: ++seq, type: 'fixed', params: {} }])}>
-                Правило
+                {tr('Правило', 'Qoida')}
               </Button>
             }
           >
@@ -297,12 +322,17 @@ function DeliveryInner() {
                 type="info"
                 showIcon
                 style={{ marginBottom: 8 }}
-                message="Цена доставки берётся из зоны на карте. Здесь действует только «Бесплатно от суммы»."
+                message={tr(
+                  'Цена доставки берётся из зоны на карте. Здесь действует только «Бесплатно от суммы».',
+                  'Yetkazib berish narxi xaritadagi hududdan olinadi. Bu yerda faqat «Summadan boshlab bepul» amal qiladi.',
+                )}
               />
             ) : (
-              <Typography.Paragraph type="secondary">Правила проверяются сверху вниз, первое подходящее задаёт цену.</Typography.Paragraph>
+              <Typography.Paragraph type="secondary">
+                {tr('Правила проверяются сверху вниз, первое подходящее задаёт цену.', 'Qoidalar yuqoridan pastga tekshiriladi, birinchi mos kelgani narxni belgilaydi.')}
+              </Typography.Paragraph>
             )}
-            {rules.length === 0 && <Alert type="info" message="Правил нет — доставка бесплатная" style={{ marginBottom: 8 }} />}
+            {rules.length === 0 && <Alert type="info" message={tr('Правил нет — доставка бесплатная', 'Qoidalar yoʻq — yetkazib berish bepul')} style={{ marginBottom: 8 }} />}
             {rules.map((r, i) => (
               <Card key={r.key} size="small" style={{ marginBottom: 8 }}>
                 <Row gutter={8} align="middle" wrap>
@@ -332,7 +362,7 @@ function DeliveryInner() {
                   ))}
                   {r.type === 'zone' && (
                     <Col flex="auto">
-                      <Typography.Text type="secondary">Цена берётся из зоны покупателя</Typography.Text>
+                      <Typography.Text type="secondary">{tr('Цена берётся из зоны покупателя', 'Narx xaridor hududidan olinadi')}</Typography.Text>
                     </Col>
                   )}
                   <Col flex="none" style={{ marginLeft: 'auto' }}>

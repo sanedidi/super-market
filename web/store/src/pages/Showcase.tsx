@@ -6,7 +6,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { App, Button, Drawer, Modal, Select, Space } from 'antd'
 import { BarChartOutlined, CheckOutlined, LockFilled, PictureFilled, ShopOutlined, TrophyFilled } from '@ant-design/icons'
-import { ApiError, HomeEditor, HomeStatsPanel, api, errorText, money, type HomeBlock, type LayoutEditor } from '@sm/shared'
+import dayjs from 'dayjs'
+import { ApiError, HomeEditor, HomeStatsPanel, api, errorText, money, tr, type HomeBlock, type LayoutEditor } from '@sm/shared'
 
 interface Plan {
   key: 'start' | 'business' | 'pro'
@@ -62,7 +63,7 @@ function Meter({ label, used, limit }: { label: string; used: number; limit: num
         <span className="smh-meter-bar">
           <i style={{ width: `${pct}%` }} />
         </span>
-        {unlimited(limit) ? `${used} · без лимита` : `${used} из ${limit}`}
+        {unlimited(limit) ? `${used} · ${tr('без лимита', 'cheklovsiz')}` : tr(`${used} из ${limit}`, `${used} / ${limit}`)}
       </div>
     </div>
   )
@@ -76,42 +77,86 @@ function PlanBar({ data, blocks, onCompare }: { data: ShowcaseData; blocks: Home
       <div className="smh-plan-name">
         <TrophyFilled />
         <span>
-          Тариф «{p.name}»
-          {data.plan.in_trial && data.plan.trial_until && <small>пробный до {new Date(data.plan.trial_until).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</small>}
+          {tr(`Тариф «${p.name}»`, `«${p.name}» tarifi`)}
+          {data.plan.in_trial && data.plan.trial_until && (
+            <small>
+              {tr(
+                `пробный до ${dayjs(data.plan.trial_until).format('D MMMM')}`,
+                `${dayjs(data.plan.trial_until).format('D MMMM')} gacha sinov`,
+              )}
+            </small>
+          )}
         </span>
       </div>
       {p.custom ? (
         <>
-          <Meter label="Фото-баннеры" used={data.usage.banners} limit={p.banners} />
-          <Meter label="Свои полки" used={c.shelves} limit={p.shelves} />
-          <Meter label="Промо-полоска" used={c.promos} limit={p.promos} />
+          <Meter label={tr('Фото-баннеры', 'Foto-bannerlar')} used={data.usage.banners} limit={p.banners} />
+          <Meter label={tr('Свои полки', 'Oʻz javonlaringiz')} used={c.shelves} limit={p.shelves} />
+          <Meter label={tr('Промо-полоска', 'Promo-chiziq')} used={c.promos} limit={p.promos} />
         </>
       ) : (
-        <span className="smh-meter-label">На тарифе «Старт» покупатели видят автоматическую витрину Super Market. Своя витрина — с тарифа «Бизнес».</span>
+        <span className="smh-meter-label">
+          {tr(
+            'На тарифе «Старт» покупатели видят автоматическую витрину Super Market. Своя витрина — с тарифа «Бизнес».',
+            '«Start» tarifida xaridorlar Super Market avtomatik vitrinasini koʻradi. Oʻz vitrinangiz — «Biznes» tarifidan boshlab.',
+          )}
+        </span>
       )}
-      <a onClick={onCompare}>Сравнить тарифы</a>
+      <a onClick={onCompare}>{tr('Сравнить тарифы', 'Tariflarni solishtirish')}</a>
     </div>
   )
 }
 
 const FEATURE_TEXT: Record<string, { title: string; text: (i: LimitInfo, p: Plan) => string; icon?: ReactNode }> = {
   banners: {
-    title: 'Лимит баннеров на тарифе',
-    text: (i) => `У вас уже ${i.used ?? i.limit} из ${i.limit} своих баннеров. Чтобы добавить новый — выключите один из текущих или перейдите на тариф выше: баннеры без лимита, расписание и полная статистика.`,
+    title: tr('Лимит баннеров на тарифе', 'Tarifdagi bannerlar cheklovi'),
+    text: (i) =>
+      tr(
+        `У вас уже ${i.used ?? i.limit} из ${i.limit} своих баннеров. Чтобы добавить новый — выключите один из текущих или перейдите на тариф выше: баннеры без лимита, расписание и полная статистика.`,
+        `Sizda allaqachon ${i.limit} ta bannerdan ${i.used ?? i.limit} tasi bor. Yangisini qoʻshish uchun mavjudlaridan birini oʻchiring yoki yuqoriroq tarifga oʻting: cheklovsiz bannerlar, jadval va toʻliq statistika.`,
+      ),
     icon: <PictureFilled />,
   },
   shelves: {
-    title: 'Лимит полок на тарифе',
-    text: (i) => `На главной уже ${i.used ?? i.limit} своих полки из ${i.limit}. Уберите одну или перейдите на тариф выше — там полок без лимита.`,
+    title: tr('Лимит полок на тарифе', 'Tarifdagi javonlar cheklovi'),
+    text: (i) =>
+      tr(
+        `На главной уже ${i.used ?? i.limit} своих полки из ${i.limit}. Уберите одну или перейдите на тариф выше — там полок без лимита.`,
+        `Bosh sahifada allaqachon ${i.limit} ta javondan ${i.used ?? i.limit} tasi bor. Bittasini olib tashlang yoki yuqoriroq tarifga oʻting — u yerda javonlar cheklovsiz.`,
+      ),
   },
   promos: {
-    title: 'Лимит промо-полосок на тарифе',
-    text: (i) => `Своих промо-полосок можно ${i.limit}. Уберите лишнюю или перейдите на тариф выше.`,
+    title: tr('Лимит промо-полосок на тарифе', 'Tarifdagi promo-chiziqlar cheklovi'),
+    text: (i) =>
+      tr(
+        `Своих промо-полосок можно ${i.limit}. Уберите лишнюю или перейдите на тариф выше.`,
+        `Oʻz promo-chiziqlaringiz ${i.limit} tagacha boʻlishi mumkin. Ortiqchasini olib tashlang yoki yuqoriroq tarifga oʻting.`,
+      ),
   },
-  manual: { title: 'Подборка «вручную» не входит в тариф', text: () => 'Собирайте полки из своих товаров в нужном порядке — с тарифа «Бизнес».' },
-  schedule: { title: 'Расписание блоков — в тарифе «Про»', text: () => 'Блок сам включится и выключится по датам: акции к праздникам без ручных правок.' },
-  per_store: { title: 'Своя витрина у каждого магазина — в тарифе «Про»', text: () => 'По умолчанию у всех магазинов сети одна витрина. На «Про» можно сделать отдельную для любого магазина.' },
-  custom: { title: 'Своя витрина — с тарифа «Бизнес»', text: () => 'Порядок блоков, свои полки, баннеры и промо-полоска. Сейчас покупатели видят автоматическую витрину Super Market.' },
+  manual: {
+    title: tr('Подборка «вручную» не входит в тариф', '«Qoʻlda» tanlash tarifga kirmaydi'),
+    text: () => tr('Собирайте полки из своих товаров в нужном порядке — с тарифа «Бизнес».', 'Javonlarni oʻz mahsulotlaringizdan kerakli tartibda tuzing — «Biznes» tarifidan boshlab.'),
+  },
+  schedule: {
+    title: tr('Расписание блоков — в тарифе «Про»', 'Bloklar jadvali — «Pro» tarifida'),
+    text: () => tr('Блок сам включится и выключится по датам: акции к праздникам без ручных правок.', 'Blok sanalar boʻyicha oʻzi yoqiladi va oʻchadi: bayram aksiyalari qoʻlda tahrirlashsiz.'),
+  },
+  per_store: {
+    title: tr('Своя витрина у каждого магазина — в тарифе «Про»', 'Har bir doʻkon uchun alohida vitrina — «Pro» tarifida'),
+    text: () =>
+      tr(
+        'По умолчанию у всех магазинов сети одна витрина. На «Про» можно сделать отдельную для любого магазина.',
+        'Odatda tarmoqning barcha doʻkonlarida bitta vitrina boʻladi. «Pro» tarifida istalgan doʻkon uchun alohida vitrina qilish mumkin.',
+      ),
+  },
+  custom: {
+    title: tr('Своя витрина — с тарифа «Бизнес»', 'Oʻz vitrinangiz — «Biznes» tarifidan boshlab'),
+    text: () =>
+      tr(
+        'Порядок блоков, свои полки, баннеры и промо-полоска. Сейчас покупатели видят автоматическую витрину Super Market.',
+        'Bloklar tartibi, oʻz javonlaringiz, bannerlar va promo-chiziq. Hozir xaridorlar Super Market avtomatik vitrinasini koʻradi.',
+      ),
+  },
 }
 
 function nextPlan(data: ShowcaseData, feature: string): Plan | undefined {
@@ -140,19 +185,19 @@ function LimitModal({ info, data, onClose, onPlans }: { info: LimitInfo | null; 
         {target && (
           <div className="smh-limit-plan">
             <div>
-              <b>Тариф «{target.name}»</b>
-              <span>{Number(target.price_uzs) > 0 ? `${money(target.price_uzs)} сум / мес` : 'бесплатно'}</span>
+              <b>{tr(`Тариф «${target.name}»`, `«${target.name}» tarifi`)}</b>
+              <span>{Number(target.price_uzs) > 0 ? `${money(target.price_uzs)} ${tr('сум / мес', 'soʻm / oy')}` : tr('бесплатно', 'bepul')}</span>
             </div>
             <TrophyFilled />
           </div>
         )}
         <div style={{ display: 'flex', gap: 12 }}>
           <Button size="large" block onClick={onClose}>
-            {withPlan ? 'Убрать старый' : 'Понятно'}
+            {withPlan ? tr('Убрать старый', 'Eskisini olib tashlash') : tr('Понятно', 'Tushunarli')}
           </Button>
           {target && (
             <Button size="large" block type="primary" danger onClick={() => onPlans(target.key)}>
-              Перейти на «{target.name}»
+              {tr(`Перейти на «${target.name}»`, `«${target.name}» tarifiga oʻtish`)}
             </Button>
           )}
         </div>
@@ -162,17 +207,17 @@ function LimitModal({ info, data, onClose, onPlans }: { info: LimitInfo | null; 
 }
 
 function planLines(p: Plan): string[] {
-  const lim = (v: number | null, one: string) => (v === null ? `${one} без лимита` : v === 0 ? '' : `${one}: ${v}`)
+  const lim = (v: number | null, one: string) => (v === null ? `${one} ${tr('без лимита', 'cheklovsiz')}` : v === 0 ? '' : `${one}: ${v}`)
   return [
-    'Автоматическая витрина (хиты, скидки, категории)',
-    p.custom ? 'Свой порядок блоков' : '',
-    lim(p.banners, 'Свои фото-баннеры'),
-    lim(p.shelves, 'Свои полки товаров'),
-    p.manual ? 'Подборка «вручную»' : '',
-    lim(p.promos, 'Промо-полоска'),
-    p.schedule ? 'Расписание блоков' : '',
-    p.stats === 'full' ? 'Полная статистика' : p.stats === 'basic' ? 'Базовая статистика' : '',
-    p.per_store ? 'Разные витрины магазинов сети' : '',
+    tr('Автоматическая витрина (хиты, скидки, категории)', 'Avtomatik vitrina (xitlar, chegirmalar, kategoriyalar)'),
+    p.custom ? tr('Свой порядок блоков', 'Bloklarning oʻz tartibi') : '',
+    lim(p.banners, tr('Свои фото-баннеры', 'Oʻz foto-bannerlaringiz')),
+    lim(p.shelves, tr('Свои полки товаров', 'Oʻz mahsulot javonlaringiz')),
+    p.manual ? tr('Подборка «вручную»', '«Qoʻlda» tanlash') : '',
+    lim(p.promos, tr('Промо-полоска', 'Promo-chiziq')),
+    p.schedule ? tr('Расписание блоков', 'Bloklar jadvali') : '',
+    p.stats === 'full' ? tr('Полная статистика', 'Toʻliq statistika') : p.stats === 'basic' ? tr('Базовая статистика', 'Asosiy statistika') : '',
+    p.per_store ? tr('Разные витрины магазинов сети', 'Tarmoq doʻkonlari uchun turli vitrinalar') : '',
   ].filter(Boolean)
 }
 
@@ -184,13 +229,19 @@ function PlansModal({ open, data, highlight, onClose }: { open: boolean; data?: 
   if (!data) return null
   const choose = (p: Plan) =>
     modal.confirm({
-      title: `Перейти на тариф «${p.name}»?`,
+      title: tr(`Перейти на тариф «${p.name}»?`, `«${p.name}» tarifiga oʻtilsinmi?`),
       content:
         Number(p.price_uzs) > 0
-          ? `${money(p.price_uzs)} сум в месяц войдут в ближайший счёт за подписку${data.plan.in_trial ? ' (после пробного периода)' : ''}. Отменить можно в любой момент.`
-          : 'Свои блоки скроются, но не удалятся: при возврате на платный тариф всё вернётся как было.',
-      okText: 'Перейти',
-      cancelText: 'Отмена',
+          ? tr(
+              `${money(p.price_uzs)} сум в месяц войдут в ближайший счёт за подписку${data.plan.in_trial ? ' (после пробного периода)' : ''}. Отменить можно в любой момент.`,
+              `Oyiga ${money(p.price_uzs)} soʻm obuna uchun eng yaqin hisobga qoʻshiladi${data.plan.in_trial ? ' (sinov muddatidan keyin)' : ''}. Istalgan vaqtda bekor qilish mumkin.`,
+            )
+          : tr(
+              'Свои блоки скроются, но не удалятся: при возврате на платный тариф всё вернётся как было.',
+              'Oʻz bloklaringiz yashiriladi, lekin oʻchirilmaydi: pullik tarifga qaytsangiz, hammasi avvalgidek tiklanadi.',
+            ),
+      okText: tr('Перейти', 'Oʻtish'),
+      cancelText: tr('Отмена', 'Bekor qilish'),
       onOk: async () => {
         setBusy(p.key)
         try {
@@ -199,13 +250,16 @@ function PlansModal({ open, data, highlight, onClose }: { open: boolean; data?: 
           onClose()
           if (Number(p.price_uzs) > 0) {
             modal.success({
-              title: `Тариф «${p.name}» подключён`,
-              content: `${money(p.price_uzs)} сум в месяц добавятся в ${data.plan.in_trial ? 'первый счёт после пробного периода' : 'ближайший счёт за подписку'}. Оплатить счёт можно с баланса платформы в разделе «Баланс и подписка». Доля с рекламы брендов уменьшает этот счёт.`,
-              okText: 'Перейти к оплате',
+              title: tr(`Тариф «${p.name}» подключён`, `«${p.name}» tarifi ulandi`),
+              content: tr(
+                `${money(p.price_uzs)} сум в месяц добавятся в ${data.plan.in_trial ? 'первый счёт после пробного периода' : 'ближайший счёт за подписку'}. Оплатить счёт можно с баланса платформы в разделе «Баланс и подписка». Доля с рекламы брендов уменьшает этот счёт.`,
+                `Oyiga ${money(p.price_uzs)} soʻm ${data.plan.in_trial ? 'sinov muddatidan keyingi birinchi hisobga' : 'obuna uchun eng yaqin hisobga'} qoʻshiladi. Hisobni «Balans va obuna» boʻlimida platformadagi balansdan toʻlash mumkin. Brendlar reklamasidan ulush bu hisobni kamaytiradi.`,
+              ),
+              okText: tr('Перейти к оплате', 'Toʻlovga oʻtish'),
               onOk: () => navigate('/balance?tab=billing'),
               closable: true,
             })
-          } else message.success(`Тариф «${p.name}» подключён`)
+          } else message.success(tr(`Тариф «${p.name}» подключён`, `«${p.name}» tarifi ulandi`))
         } catch (e) {
           message.error(errorText(e))
         } finally {
@@ -214,15 +268,15 @@ function PlansModal({ open, data, highlight, onClose }: { open: boolean; data?: 
       },
     })
   return (
-    <Modal open={open} onCancel={onClose} footer={null} width={860} title="Тарифы витрины">
+    <Modal open={open} onCancel={onClose} footer={null} width={860} title={tr('Тарифы витрины', 'Vitrina tariflari')}>
       <div className="smh-plans">
         {data.plans.map((p) => {
           const current = p.key === data.plan.chosen.key
           return (
             <div key={p.key} className={`smh-plan${p.key === highlight || (!highlight && p.recommended) ? ' rec' : ''}${current ? ' cur' : ''}`}>
-              {p.recommended && <span className="smh-plan-badge">Рекомендуем</span>}
+              {p.recommended && <span className="smh-plan-badge">{tr('Рекомендуем', 'Tavsiya etamiz')}</span>}
               <h4>{p.name}</h4>
-              <div className="smh-field-hint">{Number(p.price_uzs) > 0 ? `${money(p.price_uzs)} сум / мес` : 'бесплатно'}</div>
+              <div className="smh-field-hint">{Number(p.price_uzs) > 0 ? `${money(p.price_uzs)} ${tr('сум / мес', 'soʻm / oy')}` : tr('бесплатно', 'bepul')}</div>
               <ul>
                 {planLines(p).map((x) => (
                   <li key={x}>{x}</li>
@@ -230,14 +284,16 @@ function PlansModal({ open, data, highlight, onClose }: { open: boolean; data?: 
               </ul>
               {current ? (
                 <Button block disabled icon={<CheckOutlined />}>
-                  {data.plan.in_trial ? `Ваш тариф · пробный «${data.plan.effective.name}»` : 'Ваш тариф'}
+                  {data.plan.in_trial
+                    ? tr(`Ваш тариф · пробный «${data.plan.effective.name}»`, `Sizning tarifingiz · sinov «${data.plan.effective.name}»`)
+                    : tr('Ваш тариф', 'Sizning tarifingiz')}
                 </Button>
               ) : data.can_buy ? (
                 <Button block type={p.key === highlight ? 'primary' : 'default'} danger={p.key === highlight} loading={busy === p.key} onClick={() => choose(p)}>
-                  Перейти на «{p.name}»
+                  {tr(`Перейти на «${p.name}»`, `«${p.name}» tarifiga oʻtish`)}
                 </Button>
               ) : (
-                <div className="smh-field-hint">Сменить тариф может владелец сети</div>
+                <div className="smh-field-hint">{tr('Сменить тариф может владелец сети', 'Tarifni tarmoq egasi oʻzgartira oladi')}</div>
               )}
             </div>
           )
@@ -246,8 +302,11 @@ function PlansModal({ open, data, highlight, onClose }: { open: boolean; data?: 
       {data.plan.trial_until && (
         <div className="smh-field-hint" style={{ marginTop: 12 }}>
           {data.plan.in_trial
-            ? `Пробный период до ${new Date(data.plan.trial_until).toLocaleDateString('ru-RU')}. Потом, если не перейти на платный тариф, витрина вернётся к «Старт»: свои баннеры и полки скроются, но не удалятся.`
-            : 'Пробный период закончился.'}
+            ? tr(
+                `Пробный период до ${dayjs(data.plan.trial_until).format('DD.MM.YYYY')}. Потом, если не перейти на платный тариф, витрина вернётся к «Старт»: свои баннеры и полки скроются, но не удалятся.`,
+                `Sinov muddati ${dayjs(data.plan.trial_until).format('DD.MM.YYYY')} gacha. Keyin pullik tarifga oʻtmasangiz, vitrina «Start» tarifiga qaytadi: oʻz bannerlaringiz va javonlaringiz yashiriladi, lekin oʻchirilmaydi.`,
+              )
+            : tr('Пробный период закончился.', 'Sinov muddati tugadi.')}
         </div>
       )}
     </Modal>
@@ -283,16 +342,18 @@ export function ShowcasePage() {
         extraActions={(l) =>
           l.version > 0 ? (
             <div className="smh-reset">
-              {l.store_id ? `У магазина «${l.store_name}» своя витрина.` : 'У сети своя витрина.'}
+              {l.store_id
+                ? tr(`У магазина «${l.store_name}» своя витрина.`, `«${l.store_name}» doʻkonining oʻz vitrinasi bor.`)
+                : tr('У сети своя витрина.', 'Tarmoqning oʻz vitrinasi bor.')}
               <Button
                 size="small"
                 onClick={() =>
                   modal.confirm({
-                    title: l.store_id ? 'Вернуть витрину сети?' : 'Вернуть витрину Super Market?',
-                    content: 'Ваши блоки и их версии удалятся. Свои баннеры останутся в списке баннеров.',
-                    okText: 'Вернуть',
+                    title: l.store_id ? tr('Вернуть витрину сети?', 'Tarmoq vitrinasi qaytarilsinmi?') : tr('Вернуть витрину Super Market?', 'Super Market vitrinasi qaytarilsinmi?'),
+                    content: tr('Ваши блоки и их версии удалятся. Свои баннеры останутся в списке баннеров.', 'Bloklaringiz va ularning versiyalari oʻchiriladi. Oʻz bannerlaringiz bannerlar roʻyxatida qoladi.'),
+                    okText: tr('Вернуть', 'Qaytarish'),
                     okButtonProps: { danger: true },
-                    cancelText: 'Отмена',
+                    cancelText: tr('Отмена', 'Bekor qilish'),
                     onOk: async () => {
                       try {
                         await api.del(`${BASE}${storeId ? `?store_id=${storeId}` : ''}`)
@@ -305,13 +366,16 @@ export function ShowcasePage() {
                   })
                 }
               >
-                {l.store_id ? 'Вернуть витрину сети' : 'Вернуть витрину Super Market'}
+                {l.store_id ? tr('Вернуть витрину сети', 'Tarmoq vitrinasini qaytarish') : tr('Вернуть витрину Super Market', 'Super Market vitrinasini qaytarish')}
               </Button>
             </div>
           ) : null
         }
-        title="Витрина приложения"
-        subtitle="Так покупатели видят ваш магазин на главной. Блоки Super Market закреплены и всегда на месте."
+        title={tr('Витрина приложения', 'Ilova vitrinasi')}
+        subtitle={tr(
+          'Так покупатели видят ваш магазин на главной. Блоки Super Market закреплены и всегда на месте.',
+          'Xaridorlar doʻkoningizni bosh sahifada shunday koʻradi. Super Market bloklari mahkamlangan va doim joyida.',
+        )}
         base={BASE}
         params={params}
         storesPath="/store/home/stores"
@@ -327,31 +391,35 @@ export function ShowcasePage() {
         addInfo={(t, blocks, raw) => {
           const d = raw as ShowcaseData
           const plan = d.plan.effective
-          if (!plan.custom) return { lock: '«Бизнес»', feature: 'custom' }
+          if (!plan.custom) return { lock: tr('«Бизнес»', '«Biznes»'), feature: 'custom' }
           const c = ownCounts(blocks, d.template_ids)
           const left = (used: number, lim: number | null, what: string, feature: string) =>
             lim === null
-              ? { hint: `${what}: без лимита` }
+              ? { hint: `${what}: ${tr('без лимита', 'cheklovsiz')}` }
               : used >= lim
-                ? { lock: '«Про»', hint: `Лимит ${lim} из ${lim} — уже все`, feature }
-                : { hint: `Осталось ${lim - used} из ${lim}` }
+                ? { lock: tr('«Про»', '«Pro»'), hint: tr(`Лимит ${lim} из ${lim} — уже все`, `Cheklov ${lim} / ${lim} — hammasi band`), feature }
+                : { hint: tr(`Осталось ${lim - used} из ${lim}`, `${lim} tadan ${lim - used} ta qoldi`) }
           switch (t) {
             case 'shelf':
-              return left(c.shelves, plan.shelves, 'Свои полки', 'shelves')
+              return left(c.shelves, plan.shelves, tr('Свои полки', 'Oʻz javonlaringiz'), 'shelves')
             case 'scheduled':
-              return plan.schedule ? left(c.shelves, plan.shelves, 'Свои полки', 'shelves') : { lock: '«Про»', hint: 'Полка сама включится и выключится по датам', feature: 'schedule' }
+              return plan.schedule
+                ? left(c.shelves, plan.shelves, tr('Свои полки', 'Oʻz javonlaringiz'), 'shelves')
+                : { lock: tr('«Про»', '«Pro»'), hint: tr('Полка сама включится и выключится по датам', 'Javon sanalar boʻyicha oʻzi yoqiladi va oʻchadi'), feature: 'schedule' }
             case 'promo':
-              return left(c.promos, plan.promos, 'Промо-полоски', 'promos')
+              return left(c.promos, plan.promos, tr('Промо-полоски', 'Promo-chiziqlar'), 'promos')
             case 'banners':
-              return plan.banners === 0 ? { lock: '«Бизнес»', feature: 'banners' } : { hint: `Свои баннеры: ${d.usage.banners}${plan.banners === null ? '' : ` из ${plan.banners}`}` }
+              return plan.banners === 0
+                ? { lock: tr('«Бизнес»', '«Biznes»'), feature: 'banners' }
+                : { hint: `${tr('Свои баннеры', 'Oʻz bannerlaringiz')}: ${d.usage.banners}${plan.banners === null ? '' : tr(` из ${plan.banners}`, ` / ${plan.banners}`)}` }
             default:
-              return blocks.some((b) => b.type === t) ? { hint: 'Уже на главной' } : undefined
+              return blocks.some((b) => b.type === t) ? { hint: tr('Уже на главной', 'Bosh sahifada allaqachon bor') } : undefined
           }
         }}
         scope={
           <Space>
           <Button size="large" icon={<BarChartOutlined />} onClick={() => setStats(true)}>
-            Статистика
+            {tr('Статистика', 'Statistika')}
           </Button>
           <Select
             size="large"
@@ -366,7 +434,7 @@ export function ShowcasePage() {
               setStoreId(v)
             }}
             options={[
-              { value: '', label: 'Все магазины сети' },
+              { value: '', label: tr('Все магазины сети', 'Tarmoqning barcha doʻkonlari') },
               ...(data?.stores ?? []).map((s) => ({
                 value: s.id,
                 label: (
@@ -385,7 +453,7 @@ export function ShowcasePage() {
         <HomeStatsPanel
           path="/store/home/stats"
           params={{ store_id: storeId || undefined }}
-          subtitle={storeId ? data?.stores.find((s) => s.id === storeId)?.name : 'все магазины сети'}
+          subtitle={storeId ? data?.stores.find((s) => s.id === storeId)?.name : tr('все магазины сети', 'tarmoqning barcha doʻkonlari')}
           onUpgrade={() => {
             setStats(false)
             setPlans({ open: true, highlight: p?.key === 'business' ? 'pro' : 'business' })

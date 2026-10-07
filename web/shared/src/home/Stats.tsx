@@ -8,6 +8,7 @@ import { LockFilled, RiseOutlined } from '@ant-design/icons'
 import { ApiError, api } from '../api'
 import { LoadError } from '../components'
 import { money } from '../format'
+import { tr } from '../i18n'
 
 interface BlockStat {
   block_id: string
@@ -39,8 +40,8 @@ const num = (v: number) => v.toLocaleString('ru-RU')
 /** 31 400 000 → «31,4 млн». */
 export function shortMoney(v: string | number): string {
   const n = Number(v)
-  if (n >= 1_000_000) return `${(n / 1_000_000).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} млн`
-  if (n >= 10_000) return `${Math.round(n / 1000).toLocaleString('ru-RU')} тыс`
+  if (n >= 1_000_000) return `${(n / 1_000_000).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} ${tr('млн', 'mln')}`
+  if (n >= 10_000) return `${Math.round(n / 1000).toLocaleString('ru-RU')} ${tr('тыс', 'ming')}`
   return money(n)
 }
 
@@ -58,9 +59,9 @@ function Spark({ series }: { series: HomeStats['series'] }) {
   if (series.length < 2) return null
   const max = Math.max(...series.map((s) => s.views), 1)
   return (
-    <div className="smh-spark" title="Показы по дням">
+    <div className="smh-spark" title={tr('Показы по дням', 'Kunlar boʻyicha koʻrsatishlar')}>
       {series.map((s) => (
-        <i key={s.day} style={{ height: `${Math.max(4, (s.views / max) * 100)}%` }} title={`${s.day}: ${num(s.views)} показов, ${num(s.orders)} заказов`} />
+        <i key={s.day} style={{ height: `${Math.max(4, (s.views / max) * 100)}%` }} title={tr(`${s.day}: ${num(s.views)} показов, ${num(s.orders)} заказов`, `${s.day}: ${num(s.views)} ta koʻrsatish, ${num(s.orders)} ta buyurtma`)} />
       ))}
     </div>
   )
@@ -89,11 +90,11 @@ export function HomeStatsPanel({
     return (
       <div className="smh-locked" style={{ margin: 0 }}>
         <LockFilled />
-        <b>Статистика витрины — с тарифа «Бизнес»</b>
-        <span>Показы, нажатия и покупки по каждому блоку главной: видно, что приносит заказы.</span>
+        <b>{tr('Статистика витрины — с тарифа «Бизнес»', 'Vitrina statistikasi — «Biznes» tarifidan')}</b>
+        <span>{tr('Показы, нажатия и покупки по каждому блоку главной: видно, что приносит заказы.', 'Bosh sahifaning har bir bloki boʻyicha koʻrsatishlar, bosishlar va xaridlar: nima buyurtma keltirayotgani koʻrinadi.')}</span>
         {onUpgrade && (
           <Button type="primary" danger onClick={() => onUpgrade('stats')}>
-            Сравнить тарифы
+            {tr('Сравнить тарифы', 'Tariflarni solishtirish')}
           </Button>
         )}
       </div>
@@ -108,9 +109,10 @@ export function HomeStatsPanel({
     <div className="smh-stats">
       <div className="smh-stats-head">
         <div>
-          <h2>Статистика витрины</h2>
+          <h2>{tr('Статистика витрины', 'Vitrina statistikasi')}</h2>
           <span>
-            За {s.days} дней{subtitle ? ` · ${subtitle}` : ''}
+            {tr(`За ${s.days} дней`, `${s.days} kunda`)}
+            {subtitle ? ` · ${subtitle}` : ''}
           </span>
         </div>
         {full ? (
@@ -118,22 +120,22 @@ export function HomeStatsPanel({
             value={days}
             onChange={(v) => setDays(v as number)}
             options={[
-              { value: 7, label: '7 дней' },
-              { value: 30, label: '30 дней' },
-              { value: 90, label: '90 дней' },
+              { value: 7, label: tr('7 дней', '7 kun') },
+              { value: 30, label: tr('30 дней', '30 kun') },
+              { value: 90, label: tr('90 дней', '90 kun') },
             ]}
           />
         ) : (
           <a onClick={() => onUpgrade?.('stats_full')}>
-            <LockFilled /> Заказы, выручка и 30 дней — в «Про»
+            <LockFilled /> {tr('Заказы, выручка и 30 дней — в «Про»', 'Buyurtmalar, tushum va 30 kun — «Pro» tarifida')}
           </a>
         )}
       </div>
       <div className="smh-kpis">
-        <Kpi label="Показы главной" value={num(s.views)} />
-        <Kpi label="Нажатия на блоки" value={num(s.clicks)} />
-        <Kpi label="Заказы с главной" value={num(s.orders)} locked={!full} />
-        <Kpi label="Выручка с главной" value={`${shortMoney(s.revenue)} сум`} locked={!full} />
+        <Kpi label={tr('Показы главной', 'Bosh sahifa koʻrsatishlari')} value={num(s.views)} />
+        <Kpi label={tr('Нажатия на блоки', 'Bloklarga bosishlar')} value={num(s.clicks)} />
+        <Kpi label={tr('Заказы с главной', 'Bosh sahifadan buyurtmalar')} value={num(s.orders)} locked={!full} />
+        <Kpi label={tr('Выручка с главной', 'Bosh sahifadan tushum')} value={`${shortMoney(s.revenue)} ${tr('сум', 'soʻm')}`} locked={!full} />
       </div>
       {full && <Spark series={s.series} />}
       <Table<BlockStat>
@@ -143,14 +145,14 @@ export function HomeStatsPanel({
         loading={q.isFetching}
         dataSource={s.blocks}
         pagination={false}
-        locale={{ emptyText: 'Пока нет данных: показы появятся, когда покупатели откроют главную в новой версии приложения.' }}
+        locale={{ emptyText: tr('Пока нет данных: показы появятся, когда покупатели откроют главную в новой версии приложения.', 'Hozircha maʼlumot yoʻq: xaridorlar ilovaning yangi versiyasida bosh sahifani ochganda koʻrsatishlar paydo boʻladi.') }}
         columns={[
-          { title: 'Блок', dataIndex: 'title' },
-          { title: 'Показы', dataIndex: 'views', align: 'right', render: num },
-          { title: 'Нажатия', dataIndex: 'clicks', align: 'right', render: num },
+          { title: tr('Блок', 'Blok'), dataIndex: 'title' },
+          { title: tr('Показы', 'Koʻrsatishlar'), dataIndex: 'views', align: 'right', render: num },
+          { title: tr('Нажатия', 'Bosishlar'), dataIndex: 'clicks', align: 'right', render: num },
           { title: 'CTR', dataIndex: 'ctr', align: 'right', render: (v: number) => `${(v * 100).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%` },
-          { title: 'Заказы', dataIndex: 'orders', align: 'right', render: (v: number) => lockCell(<b>{num(v)}</b>) },
-          { title: 'Выручка', dataIndex: 'revenue', align: 'right', render: (v: string) => lockCell(`${shortMoney(v)}`) },
+          { title: tr('Заказы', 'Buyurtmalar'), dataIndex: 'orders', align: 'right', render: (v: number) => lockCell(<b>{num(v)}</b>) },
+          { title: tr('Выручка', 'Tushum'), dataIndex: 'revenue', align: 'right', render: (v: string) => lockCell(`${shortMoney(v)}`) },
         ]}
       />
       {s.hint && (
@@ -159,8 +161,10 @@ export function HomeStatsPanel({
         </div>
       )}
       <div className="smh-field-hint">
-        Показ — блок был на экране хотя бы наполовину секунду; нажатие — касание внутри блока. Считает приложение (версия 0.7 и новее), поэтому
-        возможны небольшие потери без сети.
+        {tr(
+          'Показ — блок был на экране хотя бы наполовину секунду; нажатие — касание внутри блока. Считает приложение (версия 0.7 и новее), поэтому возможны небольшие потери без сети.',
+          'Koʻrsatish — blok kamida bir soniya davomida yarmi ekranda koʻrinib turgan; bosish — blok ichiga teginish. Ilova hisoblaydi (0.7 va yangi versiyalar), shuning uchun tarmoq yoʻqligida ozgina yoʻqotishlar boʻlishi mumkin.',
+        )}
       </div>
     </div>
   )

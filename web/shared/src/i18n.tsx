@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { App as AntApp, Button, Segmented, Tooltip, type FormInstance } from 'antd'
 import { TranslationOutlined } from '@ant-design/icons'
-import { api } from './api'
+import { api, getTokens } from './api'
 
 /**
  * Языки панели магазина: узбекский (латиница, по умолчанию) и русский.
@@ -49,7 +49,11 @@ export function setLang(l: Lang) {
     // без хранилища язык продержится до перезагрузки
   }
   current = l
-  // Язык уведомлений сотрудника в Telegram — тот же, что в панели.
+  // Язык уведомлений сотрудника в Telegram — тот же, что в панели. На экране входа (без токена) — только перезагрузка.
+  if (!getTokens()) {
+    window.location.reload()
+    return
+  }
   api.put('/me/language', { language: l }).catch(() => undefined).finally(() => window.location.reload())
 }
 

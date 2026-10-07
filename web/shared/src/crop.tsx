@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { App, Button, Modal, Slider, Upload } from 'antd'
 import { PictureOutlined, ZoomInOutlined } from '@ant-design/icons'
 import { api, ApiError } from './api'
+import { tr } from './i18n'
 
 export const BANNER_W = 1080
 export const BANNER_H = 450
@@ -74,14 +75,14 @@ function CropModal({ file, onCancel, onDone }: { file: File; onCancel: () => voi
       const blob = await new Promise<Blob>((ok, fail) => canvas.toBlob((b) => (b ? ok(b) : fail(new Error('canvas'))), 'image/jpeg', 0.86))
       onDone(await api.upload(blob, 'banner.jpg'))
     } catch (e) {
-      message.error(e instanceof ApiError ? e.message : 'Не удалось загрузить фото')
+      message.error(e instanceof ApiError ? e.message : tr('Не удалось загрузить фото', 'Rasmni yuklab boʻlmadi'))
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <Modal open title="Кадр баннера" width={BOX_W + 48} onCancel={onCancel} okText="Загрузить" cancelText="Отмена" onOk={save} confirmLoading={busy}>
+    <Modal open title={tr('Кадр баннера', 'Banner kadri')} width={BOX_W + 48} onCancel={onCancel} okText={tr('Загрузить', 'Yuklash')} cancelText={tr('Отмена', 'Bekor qilish')} onOk={save} confirmLoading={busy}>
       <div
         className="sm-crop"
         style={{ width: BOX_W, height: BOX_H }}
@@ -110,25 +111,28 @@ function CropModal({ file, onCancel, onDone }: { file: File; onCancel: () => voi
         <Slider style={{ flex: 1 }} min={1} max={3} step={0.01} value={frame.zoom} onChange={setZoom} tooltip={{ open: false }} />
       </div>
       <div style={{ fontSize: 12, color: '#667085' }}>
-        Перетащите фото, чтобы выбрать кадр. Сохранится 1080 × 450, JPEG.
-        {small && <span style={{ color: '#b54708' }}> Фото меньше 1080 × 450 — в приложении может быть нечётким.</span>}
+        {tr('Перетащите фото, чтобы выбрать кадр. Сохранится 1080 × 450, JPEG.', 'Kadrni tanlash uchun rasmni suring. 1080 × 450, JPEG sifatida saqlanadi.')}
+        {small && <span style={{ color: '#b54708' }}>
+            {' '}
+            {tr('Фото меньше 1080 × 450 — в приложении может быть нечётким.', 'Rasm 1080 × 450 dan kichik — ilovada xira koʻrinishi mumkin.')}
+          </span>}
       </div>
     </Modal>
   )
 }
 
 /** Для Form.Item: value — ссылка на уже обрезанное фото баннера. */
-export function BannerUpload({ value, onChange, hint = 'Загрузить фото баннера' }: { value?: string | null; onChange?: (url: string) => void; hint?: string }) {
+export function BannerUpload({ value, onChange, hint = tr('Загрузить фото баннера', 'Banner rasmini yuklash') }: { value?: string | null; onChange?: (url: string) => void; hint?: string }) {
   const [file, setFile] = useState<File | null>(null)
   const pick = (
     <Upload accept="image/jpeg,image/png,image/webp" showUploadList={false} beforeUpload={(f) => (setFile(f), false)}>
       {value ? (
-        <Button size="small">Заменить фото</Button>
+        <Button size="small">{tr('Заменить фото', 'Rasmni almashtirish')}</Button>
       ) : (
         <div className="sm-crop-drop">
           <PictureOutlined />
           <b>{hint}</b>
-          <span>JPG или PNG · обрежем до 1080 × 450</span>
+          <span>{tr('JPG или PNG · обрежем до 1080 × 450', 'JPG yoki PNG · 1080 × 450 gacha qirqiladi')}</span>
         </div>
       )}
     </Upload>
@@ -139,7 +143,7 @@ export function BannerUpload({ value, onChange, hint = 'Загрузить фо�
       {pick}
       {value && (
         <Button size="small" type="link" danger onClick={() => onChange?.('')}>
-          Убрать
+          {tr('Убрать', 'Olib tashlash')}
         </Button>
       )}
       {file && (

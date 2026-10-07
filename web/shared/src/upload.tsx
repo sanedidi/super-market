@@ -5,6 +5,7 @@ import { App, Image, Upload } from 'antd'
 import type { UploadFile, UploadProps } from 'antd'
 import { LoadingOutlined, PlusOutlined } from '@ant-design/icons'
 import { api, ApiError } from './api'
+import { tr } from './i18n'
 
 const ACCEPT = 'image/jpeg,image/png,image/webp,image/gif'
 const MAX_MB = 8
@@ -48,7 +49,7 @@ export function ImageUpload(props: Props) {
       emit(current.current)
       onSuccess?.(url)
     } catch (e) {
-      message.error(e instanceof ApiError ? e.message : 'Не удалось загрузить фото')
+      message.error(e instanceof ApiError ? e.message : tr('Не удалось загрузить фото', 'Rasmni yuklab boʻlmadi'))
       onError?.(e as Error)
     } finally {
       setBusy((n) => n - 1)
@@ -66,11 +67,11 @@ export function ImageUpload(props: Props) {
         customRequest={customRequest}
         beforeUpload={(f) => {
           if (!ACCEPT.split(',').includes(f.type)) {
-            message.error('Нужна картинка JPG, PNG, WEBP или GIF')
+            message.error(tr('Нужна картинка JPG, PNG, WEBP или GIF', 'JPG, PNG, WEBP yoki GIF rasm kerak'))
             return Upload.LIST_IGNORE
           }
           if (f.size > MAX_MB * 1024 * 1024) {
-            message.error(`Фото больше ${MAX_MB} МБ`)
+            message.error(tr(`Фото больше ${MAX_MB} МБ`, `Rasm ${MAX_MB} MB dan katta`))
             return Upload.LIST_IGNORE
           }
           return true
@@ -85,7 +86,7 @@ export function ImageUpload(props: Props) {
         {files.length >= max ? null : (
           <div className="sm-upload-btn">
             {busy > 0 ? <LoadingOutlined /> : <PlusOutlined />}
-            <div>{props.hint ?? 'Фото'}</div>
+            <div>{props.hint ?? tr('Фото', 'Rasm')}</div>
           </div>
         )}
       </Upload>

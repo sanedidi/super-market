@@ -1,5 +1,5 @@
 // Первая настройка магазина: состояние и шаги (GET/POST/PUT /store/setup).
-import { api } from '@sm/shared'
+import { api, tr } from '@sm/shared'
 
 export type WorkingHours = { weekday: number; opens: string; closes: string }
 
@@ -70,11 +70,11 @@ export function firstStep(s: SetupState): 1 | 2 | 3 {
   return 3
 }
 
-const DAY_SHORT = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб']
+const DAY_SHORT = tr('Вс Пн Вт Ср Чт Пт Сб', 'Ya Du Se Ch Pa Ju Sh').split(' ')
 
 /** «Пн–Пт 08:00–22:00 · Сб 09:00–20:00 · Вс выходной»; пусто — круглосуточно. */
 export function hoursText(hours: WorkingHours[]): string {
-  if (hours.length === 0) return 'Круглосуточно'
+  if (hours.length === 0) return tr('Круглосуточно', 'Kecha-kunduz')
   const order = [1, 2, 3, 4, 5, 6, 0]
   const by = new Map(hours.map((h) => [h.weekday, `${h.opens}–${h.closes}`]))
   const parts: string[] = []
@@ -84,10 +84,11 @@ export function hoursText(hours: WorkingHours[]): string {
     let j = i
     while (j + 1 < order.length && (by.get(order[j + 1]) ?? null) === v) j++
     const days = i === j ? DAY_SHORT[order[i]] : `${DAY_SHORT[order[i]]}–${DAY_SHORT[order[j]]}`
-    parts.push(`${days} ${v ?? 'выходной'}`)
+    parts.push(`${days} ${v ?? tr('выходной', 'dam olish')}`)
     i = j + 1
   }
-  return parts.length === 1 && parts[0].startsWith('Пн–Вс') ? 'Каждый день ' + parts[0].slice(6) : parts.join(' · ')
+  const week = `${DAY_SHORT[1]}–${DAY_SHORT[0]} `
+  return parts.length === 1 && parts[0].startsWith(week) ? tr('Каждый день ', 'Har kuni ') + parts[0].slice(week.length) : parts.join(' · ')
 }
 
 /** «1 покупатель», «3 покупателя», «12 покупателей». */
@@ -95,5 +96,5 @@ export function buyers(n: number): string {
   const m10 = n % 10
   const m100 = n % 100
   const w = m10 === 1 && m100 !== 11 ? 'покупатель' : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? 'покупателя' : 'покупателей'
-  return `${n} ${w}`
+  return tr(`${n} ${w}`, `${n} ta xaridor`)
 }

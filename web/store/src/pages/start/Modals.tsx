@@ -3,14 +3,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Alert, App, Button, Col, Flex, Form, Input, InputNumber, Modal, Row, Segmented, Select, Space, Table, Tag, Typography } from 'antd'
 import { CheckCircleFilled, ExclamationCircleFilled, PlusOutlined, QuestionCircleFilled } from '@ant-design/icons'
-import { ImageUpload, RemoteSelect, api, errorText, money, plural, useList } from '@sm/shared'
+import { FormTranslate, ImageUpload, RemoteSelect, api, errorText, getLang, money, plural, tr, useList } from '@sm/shared'
 import { useStore } from '../../ctx'
 import { Num, ProductSelect } from '../../ui'
 import type { DictItem, Product } from '../../types'
 import { useStartApi, type Candidate, type Photo, type PhotoItem } from './api'
 import { Thumb } from './CatalogTree'
 
-const goods = (n: number) => `${n} ${plural(n, 'товар', 'товара', 'товаров')}`
+const goods = (n: number) => tr(`${n} ${plural(n, 'товар', 'товара', 'товаров')}`, `${n} ta mahsulot`)
 
 // ------------------------------------------------------------ новый товар
 
@@ -64,7 +64,8 @@ export function NewProductModal({
   }, [open, form])
   // Единица по умолчанию — штука.
   useEffect(() => {
-    const pcs = units.data?.find((u) => u.short_name === 'шт')
+    // short_name приходит на языке запроса: «шт» или «dona».
+    const pcs = units.data?.find((u) => u.short_name === 'шт' || u.short_name === 'dona')
     if (open && pcs && !form.getFieldValue('unit_id')) form.setFieldValue('unit_id', pcs.id)
   }, [open, units.data, form])
 
@@ -72,7 +73,9 @@ export function NewProductModal({
     setSaving(true)
     try {
       const p = await api.post<Product>('/store/products', {
-        name: v.name,
+        // Название по-русски и по-узбекски; если заполнено только узбекское — оно же и основное.
+        name: String(v.name ?? '').trim() || v.name_uz,
+        name_uz: String(v.name_uz ?? '').trim() || undefined,
         category_id: v.category_id,
         unit_id: v.unit_id,
         brand_id: v.brand_id || undefined,
@@ -83,7 +86,7 @@ export function NewProductModal({
       })
       if (withLine) {
         await setLines([{ product_id: p.id, qty: v.qty as string, cost: (v.cost as string) || undefined, source: 'new' }])
-        message.success('Товар создан и добавлен в список')
+        message.success(tr('Товар создан и добавлен в список', 'Mahsulot yaratildi va roʻyxatga qoʻshildi'))
       }
       onCreated?.(p)
       onClose()
@@ -97,8 +100,8 @@ export function NewProductModal({
   return (
     <Modal
       open={open}
-      title="Новый товар"
-      okText={withLine ? 'Создать и добавить' : 'Создать'}
+      title={tr('Новый товар', 'Yangi mahsulot')}
+      okText={withLine ? tr('Создать и добавить', 'Yaratish va qoʻshish') : tr('Создать', 'Yaratish')}
       onOk={() => form.submit()}
       confirmLoading={saving}
       onCancel={onClose}
@@ -109,56 +112,81 @@ export function NewProductModal({
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="Товара нет в каталоге? Создайте его: он сразу встанет в ваш список, а после проверки попадёт в общий каталог и станет виден покупателям."
+        message={tr('Товара нет в каталоге? Создайте его: он сразу встанет в ваш список, а после проверки попадёт в общий каталог и станет виден покупателям.', 'Mahsulot katalogda yoʻqmi? Uni yarating: u darhol roʻyxatingizga tushadi, tekshiruvdan soʻng esa umumiy katalogga qoʻshilib, xaridorlarga koʻrinadi.')}
       />
       <Form form={form} layout="vertical" onFinish={submit}>
         <Row gutter={16}>
-          <Col span={24}>
-            <Form.Item name="name" label="Название" rules={[{ required: true, whitespace: true, message: 'Обязательное поле' }]}>
-              <Input placeholder="Вид товара, бренд, вкус, объём — например «Квас Navruz 1,5 л»" />
-            </Form.Item>
-          </Col>
+          {(getLang() === 'uz' ? (['name_uz', 'name'] as const) : (['name', 'name_uz'] as const)).map((f, i) => (
+            <Col span={24} key={f}>
+              <Form.Item
+                name={f}
+                label={f === 'name' ? tr('Название', 'Nomi (rus tilida)') : tr('Название на узбекском', 'Nomi')}
+                dependencies={[f === 'name' ? 'name_uz' : 'name']}
+                rules={
+                  i === 0
+                    ? [
+                        {
+                          validator: (_, v) =>
+                            String(v ?? '').trim() || String(form.getFieldValue(f === 'name' ? 'name_uz' : 'name') ?? '').trim()
+                              ? Promise.resolve()
+                              : Promise.reject(new Error(tr('Обязательное поле', 'Majburiy maydon'))),
+                        },
+                      ]
+                    : undefined
+                }
+              >
+                <Input
+                  placeholder={
+                    i === 0
+                      ? tr('Вид товара, бренд, вкус, объём — например «Квас Navruz 1,5 л»', 'Mahsulot turi, brend, taʼm, hajm — masalan, «Navruz kvasi 1,5 l»')
+                      : undefined
+                  }
+                  suffix={<FormTranslate form={form} from={f === 'name' ? 'name_uz' : 'name'} into={f} to={f === 'name' ? 'ru' : 'uz'} />}
+                />
+              </Form.Item>
+            </Col>
+          ))}
           <Col xs={24} md={12}>
-            <Form.Item name="category_id" label="Категория" rules={[{ required: true, message: 'Выберите категорию' }]}>
+            <Form.Item name="category_id" label={tr('Категория', 'Kategoriya')} rules={[{ required: true, message: tr('Выберите категорию', 'Kategoriyani tanlang') }]}>
               <RemoteSelect<DictItem> path="/store/catalog/categories" />
             </Form.Item>
           </Col>
           <Col xs={24} md={12}>
-            <Form.Item name="brand_id" label="Бренд">
+            <Form.Item name="brand_id" label={tr('Бренд', 'Brend')}>
               <RemoteSelect<DictItem> path="/store/catalog/brands" allowClear />
             </Form.Item>
           </Col>
           <Col xs={24} md={8}>
-            <Form.Item name="unit_id" label="Единица" rules={[{ required: true, message: 'Выберите единицу' }]}>
+            <Form.Item name="unit_id" label={tr('Единица', 'Oʻlchov birligi')} rules={[{ required: true, message: tr('Выберите единицу', 'Oʻlchov birligini tanlang') }]}>
               <RemoteSelect<DictItem & { short_name: string }> path="/store/catalog/units" label={(u) => `${u.name} (${u.short_name})`} />
             </Form.Item>
           </Col>
           {withLine && (
             <>
               <Col xs={12} md={8}>
-                <Form.Item name="qty" label="Количество" rules={[{ required: true, message: 'Укажите количество' }]}>
+                <Form.Item name="qty" label={tr('Количество', 'Miqdor')} rules={[{ required: true, message: tr('Укажите количество', 'Miqdorni kiriting') }]}>
                   <Num min="0.001" />
                 </Form.Item>
               </Col>
               <Col xs={12} md={8}>
-                <Form.Item name="cost" label="Закупочная цена">
-                  <Num placeholder="сум за единицу" />
+                <Form.Item name="cost" label={tr('Закупочная цена', 'Xarid narxi')}>
+                  <Num placeholder={tr('сум за единицу', 'birlik uchun soʻm')} />
                 </Form.Item>
               </Col>
             </>
           )}
           <Col xs={24} md={withLine ? 8 : 16}>
-            <Form.Item name="base_price" label="Цена продажи" rules={[{ required: true, message: 'Укажите цену' }]}>
-              <Num min="1" placeholder="сум" />
+            <Form.Item name="base_price" label={tr('Цена продажи', 'Sotuv narxi')} rules={[{ required: true, message: tr('Укажите цену', 'Narxni kiriting') }]}>
+              <Num min="1" placeholder={tr('сум', 'soʻm')} />
             </Form.Item>
           </Col>
           <Col xs={24} md={withLine ? 16 : 24}>
-            <Form.Item name="barcodes" label="Штрихкод" extra="Отсканируйте или введите и нажмите Enter">
+            <Form.Item name="barcodes" label={tr('Штрихкод', 'Shtrix-kod')} extra={tr('Отсканируйте или введите и нажмите Enter', 'Skanerlang yoki kiriting va Enter tugmasini bosing')}>
               <Select mode="tags" tokenSeparators={[',', ' ']} open={false} />
             </Form.Item>
           </Col>
           <Col span={24}>
-            <Form.Item name="images" label="Фото" extra="Первое — главное. JPG, PNG, WEBP до 8 МБ">
+            <Form.Item name="images" label={tr('Фото', 'Rasm')} extra={tr('Первое — главное. JPG, PNG, WEBP до 8 МБ', 'Birinchisi — asosiy. JPG, PNG, WEBP 8 MB gacha')}>
               <ImageUpload multiple max={5} />
             </Form.Item>
           </Col>
@@ -192,7 +220,7 @@ export function BarcodeModal({ code, onClose }: { code: string | null; onClose: 
     setSaving(true)
     try {
       await setLines([{ product_id: product.id, add: true, barcode: code, source: 'barcode' }])
-      message.success(`Штрихкод привязан · ${product.name} +1`)
+      message.success(tr(`Штрихкод привязан · ${product.name} +1`, `Shtrix-kod bogʻlandi · ${product.name} +1`))
       onClose()
     } catch {
       // ошибка уже показана
@@ -205,21 +233,21 @@ export function BarcodeModal({ code, onClose }: { code: string | null; onClose: 
     <>
       <Modal
         open={!!code && !creating}
-        title={`Штрихкод ${code ?? ''} не найден`}
+        title={tr(`Штрихкод ${code ?? ''} не найден`, `${code ?? ''} shtrix-kodi topilmadi`)}
         onCancel={onClose}
         footer={
           mode === 'bind' ? (
             <Space>
-              <Button onClick={onClose}>Отмена</Button>
+              <Button onClick={onClose}>{tr('Отмена', 'Bekor qilish')}</Button>
               <Button type="primary" disabled={!product || !manage} loading={saving} onClick={bind}>
-                Привязать и добавить
+                {tr('Привязать и добавить', 'Bogʻlash va qoʻshish')}
               </Button>
             </Space>
           ) : (
             <Space>
-              <Button onClick={onClose}>Отмена</Button>
+              <Button onClick={onClose}>{tr('Отмена', 'Bekor qilish')}</Button>
               <Button type="primary" icon={<PlusOutlined />} disabled={!manage} onClick={() => setCreating(true)}>
-                Создать товар
+                {tr('Создать товар', 'Mahsulot yaratish')}
               </Button>
             </Space>
           )
@@ -227,23 +255,25 @@ export function BarcodeModal({ code, onClose }: { code: string | null; onClose: 
         destroyOnHidden
       >
         <Typography.Paragraph type="secondary">
-          Такого штрихкода нет в каталоге. Если товар в каталоге есть, но без этого штрихкода — привяжите его, и в следующий раз товар найдётся сканером.
+          {tr('Такого штрихкода нет в каталоге. Если товар в каталоге есть, но без этого штрихкода — привяжите его, и в следующий раз товар найдётся сканером.', 'Bunday shtrix-kod katalogda yoʻq. Agar mahsulot katalogda boʻlsa-yu, bu shtrix-kodsiz boʻlsa — uni bogʻlang, keyingi safar mahsulot skaner orqali topiladi.')}
         </Typography.Paragraph>
-        {!manage && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="Привязывать штрихкоды и создавать товары может сотрудник с правом на каталог." />}
+        {!manage && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={tr('Привязывать штрихкоды и создавать товары может сотрудник с правом на каталог.', 'Shtrix-kodlarni bogʻlash va mahsulot yaratishni katalog huquqiga ega xodim bajarishi mumkin.')} />}
         <Segmented
           block
           value={mode}
           onChange={(v) => setMode(v as 'bind' | 'new')}
           options={[
-            { value: 'bind', label: 'Привязать к товару' },
-            { value: 'new', label: 'Создать новый товар' },
+            { value: 'bind', label: tr('Привязать к товару', 'Mahsulotga bogʻlash') },
+            { value: 'new', label: tr('Создать новый товар', 'Yangi mahsulot yaratish') },
           ]}
           style={{ marginBottom: 16 }}
         />
         {mode === 'bind' ? (
           <ProductSelect value={product?.id} label={product?.name} onChange={(id, p) => setProduct({ id, name: p?.name ?? '' })} autoFocus />
         ) : (
-          <Typography.Text>Создайте свой товар со штрихкодом {code}. Он сразу встанет в список.</Typography.Text>
+          <Typography.Text>
+            {tr(`Создайте свой товар со штрихкодом ${code}. Он сразу встанет в список.`, `${code} shtrix-kodli oʻz mahsulotingizni yarating. U darhol roʻyxatga tushadi.`)}
+          </Typography.Text>
         )}
       </Modal>
       <NewProductModal
@@ -360,7 +390,7 @@ export function PhotoModal({ open, onClose }: { open: boolean; onClose: () => vo
     setAdding(true)
     try {
       await setLines(chosen.map((c) => ({ ...c, add: true, source: 'photo' as const })))
-      message.success(`В список добавлено: ${goods(chosen.length)}`)
+      message.success(tr(`В список добавлено: ${goods(chosen.length)}`, `Roʻyxatga qoʻshildi: ${goods(chosen.length)}`))
       onClose()
     } catch {
       // ошибка уже показана
@@ -392,8 +422,8 @@ export function PhotoModal({ open, onClose }: { open: boolean; onClose: () => vo
         ),
         search: c.name,
       })),
-      ...(can('catalog.manage') ? [{ value: NEW, label: <Typography.Text type="danger"><PlusOutlined /> Нет в каталоге — создать товар</Typography.Text>, search: '' }] : []),
-      { value: SKIP, label: <Typography.Text type="secondary">Не добавлять</Typography.Text>, search: '' },
+      ...(can('catalog.manage') ? [{ value: NEW, label: <Typography.Text type="danger"><PlusOutlined /> {tr('Нет в каталоге — создать товар', 'Katalogda yoʻq — mahsulot yaratish')}</Typography.Text>, search: '' }] : []),
+      { value: SKIP, label: <Typography.Text type="secondary">{tr('Не добавлять', 'Qoʻshmaslik')}</Typography.Text>, search: '' },
     ]
   }
 
@@ -405,9 +435,9 @@ export function PhotoModal({ open, onClose }: { open: boolean; onClose: () => vo
         width={880}
         title={
           <div>
-            Фото полок — Super Market найдёт товары
+            {tr('Фото полок — Super Market найдёт товары', 'Javon rasmlari — Super Market mahsulotlarni topadi')}
             <Typography.Paragraph type="secondary" style={{ fontSize: 13, fontWeight: 400, margin: '4px 0 0' }}>
-              Загрузите фото полок или отдельных товаров. Super Market сопоставит их с общим каталогом и посчитает штуки.
+              {tr('Загрузите фото полок или отдельных товаров. Super Market сопоставит их с общим каталогом и посчитает штуки.', 'Javonlar yoki alohida mahsulotlar rasmlarini yuklang. Super Market ularni umumiy katalog bilan solishtirib, donalarini sanaydi.')}
             </Typography.Paragraph>
           </div>
         }
@@ -417,58 +447,58 @@ export function PhotoModal({ open, onClose }: { open: boolean; onClose: () => vo
           <Space>
             {ph && (
               <Button onClick={reset} disabled={adding}>
-                Новые фото
+                {tr('Новые фото', 'Yangi rasmlar')}
               </Button>
             )}
-            <Button onClick={onClose}>Отмена</Button>
+            <Button onClick={onClose}>{tr('Отмена', 'Bekor qilish')}</Button>
             {ready ? (
               <Button type="primary" disabled={chosen.length === 0} loading={adding} onClick={add}>
-                Добавить {goods(chosen.length)} в список
+                {tr(`Добавить ${goods(chosen.length)} в список`, `${goods(chosen.length)}ni roʻyxatga qoʻshish`)}
               </Button>
             ) : (
               <Button type="primary" disabled={images.length === 0 || !!photoId} loading={starting || ph?.status === 'processing'} onClick={start}>
-                Найти товары
+                {tr('Найти товары', 'Mahsulotlarni topish')}
               </Button>
             )}
           </Space>
         }
       >
-        <ImageUpload multiple max={6} value={images} onChange={setImages} disabled={!!photoId} hint="Фото полки" />
+        <ImageUpload multiple max={6} value={images} onChange={setImages} disabled={!!photoId} hint={tr('Фото полки', 'Javon rasmi')} />
         {!photoId && (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            До 6 фото одной полки или разных полок. Снимайте ближе и при хорошем свете — так Super Market точнее посчитает штуки.
+            {tr('До 6 фото одной полки или разных полок. Снимайте ближе и при хорошем свете — так Super Market точнее посчитает штуки.', 'Bitta yoki turli javonlarning 6 tagacha rasmi. Yaqinroqdan va yaxshi yorugʻlikda suratga oling — shunda Super Market donalarni aniqroq sanaydi.')}
           </Typography.Text>
         )}
         {ph?.status === 'processing' && (
-          <Alert style={{ marginTop: 12 }} type="info" showIcon message="Super Market ищет товары на фото…" description="Обычно это занимает 10–30 секунд." />
+          <Alert style={{ marginTop: 12 }} type="info" showIcon message={tr('Super Market ищет товары на фото…', 'Super Market rasmdagi mahsulotlarni qidirmoqda…')} description={tr('Обычно это занимает 10–30 секунд.', 'Odatda bu 10–30 soniya davom etadi.')} />
         )}
         {ph?.status === 'failed' && (
           <Alert
             style={{ marginTop: 12 }}
             type="error"
             showIcon
-            message="Не удалось найти товары"
+            message={tr('Не удалось найти товары', 'Mahsulotlarni topib boʻlmadi')}
             description={ph.error}
-            action={<Button size="small" onClick={retry}>Повторить</Button>}
+            action={<Button size="small" onClick={retry}>{tr('Повторить', 'Qayta urinish')}</Button>}
           />
         )}
         {ready && ph && counts && (
           <>
             <Space size={8} wrap style={{ margin: '12px 0' }}>
               <Tag bordered={false}>
-                Распознано {ph.images.length} {plural(ph.images.length, 'фото', 'фото', 'фото')}
+                {tr(`Распознано ${ph.images.length} фото`, `${ph.images.length} ta rasm aniqlandi`)}
               </Tag>
               <Tag bordered={false} color="green">
-                {counts.found} найдено
+                {tr(`${counts.found} найдено`, `${counts.found} ta topildi`)}
               </Tag>
               {counts.choose > 0 && (
                 <Tag bordered={false} color="orange">
-                  {counts.choose} выбрать
+                  {tr(`${counts.choose} выбрать`, `${counts.choose} ta tanlash kerak`)}
                 </Tag>
               )}
               {counts.missing > 0 && (
                 <Tag bordered={false} color="red">
-                  {counts.missing} нет в каталоге
+                  {tr(`${counts.missing} нет в каталоге`, `${counts.missing} ta katalogda yoʻq`)}
                 </Tag>
               )}
             </Space>
@@ -480,7 +510,7 @@ export function PhotoModal({ open, onClose }: { open: boolean; onClose: () => vo
               scroll={{ y: 380 }}
               columns={[
                 {
-                  title: 'На фото',
+                  title: tr('На фото', 'Rasmda'),
                   key: 'name',
                   width: '34%',
                   render: (_, it) => (
@@ -491,7 +521,7 @@ export function PhotoModal({ open, onClose }: { open: boolean; onClose: () => vo
                         {it.in_draft && (
                           <div>
                             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              уже в списке — штуки прибавятся
+                              {tr('уже в списке — штуки прибавятся', 'roʻyxatda bor — donalar qoʻshiladi')}
                             </Typography.Text>
                           </div>
                         )}
@@ -500,7 +530,7 @@ export function PhotoModal({ open, onClose }: { open: boolean; onClose: () => vo
                   ),
                 },
                 {
-                  title: 'Товар в каталоге',
+                  title: tr('Товар в каталоге', 'Katalogdagi mahsulot'),
                   key: 'product',
                   render: (_, it) => {
                     const v = choice[it.n]
@@ -512,8 +542,11 @@ export function PhotoModal({ open, onClose }: { open: boolean; onClose: () => vo
                         style={{ width: '100%' }}
                         placeholder={
                           it.state === 'missing'
-                            ? 'Нет в каталоге — выберите действие'
-                            : `Выберите: ${it.candidates.length} ${plural(it.candidates.length, 'вариант', 'варианта', 'вариантов')}`
+                            ? tr('Нет в каталоге — выберите действие', 'Katalogda yoʻq — amalni tanlang')
+                            : tr(
+                                `Выберите: ${it.candidates.length} ${plural(it.candidates.length, 'вариант', 'варианта', 'вариантов')}`,
+                                `Tanlang: ${it.candidates.length} ta variant`,
+                              )
                         }
                         options={options(it)}
                         optionFilterProp="search"
@@ -527,7 +560,7 @@ export function PhotoModal({ open, onClose }: { open: boolean; onClose: () => vo
                   },
                 },
                 {
-                  title: 'Шт',
+                  title: tr('Шт', 'Dona'),
                   key: 'qty',
                   width: 100,
                   render: (_, it) => (
@@ -558,7 +591,7 @@ export function PhotoModal({ open, onClose }: { open: boolean; onClose: () => vo
             [n]: { product_id: p.id, name: p.name, image: p.images?.[0] ?? null, unit_short: p.unit_short, current_price: p.base_price, barcode: p.barcodes?.[0] ?? null, score: 0 },
           }))
           setChoice((c) => ({ ...c, [n]: p.id }))
-          message.success('Товар создан — он на проверке, но в список его добавить можно')
+          message.success(tr('Товар создан — он на проверке, но в список его добавить можно', 'Mahsulot yaratildi — u tekshiruvda, lekin uni roʻyxatga qoʻshish mumkin'))
         }}
       />
     </>
@@ -566,4 +599,4 @@ export function PhotoModal({ open, onClose }: { open: boolean; onClose: () => vo
 }
 
 /** Сумма для подписей: «18 450 000 сум». */
-export const sum = (v: string | null | undefined) => `${money(v)} сум`
+export const sum = (v: string | null | undefined) => `${money(v)} ${tr('сум', 'soʻm')}`

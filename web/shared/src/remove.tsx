@@ -4,6 +4,7 @@ import { App, Button, Popconfirm } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError, api } from "./api";
 import { errorText } from "./hooks";
+import { tr } from "./i18n";
 
 export interface RemoveOptions {
   /** DELETE-путь записи. */
@@ -22,26 +23,26 @@ export function useRemove() {
   return async (o: RemoveOptions) => {
     try {
       await api.del(o.path);
-      message.success("Удалено");
+      message.success(tr("Удалено", "Oʻchirildi"));
       await qc.invalidateQueries();
       o.onDone?.();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         const canOff = !!o.deactivate && e.details?.deactivate === true;
         const props = {
-          title: `«${o.name}» нельзя удалить`,
+          title: tr(`«${o.name}» нельзя удалить`, `«${o.name}»ni oʻchirib boʻlmaydi`),
           content: e.message,
           width: 480,
         };
         if (canOff) {
           modal.confirm({
             ...props,
-            okText: "Отключить",
-            cancelText: "Закрыть",
+            okText: tr("Отключить", "Oʻchirib qoʻyish"),
+            cancelText: tr("Закрыть", "Yopish"),
             onOk: async () => {
               try {
                 await o.deactivate!();
-                message.success("Отключено");
+                message.success(tr("Отключено", "Oʻchirib qoʻyildi"));
                 await qc.invalidateQueries();
               } catch (err) {
                 message.error(errorText(err));
@@ -49,7 +50,7 @@ export function useRemove() {
             },
           });
         } else {
-          modal.info({ ...props, okText: "Понятно" });
+          modal.info({ ...props, okText: tr("Понятно", "Tushunarli") });
         }
         return;
       }
@@ -71,16 +72,16 @@ export function DeleteButton(
   return (
     <span onClick={(e) => e.stopPropagation()}>
       <Popconfirm
-        title={props.title ?? `Удалить «${props.name}»?`}
-        description="Запись исчезнет из списков. Это нельзя отменить."
-        okText="Удалить"
-        cancelText="Отмена"
+        title={props.title ?? tr(`Удалить «${props.name}»?`, `«${props.name}» oʻchirilsinmi?`)}
+        description={tr("Запись исчезнет из списков. Это нельзя отменить.", "Yozuv roʻyxatlardan yoʻqoladi. Buni bekor qilib boʻlmaydi.")}
+        okText={tr("Удалить", "Oʻchirish")}
+        cancelText={tr("Отмена", "Bekor qilish")}
         okButtonProps={{ danger: true }}
         onConfirm={() => remove(props)}
         disabled={props.disabled}
       >
         <Button size={props.size ?? "small"} danger disabled={props.disabled}>
-          Удалить
+          {tr("Удалить", "Oʻchirish")}
         </Button>
       </Popconfirm>
     </span>
