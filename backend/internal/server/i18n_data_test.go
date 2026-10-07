@@ -336,6 +336,15 @@ func TestI18nData(t *testing.T) {
 	t.Cleanup(aisrv.Close)
 	a.expect(a.do("PUT", "/admin/ai", adminTok, map[string]any{"provider": "openai", "base_url": aisrv.URL + "/v1", "api_key": fai.key, "model": "gpt-4o"}), 200, "ai settings")
 
+	// Кнопка «Перевести автоматически»: POST /translate.
+	if r := a.expect(a.do("POST", "/translate", adminTok, map[string]any{"texts": []string{"Батон", ""}, "to": "uz"}), 200, "translate button"); fmt.Sprint(r.Body["texts"]) != "[Baton ]" {
+		t.Fatalf("translate button = %v", r.Body)
+	}
+	var trUsage int
+	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM ai_usage WHERE kind = 'translate'`).Scan(&trUsage); err != nil || trUsage != 1 {
+		t.Fatalf("translate usage %d %v", trUsage, err)
+	}
+
 	tr := a.expect(a.do("POST", "/admin/i18n/translate-missing", adminTok, map[string]any{"entity": "categories"}), 200, "translate categories")
 	if tr.Body["translated"] != float64(1) || tr.Body["remaining"] != float64(0) {
 		t.Fatalf("translate categories = %v", tr.Body)
@@ -369,7 +378,7 @@ func TestI18nData(t *testing.T) {
 		}
 	}
 	var n int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM ai_usage WHERE kind = 'translate' AND ok`).Scan(&n); err != nil || n != 3 {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM ai_usage WHERE kind = 'translate' AND ok`).Scan(&n); err != nil || n != 4 { // 3 пачки + кнопка «Перевести»
 		t.Fatalf("ai_usage translate rows = %d %v", n, err)
 	}
 
