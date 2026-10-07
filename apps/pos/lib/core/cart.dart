@@ -1,3 +1,5 @@
+import 'package:sm_core/sm_core.dart' show tr;
+
 import 'catalog.dart';
 import 'money.dart';
 
@@ -93,11 +95,11 @@ class Cart {
   /// Добавить товар. Тот же товар — прибавляется к своей строке (сервер не
   /// принимает повтор товара в чеке). [mark] — код маркировки одной штуки.
   CartLine add(Product p, {int qty = 1000, String? mark}) {
-    if (qty <= 0) throw CartError('Количество должно быть больше нуля');
-    if (!p.fractional && qty % 1000 != 0) throw CartError('«${p.name}» продаётся только целым количеством');
+    if (qty <= 0) throw CartError(tr('Количество должно быть больше нуля', 'Miqdor noldan katta boʻlishi kerak'));
+    if (!p.fractional && qty % 1000 != 0) throw CartError(tr('«${p.name}» продаётся только целым количеством', '«${p.name}» faqat butun miqdorda sotiladi'));
     if (mark != null) {
       for (final l in lines) {
-        if (l.marks.contains(mark)) throw CartError('Этот код маркировки уже в чеке');
+        if (l.marks.contains(mark)) throw CartError(tr('Этот код маркировки уже в чеке', 'Bu markirovka kodi chekda allaqachon bor'));
       }
     }
     var line = lineOf(p.id);
@@ -118,10 +120,10 @@ class Cart {
       return;
     }
     if (!line.product.fractional && qty % 1000 != 0) {
-      throw CartError('«${line.product.name}» продаётся только целым количеством');
+      throw CartError(tr('«${line.product.name}» продаётся только целым количеством', '«${line.product.name}» faqat butun miqdorda sotiladi'));
     }
     if (line.product.marked && qty != line.marks.length * 1000) {
-      throw CartError('Маркированный товар: сканируйте DataMatrix каждой штуки');
+      throw CartError(tr('Маркированный товар: сканируйте DataMatrix каждой штуки', 'Markirovkali mahsulot: har bir donaning DataMatrix kodini skanerlang'));
     }
     line.qty = qty;
     selected = line;

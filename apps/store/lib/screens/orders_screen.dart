@@ -23,12 +23,12 @@ class _Seg {
   final List<String> statuses;
 }
 
-const _segs = [
-  _Seg('Новые', ['paid']),
-  _Seg('В работе', ['accepted', 'picking']),
-  _Seg('Собраны', ['picked']),
-  _Seg('В пути', ['delivering']),
-];
+List<_Seg> get _segs => [
+      _Seg(tr('Новые', 'Yangi'), const ['paid']),
+      _Seg(tr('В работе', 'Jarayonda'), const ['accepted', 'picking']),
+      _Seg(tr('Собраны', 'Yigʻilgan'), const ['picked']),
+      _Seg(tr('В пути', 'Yoʻlda'), const ['delivering']),
+    ];
 
 class _OrdersScreenState extends State<OrdersScreen> {
   int _seg = 0;
@@ -90,8 +90,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _load());
     }
     if (!st.can('orders.manage')) {
-      return const SafeArea(
-        child: EmptyState(icon: Icons.lock_outline_rounded, title: 'Нет доступа к заказам', text: 'Нужно право «Онлайн-заказы».'),
+      return SafeArea(
+        child: EmptyState(icon: Icons.lock_outline_rounded, title: tr('Нет доступа к заказам', 'Buyurtmalarga kirish huquqi yoʻq'), text: tr('Нужно право «Онлайн-заказы».', '«Onlayn buyurtmalar» huquqi kerak.')),
       );
     }
     final seg = _segs[_seg];
@@ -100,7 +100,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       child: RefreshIndicator(
         onRefresh: _load,
         child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
-          const Text('Заказы', style: AppText.h1),
+          Text(tr('Заказы', 'Buyurtmalar'), style: AppText.h1),
           const SizedBox(height: 16),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -121,11 +121,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
           ),
           const SizedBox(height: 16),
           if (_error != null && _by.isEmpty)
-            EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить заказы', text: '$_error', action: 'Повторить', onAction: _load)
+            EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить заказы', 'Buyurtmalarni yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load)
           else if (_by.isEmpty)
             const Padding(padding: EdgeInsets.only(top: 40), child: Center(child: CircularProgressIndicator()))
           else if (items.isEmpty)
-            const EmptyState(icon: Icons.receipt_long_rounded, title: 'Заказов нет', text: 'Новый заказ придёт уведомлением.')
+            EmptyState(icon: Icons.receipt_long_rounded, title: tr('Заказов нет', 'Buyurtmalar yoʻq'), text: tr('Новый заказ придёт уведомлением.', 'Yangi buyurtma haqida bildirishnoma keladi.'))
           else
             for (final o in items) ...[_OrderTile(o: o, onTap: () => _open(o)), const SizedBox(height: 10)],
         ]),
@@ -156,8 +156,8 @@ class _OrderTile extends StatelessWidget {
         const SizedBox(height: 8),
         Wrap(spacing: 6, runSpacing: 6, children: [
           StatusChip('${o['status_title'] ?? s}', tone: orderTone(s)),
-          if (cash) const StatusChip('Наличными', icon: Icons.payments_outlined, tone: ChipTone.amber),
-          if (o['crowd_courier_id'] != null) const StatusChip('Курьер по пути', icon: Icons.directions_walk_rounded, tone: ChipTone.blue),
+          if (cash) StatusChip(tr('Наличными', 'Naqd pul'), icon: Icons.payments_outlined, tone: ChipTone.amber),
+          if (o['crowd_courier_id'] != null) StatusChip(tr('Курьер по пути', 'Yoʻlakay kuryer'), icon: Icons.directions_walk_rounded, tone: ChipTone.blue),
           StatusChip(dateTime(o['created_at']).split(' ').last, icon: Icons.schedule_rounded),
         ]),
       ]),

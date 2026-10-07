@@ -117,7 +117,7 @@ class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserv
             child: Row(children: [
               RoundIconButton(icon: Icons.close_rounded, onTap: paid ? _home : () => Navigator.of(context).pop()),
               const SizedBox(width: 12),
-              if (!paid) const Text('Оплата заказа', style: AppText.title),
+              if (!paid) Text(tr('Оплата заказа', 'Buyurtma toʻlovi'), style: AppText.title),
             ]),
           ),
           Expanded(
@@ -130,17 +130,17 @@ class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserv
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: Column(children: [
               if (paid) ...[
-                AppButton(label: 'Следить за заказом', onPressed: _toOrder),
-                TextButton(onPressed: _home, child: const Text('Вернуться на главную')),
+                AppButton(label: tr('Следить за заказом', 'Buyurtmani kuzatish'), onPressed: _toOrder),
+                TextButton(onPressed: _home, child: Text(tr('Вернуться на главную', 'Bosh sahifaga qaytish'))),
               ] else if (_status == 'awaiting_payment') ...[
-                AppButton(label: 'Открыть ${_click ? 'Click' : 'Payme'} ещё раз', onPressed: _pay),
+                AppButton(label: tr('Открыть ${_click ? 'Click' : 'Payme'} ещё раз', '${_click ? 'Click' : 'Payme'} ni qayta ochish'), onPressed: _pay),
                 TextButton(
                   style: TextButton.styleFrom(foregroundColor: AppColors.error),
                   onPressed: _busy ? null : _cancel,
-                  child: const Text('Отменить заказ'),
+                  child: Text(tr('Отменить заказ', 'Buyurtmani bekor qilish')),
                 ),
               ] else
-                AppButton(label: 'Вернуться на главную', onPressed: _home),
+                AppButton(label: tr('Вернуться на главную', 'Bosh sahifaga qaytish'), onPressed: _home),
             ]),
           ),
         ]),
@@ -161,18 +161,20 @@ class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserv
       const SizedBox(height: 20),
       const SizedBox(width: 32, height: 32, child: CircularProgressIndicator(strokeWidth: 3.5)),
       const SizedBox(height: 20),
-      const Text('Ждём подтверждения оплаты', textAlign: TextAlign.center, style: AppText.h2),
+      Text(tr('Ждём подтверждения оплаты', 'Toʻlov tasdigʻini kutyapmiz'), textAlign: TextAlign.center, style: AppText.h2),
       const SizedBox(height: 10),
-      Text('Мы открыли ${_click ? 'Click' : 'Payme'}. Подтвердите платёж и вернитесь в приложение — статус обновится сам.',
+      Text(
+          tr('Мы открыли ${_click ? 'Click' : 'Payme'}. Подтвердите платёж и вернитесь в приложение — статус обновится сам.',
+              '${_click ? 'Click' : 'Payme'} ochildi. Toʻlovni tasdiqlang va ilovaga qayting — holat oʻzi yangilanadi.'),
           textAlign: TextAlign.center, style: AppText.body.copyWith(color: AppColors.text2)),
       const SizedBox(height: 20),
       AppCard(
         color: AppColors.bg,
         child: Column(children: [
-          _row('Заказ', '№ ${_o['number']}'),
-          _row('Магазин', '${_o['store_name']}'),
-          if (windowLabel(_o['delivery_from'], _o['delivery_to']) case final w?) _row('Доставка', w),
-          _row('К оплате', money(_o['total']), bold: true),
+          _row(tr('Заказ', 'Buyurtma'), '№ ${_o['number']}'),
+          _row(tr('Магазин', 'Doʻkon'), '${_o['store_name']}'),
+          if (windowLabel(_o['delivery_from'], _o['delivery_to']) case final w?) _row(tr('Доставка', 'Yetkazish'), w),
+          _row(tr('К оплате', 'Toʻlov uchun'), money(_o['total']), bold: true),
         ]),
       ),
       if (left != null) ...[
@@ -183,7 +185,7 @@ class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserv
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             const Icon(Icons.schedule_rounded, size: 16, color: AppColors.warningInk),
             const SizedBox(width: 6),
-            Text('Заказ отменится, если не оплатить за $left', style: AppText.small.copyWith(color: AppColors.warningInk, fontWeight: FontWeight.w500)),
+            Text(tr('Заказ отменится, если не оплатить за $left', '$left ichida toʻlanmasa, buyurtma bekor qilinadi'), style: AppText.small.copyWith(color: AppColors.warningInk, fontWeight: FontWeight.w500)),
           ]),
         ),
       ],
@@ -195,14 +197,15 @@ class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserv
     final window = windowLabel(_o['delivery_from'], _o['delivery_to']);
     String when;
     if (window != null) {
-      when = 'Привезём $window';
+      when = tr('Привезём $window', '$window yetkazamiz');
     } else if (store?.etaMax != null) {
       final paidAt = DateTime.tryParse('${_o['paid_at']}') ?? DateTime.now();
-      when = 'Привезём к ${hhmm(paidAt.add(Duration(minutes: store!.etaMax!)))}';
+      final at = hhmm(paidAt.add(Duration(minutes: store!.etaMax!)));
+      when = tr('Привезём к $at', 'Soat $at gacha yetkazamiz');
     } else {
-      when = 'Привезём как можно скорее';
+      when = tr('Привезём как можно скорее', 'Imkon qadar tez yetkazamiz');
     }
-    final address = '${_o['address']}${'${_o['apartment'] ?? ''}'.isNotEmpty ? ', кв. ${_o['apartment']}' : ''}';
+    final address = '${_o['address']}${'${_o['apartment'] ?? ''}'.isNotEmpty ? tr(', кв. ${_o['apartment']}', ', ${_o['apartment']}-xonadon') : ''}';
     return Column(children: [
       const SizedBox(height: 40),
       Container(
@@ -218,9 +221,11 @@ class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserv
         ),
       ),
       const SizedBox(height: 28),
-      const Text('Заказ оплачен!', style: AppText.h1),
+      Text(tr('Заказ оплачен!', 'Buyurtma toʻlandi!'), style: AppText.h1),
       const SizedBox(height: 10),
-      Text('Заказ № ${_o['number']} передан в ${_o['store_name']}. Магазин скоро начнёт собирать ваши продукты.',
+      Text(
+          tr('Заказ № ${_o['number']} передан в ${_o['store_name']}. Магазин скоро начнёт собирать ваши продукты.',
+              'Buyurtma № ${_o['number']} ${_o['store_name']} doʻkoniga yuborildi. Doʻkon tez orada mahsulotlaringizni yigʻishni boshlaydi.'),
           textAlign: TextAlign.center, style: AppText.body.copyWith(color: AppColors.text2)),
       const SizedBox(height: 24),
       AppCard(
@@ -245,9 +250,12 @@ class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserv
       const SizedBox(height: 60),
       const IconBox(Icons.close_rounded, size: 96, bg: AppColors.soft, fg: AppColors.text2),
       const SizedBox(height: 24),
-      Text(expired ? 'Время на оплату истекло' : 'Заказ отменён', style: AppText.h2, textAlign: TextAlign.center),
+      Text(expired ? tr('Время на оплату истекло', 'Toʻlov vaqti tugadi') : tr('Заказ отменён', 'Buyurtma bekor qilindi'), style: AppText.h2, textAlign: TextAlign.center),
       const SizedBox(height: 10),
-      Text(expired ? 'Заказ отменён, товары вернулись в магазин. Можно оформить заново.' : 'Если деньги успели списаться, они вернутся на карту.',
+      Text(
+          expired
+              ? tr('Заказ отменён, товары вернулись в магазин. Можно оформить заново.', 'Buyurtma bekor qilindi, mahsulotlar doʻkonga qaytdi. Qaytadan rasmiylashtirish mumkin.')
+              : tr('Если деньги успели списаться, они вернутся на карту.', 'Agar pul yechib olingan boʻlsa, u kartaga qaytariladi.'),
           textAlign: TextAlign.center, style: AppText.body.copyWith(color: AppColors.text2)),
     ]);
   }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart' hide LoginScreen;
 
 import '../main.dart';
 import '../ui/location_disclosure.dart';
@@ -54,9 +55,9 @@ class _CrowdShellState extends State<CrowdShell> {
             child: st.error != null
                 ? EmptyState(
                     icon: Icons.wifi_off_rounded,
-                    title: 'Не удалось загрузить',
+                    title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'),
                     text: st.error.toString(),
-                    action: 'Повторить',
+                    action: tr('Повторить', 'Qayta urinish'),
                     onAction: st.load,
                   )
                 : const CircularProgressIndicator(),
@@ -89,10 +90,10 @@ class _TabBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const items = [
-      (Icons.near_me_rounded, 'Лента'),
-      (Icons.account_balance_wallet_rounded, 'Заработок'),
-      (Icons.person_rounded, 'Профиль'),
+    final items = [
+      (Icons.near_me_rounded, tr('Лента', 'Lenta')),
+      (Icons.account_balance_wallet_rounded, tr('Заработок', 'Daromad')),
+      (Icons.person_rounded, tr('Профиль', 'Profil')),
     ];
     return Container(
       decoration: const BoxDecoration(color: AppColors.white, border: Border(top: BorderSide(color: AppColors.line))),

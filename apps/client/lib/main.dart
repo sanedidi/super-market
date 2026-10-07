@@ -21,6 +21,7 @@ const _onboardingKey = 'sm_client_onboarding_done';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Lang.instance.init();
   await Push.init();
   final api = Api(baseUrl: apiUrl, app: 'client');
   await api.init();
@@ -36,7 +37,7 @@ Future<void> main() async {
   );
 }
 
-Future<void> openUrl(String url) => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+Future<void> openUrl(String url) => launchUrl(Uri.parse(docUrl(url)), mode: LaunchMode.externalApplication);
 
 class ClientApp extends StatelessWidget {
   const ClientApp({super.key, required this.onboardingDone});
@@ -44,22 +45,25 @@ class ClientApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Super Market',
-      navigatorKey: navigatorKey,
-      debugShowCheckedModeBanner: false,
-      theme: buildAppTheme(),
-      locale: const Locale('ru'),
-      supportedLocales: const [Locale('ru'), Locale('uz'), Locale('en')],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      // Тёмные значки статус-бара по умолчанию; красные экраны (главная,
-      // вход, заставка) задают светлые своим AnnotatedRegion.
-      builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(value: SystemUiOverlayStyle.dark, child: child!),
-      home: _Gate(onboardingDone: onboardingDone),
+    return ListenableBuilder(
+      listenable: Lang.instance,
+      builder: (context, _) => MaterialApp(
+        title: 'Super Market',
+        navigatorKey: navigatorKey,
+        debugShowCheckedModeBanner: false,
+        theme: buildAppTheme(),
+        locale: Lang.instance.locale,
+        supportedLocales: Lang.locales,
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        // Тёмные значки статус-бара по умолчанию; красные экраны (главная,
+        // вход, заставка) задают светлые своим AnnotatedRegion.
+        builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(value: SystemUiOverlayStyle.dark, child: child!),
+        home: _Gate(onboardingDone: onboardingDone),
+      ),
     );
   }
 }

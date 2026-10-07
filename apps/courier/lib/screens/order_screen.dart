@@ -59,7 +59,7 @@ class _OrderScreenState extends State<OrderScreen> {
       if (!mounted) return;
       setState(() => _c = r);
       if (action == 'delivered') {
-        showMessage(context, 'Заказ № ${orderOf(r)['number']} доставлен');
+        showMessage(context, tr('Заказ № ${orderOf(r)['number']} доставлен', 'Buyurtma № ${orderOf(r)['number']} yetkazildi'));
         Navigator.of(context).pop();
       }
     } catch (e) {
@@ -78,7 +78,13 @@ class _OrderScreenState extends State<OrderScreen> {
         body: Center(
           child: _error == null
               ? const CircularProgressIndicator()
-              : EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: '$_error', action: 'Повторить', onAction: _load),
+              : EmptyState(
+                  icon: Icons.wifi_off_rounded,
+                  title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'),
+                  text: '$_error',
+                  action: tr('Повторить', 'Qayta urinish'),
+                  onAction: _load,
+                ),
         ),
       );
     }
@@ -91,21 +97,21 @@ class _OrderScreenState extends State<OrderScreen> {
     final store = _StoreCard(c: c, prominent: !delivering && status != 'delivered');
     Widget? bottom;
     if (status == 'picked') {
-      bottom = BigButton(label: 'Забрал заказ', icon: Icons.shopping_bag_rounded, busy: _busy, onPressed: () => _act('picked-up'));
+      bottom = BigButton(label: tr('Забрал заказ', 'Buyurtmani oldim'), icon: Icons.shopping_bag_rounded, busy: _busy, onPressed: () => _act('picked-up'));
     } else if (delivering) {
-      bottom = BigButton(label: 'Доставил', icon: Icons.check_circle_rounded, color: AppColors.success, busy: _busy, onPressed: () => _act('delivered'));
+      bottom = BigButton(label: tr('Доставил', 'Yetkazdim'), icon: Icons.check_circle_rounded, color: AppColors.success, busy: _busy, onPressed: () => _act('delivered'));
     } else if (status == 'accepted' || status == 'picking') {
-      bottom = const BigButton(label: 'Магазин собирает заказ', icon: Icons.hourglass_top_rounded, onPressed: null);
+      bottom = BigButton(label: tr('Магазин собирает заказ', 'Doʻkon buyurtmani yigʻmoqda'), icon: Icons.hourglass_top_rounded, onPressed: null);
     }
 
     return Scaffold(
       appBar: AppBar(
         leading: Padding(
           padding: const EdgeInsets.only(left: 12),
-          child: Center(child: RoundIcon(icon: Icons.arrow_back_rounded, tooltip: 'Назад', onTap: () => Navigator.of(context).pop())),
+          child: Center(child: RoundIcon(icon: Icons.arrow_back_rounded, tooltip: tr('Назад', 'Orqaga'), onTap: () => Navigator.of(context).pop())),
         ),
         leadingWidth: 56,
-        title: Text('Заказ № ${o['number']}', style: AppText.h3),
+        title: Text(tr('Заказ № ${o['number']}', 'Buyurtma № ${o['number']}'), style: AppText.h3),
         actions: [Padding(padding: const EdgeInsets.only(right: 16), child: statusChip(status))],
       ),
       body: RefreshIndicator(
@@ -117,7 +123,7 @@ class _OrderScreenState extends State<OrderScreen> {
           else ...[store, const SizedBox(height: 14), customer, const SizedBox(height: 14), _Payment(c: c)],
           const SizedBox(height: 14),
           SectionCard(
-            title: 'Состав · ${itemsText(items.length)}',
+            title: tr('Состав · ${itemsText(items.length)}', 'Tarkibi · ${itemsText(items.length)}'),
             icon: Icons.shopping_bag_rounded,
             children: [
               for (final i in items)
@@ -138,12 +144,12 @@ class _OrderScreenState extends State<OrderScreen> {
                     Text(money(i['total'], suffix: false), style: AppText.small.copyWith(fontSize: 14)),
                   ]),
                 ),
-              if (items.isEmpty) const Text('Состав загружается…', style: AppText.small),
+              if (items.isEmpty) Text(tr('Состав загружается…', 'Tarkibi yuklanmoqda…'), style: AppText.small),
             ],
           ),
           if ('${o['comment'] ?? ''}'.trim().isNotEmpty) ...[
             const SizedBox(height: 14),
-            SectionCard(title: 'Комментарий к заказу', icon: Icons.chat_rounded, children: [Text('${o['comment']}', style: AppText.body)]),
+            SectionCard(title: tr('Комментарий к заказу', 'Buyurtmaga izoh'), icon: Icons.chat_rounded, children: [Text('${o['comment']}', style: AppText.body)]),
           ],
         ]),
       ),
@@ -164,7 +170,7 @@ class _Stepper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const names = ['Принят', 'Собран', 'В пути', 'Доставлен'];
+    final names = [tr('Принят', 'Qabul qilindi'), tr('Собран', 'Yigʻildi'), tr('В пути', 'Yoʻlda'), tr('Доставлен', 'Yetkazildi')];
     final done = switch (status) {
       'accepted' || 'picking' => 1,
       'picked' => 2,
@@ -219,22 +225,22 @@ class _StoreCard extends StatelessWidget {
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('${s['name'] ?? ''}', style: AppText.bodyStrong),
-              Text(picked != null ? 'забран в ${hm(picked)}' : '${s['address'] ?? ''}', style: AppText.small),
+              Text(picked != null ? tr('забран в ${hm(picked)}', 'soat ${hm(picked)} da olindi') : '${s['address'] ?? ''}', style: AppText.small),
             ]),
           ),
-          if (phone.isNotEmpty) RoundIcon(icon: Icons.call_rounded, tooltip: 'Позвонить в магазин', color: AppColors.white, onTap: () => call(context, phone)),
+          if (phone.isNotEmpty) RoundIcon(icon: Icons.call_rounded, tooltip: tr('Позвонить в магазин', 'Doʻkonga qoʻngʻiroq qilish'), color: AppColors.white, onTap: () => call(context, phone)),
         ]),
       );
     }
-    return SectionCard(title: 'Забрать в магазине', icon: Icons.storefront_rounded, children: [
+    return SectionCard(title: tr('Забрать в магазине', 'Doʻkondan olish'), icon: Icons.storefront_rounded, children: [
       Text('${s['name'] ?? ''}', style: AppText.title),
       const SizedBox(height: 2),
       Text('${s['address'] ?? ''}', style: AppText.body.copyWith(color: AppColors.text2)),
       const SizedBox(height: 12),
       Row(children: [
-        Expanded(child: SmallButton(label: 'Позвонить', icon: Icons.call_rounded, onPressed: phone.isEmpty ? null : () => call(context, phone))),
+        Expanded(child: SmallButton(label: tr('Позвонить', 'Qoʻngʻiroq'), icon: Icons.call_rounded, onPressed: phone.isEmpty ? null : () => call(context, phone))),
         const SizedBox(width: 8),
-        Expanded(child: SmallButton(label: 'Маршрут', icon: Icons.near_me_rounded, onPressed: lat == null || lng == null ? null : () => route(context, lat, lng))),
+        Expanded(child: SmallButton(label: tr('Маршрут', 'Yoʻnalish'), icon: Icons.near_me_rounded, onPressed: lat == null || lng == null ? null : () => route(context, lat, lng))),
       ]),
     ]);
   }
@@ -255,7 +261,7 @@ class _CustomerCard extends StatelessWidget {
     final lat = o['lat'] as num?, lng = o['lng'] as num?;
     final status = statusOf(c);
     return SectionCard(
-      title: status == 'delivering' ? 'Везу покупателю' : 'Покупатель',
+      title: status == 'delivering' ? tr('Везу покупателю', 'Xaridorga yetkazyapman') : tr('Покупатель', 'Xaridor'),
       icon: status == 'delivering' ? Icons.location_on_rounded : Icons.person_rounded,
       color: prominent ? AppColors.white : AppColors.soft,
       border: prominent ? AppColors.line : null,
@@ -280,10 +286,10 @@ class _CustomerCard extends StatelessWidget {
         const SizedBox(height: 12),
         Row(children: [
           Expanded(
-            child: SmallButton(label: 'Позвонить', icon: Icons.call_rounded, primary: prominent, onPressed: phone.isEmpty ? null : () => call(context, phone)),
+            child: SmallButton(label: tr('Позвонить', 'Qoʻngʻiroq'), icon: Icons.call_rounded, primary: prominent, onPressed: phone.isEmpty ? null : () => call(context, phone)),
           ),
           const SizedBox(width: 8),
-          Expanded(child: SmallButton(label: 'Маршрут', icon: Icons.near_me_rounded, onPressed: lat == null || lng == null ? null : () => route(context, lat, lng))),
+          Expanded(child: SmallButton(label: tr('Маршрут', 'Yoʻnalish'), icon: Icons.near_me_rounded, onPressed: lat == null || lng == null ? null : () => route(context, lat, lng))),
         ]),
         const SizedBox(height: 10),
         Row(children: [
@@ -291,7 +297,7 @@ class _CustomerCard extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              ['Ждут ${whenText(o)}', distanceText(o['distance_m'] as num?)].where((x) => x.isNotEmpty).join(' · '),
+              [tr('Ждут ${whenText(o)}', 'Kutishmoqda: ${whenText(o)}'), distanceText(o['distance_m'] as num?)].where((x) => x.isNotEmpty).join(' · '),
               style: AppText.small.copyWith(fontSize: 14),
             ),
           ),
@@ -322,12 +328,12 @@ class _Payment extends StatelessWidget {
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             if (cash) ...[
-              Text('Взять наличными', style: AppText.bodyStrong.copyWith(color: fg, fontSize: 14)),
+              Text(tr('Взять наличными', 'Naqd pul olish'), style: AppText.bodyStrong.copyWith(color: fg, fontSize: 14)),
               Text(money(o['total']), style: AppText.h2.copyWith(color: fg)),
-              Text('Товары ${money(goods, suffix: false)} + доставка ${money(fee, suffix: false)}', style: AppText.small.copyWith(color: fg)),
+              Text(tr('Товары ${money(goods, suffix: false)} + доставка ${money(fee, suffix: false)}', 'Mahsulotlar ${money(goods, suffix: false)} + yetkazish ${money(fee, suffix: false)}'), style: AppText.small.copyWith(color: fg)),
             ] else ...[
-              Text('Оплачен онлайн', style: AppText.title.copyWith(color: fg, fontSize: 17)),
-              Text('Деньги брать не нужно · ${money(o['total'])}', style: AppText.small.copyWith(color: fg, fontSize: 14)),
+              Text(tr('Оплачен онлайн', 'Onlayn toʻlandi'), style: AppText.title.copyWith(color: fg, fontSize: 17)),
+              Text(tr('Деньги брать не нужно · ${money(o['total'])}', 'Pul olish shart emas · ${money(o['total'])}'), style: AppText.small.copyWith(color: fg, fontSize: 14)),
             ],
           ]),
         ),
@@ -375,9 +381,9 @@ class _DeliveredSheetState extends State<_DeliveredSheet> {
             child: const Icon(Icons.task_alt_rounded, color: AppColors.successInk, size: 30),
           ),
           const SizedBox(height: 16),
-          Text('Заказ № ${o['number']} доставлен?', style: AppText.h2),
+          Text(tr('Заказ № ${o['number']} доставлен?', 'Buyurtma № ${o['number']} yetkazildimi?'), style: AppText.h2),
           const SizedBox(height: 6),
-          Text('Покупатель получит уведомление, заказ уйдёт в историю', style: AppText.body.copyWith(color: AppColors.text2)),
+          Text(tr('Покупатель получит уведомление, заказ уйдёт в историю', 'Xaridorga bildirishnoma boradi, buyurtma tarixga oʻtadi'), style: AppText.body.copyWith(color: AppColors.text2)),
           if (cash) ...[
             const SizedBox(height: 16),
             Material(
@@ -393,8 +399,8 @@ class _DeliveredSheetState extends State<_DeliveredSheet> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('Получил ${money(o['total'])} наличными', style: AppText.bodyStrong.copyWith(color: AppColors.warningInk, fontSize: 16)),
-                        Text('Сдачу посчитайте при покупателе', style: AppText.small.copyWith(color: AppColors.warningInk)),
+                        Text(tr('Получил ${money(o['total'])} наличными', '${money(o['total'])} naqd pul oldim'), style: AppText.bodyStrong.copyWith(color: AppColors.warningInk, fontSize: 16)),
+                        Text(tr('Сдачу посчитайте при покупателе', 'Qaytimni xaridor oldida sanang'), style: AppText.small.copyWith(color: AppColors.warningInk)),
                       ]),
                     ),
                   ]),
@@ -404,12 +410,12 @@ class _DeliveredSheetState extends State<_DeliveredSheet> {
           ],
           const SizedBox(height: 20),
           BigButton(
-            label: 'Да, доставил',
+            label: tr('Да, доставил', 'Ha, yetkazdim'),
             color: AppColors.success,
             onPressed: cash && !_got ? null : () => Navigator.of(context).pop(true),
           ),
           const SizedBox(height: 10),
-          BigButton(label: 'Ещё нет', color: AppColors.soft, foreground: AppColors.ink, onPressed: () => Navigator.of(context).pop(false)),
+          BigButton(label: tr('Ещё нет', 'Hali yoʻq'), color: AppColors.soft, foreground: AppColors.ink, onPressed: () => Navigator.of(context).pop(false)),
         ]),
       ),
     );

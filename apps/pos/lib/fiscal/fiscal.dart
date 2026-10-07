@@ -6,6 +6,8 @@
 // Адаптер настоящего модуля пишется по документации ОФД и подключается
 // в [PosController.fiscal] без изменений в остальной кассе.
 
+import 'package:sm_core/sm_core.dart' show tr;
+
 import '../core/journal.dart';
 import '../core/money.dart';
 
@@ -136,7 +138,8 @@ class FiscalReceipt {
 }
 
 FiscalLine lineFromJournal(Map<String, dynamic> l) => FiscalLine(
-      name: '${l['name']}',
+      // В ОФД — исходное название; записи журнала до языков его не имеют.
+      name: '${l['fiscal_name'] ?? l['name']}',
       ikpu: '${l['ikpu'] ?? ''}',
       packageCode: '${l['package_code'] ?? ''}',
       qty: l['qty'] as int,
@@ -155,7 +158,7 @@ FiscalLine refundLine(Map<String, dynamic> saleLine, int qty, int total) {
   final vatBp = parseMoney(saleLine['vat_rate'] ?? '0');
   final marks = ((saleLine['marking_codes'] as List?) ?? const []).map((e) => '$e').toList();
   return FiscalLine(
-    name: '${saleLine['product_name'] ?? saleLine['name'] ?? ''}',
+    name: '${saleLine['fiscal_name'] ?? saleLine['product_name'] ?? saleLine['name'] ?? ''}',
     ikpu: '${saleLine['ikpu'] ?? ''}',
     packageCode: '${saleLine['package_code'] ?? ''}',
     qty: qty,
@@ -246,29 +249,29 @@ class TestFiscalModule implements FiscalModule {
   bool get real => false;
 
   @override
-  Future<FiscalStatus> status() async => FiscalStatus(ready: false, title: 'Тестовый режим: чеки не фискальные');
+  Future<FiscalStatus> status() async => FiscalStatus(ready: false, title: tr('Тестовый режим: чеки не фискальные', 'Test rejimi: cheklar fiskal emas'));
 
   @override
-  Future<FiscalResult> register(FiscalReceipt r) => throw FiscalError('Фискальный модуль не подключён');
+  Future<FiscalResult> register(FiscalReceipt r) => throw FiscalError(tr('Фискальный модуль не подключён', 'Fiskal modul ulanmagan'));
 
   @override
   Future<FiscalResult> closeShift({required int shiftNumber, required DateTime at}) =>
-      throw FiscalError('Фискальный модуль не подключён');
+      throw FiscalError(tr('Фискальный модуль не подключён', 'Fiskal modul ulanmagan'));
 }
 
 /// Проблемы чека, из-за которых модуль его не примет. Пусто — можно пробивать.
 List<String> receiptProblems(FiscalReceipt r) {
   final out = <String>[];
   for (final l in r.lines) {
-    if (!RegExp(r'^\d{17}$').hasMatch(l.ikpu)) out.add('${l.name}: нет ИКПУ (17 цифр) — заполните в панели магазина');
-    if (l.packageCode.isEmpty) out.add('${l.name}: нет кода упаковки');
+    if (!RegExp(r'^\d{17}$').hasMatch(l.ikpu)) out.add(tr('${l.name}: нет ИКПУ (17 цифр) — заполните в панели магазина', '${l.name}: MXIK yoʻq (17 raqam) — doʻkon panelida toʻldiring'));
+    if (l.packageCode.isEmpty) out.add(tr('${l.name}: нет кода упаковки', '${l.name}: qadoq kodi yoʻq'));
   }
-  if (r.lines.isEmpty) out.add('Пустой чек');
+  if (r.lines.isEmpty) out.add(tr('Пустой чек', 'Chek boʻsh'));
   if (r.kind != ReceiptKind.refund && r.cash + r.card + r.advanceUsed != r.total) {
-    out.add('Оплата ${fmtMoney(r.cash + r.card + r.advanceUsed)} не равна итогу ${fmtMoney(r.total)}');
+    out.add(tr('Оплата ${fmtMoney(r.cash + r.card + r.advanceUsed)} не равна итогу ${fmtMoney(r.total)}', 'Toʻlov ${fmtMoney(r.cash + r.card + r.advanceUsed)} jami summaga ${fmtMoney(r.total)} teng emas'));
   }
   if ((r.kind == ReceiptKind.refund || r.kind == ReceiptKind.settlement) && r.ref == null) {
-    out.add('Нет ссылки на исходный чек');
+    out.add(tr('Нет ссылки на исходный чек', 'Asl chekka havola yoʻq'));
   }
   return out;
 }

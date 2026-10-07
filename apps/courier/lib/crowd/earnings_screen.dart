@@ -56,10 +56,16 @@ class _EarningsScreenState extends State<EarningsScreen> {
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(padding: EdgeInsets.fromLTRB(20, top + 12, 20, 24), children: [
-          const Text('Заработок', style: AppText.h1),
+          Text(tr('Заработок', 'Daromad'), style: AppText.h1),
           const SizedBox(height: 16),
           if (d == null && _error != null)
-            EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: '$_error', action: 'Повторить', onAction: _load)
+            EmptyState(
+              icon: Icons.wifi_off_rounded,
+              title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'),
+              text: '$_error',
+              action: tr('Повторить', 'Qayta urinish'),
+              onAction: _load,
+            )
           else if (d == null)
             const Padding(padding: EdgeInsets.all(48), child: Center(child: CircularProgressIndicator()))
           else ...[
@@ -67,7 +73,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(color: AppColors.ink, borderRadius: BorderRadius.circular(24)),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('К выплате', style: AppText.small.copyWith(color: const Color(0xFFD1D1D6), fontSize: 14)),
+                Text(tr('К выплате', 'Toʻlanadi'), style: AppText.small.copyWith(color: const Color(0xFFD1D1D6), fontSize: 14)),
                 const SizedBox(height: 4),
                 Text(money(d['balance']), style: AppText.h1.copyWith(color: AppColors.white, fontSize: 34)),
                 const SizedBox(height: 8),
@@ -76,7 +82,9 @@ class _EarningsScreenState extends State<EarningsScreen> {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      payout == null ? 'Выплата раз в неделю' : 'Выплата в понедельник, ${payout.day} ${_month(payout.month)}',
+                      payout == null
+                          ? tr('Выплата раз в неделю', 'Haftada bir marta toʻlanadi')
+                          : tr('Выплата в понедельник, ${payout.day} ${_month(payout.month)}', 'Toʻlov dushanba, ${payout.day}-${_monthUz(payout.month)}'),
                       style: AppText.small.copyWith(color: const Color(0xFFD1D1D6)),
                     ),
                   ),
@@ -85,21 +93,25 @@ class _EarningsScreenState extends State<EarningsScreen> {
             ),
             const SizedBox(height: 14),
             Row(children: [
-              _Stat(icon: Icons.local_shipping_rounded, fg: AppColors.primary, bg: AppColors.primarySoft, value: '${d['week_delivered'] ?? 0}', label: 'доставок за неделю'),
+              _Stat(icon: Icons.local_shipping_rounded, fg: AppColors.primary, bg: AppColors.primarySoft, value: '${d['week_delivered'] ?? 0}', label: tr('доставок за неделю', 'haftalik yetkazish')),
               const SizedBox(width: 12),
               _Stat(
                 icon: Icons.timer_rounded,
                 fg: AppColors.blue,
                 bg: AppColors.blueSoft,
-                value: (d['avg_minutes'] as num? ?? 0) > 0 ? '${d['avg_minutes']} мин' : '—',
-                label: 'в пути в среднем',
+                value: (d['avg_minutes'] as num? ?? 0) > 0 ? tr('${d['avg_minutes']} мин', '${d['avg_minutes']} daq.') : '—',
+                label: tr('в пути в среднем', 'oʻrtacha yoʻlda'),
               ),
             ]),
             const SizedBox(height: 18),
-            const Text('Движения', style: AppText.title),
+            Text(tr('Движения', 'Operatsiyalar'), style: AppText.title),
             const SizedBox(height: 10),
             if (items.isEmpty)
-              const EmptyState(icon: Icons.receipt_long_rounded, title: 'Пока пусто', text: 'Здесь будут начисления за доставки и выплаты')
+              EmptyState(
+                icon: Icons.receipt_long_rounded,
+                title: tr('Пока пусто', 'Hozircha boʻsh'),
+                text: tr('Здесь будут начисления за доставки и выплаты', 'Yetkazish uchun hisoblangan haqlar va toʻlovlar shu yerda chiqadi'),
+              )
             else
               Container(
                 decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20)),
@@ -116,6 +128,9 @@ class _EarningsScreenState extends State<EarningsScreen> {
 
   static String _month(int m) =>
       const ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'][m - 1];
+
+  static String _monthUz(int m) =>
+      const ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentyabr', 'oktyabr', 'noyabr', 'dekabr'][m - 1];
 }
 
 class _Stat extends StatelessWidget {

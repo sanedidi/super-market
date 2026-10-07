@@ -88,12 +88,12 @@ class _StartScreenState extends State<StartScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.bg,
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Начало работы'),
-          if (d != null) Text('Склад «${d['warehouse_name']}» · ${st.store?['name'] ?? ''}', style: AppText.small),
+          Text(tr('Начало работы', 'Ishni boshlash')),
+          if (d != null) Text(tr('Склад «${d['warehouse_name']}» · ${st.store?['name'] ?? ''}', '«${d['warehouse_name']}» ombori · ${st.store?['name'] ?? ''}'), style: AppText.small),
         ]),
       ),
       body: _error != null && d == null
-          ? EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: _error.toString(), action: 'Повторить', onAction: _load)
+          ? EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: _error.toString(), action: tr('Повторить', 'Qayta urinish'), onAction: _load)
           : d == null
               ? const Center(child: CircularProgressIndicator())
               : RefreshIndicator(
@@ -105,17 +105,20 @@ class _StartScreenState extends State<StartScreen> {
                           Text('$products', style: AppText.h1),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Text('${plural(products, 'товар', 'товара', 'товаров')} добавлено · ${plainQty(t['qty'] ?? 0)} шт', style: AppText.small),
+                            child: Text(
+                                tr('${plural(products, 'товар', 'товара', 'товаров')} добавлено · ${plainQty(t['qty'] ?? 0)} шт',
+                                    'ta mahsulot qoʻshildi · ${plainQty(t['qty'] ?? 0)} dona'),
+                                style: AppText.small),
                           ),
                         ]),
                         const SizedBox(height: 12),
                         Row(children: [
-                          Expanded(child: _Kpi('По закупке', money(t['cost_total'] ?? 0))),
+                          Expanded(child: _Kpi(tr('По закупке', 'Xarid narxida'), money(t['cost_total'] ?? 0))),
                           const SizedBox(width: 8),
-                          Expanded(child: _Kpi('По цене продажи', money(t['price_total'] ?? 0))),
+                          Expanded(child: _Kpi(tr('По цене продажи', 'Sotuv narxida'), money(t['price_total'] ?? 0))),
                         ]),
                         const SizedBox(height: 10),
-                        const Text('Черновик сохраняется: можно продолжить в веб-панели', style: AppText.small),
+                        Text(tr('Черновик сохраняется: можно продолжить в веб-панели', 'Qoralama saqlanadi: veb-panelda davom ettirish mumkin'), style: AppText.small),
                       ]),
                     ),
                     if (stock > 0 && d['id'] == null) ...[
@@ -123,13 +126,14 @@ class _StartScreenState extends State<StartScreen> {
                       AppCard(
                         color: AppColors.successSoft,
                         child: Text(
-                          'На складе уже ${goods(stock)}. Нашлись ещё товары — добавьте их и проведите снова. Новые поставки — через «Приход по фото».',
+                          tr('На складе уже ${goods(stock)}. Нашлись ещё товары — добавьте их и проведите снова. Новые поставки — через «Приход по фото».',
+                              'Omborda allaqachon ${goods(stock)} bor. Yana mahsulot topilsa — qoʻshing va qayta oʻtkazing. Yangi yetkazmalar — «Rasm orqali kirim» orqali.'),
                           style: AppText.small.copyWith(color: AppColors.successInk),
                         ),
                       ),
                     ],
                     const SizedBox(height: 20),
-                    const Text('Как добавить', style: AppText.h3),
+                    Text(tr('Как добавить', 'Qanday qoʻshish mumkin'), style: AppText.h3),
                     const SizedBox(height: 12),
                     Row(children: [
                       Expanded(
@@ -137,8 +141,8 @@ class _StartScreenState extends State<StartScreen> {
                           icon: Icons.photo_camera_rounded,
                           bg: AppColors.primarySoft,
                           fg: AppColors.primary,
-                          title: 'Фото товара или полки',
-                          text: 'Super Market найдёт товары в каталоге',
+                          title: tr('Фото товара или полки', 'Mahsulot yoki javon rasmi'),
+                          text: tr('Super Market найдёт товары в каталоге', 'Super Market mahsulotlarni katalogdan topadi'),
                           onTap: () => _open(StartMethod.photo),
                         ),
                       ),
@@ -148,8 +152,8 @@ class _StartScreenState extends State<StartScreen> {
                           icon: Icons.qr_code_scanner_rounded,
                           bg: AppColors.blueSoft,
                           fg: AppColors.blue,
-                          title: 'Штрихкод',
-                          text: 'Сканируйте камерой подряд',
+                          title: tr('Штрихкод', 'Shtrix-kod'),
+                          text: tr('Сканируйте камерой подряд', 'Kamera bilan ketma-ket skanerlang'),
                           onTap: () => _open(StartMethod.barcode),
                         ),
                       ),
@@ -161,8 +165,8 @@ class _StartScreenState extends State<StartScreen> {
                           icon: Icons.category_rounded,
                           bg: AppColors.successSoft,
                           fg: AppColors.success,
-                          title: 'Каталог по разделам',
-                          text: 'Отметьте галочками, что есть',
+                          title: tr('Каталог по разделам', 'Boʻlimlar boʻyicha katalog'),
+                          text: tr('Отметьте галочками, что есть', 'Bor narsalarni belgilang'),
                           onTap: () => _open(StartMethod.catalog),
                         ),
                       ),
@@ -172,8 +176,8 @@ class _StartScreenState extends State<StartScreen> {
                           icon: Icons.search_rounded,
                           bg: AppColors.warningSoft,
                           fg: AppColors.warningInk,
-                          title: 'Поиск',
-                          text: 'По названию или бренду',
+                          title: tr('Поиск', 'Qidirish'),
+                          text: tr('По названию или бренду', 'Nomi yoki brendi boʻyicha'),
                           onTap: () => _open(StartMethod.search),
                         ),
                       ),
@@ -183,21 +187,21 @@ class _StartScreenState extends State<StartScreen> {
                       TextButton.icon(
                         onPressed: () => _push(NewProductScreen(start: _start)),
                         icon: const Icon(Icons.add_rounded, color: AppColors.primary),
-                        label: Text('Нет в каталоге — новый товар', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
+                        label: Text(tr('Нет в каталоге — новый товар', 'Katalogda yoʻq — yangi mahsulot'), style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
                       ),
                     ],
                     const SizedBox(height: 16),
                     Row(children: [
-                      const Expanded(child: Text('Добавленные', style: AppText.h3)),
+                      Expanded(child: Text(tr('Добавленные', 'Qoʻshilganlar'), style: AppText.h3)),
                       if (products > 0)
                         TextButton(
                           onPressed: () => _push(StartReviewScreen(start: _start)),
-                          child: Text('Все $products', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
+                          child: Text(tr('Все $products', 'Hammasi $products'), style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
                         ),
                     ]),
                     const SizedBox(height: 4),
                     if (lines.isEmpty)
-                      const Text('Пока ничего — начните с фото полки или штрихкода.', style: AppText.small)
+                      Text(tr('Пока ничего — начните с фото полки или штрихкода.', 'Hozircha hech narsa yoʻq — javon rasmi yoki shtrix-koddan boshlang.'), style: AppText.small)
                     else
                       AppCard(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -220,12 +224,12 @@ class _StartScreenState extends State<StartScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
                   BigButton(
-                    label: 'Проверить и провести',
+                    label: tr('Проверить и провести', 'Tekshirish va oʻtkazish'),
                     icon: Icons.check_circle_outline_rounded,
                     onPressed: products == 0 ? null : () => _push(StartReviewScreen(start: _start)),
                   ),
                   const SizedBox(height: 6),
-                  const Text('Товары с остатком сразу увидят покупатели', style: AppText.small),
+                  Text(tr('Товары с остатком сразу увидят покупатели', 'Qoldigʻi bor mahsulotlarni xaridorlar darhol koʻradi'), style: AppText.small),
                 ]),
               ),
             ),
@@ -351,30 +355,30 @@ class _StartHomeBlockState extends State<StartHomeBlock> {
         border: AppColors.primary,
         onTap: () => _open(),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Row(children: [
-            IconBox(Icons.rocket_launch_rounded, bg: AppColors.primarySoft, fg: AppColors.primary),
-            SizedBox(width: 12),
+          Row(children: [
+            const IconBox(Icons.rocket_launch_rounded, bg: AppColors.primarySoft, fg: AppColors.primary),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Начало работы', style: AppText.title),
-                Text('Добавьте товары, которые уже есть в магазине', style: AppText.small),
+                Text(tr('Начало работы', 'Ishni boshlash'), style: AppText.title),
+                Text(tr('Добавьте товары, которые уже есть в магазине', 'Doʻkonda allaqachon bor mahsulotlarni qoʻshing'), style: AppText.small),
               ]),
             ),
           ]),
           const SizedBox(height: 12),
           Row(children: [
-            Expanded(child: Text('Добавлено ${goods(products)}', style: AppText.bodyStrong.copyWith(fontSize: 14))),
-            const Text('черновик сохраняется', style: AppText.small),
+            Expanded(child: Text(tr('Добавлено ${goods(products)}', 'Qoʻshildi: ${goods(products)}'), style: AppText.bodyStrong.copyWith(fontSize: 14))),
+            Text(tr('черновик сохраняется', 'qoralama saqlanadi'), style: AppText.small),
           ]),
           const SizedBox(height: 12),
           Row(children: [
-            btn(StartMethod.photo, Icons.photo_camera_rounded, 'Фото', primary: true),
+            btn(StartMethod.photo, Icons.photo_camera_rounded, tr('Фото', 'Rasm'), primary: true),
             const SizedBox(width: 8),
-            btn(StartMethod.barcode, Icons.qr_code_scanner_rounded, 'Штрихкод'),
+            btn(StartMethod.barcode, Icons.qr_code_scanner_rounded, tr('Штрихкод', 'Shtrix-kod')),
             const SizedBox(width: 8),
-            btn(StartMethod.catalog, Icons.category_rounded, 'Каталог'),
+            btn(StartMethod.catalog, Icons.category_rounded, tr('Каталог', 'Katalog')),
             const SizedBox(width: 8),
-            btn(StartMethod.search, Icons.search_rounded, 'Поиск'),
+            btn(StartMethod.search, Icons.search_rounded, tr('Поиск', 'Qidirish')),
           ]),
         ]),
       ),

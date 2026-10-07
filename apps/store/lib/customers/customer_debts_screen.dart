@@ -14,16 +14,23 @@ import 'debtor_screen.dart';
 // Долги покупателей (Figma С1): кто должен магазину, просрочка, споры.
 
 const _months = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+const _monthsUz = ['yan', 'fev', 'mar', 'apr', 'may', 'iyn', 'iyl', 'avg', 'sen', 'okt', 'noy', 'dek'];
 
-/// «2026-11-05» или ISO-время → «5 ноя».
+/// «2026-11-05» или ISO-время → «5 ноя» / «5-noy».
 String shortDate(Object? v) {
   final d = DateTime.tryParse('${v ?? ''}');
   if (d == null) return '';
   final l = d.toLocal();
-  return '${l.day} ${_months[l.month - 1]}';
+  return tr('${l.day} ${_months[l.month - 1]}', '${l.day}-${_monthsUz[l.month - 1]}');
 }
 
-const _filters = [('all', 'Все'), ('overdue', 'Просрочка'), ('unverified', 'Не подтв.'), ('disputes', 'Споры'), ('blocked', 'Стоп-лист')];
+List<(String, String)> get _filters => [
+      ('all', tr('Все', 'Hammasi')),
+      ('overdue', tr('Просрочка', 'Muddati oʻtgan')),
+      ('unverified', tr('Не подтв.', 'Tasdiqlanmagan')),
+      ('disputes', tr('Споры', 'Nizolar')),
+      ('blocked', tr('Стоп-лист', 'Stop-list')),
+    ];
 
 const _tones = [
   (AppColors.primarySoft, AppColors.primary),
@@ -114,14 +121,14 @@ class _CustomerDebtsScreenState extends State<CustomerDebtsScreen> {
             ? TextField(
                 controller: _q,
                 autofocus: true,
-                decoration: const InputDecoration(hintText: 'Имя или телефон', border: InputBorder.none, filled: false),
+                decoration: InputDecoration(hintText: tr('Имя или телефон', 'Ism yoki telefon'), border: InputBorder.none, filled: false),
                 onChanged: (_) {
                   _debounce?.cancel();
                   _debounce = Timer(const Duration(milliseconds: 300), _load);
                 },
               )
             : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Долги покупателей'),
+                Text(tr('Долги покупателей', 'Xaridorlar qarzlari')),
                 Text('${st.networkName} · ${st.store?['name'] ?? ''}', style: AppText.small),
               ]),
         actions: [
@@ -137,7 +144,7 @@ class _CustomerDebtsScreenState extends State<CustomerDebtsScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.tune_rounded),
-            tooltip: 'Настройки долгов',
+            tooltip: tr('Настройки долгов', 'Qarz sozlamalari'),
             onPressed: () async {
               await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DebtSettingsScreen()));
               if (mounted) _load();
@@ -153,15 +160,18 @@ class _CustomerDebtsScreenState extends State<CustomerDebtsScreen> {
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(color: AppColors.ink, borderRadius: BorderRadius.circular(20)),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Нам должны покупатели', style: AppText.small.copyWith(color: AppColors.muted)),
+                Text(tr('Нам должны покупатели', 'Xaridorlarning bizga qarzi'), style: AppText.small.copyWith(color: AppColors.muted)),
                 Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
                   Text(money(s['total'], suffix: false), style: AppText.h1.copyWith(color: AppColors.white, fontSize: 30)),
                   const SizedBox(width: 6),
-                  Text('сум', style: AppText.bodyStrong.copyWith(color: AppColors.muted)),
+                  Text(tr('сум', 'soʻm'), style: AppText.bodyStrong.copyWith(color: AppColors.muted)),
                 ]),
                 Text(
-                  '$count ${plural(count, 'покупатель', 'покупателя', 'покупателей')}'
-                  '${overdueCount > 0 ? ' · просрочено ${money(s['overdue'], suffix: false)} у $overdueCount' : ''}',
+                  tr(
+                      '$count ${plural(count, 'покупатель', 'покупателя', 'покупателей')}'
+                          '${overdueCount > 0 ? ' · просрочено ${money(s['overdue'], suffix: false)} у $overdueCount' : ''}',
+                      '$count ta xaridor'
+                          '${overdueCount > 0 ? ' · $overdueCount ta xaridorda ${money(s['overdue'], suffix: false)} muddati oʻtgan' : ''}'),
                   style: AppText.small.copyWith(color: AppColors.muted),
                 ),
               ]),
@@ -191,12 +201,14 @@ class _CustomerDebtsScreenState extends State<CustomerDebtsScreen> {
           if (items == null)
             _error == null
                 ? const Padding(padding: EdgeInsets.only(top: 40), child: Center(child: CircularProgressIndicator()))
-                : EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: '$_error', action: 'Повторить', onAction: _load)
+                : EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load)
           else if (items.isEmpty)
             EmptyState(
               icon: Icons.handshake_outlined,
-              title: _status == 'all' ? 'Покупатели ничего не должны' : 'Никого нет',
-              text: _status == 'all' ? 'Продажа в долг — на кассе, кнопка «В долг». Включается в настройках.' : null,
+              title: _status == 'all' ? tr('Покупатели ничего не должны', 'Xaridorlarning qarzi yoʻq') : tr('Никого нет', 'Hech kim yoʻq'),
+              text: _status == 'all'
+                  ? tr('Продажа в долг — на кассе, кнопка «В долг». Включается в настройках.', 'Qarzga sotish — kassada, «Qarzga» tugmasi. Sozlamalarda yoqiladi.')
+                  : null,
             )
           else
             AppCard(
@@ -227,10 +239,11 @@ class _Row extends StatelessWidget {
     final overdue = (b['overdue_days'] as num?)?.toInt() ?? 0;
     final disputes = (b['open_disputes'] as num?)?.toInt() ?? 0;
     final sub = b['blocked'] == true
-        ? 'стоп-лист'
+        ? tr('стоп-лист', 'stop-list')
         : b['verified'] != true
-            ? 'не подтверждён · ${shortDate(b['since'])}'
-            : 'с ${shortDate(b['since'])}${b['due_date'] != null ? ' · вернуть до ${shortDate(b['due_date'])}' : ''}';
+            ? '${tr('не подтверждён', 'tasdiqlanmagan')} · ${shortDate(b['since'])}'
+            : tr('с ${shortDate(b['since'])}${b['due_date'] != null ? ' · вернуть до ${shortDate(b['due_date'])}' : ''}',
+                '${shortDate(b['since'])} dan${b['due_date'] != null ? ' · ${shortDate(b['due_date'])} gacha qaytarish' : ''}');
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
@@ -254,13 +267,13 @@ class _Row extends StatelessWidget {
                 Row(children: [
                   const Icon(Icons.schedule_rounded, size: 14, color: AppColors.primary),
                   const SizedBox(width: 4),
-                  Text('просрочено $overdue ${plural(overdue, 'день', 'дня', 'дней')}', style: AppText.caption.copyWith(color: AppColors.primary)),
+                  Text(tr('просрочено $overdue ${plural(overdue, 'день', 'дня', 'дней')}', 'muddati $overdue kun oʻtgan'), style: AppText.caption.copyWith(color: AppColors.primary)),
                 ]),
               if (disputes > 0)
                 Row(children: [
                   const Icon(Icons.report_outlined, size: 14, color: AppColors.warningInk),
                   const SizedBox(width: 4),
-                  Text('оспаривает запись', style: AppText.caption.copyWith(color: AppColors.warningInk)),
+                  Text(tr('оспаривает запись', 'yozuvga eʼtiroz bildirgan'), style: AppText.caption.copyWith(color: AppColors.warningInk)),
                 ]),
             ]),
           ),

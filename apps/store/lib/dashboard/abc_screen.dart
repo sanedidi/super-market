@@ -26,6 +26,8 @@ class AbcScreen extends StatefulWidget {
 /// Остатка меньше чем на столько дней — товар «заканчивается» (как в бэкенде).
 const lowDays = 7;
 
+String _weeksText(int w) => tr('$w ${plural(w, 'неделя', 'недели', 'недель')}', '$w hafta');
+
 class _AbcScreenState extends State<AbcScreen> {
   late String? _cell = widget.cell;
   late String? _view = widget.view;
@@ -98,8 +100,8 @@ class _AbcScreenState extends State<AbcScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('ABC/XYZ-анализ', style: AppText.h3),
-                  Text('${st.store?['name'] ?? ''} · $_weeks ${plural(_weeks, 'неделя', 'недели', 'недель')}', style: AppText.small, overflow: TextOverflow.ellipsis),
+                  Text(tr('ABC/XYZ-анализ', 'ABC/XYZ tahlili'), style: AppText.h3),
+                  Text('${st.store?['name'] ?? ''} · ${_weeksText(_weeks)}', style: AppText.small, overflow: TextOverflow.ellipsis),
                 ]),
               ),
               RoundIcon(icon: Icons.help_outline_rounded, color: AppColors.white, onTap: () => _help(context)),
@@ -112,12 +114,12 @@ class _AbcScreenState extends State<AbcScreen> {
                   setState(() => _weeks = w);
                   _load();
                 },
-                itemBuilder: (_) => [for (final w in const [4, 12, 26]) PopupMenuItem(value: w, child: Text('$w ${plural(w, 'неделя', 'недели', 'недель')}'))],
+                itemBuilder: (_) => [for (final w in const [4, 12, 26]) PopupMenuItem(value: w, child: Text(_weeksText(w)))],
                 child: Container(
                   padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
                   decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(999), border: Border.all(color: AppColors.line)),
                   child: Row(children: [
-                    Text('$_weeks ${plural(_weeks, 'неделя', 'недели', 'недель')}', style: AppText.caption.copyWith(color: AppColors.ink, fontSize: 13)),
+                    Text(_weeksText(_weeks), style: AppText.caption.copyWith(color: AppColors.ink, fontSize: 13)),
                     const Icon(Icons.expand_more_rounded, size: 18, color: AppColors.text2),
                   ]),
                 ),
@@ -130,7 +132,7 @@ class _AbcScreenState extends State<AbcScreen> {
             ]),
             const SizedBox(height: 14),
             if (_error != null && d == null)
-              EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: '$_error', action: 'Повторить', onAction: _load)
+              EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load)
             else if (d == null)
               const Padding(padding: EdgeInsets.only(top: 80), child: Center(child: CircularProgressIndicator()))
             else
@@ -148,6 +150,7 @@ class _AbcScreenState extends State<AbcScreen> {
     final noSales = (d['no_sales'] as Map).cast<String, dynamic>();
     final xyz = d['xyz_available'] == true;
     final word = switch (_by) { 'profit' => 'прибыли', 'qty' => 'продаж', _ => 'выручки' };
+    final wordUz = switch (_by) { 'profit' => 'foyda', 'qty' => 'sotuv', _ => 'tushum' };
     final a = g('A');
     final aPct = total == 0 ? 0 : ((a['count'] as num) / total * 100).round();
     final matrix = {for (final m in ((d['matrix'] as List?) ?? const []).cast<Map<String, dynamic>>()) '${m['cell']}': (m['count'] as num).toInt()};
@@ -164,7 +167,7 @@ class _AbcScreenState extends State<AbcScreen> {
               letter: k,
               value: '${(g(k)['share'] as num).toStringAsFixed(1).replaceAll('.', ',')}%',
               line1: _by == 'profit' ? money(g(k)['profit']) : money(g(k)['revenue']),
-              line2: '${products((g(k)['count'] as num).toInt())} · ${const {'A': 'главные', 'B': 'середина', 'C': 'мало денег'}[k]}',
+              line2: '${products((g(k)['count'] as num).toInt())} · ${{'A': tr('главные', 'asosiy'), 'B': tr('середина', 'oʻrta'), 'C': tr('мало денег', 'kam daromad')}[k]}',
               active: _view == k && _cell == null && !_low,
               onTap: () => _view == k ? _filter() : _filter(view: k),
             ),
@@ -172,7 +175,7 @@ class _AbcScreenState extends State<AbcScreen> {
             letter: '',
             value: '${noSales['count']}',
             line1: money(noSales['stock_value']),
-            line2: 'без продаж',
+            line2: tr('без продаж', 'sotuvsiz'),
             active: showNoSale,
             onTap: () => showNoSale ? _filter() : _filter(view: 'nosale'),
           ),
@@ -185,19 +188,29 @@ class _AbcScreenState extends State<AbcScreen> {
           child: SectionCard(
             icon: Icons.hourglass_top_rounded,
             title: (d['weeks'] as num? ?? 0) == 0 && total == 0
-                ? 'За этот период продаж нет'
-                : 'XYZ появится через ${d['xyz_days_left']} ${plural((d['xyz_days_left'] as num? ?? 0).toInt(), 'день', 'дня', 'дней')}',
-            children: [Text('ABC уже считается. Для XYZ нужно минимум ${d['min_weeks']} недели продаж — пока матрица скрыта.', style: AppText.small)],
+                ? tr('За этот период продаж нет', 'Bu davrda sotuv yoʻq')
+                : tr('XYZ появится через ${d['xyz_days_left']} ${plural((d['xyz_days_left'] as num? ?? 0).toInt(), 'день', 'дня', 'дней')}',
+                    'XYZ ${d['xyz_days_left']} kundan keyin paydo boʻladi'),
+            children: [
+              Text(
+                  tr('ABC уже считается. Для XYZ нужно минимум ${d['min_weeks']} недели продаж — пока матрица скрыта.',
+                      'ABC allaqachon hisoblanmoqda. XYZ uchun kamida ${d['min_weeks']} hafta sotuv kerak — hozircha matritsa yashirilgan.'),
+                  style: AppText.small)
+            ],
           ),
         ),
       if (total > 0)
         AppCard(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('$aPct% товаров дают ${(a['share'] as num).round()}% $word', style: AppText.bodyStrong),
+            Text(tr('$aPct% товаров дают ${(a['share'] as num).round()}% $word', '$aPct% mahsulot ${wordUz}ning ${(a['share'] as num).round()}%ini beradi'),
+                style: AppText.bodyStrong),
             const SizedBox(height: 10),
             Pareto(counts: [for (final k in const ['A', 'B', 'C']) (g(k)['count'] as num).toInt()], shares: [for (final k in const ['A', 'B', 'C']) (g(k)['share'] as num).toDouble()]),
             const SizedBox(height: 6),
-            Text('Товары по убыванию $word: кривая показывает, сколько дают первые N% товаров', style: AppText.small.copyWith(fontSize: 11)),
+            Text(
+                tr('Товары по убыванию $word: кривая показывает, сколько дают первые N% товаров',
+                    'Mahsulotlar $wordUz kamayishi boʻyicha: egri chiziq birinchi N% mahsulot qancha berishini koʻrsatadi'),
+                style: AppText.small.copyWith(fontSize: 11)),
           ]),
         ),
       if (xyz) ...[
@@ -206,8 +219,8 @@ class _AbcScreenState extends State<AbcScreen> {
           padding: const EdgeInsets.fromLTRB(14, 16, 10, 12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              const Expanded(child: Text('Матрица ABC × XYZ', style: AppText.title)),
-              Text('нажмите на клетку', style: AppText.small.copyWith(fontSize: 11, color: AppColors.muted)),
+              Expanded(child: Text(tr('Матрица ABC × XYZ', 'ABC × XYZ matritsasi'), style: AppText.title)),
+              Text(tr('нажмите на клетку', 'katakni bosing'), style: AppText.small.copyWith(fontSize: 11, color: AppColors.muted)),
             ]),
             const SizedBox(height: 10),
             AbcMatrix(counts: matrix, hints: true, selected: _cell, onTap: (c) => _cell == c ? _filter() : _filter(cell: c)),
@@ -216,15 +229,15 @@ class _AbcScreenState extends State<AbcScreen> {
       ],
       const SizedBox(height: 18),
       Row(children: [
-        const Text('Товары', style: AppText.h3),
+        Text(tr('Товары', 'Mahsulotlar'), style: AppText.h3),
         const SizedBox(width: 8),
         if (_cell != null || _low || (_view != null))
           Flexible(
             child: InputChip(
             label: Text(_low
-                ? 'A · заканчиваются · ${items.length}'
+                ? tr('A · заканчиваются · ${items.length}', 'A · tugayapti · ${items.length}')
                 : showNoSale
-                    ? 'без продаж · ${noSaleItems.length}'
+                    ? tr('без продаж · ${noSaleItems.length}', 'sotuvsiz · ${noSaleItems.length}')
                     : '${_cell ?? _view} · ${items.length}'),
             labelStyle: AppText.caption.copyWith(color: AppColors.white),
             backgroundColor: _low ? AppColors.primary : AppColors.ink,
@@ -235,14 +248,17 @@ class _AbcScreenState extends State<AbcScreen> {
           ),
           ),
         const Spacer(),
-        Text(showNoSale ? 'по сумме' : 'по ${const {'revenue': 'выручке', 'profit': 'прибыли', 'qty': 'количеству'}[_by]}',
+        Text(
+            showNoSale
+                ? tr('по сумме', 'summa boʻyicha')
+                : '${{'revenue': tr('по выручке', 'tushum boʻyicha'), 'profit': tr('по прибыли', 'foyda boʻyicha'), 'qty': tr('по количеству', 'miqdor boʻyicha')}[_by]}',
             style: AppText.small.copyWith(fontSize: 12)),
       ]),
       const SizedBox(height: 10),
       if (showNoSale)
         _NoSaleList(noSaleItems)
       else if (items.isEmpty)
-        const EmptyState(icon: Icons.inventory_2_outlined, title: 'Товаров нет', text: 'Попробуйте другой фильтр или период')
+        EmptyState(icon: Icons.inventory_2_outlined, title: tr('Товаров нет', 'Mahsulot yoʻq'), text: tr('Попробуйте другой фильтр или период', 'Boshqa filtr yoki davrni tanlang'))
       else ...[
         AppCard(
           padding: EdgeInsets.zero,
@@ -251,10 +267,12 @@ class _AbcScreenState extends State<AbcScreen> {
           ]),
         ),
         if (items.length > _shown)
-          TextButton(onPressed: () => setState(() => _shown += 40), child: Text('Показать ещё ${items.length - _shown}')),
+          TextButton(onPressed: () => setState(() => _shown += 40), child: Text(tr('Показать ещё ${items.length - _shown}', 'Yana ${items.length - _shown} tasini koʻrsatish'))),
       ],
       const SizedBox(height: 10),
-      Text('«на N дней» — на сколько хватит остатка при спросе за последние 14 дней. Продажи кассы и доставленные онлайн-заказы минус возвраты.',
+      Text(
+          tr('«на N дней» — на сколько хватит остатка при спросе за последние 14 дней. Продажи кассы и доставленные онлайн-заказы минус возвраты.',
+              '«N kunga» — oxirgi 14 kundagi talabda qoldiq necha kunga yetishi. Kassa sotuvlari va yetkazilgan onlayn buyurtmalar, qaytarishlarsiz.'),
           style: AppText.small.copyWith(fontSize: 11, color: AppColors.muted)),
     ];
   }
@@ -267,16 +285,24 @@ class _AbcScreenState extends State<AbcScreen> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('ABC/XYZ — что это', style: AppText.h3),
+              Text(tr('ABC/XYZ — что это', 'ABC/XYZ nima'), style: AppText.h3),
               const SizedBox(height: 12),
-              Text('ABC — сколько товар приносит денег. A — главные товары (вместе 80% выручки), B — следующие 15%, C — последние 5%.', style: AppText.body),
-              const SizedBox(height: 10),
-              Text('XYZ — насколько ровно продаётся по неделям. X — почти одинаково, Y — колеблется, Z — случайно. Нужно минимум 4 недели продаж.',
+              Text(
+                  tr('ABC — сколько товар приносит денег. A — главные товары (вместе 80% выручки), B — следующие 15%, C — последние 5%.',
+                      'ABC — mahsulot qancha pul keltirishi. A — asosiy mahsulotlar (birgalikda tushumning 80%), B — keyingi 15%, C — oxirgi 5%.'),
                   style: AppText.body),
               const SizedBox(height: 10),
-              Text('AX, AY, BX держите всегда. AZ, BY, CX — следите. BZ, CY, CZ — не держите большой запас, CZ — кандидаты на вывод.', style: AppText.body),
+              Text(
+                  tr('XYZ — насколько ровно продаётся по неделям. X — почти одинаково, Y — колеблется, Z — случайно. Нужно минимум 4 недели продаж.',
+                      'XYZ — haftalar boʻyicha qanchalik barqaror sotilishi. X — deyarli bir xil, Y — oʻzgarib turadi, Z — tasodifiy. Kamida 4 hafta sotuv kerak.'),
+                  style: AppText.body),
+              const SizedBox(height: 10),
+              Text(
+                  tr('AX, AY, BX держите всегда. AZ, BY, CX — следите. BZ, CY, CZ — не держите большой запас, CZ — кандидаты на вывод.',
+                      'AX, AY, BX doim boʻlsin. AZ, BY, CX — kuzatib boring. BZ, CY, CZ — katta zaxira saqlamang, CZ — assortimentdan chiqarishga nomzodlar.'),
+                  style: AppText.body),
               const SizedBox(height: 16),
-              BigButton(label: 'Понятно', height: 48, onPressed: () => Navigator.of(context).pop()),
+              BigButton(label: tr('Понятно', 'Tushunarli'), height: 48, onPressed: () => Navigator.of(context).pop()),
             ]),
           ),
         ),
@@ -294,7 +320,7 @@ class _ByToggle extends StatelessWidget {
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(color: const Color(0xFFEDEDEF), borderRadius: BorderRadius.circular(999)),
       child: Row(children: [
-        for (final (k, l) in const [('revenue', 'Выручке'), ('profit', 'Прибыли'), ('qty', 'Кол-ву')])
+        for (final (k, l) in [('revenue', tr('Выручке', 'Tushum')), ('profit', tr('Прибыли', 'Foyda')), ('qty', tr('Кол-ву', 'Miqdor'))])
           Expanded(
             child: GestureDetector(
               onTap: () => onChanged(k),
@@ -373,7 +399,10 @@ class _ItemRow extends StatelessWidget {
     final out = stock <= 0;
     final low = dc != null && dc < lowDays;
     final mid = dc != null && dc < 14;
-    final stockText = out ? 'нет в наличии' : '${qty(i['stock'], '${i['unit']}')}${dc != null ? ' · на ${dc > 999 ? '999+' : dc} дн.' : ''}';
+    final cover = dc == null ? '' : (dc > 999 ? '999+' : '$dc');
+    final stockText = out
+        ? tr('нет в наличии', 'mavjud emas')
+        : '${qty(i['stock'], '${i['unit']}')}${dc != null ? tr(' · на $cover дн.', ' · $cover kunga') : ''}';
     final stockColor = out || low ? const Color(0xFFB42318) : (mid ? AppColors.warningInk : AppColors.text2);
     return Container(
       color: out ? const Color(0xFFFFF5F5) : null,
@@ -404,7 +433,7 @@ class _ItemRow extends StatelessWidget {
           const SizedBox(width: 8),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
             Text(money(i['revenue'], suffix: false), style: AppText.caption.copyWith(fontSize: 13, color: AppColors.ink)),
-            Text('${(i['share'] as num).toStringAsFixed(1).replaceAll('.', ',')}% · ${shortMoney(dnum(i['profit']))} приб.', style: AppText.small.copyWith(fontSize: 10)),
+            Text('${(i['share'] as num).toStringAsFixed(1).replaceAll('.', ',')}% · ${shortMoney(dnum(i['profit']))} ${tr('приб.', 'foyda')}', style: AppText.small.copyWith(fontSize: 10)),
           ]),
         ]),
         if (!last) const Padding(padding: EdgeInsets.only(top: 12), child: Divider(height: 1, color: AppColors.soft)),
@@ -419,7 +448,7 @@ class _NoSaleList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (items.isEmpty) return const EmptyState(icon: Icons.check_circle_outline_rounded, title: 'Залежавшихся товаров нет');
+    if (items.isEmpty) return EmptyState(icon: Icons.check_circle_outline_rounded, title: tr('Залежавшихся товаров нет', 'Turib qolgan mahsulot yoʻq'));
     return AppCard(
       padding: EdgeInsets.zero,
       child: Column(children: [

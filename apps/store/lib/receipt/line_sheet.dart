@@ -95,7 +95,7 @@ class _LineSheetState extends State<_LineSheet> {
     final qty = parseNum(_qty.text);
     final price = parseNum(_price.text);
     if (qty == null || price == null) {
-      showMessage(context, 'Проверьте количество и цену');
+      showMessage(context, tr('Проверьте количество и цену', 'Miqdor va narxni tekshiring'));
       return;
     }
     final body = <String, dynamic>{'skip': false};
@@ -118,7 +118,7 @@ class _LineSheetState extends State<_LineSheet> {
         child: ConstrainedBox(
           constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.85),
           child: ListView(shrinkWrap: true, padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), children: [
-            Text('Строка $_n из накладной', style: AppText.h3),
+            Text(tr('Строка $_n из накладной', 'Yuk xatidagi $_n-qator'), style: AppText.h3),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
@@ -131,7 +131,7 @@ class _LineSheetState extends State<_LineSheet> {
                 child: TextField(
                   controller: _qty,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'Количество'),
+                  decoration: InputDecoration(labelText: tr('Количество', 'Miqdor')),
                 ),
               ),
               const SizedBox(width: 12),
@@ -139,7 +139,7 @@ class _LineSheetState extends State<_LineSheet> {
                 child: TextField(
                   controller: _price,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'Цена закупки'),
+                  decoration: InputDecoration(labelText: tr('Цена закупки', 'Xarid narxi')),
                 ),
               ),
             ]),
@@ -147,16 +147,19 @@ class _LineSheetState extends State<_LineSheet> {
             TextField(
               controller: _q,
               onChanged: _onQuery,
-              decoration: const InputDecoration(prefixIcon: Icon(Icons.search_rounded), hintText: 'Название или штрихкод товара'),
+              decoration: InputDecoration(prefixIcon: const Icon(Icons.search_rounded), hintText: tr('Название или штрихкод товара', 'Mahsulot nomi yoki shtrix-kodi')),
             ),
             const SizedBox(height: 8),
-            const Text('Похожие товары', style: AppText.caption),
+            Text(tr('Похожие товары', 'Oʻxshash mahsulotlar'), style: AppText.caption),
             if (_items == null)
               const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()))
             else if (_items!.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Text('Ничего не найдено. Измените поиск или добавьте товар в панели магазина.', style: AppText.small),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                    tr('Ничего не найдено. Измените поиск или добавьте товар в панели магазина.',
+                        'Hech narsa topilmadi. Qidiruvni oʻzgartiring yoki mahsulotni doʻkon panelida qoʻshing.'),
+                    style: AppText.small),
               )
             else
               for (final p in _items!)
@@ -168,7 +171,7 @@ class _LineSheetState extends State<_LineSheet> {
                   onChanged: (v) => setState(() => _picked = v),
                   title: Text('${p['name']}', style: AppText.bodyStrong),
                   subtitle: Text(
-                    [if (p['barcode'] != null) '${p['barcode']}', if (p['score'] != null) 'совпадение ${p['score']}%'].join(' · '),
+                    [if (p['barcode'] != null) '${p['barcode']}', if (p['score'] != null) tr('совпадение ${p['score']}%', 'moslik ${p['score']}%')].join(' · '),
                     style: AppText.small,
                   ),
                 ),
@@ -179,15 +182,19 @@ class _LineSheetState extends State<_LineSheet> {
                 value: _remember && hasSupplier,
                 onChanged: hasSupplier ? (v) => setState(() => _remember = v) : null,
                 activeColor: AppColors.success,
-                title: const Text('Запомнить для этого поставщика', style: AppText.bodyStrong),
-                subtitle: Text(hasSupplier ? 'В следующей накладной строка сопоставится сама' : 'Сначала выберите поставщика', style: AppText.small),
+                title: Text(tr('Запомнить для этого поставщика', 'Bu yetkazib beruvchi uchun eslab qolish'), style: AppText.bodyStrong),
+                subtitle: Text(
+                    hasSupplier
+                        ? tr('В следующей накладной строка сопоставится сама', 'Keyingi yuk xatida qator oʻzi moslanadi')
+                        : tr('Сначала выберите поставщика', 'Avval yetkazib beruvchini tanlang'),
+                    style: AppText.small),
               ),
             ),
             const SizedBox(height: 16),
             Row(children: [
               Expanded(
                 child: SmallButton(
-                  label: skipped ? 'Вернуть' : 'Пропустить',
+                  label: skipped ? tr('Вернуть', 'Qaytarish') : tr('Пропустить', 'Oʻtkazib yuborish'),
                   icon: skipped ? Icons.undo_rounded : Icons.remove_circle_outline_rounded,
                   onPressed: _busy ? null : () => _save({'skip': !skipped}),
                 ),
@@ -195,7 +202,7 @@ class _LineSheetState extends State<_LineSheet> {
               const SizedBox(width: 12),
               Expanded(
                 child: SmallButton(
-                  label: 'Выбрать',
+                  label: tr('Выбрать', 'Tanlash'),
                   icon: Icons.check_rounded,
                   primary: true,
                   onPressed: _busy || _picked == null ? null : _choose,

@@ -72,18 +72,18 @@ class _OrderScreenState extends State<OrderScreen> {
     try {
       final api = context.read<Api>();
       final o = await api.get('/client/orders/${widget.id}') as Map<String, dynamic>;
-      Map<String, dynamic>? tr;
+      Map<String, dynamic>? track;
       if (o['courier_name'] != null && {'accepted', 'picking', 'picked', 'delivering'}.contains(o['status'])) {
         try {
-          tr = await api.get('/client/orders/${widget.id}/tracking') as Map<String, dynamic>;
+          track = await api.get('/client/orders/${widget.id}/tracking') as Map<String, dynamic>;
         } catch (_) {
-          tr = _tracking;
+          track = _tracking;
         }
       }
       if (mounted) {
         setState(() {
           _order = o;
-          _tracking = tr;
+          _tracking = track;
         });
       }
     } catch (e) {
@@ -101,7 +101,11 @@ class _OrderScreenState extends State<OrderScreen> {
   }
 
   Future<void> _cancel() async {
-    final ok = await confirmSheet(context, title: 'Отменить заказ?', text: 'Если заказ оплачен, деньги вернутся на карту.', confirm: 'Отменить заказ', cancel: 'Не отменять');
+    final ok = await confirmSheet(context,
+        title: tr('Отменить заказ?', 'Buyurtma bekor qilinsinmi?'),
+        text: tr('Если заказ оплачен, деньги вернутся на карту.', 'Agar buyurtma toʻlangan boʻlsa, pul kartaga qaytariladi.'),
+        confirm: tr('Отменить заказ', 'Buyurtmani bekor qilish'),
+        cancel: tr('Не отменять', 'Bekor qilmaslik'));
     if (!ok || !mounted) return;
     setState(() => _busy = true);
     try {
@@ -118,8 +122,8 @@ class _OrderScreenState extends State<OrderScreen> {
   Widget build(BuildContext context) {
     final o = _order;
     final status = o?['status'] as String?;
-    final tr = _tracking;
-    if (o != null && status == 'delivering' && tr != null && !_details) return _trackingView(o, tr);
+    final track = _tracking;
+    if (o != null && status == 'delivering' && track != null && !_details) return _trackingView(o, track);
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: SafeArea(
@@ -130,7 +134,7 @@ class _OrderScreenState extends State<OrderScreen> {
             child: Row(children: [
               RoundIconButton(icon: Icons.arrow_back_rounded, bg: AppColors.white, onTap: () => Navigator.of(context).pop()),
               const SizedBox(width: 12),
-              Text(o == null ? 'Заказ' : 'Заказ № ${o['number']}', style: AppText.title),
+              Text(o == null ? tr('Заказ', 'Buyurtma') : tr('Заказ № ${o['number']}', 'Buyurtma № ${o['number']}'), style: AppText.title),
             ]),
           ),
           Expanded(
@@ -144,24 +148,24 @@ class _OrderScreenState extends State<OrderScreen> {
                         const SizedBox(height: 12),
                         HandoffCodeCard(code: '${o['handoff_code']}'),
                       ],
-                      if (tr?['courier'] != null) ...[
+                      if (track?['courier'] != null) ...[
                         const SizedBox(height: 12),
-                        CourierCard(courier: tr!['courier'] as Map<String, dynamic>),
+                        CourierCard(courier: track!['courier'] as Map<String, dynamic>),
                       ],
                       const SizedBox(height: 16),
                       AppCard(
                         padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
                         child: Column(children: [
-                          AppListRow(icon: Icons.storefront_outlined, title: o['store_name'] as String, subtitle: 'Магазин'),
+                          AppListRow(icon: Icons.storefront_outlined, title: o['store_name'] as String, subtitle: tr('Магазин', 'Doʻkon')),
                           AppListRow(
                             icon: Icons.schedule_rounded,
-                            title: windowLabel(o['delivery_from'], o['delivery_to']) ?? 'Как можно скорее',
-                            subtitle: 'Время доставки',
+                            title: windowLabel(o['delivery_from'], o['delivery_to']) ?? tr('Как можно скорее', 'Imkon qadar tez'),
+                            subtitle: tr('Время доставки', 'Yetkazish vaqti'),
                           ),
                           AppListRow(
                             icon: Icons.location_on_outlined,
-                            title: '${o['address']}${(o['apartment'] as String? ?? '').isNotEmpty ? ', кв. ${o['apartment']}' : ''}',
-                            subtitle: 'Адрес доставки',
+                            title: '${o['address']}${(o['apartment'] as String? ?? '').isNotEmpty ? tr(', кв. ${o['apartment']}', ', ${o['apartment']}-xonadon') : ''}',
+                            subtitle: tr('Адрес доставки', 'Yetkazish manzili'),
                             divider: false,
                           ),
                         ]),
@@ -169,7 +173,7 @@ class _OrderScreenState extends State<OrderScreen> {
                       const SizedBox(height: 16),
                       AppCard(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          const Text('Состав заказа', style: AppText.title),
+                          Text(tr('Состав заказа', 'Buyurtma tarkibi'), style: AppText.title),
                           const SizedBox(height: 8),
                           for (final i in (o['items'] as List? ?? const []).cast<Map<String, dynamic>>())
                             Padding(
@@ -196,18 +200,19 @@ class _OrderScreenState extends State<OrderScreen> {
                             ),
                           const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Divider()),
                           if ((num.tryParse('${o['discount']}') ?? 0) > 0) ...[
-                            _row('Товары', money(addMoney(['${o['subtotal']}', '${o['discount']}']))),
-                            _row('Скидка', '−${money(o['discount'])}', color: AppColors.primary),
+                            _row(tr('Товары', 'Mahsulotlar'), money(addMoney(['${o['subtotal']}', '${o['discount']}']))),
+                            _row(tr('Скидка', 'Chegirma'), '−${money(o['discount'])}', color: AppColors.primary),
                           ] else
-                            _row('Товары', money(o['subtotal'])),
-                          _row('Доставка', (num.tryParse('${o['delivery_fee']}') ?? 0) == 0 ? 'Бесплатно' : money(o['delivery_fee'])),
-                          _row('Итого', money(o['total']), bold: true),
+                            _row(tr('Товары', 'Mahsulotlar'), money(o['subtotal'])),
+                          _row(tr('Доставка', 'Yetkazish'),
+                              (num.tryParse('${o['delivery_fee']}') ?? 0) == 0 ? tr('Бесплатно', 'Bepul') : money(o['delivery_fee'])),
+                          _row(tr('Итого', 'Jami'), money(o['total']), bold: true),
                         ]),
                       ),
                       const SizedBox(height: 16),
                       AppCard(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          const Text('История', style: AppText.title),
+                          Text(tr('История', 'Tarix'), style: AppText.title),
                           const SizedBox(height: 8),
                           for (final h in (o['history'] as List? ?? const []).cast<Map<String, dynamic>>())
                             Padding(
@@ -234,10 +239,10 @@ class _OrderScreenState extends State<OrderScreen> {
           ? null
           : BottomActionBar(
               child: Row(children: [
-                Expanded(child: AppButton(label: 'Отменить', type: AppButtonType.outline, onPressed: _busy ? null : _cancel)),
+                Expanded(child: AppButton(label: tr('Отменить', 'Bekor qilish'), type: AppButtonType.outline, onPressed: _busy ? null : _cancel)),
                 if (status == 'awaiting_payment') ...[
                   const SizedBox(width: 12),
-                  Expanded(child: AppButton(label: 'Оплатить', onPressed: _pay)),
+                  Expanded(child: AppButton(label: tr('Оплатить', 'Toʻlash'), onPressed: _pay)),
                 ],
               ]),
             ),
@@ -245,16 +250,16 @@ class _OrderScreenState extends State<OrderScreen> {
   }
 
   /// Заказ в пути — по макету: карта с курьером сверху, статус и курьер в листе.
-  Widget _trackingView(Map<String, dynamic> o, Map<String, dynamic> tr) {
+  Widget _trackingView(Map<String, dynamic> o, Map<String, dynamic> track) {
     ({double lat, double lng}) pt(Object? p) {
       final m = p as Map<String, dynamic>;
       return (lat: (m['lat'] as num).toDouble(), lng: (m['lng'] as num).toDouble());
     }
 
-    final courier = tr['courier'] as Map<String, dynamic>?;
+    final courier = track['courier'] as Map<String, dynamic>?;
     final loc = courier?['location'];
-    final eta = tr['eta_minutes'] as num?;
-    final etaAt = tr['eta_at'] == null ? null : hhmm(DateTime.parse('${tr['eta_at']}'));
+    final eta = track['eta_minutes'] as num?;
+    final etaAt = track['eta_at'] == null ? null : hhmm(DateTime.parse('${track['eta_at']}'));
     final size = MediaQuery.sizeOf(context);
     final items = (o['items'] as List? ?? const []).length;
     return Scaffold(
@@ -267,8 +272,8 @@ class _OrderScreenState extends State<OrderScreen> {
           height: size.height * 0.5,
           child: TrackingMap(
             key: ValueKey('track-${loc != null}'),
-            store: pt(tr['store']),
-            destination: pt(tr['destination']),
+            store: pt(track['store']),
+            destination: pt(track['destination']),
             courier: loc == null ? null : pt(loc),
           ),
         ),
@@ -293,10 +298,13 @@ class _OrderScreenState extends State<OrderScreen> {
               child: ListView(padding: EdgeInsets.fromLTRB(16, 10, 16, 16 + MediaQuery.paddingOf(context).bottom), children: [
                 Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.line, borderRadius: BorderRadius.circular(2)))),
                 const SizedBox(height: 16),
-                const Text('Курьер в пути', style: AppText.h2),
+                Text(tr('Курьер в пути', 'Kuryer yoʻlda'), style: AppText.h2),
                 const SizedBox(height: 4),
                 Text(
-                  eta == null ? 'Скоро будет у вас' : 'Будет через ${eta.toInt()} мин${etaAt == null ? '' : ' — примерно к $etaAt'}',
+                  eta == null
+                      ? tr('Скоро будет у вас', 'Tez orada sizda boʻladi')
+                      : tr('Будет через ${eta.toInt()} мин${etaAt == null ? '' : ' — примерно к $etaAt'}',
+                          '${eta.toInt()} daqiqada yetib keladi${etaAt == null ? '' : ' — taxminan soat $etaAt da'}'),
                   style: AppText.body.copyWith(color: AppColors.text2),
                 ),
                 const SizedBox(height: 20),
@@ -312,7 +320,8 @@ class _OrderScreenState extends State<OrderScreen> {
                 const SizedBox(height: 12),
                 AppListRow(
                   icon: Icons.receipt_long_outlined,
-                  title: 'Заказ № ${o['number']} · $items ${items == 1 ? 'товар' : (items >= 2 && items <= 4 ? 'товара' : 'товаров')}',
+                  title: tr('Заказ № ${o['number']} · $items ${items == 1 ? 'товар' : (items >= 2 && items <= 4 ? 'товара' : 'товаров')}',
+                      'Buyurtma № ${o['number']} · $items ta mahsulot'),
                   subtitle: '${o['store_name']} · ${money(o['total'])}',
                   divider: false,
                   onTap: () => setState(() => _details = true),
@@ -345,17 +354,28 @@ class _StatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final status = order['status'] as String;
     final (title, text) = switch (status) {
-      'awaiting_payment' => ('Ждём оплату', 'Подтвердите платёж в ${order['payment_provider'] == 'click' ? 'Click' : 'Payme'} — статус обновится сам. Неоплаченный заказ отменится автоматически.'),
+      'awaiting_payment' => (
+          tr('Ждём оплату', 'Toʻlov kutilmoqda'),
+          tr('Подтвердите платёж в ${order['payment_provider'] == 'click' ? 'Click' : 'Payme'} — статус обновится сам. Неоплаченный заказ отменится автоматически.',
+              'Toʻlovni ${order['payment_provider'] == 'click' ? 'Click' : 'Payme'} ilovasida tasdiqlang — holat oʻzi yangilanadi. Toʻlanmagan buyurtma avtomatik bekor qilinadi.')
+        ),
       'paid' => order['payment_provider'] == 'cash'
-          ? ('Заказ оформлен', 'Оплата наличными курьеру. Передали заказ в магазин — ждём, когда его примут.')
-          : ('Заказ оплачен', 'Передали заказ в магазин — ждём, когда его примут.'),
-      'accepted' => ('Магазин принял заказ', 'Скоро начнут собирать продукты.'),
-      'picking' => ('Собираем заказ', 'Сборщик складывает ваши продукты.'),
-      'picked' => ('Заказ собран', 'Ждём курьера.'),
-      'delivering' => ('Курьер в пути', 'Скоро будет у вас.'),
-      'delivered' => ('Заказ доставлен', 'Приятного аппетита!'),
-      'cancelled' => ('Заказ отменён', (order['cancel_reason'] as String? ?? '').isEmpty ? '' : 'Причина: ${order['cancel_reason']}'),
-      'expired' => ('Заказ не оплачен', 'Время на оплату истекло, заказ отменён.'),
+          ? (
+              tr('Заказ оформлен', 'Buyurtma rasmiylashtirildi'),
+              tr('Оплата наличными курьеру. Передали заказ в магазин — ждём, когда его примут.',
+                  'Toʻlov kuryerga naqd pulda. Buyurtma doʻkonga yuborildi — qabul qilinishini kutyapmiz.')
+            )
+          : (tr('Заказ оплачен', 'Buyurtma toʻlandi'), tr('Передали заказ в магазин — ждём, когда его примут.', 'Buyurtma doʻkonga yuborildi — qabul qilinishini kutyapmiz.')),
+      'accepted' => (tr('Магазин принял заказ', 'Doʻkon buyurtmani qabul qildi'), tr('Скоро начнут собирать продукты.', 'Tez orada mahsulotlarni yigʻishni boshlashadi.')),
+      'picking' => (tr('Собираем заказ', 'Buyurtma yigʻilmoqda'), tr('Сборщик складывает ваши продукты.', 'Yigʻuvchi mahsulotlaringizni joylamoqda.')),
+      'picked' => (tr('Заказ собран', 'Buyurtma yigʻildi'), tr('Ждём курьера.', 'Kuryer kutilmoqda.')),
+      'delivering' => (tr('Курьер в пути', 'Kuryer yoʻlda'), tr('Скоро будет у вас.', 'Tez orada sizda boʻladi.')),
+      'delivered' => (tr('Заказ доставлен', 'Buyurtma yetkazildi'), tr('Приятного аппетита!', 'Yoqimli ishtaha!')),
+      'cancelled' => (
+          tr('Заказ отменён', 'Buyurtma bekor qilindi'),
+          (order['cancel_reason'] as String? ?? '').isEmpty ? '' : tr('Причина: ${order['cancel_reason']}', 'Sabab: ${order['cancel_reason']}')
+        ),
+      'expired' => (tr('Заказ не оплачен', 'Buyurtma toʻlanmadi'), tr('Время на оплату истекло, заказ отменён.', 'Toʻlov vaqti tugadi, buyurtma bekor qilindi.')),
       _ => (order['status_title'] as String? ?? status, ''),
     };
     final done = switch (status) {
@@ -382,8 +402,8 @@ class _StatusCard extends StatelessWidget {
           Expanded(child: Text(title, style: AppText.h3.copyWith(fontWeight: FontWeight.w700))),
         ]),
         if (text.isNotEmpty) ...[const SizedBox(height: 10), Text(text, style: AppText.small.copyWith(fontSize: 14))],
-        if (payment == 'refund_pending') ...[const SizedBox(height: 8), Text('Деньги возвращаются на карту', style: AppText.smallStrong)],
-        if (payment == 'refunded') ...[const SizedBox(height: 8), Text('Деньги возвращены на карту', style: AppText.smallStrong)],
+        if (payment == 'refund_pending') ...[const SizedBox(height: 8), Text(tr('Деньги возвращаются на карту', 'Pul kartaga qaytarilmoqda'), style: AppText.smallStrong)],
+        if (payment == 'refunded') ...[const SizedBox(height: 8), Text(tr('Деньги возвращены на карту', 'Pul kartaga qaytarildi'), style: AppText.smallStrong)],
         if (!bad && status != 'awaiting_payment') ...[
           const SizedBox(height: 20),
           _Steps(done: done, current: current),
@@ -400,7 +420,7 @@ class _Steps extends StatelessWidget {
   final int done;
   final int current;
 
-  static const _labels = ['Принят', 'Собран', 'В пути', 'Доставлен'];
+  static List<String> get _labels => [tr('Принят', 'Qabul'), tr('Собран', 'Yigʻildi'), tr('В пути', 'Yoʻlda'), tr('Доставлен', 'Yetkazildi')];
 
   @override
   Widget build(BuildContext context) {
@@ -445,19 +465,24 @@ class _Steps extends StatelessWidget {
   }
 }
 
-const statusTitles = {
-  'awaiting_payment': 'Ожидает оплаты',
-  'paid': 'Оплачен',
-  'accepted': 'Принят магазином',
-  'picking': 'Собирается',
-  'picked': 'Собран',
-  'delivering': 'Курьер в пути',
-  'delivered': 'Доставлен',
-  'cancelled': 'Отменён',
-  'expired': 'Не оплачен вовремя',
-};
+Map<String, String> get statusTitles => {
+      'awaiting_payment': tr('Ожидает оплаты', 'Toʻlov kutilmoqda'),
+      'paid': tr('Оплачен', 'Toʻlandi'),
+      'accepted': tr('Принят магазином', 'Doʻkon qabul qildi'),
+      'picking': tr('Собирается', 'Yigʻilmoqda'),
+      'picked': tr('Собран', 'Yigʻildi'),
+      'delivering': tr('Курьер в пути', 'Kuryer yoʻlda'),
+      'delivered': tr('Доставлен', 'Yetkazildi'),
+      'cancelled': tr('Отменён', 'Bekor qilindi'),
+      'expired': tr('Не оплачен вовремя', 'Oʻz vaqtida toʻlanmadi'),
+    };
 
-const _vehicleNames = {'foot': 'пешком', 'bike': 'на велосипеде', 'scooter': 'на скутере', 'car': 'на машине'};
+Map<String, String> get _vehicleNames => {
+      'foot': tr('пешком', 'piyoda'),
+      'bike': tr('на велосипеде', 'velosipedda'),
+      'scooter': tr('на скутере', 'skuterda'),
+      'car': tr('на машине', 'mashinada'),
+    };
 
 /// Карточка курьера: имя, транспорт, сообщение и звонок (телефон — только пока заказ в пути).
 class CourierCard extends StatelessWidget {
@@ -495,10 +520,10 @@ class CourierCard extends StatelessWidget {
               Row(children: [
                 const Icon(Icons.verified_rounded, size: 14, color: AppColors.success),
                 const SizedBox(width: 4),
-                Flexible(child: Text('Курьер по пути · личность подтверждена', style: AppText.small.copyWith(color: AppColors.success))),
+                Flexible(child: Text(tr('Курьер по пути · личность подтверждена', 'Yoʻlakay kuryer · shaxsi tasdiqlangan'), style: AppText.small.copyWith(color: AppColors.success))),
               ])
             else
-              Text('Курьер · ${_vehicleNames[courier['vehicle']] ?? ''}', style: AppText.small),
+              Text(tr('Курьер · ${_vehicleNames[courier['vehicle']] ?? ''}', 'Kuryer · ${_vehicleNames[courier['vehicle']] ?? ''}'), style: AppText.small),
           ]),
         ),
         if (phone != null) ...[
@@ -534,8 +559,8 @@ class HandoffCodeCard extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Код получения', style: AppText.bodyStrong),
-            Text('Назовите его курьеру, только когда заказ у вас в руках', style: AppText.small),
+            Text(tr('Код получения', 'Qabul qilish kodi'), style: AppText.bodyStrong),
+            Text(tr('Назовите его курьеру, только когда заказ у вас в руках', 'Uni kuryerga faqat buyurtma qoʻlingizda boʻlganda ayting'), style: AppText.small),
           ]),
         ),
         const SizedBox(width: 12),

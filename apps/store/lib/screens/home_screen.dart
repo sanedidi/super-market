@@ -114,8 +114,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Новых заказов: $_newOrders', style: AppText.bodyStrong.copyWith(color: AppColors.white, fontSize: 16)),
-                    Text('Примите их как можно скорее', style: AppText.small.copyWith(color: AppColors.white)),
+                    Text(tr('Новых заказов: $_newOrders', 'Yangi buyurtmalar: $_newOrders'), style: AppText.bodyStrong.copyWith(color: AppColors.white, fontSize: 16)),
+                    Text(tr('Примите их как можно скорее', 'Ularni imkon qadar tezroq qabul qiling'), style: AppText.small.copyWith(color: AppColors.white)),
                   ]),
                 ),
                 const Icon(Icons.chevron_right_rounded, color: AppColors.white),
@@ -145,19 +145,19 @@ class _HomeScreenState extends State<HomeScreen> {
       Expanded(
         child: _MiniAction(
           icon: Icons.document_scanner_rounded,
-          label: 'Приход',
+          label: tr('Приход', 'Kirim'),
           bg: AppColors.primarySoft,
           fg: AppColors.primary,
           onTap: canIncome ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CaptureScreen())) : null,
         ),
       ),
       const SizedBox(width: 8),
-      Expanded(child: _MiniAction(icon: Icons.inventory_2_rounded, label: 'Склад', bg: AppColors.blueSoft, fg: AppColors.blue, onTap: () => widget.onTab(2))),
+      Expanded(child: _MiniAction(icon: Icons.inventory_2_rounded, label: tr('Склад', 'Ombor'), bg: AppColors.blueSoft, fg: AppColors.blue, onTap: () => widget.onTab(2))),
       const SizedBox(width: 8),
       Expanded(
         child: _MiniAction(
           icon: Icons.insights_rounded,
-          label: 'Итоги дня',
+          label: tr('Итоги дня', 'Kun yakunlari'),
           bg: AppColors.successSoft,
           fg: AppColors.successInk,
           onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SummaryScreen())),
@@ -172,27 +172,27 @@ class _HomeScreenState extends State<HomeScreen> {
           if (_sales != null) ...[
             AppCard(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Сегодня', style: AppText.title),
+                Text(tr('Сегодня', 'Bugun'), style: AppText.title),
                 const SizedBox(height: 12),
-                const Text('Выручка на кассе', style: AppText.small),
+                Text(tr('Выручка на кассе', 'Kassadagi tushum'), style: AppText.small),
                 Text(money(_sales!['net']), style: AppText.h1.copyWith(fontSize: 30)),
                 const SizedBox(height: 12),
                 Row(children: [
-                  Expanded(child: _Kpi('Чеков', '${_sales!['sales_count'] ?? 0}')),
+                  Expanded(child: _Kpi(tr('Чеков', 'Cheklar'), '${_sales!['sales_count'] ?? 0}')),
                   const SizedBox(width: 8),
-                  Expanded(child: _Kpi('Возвратов', '${_sales!['returns_count'] ?? 0}')),
+                  Expanded(child: _Kpi(tr('Возвратов', 'Qaytarishlar'), '${_sales!['returns_count'] ?? 0}')),
                 ]),
               ]),
             ),
             const SizedBox(height: 16),
           ],
-          const Text('Быстрые действия', style: AppText.h3),
+          Text(tr('Быстрые действия', 'Tezkor amallar'), style: AppText.h3),
           const SizedBox(height: 12),
           Row(children: [
             Expanded(
               child: _Action(
                 icon: Icons.document_scanner_rounded,
-                label: 'Приход по фото',
+                label: tr('Приход по фото', 'Rasm orqali kirim'),
                 bg: AppColors.primarySoft,
                 fg: AppColors.primary,
                 onTap: canIncome ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CaptureScreen())) : null,
@@ -200,7 +200,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _Action(icon: Icons.inventory_2_rounded, label: 'Склад', bg: AppColors.blueSoft, fg: AppColors.blue, onTap: () => widget.onTab(2)),
+              child: _Action(icon: Icons.inventory_2_rounded, label: tr('Склад', 'Ombor'), bg: AppColors.blueSoft, fg: AppColors.blue, onTap: () => widget.onTab(2)),
             ),
           ]),
           if (_balance != null) ...[
@@ -211,8 +211,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('К выводу: ${money(_balance!['available'])}', style: AppText.bodyStrong),
-                    Text('Ждёт доставки: ${money(_balance!['pending'])}', style: AppText.small),
+                    Text(tr('К выводу: ${money(_balance!['available'])}', 'Yechib olish mumkin: ${money(_balance!['available'])}'), style: AppText.bodyStrong),
+                    Text(tr('Ждёт доставки: ${money(_balance!['pending'])}', 'Yetkazilishini kutmoqda: ${money(_balance!['pending'])}'), style: AppText.small),
                   ]),
                 ),
               ]),

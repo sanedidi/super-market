@@ -78,7 +78,7 @@ class _SupplierSheetState extends State<_SupplierSheet> {
         child: ConstrainedBox(
           constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.8),
           child: ListView(shrinkWrap: true, padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), children: [
-            const Text('Поставщик', style: AppText.h3),
+            Text(tr('Поставщик', 'Yetkazib beruvchi'), style: AppText.h3),
             const SizedBox(height: 12),
             if (scanned.isNotEmpty) ...[
               Container(
@@ -86,8 +86,8 @@ class _SupplierSheetState extends State<_SupplierSheet> {
                 child: ListTile(
                   enabled: !_busy,
                   leading: const Icon(Icons.add_business_rounded, color: AppColors.primary),
-                  title: Text('Добавить «$scanned»', style: AppText.bodyStrong),
-                  subtitle: Text(inn.isEmpty ? 'как в накладной' : 'ИНН $inn · как в накладной', style: AppText.small),
+                  title: Text(tr('Добавить «$scanned»', '«$scanned»ni qoʻshish'), style: AppText.bodyStrong),
+                  subtitle: Text(inn.isEmpty ? tr('как в накладной', 'yuk xatidagidek') : tr('ИНН $inn · как в накладной', 'STIR $inn · yuk xatidagidek'), style: AppText.small),
                   onTap: () => _set({'create': true}),
                 ),
               ),
@@ -99,13 +99,13 @@ class _SupplierSheetState extends State<_SupplierSheet> {
                 _debounce?.cancel();
                 _debounce = Timer(const Duration(milliseconds: 350), _search);
               },
-              decoration: const InputDecoration(prefixIcon: Icon(Icons.search_rounded), hintText: 'Поиск поставщика'),
+              decoration: InputDecoration(prefixIcon: const Icon(Icons.search_rounded), hintText: tr('Поиск поставщика', 'Yetkazib beruvchini qidirish')),
             ),
             const SizedBox(height: 8),
             if (_items == null)
               const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()))
             else if (_items!.isEmpty)
-              const Padding(padding: EdgeInsets.all(12), child: Text('Поставщики не найдены', style: AppText.small))
+              Padding(padding: const EdgeInsets.all(12), child: Text(tr('Поставщики не найдены', 'Yetkazib beruvchilar topilmadi'), style: AppText.small))
             else
               for (final c in _items!)
                 ListTile(
@@ -113,7 +113,7 @@ class _SupplierSheetState extends State<_SupplierSheet> {
                   enabled: !_busy,
                   leading: const Icon(Icons.local_shipping_outlined),
                   title: Text('${c['name']}', style: AppText.bodyStrong),
-                  subtitle: (c['inn'] as String?)?.isNotEmpty == true ? Text('ИНН ${c['inn']}', style: AppText.small) : null,
+                  subtitle: (c['inn'] as String?)?.isNotEmpty == true ? Text('${tr('ИНН', 'STIR')} ${c['inn']}', style: AppText.small) : null,
                   trailing: c['id'] == widget.scan['counterparty_id'] ? const Icon(Icons.check_rounded, color: AppColors.primary) : null,
                   onTap: () => _set({'counterparty_id': c['id']}),
                 ),

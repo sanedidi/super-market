@@ -93,7 +93,7 @@ class Push {
           content: Text([n.title, n.body].whereType<String>().join('\n')),
           action: m.data['type'] == null
               ? null
-              : SnackBarAction(label: 'Открыть', onPressed: () => _open(m)),
+              : SnackBarAction(label: tr('Открыть', 'Ochish'), onPressed: () => _open(m)),
         ));
       });
     } catch (e) {

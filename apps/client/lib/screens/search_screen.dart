@@ -29,13 +29,13 @@ class SearchOffer {
   int? get etaMin => (json['eta_min'] as num?)?.toInt();
   int? get etaMax => (json['eta_max'] as num?)?.toInt();
 
-  String get distanceText => distanceM < 1000 ? '$distanceM м' : '${(distanceM / 1000).toStringAsFixed(1)} км';
+  String get distanceText => distanceM < 1000 ? tr('$distanceM м', '$distanceM m') : tr('${(distanceM / 1000).toStringAsFixed(1)} км', '${(distanceM / 1000).toStringAsFixed(1)} km');
 
   /// «привезут за 25–35 мин» или «не доставляет · 1,2 км».
   String get meta {
-    if (!delivers) return 'не доставляет · $distanceText';
+    if (!delivers) return tr('не доставляет · $distanceText', 'yetkazmaydi · $distanceText');
     final eta = Store({'eta_min': etaMin, 'eta_max': etaMax}).etaText;
-    return eta == null ? 'привезут · $distanceText' : 'привезут за $eta';
+    return eta == null ? tr('привезут · $distanceText', 'yetkazadi · $distanceText') : tr('привезут за $eta', '$eta ichida yetkazadi');
   }
 }
 
@@ -58,8 +58,8 @@ class SearchItem {
       });
 }
 
-/// «Склонение»: 1 магазине, 3 магазинах.
-String inStoresWord(int n) => n % 10 == 1 && n % 100 != 11 ? '$n магазине' : '$n магазинах';
+/// «Склонение»: 1 магазине, 3 магазинах; по-узбекски — «3 ta doʻkonda».
+String inStoresWord(int n) => tr(n % 10 == 1 && n % 100 != 11 ? '$n магазине' : '$n магазинах', '$n ta doʻkonda');
 
 /// Поиск по всем магазинам рядом (Figma К7): товар → в каких магазинах есть,
 /// почём и привезут ли. Сначала магазины, которые привезут, дешевле и ближе.
@@ -153,7 +153,7 @@ class _SearchScreenState extends State<SearchScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: Stack(alignment: Alignment.centerRight, children: [
-                  AppSearchField(hint: 'Найти во всех магазинах', controller: _q, autofocus: widget.query.isEmpty, onChanged: _onChanged),
+                  AppSearchField(hint: tr('Найти во всех магазинах', 'Barcha doʻkonlardan qidirish'), controller: _q, autofocus: widget.query.isEmpty, onChanged: _onChanged),
                   if (_q.text.isNotEmpty)
                     IconButton(
                       icon: const Icon(Icons.cancel_rounded, color: AppColors.muted),
@@ -170,7 +170,7 @@ class _SearchScreenState extends State<SearchScreen> {
             height: 40,
             child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), children: [
               AppChip(
-                label: 'Все магазины',
+                label: tr('Все магазины', 'Barcha doʻkonlar'),
                 selected: !_onlyDelivering,
                 onTap: () {
                   setState(() => _onlyDelivering = false);
@@ -179,7 +179,7 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
               const SizedBox(width: 8),
               AppChip(
-                label: 'Только с доставкой',
+                label: tr('Только с доставкой', 'Faqat yetkazadiganlar'),
                 selected: _onlyDelivering,
                 onTap: () {
                   setState(() => _onlyDelivering = true);
@@ -197,20 +197,28 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _body(List<SearchItem>? items, AppState state) {
     if (_error != null && items == null) {
-      return EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось найти', text: _error.toString(), action: 'Повторить', onAction: _search);
+      return EmptyState(
+          icon: Icons.wifi_off_rounded,
+          title: tr('Не удалось найти', 'Qidirib boʻlmadi'),
+          text: _error.toString(),
+          action: tr('Повторить', 'Qayta urinish'),
+          onAction: _search);
     }
     if (items == null) {
-      return const EmptyState(
+      return EmptyState(
         icon: Icons.search_rounded,
-        title: 'Что ищем?',
-        text: 'Ищем во всех магазинах рядом — покажем, где есть товар, почём и привезут ли.',
+        title: tr('Что ищем?', 'Nima qidiramiz?'),
+        text: tr('Ищем во всех магазинах рядом — покажем, где есть товар, почём и привезут ли.',
+            'Yaqindagi barcha doʻkonlardan qidiramiz — mahsulot qayerda borligi, narxi va yetkazib berilishini koʻrsatamiz.'),
       );
     }
     if (items.isEmpty) {
       return EmptyState(
         icon: Icons.search_off_rounded,
-        title: 'Ничего не нашли',
-        text: _onlyDelivering ? 'В магазинах с доставкой такого нет. Попробуйте «Все магазины».' : 'Попробуйте написать по-другому.',
+        title: tr('Ничего не нашли', 'Hech narsa topilmadi'),
+        text: _onlyDelivering
+            ? tr('В магазинах с доставкой такого нет. Попробуйте «Все магазины».', 'Yetkazadigan doʻkonlarda bunday mahsulot yoʻq. «Barcha doʻkonlar»ni sinab koʻring.')
+            : tr('Попробуйте написать по-другому.', 'Boshqacha yozib koʻring.'),
       );
     }
     return ListView.separated(
@@ -219,7 +227,10 @@ class _SearchScreenState extends State<SearchScreen> {
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (_, i) {
         if (i == 0) {
-          return Text('Нашли ${items.length} ${_goods(items.length)} в ${inStoresWord(_stores)} рядом', style: AppText.small);
+          return Text(
+              tr('Нашли ${items.length} ${_goods(items.length)} в ${inStoresWord(_stores)} рядом',
+                  'Yaqindagi ${inStoresWord(_stores)} ${items.length} ta mahsulot topildi'),
+              style: AppText.small);
         }
         return _card(items[i - 1], state);
       },
@@ -253,7 +264,9 @@ class _SearchScreenState extends State<SearchScreen> {
               Text('${p['name'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong),
               const SizedBox(height: 4),
               Text(
-                offers.length == 1 ? 'есть в 1 магазине · ${money(it.minPrice)}' : 'есть в ${inStoresWord(offers.length)} · от ${money(it.minPrice)}',
+                offers.length == 1
+                    ? tr('есть в 1 магазине · ${money(it.minPrice)}', '1 ta doʻkonda bor · ${money(it.minPrice)}')
+                    : tr('есть в ${inStoresWord(offers.length)} · от ${money(it.minPrice)}', '${inStoresWord(offers.length)} bor · ${money(it.minPrice)} dan'),
                 style: AppText.small,
               ),
             ]),
@@ -264,7 +277,7 @@ class _SearchScreenState extends State<SearchScreen> {
         if (offers.length > 3)
           TextButton(
             onPressed: () => setState(() => open ? _expanded.remove(id) : _expanded.add(id)),
-            child: Text(open ? 'Свернуть' : 'Ещё ${offers.length - 3}', style: AppText.smallStrong.copyWith(color: AppColors.primary)),
+            child: Text(open ? tr('Свернуть', 'Yigʻish') : tr('Ещё ${offers.length - 3}', 'Yana ${offers.length - 3}'), style: AppText.smallStrong.copyWith(color: AppColors.primary)),
           ),
       ]),
     );

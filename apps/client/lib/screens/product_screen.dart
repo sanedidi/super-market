@@ -118,12 +118,12 @@ class _ProductScreenState extends State<ProductScreen> {
     final subtitle = [_p.brand, attrs['volume']].whereType<String>().where((s) => s.isNotEmpty).join(' · ');
     final nutrition = (attrs['nutrition'] as Map<String, dynamic>?) ?? const {};
     final details = <(String, String)>[
-      for (final (k, label) in const [
-        ('composition', 'Состав'),
-        ('shelf_life', 'Срок хранения'),
-        ('storage', 'Хранение'),
-        ('manufacturer', 'Производитель'),
-        ('country', 'Страна'),
+      for (final (k, label) in [
+        ('composition', tr('Состав', 'Tarkibi')),
+        ('shelf_life', tr('Срок хранения', 'Saqlash muddati')),
+        ('storage', tr('Хранение', 'Saqlash sharoiti')),
+        ('manufacturer', tr('Производитель', 'Ishlab chiqaruvchi')),
+        ('country', tr('Страна', 'Mamlakat')),
       ])
         if ('${attrs[k] ?? ''}'.trim().isNotEmpty) (label, '${attrs[k]}'),
     ];
@@ -160,17 +160,17 @@ class _ProductScreenState extends State<ProductScreen> {
               ],
               const SizedBox(height: 12),
               Wrap(spacing: 8, runSpacing: 8, children: [
-                if (_p.isNew) const AppBadge(label: 'Новинка', kind: BadgeKind.isNew),
+                if (_p.isNew) AppBadge(label: tr('Новинка', 'Yangi'), kind: BadgeKind.isNew),
                 available > 0
-                    ? const AppBadge(label: 'В наличии', kind: BadgeKind.success)
-                    : const AppBadge(label: 'Нет в наличии', kind: BadgeKind.error),
+                    ? AppBadge(label: tr('В наличии', 'Mavjud'), kind: BadgeKind.success)
+                    : AppBadge(label: tr('Нет в наличии', 'Mavjud emas'), kind: BadgeKind.error),
               ]),
               const SizedBox(height: 20),
               _StoreRow(
                   name: _store.name,
                   logoUrl: store?.logoUrl,
                   eta: canOrder ? store?.etaText : null,
-                  note: canOrder || store == null ? null : 'Есть в магазине · ${noDeliveryText(store)}',
+                  note: canOrder || store == null ? null : tr('Есть в магазине · ${noDeliveryText(store)}', 'Doʻkonda bor · ${noDeliveryText(store)}'),
                   onTap: store == null
                       ? null
                       : () {
@@ -183,10 +183,15 @@ class _ProductScreenState extends State<ProductScreen> {
               ],
               if (nutrition.isNotEmpty) ...[
                 const SizedBox(height: 24),
-                const Text('Пищевая ценность на 100 г', style: AppText.title),
+                Text(tr('Пищевая ценность на 100 г', '100 g dagi ozuqaviy qiymat'), style: AppText.title),
                 const SizedBox(height: 12),
                 Row(children: [
-                  for (final (k, label, unit) in const [('kcal', 'ккал', ''), ('protein', 'белки', ' г'), ('fat', 'жиры', ' г'), ('carbs', 'углеводы', ' г')]) ...[
+                  for (final (k, label, unit) in [
+                    ('kcal', tr('ккал', 'kkal'), ''),
+                    ('protein', tr('белки', 'oqsillar'), tr(' г', ' g')),
+                    ('fat', tr('жиры', 'yogʻlar'), tr(' г', ' g')),
+                    ('carbs', tr('углеводы', 'uglevodlar'), tr(' г', ' g')),
+                  ]) ...[
                     if (k != 'kcal') const SizedBox(width: 8),
                     Expanded(child: _Nutrient(value: nutrition[k] == null ? '—' : '${qty(nutrition[k])}$unit', label: label)),
                   ],
@@ -213,7 +218,7 @@ class _ProductScreenState extends State<ProductScreen> {
             child: Padding(
               padding: const EdgeInsets.only(bottom: 24),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const SectionHeader(title: 'Может что-то ещё?'),
+                SectionHeader(title: tr('Может что-то ещё?', 'Yana nimadir kerakmi?')),
                 const SizedBox(height: 12),
                 ProductCarousel(products: _related, store: _store),
               ]),
@@ -225,8 +230,8 @@ class _ProductScreenState extends State<ProductScreen> {
         child: canOrder
             ? _actions(state, available)
             : store == null
-                ? const AppButton(label: 'Магазин не доставляет', onPressed: null)
-                : WishButton(store: store, label: 'Хочу доставку из ${store.name}', height: 56),
+                ? AppButton(label: tr('Магазин не доставляет', 'Doʻkon yetkazib bermaydi'), onPressed: null)
+                : WishButton(store: store, label: tr('Хочу доставку из ${store.name}', '«${store.name}» yetkazib bersin'), height: 56),
       ),
     );
   }
@@ -282,7 +287,7 @@ class _ProductScreenState extends State<ProductScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
                 decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(8)),
-                child: Text('АКЦИЯ', style: AppText.title.copyWith(color: AppColors.white, fontWeight: FontWeight.w800)),
+                child: Text(tr('АКЦИЯ', 'AKSIYA'), style: AppText.title.copyWith(color: AppColors.white, fontWeight: FontWeight.w800)),
               ),
               const SizedBox(height: 10),
               Transform.rotate(
@@ -321,7 +326,7 @@ class _ProductScreenState extends State<ProductScreen> {
 
   Widget _actions(AppState state, num available) {
     final inCart = state.cartStoreId == _store.id ? state.qtyOf(_p.id) : 0;
-    if (available <= 0 && inCart == 0) return const AppButton(label: 'Нет в наличии', onPressed: null);
+    if (available <= 0 && inCart == 0) return AppButton(label: tr('Нет в наличии', 'Mavjud emas'), onPressed: null);
     if (inCart == 0) {
       return AppButton(
         label: money(_p.price),
@@ -334,7 +339,7 @@ class _ProductScreenState extends State<ProductScreen> {
       const SizedBox(width: 12),
       Expanded(
         child: AppButton(
-          label: 'Корзина',
+          label: tr('Корзина', 'Savat'),
           subtitle: money(state.cartTotal),
           onPressed: () {
             final nav = Navigator.of(context, rootNavigator: true);
@@ -378,7 +383,7 @@ class _StoreRow extends StatelessWidget {
                   Row(children: [
                     const Icon(Icons.schedule_rounded, size: 14, color: AppColors.text2),
                     const SizedBox(width: 4),
-                    Text('Привезём за $eta', style: AppText.small),
+                    Text(tr('Привезём за $eta', '$eta ichida yetkazamiz'), style: AppText.small),
                   ]),
                 ],
                 if (note != null) ...[
@@ -429,10 +434,10 @@ class _Elsewhere extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(borderRadius: BorderRadius.circular(AppRadius.xl), border: Border.all(color: AppColors.line)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Row(children: [
-          Icon(Icons.local_shipping_rounded, color: AppColors.success, size: 20),
-          SizedBox(width: 6),
-          Text('Привезут из других магазинов', style: AppText.bodyStrong),
+        Row(children: [
+          const Icon(Icons.local_shipping_rounded, color: AppColors.success, size: 20),
+          const SizedBox(width: 6),
+          Text(tr('Привезут из других магазинов', 'Boshqa doʻkonlardan yetkazib beriladi'), style: AppText.bodyStrong),
         ]),
         const SizedBox(height: 6),
         for (final o in offers)

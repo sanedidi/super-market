@@ -287,6 +287,9 @@ Future<void> _shot(WidgetTester tester, Widget screen, String name,
 
 void main() {
   setUpAll(() async {
+    // Снимки экранов и тексты — на русском (язык по умолчанию — узбекский).
+    SharedPreferences.setMockInitialValues({'sm_lang': 'ru'});
+    await Lang.instance.init();
     SharedPreferences.setMockInitialValues({});
     await _loadFonts();
   });

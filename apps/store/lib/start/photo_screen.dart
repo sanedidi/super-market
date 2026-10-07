@@ -108,7 +108,7 @@ class _PhotoResultsScreenState extends State<PhotoResultsScreen> {
     final r = await pickProductSheet(
       context,
       widget.start,
-      info: 'На фото: ${it['name']}',
+      info: tr('На фото: ${it['name']}', 'Rasmda: ${it['name']}'),
       candidates: _candidates(it),
       query: _candidates(it).isEmpty ? '${it['name']}' : '',
       current: _choice[n],
@@ -143,9 +143,9 @@ class _PhotoResultsScreenState extends State<PhotoResultsScreen> {
   Future<void> _editQty(Map<String, dynamic> it) async {
     final n = (it['n'] as num).toInt();
     final v = await promptSheet(context,
-        title: 'Сколько штук?',
-        text: '${it['name']} · 0 — не добавлять',
-        confirm: 'Готово',
+        title: tr('Сколько штук?', 'Nechta?'),
+        text: tr('${it['name']} · 0 — не добавлять', '${it['name']} · 0 — qoʻshmaslik'),
+        confirm: tr('Готово', 'Tayyor'),
         hint: plainQty(_qty[n]),
         keyboardType: const TextInputType.numberWithOptions(decimal: true));
     final q = num.tryParse(parseNum(v ?? '') ?? '');
@@ -191,29 +191,29 @@ class _PhotoResultsScreenState extends State<PhotoResultsScreen> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppColors.bg,
-        title: Text(status == 'ready' ? 'Super Market нашёл ${goods(_items.length)}' : 'Фото полок'),
+        title: Text(status == 'ready' ? tr('Super Market нашёл ${goods(_items.length)}', 'Super Market ${goods(_items.length)} topdi') : tr('Фото полок', 'Javonlar rasmi')),
       ),
       body: _error != null && ph == null
-          ? EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: _error.toString(), action: 'Повторить', onAction: _load)
+          ? EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: _error.toString(), action: tr('Повторить', 'Qayta urinish'), onAction: _load)
           : ph == null || status == 'processing'
-              ? const Center(
+              ? Center(
                   child: Padding(
-                    padding: EdgeInsets.all(32),
+                    padding: const EdgeInsets.all(32),
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 20),
-                      Text('Super Market ищет товары на фото…', style: AppText.title, textAlign: TextAlign.center),
-                      SizedBox(height: 6),
-                      Text('Обычно это 10–30 секунд. Можно не ждать — фото сохранено.', style: AppText.small, textAlign: TextAlign.center),
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 20),
+                      Text(tr('Super Market ищет товары на фото…', 'Super Market rasmdan mahsulotlarni qidirmoqda…'), style: AppText.title, textAlign: TextAlign.center),
+                      const SizedBox(height: 6),
+                      Text(tr('Обычно это 10–30 секунд. Можно не ждать — фото сохранено.', 'Odatda 10–30 soniya. Kutish shart emas — rasm saqlandi.'), style: AppText.small, textAlign: TextAlign.center),
                     ]),
                   ),
                 )
               : status == 'failed'
                   ? EmptyState(
                       icon: Icons.image_not_supported_outlined,
-                      title: 'Не удалось найти товары',
+                      title: tr('Не удалось найти товары', 'Mahsulotlarni topib boʻlmadi'),
                       text: '${ph['error']}',
-                      action: 'Повторить',
+                      action: tr('Повторить', 'Qayta urinish'),
                       onAction: _busy ? null : _retry,
                     )
                   : _list(ph),
@@ -223,15 +223,17 @@ class _PhotoResultsScreenState extends State<PhotoResultsScreen> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Text('Количество Super Market посчитал по фото — проверьте. Цены укажете на следующем шаге',
+                  Text(
+                      tr('Количество Super Market посчитал по фото — проверьте. Цены укажете на следующем шаге',
+                          'Miqdorni Super Market rasm boʻyicha hisobladi — tekshiring. Narxlarni keyingi qadamda kiritasiz'),
                       style: AppText.small, textAlign: TextAlign.center),
                   const SizedBox(height: 10),
                   Row(children: [
-                    Expanded(child: SmallButton(label: 'Ещё фото', icon: Icons.photo_camera_rounded, onPressed: _busy ? null : _more)),
+                    Expanded(child: SmallButton(label: tr('Ещё фото', 'Yana rasm'), icon: Icons.photo_camera_rounded, onPressed: _busy ? null : _more)),
                     const SizedBox(width: 12),
                     Expanded(
                       child: SmallButton(
-                        label: chosen == 0 ? 'Дальше' : 'Дальше: цены',
+                        label: chosen == 0 ? tr('Дальше', 'Keyingi') : tr('Дальше: цены', 'Keyingi: narxlar'),
                         icon: Icons.arrow_forward_rounded,
                         primary: true,
                         onPressed: _busy ? null : _next,
@@ -249,9 +251,9 @@ class _PhotoResultsScreenState extends State<PhotoResultsScreen> {
     int c(String k) => (counts[k] as num?)?.toInt() ?? 0;
     return ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24), children: [
       Wrap(spacing: 8, runSpacing: 8, children: [
-        StatusChip('${c('found')} найдено', tone: ChipTone.green),
-        if (c('choose') > 0) StatusChip('${c('choose')} выбрать', tone: ChipTone.amber),
-        if (c('missing') > 0) StatusChip('${c('missing')} нет в каталоге', tone: ChipTone.red),
+        StatusChip(tr('${c('found')} найдено', '${c('found')} ta topildi'), tone: ChipTone.green),
+        if (c('choose') > 0) StatusChip(tr('${c('choose')} выбрать', '${c('choose')} ta tanlash kerak'), tone: ChipTone.amber),
+        if (c('missing') > 0) StatusChip(tr('${c('missing')} нет в каталоге', '${c('missing')} ta katalogda yoʻq'), tone: ChipTone.red),
       ]),
       const SizedBox(height: 12),
       AppCard(
@@ -273,28 +275,30 @@ class _PhotoResultsScreenState extends State<PhotoResultsScreen> {
     if (ref != null) {
       icon = const Icon(Icons.check_circle_rounded, color: AppColors.success, size: 22);
       sub = [
-        if (ref.score != null && ref.score! > 0 && ref.score! < 100) 'совпадение ${ref.score}%',
-        if (ref.score == 100) 'по штрихкоду',
-        'на фото ${plainQty(it['qty'])} шт',
+        if (ref.score != null && ref.score! > 0 && ref.score! < 100) tr('совпадение ${ref.score}%', 'moslik ${ref.score}%'),
+        if (ref.score == 100) tr('по штрихкоду', 'shtrix-kod boʻyicha'),
+        tr('на фото ${plainQty(it['qty'])} шт', 'rasmda ${plainQty(it['qty'])} dona'),
       ].join(' · ');
       trailing = InkWell(
         onTap: () => _editQty(it),
         child: Padding(
           padding: const EdgeInsets.all(6),
-          child: Text(qty <= 0 ? 'не добавлять' : '${plainQty(qty)} ${ref.unit}', style: AppText.bodyStrong.copyWith(color: qty <= 0 ? AppColors.muted : null)),
+          child: Text(qty <= 0 ? tr('не добавлять', 'qoʻshmaslik') : '${plainQty(qty)} ${ref.unit}', style: AppText.bodyStrong.copyWith(color: qty <= 0 ? AppColors.muted : null)),
         ),
       );
     } else if (state == 'missing') {
       icon = const Icon(Icons.error_rounded, color: AppColors.error, size: 22);
-      sub = '«${it['name']}» — на фото';
+      sub = tr('«${it['name']}» — на фото', '«${it['name']}» — rasmda');
       subColor = AppColors.error;
-      trailing = Text('Новый', style: AppText.bodyStrong.copyWith(color: AppColors.primary));
+      trailing = Text(tr('Новый', 'Yangi'), style: AppText.bodyStrong.copyWith(color: AppColors.primary));
     } else {
       final k = ((it['candidates'] as List?) ?? const []).length;
       icon = const Icon(Icons.help_rounded, color: Color(0xFFF79009), size: 22);
-      sub = k > 0 ? '$k ${plural(k, 'похожий товар', 'похожих товара', 'похожих товаров')} — какой?' : 'выберите товар';
+      sub = k > 0
+          ? tr('$k ${plural(k, 'похожий товар', 'похожих товара', 'похожих товаров')} — какой?', '$k ta oʻxshash mahsulot — qaysi biri?')
+          : tr('выберите товар', 'mahsulotni tanlang');
       subColor = AppColors.warningInk;
-      trailing = Text('Выбрать', style: AppText.bodyStrong.copyWith(color: AppColors.primary));
+      trailing = Text(tr('Выбрать', 'Tanlash'), style: AppText.bodyStrong.copyWith(color: AppColors.primary));
     }
     return InkWell(
       onTap: () => _pick(it),
@@ -307,10 +311,10 @@ class _PhotoResultsScreenState extends State<PhotoResultsScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(ref != null ? ref.name : (state == 'missing' ? 'Не найден в каталоге' : '${it['name']}'),
+              Text(ref != null ? ref.name : (state == 'missing' ? tr('Не найден в каталоге', 'Katalogda topilmadi') : '${it['name']}'),
                   style: AppText.bodyStrong, maxLines: 1, overflow: TextOverflow.ellipsis),
               Text(sub, style: AppText.small.copyWith(color: subColor), maxLines: 1, overflow: TextOverflow.ellipsis),
-              if (it['in_draft'] == true) const Text('уже в списке — штуки прибавятся', style: AppText.small),
+              if (it['in_draft'] == true) Text(tr('уже в списке — штуки прибавятся', 'roʻyxatda bor — miqdori qoʻshiladi'), style: AppText.small),
             ]),
           ),
           const SizedBox(width: 8),

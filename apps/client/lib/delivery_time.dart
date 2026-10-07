@@ -1,9 +1,13 @@
 // Время доставки: окна магазина, подписи «Сегодня, 29 сент · 16:00–17:00».
 
+import 'package:sm_core/sm_core.dart';
+
 /// Время по Ташкенту (UTC+5, без летнего времени) — поля hour/day для подписи.
 DateTime tashkent(DateTime d) => d.toUtc().add(const Duration(hours: 5));
 
-const _months = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сент', 'окт', 'ноя', 'дек'];
+List<String> get _months => Lang.instance.isUz
+    ? const ['yan', 'fev', 'mar', 'apr', 'may', 'iyun', 'iyul', 'avg', 'sen', 'okt', 'noy', 'dek']
+    : const ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сент', 'окт', 'ноя', 'дек'];
 
 String _two(int v) => v.toString().padLeft(2, '0');
 
@@ -20,7 +24,7 @@ String dayLabel(DateTime d, {DateTime? now}) {
   final day = DateTime.utc(t.year, t.month, t.day);
   final diff = day.difference(today).inDays;
   final date = '${t.day} ${_months[t.month - 1]}';
-  return switch (diff) { 0 => 'Сегодня, $date', 1 => 'Завтра, $date', _ => date };
+  return switch (diff) { 0 => tr('Сегодня, $date', 'Bugun, $date'), 1 => tr('Завтра, $date', 'Ertaga, $date'), _ => date };
 }
 
 /// Окно доставки из API.

@@ -18,18 +18,36 @@ import 'ui/widgets.dart';
 
 /// Зачем нужен вход — заголовок и пояснение шторки.
 enum LoginReason {
-  checkout('Войдите, чтобы оформить заказ', 'Товары останутся в корзине.'),
-  favorite('Войдите, чтобы добавить в избранное', 'Избранное сохранится на всех ваших устройствах.'),
-  wish('Войдите, чтобы попросить доставку', 'Магазин узнает, что доставку ждут.'),
-  family('Войдите, чтобы покупать вместе с семьёй', 'Списки покупок и просьбы для близких.'),
-  orders('Войдите, чтобы увидеть заказы', 'История заказов и текущий заказ.'),
-  addresses('Войдите, чтобы сохранять адреса', 'Адреса доставки будут под рукой.'),
-  notifications('Войдите, чтобы получать уведомления', 'Статус заказа и ответы магазинов.'),
-  debts('Войдите, чтобы увидеть долги', 'Покупки в долг в магазинах рядом.');
+  checkout,
+  favorite,
+  wish,
+  family,
+  orders,
+  addresses,
+  notifications,
+  debts;
 
-  const LoginReason(this.title, this.text);
-  final String title;
-  final String text;
+  String get title => switch (this) {
+        LoginReason.checkout => tr('Войдите, чтобы оформить заказ', 'Buyurtma berish uchun kiring'),
+        LoginReason.favorite => tr('Войдите, чтобы добавить в избранное', 'Sevimlilarga qoʻshish uchun kiring'),
+        LoginReason.wish => tr('Войдите, чтобы попросить доставку', 'Yetkazib berishni soʻrash uchun kiring'),
+        LoginReason.family => tr('Войдите, чтобы покупать вместе с семьёй', 'Oila bilan birga xarid qilish uchun kiring'),
+        LoginReason.orders => tr('Войдите, чтобы увидеть заказы', 'Buyurtmalarni koʻrish uchun kiring'),
+        LoginReason.addresses => tr('Войдите, чтобы сохранять адреса', 'Manzillarni saqlash uchun kiring'),
+        LoginReason.notifications => tr('Войдите, чтобы получать уведомления', 'Bildirishnomalar olish uchun kiring'),
+        LoginReason.debts => tr('Войдите, чтобы увидеть долги', 'Qarzlarni koʻrish uchun kiring'),
+      };
+
+  String get text => switch (this) {
+        LoginReason.checkout => tr('Товары останутся в корзине.', 'Mahsulotlar savatda qoladi.'),
+        LoginReason.favorite => tr('Избранное сохранится на всех ваших устройствах.', 'Sevimlilar barcha qurilmalaringizda saqlanadi.'),
+        LoginReason.wish => tr('Магазин узнает, что доставку ждут.', 'Doʻkon yetkazib berish kutilayotganini bilib oladi.'),
+        LoginReason.family => tr('Списки покупок и просьбы для близких.', 'Yaqinlaringiz uchun xarid roʻyxatlari va iltimoslar.'),
+        LoginReason.orders => tr('История заказов и текущий заказ.', 'Buyurtmalar tarixi va joriy buyurtma.'),
+        LoginReason.addresses => tr('Адреса доставки будут под рукой.', 'Yetkazib berish manzillari doim qoʻl ostida.'),
+        LoginReason.notifications => tr('Статус заказа и ответы магазинов.', 'Buyurtma holati va doʻkonlar javoblari.'),
+        LoginReason.debts => tr('Покупки в долг в магазинах рядом.', 'Yaqindagi doʻkonlardan qarzga xaridlar.'),
+      };
 }
 
 /// Вход нужен для действия: залогинен — сразу true; гость — шторка входа,
@@ -103,7 +121,9 @@ class _LoginSheetState extends State<LoginSheet> {
     final state = context.watch<AppState>();
     final legal = AppText.caption.copyWith(height: 1.45);
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      SheetHeader(title: widget.reason.title, text: '${widget.reason.text} Код придёт по SMS или в Telegram.'),
+      SheetHeader(
+          title: widget.reason.title,
+          text: tr('${widget.reason.text} Код придёт по SMS или в Telegram.', '${widget.reason.text} Kod SMS yoki Telegram orqali keladi.')),
       const SizedBox(height: 20),
       PhoneField(
         controller: _phone,
@@ -117,12 +137,13 @@ class _LoginSheetState extends State<LoginSheet> {
         Text(_error!, style: AppText.small.copyWith(color: AppColors.primary)),
       ],
       const SizedBox(height: 16),
-      SheetButton(label: 'Получить код', busy: _busy, onPressed: _ready ? _send : null),
+      SheetButton(label: tr('Получить код', 'Kodni olish'), busy: _busy, onPressed: _ready ? _send : null),
       const SizedBox(height: 12),
       Text.rich(
         TextSpan(style: legal, children: [
-          const TextSpan(text: 'Нажимая «Получить код», вы соглашаетесь с '),
+          TextSpan(text: tr('Нажимая «Получить код», вы соглашаетесь с ', '«Kodni olish» tugmasini bosib, siz ')),
           ...legalSpans(legal, offerUrl: state.link('offer_url'), privacyUrl: state.privacyUrl),
+          TextSpan(text: tr('', ' rozilik bildirasiz')),
         ]),
         textAlign: TextAlign.center,
       ),
@@ -130,7 +151,7 @@ class _LoginSheetState extends State<LoginSheet> {
       TextButton(
         onPressed: () => Navigator.pop(context),
         style: TextButton.styleFrom(foregroundColor: AppColors.dark, textStyle: AppText.bodyStrong),
-        child: const Text('Продолжить без входа'),
+        child: Text(tr('Продолжить без входа', 'Kirmasdan davom etish')),
       ),
     ]);
   }
@@ -193,7 +214,7 @@ class _GuestPointScreenState extends State<GuestPointScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Куда доставить?')),
+      appBar: AppBar(title: Text(tr('Куда доставить?', 'Qayerga yetkazaylik?'))),
       body: Column(children: [
         Expanded(
           child: PointPicker(
@@ -206,10 +227,12 @@ class _GuestPointScreenState extends State<GuestPointScreen> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Text('Покажем магазины, которые привезут продукты сюда. Точный адрес укажете при оформлении заказа.',
+              Text(
+                  tr('Покажем магазины, которые привезут продукты сюда. Точный адрес укажете при оформлении заказа.',
+                      'Bu yerga mahsulot yetkazib beradigan doʻkonlarni koʻrsatamiz. Aniq manzilni buyurtma berishda kiritasiz.'),
                   style: AppText.body.copyWith(color: AppColors.text2)),
               const SizedBox(height: 12),
-              AppButton(label: 'Показать магазины рядом', onPressed: _done),
+              AppButton(label: tr('Показать магазины рядом', 'Yaqindagi doʻkonlarni koʻrsatish'), onPressed: _done),
             ]),
           ),
         ),

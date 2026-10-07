@@ -47,7 +47,7 @@ class _ProfitScreenState extends State<ProfitScreen> {
   Widget build(BuildContext context) {
     final pl = _pl;
     return Scaffold(
-      appBar: AppBar(title: const Text('Прибыль и убыток')),
+      appBar: AppBar(title: Text(tr('Прибыль и убыток', 'Foyda va zarar'))),
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
@@ -72,7 +72,12 @@ class _ProfitScreenState extends State<ProfitScreen> {
           if (pl == null)
             _error == null
                 ? const Padding(padding: EdgeInsets.only(top: 40), child: Center(child: CircularProgressIndicator()))
-                : EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить отчёт', text: '$_error', action: 'Повторить', onAction: _load)
+                : EmptyState(
+                    icon: Icons.wifi_off_rounded,
+                    title: tr('Не удалось загрузить отчёт', 'Hisobotni yuklab boʻlmadi'),
+                    text: '$_error',
+                    action: tr('Повторить', 'Qayta urinish'),
+                    onAction: _load)
           else
             ..._report(pl),
         ]),
@@ -91,43 +96,46 @@ class _ProfitScreenState extends State<ProfitScreen> {
       AppCard(
         color: net < 0 ? AppColors.errorSoft : AppColors.successSoft,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(net < 0 ? 'Убыток' : 'Чистая прибыль', style: AppText.small),
+          Text(net < 0 ? tr('Убыток', 'Zarar') : tr('Чистая прибыль', 'Sof foyda'), style: AppText.small),
           Text(money(pl['net_profit']), style: AppText.h1.copyWith(fontSize: 30, color: net < 0 ? AppColors.error : AppColors.successInk)),
           const SizedBox(height: 4),
-          Text('Продаж на кассе: ${pl['sales_count'] ?? 0} · онлайн-заказов: ${pl['orders_count'] ?? 0}', style: AppText.small),
+          Text(
+              tr('Продаж на кассе: ${pl['sales_count'] ?? 0} · онлайн-заказов: ${pl['orders_count'] ?? 0}',
+                  'Kassadagi sotuvlar: ${pl['sales_count'] ?? 0} · onlayn buyurtmalar: ${pl['orders_count'] ?? 0}'),
+              style: AppText.small),
         ]),
       ),
       const SizedBox(height: 12),
-      _Block('Выручка', [
-        _Row('Продажи на кассе', rev['pos_sales']),
-        _Row('Возвраты покупателей', rev['customer_returns'], minus: true),
-        _Row('Онлайн-заказы', rev['online_orders']),
-        _Row('Доставка', rev['delivery_fees']),
-        _Row('Итого выручка', rev['total'], strong: true),
+      _Block(tr('Выручка', 'Tushum'), [
+        _Row(tr('Продажи на кассе', 'Kassadagi sotuvlar'), rev['pos_sales']),
+        _Row(tr('Возвраты покупателей', 'Xaridorlar qaytarishlari'), rev['customer_returns'], minus: true),
+        _Row(tr('Онлайн-заказы', 'Onlayn buyurtmalar'), rev['online_orders']),
+        _Row(tr('Доставка', 'Yetkazib berish'), rev['delivery_fees']),
+        _Row(tr('Итого выручка', 'Jami tushum'), rev['total'], strong: true),
       ]),
       const SizedBox(height: 12),
-      _Block('Себестоимость', [
-        _Row('Продажи на кассе', cogs['pos'], minus: true),
-        _Row('Возвраты', cogs['returns']),
-        _Row('Онлайн-заказы', cogs['online'], minus: true),
-        _Row('Итого себестоимость', cogs['total'], strong: true, minus: true),
+      _Block(tr('Себестоимость', 'Tannarx'), [
+        _Row(tr('Продажи на кассе', 'Kassadagi sotuvlar'), cogs['pos'], minus: true),
+        _Row(tr('Возвраты', 'Qaytarishlar'), cogs['returns']),
+        _Row(tr('Онлайн-заказы', 'Onlayn buyurtmalar'), cogs['online'], minus: true),
+        _Row(tr('Итого себестоимость', 'Jami tannarx'), cogs['total'], strong: true, minus: true),
       ]),
       const SizedBox(height: 12),
-      _Block(null, [_Row('Валовая прибыль', pl['gross_profit'], strong: true)]),
+      _Block(null, [_Row(tr('Валовая прибыль', 'Yalpi foyda'), pl['gross_profit'], strong: true)]),
       const SizedBox(height: 12),
-      _Block('Склад', [
-        _Row('Списания', adj['write_offs'], minus: true),
-        _Row('Недостача при инвентаризации', adj['inventory_shortage'], minus: true),
-        _Row('Излишек при инвентаризации', adj['inventory_surplus']),
+      _Block(tr('Склад', 'Ombor'), [
+        _Row(tr('Списания', 'Hisobdan chiqarishlar'), adj['write_offs'], minus: true),
+        _Row(tr('Недостача при инвентаризации', 'Inventarizatsiyadagi kamomad'), adj['inventory_shortage'], minus: true),
+        _Row(tr('Излишек при инвентаризации', 'Inventarizatsiyadagi ortiqcha'), adj['inventory_surplus']),
       ]),
       if (income.isNotEmpty) ...[
         const SizedBox(height: 12),
-        _Block('Прочие доходы', [for (final r in income) _Row('${r['name']}', r['amount'])]),
+        _Block(tr('Прочие доходы', 'Boshqa daromadlar'), [for (final r in income) _Row('${r['name']}', r['amount'])]),
       ],
       const SizedBox(height: 12),
-      _Block('Расходы', [
+      _Block(tr('Расходы', 'Xarajatlar'), [
         for (final r in expenses) _Row('${r['name']}', r['amount'], minus: true),
-        _Row('Подписка платформы', pl['platform_subscription'], minus: true),
+        _Row(tr('Подписка платформы', 'Platforma obunasi'), pl['platform_subscription'], minus: true),
       ]),
     ];
   }

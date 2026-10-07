@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart';
 
 import 'guest.dart';
 import 'main.dart';
@@ -25,7 +26,9 @@ Future<void> toggleWishWithMessage(BuildContext context, Store s) async {
     if (!was) {
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('Спасибо! Магазин узнает, что доставку ждут. Чем больше людей нажмут — тем быстрее её включат')));
+        ..showSnackBar(SnackBar(
+            content: Text(tr('Спасибо! Магазин узнает, что доставку ждут. Чем больше людей нажмут — тем быстрее её включат',
+                'Rahmat! Doʻkon yetkazib berish kutilayotganini bilib oladi. Qancha koʻp odam bossa, shuncha tez yoqiladi'))));
     }
   } catch (e) {
     if (context.mounted) showError(context, e);
@@ -69,7 +72,7 @@ class WishButton extends StatelessWidget {
               const SizedBox(width: 6),
               Flexible(
                 child: Text(
-                  wished ? 'Вы ждёте доставку' : (label ?? 'Хочу доставку'),
+                  wished ? tr('Вы ждёте доставку', 'Yetkazishni kutyapsiz') : (label ?? tr('Хочу доставку', 'Yetkazishni xohlayman')),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppText.bodyStrong.copyWith(color: fg),
@@ -84,7 +87,8 @@ class WishButton extends StatelessWidget {
 }
 
 /// «Не доставляет · 1,2 км» для карточек магазинов.
-String noDeliveryText(Store s) => ['Не доставляет', s.distanceText, if (!s.isOpen) 'закрыто'].join(' · ');
+String noDeliveryText(Store s) =>
+    [tr('Не доставляет', 'Yetkazmaydi'), s.distanceText, if (!s.isOpen) tr('закрыто', 'yopiq')].join(' · ');
 
 /// Карточка под шапкой магазина, который не доставляет: почему нельзя заказать
 /// и ссылка на магазины, которые привезут.
@@ -116,12 +120,14 @@ class NoDeliveryCard extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Можно посмотреть, что есть и почём', style: AppText.bodyStrong),
+                Text(tr('Можно посмотреть, что есть и почём', 'Nima borligi va narxlarini koʻrish mumkin'), style: AppText.bodyStrong),
                 const SizedBox(height: 2),
                 Text(
                   store.reason == 'out_of_zone'
-                      ? 'До вашего адреса этот магазин пока не доставляет. Нажмите «Хочу доставку» — магазин узнает, что её ждут.'
-                      : 'Заказать отсюда пока нельзя. Нажмите «Хочу доставку» — магазин узнает, что её ждут.',
+                      ? tr('До вашего адреса этот магазин пока не доставляет. Нажмите «Хочу доставку» — магазин узнает, что её ждут.',
+                          'Bu doʻkon hozircha manzilingizga yetkazib bermaydi. «Yetkazishni xohlayman» tugmasini bosing — doʻkon kutilayotganini bilib oladi.')
+                      : tr('Заказать отсюда пока нельзя. Нажмите «Хочу доставку» — магазин узнает, что её ждут.',
+                          'Bu yerdan hozircha buyurtma berib boʻlmaydi. «Yetkazishni xohlayman» tugmasini bosing — doʻkon kutilayotganini bilib oladi.'),
                   style: AppText.small,
                 ),
               ]),
@@ -142,7 +148,8 @@ class NoDeliveryCard extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '${storesWord(n)} рядом ${n % 10 == 1 && n % 100 != 11 ? 'привезёт' : 'привезут'}${eta == null ? '' : ' за $eta'}',
+                        tr('${storesWord(n)} рядом ${n % 10 == 1 && n % 100 != 11 ? 'привезёт' : 'привезут'}${eta == null ? '' : ' за $eta'}',
+                            'Yaqindagi ${storesWord(n)}${eta == null ? '' : ' $eta ichida'} yetkazib beradi'),
                         style: AppText.smallStrong.copyWith(color: AppColors.primary, fontSize: 14),
                       ),
                     ),
@@ -167,5 +174,5 @@ String storesWord(int n) {
       : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)
           ? 'магазина'
           : 'магазинов';
-  return '$n $w';
+  return tr('$n $w', '$n ta doʻkon');
 }

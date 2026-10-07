@@ -113,14 +113,14 @@ Widget? _shelf(BuildContext context, Store store, HomeBlock b) {
             Row(children: [
               Flexible(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.h2.copyWith(fontSize: 23, color: AppColors.dark))),
               const SizedBox(width: 8),
-              AdLabel(text: '${ad['label'] ?? 'Реклама'}'),
+              AdLabel(text: '${ad['label'] ?? tr('Реклама', 'Reklama')}'),
             ]),
             if ('${ad['brand'] ?? ''}'.isNotEmpty) Text('${ad['brand']}', style: AppText.caption),
           ]),
         )
       : Padding(
           padding: const EdgeInsets.only(top: 24, bottom: 12),
-          child: SectionHeader(title: title, action: canAll ? 'Все' : null, onAction: canAll ? () => _openShelf(context, store, b) : null),
+          child: SectionHeader(title: title, action: canAll ? tr('Все', 'Hammasi') : null, onAction: canAll ? () => _openShelf(context, store, b) : null),
         );
   final ref = storeRef(store);
   final view = '${b['view'] ?? 'row'}';
@@ -172,13 +172,13 @@ Future<void> openCategoryById(BuildContext context, Store store, String id) asyn
 }
 
 /// Переход по ссылке промо-полоски: скидки, раздел, товар, условия доставки, сайт.
-Future<void> openBlockLink(BuildContext context, Store store, Map<String, dynamic>? link, {String title = 'Горячие скидки'}) async {
+Future<void> openBlockLink(BuildContext context, Store store, Map<String, dynamic>? link, {String? title}) async {
   if (link == null) return;
   final id = '${link['id'] ?? ''}';
   try {
     switch (link['type']) {
       case 'deals':
-        await openDeals(context, store, title: title);
+        await openDeals(context, store, title: title ?? tr('Горячие скидки', 'Qaynoq chegirmalar'));
       case 'category':
         await openCategoryById(context, store, id);
       case 'product':
@@ -334,7 +334,7 @@ class _HomeBannersState extends State<HomeBanners> {
                         Positioned(
                           left: 12,
                           top: 12,
-                          child: AdLabel(text: '${(widget.block['ad'] as Map)['label'] ?? 'Реклама'}', onDark: true),
+                          child: AdLabel(text: '${(widget.block['ad'] as Map)['label'] ?? tr('Реклама', 'Reklama')}', onDark: true),
                         ),
                       if (hasImage && showText)
                         const DecoratedBox(
@@ -484,7 +484,7 @@ class CategoryIcons extends StatelessWidget {
 
         if (shape == 'tiles') {
           final items = <(String, Color, Widget, VoidCallback)>[
-            if (deals) ('Скидки', dealsBg, dealsGlyph, () => openDeals(context, store)),
+            if (deals) (tr('Скидки', 'Chegirmalar'), dealsBg, dealsGlyph, () => openDeals(context, store)),
             for (var i = 0; i < cats.length; i++) (cats[i].name, _tones[i % _tones.length].$1, glyph(cats[i], i), () => open(cats[i])),
           ];
           return GridView.count(
@@ -545,7 +545,7 @@ class CategoryIcons extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.fromLTRB(10, 16, 10, 0),
             children: [
-              if (deals) item(bg: dealsBg, label: 'Скидки', onTap: () => openDeals(context, store), child: dealsGlyph),
+              if (deals) item(bg: dealsBg, label: tr('Скидки', 'Chegirmalar'), onTap: () => openDeals(context, store), child: dealsGlyph),
               for (var i = 0; i < cats.length; i++)
                 item(bg: _tones[i % _tones.length].$1, label: cats[i].name, onTap: () => open(cats[i]), child: glyph(cats[i], i)),
             ],

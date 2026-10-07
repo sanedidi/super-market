@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart';
 
 import '../links.dart';
 import '../state.dart';
@@ -53,12 +54,17 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (items == null) {
       body = _error == null
           ? const Center(child: CircularProgressIndicator())
-          : EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: _error.toString(), action: 'Повторить', onAction: _load);
+          : EmptyState(
+              icon: Icons.wifi_off_rounded,
+              title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'),
+              text: _error.toString(),
+              action: tr('Повторить', 'Qayta urinish'),
+              onAction: _load);
     } else if (items.isEmpty) {
-      body = const EmptyState(
+      body = EmptyState(
         icon: Icons.notifications_none_rounded,
-        title: 'Пока тихо',
-        text: 'Здесь появятся статусы заказов, просьбы семьи и скидки.',
+        title: tr('Пока тихо', 'Hozircha jimjitlik'),
+        text: tr('Здесь появятся статусы заказов, просьбы семьи и скидки.', 'Bu yerda buyurtma holatlari, oila iltimoslari va chegirmalar paydo boʻladi.'),
       );
     } else {
       body = RefreshIndicator(
@@ -73,7 +79,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
     return Scaffold(
       backgroundColor: AppColors.white,
-      body: SafeArea(child: Column(children: [const PageHeader(title: 'Уведомления'), Expanded(child: body)])),
+      body: SafeArea(child: Column(children: [PageHeader(title: tr('Уведомления', 'Bildirishnomalar')), Expanded(child: body)])),
     );
   }
 }
@@ -132,7 +138,9 @@ class _NotificationTile extends StatelessWidget {
   }
 }
 
-const _months = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+List<String> get _months => Lang.instance.isUz
+    ? const ['yan', 'fev', 'mar', 'apr', 'may', 'iyun', 'iyul', 'avg', 'sen', 'okt', 'noy', 'dek']
+    : const ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 
 /// «14:05» сегодня, «вчера», иначе «3 окт». Время ташкентское (UTC+5).
 String notificationTime(DateTime? t, {DateTime? now}) {
@@ -143,6 +151,6 @@ String notificationTime(DateTime? t, {DateTime? now}) {
   final d = DateTime.utc(local.year, local.month, local.day);
   final days = d0.difference(d).inDays;
   if (days == 0) return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
-  if (days == 1) return 'вчера';
+  if (days == 1) return tr('вчера', 'kecha');
   return '${local.day} ${_months[local.month - 1]}';
 }

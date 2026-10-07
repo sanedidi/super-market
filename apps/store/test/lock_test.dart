@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sm_core/sm_core.dart';
 import 'package:sm_store/lock/app_lock.dart';
+import 'package:sm_core/sm_core.dart' as sm_i18n;
 
 class FakeBio implements Biometrics {
   FakeBio({this.has = true, this.pass = true});
@@ -20,6 +21,9 @@ class FakeBio implements Biometrics {
 }
 
 void main() {
+  // Проверки написаны на русском; язык по умолчанию в приложениях — узбекский.
+  setUpAll(() => sm_i18n.Lang.instance.debugUse(sm_i18n.Lang.ru));
+
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   test('простые коды не принимаем', () {

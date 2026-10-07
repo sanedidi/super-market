@@ -145,16 +145,18 @@ class _AuthScreenState extends State<AuthScreen> {
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             const FaGlyph('telegram', size: 48, color: _telegramBlue),
             const SizedBox(height: 16),
-            const Text('Подключите Telegram-бот', textAlign: TextAlign.center, style: AppText.h3),
+            Text(tr('Подключите Telegram-бот', 'Telegram-botni ulang'), textAlign: TextAlign.center, style: AppText.h3),
             const SizedBox(height: 8),
-            Text('Не удалось отправить SMS. Откройте бота Super Market, нажмите «Поделиться номером» и возвращайтесь — код придёт туда.',
+            Text(
+                tr('Не удалось отправить SMS. Откройте бота Super Market, нажмите «Поделиться номером» и возвращайтесь — код придёт туда.',
+                    'SMS yuborib boʻlmadi. Super Market botini oching, «Raqamni ulashish» tugmasini bosing va qayting — kod oʻsha yerga keladi.'),
                 textAlign: TextAlign.center, style: AppText.body.copyWith(color: AppColors.text2)),
             const SizedBox(height: 20),
             if (bot.isNotEmpty) ...[
               _TelegramButton(onTap: () => openUrl(bot)),
               const SizedBox(height: 10),
             ],
-            StepButton(label: 'Я поделился номером', onPressed: () => Navigator.pop(ctx, true)),
+            StepButton(label: tr('Я поделился номером', 'Raqamni ulashdim'), onPressed: () => Navigator.pop(ctx, true)),
           ]),
         ),
       ),
@@ -233,16 +235,16 @@ class _AuthScreenState extends State<AuthScreen> {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   SvgPicture.asset('assets/images/logo_words_white.svg', height: 76, semanticsLabel: 'Super Market'),
                   const SizedBox(height: 28),
-                  Text('Продукты из магазинов\nрядом с домом',
+                  Text(tr('Продукты из магазинов\nрядом с домом', 'Uyingiz yaqinidagi\ndoʻkonlardan mahsulotlar'),
                       style: AppText.body.copyWith(color: AppColors.white, fontSize: 17, height: 1.35, fontWeight: FontWeight.w500)),
                 ]),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  const Text('Вход', style: AppText.h1),
+                  Text(tr('Вход', 'Kirish'), style: AppText.h1),
                   const SizedBox(height: 6),
-                  Text('Пришлём код по SMS или в Telegram', style: AppText.body.copyWith(color: AppColors.text2)),
+                  Text(tr('Пришлём код по SMS или в Telegram', 'Kodni SMS yoki Telegram orqali yuboramiz'), style: AppText.body.copyWith(color: AppColors.text2)),
                   const SizedBox(height: 24),
                   PhoneField(controller: _phone, error: _error != null, onChanged: () => setState(() => _error = null), onSubmit: _canSend ? _request : null),
                   if (_error != null) ...[
@@ -266,7 +268,7 @@ class _AuthScreenState extends State<AuthScreen> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              StepButton(label: 'Продолжить', arrow: true, busy: _busy, onPressed: _canSend ? _request : null),
+              StepButton(label: tr('Продолжить', 'Davom etish'), arrow: true, busy: _busy, onPressed: _canSend ? _request : null),
               const SizedBox(height: 6),
               // Вход не обязателен: магазины и товары можно смотреть без него (Apple 5.1.1).
               Align(
@@ -279,7 +281,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     textStyle: AppText.smallStrong.copyWith(fontSize: 14),
                   ),
                   icon: const Icon(Icons.storefront_rounded, size: 18),
-                  label: const Text('Посмотреть магазины без входа'),
+                  label: Text(tr('Посмотреть магазины без входа', 'Doʻkonlarni kirmasdan koʻrish')),
                 ),
               ),
             ]),
@@ -335,7 +337,8 @@ class PhoneField extends StatelessWidget {
 }
 
 /// Ссылки «офертой» и «политикой конфиденциальности» внутри текста согласия.
-/// Открываются в браузере; пустая ссылка — просто текст.
+/// Открываются в браузере; пустая ссылка — просто текст. По-узбекски глагол
+/// стоит после ссылок — его добавляет вызывающий (`tr('', ' roziman')`).
 List<InlineSpan> legalSpans(TextStyle style, {required String offerUrl, required String privacyUrl}) {
   InlineSpan link(String text, String url) => WidgetSpan(
         alignment: PlaceholderAlignment.baseline,
@@ -345,7 +348,11 @@ List<InlineSpan> legalSpans(TextStyle style, {required String offerUrl, required
           child: Text(text, style: style.copyWith(color: AppColors.primary)),
         ),
       );
-  return [link('офертой', offerUrl), const TextSpan(text: ' и '), link('политикой конфиденциальности', privacyUrl)];
+  return [
+    link(tr('офертой', 'ofertaga'), offerUrl),
+    TextSpan(text: tr(' и ', ' va ')),
+    link(tr('политикой конфиденциальности', 'maxfiylik siyosatiga'), privacyUrl),
+  ];
 }
 
 /// Флажок «Согласен с офертой и политикой конфиденциальности»; обе — ссылки.
@@ -377,8 +384,9 @@ class _Consent extends StatelessWidget {
         ),
         Expanded(
           child: Text.rich(TextSpan(style: style, children: [
-            const TextSpan(text: 'Согласен с '),
+            TextSpan(text: tr('Согласен с ', 'Men ')),
             ...legalSpans(style, offerUrl: offerUrl, privacyUrl: privacyUrl),
+            TextSpan(text: tr('', ' roziman')),
           ])),
         ),
       ]),
@@ -394,7 +402,7 @@ class StepProgress extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('Шаг $step из 3', style: AppText.smallStrong.copyWith(color: AppColors.primary)),
+      Text(tr('Шаг $step из 3', 'Qadam $step/3'), style: AppText.smallStrong.copyWith(color: AppColors.primary)),
       const SizedBox(height: 8),
       Row(children: [
         for (var i = 1; i <= 3; i++) ...[
@@ -415,9 +423,12 @@ class StepProgress extends StatelessWidget {
 (String, String) codeStepText(String channel, String phone) {
   final number = '+998 ${UzPhoneFormatter.format(phone.substring(4))}';
   return switch (channel) {
-    'sms' => ('Код из SMS', 'Отправили SMS с 6 цифрами на номер $number. '),
-    'telegram' => ('Код из Telegram', 'Бот Super Market прислал 6 цифр на номер $number. '),
-    _ => ('Введите код', 'Отправили 6 цифр на номер $number по SMS или в Telegram. '),
+    'sms' => (tr('Код из SMS', 'SMS dagi kod'), tr('Отправили SMS с 6 цифрами на номер $number. ', '$number raqamiga 6 xonali kod bilan SMS yubordik. ')),
+    'telegram' => (
+        tr('Код из Telegram', 'Telegramdagi kod'),
+        tr('Бот Super Market прислал 6 цифр на номер $number. ', 'Super Market boti $number raqamiga 6 xonali kod yubordi. ')
+      ),
+    _ => (tr('Введите код', 'Kodni kiriting'), tr('Отправили 6 цифр на номер $number по SMS или в Telegram. ', '$number raqamiga SMS yoki Telegram orqali 6 xonali kod yubordik. ')),
   };
 }
 
@@ -569,7 +580,7 @@ class _CodeStepState extends State<CodeStep> {
                   baseline: TextBaseline.alphabetic,
                   child: GestureDetector(
                     onTap: widget.onBack,
-                    child: Text('Изменить', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
+                    child: Text(tr('Изменить', 'Oʻzgartirish'), style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
                   ),
                 ),
               ]),
@@ -622,18 +633,20 @@ class _CodeStepState extends State<CodeStep> {
             const SizedBox(height: 36),
             if (widget.botUrl.isNotEmpty)
               _TelegramButton(
-                label: widget.channel == 'telegram' ? 'Открыть бота в Telegram' : 'Не пришло? Получить код в Telegram',
+                label: widget.channel == 'telegram'
+                    ? tr('Открыть бота в Telegram', 'Botni Telegramda ochish')
+                    : tr('Не пришло? Получить код в Telegram', 'Kelmadimi? Kodni Telegramda oling'),
                 onTap: () => openUrl(widget.botUrl),
               ),
             const SizedBox(height: 16),
             if (_left > 0)
-              Text('Отправить код ещё раз через $_mmss', style: AppText.small.copyWith(fontSize: 14))
+              Text(tr('Отправить код ещё раз через $_mmss', 'Kodni $_mmss dan keyin qayta yuborish mumkin'), style: AppText.small.copyWith(fontSize: 14))
             else
               Align(
                 alignment: Alignment.centerLeft,
                 child: GestureDetector(
                   onTap: _resend,
-                  child: Text('Отправить код ещё раз', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
+                  child: Text(tr('Отправить код ещё раз', 'Kodni qayta yuborish'), style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
                 ),
               ),
           ]),
@@ -645,9 +658,9 @@ class _CodeStepState extends State<CodeStep> {
 
 /// Голубая кнопка «Открыть бота в Telegram».
 class _TelegramButton extends StatelessWidget {
-  const _TelegramButton({required this.onTap, this.label = 'Открыть бота в Telegram'});
+  const _TelegramButton({required this.onTap, this.label});
   final VoidCallback onTap;
-  final String label;
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
@@ -665,7 +678,7 @@ class _TelegramButton extends StatelessWidget {
               const FaGlyph('telegram', size: 22, color: _telegramBlue),
               const SizedBox(width: 10),
               Flexible(
-                child: Text(label,
+                child: Text(label ?? tr('Открыть бота в Telegram', 'Botni Telegramda ochish'),
                     maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong.copyWith(color: const Color(0xFF1E88C8), fontSize: 16)),
               ),
             ]),
@@ -726,9 +739,9 @@ class _NameStepScreenState extends State<NameStepScreen> {
               const SizedBox(height: 8),
               const StepProgress(step: 3),
               const SizedBox(height: 24),
-              const Text('Как вас зовут?', style: AppText.h1),
+              Text(tr('Как вас зовут?', 'Ismingiz nima?'), style: AppText.h1),
               const SizedBox(height: 8),
-              Text('Курьер будет обращаться к вам по имени', style: AppText.body.copyWith(color: AppColors.text2)),
+              Text(tr('Курьер будет обращаться к вам по имени', 'Kuryer sizga ismingiz bilan murojaat qiladi'), style: AppText.body.copyWith(color: AppColors.text2)),
               const SizedBox(height: 24),
               PersonForm(data: _data, autofocus: true, onChanged: () => setState(() {})),
               const SizedBox(height: 24),
@@ -736,7 +749,7 @@ class _NameStepScreenState extends State<NameStepScreen> {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
-            child: StepButton(label: 'Готово', busy: _busy, onPressed: _data.firstName.trim().isEmpty ? null : _save),
+            child: StepButton(label: tr('Готово', 'Tayyor'), busy: _busy, onPressed: _data.firstName.trim().isEmpty ? null : _save),
           ),
         ]),
       ),

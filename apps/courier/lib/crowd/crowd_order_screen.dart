@@ -67,9 +67,9 @@ class _CrowdOrderScreenState extends State<CrowdOrderScreen> {
   Future<void> _release() async {
     final ok = await confirmSheet(
       context,
-      title: 'Отказаться от заказа?',
-      text: 'Заказ вернётся в ленту, его возьмёт другой курьер.',
-      confirm: 'Отказаться',
+      title: tr('Отказаться от заказа?', 'Buyurtmadan voz kechasizmi?'),
+      text: tr('Заказ вернётся в ленту, его возьмёт другой курьер.', 'Buyurtma lentaga qaytadi, uni boshqa kuryer oladi.'),
+      confirm: tr('Отказаться', 'Voz kechish'),
     );
     if (!ok || !mounted) return;
     setState(() => _busy = true);
@@ -86,7 +86,7 @@ class _CrowdOrderScreenState extends State<CrowdOrderScreen> {
   Future<void> _deliver() async {
     final code = _code.text.trim();
     if (code.length != 4) {
-      setState(() => _codeError = 'Код — 4 цифры');
+      setState(() => _codeError = tr('Код — 4 цифры', 'Kod — 4 ta raqam'));
       return;
     }
     setState(() {
@@ -96,7 +96,7 @@ class _CrowdOrderScreenState extends State<CrowdOrderScreen> {
     try {
       await context.read<CrowdState>().deliver(widget.orderId, code);
       if (!mounted) return;
-      showMessage(context, 'Заказ № ${_order['number']} вручён — вознаграждение начислено');
+      showMessage(context, tr('Заказ № ${_order['number']} вручён — вознаграждение начислено', 'Buyurtma № ${_order['number']} topshirildi — haq hisoblandi'));
       Navigator.of(context).pop();
     } on ApiError catch (e) {
       if (mounted) setState(() => _codeError = e.message);
@@ -114,8 +114,9 @@ class _CrowdOrderScreenState extends State<CrowdOrderScreen> {
       await infoSheet(
         context,
         icon: Icons.support_agent_rounded,
-        title: 'Сообщили в поддержку',
-        text: 'Позвоните покупателю ещё раз и подождите у двери 5–10 минут. Поддержка Super Market свяжется с вами.',
+        title: tr('Сообщили в поддержку', 'Qoʻllab-quvvatlash xizmatiga xabar berdik'),
+        text: tr('Позвоните покупателю ещё раз и подождите у двери 5–10 минут. Поддержка Super Market свяжется с вами.',
+            'Xaridorga yana qoʻngʻiroq qiling va eshik oldida 5–10 daqiqa kuting. Super Market qoʻllab-quvvatlash xizmati siz bilan bogʻlanadi.'),
       );
     } catch (e) {
       if (mounted) showMessage(context, e);
@@ -131,7 +132,13 @@ class _CrowdOrderScreenState extends State<CrowdOrderScreen> {
         body: Center(
           child: _error == null
               ? const CircularProgressIndicator()
-              : EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: '$_error', action: 'Повторить', onAction: _load),
+              : EmptyState(
+                  icon: Icons.wifi_off_rounded,
+                  title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'),
+                  text: '$_error',
+                  action: tr('Повторить', 'Qayta urinish'),
+                  onAction: _load,
+                ),
         ),
       );
     }
@@ -148,8 +155,8 @@ class _CrowdOrderScreenState extends State<CrowdOrderScreen> {
         ),
         leadingWidth: 56,
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Заказ № ${o['number']}', style: AppText.h3),
-          Text('${money(c['fee'])} за доставку', style: AppText.small),
+          Text(tr('Заказ № ${o['number']}', 'Buyurtma № ${o['number']}'), style: AppText.h3),
+          Text(tr('${money(c['fee'])} за доставку', 'Yetkazish uchun ${money(c['fee'])}'), style: AppText.small),
         ]),
       ),
       body: RefreshIndicator(
@@ -160,9 +167,17 @@ class _CrowdOrderScreenState extends State<CrowdOrderScreen> {
           if (status == 'picked') ..._pickup(c, o),
           if (status == 'delivering') ..._handoff(c, o),
           if (status == 'delivered')
-            const EmptyState(icon: Icons.check_circle_rounded, title: 'Заказ вручён', text: 'Вознаграждение уже в разделе «Заработок»'),
+            EmptyState(
+              icon: Icons.check_circle_rounded,
+              title: tr('Заказ вручён', 'Buyurtma topshirildi'),
+              text: tr('Вознаграждение уже в разделе «Заработок»', 'Haq allaqachon «Daromad» boʻlimida'),
+            ),
           if (status == 'cancelled')
-            const EmptyState(icon: Icons.cancel_rounded, title: 'Заказ отменён', text: 'Верните пакет в магазин, если он у вас'),
+            EmptyState(
+              icon: Icons.cancel_rounded,
+              title: tr('Заказ отменён', 'Buyurtma bekor qilindi'),
+              text: tr('Верните пакет в магазин, если он у вас', 'Paket sizda boʻlsa, uni doʻkonga qaytaring'),
+            ),
         ]),
       ),
     );
@@ -181,8 +196,11 @@ class _CrowdOrderScreenState extends State<CrowdOrderScreen> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                'Заберите до ${until.hour.toString().padLeft(2, '0')}:${until.minute.toString().padLeft(2, '0')} — '
-                '${minutesLeft(until, DateTime.now())}. Потом заказ вернётся в ленту.',
+                tr(
+                    'Заберите до ${until.hour.toString().padLeft(2, '0')}:${until.minute.toString().padLeft(2, '0')} — '
+                        '${minutesLeft(until, DateTime.now())}. Потом заказ вернётся в ленту.',
+                    '${until.hour.toString().padLeft(2, '0')}:${until.minute.toString().padLeft(2, '0')} gacha oling — '
+                        '${minutesLeft(until, DateTime.now())}. Keyin buyurtma lentaga qaytadi.'),
                 style: AppText.small.copyWith(color: AppColors.warningInk, fontSize: 14, fontWeight: FontWeight.w500),
               ),
             ),
@@ -193,7 +211,7 @@ class _CrowdOrderScreenState extends State<CrowdOrderScreen> {
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(24)),
         child: Column(children: [
-          const Text('Покажите код продавцу', style: AppText.title),
+          Text(tr('Покажите код продавцу', 'Kodni sotuvchiga koʻrsating'), style: AppText.title),
           const SizedBox(height: 14),
           QrImageView(data: pickupQr(o['number'], code), size: 180, backgroundColor: AppColors.white),
           const SizedBox(height: 12),
@@ -201,7 +219,7 @@ class _CrowdOrderScreenState extends State<CrowdOrderScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(color: AppColors.soft, borderRadius: BorderRadius.circular(12)),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Text('Код выдачи', style: AppText.small.copyWith(fontWeight: FontWeight.w500)),
+              Text(tr('Код выдачи', 'Berish kodi'), style: AppText.small.copyWith(fontWeight: FontWeight.w500)),
               const SizedBox(width: 8),
               Text('${o['number']} · $code', style: AppText.bodyStrong),
             ]),
@@ -220,7 +238,7 @@ class _CrowdOrderScreenState extends State<CrowdOrderScreen> {
       Center(
         child: TextButton(
           onPressed: _busy ? null : _release,
-          child: Text('Не могу забрать', style: AppText.bodyStrong.copyWith(color: AppColors.text2)),
+          child: Text(tr('Не могу забрать', 'Ola olmayman'), style: AppText.bodyStrong.copyWith(color: AppColors.text2)),
         ),
       ),
     ];
@@ -228,15 +246,15 @@ class _CrowdOrderScreenState extends State<CrowdOrderScreen> {
 
   List<Widget> _handoff(Map<String, dynamic> c, Map<String, dynamic> o) {
     final details = [
-      if ('${o['entrance'] ?? ''}'.isNotEmpty) 'подъезд ${o['entrance']}',
-      if ('${o['floor'] ?? ''}'.isNotEmpty) 'этаж ${o['floor']}',
-      if ('${o['apartment'] ?? ''}'.isNotEmpty) 'кв. ${o['apartment']}',
+      if ('${o['entrance'] ?? ''}'.isNotEmpty) tr('подъезд ${o['entrance']}', 'podʼezd ${o['entrance']}'),
+      if ('${o['floor'] ?? ''}'.isNotEmpty) tr('этаж ${o['floor']}', 'qavat ${o['floor']}'),
+      if ('${o['apartment'] ?? ''}'.isNotEmpty) tr('кв. ${o['apartment']}', 'xonadon ${o['apartment']}'),
     ].join(' · ');
     final phone = '${o['customer_phone'] ?? ''}';
     return [
       _PlaceCard(
         icon: Icons.person_rounded,
-        title: '${c['customer_name'] ?? ''}'.isEmpty ? 'Покупатель' : '${c['customer_name']}',
+        title: '${c['customer_name'] ?? ''}'.isEmpty ? tr('Покупатель', 'Xaridor') : '${c['customer_name']}',
         sub: [o['address'], details, if ('${o['address_comment'] ?? ''}'.isNotEmpty) o['address_comment']]
             .where((x) => '${x ?? ''}'.isNotEmpty)
             .join(' · '),
@@ -248,9 +266,11 @@ class _CrowdOrderScreenState extends State<CrowdOrderScreen> {
         padding: const EdgeInsets.all(22),
         decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(24)),
         child: Column(children: [
-          const Text('Попросите код у покупателя', style: AppText.title, textAlign: TextAlign.center),
+          Text(tr('Попросите код у покупателя', 'Xaridordan kodni soʻrang'), style: AppText.title, textAlign: TextAlign.center),
           const SizedBox(height: 6),
-          Text('Код есть в приложении Super Market в этом заказе. Без кода заказ не закрыть.',
+          Text(
+              tr('Код есть в приложении Super Market в этом заказе. Без кода заказ не закрыть.',
+                  'Kod Super Market ilovasida, shu buyurtma ichida. Kodsiz buyurtmani yopib boʻlmaydi.'),
               style: AppText.small.copyWith(fontSize: 14), textAlign: TextAlign.center),
           const SizedBox(height: 16),
           SizedBox(
@@ -276,7 +296,7 @@ class _CrowdOrderScreenState extends State<CrowdOrderScreen> {
       ),
       const SizedBox(height: 16),
       BigButton(
-        label: 'Вручил заказ',
+        label: tr('Вручил заказ', 'Buyurtmani topshirdim'),
         icon: Icons.check_circle_rounded,
         color: AppColors.success,
         busy: _busy,
@@ -287,7 +307,7 @@ class _CrowdOrderScreenState extends State<CrowdOrderScreen> {
         child: TextButton.icon(
           onPressed: _busy ? null : _noAnswer,
           icon: const Icon(Icons.help_outline_rounded, size: 18, color: AppColors.text2),
-          label: Text('Покупатель не отвечает', style: AppText.bodyStrong.copyWith(color: AppColors.text2)),
+          label: Text(tr('Покупатель не отвечает', 'Xaridor javob bermayapti'), style: AppText.bodyStrong.copyWith(color: AppColors.text2)),
         ),
       ),
     ];
@@ -300,7 +320,7 @@ class _Steps extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const labels = ['Принят', 'В магазине', 'В пути', 'Вручён'];
+    final labels = [tr('Принят', 'Qabul qilindi'), tr('В магазине', 'Doʻkonda'), tr('В пути', 'Yoʻlda'), tr('Вручён', 'Topshirildi')];
     return Row(children: [
       for (var i = 0; i < labels.length; i++) ...[
         if (i > 0) const SizedBox(width: 6),

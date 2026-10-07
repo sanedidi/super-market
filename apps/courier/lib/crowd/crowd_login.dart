@@ -44,19 +44,23 @@ class ModeSwitch extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(color: AppColors.soft, borderRadius: BorderRadius.circular(14)),
-      child: Row(children: [item('Курьер по пути', true), const SizedBox(width: 4), item('Сотрудник магазина', false)]),
+      child: Row(children: [
+        item(tr('Курьер по пути', 'Yoʻlakay kuryer'), true),
+        const SizedBox(width: 4),
+        item(tr('Сотрудник магазина', 'Doʻkon xodimi'), false),
+      ]),
     );
   }
 }
 
 Future<void> openLink(BuildContext context, String url) async {
   if (url.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Документ скоро появится')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Документ скоро появится', 'Hujjat tez orada paydo boʻladi'))));
     return;
   }
-  final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  final ok = await launchUrl(Uri.parse(docUrl(url)), mode: LaunchMode.externalApplication);
   if (!ok && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Не удалось открыть: $url')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Не удалось открыть: $url', 'Ochib boʻlmadi: $url'))));
   }
 }
 
@@ -104,7 +108,7 @@ class _CrowdLoginFormState extends State<CrowdLoginForm> {
   Future<void> _submit() async {
     final phone = normalizeUzPhone(_phone.text);
     if (phone == null) {
-      setState(() => _error = 'Введите номер полностью: 90 123 45 67');
+      setState(() => _error = tr('Введите номер полностью: 90 123 45 67', 'Raqamni toʻliq kiriting: 90 123 45 67'));
       return;
     }
     setState(() {
@@ -127,7 +131,8 @@ class _CrowdLoginFormState extends State<CrowdLoginForm> {
           builder: (_) => CrowdCodeScreen(phone: phone, channel: 'sms', botUrl: '', resendIn: (e.details['retry_after'] as num?)?.toInt() ?? 60),
         ));
       } else if (e.code == 'telegram_not_linked') {
-        setState(() => _error = 'Откройте нашего бота в Telegram и поделитесь номером — код придёт туда.');
+        setState(() => _error = tr('Откройте нашего бота в Telegram и поделитесь номером — код придёт туда.',
+            'Telegramda botimizni ochib, raqamingizni ulashing — kod oʻsha yerga keladi.'));
         final url = '${e.details['bot_url'] ?? ''}';
         if (url.isNotEmpty) await openLink(context, url);
       } else {
@@ -142,11 +147,11 @@ class _CrowdLoginFormState extends State<CrowdLoginForm> {
   Widget build(BuildContext context) {
     final link = AppText.small.copyWith(color: AppColors.primary, fontWeight: FontWeight.w600, decoration: TextDecoration.underline, decorationColor: AppColors.primary);
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      const Text('Вход по телефону', style: AppText.h2),
+      Text(tr('Вход по телефону', 'Telefon orqali kirish'), style: AppText.h2),
       const SizedBox(height: 6),
-      Text('Пришлём код из SMS. Аккаунт создастся сам', style: AppText.body.copyWith(color: AppColors.text2)),
+      Text(tr('Пришлём код из SMS. Аккаунт создастся сам', 'SMS orqali kod yuboramiz. Akkaunt avtomatik yaratiladi'), style: AppText.body.copyWith(color: AppColors.text2)),
       const SizedBox(height: 20),
-      const Text('Номер телефона', style: AppText.caption),
+      Text(tr('Номер телефона', 'Telefon raqami'), style: AppText.caption),
       const SizedBox(height: 8),
       TextField(
         controller: _phone,
@@ -183,23 +188,31 @@ class _CrowdLoginFormState extends State<CrowdLoginForm> {
           const SizedBox(width: 10),
           Expanded(
             child: Text.rich(TextSpan(style: AppText.small.copyWith(color: AppColors.ink, fontSize: 14), children: [
-              const TextSpan(text: 'Я прочитал и согласен с '),
-              TextSpan(text: 'Условиями для курьеров', style: link, recognizer: TapGestureRecognizer()..onTap = () => openLink(context, _termsUrl)),
-              const TextSpan(text: ' и '),
-              TextSpan(text: 'Политикой конфиденциальности', style: link, recognizer: TapGestureRecognizer()..onTap = () => openLink(context, _privacyUrl)),
-              const TextSpan(text: ' Super Market'),
+              TextSpan(text: tr('Я прочитал и согласен с ', 'Men Super Marketning ')),
+              TextSpan(
+                  text: tr('Условиями для курьеров', 'kuryerlar uchun shartlari'),
+                  style: link,
+                  recognizer: TapGestureRecognizer()..onTap = () => openLink(context, _termsUrl)),
+              TextSpan(text: tr(' и ', ' va ')),
+              TextSpan(
+                  text: tr('Политикой конфиденциальности', 'maxfiylik siyosati'),
+                  style: link,
+                  recognizer: TapGestureRecognizer()..onTap = () => openLink(context, _privacyUrl)),
+              TextSpan(text: tr(' Super Market', ' bilan tanishdim va roziman')),
             ])),
           ),
         ]),
       ),
       const SizedBox(height: 20),
-      BigButton(label: 'Получить код', icon: Icons.arrow_forward_rounded, busy: _busy, onPressed: _agree ? _submit : null),
+      BigButton(label: tr('Получить код', 'Kodni olish'), icon: Icons.arrow_forward_rounded, busy: _busy, onPressed: _agree ? _submit : null),
       const SizedBox(height: 18),
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Icon(Icons.verified_user_rounded, size: 18, color: AppColors.muted),
         const SizedBox(width: 8),
         Expanded(
-          child: Text('Паспорт загружать не нужно — личность подтвердит продавец в любом магазине Super Market. Только с 18 лет.',
+          child: Text(
+              tr('Паспорт загружать не нужно — личность подтвердит продавец в любом магазине Super Market. Только с 18 лет.',
+                  'Pasport yuklash shart emas — shaxsingizni istalgan Super Market doʻkonida sotuvchi tasdiqlaydi. Faqat 18 yoshdan.'),
               style: AppText.small),
         ),
       ]),
@@ -270,7 +283,8 @@ class _CrowdCodeScreenState extends State<CrowdCodeScreen> {
     } on ApiError catch (e) {
       if (!mounted) return;
       setState(() => _error = switch (e.code) {
-            'validation' => 'Неверный код или он устарел. Проверьте SMS или запросите новый',
+            'validation' => tr('Неверный код или он устарел. Проверьте SMS или запросите новый',
+                'Kod notoʻgʻri yoki eskirgan. SMSni tekshiring yoki yangisini soʻrang'),
             'crowd_blocked' => e.message,
             _ => e.message,
           });
@@ -303,15 +317,15 @@ class _CrowdCodeScreenState extends State<CrowdCodeScreen> {
       backgroundColor: AppColors.bg,
       appBar: AppBar(backgroundColor: AppColors.bg),
       body: ListView(padding: const EdgeInsets.fromLTRB(20, 8, 20, 24), children: [
-        Text(sms ? 'Введите код из SMS' : 'Введите код из Telegram', style: AppText.h1.copyWith(fontSize: 30)),
+        Text(sms ? tr('Введите код из SMS', 'SMSdagi kodni kiriting') : tr('Введите код из Telegram', 'Telegramdagi kodni kiriting'), style: AppText.h1.copyWith(fontSize: 30)),
         const SizedBox(height: 8),
-        Text('Отправили 6 цифр на ${widget.phone}', style: AppText.body.copyWith(color: AppColors.text2, fontSize: 16)),
+        Text(tr('Отправили 6 цифр на ${widget.phone}', '${widget.phone} raqamiga 6 xonali kod yubordik'), style: AppText.body.copyWith(color: AppColors.text2, fontSize: 16)),
         const SizedBox(height: 4),
         TextButton.icon(
           style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft, foregroundColor: AppColors.primary),
           onPressed: () => Navigator.of(context).pop(),
           icon: const Icon(Icons.edit_rounded, size: 16),
-          label: const Text('Изменить номер', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w600, fontSize: 15)),
+          label: Text(tr('Изменить номер', 'Raqamni oʻzgartirish'), style: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w600, fontSize: 15)),
         ),
         const SizedBox(height: 16),
         GestureDetector(
@@ -369,20 +383,22 @@ class _CrowdCodeScreenState extends State<CrowdCodeScreen> {
           Row(children: [
             const Icon(Icons.schedule_rounded, size: 18, color: AppColors.text2),
             const SizedBox(width: 6),
-            Text('Отправить код ещё раз через ${_left ~/ 60}:${(_left % 60).toString().padLeft(2, '0')}',
+            Text(
+                tr('Отправить код ещё раз через ${_left ~/ 60}:${(_left % 60).toString().padLeft(2, '0')}',
+                    'Kodni qayta yuborish ${_left ~/ 60}:${(_left % 60).toString().padLeft(2, '0')} dan keyin'),
                 style: AppText.body.copyWith(color: AppColors.text2, fontWeight: FontWeight.w500)),
           ])
         else
           Align(
             alignment: Alignment.centerLeft,
-            child: TextButton(onPressed: _resend, child: const Text('Отправить код ещё раз')),
+            child: TextButton(onPressed: _resend, child: Text(tr('Отправить код ещё раз', 'Kodni qayta yuborish'))),
           ),
         if (!sms && widget.botUrl.isNotEmpty) ...[
           const SizedBox(height: 8),
-          SmallButton(label: 'Открыть бота', icon: Icons.send_rounded, onPressed: () => openLink(context, widget.botUrl)),
+          SmallButton(label: tr('Открыть бота', 'Botni ochish'), icon: Icons.send_rounded, onPressed: () => openLink(context, widget.botUrl)),
         ],
         const SizedBox(height: 18),
-        BigButton(label: 'Подтвердить', busy: _busy, onPressed: digits.length == 6 ? _verify : null),
+        BigButton(label: tr('Подтвердить', 'Tasdiqlash'), busy: _busy, onPressed: digits.length == 6 ? _verify : null),
         const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.all(14),
@@ -391,7 +407,10 @@ class _CrowdCodeScreenState extends State<CrowdCodeScreen> {
             const Icon(Icons.lock_rounded, size: 20, color: AppColors.muted),
             const SizedBox(width: 10),
             Expanded(
-              child: Text('Код действует 5 минут. После 5 неверных попыток нужно запросить новый код.', style: AppText.small),
+              child: Text(
+                  tr('Код действует 5 минут. После 5 неверных попыток нужно запросить новый код.',
+                      'Kod 5 daqiqa amal qiladi. 5 marta notoʻgʻri kiritilsa, yangi kod soʻrash kerak.'),
+                  style: AppText.small),
             ),
           ]),
         ),

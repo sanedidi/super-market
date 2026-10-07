@@ -176,14 +176,14 @@ class CourierState extends ChangeNotifier {
     if (_positions != null) return;
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
-        locationProblem = 'Геолокация на телефоне выключена';
+        locationProblem = tr('Геолокация на телефоне выключена', 'Telefonda joylashuv xizmati oʻchiq');
         notifyListeners();
         return;
       }
       var perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) perm = await _askPermission();
       if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
-        locationProblem = 'Нет доступа к геопозиции';
+        locationProblem = tr('Нет доступа к геопозиции', 'Joylashuvga ruxsat yoʻq');
         notifyListeners();
         return;
       }
@@ -197,9 +197,9 @@ class CourierState extends ChangeNotifier {
             accuracy: LocationAccuracy.high,
             distanceFilter: 15,
             intervalDuration: const Duration(seconds: 10),
-            foregroundNotificationConfig: const ForegroundNotificationConfig(
-              notificationTitle: 'Вы на смене',
-              notificationText: 'Покупатели видят, где их заказ',
+            foregroundNotificationConfig: ForegroundNotificationConfig(
+              notificationTitle: tr('Вы на смене', 'Siz smenadasiz'),
+              notificationText: tr('Покупатели видят, где их заказ', 'Xaridorlar buyurtmasi qayerdaligini koʻrib turibdi'),
               enableWakeLock: true,
             ),
           ),
@@ -214,14 +214,14 @@ class CourierState extends ChangeNotifier {
         _ => const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 15),
       };
       _positions = Geolocator.getPositionStream(locationSettings: settings).listen(_send, onError: (Object e) {
-        locationProblem = 'Геопозиция недоступна';
+        locationProblem = tr('Геопозиция недоступна', 'Joylashuv aniqlanmayapti');
         _positions = null;
         notifyListeners();
       });
       // Первая точка сразу — не ждём, пока курьер сдвинется на 15 метров.
       unawaited(Geolocator.getCurrentPosition().then(_send, onError: (Object _) {}));
     } catch (e) {
-      locationProblem = 'Геопозиция недоступна';
+      locationProblem = tr('Геопозиция недоступна', 'Joylashuv aniqlanmayapti');
       notifyListeners();
     }
   }

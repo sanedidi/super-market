@@ -16,7 +16,15 @@ import 'charts.dart';
 
 enum Period { today, yesterday, week, month }
 
-const periodLabels = {Period.today: 'Сегодня', Period.yesterday: 'Вчера', Period.week: '7 дней', Period.month: '30 дней'};
+Map<Period, String> get periodLabels => {
+      Period.today: tr('Сегодня', 'Bugun'),
+      Period.yesterday: tr('Вчера', 'Kecha'),
+      Period.week: tr('7 дней', '7 kun'),
+      Period.month: tr('30 дней', '30 kun'),
+    };
+
+/// Список на текущем языке: [ru] или [uz].
+List<String> trList(List<String> ru, List<String> uz) => Lang.instance.isUz ? uz : ru;
 
 /// Отчётное время — Ташкент (UTC+5), независимо от часового пояса телефона.
 DateTime tashNow() => DateTime.now().toUtc().add(const Duration(hours: 5));
@@ -24,13 +32,18 @@ DateTime tash(Object? iso) => (DateTime.tryParse('${iso ?? ''}') ?? DateTime.now
 String ymd(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 double dnum(Object? v) => double.tryParse('${v ?? ''}') ?? 0;
 
-const _months = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
-String dayLabel(DateTime d) => '${d.day} ${_months[d.month - 1]}';
+const _monthsRu = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+const _monthsUz = ['yan', 'fev', 'mar', 'apr', 'may', 'iyn', 'iyl', 'avg', 'sen', 'okt', 'noy', 'dek'];
+String dayLabel(DateTime d) => tr('${d.day} ${_monthsRu[d.month - 1]}', '${d.day}-${_monthsUz[d.month - 1]}');
 
 // «прошлая среда» / «к прошлой среде»
-const _lastWeekday = ['прошлый понедельник', 'прошлый вторник', 'прошлая среда', 'прошлый четверг', 'прошлая пятница', 'прошлая суббота', 'прошлое воскресенье'];
+List<String> get _lastWeekday => trList(
+      ['прошлый понедельник', 'прошлый вторник', 'прошлая среда', 'прошлый четверг', 'прошлая пятница', 'прошлая суббота', 'прошлое воскресенье'],
+      ['oʻtgan dushanba', 'oʻtgan seshanba', 'oʻtgan chorshanba', 'oʻtgan payshanba', 'oʻtgan juma', 'oʻtgan shanba', 'oʻtgan yakshanba'],
+    );
 const _lastWeekdayTo = ['прошлому понедельнику', 'прошлому вторнику', 'прошлой среде', 'прошлому четвергу', 'прошлой пятнице', 'прошлой субботе', 'прошлому воскресенью'];
-const weekdayNames = ['понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье'];
+const _weekdayUz = ['dushanba', 'seshanba', 'chorshanba', 'payshanba', 'juma', 'shanba', 'yakshanba'];
+List<String> get weekdayNames => trList(['понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье'], _weekdayUz);
 
 String plural(int n, String one, String few, String many) {
   final m10 = n % 10, m100 = n % 100;
@@ -39,7 +52,7 @@ String plural(int n, String one, String few, String many) {
   return many;
 }
 
-String products(int n) => '$n ${plural(n, 'товар', 'товара', 'товаров')}';
+String products(int n) => '$n ${tr(plural(n, 'товар', 'товара', 'товаров'), 'ta mahsulot')}';
 
 class _Query {
   const _Query(this.from, this.to, this.bucket, this.compare);
@@ -63,18 +76,19 @@ String _prevName(Period p) {
   return switch (p) {
     Period.today => _lastWeekday[t.weekday - 1],
     Period.yesterday => _lastWeekday[t.subtract(const Duration(days: 1)).weekday - 1],
-    Period.week => 'прошлые 7 дней',
-    Period.month => 'прошлые 30 дней',
+    Period.week => tr('прошлые 7 дней', 'oʻtgan 7 kun'),
+    Period.month => tr('прошлые 30 дней', 'oʻtgan 30 kun'),
   };
 }
 
 String _prevTo(Period p) {
   final t = tashNow();
   return switch (p) {
-    Period.today => 'к ${_lastWeekdayTo[t.weekday - 1]}',
-    Period.yesterday => 'к ${_lastWeekdayTo[t.subtract(const Duration(days: 1)).weekday - 1]}',
-    Period.week => 'к прошлым 7 дням',
-    Period.month => 'к прошлым 30 дням',
+    Period.today => tr('к ${_lastWeekdayTo[t.weekday - 1]}', 'oʻtgan ${_weekdayUz[t.weekday - 1]}ga nisbatan'),
+    Period.yesterday => tr('к ${_lastWeekdayTo[t.subtract(const Duration(days: 1)).weekday - 1]}',
+        'oʻtgan ${_weekdayUz[t.subtract(const Duration(days: 1)).weekday - 1]}ga nisbatan'),
+    Period.week => tr('к прошлым 7 дням', 'oʻtgan 7 kunga nisbatan'),
+    Period.month => tr('к прошлым 30 дням', 'oʻtgan 30 kunga nisbatan'),
   };
 }
 
@@ -197,7 +211,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
       const SizedBox(height: 16),
       widget.actions,
       const SizedBox(height: 20),
-      const Text('Динамика · 14 дней', style: AppText.h3),
+      Text(tr('Динамика · 14 дней', 'Dinamika · 14 kun'), style: AppText.h3),
       const SizedBox(height: 12),
       _trendGrid(),
       if (_month != null) ...[const SizedBox(height: 16), _monthCard()],
@@ -248,15 +262,18 @@ class _HomeDashboardState extends State<HomeDashboard> {
       final i = sel + lo;
       final b = bars[sel];
       final title = hourly ? '${at(i).hour}:00–${at(i).hour + 1}:00' : dayLabel(at(i));
+      final prevText = b.prev != null ? ' · ${_prevName(_p)} ${money(b.prev, suffix: false)}' : '';
       selText = i < pts.length
-          ? '$title · касса ${money(b.pos, suffix: false)} · онлайн ${money(b.online, suffix: false)}${b.prev != null ? ' · ${_prevName(_p)} ${money(b.prev, suffix: false)}' : ''}'
-          : '$title · ещё не наступило${b.prev != null ? ' · ${_prevName(_p)} ${money(b.prev, suffix: false)}' : ''}';
+          ? tr('$title · касса ${money(b.pos, suffix: false)} · онлайн ${money(b.online, suffix: false)}$prevText',
+              '$title · kassa ${money(b.pos, suffix: false)} · onlayn ${money(b.online, suffix: false)}$prevText')
+          : tr('$title · ещё не наступило$prevText', '$title · hali kelmagan$prevText');
     }
+    final nowHm = '${tashNow().hour.toString().padLeft(2, '0')}:${tashNow().minute.toString().padLeft(2, '0')}';
     return AppCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          const Expanded(child: Text('Выручка', style: AppText.small)),
-          if (_p == Period.today) Text('до ${tashNow().hour.toString().padLeft(2, '0')}:${tashNow().minute.toString().padLeft(2, '0')}', style: AppText.small.copyWith(color: AppColors.muted)),
+          Expanded(child: Text(tr('Выручка', 'Tushum'), style: AppText.small)),
+          if (_p == Period.today) Text(tr('до $nowHm', '$nowHm gacha'), style: AppText.small.copyWith(color: AppColors.muted)),
         ]),
         const SizedBox(height: 2),
         if (_loading && s == null)
@@ -264,7 +281,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
         else ...[
           Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, children: [
             Text(money(t['revenue'], suffix: false), style: AppText.h1.copyWith(fontSize: 30)),
-            Text('сум', style: AppText.bodyStrong.copyWith(color: AppColors.text2)),
+            Text(tr('сум', 'soʻm'), style: AppText.bodyStrong.copyWith(color: AppColors.text2)),
             if (change != null) DeltaChip(change.toDouble()),
           ]),
           Text(_prevTo(_p), style: AppText.small.copyWith(fontSize: 12, color: AppColors.muted)),
@@ -275,19 +292,19 @@ class _HomeDashboardState extends State<HomeDashboard> {
             Text(selText, style: AppText.caption.copyWith(color: AppColors.ink))
           else
             Wrap(spacing: 12, runSpacing: 4, children: [
-              const Legend(ChartColors.pos, 'Касса'),
-              const Legend(ChartColors.online, 'Онлайн'),
+              Legend(ChartColors.pos, tr('Касса', 'Kassa')),
+              Legend(ChartColors.online, tr('Онлайн', 'Onlayn')),
               Legend(ChartColors.prev, _prevName(_p), dashed: true),
             ]),
           const SizedBox(height: 12),
           Row(children: [
-            Expanded(child: _Stat('Чеков', '${t['checks'] ?? 0}', 'ср. чек ${money(t['avg_check'], suffix: false)}')),
+            Expanded(child: _Stat(tr('Чеков', 'Cheklar'), '${t['checks'] ?? 0}', tr('ср. чек ${money(t['avg_check'], suffix: false)}', 'oʻrt. chek ${money(t['avg_check'], suffix: false)}'))),
             const SizedBox(width: 8),
-            Expanded(child: _Stat('Онлайн', '${t['orders'] ?? 0}', 'на ${money(t['online'], suffix: false)}')),
+            Expanded(child: _Stat(tr('Онлайн', 'Onlayn'), '${t['orders'] ?? 0}', tr('на ${money(t['online'], suffix: false)}', 'jami ${money(t['online'], suffix: false)}'))),
             const SizedBox(width: 8),
             Expanded(
-                child: _Stat('Прибыль', money(t['profit'], suffix: false),
-                    t['margin_pct'] == null ? 'маржа —' : 'маржа ${(t['margin_pct'] as num).round()}%')),
+                child: _Stat(tr('Прибыль', 'Foyda'), money(t['profit'], suffix: false),
+                    t['margin_pct'] == null ? tr('маржа —', 'marja —') : tr('маржа ${(t['margin_pct'] as num).round()}%', 'marja ${(t['margin_pct'] as num).round()}%'))),
           ]),
         ],
       ]),
@@ -311,12 +328,15 @@ class _HomeDashboardState extends State<HomeDashboard> {
     }
 
     final tiles = <Widget>[
-      _TrendTile('Выручка', shortMoney(rev.fold(0.0, (a, b) => a + b)), wow(rev), 'за 14 дней', ChartColors.pos, rev),
-      _TrendTile('Прибыль', shortMoney(prof.fold(0.0, (a, b) => a + b)), wow(prof), 'за 14 дней', ChartColors.profit, prof),
-      _TrendTile('Средний чек', money(avg.isEmpty ? 0 : avg.last.round(), suffix: false), null, 'сегодня, сум', ChartColors.pos, avg),
-      if (widget.canOrders) _TrendTile('Онлайн-заказы', '${orders.fold(0.0, (a, b) => a + b).round()}', wow(orders), 'доставлено за 14 дней', ChartColors.orange, orders),
+      _TrendTile(tr('Выручка', 'Tushum'), shortMoney(rev.fold(0.0, (a, b) => a + b)), wow(rev), tr('за 14 дней', '14 kunda'), ChartColors.pos, rev),
+      _TrendTile(tr('Прибыль', 'Foyda'), shortMoney(prof.fold(0.0, (a, b) => a + b)), wow(prof), tr('за 14 дней', '14 kunda'), ChartColors.profit, prof),
+      _TrendTile(tr('Средний чек', 'Oʻrtacha chek'), money(avg.isEmpty ? 0 : avg.last.round(), suffix: false), null, tr('сегодня, сум', 'bugun, soʻm'), ChartColors.pos, avg),
+      if (widget.canOrders)
+        _TrendTile(tr('Онлайн-заказы', 'Onlayn buyurtmalar'), '${orders.fold(0.0, (a, b) => a + b).round()}', wow(orders), tr('доставлено за 14 дней', '14 kunda yetkazilgan'),
+            ChartColors.orange, orders),
       if (widget.canBalance && _balance != null)
-        _TrendTile('К выводу', money(_balance!['available'], suffix: false), null, 'ожидает ${money(_balance!['pending'], suffix: false)}', ChartColors.prev, const []),
+        _TrendTile(tr('К выводу', 'Yechish mumkin'), money(_balance!['available'], suffix: false), null,
+            tr('ожидает ${money(_balance!['pending'], suffix: false)}', 'kutilmoqda ${money(_balance!['pending'], suffix: false)}'), ChartColors.prev, const []),
     ];
     return Column(children: [
       for (var i = 0; i < tiles.length; i += 2)
@@ -345,13 +365,16 @@ class _HomeDashboardState extends State<HomeDashboard> {
     final change = m['change_pct'] as num?;
     return AppCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Выручка и прибыль · 30 дней', style: AppText.title),
+        Text(tr('Выручка и прибыль · 30 дней', 'Tushum va foyda · 30 kun'), style: AppText.title),
         const SizedBox(height: 8),
         Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, children: [
-          Text('${shortMoney(dnum(t['revenue']))} сум', style: AppText.h3),
+          Text('${shortMoney(dnum(t['revenue']))} ${tr('сум', 'soʻm')}', style: AppText.h3),
           if (change != null) DeltaChip(change.toDouble()),
         ]),
-        Text('прибыль ${shortMoney(dnum(t['profit']))}${t['margin_pct'] != null ? ' · маржа ${(t['margin_pct'] as num).round()}%' : ''}', style: AppText.small),
+        Text(
+            tr('прибыль ${shortMoney(dnum(t['profit']))}${t['margin_pct'] != null ? ' · маржа ${(t['margin_pct'] as num).round()}%' : ''}',
+                'foyda ${shortMoney(dnum(t['profit']))}${t['margin_pct'] != null ? ' · marja ${(t['margin_pct'] as num).round()}%' : ''}'),
+            style: AppText.small),
         const SizedBox(height: 12),
         DayLines(
           revenue: pts.map((p) => dnum(p['revenue'])).toList(),
@@ -360,10 +383,10 @@ class _HomeDashboardState extends State<HomeDashboard> {
           labels: labels,
         ),
         const SizedBox(height: 6),
-        const Wrap(spacing: 12, runSpacing: 4, children: [
-          Legend(ChartColors.pos, 'Выручка'),
-          Legend(ChartColors.profit, 'Прибыль'),
-          Legend(ChartColors.prev, 'Прошлые 30 дней', dashed: true),
+        Wrap(spacing: 12, runSpacing: 4, children: [
+          Legend(ChartColors.pos, tr('Выручка', 'Tushum')),
+          Legend(ChartColors.profit, tr('Прибыль', 'Foyda')),
+          Legend(ChartColors.prev, tr('Прошлые 30 дней', 'Oʻtgan 30 kun'), dashed: true),
         ]),
       ]),
     );
@@ -378,16 +401,22 @@ class _HomeDashboardState extends State<HomeDashboard> {
     int? nonCash(String field) {
       final all = items.fold(0.0, (a, i) => a + dnum(i[field]));
       if (all <= 0) return null;
-      final cash = items.where((i) => '${i['name']}'.toLowerCase().contains('налич')).fold(0.0, (a, i) => a + dnum(i[field]));
+      // Названия приходят на языке запроса — ищем и по-русски, и по-узбекски.
+      bool isCash(Map<String, dynamic> i) {
+        final n = '${i['name']}'.toLowerCase();
+        return n.contains('налич') || n.contains('naqd');
+      }
+
+      final cash = items.where(isCash).fold(0.0, (a, i) => a + dnum(i[field]));
       return ((all - cash) / all * 100).round();
     }
 
     final cur = nonCash('value'), prev = nonCash('prev_value');
-    final when = _period(_p).compare == 'week' ? 'Неделю назад' : 'В прошлом периоде';
+    final when = _period(_p).compare == 'week' ? tr('Неделю назад', 'Bir hafta oldin') : tr('В прошлом периоде', 'Oʻtgan davrda');
     return AppCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Способы оплаты', style: AppText.title),
-        Text('${periodLabels[_p]}, касса и онлайн', style: AppText.small),
+        Text(tr('Способы оплаты', 'Toʻlov usullari'), style: AppText.title),
+        Text(tr('${periodLabels[_p]}, касса и онлайн', '${periodLabels[_p]}, kassa va onlayn'), style: AppText.small),
         const SizedBox(height: 14),
         Row(children: [
           Donut(
@@ -395,7 +424,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
             colors: ChartColors.cats,
             center: Column(mainAxisSize: MainAxisSize.min, children: [
               Text(shortMoney(total), style: AppText.bodyStrong),
-              Text('сум', style: AppText.small.copyWith(fontSize: 10)),
+              Text(tr('сум', 'soʻm'), style: AppText.small.copyWith(fontSize: 10)),
             ]),
           ),
           const SizedBox(width: 16),
@@ -428,7 +457,8 @@ class _HomeDashboardState extends State<HomeDashboard> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(color: AppColors.soft, borderRadius: BorderRadius.circular(12)),
-            child: Text('Безналичных — $cur%.${prev != null ? ' $when было $prev%.' : ''}', style: AppText.small.copyWith(fontSize: 12)),
+            child: Text(tr('Безналичных — $cur%.${prev != null ? ' $when было $prev%.' : ''}', 'Naqdsiz — $cur%.${prev != null ? ' $when $prev% edi.' : ''}'),
+                style: AppText.small.copyWith(fontSize: 12)),
           ),
         ],
       ]),
@@ -463,11 +493,14 @@ class _HomeDashboardState extends State<HomeDashboard> {
         );
     return AppCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Категории', style: AppText.title),
-        const Text('30 дней · выручка, сум', style: AppText.small),
+        Text(tr('Категории', 'Kategoriyalar'), style: AppText.title),
+        Text(tr('30 дней · выручка, сум', '30 kun · tushum, soʻm'), style: AppText.small),
         const SizedBox(height: 12),
         for (final i in items) row('${i['name']}', dnum(i['value']), i['change_pct'] as num?),
-        if (other != null) row('Ещё ${other['count']} ${plural((other['count'] as num).toInt(), 'категория', 'категории', 'категорий')}', dnum(other['value']), null, muted: true),
+        if (other != null)
+          row(tr('Ещё ${other['count']} ${plural((other['count'] as num).toInt(), 'категория', 'категории', 'категорий')}', 'Yana ${other['count']} ta kategoriya'),
+              dnum(other['value']), null,
+              muted: true),
       ]),
     );
   }
@@ -485,8 +518,8 @@ class _HomeDashboardState extends State<HomeDashboard> {
     }
     return AppCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Когда покупают', style: AppText.title),
-        const Text('чеков в час · последние 4 недели', style: AppText.small),
+        Text(tr('Когда покупают', 'Qachon xarid qilishadi'), style: AppText.title),
+        Text(tr('чеков в час · последние 4 недели', 'soatiga chek · oxirgi 4 hafta'), style: AppText.small),
         const SizedBox(height: 12),
         Heatmap(cells: cells, slots: const [8, 10, 12, 14, 16, 18, 20, 22], peak: peak),
         if (peak != null) ...[
@@ -500,8 +533,9 @@ class _HomeDashboardState extends State<HomeDashboard> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Пик — ${weekdayNames[peak.weekday - 1]} ${peak.hour}:00–${peak.hour + 1}:00, ${_fmt1(peak.checks)} чеков в час.'
-                  '${peak.checks >= 25 ? ' Нужен второй кассир.' : ''}',
+                  tr('Пик — ${weekdayNames[peak.weekday - 1]} ${peak.hour}:00–${peak.hour + 1}:00, ${_fmt1(peak.checks)} чеков в час.',
+                          'Eng gavjum vaqt — ${weekdayNames[peak.weekday - 1]} ${peak.hour}:00–${peak.hour + 1}:00, soatiga ${_fmt1(peak.checks)} ta chek.') +
+                      (peak.checks >= 25 ? tr(' Нужен второй кассир.', ' Ikkinchi kassir kerak.') : ''),
                   style: AppText.small.copyWith(fontSize: 12, color: AppColors.dark),
                 ),
               ),
@@ -584,7 +618,7 @@ class _TrendTile extends StatelessWidget {
           ]),
           Text(note, style: AppText.small.copyWith(fontSize: 10, color: AppColors.muted)),
           const SizedBox(height: 6),
-          if (values.isNotEmpty) Sparkline(values: values, color: color, bars: title == 'К выводу'),
+          if (values.isNotEmpty) Sparkline(values: values, color: color, bars: title == tr('К выводу', 'Yechish mumkin')),
         ]),
       );
 }
@@ -602,10 +636,10 @@ class AbcHomeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final head = Row(children: [
-      const Expanded(
+      Expanded(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('ABC/XYZ-анализ', style: AppText.title),
-          Text('какие товары главные и как ровно продаются', style: AppText.small),
+          Text(tr('ABC/XYZ-анализ', 'ABC/XYZ tahlili'), style: AppText.title),
+          Text(tr('какие товары главные и как ровно продаются', 'asosiy mahsulotlar va sotuv barqarorligi'), style: AppText.small),
         ]),
       ),
       IconButton(onPressed: () => _open(context), icon: const Icon(Icons.chevron_right_rounded, color: AppColors.muted)),
@@ -627,9 +661,16 @@ class AbcHomeCard extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(none ? 'Появится после первых продаж' : 'Появится через $left ${plural(left, 'день', 'дня', 'дней')}', style: AppText.bodyStrong),
+                  Text(
+                      none
+                          ? tr('Появится после первых продаж', 'Birinchi sotuvlardan keyin paydo boʻladi')
+                          : tr('Появится через $left ${plural(left, 'день', 'дня', 'дней')}', '$left kundan keyin paydo boʻladi'),
+                      style: AppText.bodyStrong),
                   const SizedBox(height: 4),
-                  Text('Super Market нужно минимум $minW недели продаж через кассу. Данные копятся сами.', style: AppText.small.copyWith(fontSize: 12)),
+                  Text(
+                      tr('Super Market нужно минимум $minW недели продаж через кассу. Данные копятся сами.',
+                          'Super Market uchun kassa orqali kamida $minW hafta sotuv kerak. Maʼlumotlar oʻzi yigʻiladi.'),
+                      style: AppText.small.copyWith(fontSize: 12)),
                   const SizedBox(height: 8),
                   Row(children: [
                     for (var i = 0; i < minW; i++)
@@ -641,7 +682,7 @@ class AbcHomeCard extends StatelessWidget {
                         ),
                       ),
                     const SizedBox(width: 4),
-                    Text('$weeks из $minW', style: AppText.caption.copyWith(fontSize: 11)),
+                    Text(tr('$weeks из $minW', '$weeks / $minW'), style: AppText.caption.copyWith(fontSize: 11)),
                   ]),
                 ]),
               ),
@@ -660,7 +701,7 @@ class AbcHomeCard extends StatelessWidget {
     final cz = matrix['CZ'] ?? 0;
     String cover(Map<String, dynamic> i) {
       final d = (i['days_cover'] as num?)?.toInt() ?? 0;
-      return d == 0 ? 'нет' : 'на $d ${plural(d, 'день', 'дня', 'дней')}';
+      return d == 0 ? tr('нет', 'yoʻq') : tr('на $d ${plural(d, 'день', 'дня', 'дней')}', '$d kunga');
     }
 
     return AppCard(
@@ -674,23 +715,26 @@ class AbcHomeCard extends StatelessWidget {
           ],
         ]),
         const SizedBox(height: 4),
-        Text('доля выручки каждой группы', style: AppText.small.copyWith(fontSize: 10, color: AppColors.muted)),
+        Text(tr('доля выручки каждой группы', 'har bir guruhning tushumdagi ulushi'), style: AppText.small.copyWith(fontSize: 10, color: AppColors.muted)),
         const SizedBox(height: 12),
         AbcMatrix(counts: matrix, onTap: (c) => _open(context, cell: c)),
         const SizedBox(height: 12),
         if (low.isEmpty && noSalesCount == 0 && cz == 0)
-          const _Attention(Icons.check_circle_rounded, AppColors.successInk, AppColors.successSoft, 'Всё в порядке', 'Главные товары в наличии, залежавшихся нет', null),
+          _Attention(Icons.check_circle_rounded, AppColors.successInk, AppColors.successSoft, tr('Всё в порядке', 'Hammasi joyida'),
+              tr('Главные товары в наличии, залежавшихся нет', 'Asosiy mahsulotlar bor, turib qolganlari yoʻq'), null),
         if (low.isNotEmpty)
           _Attention(Icons.inventory_rounded, const Color(0xFFB42318), AppColors.errorSoft,
-              '${low.length} ${plural(low.length, 'главный товар заканчивается', 'главных товара заканчиваются', 'главных товаров заканчиваются')}',
+              tr('${low.length} ${plural(low.length, 'главный товар заканчивается', 'главных товара заканчиваются', 'главных товаров заканчиваются')}',
+                  '${low.length} ta asosiy mahsulot tugayapti'),
               low.take(2).map((i) => '${i['name']} — ${cover(i)}').join(' · '), () => _open(context, low: true)),
         if (noSalesCount > 0)
-          _Attention(Icons.hourglass_empty_rounded, AppColors.warningInk, AppColors.warningSoft, '${products(noSalesCount)} без продаж',
-              'на складе на ${money(noSales['stock_value'])}', () => _open(context, view: 'nosale')),
+          _Attention(Icons.hourglass_empty_rounded, AppColors.warningInk, AppColors.warningSoft, tr('${products(noSalesCount)} без продаж', '${products(noSalesCount)} sotuvsiz'),
+              tr('на складе на ${money(noSales['stock_value'])}', 'omborda ${money(noSales['stock_value'])}lik mahsulot'), () => _open(context, view: 'nosale')),
         if (cz > 0)
-          _Attention(Icons.delete_sweep_rounded, AppColors.dark, AppColors.soft, '${products(cz)} в CZ', 'кандидаты на вывод', () => _open(context, cell: 'CZ')),
+          _Attention(Icons.delete_sweep_rounded, AppColors.dark, AppColors.soft, tr('${products(cz)} в CZ', '${products(cz)} CZ guruhida'),
+              tr('кандидаты на вывод', 'assortimentdan chiqarishga nomzodlar'), () => _open(context, cell: 'CZ')),
         const SizedBox(height: 4),
-        BigButton(label: 'Открыть анализ', color: AppColors.ink, height: 48, onPressed: () => _open(context)),
+        BigButton(label: tr('Открыть анализ', 'Tahlilni ochish'), color: AppColors.ink, height: 48, onPressed: () => _open(context)),
       ]),
     );
   }
@@ -743,11 +787,11 @@ class AbcMatrix extends StatelessWidget {
     'BX': 'g', 'BY': 'y', 'BZ': 'r',
     'CX': 'y', 'CY': 'r', 'CZ': 'r',
   };
-  static const actions = {
-    'AX': 'держать всегда', 'AY': 'запас по сезону', 'AZ': 'заказ вручную', //
-    'BX': 'автозаказ', 'BY': 'средний запас', 'BZ': 'малый запас',
-    'CX': 'минимум', 'CY': 'под заказ', 'CZ': 'на вывод',
-  };
+  static Map<String, String> get actions => {
+        'AX': tr('держать всегда', 'doim boʻlsin'), 'AY': tr('запас по сезону', 'mavsumiy zaxira'), 'AZ': tr('заказ вручную', 'qoʻlda buyurtma'), //
+        'BX': tr('автозаказ', 'avtobuyurtma'), 'BY': tr('средний запас', 'oʻrtacha zaxira'), 'BZ': tr('малый запас', 'kam zaxira'),
+        'CX': tr('минимум', 'minimal'), 'CY': tr('под заказ', 'buyurtmaga'), 'CZ': tr('на вывод', 'chiqarishga'),
+      };
   static const colors = {'g': (Color(0xFFE8F7EE), Color(0xFF067647)), 'y': (Color(0xFFFFF6E5), Color(0xFFB54708)), 'r': (Color(0xFFFDECEC), Color(0xFFB42318))};
 
   @override
@@ -755,7 +799,7 @@ class AbcMatrix extends StatelessWidget {
     return Column(children: [
       Row(children: [
         const SizedBox(width: 18),
-        for (final x in const ['X · ровно', 'Y · колеблется', 'Z · случайно'])
+        for (final x in [tr('X · ровно', 'X · barqaror'), tr('Y · колеблется', 'Y · oʻzgaruvchan'), tr('Z · случайно', 'Z · tasodifiy')])
           Expanded(child: Text(x, textAlign: TextAlign.center, style: AppText.small.copyWith(fontSize: 10))),
       ]),
       const SizedBox(height: 4),

@@ -185,7 +185,7 @@ class CrowdState extends ChangeNotifier {
   Future<void> _loadPlaces() async {
     final prefs = await SharedPreferences.getInstance();
     final out = <String, SavedPlace>{};
-    for (final (key, title) in const [('home', 'Дом'), ('work', 'Работа')]) {
+    for (final (key, title) in [('home', tr('Дом', 'Uy')), ('work', tr('Работа', 'Ish'))]) {
       final lat = prefs.getDouble('crowd_place_${key}_lat');
       final lng = prefs.getDouble('crowd_place_${key}_lng');
       if (lat != null && lng != null) out[key] = SavedPlace(key, title, lat, lng);
@@ -218,7 +218,7 @@ class CrowdState extends ChangeNotifier {
       lastPosition = p;
       return p;
     } catch (_) {
-      locationProblem = 'Геопозиция недоступна';
+      locationProblem = tr('Геопозиция недоступна', 'Joylashuv aniqlanmayapti');
       notifyListeners();
       return null;
     }
@@ -226,14 +226,14 @@ class CrowdState extends ChangeNotifier {
 
   Future<bool> _permission() async {
     if (!await Geolocator.isLocationServiceEnabled()) {
-      locationProblem = 'Геолокация на телефоне выключена';
+      locationProblem = tr('Геолокация на телефоне выключена', 'Telefonda joylashuv xizmati oʻchiq');
       notifyListeners();
       return false;
     }
     var perm = await Geolocator.checkPermission();
     if (perm == LocationPermission.denied) perm = await _askPermission();
     if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
-      locationProblem = 'Нет доступа к геопозиции';
+      locationProblem = tr('Нет доступа к геопозиции', 'Joylashuvga ruxsat yoʻq');
       notifyListeners();
       return false;
     }
@@ -293,9 +293,9 @@ class CrowdState extends ChangeNotifier {
           accuracy: LocationAccuracy.high,
           distanceFilter: 20,
           intervalDuration: const Duration(seconds: 15),
-          foregroundNotificationConfig: const ForegroundNotificationConfig(
-            notificationTitle: 'Ищу заказы по пути',
-            notificationText: 'Super Market подбирает заказы рядом с вами',
+          foregroundNotificationConfig: ForegroundNotificationConfig(
+            notificationTitle: tr('Ищу заказы по пути', 'Yoʻlakay buyurtmalar qidirilmoqda'),
+            notificationText: tr('Super Market подбирает заказы рядом с вами', 'Super Market yaqiningizdagi buyurtmalarni tanlamoqda'),
             enableWakeLock: true,
           ),
         ),
@@ -310,7 +310,7 @@ class CrowdState extends ChangeNotifier {
       _ => const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 20),
     };
     _positions = Geolocator.getPositionStream(locationSettings: settings).listen(_send, onError: (Object e) {
-      locationProblem = 'Геопозиция недоступна';
+      locationProblem = tr('Геопозиция недоступна', 'Joylashuv aniqlanmayapti');
       _positions = null;
       notifyListeners();
     });

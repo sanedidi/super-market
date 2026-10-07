@@ -77,11 +77,13 @@ class _TimeSheetState extends State<_TimeSheet> {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('Когда привезти?', style: AppText.h3),
+          Text(tr('Когда привезти?', 'Qachon yetkazaylik?'), style: AppText.h3),
           const SizedBox(height: 16),
           _Option(
-            title: 'Как можно скорее',
-            subtitle: widget.eta == null ? 'Магазин соберёт и привезёт заказ' : 'Привезём за ${widget.eta}',
+            title: tr('Как можно скорее', 'Imkon qadar tez'),
+            subtitle: widget.eta == null
+                ? tr('Магазин соберёт и привезёт заказ', 'Doʻkon buyurtmani yigʻib, yetkazib beradi')
+                : tr('Привезём за ${widget.eta}', '${widget.eta} ichida yetkazamiz'),
             selected: _asap,
             onTap: () => setState(() => _asap = true),
           ),
@@ -89,13 +91,13 @@ class _TimeSheetState extends State<_TimeSheet> {
           if (days == null && _error == null)
             const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
           else if (_error != null)
-            Text('Не удалось загрузить время доставки: $_error', style: AppText.small.copyWith(color: AppColors.error))
+            Text(tr('Не удалось загрузить время доставки: $_error', 'Yetkazish vaqtini yuklab boʻlmadi: $_error'), style: AppText.small.copyWith(color: AppColors.error))
           else if (!_enabled || days!.isEmpty)
-            Text('Этот магазин пока доставляет только как можно скорее.', style: AppText.small)
+            Text(tr('Этот магазин пока доставляет только как можно скорее.', 'Bu doʻkon hozircha faqat imkon qadar tez yetkazadi.'), style: AppText.small)
           else ...[
             _Option(
-              title: 'Ко времени',
-              subtitle: 'Выберите удобный час',
+              title: tr('Ко времени', 'Belgilangan vaqtga'),
+              subtitle: tr('Выберите удобный час', 'Qulay soatni tanlang'),
               selected: !_asap,
               onTap: () => setState(() => _asap = false),
             ),
@@ -130,7 +132,9 @@ class _TimeSheetState extends State<_TimeSheet> {
           ],
           const SizedBox(height: 16),
           AppButton(
-            label: _asap ? 'Как можно скорее' : (slot == null ? 'Выберите время' : 'Привезти ${slot.range}'),
+            label: _asap
+                ? tr('Как можно скорее', 'Imkon qadar tez')
+                : (slot == null ? tr('Выберите время', 'Vaqtni tanlang') : tr('Привезти ${slot.range}', '${slot.range} da yetkazish')),
             onPressed: _asap || slot != null ? () => Navigator.pop(context, TimeChoice(_asap ? null : slot)) : null,
           ),
         ]),
@@ -188,7 +192,7 @@ class _SlotTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final free = slot.free;
-    final note = switch (slot.status) { 'past' => 'прошло', 'full' => 'нет мест', _ => null };
+    final note = switch (slot.status) { 'past' => tr('прошло', 'oʻtdi'), 'full' => tr('нет мест', 'joy yoʻq'), _ => null };
     return Material(
       color: selected ? AppColors.primary : (free ? AppColors.white : AppColors.soft),
       shape: RoundedRectangleBorder(
@@ -263,7 +267,7 @@ class _AddressSheetState extends State<_AddressSheet> {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('Куда доставить?', style: AppText.h3),
+          Text(tr('Куда доставить?', 'Qayerga yetkazaylik?'), style: AppText.h3),
           const SizedBox(height: 16),
           ConstrainedBox(
             constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.45),
@@ -271,10 +275,10 @@ class _AddressSheetState extends State<_AddressSheet> {
               for (final a in state.addresses) ...[
                 _Option(
                   title: a.label.isNotEmpty ? a.label : a.address,
-                  subtitle: a.label.isNotEmpty ? a.address : (a.json['apartment'] as String? ?? '').isEmpty ? 'Адрес' : 'кв. ${a.json['apartment']}',
+                  subtitle: a.label.isNotEmpty ? a.address : (a.json['apartment'] as String? ?? '').isEmpty ? tr('Адрес', 'Manzil') : tr('кв. ${a.json['apartment']}', '${a.json['apartment']}-xonadon'),
                   selected: a.id == _selected,
                   disabled: _ok[a.id] == false,
-                  note: _ok[a.id] == false ? '${widget.storeName} сюда не доставляет' : null,
+                  note: _ok[a.id] == false ? tr('${widget.storeName} сюда не доставляет', '${widget.storeName} bu yerga yetkazmaydi') : null,
                   onTap: () => setState(() => _selected = a.id),
                 ),
                 const SizedBox(height: 10),
@@ -284,7 +288,7 @@ class _AddressSheetState extends State<_AddressSheet> {
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const IconBox(Icons.add_rounded, size: 44),
-            title: Text('Новый адрес на карте', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
+            title: Text(tr('Новый адрес на карте', 'Xaritada yangi manzil'), style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
             onTap: () async {
               final before = state.addresses.map((a) => a.id).toSet();
               await openAddressEditor(context);
@@ -296,7 +300,7 @@ class _AddressSheetState extends State<_AddressSheet> {
           ),
           const SizedBox(height: 8),
           AppButton(
-            label: 'Доставить сюда',
+            label: tr('Доставить сюда', 'Shu yerga yetkazish'),
             onPressed: chosen == null || _ok[chosen.id] == false
                 ? null
                 : () {

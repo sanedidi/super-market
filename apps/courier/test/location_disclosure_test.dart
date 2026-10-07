@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sm_courier/ui/location_disclosure.dart';
+import 'package:sm_core/sm_core.dart' as sm_i18n;
 
 /// Экран «зачем геопозиция» (Figma Ц0): «Продолжить» → true, «Не сейчас» → false.
 Future<bool?> _open(WidgetTester tester, LocationAudience audience, String button) async {
@@ -28,6 +29,9 @@ Future<bool?> _open(WidgetTester tester, LocationAudience audience, String butto
 }
 
 void main() {
+  // Проверки написаны на русском; язык по умолчанию в приложениях — узбекский.
+  setUpAll(() => sm_i18n.Lang.instance.debugUse(sm_i18n.Lang.ru));
+
   testWidgets('курьер «по пути»: Продолжить', (tester) async {
     expect(await _open(tester, LocationAudience.crowd, 'Продолжить'), isTrue);
   });

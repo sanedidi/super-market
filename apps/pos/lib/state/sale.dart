@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:sm_core/sm_core.dart' show Lang, tr;
 
 import '../core/cart.dart';
 import '../core/catalog.dart';
@@ -84,7 +85,7 @@ class SaleController extends ChangeNotifier {
 
   /// Вкладки плиток: «Частые» и разделы (пересобираются при смене каталога).
   List<QuickTab> get quickTabs {
-    final k = '${catalog.version}/${catalog.length}/${catalog.quickPinned.join(',')}/${catalog.quickTop.length}';
+    final k = '${Lang.instance.code}/${catalog.version}/${catalog.length}/${catalog.quickPinned.join(',')}/${catalog.quickTop.length}';
     if (_tabs == null || _tabsKey != k) {
       _tabs = buildQuickTabs(catalog);
       _tabsKey = k;
@@ -113,7 +114,7 @@ class SaleController extends ChangeNotifier {
   void tapProduct(Product p) {
     if (busy || mode == SaleMode.held) return;
     if (p.marked) {
-      _error('Маркированный товар — сканируйте DataMatrix на упаковке', note: p.name);
+      _error(tr('Маркированный товар — сканируйте DataMatrix на упаковке', 'Markirovkali mahsulot — qadoqdagi DataMatrix kodini skanerlang'), note: p.name);
       notifyListeners();
       return;
     }
@@ -123,12 +124,12 @@ class SaleController extends ChangeNotifier {
       _clearInput();
       qty = parseQty(raw);
       if (qty <= 0) {
-        _error('Количество — число больше нуля', note: p.name);
+        _error(tr('Количество — число больше нуля', 'Miqdor — noldan katta son'), note: p.name);
         notifyListeners();
         return;
       }
     } else if (p.fractional) {
-      _error('Наберите вес и нажмите плитку ещё раз', note: '${p.name} · например 1,25 — это 1 кг 250 г', sound: false);
+      _error(tr('Наберите вес и нажмите плитку ещё раз', 'Vaznni tering va tugmani yana bosing'), note: tr('${p.name} · например 1,25 — это 1 кг 250 г', '${p.name} · masalan, 1,25 — bu 1 kg 250 g'), sound: false);
       notifyListeners();
       return;
     }
@@ -173,12 +174,12 @@ class SaleController extends ChangeNotifier {
     final raw = input.trim();
     _clearInput();
     if (raw.isEmpty || !RegExp(r'^[0-9]+$').hasMatch(raw)) {
-      _error('Наберите код товара и нажмите «Код»', sound: false);
+      _error(tr('Наберите код товара и нажмите «Код»', 'Mahsulot kodini tering va «Kod»ni bosing'), sound: false);
       return;
     }
     final p = catalog.byPlu(int.parse(raw));
     if (p == null) {
-      _error('Код $raw не найден', note: 'Поиск по названию: F2');
+      _error(tr('Код $raw не найден', '$raw kodi topilmadi'), note: tr('Поиск по названию: F2', 'Nomi boʻyicha qidirish: F2'));
     } else {
       _add(p);
     }
@@ -295,7 +296,7 @@ class SaleController extends ChangeNotifier {
       case Cmd.hold:
         await _hold();
       case Cmd.orders:
-        _error('Онлайн-заказы на кассе — в следующем обновлении');
+        _error(tr('Онлайн-заказы на кассе — в следующем обновлении', 'Kassada onlayn buyurtmalar — keyingi yangilanishda'));
       case Cmd.search:
         if (searching) {
           closeSearch();
@@ -307,7 +308,7 @@ class SaleController extends ChangeNotifier {
         if (cart.isEmpty || mode == SaleMode.paid) {
           onNavigate?.call(c);
         } else {
-          _error('Сначала завершите или отложите чек (F7)');
+          _error(tr('Сначала завершите или отложите чек (F7)', 'Avval chekni yakunlang yoki kechiktiring (F7)'));
         }
     }
     notifyListeners();
@@ -335,7 +336,7 @@ class SaleController extends ChangeNotifier {
     final l = cart.selected;
     if (l == null) return;
     cart.remove(l);
-    msg = SaleMsg(MsgKind.info, 'Удалено: ${l.product.name}');
+    msg = SaleMsg(MsgKind.info, tr('Удалено: ${l.product.name}', 'Oʻchirildi: ${l.product.name}'));
   }
 
   // ------------------------------------------------------------- Enter
@@ -364,7 +365,7 @@ class SaleController extends ChangeNotifier {
     if (p != null) {
       _add(p);
     } else {
-      _error('Код $raw не найден', note: 'Поиск по названию: F2');
+      _error(tr('Код $raw не найден', '$raw kodi topilmadi'), note: tr('Поиск по названию: F2', 'Nomi boʻyicha qidirish: F2'));
     }
   }
 
@@ -384,18 +385,18 @@ class SaleController extends ChangeNotifier {
           return true;
         }
       }
-      _error('Товар не найден: ${mark.gtin}', note: 'Код маркировки', right: 'Поиск: F2');
+      _error(tr('Товар не найден: ${mark.gtin}', 'Mahsulot topilmadi: ${mark.gtin}'), note: tr('Код маркировки', 'Markirovka kodi'), right: tr('Поиск: F2', 'Qidirish: F2'));
       return false;
     }
     final w = parseWeight(code, catalog.settings.weightPrefixes);
     if (w != null) {
       final p = catalog.byPlu(w.plu);
       if (p == null) {
-        _error('Весовой товар с кодом ${w.plu} не найден', note: 'Этикетка весов', right: 'Поиск: F2');
+        _error(tr('Весовой товар с кодом ${w.plu} не найден', '${w.plu} kodli tortiladigan mahsulot topilmadi'), note: tr('Этикетка весов', 'Tarozi yorligʻi'), right: tr('Поиск: F2', 'Qidirish: F2'));
         return false;
       }
       if (!p.fractional) {
-        _error('«${p.name}» — штучный товар, а этикетка весовая');
+        _error(tr('«${p.name}» — штучный товар, а этикетка весовая', '«${p.name}» — donalab sotiladi, yorliq esa tarozidan'));
         return false;
       }
       _add(p, qty: w.grams);
@@ -403,11 +404,11 @@ class SaleController extends ChangeNotifier {
     }
     final p = catalog.byBarcode(code);
     if (p == null) {
-      _error('Товар не найден: $code', note: 'Звук ошибки · строка не добавлена', right: 'Поиск: F2');
+      _error(tr('Товар не найден: $code', 'Mahsulot topilmadi: $code'), note: tr('Звук ошибки · строка не добавлена', 'Xatolik ovozi · qator qoʻshilmadi'), right: tr('Поиск: F2', 'Qidirish: F2'));
       return false;
     }
     if (p.marked) {
-      _error('Маркированный товар — сканируйте DataMatrix на упаковке', note: p.name);
+      _error(tr('Маркированный товар — сканируйте DataMatrix на упаковке', 'Markirovkali mahsulot — qadoqdagi DataMatrix kodini skanerlang'), note: p.name);
       return true;
     }
     _add(p);
@@ -417,7 +418,7 @@ class SaleController extends ChangeNotifier {
   /// Товар из поиска (F2) или по коду.
   void addProduct(Product p) {
     if (p.marked) {
-      _error('Маркированный товар — сканируйте DataMatrix на упаковке', note: p.name);
+      _error(tr('Маркированный товар — сканируйте DataMatrix на упаковке', 'Markirovkali mahsulot — qadoqdagi DataMatrix kodini skanerlang'), note: p.name);
     } else {
       _add(p);
     }
@@ -426,11 +427,11 @@ class SaleController extends ChangeNotifier {
 
   void _add(Product p, {int qty = 1000, String? mark}) {
     if (!p.active) {
-      _error('Товар снят с продажи', note: p.name);
+      _error(tr('Товар снят с продажи', 'Mahsulot sotuvdan olingan'), note: p.name);
       return;
     }
     if (p.ikpu.isEmpty && pos.fiscalMode) {
-      _error('Нет ИКПУ — продавать нельзя. Владелец заполняет в панели', note: p.name);
+      _error(tr('Нет ИКПУ — продавать нельзя. Владелец заполняет в панели', 'MXIK yoʻq — sotib boʻlmaydi. Egasi panelda toʻldiradi'), note: p.name);
       return;
     }
     if (mode == SaleMode.paid) _newCheck();
@@ -442,7 +443,7 @@ class SaleController extends ChangeNotifier {
       msg = SaleMsg(
         MsgKind.ok,
         p.name,
-        note: p.ikpu.isEmpty ? 'Только что отсканировано · нет ИКПУ — заполните в панели' : 'Только что отсканировано',
+        note: p.ikpu.isEmpty ? tr('Только что отсканировано · нет ИКПУ — заполните в панели', 'Hozirgina skanerlandi · MXIK yoʻq — panelda toʻldiring') : tr('Только что отсканировано', 'Hozirgina skanerlandi'),
         right: fmtMoney(lineSum(line.price, qty)),
         rightNote: '$q ${fmtMoney(line.price)}',
       );
@@ -465,7 +466,7 @@ class SaleController extends ChangeNotifier {
   }
 
   void _error(String text, {String note = '', String right = '', bool sound = true}) {
-    msg = SaleMsg(MsgKind.error, text, note: note, right: right, rightNote: right.isEmpty ? '' : 'Esc — убрать сообщение');
+    msg = SaleMsg(MsgKind.error, text, note: note, right: right, rightNote: right.isEmpty ? '' : tr('Esc — убрать сообщение', 'Esc — xabarni yopish'));
     if (sound) onSound?.call(false);
   }
 
@@ -484,11 +485,11 @@ class SaleController extends ChangeNotifier {
   String? step(CartLine line, int delta) {
     if (mode != SaleMode.sale) return null;
     cart.selected = line;
-    if (line.product.fractional) return 'Весовой товар — вес меняется в карточке товара';
+    if (line.product.fractional) return tr('Весовой товар — вес меняется в карточке товара', 'Tortiladigan mahsulot — vazn mahsulot kartochkasida oʻzgartiriladi');
     String? err;
     if (line.product.marked) {
       if (delta > 0) {
-        err = 'Маркированный товар — сканируйте DataMatrix следующей штуки';
+        err = tr('Маркированный товар — сканируйте DataMatrix следующей штуки', 'Markirovkali mahsulot — keyingi donaning DataMatrix kodini skanerlang');
       } else if (line.marks.length <= 1) {
         removeLine(line);
         return null;
@@ -508,14 +509,14 @@ class SaleController extends ChangeNotifier {
     if (mode != SaleMode.sale) return;
     cart.remove(line);
     rowFocused = false;
-    msg = SaleMsg(MsgKind.info, 'Удалено: ${line.product.name}');
+    msg = SaleMsg(MsgKind.info, tr('Удалено: ${line.product.name}', 'Oʻchirildi: ${line.product.name}'));
     notifyListeners();
   }
 
   /// Цифры + * — количество сразу; * без цифр — окно количества.
   void _star() {
     if (mode != SaleMode.sale || cart.selected == null) {
-      _error('Нет строки для количества');
+      _error(tr('Нет строки для количества', 'Miqdor uchun qator yoʻq'));
       return;
     }
     if (input.isEmpty) {
@@ -531,13 +532,13 @@ class SaleController extends ChangeNotifier {
   /// Количество выбранной строки (в тысячных). Возвращает ошибку или null.
   String? setQty(int q) {
     final line = cart.selected;
-    if (line == null) return 'Нет строки для количества';
+    if (line == null) return tr('Нет строки для количества', 'Miqdor uchun qator yoʻq');
     try {
       cart.setQty(line, q);
       msg = q <= 0
-          ? SaleMsg(MsgKind.info, 'Удалено: ${line.product.name}')
+          ? SaleMsg(MsgKind.info, tr('Удалено: ${line.product.name}', 'Oʻchirildi: ${line.product.name}'))
           : SaleMsg(MsgKind.info, line.product.name,
-              note: 'Количество изменено', right: fmtMoney(line.total), rightNote: '${fmtQty(q)} × ${fmtMoney(line.price)}');
+              note: tr('Количество изменено', 'Miqdor oʻzgartirildi'), right: fmtMoney(line.total), rightNote: '${fmtQty(q)} × ${fmtMoney(line.price)}');
       notifyListeners();
       return null;
     } on CartError catch (e) {
@@ -550,11 +551,11 @@ class SaleController extends ChangeNotifier {
   /// F6 / ⇧F6. «10%» или «5000» перед F6 — сразу применить, иначе окно скидки.
   void _discount(Cmd c) {
     if (mode != SaleMode.sale || cart.isEmpty) {
-      _error('Нет чека для скидки');
+      _error(tr('Нет чека для скидки', 'Chegirma uchun chek yoʻq'));
       return;
     }
     if (!canDiscount) {
-      _error('Нет права на скидку', note: 'Скидку даёт кассир с правом «Скидки на кассе»');
+      _error(tr('Нет права на скидку', 'Chegirma berish huquqi yoʻq'), note: tr('Скидку даёт кассир с правом «Скидки на кассе»', 'Chegirmani «Kassada chegirmalar» huquqiga ega kassir beradi'));
       return;
     }
     if (input.isEmpty) {
@@ -575,28 +576,28 @@ class SaleController extends ChangeNotifier {
   /// Скидка на выбранную строку или весь чек. [value] — сотые процента
   /// (1000 = 10%) или тийины. Возвращает ошибку или null.
   String? applyDiscount({required bool all, required bool percent, required int value}) {
-    if (!canDiscount) return 'Нет права на скидку';
-    if (value <= 0 || (percent && value > 10000)) return 'Скидка: процент до 100 или сумма больше нуля';
+    if (!canDiscount) return tr('Нет права на скидку', 'Chegirma berish huquqi yoʻq');
+    if (value <= 0 || (percent && value > 10000)) return tr('Скидка: процент до 100 или сумма больше нуля', 'Chegirma: 100 gacha foiz yoki noldan katta summa');
     final label = percent ? '${fmtMoney(value)}%' : fmtMoney(value);
     if (all) {
       if (percent) {
         cart.discountAllPercent(value);
       } else {
-        if (value >= cart.subtotal) return 'Скидка больше суммы чека';
+        if (value >= cart.subtotal) return tr('Скидка больше суммы чека', 'Chegirma chek summasidan katta');
         cart.discountAllAmount(value);
       }
-      msg = SaleMsg(MsgKind.info, 'Скидка на чек: $label', right: fmtMoney(cart.total));
+      msg = SaleMsg(MsgKind.info, tr('Скидка на чек: $label', 'Chekka chegirma: $label'), right: fmtMoney(cart.total));
     } else {
       final l = cart.selected;
-      if (l == null) return 'Выберите строку стрелками';
-      if (!percent && value > l.sum) return 'Скидка больше суммы строки';
+      if (l == null) return tr('Выберите строку стрелками', 'Qatorni strelkalar bilan tanlang');
+      if (!percent && value > l.sum) return tr('Скидка больше суммы строки', 'Chegirma qator summasidan katta');
       l.clearDiscount();
       if (percent) {
         l.discountBp = value;
       } else {
         l.discountFixed = value;
       }
-      msg = SaleMsg(MsgKind.info, '${l.product.name} · скидка $label', right: fmtMoney(l.total));
+      msg = SaleMsg(MsgKind.info, tr('${l.product.name} · скидка $label', '${l.product.name} · chegirma $label'), right: fmtMoney(l.total));
     }
     notifyListeners();
     return null;
@@ -608,7 +609,7 @@ class SaleController extends ChangeNotifier {
     } else {
       cart.selected?.clearDiscount();
     }
-    msg = SaleMsg(MsgKind.info, 'Скидка убрана', right: fmtMoney(cart.total));
+    msg = SaleMsg(MsgKind.info, tr('Скидка убрана', 'Chegirma olib tashlandi'), right: fmtMoney(cart.total));
     notifyListeners();
   }
 
@@ -620,27 +621,27 @@ class SaleController extends ChangeNotifier {
   /// Провести оплату из окна. [kind]: cash (с [received]), card, qr, mixed
   /// ([cashPart] наличными, остаток картой). Ошибка — текст, успех — null.
   Future<String?> pay(String kind, {int received = 0, int cashPart = 0}) async {
-    if (!canPay) return 'Чек пуст';
+    if (!canPay) return tr('Чек пуст', 'Chek boʻsh');
     final total = due;
-    if (total <= 0) return 'Итог чека — 0';
+    if (total <= 0) return tr('Итог чека — 0', 'Chek jami — 0');
     final payments = <Payment>[];
     String label;
     if (kind == 'mixed') {
       final cash = method('cash');
       final card = method('card');
-      if (cash == null || card == null) return 'В магазине нет способов оплаты «Наличные» и «Карта»';
-      if (cashPart <= 0 || cashPart >= total) return 'Наличными — меньше итога, остаток уйдёт на карту';
+      if (cash == null || card == null) return tr('В магазине нет способов оплаты «Наличные» и «Карта»', 'Doʻkonda «Naqd pul» va «Karta» toʻlov usullari yoʻq');
+      if (cashPart <= 0 || cashPart >= total) return tr('Наличными — меньше итога, остаток уйдёт на карту', 'Naqd pul jamidan kam boʻlsin, qolgani kartaga oʻtadi');
       payments
         ..add(Payment(methodId: cash.id, name: cash.name, kind: 'cash', amount: cashPart))
         ..add(Payment(methodId: card.id, name: card.name, kind: 'card', amount: total - cashPart));
-      label = 'Оплачено: ${fmtMoney(cashPart)} наличными + ${fmtMoney(total - cashPart)} картой';
+      label = tr('Оплачено: ${fmtMoney(cashPart)} наличными + ${fmtMoney(total - cashPart)} картой', 'Toʻlandi: ${fmtMoney(cashPart)} naqd + ${fmtMoney(total - cashPart)} karta');
       received = cashPart;
     } else {
       final m = method(kind);
-      if (m == null) return 'В магазине нет способа оплаты «${_kindName(kind)}» — добавьте в панели';
-      if (kind == 'cash' && received < total) return 'Получено меньше итога';
+      if (m == null) return tr('В магазине нет способа оплаты «${_kindName(kind)}» — добавьте в панели', 'Doʻkonda «${_kindName(kind)}» toʻlov usuli yoʻq — panelda qoʻshing');
+      if (kind == 'cash' && received < total) return tr('Получено меньше итога', 'Olingan summa jamidan kam');
       payments.add(Payment(methodId: m.id, name: m.name, kind: kind, amount: total));
-      label = kind == 'cash' ? 'Оплачено наличными' : 'Оплачено: ${m.name}';
+      label = kind == 'cash' ? tr('Оплачено наличными', 'Naqd pul bilan toʻlandi') : tr('Оплачено: ${m.name}', 'Toʻlandi: ${m.name}');
     }
     busy = true;
     notifyListeners();
@@ -655,7 +656,7 @@ class SaleController extends ChangeNotifier {
       onSound?.call(true);
       return null;
     } catch (e) {
-      return 'Чек не сохранён: $e';
+      return tr('Чек не сохранён: $e', 'Chek saqlanmadi: $e');
     } finally {
       busy = false;
       notifyListeners();
@@ -665,16 +666,16 @@ class SaleController extends ChangeNotifier {
   /// Продажа в долг: [debt] — сколько в долг, остаток итога — [restKind]
   /// (наличными или картой). [name] — имя покупателя для нового номера.
   Future<String?> payDebt(DebtorView who, {required int debt, String name = '', String restKind = 'cash'}) async {
-    if (!canPay) return 'Чек пуст';
-    if (!pos.canDebt) return 'Продажа в долг выключена в этом магазине';
-    if (who.blocked) return 'Покупатель в стоп-листе — в долг не давать';
+    if (!canPay) return tr('Чек пуст', 'Chek boʻsh');
+    if (!pos.canDebt) return tr('Продажа в долг выключена в этом магазине', 'Bu doʻkonda qarzga sotish oʻchirilgan');
+    if (who.blocked) return tr('Покупатель в стоп-листе — в долг не давать', 'Xaridor stop-listda — qarzga bermang');
     final total = due;
-    if (debt <= 0 || debt > total) return 'В долг — больше нуля и не больше итога';
+    if (debt <= 0 || debt > total) return tr('В долг — больше нуля и не больше итога', 'Qarzga — noldan katta va jamidan oshmasin');
     final rest = total - debt;
     final payments = <Payment>[];
     if (rest > 0) {
       final m = method(restKind);
-      if (m == null) return 'В магазине нет способа оплаты «${_kindName(restKind)}» — добавьте в панели';
+      if (m == null) return tr('В магазине нет способа оплаты «${_kindName(restKind)}» — добавьте в панели', 'Doʻkonda «${_kindName(restKind)}» toʻlov usuli yoʻq — panelda qoʻshing');
       payments.add(Payment(methodId: m.id, name: m.name, kind: restKind, amount: rest));
     }
     final buyer = name.trim().isNotEmpty ? name.trim() : who.name;
@@ -685,9 +686,10 @@ class SaleController extends ChangeNotifier {
           received: restKind == 'cash' ? rest : 0,
           debt: DebtPart(phone: who.phone, name: buyer, amount: debt, balance: who.debt + debt));
       final label = rest > 0
-          ? 'В долг ${fmtMoney(debt)} + ${fmtMoney(rest)} ${restKind == 'cash' ? 'наличными' : 'картой'}'
-          : 'В долг: ${fmtMoney(debt)}';
-      paid = PaidInfo(rec, '$label · долг ${fmtMoney(who.debt + debt)}');
+          ? tr('В долг ${fmtMoney(debt)} + ${fmtMoney(rest)} ${restKind == 'cash' ? 'наличными' : 'картой'}',
+              'Qarzga ${fmtMoney(debt)} + ${fmtMoney(rest)} ${restKind == 'cash' ? 'naqd' : 'karta'}')
+          : tr('В долг: ${fmtMoney(debt)}', 'Qarzga: ${fmtMoney(debt)}');
+      paid = PaidInfo(rec, tr('$label · долг ${fmtMoney(who.debt + debt)}', '$label · qarz ${fmtMoney(who.debt + debt)}'));
       mode = SaleMode.paid;
       rowFocused = false;
       // Чек пробит — список очищается, в заголовке остаются итог и сдача.
@@ -696,7 +698,7 @@ class SaleController extends ChangeNotifier {
       onSound?.call(true);
       return null;
     } catch (e) {
-      return 'Чек не сохранён: $e';
+      return tr('Чек не сохранён: $e', 'Chek saqlanmadi: $e');
     } finally {
       busy = false;
       notifyListeners();
@@ -704,8 +706,8 @@ class SaleController extends ChangeNotifier {
   }
 
   static String _kindName(String kind) => switch (kind) {
-        'cash' => 'Наличные',
-        'card' => 'Карта',
+        'cash' => tr('Наличные', 'Naqd pul'),
+        'card' => tr('Карта', 'Karta'),
         'qr' => 'Payme · Click',
         _ => kind,
       };
@@ -720,11 +722,11 @@ class SaleController extends ChangeNotifier {
     if (mode == SaleMode.sale && !cart.isEmpty) {
       await pos.hold(cart);
       cart = Cart();
-      msg = SaleMsg(MsgKind.info, 'Чек отложен', note: 'F7 — список отложенных');
+      msg = SaleMsg(MsgKind.info, tr('Чек отложен', 'Chek kechiktirildi'), note: tr('F7 — список отложенных', 'F7 — kechiktirilganlar roʻyxati'));
       return;
     }
     if (pos.held.isEmpty) {
-      _error('Отложенных чеков нет', sound: false);
+      _error(tr('Отложенных чеков нет', 'Kechiktirilgan cheklar yoʻq'), sound: false);
       return;
     }
     if (mode == SaleMode.paid) _newCheck();
@@ -737,7 +739,7 @@ class SaleController extends ChangeNotifier {
     cart = c;
     paid = null;
     mode = SaleMode.sale;
-    msg = SaleMsg(MsgKind.info, 'Чек возвращён', note: '${c.count} позиций');
+    msg = SaleMsg(MsgKind.info, tr('Чек возвращён', 'Chek qaytarildi'), note: tr('${c.count} позиций', '${c.count} ta pozitsiya'));
     notifyListeners();
   }
 }

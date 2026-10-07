@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
-import 'package:sm_core/sm_core.dart' show ApiError;
+import 'package:sm_core/sm_core.dart' show ApiError, Lang, tr;
 
 export 'package:sm_core/sm_core.dart' show ApiError;
 
@@ -28,6 +28,8 @@ class PosApi {
     var uri = Uri.parse('$baseUrl$path');
     if (query != null && query.isNotEmpty) uri = uri.replace(queryParameters: query);
     final req = http.Request(method, uri);
+    // Сервер отвечает на языке кассы: ошибки, названия товаров и разделов.
+    req.headers['Accept-Language'] = Lang.instance.code;
     if (token != null) req.headers['Authorization'] = 'Bearer $token';
     if (cashier != null) req.headers['X-Cashier-ID'] = cashier;
     if (body != null) {
@@ -38,9 +40,9 @@ class PosApi {
     try {
       res = await http.Response.fromStream(await _http.send(req).timeout(timeout));
     } on TimeoutException {
-      throw ApiError(0, 'network', 'Сервер не отвечает');
+      throw ApiError(0, 'network', tr('Сервер не отвечает', 'Server javob bermayapti'));
     } catch (_) {
-      throw ApiError(0, 'network', 'Нет связи с сервером');
+      throw ApiError(0, 'network', tr('Нет связи с сервером', 'Server bilan aloqa yoʻq'));
     }
     dynamic data;
     if (res.bodyBytes.isNotEmpty) {
@@ -55,7 +57,7 @@ class PosApi {
       throw ApiError(
         res.statusCode,
         err?['code'] as String? ?? 'http_${res.statusCode}',
-        err?['message'] as String? ?? 'Ошибка сервера ${res.statusCode}',
+        err?['message'] as String? ?? tr('Ошибка сервера ${res.statusCode}', 'Server xatoligi ${res.statusCode}'),
         (err?['details'] as Map<String, dynamic>?) ?? const {},
       );
     }

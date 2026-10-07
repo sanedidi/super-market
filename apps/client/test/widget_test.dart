@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sm_client/screens/catalog_screen.dart';
 import 'package:sm_client/delivery_time.dart';
 import 'package:sm_client/product_tile.dart';
@@ -9,8 +10,17 @@ import 'package:sm_client/state.dart';
 import 'package:sm_client/ui/theme.dart';
 import 'package:sm_client/ui/widgets.dart';
 import 'package:sm_client/wish.dart';
+import 'package:sm_core/sm_core.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  // Тексты ниже проверяются по-русски; узбекский — отдельным тестом в конце.
+  setUpAll(() async {
+    SharedPreferences.setMockInitialValues({'sm_lang': 'ru'});
+    await Lang.instance.init();
+  });
+
   test('delivery window labels (Tashkent time)', () {
     final now = DateTime.parse('2026-09-29T10:00:00+05:00');
     expect(dayLabel(DateTime.parse('2026-09-29T16:00:00+05:00'), now: now), 'Сегодня, 29 сент');
@@ -105,5 +115,18 @@ void main() {
     ));
     expect(find.byKey(const ValueKey('add')), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  test('узбекский: подписи и склонения', () async {
+    await Lang.instance.set(Lang.uz);
+    addTearDown(() => Lang.instance.set(Lang.ru));
+    final now = DateTime.parse('2026-09-29T10:00:00+05:00');
+    expect(dayLabel(DateTime.parse('2026-09-29T16:00:00+05:00'), now: now), 'Bugun, 29 sen');
+    expect(dayLabel(DateTime.parse('2026-10-01T09:00:00+05:00'), now: now), '1 okt');
+    expect(Store({'eta_min': 25, 'eta_max': 35}).etaText, '25–35 daq');
+    expect(storesWord(3), '3 ta doʻkon');
+    expect(itemsWord(22), '22 ta mahsulot');
+    expect(inStoresWord(3), '3 ta doʻkonda');
+    expect(SearchOffer({'delivers': false, 'distance_m': 1200}).meta, 'yetkazmaydi · 1.2 km');
   });
 }

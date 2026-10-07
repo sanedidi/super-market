@@ -68,7 +68,9 @@ class _CaptureScreenState extends State<CaptureScreen> {
       final bytes = await x.readAsBytes();
       if (mounted) setState(() => _pages.add(bytes));
     } catch (e) {
-      if (mounted) showMessage(context, 'Нет доступа к камере или фото. Разрешите доступ в настройках телефона.');
+      if (mounted) {
+        showMessage(context, tr('Нет доступа к камере или фото. Разрешите доступ в настройках телефона.', 'Kamera yoki rasmlarga ruxsat yoʻq. Telefon sozlamalarida ruxsat bering.'));
+      }
     }
   }
 
@@ -99,7 +101,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.ink,
         foregroundColor: AppColors.white,
-        title: Text('Накладная', style: AppText.title.copyWith(color: AppColors.white)),
+        title: Text(tr('Накладная', 'Yuk xati'), style: AppText.title.copyWith(color: AppColors.white)),
         centerTitle: true,
       ),
       body: SafeArea(
@@ -112,10 +114,12 @@ class _CaptureScreenState extends State<CaptureScreen> {
                       child: Column(mainAxisSize: MainAxisSize.min, children: [
                         const Icon(Icons.document_scanner_rounded, size: 72, color: AppColors.muted),
                         const SizedBox(height: 16),
-                        Text('Сфотографируйте накладную целиком',
+                        Text(tr('Сфотографируйте накладную целиком', 'Yuk xatini toʻliq suratga oling'),
                             style: AppText.title.copyWith(color: AppColors.white), textAlign: TextAlign.center),
                         const SizedBox(height: 8),
-                        Text('Положите лист ровно, при хорошем свете. Если страниц несколько — снимите каждую.',
+                        Text(
+                            tr('Положите лист ровно, при хорошем свете. Если страниц несколько — снимите каждую.',
+                                'Varaqni tekis qoʻying, yorugʻ joyda suratga oling. Sahifa bir nechta boʻlsa — har birini oling.'),
                             style: AppText.small.copyWith(color: AppColors.muted), textAlign: TextAlign.center),
                       ]),
                     ),
@@ -131,7 +135,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                       Positioned(
                         left: 8,
                         top: 8,
-                        child: StatusChip('Стр. ${i + 1}', tone: ChipTone.gray),
+                        child: StatusChip(tr('Стр. ${i + 1}', '${i + 1}-bet'), tone: ChipTone.gray),
                       ),
                       Positioned(
                         right: 4,
@@ -147,7 +151,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
               Row(children: [
                 Expanded(
                   child: SmallButton(
-                    label: 'Из галереи',
+                    label: tr('Из галереи', 'Galereyadan'),
                     icon: Icons.photo_library_rounded,
                     onPressed: _busy || _pages.length >= maxPages ? null : () => _take(ImageSource.gallery),
                   ),
@@ -155,7 +159,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: SmallButton(
-                    label: _pages.isEmpty ? 'Снять' : '+ страница',
+                    label: _pages.isEmpty ? tr('Снять', 'Suratga olish') : tr('+ страница', '+ sahifa'),
                     icon: Icons.photo_camera_rounded,
                     onPressed: _busy || _pages.length >= maxPages ? null : () => _take(ImageSource.camera),
                   ),
@@ -163,7 +167,7 @@ class _CaptureScreenState extends State<CaptureScreen> {
               ]),
               const SizedBox(height: 12),
               BigButton(
-                label: _pages.length > 1 ? 'Распознать ${_pages.length} стр.' : 'Распознать',
+                label: _pages.length > 1 ? tr('Распознать ${_pages.length} стр.', '${_pages.length} betni tanib olish') : tr('Распознать', 'Tanib olish'),
                 icon: Icons.auto_awesome_rounded,
                 busy: _busy,
                 onPressed: _pages.isEmpty ? null : _send,

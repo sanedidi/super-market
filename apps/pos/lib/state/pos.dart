@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:sm_core/sm_core.dart' show Lang, tr;
 import 'package:uuid/uuid.dart';
 
 import '../core/cart.dart';
@@ -71,6 +72,10 @@ class PosController extends ChangeNotifier {
   Timer? _timer;
   DateTime? _lastCatalog;
 
+  /// Язык, на котором загружен каталог (названия товаров и разделов приходят
+  /// на языке запроса). Сменили язык кассы — каталог загружается заново целиком.
+  String? _catalogLang;
+
   /// Фискальный модуль. Пока ОФД не выдал протокол — тестовый: чеки не фискальные.
   FiscalModule fiscal = TestFiscalModule();
   FiscalStatus? fiscalStatus;
@@ -95,10 +100,10 @@ class PosController extends ChangeNotifier {
   /// Можно ли сейчас продавать; иначе — причина.
   String? get saleBlocked {
     if (shiftLimit?.state == LimitState.blocked) {
-      return 'Смена идёт больше 24 часов — закройте смену (Z-отчёт)';
+      return tr('Смена идёт больше 24 часов — закройте смену (Z-отчёт)', 'Smena 24 soatdan beri davom etmoqda — smenani yoping (Z-hisobot)');
     }
     if (offlineLimit.state == LimitState.blocked) {
-      return 'Касса без связи больше 24 часов — подключите интернет, чтобы отправить чеки';
+      return tr('Касса без связи больше 24 часов — подключите интернет, чтобы отправить чеки', 'Kassa 24 soatdan beri aloqasiz — cheklarni yuborish uchun internetga ulaning');
     }
     return null;
   }
@@ -118,6 +123,7 @@ class PosController extends ChangeNotifier {
       catalog = Catalog.fromJson(cat);
       final at = cat['saved_at'] as String?;
       catalogAt = at == null ? null : DateTime.tryParse(at)?.toLocal();
+      _catalogLang = cat['lang'] as String?;
     }
     final st = await store.readJson('state.json');
     if (st != null) {
@@ -139,7 +145,13 @@ class PosController extends ChangeNotifier {
     }
     stage = api.token == null ? Stage.activate : Stage.login;
     notifyListeners();
+    Lang.instance.addListener(_langChanged);
     if (api.token != null) _startTimer();
+  }
+
+  /// Сменили язык кассы — сразу перезагрузить каталог на новом языке.
+  void _langChanged() {
+    if (api.token != null) unawaited(sync(catalog: true));
   }
 
   void _startTimer() {
@@ -151,6 +163,7 @@ class PosController extends ChangeNotifier {
   @override
   void dispose() {
     _timer?.cancel();
+    Lang.instance.removeListener(_langChanged);
     super.dispose();
   }
 
@@ -179,11 +192,11 @@ class PosController extends ChangeNotifier {
     await store.writeJson('device.json', res);
     catalog = Catalog();
     final ok = await syncCatalog();
-    if (!ok) throw ApiError(0, 'network', 'Касса подключена, но каталог не загрузился — проверьте интернет');
+    if (!ok) throw ApiError(0, 'network', tr('Касса подключена, но каталог не загрузился — проверьте интернет', 'Kassa ulandi, lekin katalog yuklanmadi — internetni tekshiring'));
     revoked = false;
     // События, которые сервер отклонил, пока касса была отключена, — отправить снова.
     for (final item in List.of(outbox.failed)) {
-      if ((item.error ?? '').startsWith('касса отключена')) await outbox.retry(item);
+      if (item.errorCode == 'device_revoked' || (item.error ?? '').startsWith('касса отключена')) await outbox.retry(item);
     }
     stage = cashier == null ? Stage.login : (shift == null ? Stage.openShift : Stage.work);
     notifyListeners();
@@ -206,15 +219,18 @@ class PosController extends ChangeNotifier {
   /// Каталог: первый раз целиком, дальше — изменения.
   Future<bool> syncCatalog() async {
     try {
+      // Каталог на другом языке — без since: сервер пришлёт его целиком.
+      final lang = Lang.instance.code;
       final q = <String, String>{
         'epoch': '${catalog.epoch}',
-        if (catalog.version != null && catalog.length > 0) 'since': catalog.version!,
+        if (lang == _catalogLang && catalog.version != null && catalog.length > 0) 'since': catalog.version!,
       };
       final res = await api.get('/pos/catalog', query: q) as Map<String, dynamic>;
       catalog.apply(res);
+      _catalogLang = lang;
       catalogAt = _now();
       _lastCatalog = catalogAt;
-      await store.writeJson('catalog.json', {...catalog.toJson(), 'saved_at': catalogAt!.toUtc().toIso8601String()});
+      await store.writeJson('catalog.json', {...catalog.toJson(), 'saved_at': catalogAt!.toUtc().toIso8601String(), 'lang': lang});
       online = true;
       notifyListeners();
       return true;
@@ -245,7 +261,7 @@ class PosController extends ChangeNotifier {
       if (r.sent > 0) online = true;
       if (r.revoked) revoked = true;
       final due = _lastCatalog == null || _now().difference(_lastCatalog!) > const Duration(minutes: 1);
-      if (catalog || due) await syncCatalog();
+      if (catalog || due || _catalogLang != Lang.instance.code) await syncCatalog();
     } finally {
       syncing = false;
       notifyListeners();
@@ -273,12 +289,12 @@ class PosController extends ChangeNotifier {
   /// Вход по ПИНу — проверка на кассе, без сервера. Возвращает ошибку или null.
   String? login(Cashier c, String pin) {
     final wait = pins.lockedFor(c.id);
-    if (wait != null) return 'Слишком много попыток — подождите ${wait.inMinutes + 1} мин';
+    if (wait != null) return tr('Слишком много попыток — подождите ${wait.inMinutes + 1} мин', 'Urinishlar juda koʻp — ${wait.inMinutes + 1} daqiqa kuting');
     if (!pins.check(c.id, c.pinHash, pin)) {
       final w = pins.lockedFor(c.id);
-      return w != null ? 'Вход заблокирован на 5 минут' : 'Неверный ПИН';
+      return w != null ? tr('Вход заблокирован на 5 минут', 'Kirish 5 daqiqaga bloklandi') : tr('Неверный ПИН', 'PIN-kod notoʻgʻri');
     }
-    if (!c.can(Perm.pos)) return 'Нет права работать на кассе';
+    if (!c.can(Perm.pos)) return tr('Нет права работать на кассе', 'Kassada ishlash huquqi yoʻq');
     cashier = c;
     stage = shift == null ? Stage.openShift : Stage.work;
     notifyListeners();
@@ -388,7 +404,7 @@ class PosController extends ChangeNotifier {
       try {
         z = await fiscal.closeShift(shiftNumber: s.number ?? 0, at: now);
       } on FiscalError catch (e) {
-        throw CartError('Фискальный модуль не закрыл смену: ${e.message}');
+        throw CartError(tr('Фискальный модуль не закрыл смену: ${e.message}', 'Fiskal modul smenani yopmadi: ${e.message}'));
       }
     }
     final rep = report;
@@ -430,7 +446,7 @@ class PosController extends ChangeNotifier {
     if (blocked != null) throw CartError(blocked);
     if (debt != null && fiscalMode) {
       // Как фискализировать продажу в долг, уточняем у ОФД — до этого не продаём.
-      throw CartError('Продажа в долг с фискальным модулем пока недоступна — ждём правила ОФД');
+      throw CartError(tr('Продажа в долг с фискальным модулем пока недоступна — ждём правила ОФД', 'Fiskal modul bilan qarzga sotish hozircha mavjud emas — OFD qoidalarini kutyapmiz'));
     }
     final uid = _uuid.v4();
     final soldAt = _now();
@@ -455,7 +471,7 @@ class PosController extends ChangeNotifier {
         final res = await this.fiscal.register(receipt);
         draft = SaleRecord.fromJson({...draft.toJson(), 'fiscal': res.toSale()});
       } on FiscalError catch (e) {
-        throw CartError('Фискальный модуль: ${e.message}');
+        throw CartError(tr('Фискальный модуль: ${e.message}', 'Fiskal modul: ${e.message}'));
       }
     }
     _saleSeq++;
@@ -470,8 +486,8 @@ class PosController extends ChangeNotifier {
     return rec;
   }
 
-  String get _shiftLabel => '${catalog.settings.deviceName.isEmpty ? 'Касса' : catalog.settings.deviceName}'
-      '${shift?.number != null ? ' · смена ${shift!.number}' : ''}';
+  String get _shiftLabel => '${catalog.settings.deviceName.isEmpty ? tr('Касса', 'Kassa') : catalog.settings.deviceName}'
+      '${shift?.number != null ? tr(' · смена ${shift!.number}', ' · smena ${shift!.number}') : ''}';
 
   /// Напечатать чек продажи (и открыть ящик при наличных). Ошибка не мешает продаже.
   Future<bool> printSale(SaleRecord rec) => _print(() => saleReceipt(
@@ -550,7 +566,7 @@ class PosController extends ChangeNotifier {
   /// Закрепить товары на вкладке «Частые» (порядок — как в списке). Сохраняется
   /// на сервере для всех касс магазина. Ошибка — текст, успех — null.
   Future<String?> saveQuickKeys(List<String> productIds) async {
-    if (!canQuickKeys) return 'Нет права «Настройка кассы»';
+    if (!canQuickKeys) return tr('Нет права «Настройка кассы»', '«Kassa sozlamalari» huquqi yoʻq');
     try {
       final res = await api.send('PUT', '/pos/quick-keys', body: {'product_ids': productIds}, cashier: cashier?.id)
           as Map<String, dynamic>;
@@ -559,13 +575,14 @@ class PosController extends ChangeNotifier {
       await store.writeJson('catalog.json', {
         ...catalog.toJson(),
         if (catalogAt != null) 'saved_at': catalogAt!.toUtc().toIso8601String(),
+        if (_catalogLang != null) 'lang': _catalogLang,
       });
       online = true;
       notifyListeners();
       return null;
     } on ApiError catch (e) {
       _netError(e);
-      return e.isNetwork ? 'Нет связи с сервером — быстрые кнопки сохраняются на сервере, попробуйте позже' : e.message;
+      return e.isNetwork ? tr('Нет связи с сервером — быстрые кнопки сохраняются на сервере, попробуйте позже', 'Server bilan aloqa yoʻq — tezkor tugmalar serverda saqlanadi, keyinroq urinib koʻring') : e.message;
     }
   }
 
@@ -638,9 +655,9 @@ class PosController extends ChangeNotifier {
 
   /// Погашение долга на кассе: журнал смены, очередь, квитанция. Без сервера.
   Future<DebtPaymentRecord> recordDebtPayment({required DebtorView who, required int amount, required PayMethod method}) async {
-    if (shiftLimit?.state == LimitState.blocked) throw CartError('Смена идёт больше 24 часов — закройте смену (Z-отчёт)');
-    if (amount <= 0) throw CartError('Наберите сумму');
-    if (amount > who.debt) throw CartError('Сумма больше долга ${fmtMoney(who.debt)}');
+    if (shiftLimit?.state == LimitState.blocked) throw CartError(tr('Смена идёт больше 24 часов — закройте смену (Z-отчёт)', 'Smena 24 soatdan beri davom etmoqda — smenani yoping (Z-hisobot)'));
+    if (amount <= 0) throw CartError(tr('Наберите сумму', 'Summani tering'));
+    if (amount > who.debt) throw CartError(tr('Сумма больше долга ${fmtMoney(who.debt)}', 'Summa qarzdan (${fmtMoney(who.debt)}) koʻp'));
     final r = DebtPaymentRecord(
       uid: _uuid.v4(),
       shiftUid: shift!.uid,
@@ -679,12 +696,12 @@ class PosController extends ChangeNotifier {
     q = q.trim().replaceFirst('№', '');
     // Чек этой кассы, который ещё не дошёл до сервера.
     final pendingSale = outbox.failed.any((i) => i.body['uid'] == q);
-    if (pendingSale) throw ApiError(400, 'not_sent', 'Этот чек не принят сервером — возврат невозможен');
+    if (pendingSale) throw ApiError(400, 'not_sent', tr('Этот чек не принят сервером — возврат невозможен', 'Bu chek server tomonidan qabul qilinmagan — qaytarib boʻlmaydi'));
     await sync();
     final res = await api.get('/pos/sales', query: {'q': q}, cashier: cashier!.id) as Map<String, dynamic>;
     final items = (res['items'] as List?) ?? const [];
     if (items.isEmpty) {
-      throw ApiError(404, 'not_found', online ? 'Чек $q не найден' : 'Нет связи — возврат проводится только онлайн');
+      throw ApiError(404, 'not_found', online ? tr('Чек $q не найден', '$q chek topilmadi') : tr('Нет связи — возврат проводится только онлайн', 'Aloqa yoʻq — qaytarish faqat onlayn amalga oshiriladi'));
     }
     final id = (items.first as Map<String, dynamic>)['id'] as String;
     return await api.get('/pos/sales/$id', cashier: cashier!.id) as Map<String, dynamic>;
@@ -700,13 +717,13 @@ class PosController extends ChangeNotifier {
     required Cashier by,
   }) async {
     await sync();
-    final blocked = shiftLimit?.state == LimitState.blocked ? 'Смена идёт больше 24 часов — закройте смену (Z-отчёт)' : null;
+    final blocked = shiftLimit?.state == LimitState.blocked ? tr('Смена идёт больше 24 часов — закройте смену (Z-отчёт)', 'Smena 24 soatdan beri davom etmoqda — smenani yoping (Z-hisobot)') : null;
     if (blocked != null) throw ApiError(409, 'shift_expired', blocked);
     final shiftId = shift!.serverId ?? outbox.shiftIds[shift!.uid];
-    if (shiftId == null) throw ApiError(0, 'network', 'Смена ещё не дошла до сервера — нужен интернет');
+    if (shiftId == null) throw ApiError(0, 'network', tr('Смена ещё не дошла до сервера — нужен интернет', 'Smena hali serverga yetib bormadi — internet kerak'));
     final saleSign = '${sale['fiscal_sign'] ?? ''}';
     if (fiscalMode && saleSign.isEmpty) {
-      throw ApiError(409, 'not_fiscal', 'Исходный чек не фискальный — возврат через фискальный модуль невозможен');
+      throw ApiError(409, 'not_fiscal', tr('Исходный чек не фискальный — возврат через фискальный модуль невозможен', 'Asl chek fiskal emas — fiskal modul orqali qaytarib boʻlmaydi'));
     }
     final res = await api.post('/pos/returns', {
       'sale_id': sale['id'],
@@ -750,9 +767,9 @@ class PosController extends ChangeNotifier {
         fr = await fiscal.register(receipt);
         await api.post('/pos/returns/$id/fiscal', fr.toReturn(), cashier: by.id);
       } on FiscalError catch (e) {
-        fiscalError = 'Возврат проведён, но фискальный модуль не пробил чек: ${e.message}';
+        fiscalError = tr('Возврат проведён, но фискальный модуль не пробил чек: ${e.message}', 'Qaytarish bajarildi, lekin fiskal modul chek chiqarmadi: ${e.message}');
       } on ApiError catch (e) {
-        fiscalError = 'Чек возврата пробит, но сервер не сохранил признак: ${e.message}';
+        fiscalError = tr('Чек возврата пробит, но сервер не сохранил признак: ${e.message}', 'Qaytarish cheki chiqarildi, lekin server fiskal belgini saqlamadi: ${e.message}');
       }
     }
     final rec = ReturnRecord(

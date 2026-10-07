@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart' show tr;
 
 import '../core/catalog.dart';
 import '../core/codes.dart';
@@ -20,7 +21,7 @@ class ReturnScreen extends StatefulWidget {
 }
 
 const _reasonKeys = ['F2', 'F3', 'F4'];
-const _reasonText = ['Брак', 'Не подошло', 'Ошибка кассира'];
+List<String> get _reasonText => [tr('Брак', 'Nuqsonli'), tr('Не подошло', 'Mos kelmadi'), tr('Ошибка кассира', 'Kassir xatosi')];
 
 class _ReturnScreenState extends State<ReturnScreen> {
   String _input = '';
@@ -82,7 +83,7 @@ class _ReturnScreenState extends State<ReturnScreen> {
 
   Future<void> _submit(String kind) async {
     if (_total <= 0) {
-      setState(() => _error = 'Отметьте, что вернуть: пробел — всю строку, цифры — количество');
+      setState(() => _error = tr('Отметьте, что вернуть: пробел — всю строку, цифры — количество', 'Nimani qaytarishni belgilang: probel — butun qator, raqamlar — miqdor'));
       return;
     }
     Cashier? by = pos.cashier;
@@ -90,7 +91,7 @@ class _ReturnScreenState extends State<ReturnScreen> {
       if (_pin.isEmpty) {
         setState(() {
           _pinMode = true;
-          _error = 'Нужен ПИН старшего кассира';
+          _error = tr('Нужен ПИН старшего кассира', 'Katta kassirning PIN-kodi kerak');
         });
         return;
       }
@@ -98,14 +99,14 @@ class _ReturnScreenState extends State<ReturnScreen> {
       if (by == null) {
         setState(() {
           _pin = '';
-          _error = 'Неверный ПИН или нет права на возврат';
+          _error = tr('Неверный ПИН или нет права на возврат', 'PIN-kod notoʻgʻri yoki qaytarish huquqi yoʻq');
         });
         return;
       }
     }
     final method = pos.catalog.method(kind);
     if (method == null) {
-      setState(() => _error = 'В магазине нет способа оплаты «${kind == 'cash' ? 'Наличные' : 'Карта'}»');
+      setState(() => _error = tr('В магазине нет способа оплаты «${kind == 'cash' ? 'Наличные' : 'Карта'}»', 'Doʻkonda «${kind == 'cash' ? 'Naqd pul' : 'Karta'}» toʻlov usuli yoʻq'));
       return;
     }
     setState(() => _busy = true);
@@ -121,7 +122,7 @@ class _ReturnScreenState extends State<ReturnScreen> {
         by: by!,
       );
       setState(() {
-        _done = 'Возврат проведён: ${fmtMoney(rec.total)} · ${method.name}';
+        _done = tr('Возврат проведён: ${fmtMoney(rec.total)} · ${method.name}', 'Qaytarish bajarildi: ${fmtMoney(rec.total)} · ${method.name}');
         _sale = null;
         _pin = '';
         _pinMode = false;
@@ -208,7 +209,7 @@ class _ReturnScreenState extends State<ReturnScreen> {
     setState(() {
       _input = '';
       if (q > left) {
-        _error = 'Можно вернуть не больше ${fmtQty(left)}';
+        _error = tr('Можно вернуть не больше ${fmtQty(left)}', 'Koʻpi bilan ${fmtQty(left)} qaytarish mumkin');
       } else {
         _ret[_row] = q;
         _error = null;
@@ -241,12 +242,12 @@ class _ReturnScreenState extends State<ReturnScreen> {
                       child: Row(children: [
                         Expanded(
                           child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text('Возврат · отсканируйте QR с чека или наберите номер и Enter', style: t(13, c: C.brand)),
+                            Text(tr('Возврат · отсканируйте QR с чека или наберите номер и Enter', 'Qaytarish · chekdagi QR kodni skanerlang yoki raqamni tering va Enter'), style: t(13, c: C.brand)),
                             const SizedBox(height: 4),
                             Text(
                               sale == null
-                                  ? (_input.isEmpty ? (_busy ? 'Ищем чек…' : 'Чек №…') : _input)
-                                  : 'Чек №${sale['number']} · ${sale['cashier'] ?? ''}',
+                                  ? (_input.isEmpty ? (_busy ? tr('Ищем чек…', 'Chek qidirilmoqda…') : tr('Чек №…', 'Chek №…')) : _input)
+                                  : tr('Чек №${sale['number']} · ${sale['cashier'] ?? ''}', 'Chek №${sale['number']} · ${sale['cashier'] ?? ''}'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: t(26, w: FontWeight.w700),
@@ -255,7 +256,7 @@ class _ReturnScreenState extends State<ReturnScreen> {
                         ),
                         if (sale != null)
                           Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
-                            Text('итог чека', style: t(14, c: C.ts)),
+                            Text(tr('итог чека', 'chek jami'), style: t(14, c: C.ts)),
                             Text(fmtMoney(parseMoney(sale['total'])), style: t(30, w: FontWeight.w700)),
                           ]),
                       ]),
@@ -267,13 +268,13 @@ class _ReturnScreenState extends State<ReturnScreen> {
                         clipBehavior: Clip.antiAlias,
                         child: sale == null
                             ? Center(
-                                child: Text(_done ?? 'Возврат проводится только онлайн: касса берёт чек с сервера',
+                                child: Text(_done ?? tr('Возврат проводится только онлайн: касса берёт чек с сервера', 'Qaytarish faqat onlayn: kassa chekni serverdan oladi'),
                                     style: t(16, c: _done != null ? C.success : C.td)))
                             : ListView(children: [
                                 Container(
                                   color: C.subtle,
                                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                                  child: Text('↑↓ строка · пробел — вернуть всё · цифры + Enter — сколько вернуть',
+                                  child: Text(tr('↑↓ строка · пробел — вернуть всё · цифры + Enter — сколько вернуть', '↑↓ qator · probel — hammasini qaytarish · raqamlar + Enter — qanchasini qaytarish'),
                                       style: t(12, c: C.ts)),
                                 ),
                                 for (var i = 0; i < _items.length; i++) _line(i, _row == i),
@@ -285,8 +286,8 @@ class _ReturnScreenState extends State<ReturnScreen> {
                       padding: const EdgeInsets.all(14),
                       child: Text(
                         _input.isNotEmpty && sale != null
-                            ? 'Количество: $_input · Enter — применить к строке'
-                            : 'Вернуть можно только то, что есть в чеке, и не больше купленного. Товар вернётся на склад.',
+                            ? tr('Количество: $_input · Enter — применить к строке', 'Miqdor: $_input · Enter — qatorga qoʻllash')
+                            : tr('Вернуть можно только то, что есть в чеке, и не больше купленного. Товар вернётся на склад.', 'Faqat chekdagi mahsulotni va sotib olingandan koʻp boʻlmagan miqdorda qaytarish mumkin. Mahsulot omborga qaytadi.'),
                         style: t(13, c: C.ts),
                       ),
                     ),
@@ -325,7 +326,7 @@ class _ReturnScreenState extends State<ReturnScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(color: r > 0 ? C.brandSoft : C.keyBg, borderRadius: BorderRadius.circular(6)),
-          child: Text(left == 0 ? 'уже возвращено' : 'вернуть ${fmtQty(r)} из ${fmtQty(left)}',
+          child: Text(left == 0 ? tr('уже возвращено', 'allaqachon qaytarilgan') : tr('вернуть ${fmtQty(r)} из ${fmtQty(left)}', '${fmtQty(left)} dan ${fmtQty(r)} qaytarish'),
               style: t(13, w: FontWeight.w600, c: r > 0 ? C.brand : C.ts)),
         ),
         SizedBox(width: 110, child: Text(fmtMoney(parseMoney(it['price'])), textAlign: TextAlign.right, style: t(15, c: C.ts))),
@@ -344,9 +345,9 @@ class _ReturnScreenState extends State<ReturnScreen> {
         color: C.dark,
         padding: const EdgeInsets.all(24),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Вернуть покупателю', style: t(15, c: Colors.white70)),
+          Text(tr('Вернуть покупателю', 'Xaridorga qaytarish'), style: t(15, c: Colors.white70)),
           Text(fmtMoney(_sale == null ? 0 : _total), style: t(64, w: FontWeight.w800, c: Colors.white)),
-          Text('точную сумму посчитает сервер по оплаченному', style: t(12, c: Colors.white60)),
+          Text(tr('точную сумму посчитает сервер по оплаченному', 'aniq summani server toʻlangan summa boʻyicha hisoblaydi'), style: t(12, c: Colors.white60)),
         ]),
       ),
       const SizedBox(height: 12),
@@ -355,7 +356,7 @@ class _ReturnScreenState extends State<ReturnScreen> {
           color: C.warningSoft,
           padding: const EdgeInsets.all(16),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Подтверждение старшего: ПИН кассира с правом на возврат', style: t(14, w: FontWeight.w600, c: C.warning)),
+            Text(tr('Подтверждение старшего: ПИН кассира с правом на возврат', 'Katta kassir tasdigʻi: qaytarish huquqiga ega kassir PIN-kodi'), style: t(14, w: FontWeight.w600, c: C.warning)),
             const SizedBox(height: 8),
             Row(children: [
               for (var i = 0; i < 4 || i < _pin.length; i++)
@@ -371,35 +372,35 @@ class _ReturnScreenState extends State<ReturnScreen> {
                 ),
             ]),
             const SizedBox(height: 6),
-            Text(_pinMode ? 'Наберите ПИН, затем Enter (наличными) или * (на карту)' : 'Касса попросит ПИН при подтверждении',
+            Text(_pinMode ? tr('Наберите ПИН, затем Enter (наличными) или * (на карту)', 'PIN-kodni tering, keyin Enter (naqd) yoki * (kartaga)') : tr('Касса попросит ПИН при подтверждении', 'Tasdiqlashda kassa PIN-kod soʻraydi'),
                 style: t(12, c: C.warning)),
           ]),
         ),
       const SizedBox(height: 12),
       KeyCard(
         keyLabel: 'Enter',
-        title: 'Наличными',
-        subtitle: 'выдать из ящика',
+        title: tr('Наличными', 'Naqd pulda'),
+        subtitle: tr('выдать из ящика', 'gʻaladondan berish'),
         style: ready ? KeyCardStyle.primary : KeyCardStyle.dim,
         onTap: ready ? () => _submit('cash') : null,
       ),
       const SizedBox(height: 10),
       KeyCard(
         keyLabel: '*',
-        title: 'На карту',
-        subtitle: 'деньги вернутся на карту покупателя',
+        title: tr('На карту', 'Kartaga'),
+        subtitle: tr('деньги вернутся на карту покупателя', 'pul xaridorning kartasiga qaytadi'),
         style: ready ? KeyCardStyle.normal : KeyCardStyle.dim,
         onTap: ready ? () => _submit('card') : null,
       ),
       const SizedBox(height: 10),
-      KeyCard(keyLabel: 'Esc', title: 'Назад к продаже', onTap: () => Navigator.of(context).pop()),
+      KeyCard(keyLabel: 'Esc', title: tr('Назад к продаже', 'Sotuvga qaytish'), onTap: () => Navigator.of(context).pop()),
       if (_error != null) ...[
         const SizedBox(height: 12),
         Text(_error!, style: t(14, c: C.error)),
       ],
       const Spacer(),
       Text(
-        'Причина: ${[for (var i = 0; i < 3; i++) '${_reasonKeys[i]} — ${_reasonText[i]}${i == _reason ? ' ✓' : ''}'].join(' · ')}',
+        '${tr('Причина', 'Sabab')}: ${[for (var i = 0; i < 3; i++) '${_reasonKeys[i]} — ${_reasonText[i]}${i == _reason ? ' ✓' : ''}'].join(' · ')}',
         style: t(12, c: C.ts),
       ),
     ]);

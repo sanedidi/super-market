@@ -68,15 +68,15 @@ class _CrowdScreenState extends State<CrowdScreen> {
     final b = _bonuses;
     final items = ((b?['items'] as List?) ?? const []).cast<Map<String, dynamic>>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Курьеры по пути')),
+      appBar: AppBar(title: Text(tr('Курьеры по пути', 'Yoʻlakay kuryerlar'))),
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
           AppCard(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Проверить нового курьера', style: AppText.title),
+              Text(tr('Проверить нового курьера', 'Yangi kuryerni tekshirish'), style: AppText.title),
               const SizedBox(height: 4),
-              const Text('Попросите показать код в приложении курьера (KR-12345) и документ с фото.', style: AppText.small),
+              Text(tr('Попросите показать код в приложении курьера (KR-12345) и документ с фото.', 'Kuryer ilovasidagi kodni (KR-12345) va rasmli hujjatni koʻrsatishini soʻrang.'), style: AppText.small),
               const SizedBox(height: 12),
               TextField(
                 controller: _code,
@@ -86,24 +86,25 @@ class _CrowdScreenState extends State<CrowdScreen> {
                 onSubmitted: (_) => _lookup(),
               ),
               const SizedBox(height: 12),
-              BigButton(label: 'Найти курьера', icon: Icons.search_rounded, busy: _busy, height: 48, onPressed: _lookup),
+              BigButton(label: tr('Найти курьера', 'Kuryerni topish'), icon: Icons.search_rounded, busy: _busy, height: 48, onPressed: _lookup),
             ]),
           ),
           if (b != null) ...[
             const SizedBox(height: 20),
-            const Text('Бонусы магазину', style: AppText.h3),
+            Text(tr('Бонусы магазину', 'Doʻkon uchun bonuslar'), style: AppText.h3),
             const SizedBox(height: 4),
             Text(
-              'За каждую из первых ${b['max_deliveries']} доставок проверенного вами курьера — ${money(b['per_delivery'])}.',
+              tr('За каждую из первых ${b['max_deliveries']} доставок проверенного вами курьера — ${money(b['per_delivery'])}.',
+                  'Siz tekshirgan kuryerning dastlabki ${b['max_deliveries']} ta yetkazishining har biri uchun — ${money(b['per_delivery'])}.'),
               style: AppText.small,
             ),
             const SizedBox(height: 10),
             Row(children: [
-              Expanded(child: _Kpi('Начислено за месяц', money(b['credited_month']))),
+              Expanded(child: _Kpi(tr('Начислено за месяц', 'Oy davomida hisoblandi'), money(b['credited_month']))),
               const SizedBox(width: 8),
-              Expanded(child: _Kpi('Ожидается', money(b['pending']))),
+              Expanded(child: _Kpi(tr('Ожидается', 'Kutilmoqda'), money(b['pending']))),
               const SizedBox(width: 8),
-              Expanded(child: _Kpi('Проверено', '${b['verified'] ?? 0}')),
+              Expanded(child: _Kpi(tr('Проверено', 'Tekshirilgan'), '${b['verified'] ?? 0}')),
             ]),
             if (items.isNotEmpty) ...[
               const SizedBox(height: 10),
@@ -117,7 +118,7 @@ class _CrowdScreenState extends State<CrowdScreen> {
                         Expanded(
                           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                             Text('${c['name']} · ${c['code']}', style: AppText.bodyStrong),
-                            Text('Доставок засчитано: ${c['deliveries']} из ${b['max_deliveries']}', style: AppText.small),
+                            Text(tr('Доставок засчитано: ${c['deliveries']} из ${b['max_deliveries']}', 'Hisobga olingan yetkazishlar: ${c['deliveries']} / ${b['max_deliveries']}'), style: AppText.small),
                           ]),
                         ),
                         Text(money(c['credited']), style: AppText.bodyStrong),
@@ -194,16 +195,16 @@ class _VerifyScreenState extends State<_VerifyScreen> {
     String? err;
     if (approve) {
       if (_name.text.trim().split(RegExp(r'\s+')).length < 2) {
-        err = 'ФИО как в документе';
+        err = tr('ФИО как в документе', 'F.I.Sh. hujjatdagidek');
       } else if (_birthIso() == null) {
-        err = 'Дата рождения в виде ДД.ММ.ГГГГ';
+        err = tr('Дата рождения в виде ДД.ММ.ГГГГ', 'Tugʻilgan sana KK.OO.YYYY koʻrinishida');
       } else if (!RegExp(r'^\d{4}$').hasMatch(_last4.text.trim())) {
-        err = 'Последние 4 цифры номера документа';
+        err = tr('Последние 4 цифры номера документа', 'Hujjat raqamining oxirgi 4 ta raqami');
       } else if (!_photoMatch || !_docValid) {
-        err = 'Отметьте, что фото совпадает и документ действителен';
+        err = tr('Отметьте, что фото совпадает и документ действителен', 'Rasm mos kelishi va hujjat amal qilishini belgilang');
       }
     } else if (_reason.text.trim().isEmpty) {
-      err = 'Укажите причину отказа';
+      err = tr('Укажите причину отказа', 'Rad etish sababini koʻrsating');
     }
     if (err != null) {
       setState(() => _error = err);
@@ -231,7 +232,7 @@ class _VerifyScreenState extends State<_VerifyScreen> {
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       Navigator.of(context).pop(true);
-      messenger.showSnackBar(SnackBar(content: Text(approve ? 'Курьер подтверждён — ему начнут приходить заказы' : 'Отказ сохранён')));
+      messenger.showSnackBar(SnackBar(content: Text(approve ? tr('Курьер подтверждён — ему начнут приходить заказы', 'Kuryer tasdiqlandi — unga buyurtmalar kela boshlaydi') : tr('Отказ сохранён', 'Rad etish saqlandi'))));
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -253,12 +254,12 @@ class _VerifyScreenState extends State<_VerifyScreen> {
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('${c['full_name'] ?? ''}'.isEmpty ? 'Без имени' : '${c['full_name']}', style: AppText.bodyStrong.copyWith(fontSize: 16)),
-                Text('${formatPhone(c['phone'])} · ${c['level'] ?? ''} · доставок ${c['delivered'] ?? 0}', style: AppText.small),
+                Text('${c['full_name'] ?? ''}'.isEmpty ? tr('Без имени', 'Ismsiz') : '${c['full_name']}', style: AppText.bodyStrong.copyWith(fontSize: 16)),
+                Text(tr('${formatPhone(c['phone'])} · ${c['level'] ?? ''} · доставок ${c['delivered'] ?? 0}', '${formatPhone(c['phone'])} · ${c['level'] ?? ''} · ${c['delivered'] ?? 0} ta yetkazish'), style: AppText.small),
               ]),
             ),
             StatusChip(
-              switch (status) { 'active' => 'Подтверждён', 'blocked' => 'Заблокирован', _ => 'Не проверен' },
+              switch (status) { 'active' => tr('Подтверждён', 'Tasdiqlangan'), 'blocked' => tr('Заблокирован', 'Bloklangan'), _ => tr('Не проверен', 'Tekshirilmagan') },
               tone: switch (status) { 'active' => ChipTone.green, 'blocked' => ChipTone.red, _ => ChipTone.amber },
             ),
           ]),
@@ -268,17 +269,18 @@ class _VerifyScreenState extends State<_VerifyScreen> {
           SectionCard(children: [
             Text(
               status == 'active'
-                  ? 'Личность уже подтверждена${c['verified_store'] != null ? ' в магазине «${c['verified_store']}»' : ''}${c['verified_at'] != null ? ' ${dateTime(c['verified_at'])}' : ''}.'
-                  : 'Курьер заблокирован платформой — проверка недоступна.',
+                  ? tr('Личность уже подтверждена${c['verified_store'] != null ? ' в магазине «${c['verified_store']}»' : ''}${c['verified_at'] != null ? ' ${dateTime(c['verified_at'])}' : ''}.',
+                      'Shaxs allaqachon tasdiqlangan${c['verified_store'] != null ? ' — «${c['verified_store']}» doʻkonida' : ''}${c['verified_at'] != null ? ', ${dateTime(c['verified_at'])}' : ''}.')
+                  : tr('Курьер заблокирован платформой — проверка недоступна.', 'Kuryer platforma tomonidan bloklangan — tekshirish imkonsiz.'),
               style: AppText.body,
             ),
           ]),
         ] else ...[
           const SizedBox(height: 16),
-          const Text('ДОКУМЕНТ', style: AppText.caption),
+          Text(tr('ДОКУМЕНТ', 'HUJJAT'), style: AppText.caption),
           const SizedBox(height: 8),
           Wrap(spacing: 8, children: [
-            for (final (v, t) in [('passport', 'Паспорт'), ('id_card', 'ID-карта')])
+            for (final (v, t) in [('passport', tr('Паспорт', 'Pasport')), ('id_card', tr('ID-карта', 'ID-karta'))])
               ChoiceChip(
                 label: Text(t),
                 selected: _docType == v,
@@ -289,14 +291,14 @@ class _VerifyScreenState extends State<_VerifyScreen> {
               ),
           ]),
           const SizedBox(height: 12),
-          TextField(controller: _name, textCapitalization: TextCapitalization.characters, decoration: const InputDecoration(labelText: 'ФИО как в документе')),
+          TextField(controller: _name, textCapitalization: TextCapitalization.characters, decoration: InputDecoration(labelText: tr('ФИО как в документе', 'F.I.Sh. hujjatdagidek'))),
           const SizedBox(height: 12),
           Row(children: [
             Expanded(
               child: TextField(
                 controller: _birth,
                 keyboardType: TextInputType.datetime,
-                decoration: const InputDecoration(labelText: 'Дата рождения', hintText: 'ДД.ММ.ГГГГ'),
+                decoration: InputDecoration(labelText: tr('Дата рождения', 'Tugʻilgan sana'), hintText: tr('ДД.ММ.ГГГГ', 'KK.OO.YYYY')),
               ),
             ),
             const SizedBox(width: 12),
@@ -305,7 +307,7 @@ class _VerifyScreenState extends State<_VerifyScreen> {
                 controller: _last4,
                 keyboardType: TextInputType.number,
                 maxLength: 4,
-                decoration: const InputDecoration(labelText: 'Посл. 4 цифры', counterText: ''),
+                decoration: InputDecoration(labelText: tr('Посл. 4 цифры', 'Oxirgi 4 raqam'), counterText: ''),
               ),
             ),
           ]),
@@ -314,27 +316,27 @@ class _VerifyScreenState extends State<_VerifyScreen> {
             contentPadding: EdgeInsets.zero,
             value: _photoMatch,
             onChanged: (v) => setState(() => _photoMatch = v ?? false),
-            title: const Text('Фото в документе совпадает с человеком', style: AppText.body),
+            title: Text(tr('Фото в документе совпадает с человеком', 'Hujjatdagi rasm shu odamga mos keladi'), style: AppText.body),
           ),
           CheckboxListTile(
             contentPadding: EdgeInsets.zero,
             value: _docValid,
             onChanged: (v) => setState(() => _docValid = v ?? false),
-            title: const Text('Документ действителен, возраст от 18 лет', style: AppText.body),
+            title: Text(tr('Документ действителен, возраст от 18 лет', 'Hujjat amal qiladi, yoshi 18 va undan katta'), style: AppText.body),
           ),
           const SizedBox(height: 4),
-          const Text('Документ не фотографируется и не хранится.', style: AppText.small),
+          Text(tr('Документ не фотографируется и не хранится.', 'Hujjat suratga olinmaydi va saqlanmaydi.'), style: AppText.small),
           if (_error != null) ...[
             const SizedBox(height: 10),
             Text(_error!, style: AppText.small.copyWith(color: AppColors.error)),
           ],
           const SizedBox(height: 16),
-          BigButton(label: 'Подтвердить курьера', icon: Icons.verified_user_rounded, busy: _busy == 'approve', onPressed: _busy == null ? () => _send('approve') : null),
+          BigButton(label: tr('Подтвердить курьера', 'Kuryerni tasdiqlash'), icon: Icons.verified_user_rounded, busy: _busy == 'approve', onPressed: _busy == null ? () => _send('approve') : null),
           const SizedBox(height: 20),
-          TextField(controller: _reason, decoration: const InputDecoration(labelText: 'Причина отказа (если не подходит)')),
+          TextField(controller: _reason, decoration: InputDecoration(labelText: tr('Причина отказа (если не подходит)', 'Rad etish sababi (mos kelmasa)'))),
           const SizedBox(height: 10),
           BigButton(
-            label: 'Отказать',
+            label: tr('Отказать', 'Rad etish'),
             color: AppColors.primarySoft,
             foreground: AppColors.primary,
             busy: _busy == 'reject',

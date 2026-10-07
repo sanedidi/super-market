@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sm_core/sm_core.dart' hide LoginScreen;
 
 import '../logic.dart';
 import '../main.dart';
@@ -26,20 +27,26 @@ class LocationDisclosureScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final crowd = audience == LocationAudience.crowd;
     final text = crowd
-        ? 'Super Market Курьер получает геопозицию, только когда включено «Ищу заказы» или у вас есть заказ. '
-            'Выключите поиск и завершите заказы — передача прекратится.'
-        : 'Super Market Курьер получает геопозицию, только пока вы на смене — в это время на телефоне видно уведомление «Вы на смене». '
-            'Завершите смену — передача прекратится.';
+        ? tr(
+            'Super Market Курьер получает геопозицию, только когда включено «Ищу заказы» или у вас есть заказ. '
+                'Выключите поиск и завершите заказы — передача прекратится.',
+            'Super Market Kuryer joylashuvni faqat «Buyurtma qidiryapman» yoqilganda yoki sizda buyurtma boʻlganda oladi. '
+                'Qidiruvni oʻchirib, buyurtmalarni yakunlang — uzatish toʻxtaydi.')
+        : tr(
+            'Super Market Курьер получает геопозицию, только пока вы на смене — в это время на телефоне видно уведомление «Вы на смене». '
+                'Завершите смену — передача прекратится.',
+            'Super Market Kuryer joylashuvni faqat smenada boʻlganingizda oladi — bu vaqtda telefonda «Siz smenadasiz» bildirishnomasi koʻrinadi. '
+                'Smenani yakunlang — uzatish toʻxtaydi.');
     final reasons = crowd
-        ? const [
-            (Icons.local_shipping_rounded, 'Заказы рядом', 'лента показывает заказы, которые по пути'),
-            (Icons.map_rounded, 'Покупатель видит курьера', 'магазин и покупатель видят, где заказ'),
-            (Icons.history_rounded, 'Хранится недолго', 'только последняя точка, удаляется вместе с аккаунтом'),
+        ? [
+            (Icons.local_shipping_rounded, tr('Заказы рядом', 'Yaqindagi buyurtmalar'), tr('лента показывает заказы, которые по пути', 'lenta yoʻlingizdagi buyurtmalarni koʻrsatadi')),
+            (Icons.map_rounded, tr('Покупатель видит курьера', 'Xaridor kuryerni koʻradi'), tr('магазин и покупатель видят, где заказ', 'doʻkon va xaridor buyurtma qayerdaligini koʻradi')),
+            (Icons.history_rounded, tr('Хранится недолго', 'Uzoq saqlanmaydi'), tr('только последняя точка, удаляется вместе с аккаунтом', 'faqat oxirgi nuqta, akkaunt bilan birga oʻchiriladi')),
           ]
-        : const [
-            (Icons.map_rounded, 'Покупатель видит курьера', 'магазин и покупатель видят, где заказ'),
-            (Icons.schedule_rounded, 'Время прибытия', 'покупатель знает, когда вы приедете'),
-            (Icons.history_rounded, 'Хранится недолго', 'только последняя точка, без истории перемещений'),
+        : [
+            (Icons.map_rounded, tr('Покупатель видит курьера', 'Xaridor kuryerni koʻradi'), tr('магазин и покупатель видят, где заказ', 'doʻkon va xaridor buyurtma qayerdaligini koʻradi')),
+            (Icons.schedule_rounded, tr('Время прибытия', 'Yetib kelish vaqti'), tr('покупатель знает, когда вы приедете', 'xaridor qachon yetib kelishingizni biladi')),
+            (Icons.history_rounded, tr('Хранится недолго', 'Uzoq saqlanmaydi'), tr('только последняя точка, без истории перемещений', 'faqat oxirgi nuqta, harakatlar tarixisiz')),
           ];
     return Scaffold(
       backgroundColor: AppColors.white,
@@ -56,7 +63,7 @@ class LocationDisclosureScreen extends StatelessWidget {
                   child: const Icon(Icons.near_me_rounded, size: 40, color: AppColors.primary),
                 ),
                 const SizedBox(height: 24),
-                Text('Разрешите доступ к геопозиции', style: AppText.h2.copyWith(fontSize: 28)),
+                Text(tr('Разрешите доступ к геопозиции', 'Joylashuvga ruxsat bering'), style: AppText.h2.copyWith(fontSize: 28)),
                 const SizedBox(height: 12),
                 Text(text, style: AppText.body.copyWith(fontSize: 16, color: AppColors.text2)),
                 const SizedBox(height: 20),
@@ -83,7 +90,7 @@ class LocationDisclosureScreen extends StatelessWidget {
                   onTap: () => openLink(context, privacyUrl),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Text('Политика конфиденциальности', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
+                    child: Text(tr('Политика конфиденциальности', 'Maxfiylik siyosati'), style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
                   ),
                 ),
               ]),
@@ -92,7 +99,7 @@ class LocationDisclosureScreen extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: Column(children: [
-              BigButton(label: 'Продолжить', onPressed: () => Navigator.pop(context, true)),
+              BigButton(label: tr('Продолжить', 'Davom etish'), onPressed: () => Navigator.pop(context, true)),
               const SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
@@ -100,7 +107,7 @@ class LocationDisclosureScreen extends StatelessWidget {
                 child: TextButton(
                   style: TextButton.styleFrom(foregroundColor: AppColors.dark),
                   onPressed: () => Navigator.pop(context, false),
-                  child: Text('Не сейчас', style: AppText.bodyStrong.copyWith(fontSize: 16, color: AppColors.dark)),
+                  child: Text(tr('Не сейчас', 'Hozir emas'), style: AppText.bodyStrong.copyWith(fontSize: 16, color: AppColors.dark)),
                 ),
               ),
             ]),

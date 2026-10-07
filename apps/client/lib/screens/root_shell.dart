@@ -141,7 +141,10 @@ Future<void> showDeliveryTerms(BuildContext context, Store s) {
         ]),
       );
   final min = num.tryParse(s.minOrder) ?? 0;
-  final deliveryText = [if (s.etaText != null) 'Привезём за ${s.etaText}.', if (s.freeFrom != null) 'Бесплатно от ${money(s.freeFrom)}.'].join(' ');
+  final deliveryText = [
+    if (s.etaText != null) tr('Привезём за ${s.etaText}.', '${s.etaText} ichida yetkazamiz.'),
+    if (s.freeFrom != null) tr('Бесплатно от ${money(s.freeFrom)}.', '${money(s.freeFrom)} dan bepul.'),
+  ].join(' ');
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -151,7 +154,7 @@ Future<void> showDeliveryTerms(BuildContext context, Store s) {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('Условия доставки', style: AppText.h2),
+          Text(tr('Условия доставки', 'Yetkazib berish shartlari'), style: AppText.h2),
           const SizedBox(height: 16),
           Row(children: [
             StoreLogo(name: s.name, url: s.logoUrl, size: 48),
@@ -159,23 +162,25 @@ Future<void> showDeliveryTerms(BuildContext context, Store s) {
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(s.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong),
-                Text([s.isOpen ? 'Открыт' : 'Закрыт', storeSubtitle(s)].join(' · '),
+                Text([s.isOpen ? tr('Открыт', 'Ochiq') : tr('Закрыт', 'Yopiq'), storeSubtitle(s)].join(' · '),
                     maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.small.copyWith(color: s.isOpen ? AppColors.text2 : AppColors.error)),
               ]),
             ),
           ]),
           const Divider(height: 28),
           if (min > 0)
-            card(Icons.shopping_bag_rounded, 'Минимальный заказ', money(s.minOrder),
-                'Когда сумма товаров в корзине достигнет минимальной, можно будет оформить заказ.'),
-          card(Icons.directions_car_filled_rounded, 'Доставка', s.freeDelivery ? '0 сум' : money(s.deliveryFee), deliveryText.isEmpty ? 'Цена зависит от вашего адреса.' : deliveryText),
+            card(Icons.shopping_bag_rounded, tr('Минимальный заказ', 'Minimal buyurtma'), money(s.minOrder),
+                tr('Когда сумма товаров в корзине достигнет минимальной, можно будет оформить заказ.',
+                    'Savatdagi mahsulotlar summasi minimal summaga yetganda buyurtma berish mumkin boʻladi.')),
+          card(Icons.directions_car_filled_rounded, tr('Доставка', 'Yetkazib berish'), s.freeDelivery ? tr('0 сум', '0 soʻm') : money(s.deliveryFee),
+              deliveryText.isEmpty ? tr('Цена зависит от вашего адреса.', 'Narx manzilingizga bogʻliq.') : deliveryText),
           const SizedBox(height: 8),
           SizedBox(
             height: 56,
             child: FilledButton(
               style: FilledButton.styleFrom(backgroundColor: AppColors.dark),
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Закрыть'),
+              child: Text(tr('Закрыть', 'Yopish')),
             ),
           ),
         ]),
@@ -211,7 +216,7 @@ class CartBar extends StatelessWidget {
               child: Row(children: [
                 const Icon(Icons.shopping_bag_rounded, color: AppColors.white, size: 26),
                 const SizedBox(width: 14),
-                Text('Корзина', style: AppText.bodyStrong.copyWith(color: AppColors.white, fontSize: 19)),
+                Text(tr('Корзина', 'Savat'), style: AppText.bodyStrong.copyWith(color: AppColors.white, fontSize: 19)),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(itemsWord(state.cartCount),
@@ -235,5 +240,5 @@ String itemsWord(int n) {
       : (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14))
           ? 'товара'
           : 'товаров';
-  return '$n $w';
+  return tr('$n $w', '$n ta mahsulot');
 }

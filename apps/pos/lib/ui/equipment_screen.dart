@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart' show tr;
 
 import '../printer/transport.dart';
 import '../state/pos.dart';
@@ -64,7 +65,7 @@ class _EquipmentScreenState extends State<EquipmentScreen> {
     if (!mounted) return;
     setState(() {
       _busy = false;
-      _note = res ? ok : (pos.printError ?? 'Принтер не выбран');
+      _note = res ? ok : (pos.printError ?? tr('Принтер не выбран', 'Printer tanlanmagan'));
     });
   }
 
@@ -98,36 +99,36 @@ class _EquipmentScreenState extends State<EquipmentScreen> {
             decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(24)),
             child: SingleChildScrollView(
               child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Оборудование', style: t(30, w: FontWeight.w700)),
+                Text(tr('Оборудование', 'Uskunalar'), style: t(30, w: FontWeight.w700)),
                 const SizedBox(height: 4),
-                Text('Проверьте каждое устройство — это займёт минуту.', style: t(15, c: C.ts)),
+                Text(tr('Проверьте каждое устройство — это займёт минуту.', 'Har bir qurilmani tekshiring — bu bir daqiqa oladi.'), style: t(15, c: C.ts)),
                 const SizedBox(height: 20),
                 _Row(
-                  title: 'Чековый принтер',
-                  status: !_cfg.enabled ? ('не выбран', C.warning) : (printerOk ? ('выбран', C.success) : ('ошибка', C.error)),
-                  subtitle: _cfg.enabled ? '${_cfg.title} · ESC/POS · бумага ${_cfg.paperMm} мм' : 'Выберите принтер Windows или укажите IP сетевого принтера',
+                  title: tr('Чековый принтер', 'Chek printeri'),
+                  status: !_cfg.enabled ? (tr('не выбран', 'tanlanmagan'), C.warning) : (printerOk ? (tr('выбран', 'tanlangan'), C.success) : (tr('ошибка', 'xatolik'), C.error)),
+                  subtitle: _cfg.enabled ? tr('${_cfg.title} · ESC/POS · бумага ${_cfg.paperMm} мм', '${_cfg.title} · ESC/POS · qogʻoz ${_cfg.paperMm} mm') : tr('Выберите принтер Windows или укажите IP сетевого принтера', 'Windows printerini tanlang yoki tarmoq printerining IP manzilini kiriting'),
                   actions: [
                     _Dropdown<int>(
                       value: _cfg.paperMm,
-                      items: const {80: 'Бумага 80 мм', 58: 'Бумага 58 мм'},
+                      items: {80: tr('Бумага 80 мм', 'Qogʻoz 80 mm'), 58: tr('Бумага 58 мм', 'Qogʻoz 58 mm')},
                       onChanged: (v) => _save(_cfg.copyWith(paperMm: v)),
                     ),
-                    _Btn('Пробная печать', _busy ? null : () => _run(pos.testPrint, 'Пробная страница отправлена на принтер')),
+                    _Btn(tr('Пробная печать', 'Sinov chop etish'), _busy ? null : () => _run(pos.testPrint, tr('Пробная страница отправлена на принтер', 'Sinov sahifasi printerga yuborildi'))),
                   ],
                   extra: Wrap(spacing: 12, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
                     _Dropdown<String>(
                       value: _cfg.kind,
                       items: {
-                        'none': 'Без принтера',
-                        if (Platform.isWindows) 'windows': 'Принтер Windows (USB)',
-                        'network': 'Сетевой принтер (IP)',
+                        'none': tr('Без принтера', 'Printersiz'),
+                        if (Platform.isWindows) 'windows': tr('Принтер Windows (USB)', 'Windows printeri (USB)'),
+                        'network': tr('Сетевой принтер (IP)', 'Tarmoq printeri (IP)'),
                       },
                       onChanged: (v) => _save(_cfg.copyWith(kind: v)),
                     ),
                     if (_cfg.kind == 'windows')
                       _Dropdown<String>(
                         value: _winPrinters.contains(_cfg.name) ? _cfg.name : '',
-                        items: {'': 'Выберите принтер…', for (final n in _winPrinters) n: n},
+                        items: {'': tr('Выберите принтер…', 'Printerni tanlang…'), for (final n in _winPrinters) n: n},
                         onChanged: (v) => _save(_cfg.copyWith(name: v)),
                       ),
                     if (_cfg.kind == 'network')
@@ -136,37 +137,37 @@ class _EquipmentScreenState extends State<EquipmentScreen> {
                         child: TextField(
                           controller: _host,
                           focusNode: _hostFocus,
-                          decoration: const InputDecoration(hintText: '192.168.1.50', labelText: 'IP принтера (порт 9100)'),
+                          decoration: InputDecoration(hintText: '192.168.1.50', labelText: tr('IP принтера (порт 9100)', 'Printer IP manzili (port 9100)')),
                           onSubmitted: (v) => _save(_cfg.copyWith(host: v.trim())),
                         ),
                       ),
                   ]),
                 ),
                 _Row(
-                  title: 'Сканер штрихкодов',
-                  status: _lastScan.isEmpty ? ('отсканируйте товар', C.ts) : ('работает', C.success),
-                  subtitle: _lastScan.isEmpty ? 'Режим «как клавиатура» — отсканируйте любой штрихкод, он появится здесь' : 'Последний скан: $_lastScan',
-                  actions: [_Btn('Проверить ещё раз', () => setState(() => _lastScan = ''))],
+                  title: tr('Сканер штрихкодов', 'Shtrix-kod skaneri'),
+                  status: _lastScan.isEmpty ? (tr('отсканируйте товар', 'mahsulotni skanerlang'), C.ts) : (tr('работает', 'ishlayapti'), C.success),
+                  subtitle: _lastScan.isEmpty ? tr('Режим «как клавиатура» — отсканируйте любой штрихкод, он появится здесь', '«Klaviatura kabi» rejimi — istalgan shtrix-kodni skanerlang, u shu yerda paydo boʻladi') : tr('Последний скан: $_lastScan', 'Oxirgi skan: $_lastScan'),
+                  actions: [_Btn(tr('Проверить ещё раз', 'Yana tekshirish'), () => setState(() => _lastScan = ''))],
                 ),
                 _Row(
-                  title: 'Денежный ящик',
-                  status: ('через принтер', C.ts),
-                  subtitle: 'Открывается командой принтера при оплате наличными',
+                  title: tr('Денежный ящик', 'Pul gʻaladoni'),
+                  status: (tr('через принтер', 'printer orqali'), C.ts),
+                  subtitle: tr('Открывается командой принтера при оплате наличными', 'Naqd toʻlovda printer buyrugʻi bilan ochiladi'),
                   actions: [
                     _Dropdown<bool>(
                       value: _cfg.drawer,
-                      items: const {true: 'Открывать при наличных', false: 'Не открывать'},
+                      items: {true: tr('Открывать при наличных', 'Naqd toʻlovda ochish'), false: tr('Не открывать', 'Ochmaslik')},
                       onChanged: (v) => _save(_cfg.copyWith(drawer: v)),
                     ),
-                    _Btn('Открыть ящик', _busy ? null : () => _run(pos.openDrawer, 'Команда открытия отправлена')),
+                    _Btn(tr('Открыть ящик', 'Gʻaladonni ochish'), _busy ? null : () => _run(pos.openDrawer, tr('Команда открытия отправлена', 'Ochish buyrugʻi yuborildi'))),
                   ],
                 ),
                 _Row(
-                  title: 'Фискальный модуль',
-                  status: p.fiscalMode && (fs?.ready ?? false) ? ('работает', C.success) : ('не подключён', C.warning),
+                  title: tr('Фискальный модуль', 'Fiskal modul'),
+                  status: p.fiscalMode && (fs?.ready ?? false) ? (tr('работает', 'ishlayapti'), C.success) : (tr('не подключён', 'ulanmagan'), C.warning),
                   subtitle: p.fiscalMode
-                      ? '${fs?.title ?? ''}${fs != null && fs.pending > 0 ? ' · ждут отправки в ОФД: ${fs.pending}' : ''}'
-                      : 'Тестовый режим: чеки не фискальные. Модуль подключим по протоколу ОФД, когда касса будет в госреестре.',
+                      ? '${fs?.title ?? ''}${fs != null && fs.pending > 0 ? tr(' · ждут отправки в ОФД: ${fs.pending}', ' · OFDga yuborilishini kutmoqda: ${fs.pending}') : ''}'
+                      : tr('Тестовый режим: чеки не фискальные. Модуль подключим по протоколу ОФД, когда касса будет в госреестре.', 'Test rejimi: cheklar fiskal emas. Kassa davlat reyestriga kiritilgach, modulni OFD protokoli boʻyicha ulaymiz.'),
                   actions: const [],
                 ),
                 if (_note != null) ...[
@@ -176,7 +177,7 @@ class _EquipmentScreenState extends State<EquipmentScreen> {
                 const SizedBox(height: 16),
                 Row(children: [
                   Expanded(
-                    child: Text('Принтер печатает напрямую командами ESC/POS. Кириллица — кодовая страница 866.', style: t(13, c: C.ts)),
+                    child: Text(tr('Принтер печатает напрямую командами ESC/POS. Кириллица — кодовая страница 866.', 'Printer toʻgʻridan-toʻgʻri ESC/POS buyruqlari bilan chop etadi. Kirill yozuvi — 866 kod sahifasi.'), style: t(13, c: C.ts)),
                   ),
                   Material(
                     color: C.brand,
@@ -186,7 +187,7 @@ class _EquipmentScreenState extends State<EquipmentScreen> {
                       onTap: () => Navigator.of(context).pop(),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                        child: Text('Готово · Enter', style: t(15, w: FontWeight.w600, c: Colors.white)),
+                        child: Text(tr('Готово · Enter', 'Tayyor · Enter'), style: t(15, w: FontWeight.w600, c: Colors.white)),
                       ),
                     ),
                   ),

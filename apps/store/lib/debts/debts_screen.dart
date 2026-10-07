@@ -17,7 +17,7 @@ class DebtsScreen extends StatefulWidget {
   State<DebtsScreen> createState() => _DebtsScreenState();
 }
 
-const _sides = [('we_owe', 'Мы должны'), ('they_owe', 'Нам должны'), ('all', 'Все')];
+List<(String, String)> get _sides => [('we_owe', tr('Мы должны', 'Qarzimiz')), ('they_owe', tr('Нам должны', 'Bizga qarzdor')), ('all', tr('Все', 'Hammasi'))];
 const _tones = [
   (AppColors.primarySoft, AppColors.primary),
   (AppColors.blueSoft, AppColors.blue),
@@ -79,13 +79,13 @@ class _DebtsScreenState extends State<DebtsScreen> {
             ? TextField(
                 controller: _q,
                 autofocus: true,
-                decoration: const InputDecoration(hintText: 'Поставщик или телефон', border: InputBorder.none, filled: false),
+                decoration: InputDecoration(hintText: tr('Поставщик или телефон', 'Yetkazib beruvchi yoki telefon'), border: InputBorder.none, filled: false),
                 onChanged: (_) {
                   _debounce?.cancel();
                   _debounce = Timer(const Duration(milliseconds: 300), _load);
                 },
               )
-            : const Text('Долги поставщикам'),
+            : Text(tr('Долги поставщикам', 'Yetkazib beruvchilarga qarzlar')),
         actions: [
           IconButton(
             icon: Icon(_search ? Icons.close_rounded : Icons.search_rounded),
@@ -107,15 +107,15 @@ class _DebtsScreenState extends State<DebtsScreen> {
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(color: AppColors.ink, borderRadius: BorderRadius.circular(20)),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Мы должны поставщикам', style: AppText.small.copyWith(color: AppColors.muted)),
+                Text(tr('Мы должны поставщикам', 'Yetkazib beruvchilarga qarzimiz'), style: AppText.small.copyWith(color: AppColors.muted)),
                 Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
                   Text(money(d['we_owe'], suffix: false), style: AppText.h1.copyWith(color: AppColors.white, fontSize: 30)),
                   const SizedBox(width: 6),
-                  Text('сум', style: AppText.bodyStrong.copyWith(color: AppColors.muted)),
+                  Text(tr('сум', 'soʻm'), style: AppText.bodyStrong.copyWith(color: AppColors.muted)),
                 ]),
                 Text(
-                  '${d['we_owe_count']} ${plural((d['we_owe_count'] as num).toInt(), 'поставщик', 'поставщика', 'поставщиков')}'
-                  '${(num.tryParse('${d['they_owe']}') ?? 0) > 0 ? ' · нам должны ${money(d['they_owe'], suffix: false)}' : ''}',
+                  '${d['we_owe_count']} ${tr(plural((d['we_owe_count'] as num).toInt(), 'поставщик', 'поставщика', 'поставщиков'), 'ta yetkazib beruvchi')}'
+                  '${(num.tryParse('${d['they_owe']}') ?? 0) > 0 ? tr(' · нам должны ${money(d['they_owe'], suffix: false)}', ' · bizga qarzdor: ${money(d['they_owe'], suffix: false)}') : ''}',
                   style: AppText.small.copyWith(color: AppColors.muted),
                 ),
               ]),
@@ -137,9 +137,9 @@ class _DebtsScreenState extends State<DebtsScreen> {
           if (d == null)
             _error == null
                 ? const Padding(padding: EdgeInsets.only(top: 40), child: Center(child: CircularProgressIndicator()))
-                : EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: '$_error', action: 'Повторить', onAction: _load)
+                : EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load)
           else if (items.isEmpty)
-            EmptyState(icon: Icons.handshake_outlined, title: _side == 'they_owe' ? 'Нам никто не должен' : 'Долгов нет')
+            EmptyState(icon: Icons.handshake_outlined, title: _side == 'they_owe' ? tr('Нам никто не должен', 'Bizga hech kim qarzdor emas') : tr('Долгов нет', 'Qarz yoʻq'))
           else
             AppCard(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
@@ -174,7 +174,9 @@ class _DebtRow extends StatelessWidget {
     final bal = num.tryParse('${s['balance']}') ?? 0;
     final days = (s['days_unpaid'] as num?)?.toInt();
     final long = days != null && days >= longUnpaidDays;
-    final sub = s['last_payment_at'] != null ? 'оплата ${_ago(s['last_payment_at'])}' : (bal > 0 ? 'оплат не было' : 'нам должны');
+    final sub = s['last_payment_at'] != null
+        ? tr('оплата ${_ago(s['last_payment_at'])}', 'toʻlov ${_ago(s['last_payment_at'])}')
+        : (bal > 0 ? tr('оплат не было', 'toʻlov boʻlmagan') : tr('нам должны', 'bizga qarzdor'));
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
@@ -197,7 +199,7 @@ class _DebtRow extends StatelessWidget {
                 Row(children: [
                   const Icon(Icons.schedule_rounded, size: 14, color: AppColors.primary),
                   const SizedBox(width: 4),
-                  Text('$days ${plural(days, 'день', 'дня', 'дней')} без оплаты',
+                  Text(tr('$days ${plural(days, 'день', 'дня', 'дней')} без оплаты', '$days kundan beri toʻlovsiz'),
                       style: AppText.caption.copyWith(color: AppColors.primary)),
                 ]),
             ]),

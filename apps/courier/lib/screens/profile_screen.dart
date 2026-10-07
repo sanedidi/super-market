@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:sm_core/sm_core.dart' show confirmSheet, formatPhone, infoSheet, promptSheet;
+import 'package:sm_core/sm_core.dart' show Lang, confirmSheet, formatPhone, infoSheet, pickLanguage, promptSheet, tr;
 
 import '../logic.dart';
 import '../main.dart';
@@ -22,7 +22,7 @@ class ProfileScreen extends StatelessWidget {
     final top = MediaQuery.paddingOf(context).top;
     return Scaffold(
       body: ListView(padding: EdgeInsets.fromLTRB(20, top + 12, 20, 24), children: [
-        const Text('Профиль', style: AppText.h1),
+        Text(tr('Профиль', 'Profil'), style: AppText.h1),
         const SizedBox(height: 18),
         Row(children: [
           Container(
@@ -36,7 +36,7 @@ class ProfileScreen extends StatelessWidget {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(name, style: AppText.h3),
               Text(
-                [if ('${me['login'] ?? ''}'.isNotEmpty) 'Логин ${me['login']}', formatPhone(me['phone'])].where((x) => x.isNotEmpty).join(' · '),
+                [if ('${me['login'] ?? ''}'.isNotEmpty) tr('Логин ${me['login']}', 'Login: ${me['login']}'), formatPhone(me['phone'])].where((x) => x.isNotEmpty).join(' · '),
                 style: AppText.body.copyWith(color: const Color(0xFF8E8E93)),
               ),
             ]),
@@ -44,13 +44,15 @@ class ProfileScreen extends StatelessWidget {
         ]),
         const SizedBox(height: 18),
         _Group(children: [
-          _Item(icon: Icons.storefront_rounded, title: '${me['network_name'] ?? ''}', trailing: const Text('сеть', style: _gray)),
-          _Item(icon: vehicleIcons[st.vehicle] ?? Icons.directions_walk_rounded, title: 'Транспорт', trailing: Text(vehicleTitles[st.vehicle] ?? st.vehicle, style: _gray)),
+          _Item(icon: Icons.storefront_rounded, title: '${me['network_name'] ?? ''}', trailing: Text(tr('сеть', 'tarmoq'), style: _gray)),
+          _Item(icon: vehicleIcons[st.vehicle] ?? Icons.directions_walk_rounded, title: tr('Транспорт', 'Transport'), trailing: Text(vehicleTitles[st.vehicle] ?? st.vehicle, style: _gray)),
           _Item(
             icon: Icons.my_location_rounded,
-            title: 'Геопозиция',
+            title: tr('Геопозиция', 'Joylashuv'),
             trailing: Text(
-              !st.onShift ? 'только на смене' : (st.locationProblem == null ? 'передаётся' : 'не передаётся'),
+              !st.onShift
+                  ? tr('только на смене', 'faqat smenada')
+                  : (st.locationProblem == null ? tr('передаётся', 'uzatilmoqda') : tr('не передаётся', 'uzatilmayapti')),
               style: _gray.copyWith(color: st.onShift && st.locationProblem != null ? AppColors.error : null),
             ),
             onTap: st.onShift && st.locationProblem != null ? st.openLocationSettings : null,
@@ -58,40 +60,56 @@ class ProfileScreen extends StatelessWidget {
           for (final s in stores)
             _Item(
               icon: Icons.call_rounded,
-              title: 'Позвонить: ${s['name']}',
+              title: tr('Позвонить: ${s['name']}', 'Qoʻngʻiroq: ${s['name']}'),
               trailing: const Icon(Icons.chevron_right_rounded, color: Color(0xFF8E8E93)),
               onTap: '${s['phone'] ?? ''}'.isEmpty ? null : () => call(context, '${s['phone']}'),
             ),
           // Figma К8а: политика и запрос на удаление аккаунта.
           _Item(
             icon: Icons.policy_rounded,
-            title: 'Политика конфиденциальности',
+            title: tr('Политика конфиденциальности', 'Maxfiylik siyosati'),
             trailing: const Icon(Icons.chevron_right_rounded, color: Color(0xFF8E8E93)),
             onTap: () => openLink(context, privacyUrl),
           ),
-          _Item(icon: Icons.person_remove_rounded, title: 'Удалить аккаунт', color: AppColors.primary, onTap: () => _requestDeletion(context, st)),
+          _Item(icon: Icons.person_remove_rounded, title: tr('Удалить аккаунт', 'Akkauntni oʻchirish'), color: AppColors.primary, onTap: () => _requestDeletion(context, st)),
         ]),
         const SizedBox(height: 18),
         _Group(children: [
-          const _Item(icon: Icons.lock_reset_rounded, title: 'Сменить пароль', trailing: Text('у менеджера', style: _gray)),
+          _Item(
+            icon: Icons.language_rounded,
+            title: tr('Язык', 'Til'),
+            trailing: Text(Lang.names[Lang.instance.code]!, style: _gray),
+            onTap: () async {
+              final code = await pickLanguage(context);
+              if (code == null || !st.api.loggedIn) return;
+              try {
+                await st.api.put('/me/language', {'language': code});
+              } catch (_) {
+                // Не сохранилось на сервере — уведомления придут на прежнем языке.
+              }
+            },
+          ),
+          _Item(icon: Icons.lock_reset_rounded, title: tr('Сменить пароль', 'Parolni almashtirish'), trailing: Text(tr('у менеджера', 'menejerda'), style: _gray)),
           _Item(
             icon: Icons.logout_rounded,
-            title: 'Выйти',
+            title: tr('Выйти', 'Chiqish'),
             color: AppColors.primary,
             onTap: () async {
               final ok = await confirmSheet(
                 context,
                 icon: Icons.logout_rounded,
-                title: 'Выйти из приложения?',
-                text: st.onShift ? 'Смена завершится, магазин перестанет назначать вам заказы.' : 'Чтобы войти снова, понадобятся логин и пароль.',
-                confirm: 'Выйти',
+                title: tr('Выйти из приложения?', 'Ilovadan chiqasizmi?'),
+                text: st.onShift
+                    ? tr('Смена завершится, магазин перестанет назначать вам заказы.', 'Smena yakunlanadi, doʻkon sizga buyurtma biriktirishni toʻxtatadi.')
+                    : tr('Чтобы войти снова, понадобятся логин и пароль.', 'Qayta kirish uchun login va parol kerak boʻladi.'),
+                confirm: tr('Выйти', 'Chiqish'),
               );
               if (ok) await st.logout();
             },
           ),
         ]),
         const SizedBox(height: 18),
-        Text('Super Market Курьер · версия $appVersion', textAlign: TextAlign.center, style: AppText.small.copyWith(color: AppColors.muted)),
+        Text(tr('Super Market Курьер · версия $appVersion', 'Super Market Kuryer · versiya $appVersion'), textAlign: TextAlign.center, style: AppText.small.copyWith(color: AppColors.muted)),
       ]),
     );
   }
@@ -101,11 +119,12 @@ class ProfileScreen extends StatelessWidget {
 Future<void> _requestDeletion(BuildContext context, CourierState st) async {
   final reason = await promptSheet(
     context,
-    title: 'Удалить аккаунт?',
-    text: 'Ваш аккаунт создал магазин, поэтому удаляем по запросу — в течение 30 дней. Магазин и поддержка получат уведомление.',
-    confirm: 'Отправить запрос',
+    title: tr('Удалить аккаунт?', 'Akkauntni oʻchirasizmi?'),
+    text: tr('Ваш аккаунт создал магазин, поэтому удаляем по запросу — в течение 30 дней. Магазин и поддержка получат уведомление.',
+        'Akkauntingizni doʻkon yaratgan, shuning uchun uni soʻrov boʻyicha 30 kun ichida oʻchiramiz. Doʻkon va qoʻllab-quvvatlash xizmati xabardor qilinadi.'),
+    confirm: tr('Отправить запрос', 'Soʻrov yuborish'),
     options: deletionReasons,
-    hint: 'Комментарий (необязательно)',
+    hint: tr('Комментарий (необязательно)', 'Izoh (ixtiyoriy)'),
     requireValue: false,
     maxLength: 500,
   );
@@ -116,8 +135,9 @@ Future<void> _requestDeletion(BuildContext context, CourierState st) async {
     await infoSheet(
       context,
       icon: Icons.mark_email_read_rounded,
-      title: 'Запрос отправлен',
-      text: 'Удалим аккаунт в течение 30 дней. Магазин и поддержка получили уведомление.',
+      title: tr('Запрос отправлен', 'Soʻrov yuborildi'),
+      text: tr('Удалим аккаунт в течение 30 дней. Магазин и поддержка получили уведомление.',
+          'Akkauntni 30 kun ichida oʻchiramiz. Doʻkon va qoʻllab-quvvatlash xizmati xabardor qilindi.'),
     );
   } catch (e) {
     if (context.mounted) showMessage(context, e);

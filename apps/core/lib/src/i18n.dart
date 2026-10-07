@@ -44,6 +44,13 @@ class Lang extends ChangeNotifier {
     if (v != null && supported.contains(v)) _code = v;
   }
 
+  /// Только для тестов: язык без сохранения и перерисовки
+  /// (`setUpAll(() => Lang.instance.debugUse(Lang.ru))` — проверки на русском).
+  @visibleForTesting
+  void debugUse(String code) {
+    if (supported.contains(code)) _code = code;
+  }
+
   /// Сменить язык: сохраняет выбор и перерисовывает весь интерфейс без
   /// потери навигации и состояния экранов.
   Future<void> set(String code) async {
@@ -192,4 +199,17 @@ class LangSwitch extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Ссылка на документ сайта (политика, оферта, условия для курьеров,
+/// удаление аккаунта) на языке приложения: на super-market.uz узбекская
+/// версия — по адресу без суффикса, русская — с `/ru`. Остальные ссылки — как есть.
+String docUrl(String url) {
+  const docs = {'/privacy', '/offer', '/offer/stores', '/courier-terms', '/delete-account'};
+  final u = Uri.tryParse(url);
+  if (u == null || !(u.host == 'super-market.uz' || u.host.endsWith('.super-market.uz'))) return url;
+  var path = u.path.endsWith('/') ? u.path.substring(0, u.path.length - 1) : u.path;
+  if (path.endsWith('/ru') || path.endsWith('/uz')) path = path.substring(0, path.length - 3);
+  if (!docs.contains(path)) return url;
+  return u.replace(path: Lang.instance.isRu ? '$path/ru' : path).toString();
 }

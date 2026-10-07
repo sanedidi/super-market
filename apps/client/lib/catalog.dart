@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sm_core/sm_core.dart';
 
 /// Категория каталога магазина с подкатегориями и числом товаров.
 class CatalogCategory {
@@ -50,13 +51,14 @@ List<({String? id, String title, List<CatalogCategory> tiles})> catalogSections(
   final leaves = roots.where((c) => c.children.isEmpty).toList();
   return [
     for (final c in roots.where((c) => c.children.isNotEmpty)) (id: c.id, title: c.name, tiles: c.children),
-    if (leaves.isNotEmpty) (id: null, title: 'Каталог', tiles: leaves),
+    if (leaves.isNotEmpty) (id: null, title: tr('Каталог', 'Katalog'), tiles: leaves),
   ];
 }
 
-/// Иконка плитки по названию категории (если нет картинки).
+/// Иконка плитки по названию категории (если нет картинки). Название
+/// приходит на языке приложения — ключи и русские, и узбекские (без апострофов).
 IconData categoryIcon(String name) {
-  final n = name.toLowerCase();
+  final n = name.toLowerCase().replaceAll(RegExp('[ʻʼ‘’`\']'), '');
   const map = <String, IconData>{
     'молоч': Icons.local_drink_outlined,
     'сыр': Icons.local_pizza_outlined,
@@ -93,6 +95,39 @@ IconData categoryIcon(String name) {
     'кухн': Icons.kitchen_outlined,
     'электр': Icons.electrical_services_outlined,
     'канцел': Icons.edit_outlined,
+    'sut': Icons.local_drink_outlined,
+    'pishloq': Icons.local_pizza_outlined,
+    'sabzavot': Icons.eco_outlined,
+    'meva': Icons.apple,
+    'rezavor': Icons.eco_outlined,
+    'gosht': Icons.set_meal_outlined,
+    'kolbasa': Icons.lunch_dining_outlined,
+    'parranda': Icons.egg_alt_outlined,
+    'baliq': Icons.phishing_outlined,
+    'non': Icons.bakery_dining_outlined,
+    'pishiriq': Icons.bakery_dining_outlined,
+    'ichimlik': Icons.local_cafe_outlined,
+    'sharbat': Icons.local_drink_outlined,
+    'suv': Icons.water_drop_outlined,
+    'shirinlik': Icons.cake_outlined,
+    'qandolat': Icons.cake_outlined,
+    'muzqaymoq': Icons.icecream_outlined,
+    'muzlatilgan': Icons.ac_unit_rounded,
+    'yorma': Icons.rice_bowl_outlined,
+    'gazak': Icons.fastfood_outlined,
+    'kimyo': Icons.cleaning_services_outlined,
+    'tozala': Icons.cleaning_services_outlined,
+    'maishiy': Icons.cleaning_services_outlined,
+    'gigiyena': Icons.soap_outlined,
+    'bolalar': Icons.child_friendly_outlined,
+    'mushuk': Icons.pets_outlined,
+    'hayvon': Icons.pets_outlined,
+    'choy': Icons.emoji_food_beverage_outlined,
+    'qahva': Icons.coffee_outlined,
+    'tuxum': Icons.egg_outlined,
+    'oshxona': Icons.kitchen_outlined,
+    'elektr': Icons.electrical_services_outlined,
+    'kanselyar': Icons.edit_outlined,
   };
   for (final e in map.entries) {
     if (n.contains(e.key)) return e.value;

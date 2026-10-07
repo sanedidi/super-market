@@ -130,6 +130,8 @@ class SaleRecord {
           {
             'product_id': l.product.id,
             'name': l.product.name,
+            // Для фискального чека — исходное (русское) название.
+            'fiscal_name': l.product.fiscalName,
             'unit': l.product.unit,
             'qty': l.qty,
             'price': l.price,

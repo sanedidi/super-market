@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart';
 
 import '../main.dart';
 import '../state.dart';
@@ -49,14 +50,14 @@ class HelpScreen extends StatelessWidget {
       backgroundColor: AppColors.white,
       body: SafeArea(
         child: Column(children: [
-          const PageHeader(title: 'Помощь и поддержка'),
+          PageHeader(title: tr('Помощь и поддержка', 'Yordam va qoʻllab-quvvatlash')),
           Expanded(
             child: ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 24), children: [
               if (support.isNotEmpty) ...[
-                card(Icons.headset_mic_rounded, AppColors.dark, 'Служба поддержки', () => go(support)),
-                card(Icons.send_rounded, const Color(0xFF2AABEE), 'Телеграм бот', () => go(support)),
+                card(Icons.headset_mic_rounded, AppColors.dark, tr('Служба поддержки', 'Qoʻllab-quvvatlash xizmati'), () => go(support)),
+                card(Icons.send_rounded, const Color(0xFF2AABEE), tr('Телеграм бот', 'Telegram bot'), () => go(support)),
               ],
-              card(Icons.description_rounded, AppColors.dark, 'Политика конфиденциальности', () => go(privacy)),
+              card(Icons.description_rounded, AppColors.dark, tr('Политика конфиденциальности', 'Maxfiylik siyosati'), () => go(privacy)),
             ]),
           ),
         ]),

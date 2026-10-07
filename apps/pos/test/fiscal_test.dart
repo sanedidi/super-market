@@ -14,6 +14,7 @@ import 'package:sm_pos/printer/receipts.dart';
 import 'package:sm_pos/state/pos.dart';
 
 import 'flow_test.dart' show FakeServer, until;
+import 'package:sm_core/sm_core.dart' as sm_i18n;
 
 /// Модуль-заглушка: подписывает всё, что прошло проверку.
 class FakeFiscal implements FiscalModule {
@@ -67,6 +68,9 @@ SaleRecord _sale({String ikpu = '10520001001000000', String pkg = '1501837'}) =>
     );
 
 void main() {
+  // Проверки написаны на русском; язык по умолчанию в приложениях — узбекский.
+  setUpAll(() => sm_i18n.Lang.instance.debugUse(sm_i18n.Lang.ru));
+
   test('PC866: кириллица, №, узбекские буквы', () {
     expect(encode866('АЯая№'), [0x80, 0x9F, 0xA0, 0xEF, 0xFC]);
     expect(encode866('Ўў'), [0xF6, 0xF7]);

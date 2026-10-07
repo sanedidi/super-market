@@ -63,16 +63,17 @@ class _BalanceScreenState extends State<BalanceScreen> {
   Future<void> _pay(Map<String, dynamic> inv) async {
     final ok = await confirmSheet(
       context,
-      title: 'Оплатить счёт с баланса?',
-      text: 'Счёт за ${inv['period']} — ${money(inv['amount_uzs'])}. Сумма спишется с баланса к выводу.',
-      confirm: 'Оплатить',
+      title: tr('Оплатить счёт с баланса?', 'Hisob-varaq balansdan toʻlansinmi?'),
+      text: tr('Счёт за ${inv['period']} — ${money(inv['amount_uzs'])}. Сумма спишется с баланса к выводу.',
+          '${inv['period']} uchun hisob-varaq — ${money(inv['amount_uzs'])}. Summa yechib olish mumkin boʻlgan balansdan yechiladi.'),
+      confirm: tr('Оплатить', 'Toʻlash'),
     );
     if (!ok || !mounted) return;
     setState(() => _paying = inv['id'] as String);
     try {
       await context.read<Api>().post('/store/billing/invoices/${inv['id']}/pay');
       if (!mounted) return;
-      showMessage(context, 'Счёт оплачен');
+      showMessage(context, tr('Счёт оплачен', 'Hisob-varaq toʻlandi'));
       await _load();
     } catch (e) {
       if (mounted) showMessage(context, e);
@@ -97,28 +98,31 @@ class _BalanceScreenState extends State<BalanceScreen> {
     final b = _balance;
     final bill = _billing;
     return Scaffold(
-      appBar: AppBar(title: const Text('Баланс и подписка')),
+      appBar: AppBar(title: Text(tr('Баланс и подписка', 'Balans va obuna'))),
       body: b == null || bill == null
           ? Center(
               child: _error == null
                   ? const CircularProgressIndicator()
-                  : EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: '$_error', action: 'Повторить', onAction: _load),
+                  : EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load),
             )
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
                 AppCard(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('К выводу', style: AppText.small),
+                    Text(tr('К выводу', 'Yechish mumkin'), style: AppText.small),
                     Text(money(b['available']), style: AppText.h1.copyWith(fontSize: 30)),
                     const SizedBox(height: 4),
-                    Text('Ждёт доставки: ${money(b['pending'])}', style: AppText.small),
+                    Text(tr('Ждёт доставки: ${money(b['pending'])}', 'Yetkazilishini kutmoqda: ${money(b['pending'])}'), style: AppText.small),
                     const SizedBox(height: 14),
                     if (b['next_payout_at'] != null)
-                      Text('Следующий вывод можно запросить ${dateTime(b['next_payout_at'])}', style: AppText.small)
+                      Text(
+                          tr('Следующий вывод можно запросить ${dateTime(b['next_payout_at'])}',
+                              'Keyingi yechib olishni ${dateTime(b['next_payout_at'])} dan soʻrash mumkin'),
+                          style: AppText.small)
                     else
                       BigButton(
-                        label: 'Вывести деньги',
+                        label: tr('Вывести деньги', 'Pulni yechib olish'),
                         icon: Icons.account_balance_rounded,
                         height: 48,
                         onPressed: n(b['available']) > 0 ? _requestPayout : null,
@@ -129,20 +133,22 @@ class _BalanceScreenState extends State<BalanceScreen> {
                 if (subscriptionReadOnly)
                   SubscriptionInfoCard(bill: bill)
                 else ...[
-                  const Text('Подписка', style: AppText.h3),
+                  Text(tr('Подписка', 'Obuna'), style: AppText.h3),
                   const SizedBox(height: 10),
                   AppCard(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Row(children: [
-                        Expanded(child: Text('\$${money(bill['monthly_usd'], suffix: false)} в месяц', style: AppText.title)),
+                        Expanded(
+                            child: Text(tr('\$${money(bill['monthly_usd'], suffix: false)} в месяц', 'Oyiga \$${money(bill['monthly_usd'], suffix: false)}'),
+                                style: AppText.title)),
                         StatusChip(
                           billingStatus(bill),
                           tone: bill['overdue'] == true ? ChipTone.red : (n(bill['unpaid_uzs']) > 0 ? ChipTone.amber : ChipTone.green),
                         ),
                       ]),
                       const SizedBox(height: 6),
-                      Text('Магазинов: ${bill['stores_count'] ?? 0} × \$${money(bill['price_per_store'], suffix: false)}', style: AppText.small),
-                      if (n(bill['unpaid_uzs']) > 0) Text('К оплате: ${money(bill['unpaid_uzs'])}', style: AppText.bodyStrong),
+                      Text('${tr('Магазинов', 'Doʻkonlar')}: ${bill['stores_count'] ?? 0} × \$${money(bill['price_per_store'], suffix: false)}', style: AppText.small),
+                      if (n(bill['unpaid_uzs']) > 0) Text('${tr('К оплате', 'Toʻlash kerak')}: ${money(bill['unpaid_uzs'])}', style: AppText.bodyStrong),
                     ]),
                   ),
                 ],
@@ -153,31 +159,36 @@ class _BalanceScreenState extends State<BalanceScreen> {
                       border: inv['overdue'] == true ? AppColors.primary : null,
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Row(children: [
-                          Expanded(child: Text('Счёт за ${inv['period']}', style: AppText.bodyStrong)),
+                          Expanded(child: Text(tr('Счёт за ${inv['period']}', '${inv['period']} uchun hisob-varaq'), style: AppText.bodyStrong)),
                           Text(money(inv['amount_uzs']), style: AppText.bodyStrong),
                         ]),
                         Text(
-                          inv['overdue'] == true ? 'Просрочен · срок был ${inv['due_date']}' : 'Оплатить до ${inv['due_date']}',
+                          inv['overdue'] == true
+                              ? tr('Просрочен · срок был ${inv['due_date']}', 'Muddati oʻtgan · muddat ${inv['due_date']} edi')
+                              : tr('Оплатить до ${inv['due_date']}', '${inv['due_date']} gacha toʻlang'),
                           style: AppText.small.copyWith(color: inv['overdue'] == true ? AppColors.primary : AppColors.text2),
                         ),
                         const SizedBox(height: 10),
                         BigButton(
-                          label: 'Оплатить с баланса',
+                          label: tr('Оплатить с баланса', 'Balansdan toʻlash'),
                           height: 44,
                           busy: _paying == inv['id'],
                           onPressed: _paying == null && n(b['available']) >= n(inv['amount_uzs']) ? () => _pay(inv) : null,
                         ),
                         if (n(b['available']) < n(inv['amount_uzs']))
-                          const Padding(
-                            padding: EdgeInsets.only(top: 6),
-                            child: Text('На балансе не хватает — оплатите счёт другим способом, реквизиты у администратора платформы.', style: AppText.small),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                                tr('На балансе не хватает — оплатите счёт другим способом, реквизиты у администратора платформы.',
+                                    'Balansda yetarli emas — hisob-varaqni boshqa usulda toʻlang, rekvizitlar platforma administratorida.'),
+                                style: AppText.small),
                           ),
                       ]),
                     ),
                   ],
                 if (_payouts.isNotEmpty) ...[
                   const SizedBox(height: 20),
-                  const Text('Заявки на вывод', style: AppText.h3),
+                  Text(tr('Заявки на вывод', 'Yechib olish soʻrovlari'), style: AppText.h3),
                   const SizedBox(height: 10),
                   AppCard(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -193,7 +204,11 @@ class _BalanceScreenState extends State<BalanceScreen> {
                               ]),
                             ),
                             StatusChip(
-                              switch (p['status']) { 'paid' => 'Выплачено', 'rejected' => 'Отклонено', _ => 'На рассмотрении' },
+                              switch (p['status']) {
+                                'paid' => tr('Выплачено', 'Toʻlab berildi'),
+                                'rejected' => tr('Отклонено', 'Rad etildi'),
+                                _ => tr('На рассмотрении', 'Koʻrib chiqilmoqda'),
+                              },
                               tone: switch (p['status']) { 'paid' => ChipTone.green, 'rejected' => ChipTone.red, _ => ChipTone.amber },
                             ),
                           ]),
@@ -203,7 +218,7 @@ class _BalanceScreenState extends State<BalanceScreen> {
                 ],
                 if (_entries.isNotEmpty) ...[
                   const SizedBox(height: 20),
-                  const Text('Движения баланса', style: AppText.h3),
+                  Text(tr('Движения баланса', 'Balans harakati'), style: AppText.h3),
                   const SizedBox(height: 10),
                   AppCard(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -215,7 +230,7 @@ class _BalanceScreenState extends State<BalanceScreen> {
                             Expanded(
                               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                 Text(
-                                  e['order_number'] != null ? 'Заказ № ${e['order_number']}' : balanceKindTitle(e['kind'] as String?),
+                                  e['order_number'] != null ? '${tr('Заказ', 'Buyurtma')} № ${e['order_number']}' : balanceKindTitle(e['kind'] as String?),
                                   style: AppText.body,
                                 ),
                                 Text(dateTime(e['created_at']), style: AppText.small),
@@ -253,7 +268,7 @@ class SubscriptionInfoCard extends StatelessWidget {
     return AppCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          const Expanded(child: Text('Подписка', style: AppText.title)),
+          Expanded(child: Text(tr('Подписка', 'Obuna'), style: AppText.title)),
           StatusChip(
             billingStatus(bill),
             icon: bill['overdue'] != true && n(bill['unpaid_uzs']) <= 0 ? Icons.check_circle_rounded : null,
@@ -261,9 +276,9 @@ class SubscriptionInfoCard extends StatelessWidget {
           ),
         ]),
         const SizedBox(height: 8),
-        if (tariff.isNotEmpty) _row('Тариф', tariff),
-        _row('Магазинов', '${bill['stores_count'] ?? 0}'),
-        if (paidUntil != null) _row('Оплачено до', ruDate(paidUntil)),
+        if (tariff.isNotEmpty) _row(tr('Тариф', 'Tarif'), tariff),
+        _row(tr('Магазинов', 'Doʻkonlar'), '${bill['stores_count'] ?? 0}'),
+        if (paidUntil != null) _row(tr('Оплачено до', 'Toʻlangan muddat'), ruDate(paidUntil)),
       ]),
     );
   }
@@ -304,11 +319,11 @@ class _PayoutSheetState extends State<_PayoutSheet> {
     final v = num.tryParse(plainAmount(_amount.text));
     String? err;
     if (v == null || v <= 0) {
-      err = 'Введите сумму больше нуля';
+      err = tr('Введите сумму больше нуля', 'Noldan katta summani kiriting');
     } else if (v > n(widget.available)) {
-      err = 'Больше, чем доступно к выводу';
+      err = tr('Больше, чем доступно к выводу', 'Yechish mumkin boʻlgan summadan koʻp');
     } else if (_requisites.text.trim().isEmpty) {
-      err = 'Укажите реквизиты: счёт или карту для перевода';
+      err = tr('Укажите реквизиты: счёт или карту для перевода', 'Rekvizitlarni kiriting: oʻtkazma uchun hisob raqami yoki karta');
     }
     if (err != null) {
       setState(() => _error = err);
@@ -324,7 +339,7 @@ class _PayoutSheetState extends State<_PayoutSheet> {
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       Navigator.of(context).pop(true);
-      messenger.showSnackBar(const SnackBar(content: Text('Заявка на вывод отправлена')));
+      messenger.showSnackBar(SnackBar(content: Text(tr('Заявка на вывод отправлена', 'Yechib olish soʻrovi yuborildi'))));
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -338,25 +353,26 @@ class _PayoutSheetState extends State<_PayoutSheet> {
       padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
       child: SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Вывести деньги', style: AppText.h3),
+          Text(tr('Вывести деньги', 'Pulni yechib olish'), style: AppText.h3),
           const SizedBox(height: 4),
-          Text('Доступно ${money(widget.available)}. Вывод — раз в 7 дней.', style: AppText.small),
+          Text(tr('Доступно ${money(widget.available)}. Вывод — раз в 7 дней.', 'Mavjud: ${money(widget.available)}. Yechib olish — 7 kunda bir marta.'),
+              style: AppText.small),
           const SizedBox(height: 16),
           TextField(
             controller: _amount,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,\s]'))],
             style: AppText.h2,
-            decoration: const InputDecoration(labelText: 'Сумма', suffixText: 'сум'),
+            decoration: InputDecoration(labelText: tr('Сумма', 'Summa'), suffixText: tr('сум', 'soʻm')),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _requisites,
             maxLines: 2,
-            decoration: InputDecoration(labelText: 'Реквизиты (счёт, МФО или карта)', errorText: _error),
+            decoration: InputDecoration(labelText: tr('Реквизиты (счёт, МФО или карта)', 'Rekvizitlar (hisob raqami, MFO yoki karta)'), errorText: _error),
           ),
           const SizedBox(height: 20),
-          BigButton(label: 'Отправить заявку', icon: Icons.send_rounded, busy: _busy, onPressed: _submit),
+          BigButton(label: tr('Отправить заявку', 'Soʻrov yuborish'), icon: Icons.send_rounded, busy: _busy, onPressed: _submit),
         ]),
       ),
     );

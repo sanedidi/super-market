@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:sm_core/sm_core.dart' show tr;
 
 /// Настройки принтера кассы (хранятся в printer.json).
 class PrinterConfig {
@@ -27,7 +28,7 @@ class PrinterConfig {
   String get title => switch (kind) {
         'windows' => name,
         'network' => '$host:$port',
-        _ => 'не выбран',
+        _ => tr('не выбран', 'tanlanmagan'),
       };
 
   PrinterConfig copyWith({String? kind, String? name, String? host, int? port, int? paperMm, int? codePage, bool? drawer}) => PrinterConfig(
@@ -69,22 +70,22 @@ Future<void> sendToPrinter(PrinterConfig c, Uint8List data) async {
     case 'network':
       await _sendTcp(c.host, c.port, data);
     case 'windows':
-      if (!Platform.isWindows) throw PrintError('Принтер Windows доступен только на Windows');
+      if (!Platform.isWindows) throw PrintError(tr('Принтер Windows доступен только на Windows', 'Windows printeri faqat Windowsda ishlaydi'));
       _sendWindowsRaw(c.name, data);
     default:
-      throw PrintError('Принтер не выбран — откройте «Оборудование»');
+      throw PrintError(tr('Принтер не выбран — откройте «Оборудование»', 'Printer tanlanmagan — «Uskunalar» boʻlimini oching'));
   }
 }
 
 Future<void> _sendTcp(String host, int port, Uint8List data) async {
-  if (host.isEmpty) throw PrintError('Укажите IP-адрес принтера');
+  if (host.isEmpty) throw PrintError(tr('Укажите IP-адрес принтера', 'Printerning IP-manzilini kiriting'));
   Socket? s;
   try {
     s = await Socket.connect(host, port, timeout: const Duration(seconds: 4));
     s.add(data);
     await s.flush();
   } on SocketException catch (e) {
-    throw PrintError('Принтер $host:$port не отвечает (${e.osError?.message ?? e.message})');
+    throw PrintError(tr('Принтер $host:$port не отвечает (${e.osError?.message ?? e.message})', 'Printer $host:$port javob bermayapti (${e.osError?.message ?? e.message})'));
   } finally {
     await s?.close();
   }
@@ -120,7 +121,7 @@ DynamicLibrary? _spool;
 DynamicLibrary get _winspool => _spool ??= DynamicLibrary.open('winspool.drv');
 
 void _sendWindowsRaw(String printer, Uint8List data) {
-  if (printer.isEmpty) throw PrintError('Выберите принтер Windows');
+  if (printer.isEmpty) throw PrintError(tr('Выберите принтер Windows', 'Windows printerini tanlang'));
   final open = _winspool.lookupFunction<_OpenC, _OpenD>('OpenPrinterW');
   final startDoc = _winspool.lookupFunction<_StartDocC, _StartDocD>('StartDocPrinterW');
   final startPage = _winspool.lookupFunction<_HC, _HD>('StartPagePrinter');
@@ -137,20 +138,20 @@ void _sendWindowsRaw(String printer, Uint8List data) {
   final buf = calloc<Uint8>(data.length);
   final written = calloc<Uint32>();
   try {
-    if (open(name, handle, nullptr) == 0) throw PrintError('Принтер «$printer» не найден в Windows');
+    if (open(name, handle, nullptr) == 0) throw PrintError(tr('Принтер «$printer» не найден в Windows', '«$printer» printeri Windowsda topilmadi'));
     final h = handle.value;
     try {
       doc.ref
         ..pDocName = docName
         ..pOutputFile = nullptr
         ..pDatatype = rawType;
-      if (startDoc(h, 1, doc) == 0) throw PrintError('Windows не принял задание печати');
+      if (startDoc(h, 1, doc) == 0) throw PrintError(tr('Windows не принял задание печати', 'Windows chop etish topshirigʻini qabul qilmadi'));
       startPage(h);
       buf.asTypedList(data.length).setAll(0, data);
       final ok = write(h, buf, data.length, written);
       endPage(h);
       endDoc(h);
-      if (ok == 0 || written.value != data.length) throw PrintError('Принтер «$printer» не принял данные');
+      if (ok == 0 || written.value != data.length) throw PrintError(tr('Принтер «$printer» не принял данные', '«$printer» printeri maʼlumotlarni qabul qilmadi'));
     } finally {
       close(h);
     }

@@ -1,3 +1,5 @@
+import 'package:sm_core/sm_core.dart' show tr;
+
 import 'catalog.dart';
 
 /// Вкладка быстрых кнопок: «Частые» или раздел каталога.
@@ -58,7 +60,7 @@ List<QuickTab> buildQuickTabs(Catalog c) {
   order.addAll(rest);
 
   final rank = <String, int>{for (var i = 0; i < top.length; i++) top[i].id: i};
-  final tabs = <QuickTab>[QuickTab('Частые', frequent, frequent: true)];
+  final tabs = <QuickTab>[QuickTab(tr('Частые', 'Ommabop'), frequent, frequent: true)];
   for (final name in order) {
     final list = [...?byCat[name]];
     if (list.isEmpty) continue;

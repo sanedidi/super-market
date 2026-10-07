@@ -53,26 +53,27 @@ class _SupplierReturnsScreenState extends State<SupplierReturnsScreen> {
   Widget build(BuildContext context) {
     final docs = _docs;
     return Scaffold(
-      appBar: AppBar(title: const Text('Возврат поставщику')),
+      appBar: AppBar(title: Text(tr('Возврат поставщику', 'Yetkazib beruvchiga qaytarish'))),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _new,
         backgroundColor: AppColors.primary,
         foregroundColor: AppColors.white,
         icon: const Icon(Icons.add_rounded),
-        label: const Text('Новый возврат'),
+        label: Text(tr('Новый возврат', 'Yangi qaytarish')),
       ),
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 96), children: [
           if (_error != null && docs == null)
-            EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: '$_error', action: 'Повторить', onAction: _load)
+            EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load)
           else if (docs == null)
             const Padding(padding: EdgeInsets.only(top: 40), child: Center(child: CircularProgressIndicator()))
           else if (docs.isEmpty)
-            const EmptyState(
+            EmptyState(
               icon: Icons.assignment_return_rounded,
-              title: 'Возвратов пока нет',
-              text: 'Брак, просрочка или пересорт — выберите поставщика и товары, долг поставщику уменьшится сам.',
+              title: tr('Возвратов пока нет', 'Hozircha qaytarishlar yoʻq'),
+              text: tr('Брак, просрочка или пересорт — выберите поставщика и товары, долг поставщику уменьшится сам.',
+                  'Brak, muddati oʻtgan yoki notoʻgʻri nav — yetkazib beruvchi va mahsulotlarni tanlang, qarz oʻzi kamayadi.'),
             )
           else
             for (final d in docs) ...[
@@ -82,13 +83,15 @@ class _SupplierReturnsScreenState extends State<SupplierReturnsScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('${d['counterparty_name'] ?? 'Поставщик'} · № ${d['number']}', style: AppText.bodyStrong, overflow: TextOverflow.ellipsis),
-                      Text('${dateTime(d['posted_at'] ?? d['created_at'])} · позиций ${d['items_count'] ?? 0}', style: AppText.small),
+                      Text('${d['counterparty_name'] ?? tr('Поставщик', 'Yetkazib beruvchi')} · № ${d['number']}', style: AppText.bodyStrong, overflow: TextOverflow.ellipsis),
+                      Text(
+                          '${dateTime(d['posted_at'] ?? d['created_at'])} · ${tr('позиций ${d['items_count'] ?? 0}', '${d['items_count'] ?? 0} ta pozitsiya')}',
+                          style: AppText.small),
                     ]),
                   ),
                   Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                     Text(money(d['total']), style: AppText.bodyStrong),
-                    if (d['status'] != 'posted') const StatusChip('Черновик', tone: ChipTone.amber),
+                    if (d['status'] != 'posted') StatusChip(tr('Черновик', 'Qoralama'), tone: ChipTone.amber),
                   ]),
                 ]),
               ),
@@ -175,19 +178,21 @@ class _NewReturnScreenState extends State<NewReturnScreen> {
     );
     if (row == null) return;
     if (_lines.any((l) => l.stock['product_id'] == row['product_id'])) {
-      if (mounted) showMessage(context, 'Этот товар уже в возврате');
+      if (mounted) showMessage(context, tr('Этот товар уже в возврате', 'Bu mahsulot qaytarishda bor'));
       return;
     }
     setState(() => _lines.add(_Line(row)));
   }
 
   String? _check() {
-    if (_supplier == null) return 'Выберите поставщика';
-    if (_lines.isEmpty) return 'Добавьте товары';
+    if (_supplier == null) return tr('Выберите поставщика', 'Yetkazib beruvchini tanlang');
+    if (_lines.isEmpty) return tr('Добавьте товары', 'Mahsulotlarni qoʻshing');
     for (final l in _lines) {
       final q = num.tryParse(plainAmount(l.qty.text));
-      if (q == null || q <= 0) return '${l.stock['product_name']}: укажите количество';
-      if (q > n(l.stock['qty'])) return '${l.stock['product_name']}: на складе только ${qty(l.stock['qty'], '${l.stock['unit_short'] ?? ''}')}';
+      if (q == null || q <= 0) return '${l.stock['product_name']}: ${tr('укажите количество', 'miqdorni kiriting')}';
+      if (q > n(l.stock['qty'])) {
+        return '${l.stock['product_name']}: ${tr('на складе только', 'omborda faqat')} ${qty(l.stock['qty'], '${l.stock['unit_short'] ?? ''}')}';
+      }
     }
     return null;
   }
@@ -222,7 +227,7 @@ class _NewReturnScreenState extends State<NewReturnScreen> {
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       Navigator.of(context).pop(true);
-      messenger.showSnackBar(const SnackBar(content: Text('Возврат проведён, долг поставщику уменьшен')));
+      messenger.showSnackBar(SnackBar(content: Text(tr('Возврат проведён, долг поставщику уменьшен', 'Qaytarish oʻtkazildi, yetkazib beruvchiga qarz kamaydi'))));
     } catch (e) {
       if (mounted) showMessage(context, e);
     } finally {
@@ -234,7 +239,7 @@ class _NewReturnScreenState extends State<NewReturnScreen> {
   Widget build(BuildContext context) {
     final s = _supplier;
     return Scaffold(
-      appBar: AppBar(title: const Text('Новый возврат')),
+      appBar: AppBar(title: Text(tr('Новый возврат', 'Yangi qaytarish'))),
       body: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
         AppCard(
           onTap: _pickSupplier,
@@ -243,10 +248,14 @@ class _NewReturnScreenState extends State<NewReturnScreen> {
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Поставщик', style: AppText.small),
-                Text(s == null ? 'Выбрать' : '${s['name']}', style: AppText.bodyStrong.copyWith(color: s == null ? AppColors.primary : AppColors.ink)),
+                Text(tr('Поставщик', 'Yetkazib beruvchi'), style: AppText.small),
+                Text(s == null ? tr('Выбрать', 'Tanlash') : '${s['name']}', style: AppText.bodyStrong.copyWith(color: s == null ? AppColors.primary : AppColors.ink)),
                 if (s != null && n(s['balance']) != 0)
-                  Text(n(s['balance']) > 0 ? 'Мы должны ${money(s['balance'])}' : 'Он должен ${money(n(s['balance']).abs())}', style: AppText.small),
+                  Text(
+                      n(s['balance']) > 0
+                          ? tr('Мы должны ${money(s['balance'])}', 'Bizning qarzimiz ${money(s['balance'])}')
+                          : tr('Он должен ${money(n(s['balance']).abs())}', 'U qarzdor: ${money(n(s['balance']).abs())}'),
+                      style: AppText.small),
               ]),
             ),
             const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
@@ -254,12 +263,12 @@ class _NewReturnScreenState extends State<NewReturnScreen> {
         ),
         const SizedBox(height: 16),
         Row(children: [
-          Expanded(child: Text('Товары · ${_lines.length}', style: AppText.h3)),
-          TextButton.icon(onPressed: _warehouseId == null ? null : _addProduct, icon: const Icon(Icons.add_rounded), label: const Text('Добавить')),
+          Expanded(child: Text('${tr('Товары', 'Mahsulotlar')} · ${_lines.length}', style: AppText.h3)),
+          TextButton.icon(onPressed: _warehouseId == null ? null : _addProduct, icon: const Icon(Icons.add_rounded), label: Text(tr('Добавить', 'Qoʻshish'))),
         ]),
         const SizedBox(height: 6),
         if (_lines.isEmpty)
-          const AppCard(child: Text('Добавьте товары, которые возвращаете. Цена — по себестоимости.', style: AppText.small))
+          AppCard(child: Text(tr('Добавьте товары, которые возвращаете. Цена — по себестоимости.', 'Qaytariladigan mahsulotlarni qoʻshing. Narx — tannarx boʻyicha.'), style: AppText.small))
         else
           for (final l in _lines) ...[
             AppCard(
@@ -268,7 +277,7 @@ class _NewReturnScreenState extends State<NewReturnScreen> {
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text('${l.stock['product_name']}', style: AppText.bodyStrong),
-                    Text('На складе ${qty(l.stock['qty'], '${l.stock['unit_short'] ?? ''}')}', style: AppText.small),
+                    Text('${tr('На складе', 'Omborda')} ${qty(l.stock['qty'], '${l.stock['unit_short'] ?? ''}')}', style: AppText.small),
                   ]),
                 ),
                 SizedBox(
@@ -293,9 +302,9 @@ class _NewReturnScreenState extends State<NewReturnScreen> {
             const SizedBox(height: 8),
           ],
         const SizedBox(height: 12),
-        TextField(controller: _reason, decoration: const InputDecoration(labelText: 'Причина: брак, просрочка, пересорт…')),
+        TextField(controller: _reason, decoration: InputDecoration(labelText: tr('Причина: брак, просрочка, пересорт…', 'Sabab: brak, muddati oʻtgan, notoʻgʻri nav…'))),
         const SizedBox(height: 24),
-        BigButton(label: 'Провести возврат', icon: Icons.assignment_return_rounded, busy: _busy, onPressed: _post),
+        BigButton(label: tr('Провести возврат', 'Qaytarishni oʻtkazish'), icon: Icons.assignment_return_rounded, busy: _busy, onPressed: _post),
       ]),
     );
   }
@@ -338,19 +347,20 @@ class _SupplierPickerState extends State<_SupplierPicker> {
   @override
   Widget build(BuildContext context) {
     return _PickerFrame(
-      title: 'Поставщик',
+      title: tr('Поставщик', 'Yetkazib beruvchi'),
       controller: _q,
-      hint: 'Название, телефон или ИНН',
+      hint: tr('Название, телефон или ИНН', 'Nomi, telefon yoki STIR'),
       onChanged: (_) {
         _debounce?.cancel();
         _debounce = Timer(const Duration(milliseconds: 300), _search);
       },
       items: _items,
-      empty: 'Поставщик не найден. Новых поставщиков заводите в панели магазина.',
+      empty: tr('Поставщик не найден. Новых поставщиков заводите в панели магазина.', 'Yetkazib beruvchi topilmadi. Yangilarini doʻkon panelida qoʻshing.'),
       tile: (c) => ListTile(
         contentPadding: EdgeInsets.zero,
         title: Text('${c['name']}', style: AppText.bodyStrong),
-        subtitle: Text(n(c['balance']) > 0 ? 'Мы должны ${money(c['balance'])}' : formatPhone(c['phone']), style: AppText.small),
+        subtitle: Text(n(c['balance']) > 0 ? tr('Мы должны ${money(c['balance'])}', 'Bizning qarzimiz ${money(c['balance'])}') : formatPhone(c['phone']),
+            style: AppText.small),
         onTap: () => Navigator.of(context).pop(c),
       ),
     );
@@ -396,19 +406,19 @@ class _StockPickerState extends State<_StockPicker> {
   @override
   Widget build(BuildContext context) {
     return _PickerFrame(
-      title: 'Товар со склада',
+      title: tr('Товар со склада', 'Ombordagi mahsulot'),
       controller: _q,
-      hint: 'Название или штрихкод',
+      hint: tr('Название или штрихкод', 'Nomi yoki shtrix-kod'),
       onChanged: (_) {
         _debounce?.cancel();
         _debounce = Timer(const Duration(milliseconds: 300), _search);
       },
       items: _items,
-      empty: 'На складе нет такого товара',
+      empty: tr('На складе нет такого товара', 'Omborda bunday mahsulot yoʻq'),
       tile: (r) => ListTile(
         contentPadding: EdgeInsets.zero,
         title: Text('${r['product_name']}', style: AppText.bodyStrong),
-        subtitle: Text('На складе ${qty(r['qty'], '${r['unit_short'] ?? ''}')}', style: AppText.small),
+        subtitle: Text('${tr('На складе', 'Omborda')} ${qty(r['qty'], '${r['unit_short'] ?? ''}')}', style: AppText.small),
         trailing: r['avg_cost'] != null ? Text(money(r['avg_cost']), style: AppText.small) : null,
         onTap: () => Navigator.of(context).pop(r),
       ),

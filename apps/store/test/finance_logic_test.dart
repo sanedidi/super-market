@@ -1,7 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sm_store/finance/finance_logic.dart';
+import 'package:sm_core/sm_core.dart' as sm_i18n;
 
 void main() {
+  // Проверки написаны на русском; язык по умолчанию в приложениях — узбекский.
+  setUpAll(() => sm_i18n.Lang.instance.debugUse(sm_i18n.Lang.ru));
+
   final now = DateTime(2026, 10, 2, 15, 30);
 
   test('periodQuery: to не включается', () {

@@ -35,10 +35,10 @@ class OrdersScreen extends StatelessWidget {
           padding: EdgeInsets.fromLTRB(20, top + 12, 20, 24),
           children: [
             Row(children: [
-              Expanded(child: Text(st.onShift ? 'Заказы' : 'Привет, ${_firstName(st)}', style: AppText.h1)),
+              Expanded(child: Text(st.onShift ? tr('Заказы', 'Buyurtmalar') : tr('Привет, ${_firstName(st)}', 'Salom, ${_firstName(st)}'), style: AppText.h1)),
               RoundIcon(
                 icon: Icons.refresh_rounded,
-                tooltip: 'Обновить',
+                tooltip: tr('Обновить', 'Yangilash'),
                 color: st.onShift ? AppColors.white : AppColors.soft,
                 onTap: () => st.refreshOrders().catchError((Object e) {
                   if (context.mounted) showMessage(context, e);
@@ -58,24 +58,25 @@ class OrdersScreen extends StatelessWidget {
               const SizedBox(height: 14),
             ],
             if (g.delivering.isNotEmpty) ...[
-              _SectionTitle('Везу', g.delivering.length),
+              _SectionTitle(tr('Везу', 'Yetkazyapman'), g.delivering.length),
               for (final c in g.delivering) _OrderCard(c, fresh: st.fresh.contains(idOf(c))),
             ],
             if (g.toPick.isNotEmpty) ...[
-              _SectionTitle('Забрать в магазине', g.toPick.length),
+              _SectionTitle(tr('Забрать в магазине', 'Doʻkondan olish'), g.toPick.length),
               for (final c in g.toPick) _OrderCard(c, fresh: st.fresh.contains(idOf(c))),
             ],
             if (g.delivering.isEmpty && g.toPick.isEmpty)
               st.onShift
-                  ? const EmptyState(
+                  ? EmptyState(
                       icon: Icons.inventory_2_rounded,
-                      title: 'Пока заказов нет',
-                      text: 'Как только магазин назначит заказ, он появится здесь — телефон завибрирует',
+                      title: tr('Пока заказов нет', 'Hozircha buyurtma yoʻq'),
+                      text: tr('Как только магазин назначит заказ, он появится здесь — телефон завибрирует',
+                          'Doʻkon buyurtma biriktirishi bilan u shu yerda chiqadi — telefon tebranadi'),
                     )
                   : const _TodayHint(),
             if (g.done.isNotEmpty) ...[
               const SizedBox(height: 8),
-              _SectionTitle('Доставлены сегодня', g.done.length),
+              _SectionTitle(tr('Доставлены сегодня', 'Bugun yetkazilgan'), g.done.length),
               for (final c in g.done) _OrderCard(c, fresh: false),
             ],
           ],
@@ -146,15 +147,18 @@ class _OffShiftCardState extends State<_OffShiftCard> {
             child: const Icon(Icons.bedtime_rounded, color: AppColors.white),
           ),
           const SizedBox(width: 10),
-          const Expanded(
+          Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Вы не на смене', style: TextStyle(fontFamily: 'Inter', fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.white)),
-              Text('Магазин не назначает заказы', style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: Color(0xFFD1D1D6))),
+              Text(tr('Вы не на смене', 'Siz smenada emassiz'),
+                  style: const TextStyle(fontFamily: 'Inter', fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.white)),
+              Text(tr('Магазин не назначает заказы', 'Doʻkon buyurtma biriktirmaydi'),
+                  style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: Color(0xFFD1D1D6))),
             ]),
           ),
         ]),
         const SizedBox(height: 16),
-        const Text('На чём доставляете?', style: TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFFD1D1D6))),
+        Text(tr('На чём доставляете?', 'Nimada yetkazasiz?'),
+            style: const TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFFD1D1D6))),
         const SizedBox(height: 10),
         Row(children: [
           for (final e in vehicleTitles.entries) ...[
@@ -170,7 +174,7 @@ class _OffShiftCardState extends State<_OffShiftCard> {
           ],
         ]),
         const SizedBox(height: 16),
-        BigButton(label: 'Выйти на смену', icon: Icons.play_arrow_rounded, busy: _busy, onPressed: () => _run(() => st.setShift(onShift: true))),
+        BigButton(label: tr('Выйти на смену', 'Smenaga chiqish'), icon: Icons.play_arrow_rounded, busy: _busy, onPressed: () => _run(() => st.setShift(onShift: true))),
       ]),
     );
   }
@@ -224,12 +228,13 @@ class _ShiftBarState extends State<_ShiftBar> {
     final active = groupOrders(st.orders);
     final ok = await confirmSheet(
       context,
-      title: 'Завершить смену?',
+      title: tr('Завершить смену?', 'Smenani yakunlaysizmi?'),
       text: active.delivering.isNotEmpty || active.toPick.isNotEmpty
-          ? 'У вас есть незавершённые заказы. Магазин увидит, что вы ушли со смены.'
-          : 'Магазин перестанет назначать вам заказы.',
-      confirm: 'Завершить смену',
-      cancel: 'Остаться на смене',
+          ? tr('У вас есть незавершённые заказы. Магазин увидит, что вы ушли со смены.',
+              'Sizda yakunlanmagan buyurtmalar bor. Doʻkon smenadan ketganingizni koʻradi.')
+          : tr('Магазин перестанет назначать вам заказы.', 'Doʻkon sizga buyurtma biriktirishni toʻxtatadi.'),
+      confirm: tr('Завершить смену', 'Smenani yakunlash'),
+      cancel: tr('Остаться на смене', 'Smenada qolish'),
     );
     if (!ok || !mounted) return;
     setState(() => _busy = true);
@@ -247,10 +252,10 @@ class _ShiftBarState extends State<_ShiftBar> {
     final st = context.watch<CourierState>();
     final at = st.lastLocationAt;
     final sub = st.locationProblem != null
-        ? 'Геопозиция не передаётся'
+        ? tr('Геопозиция не передаётся', 'Joylashuv uzatilmayapti')
         : at == null
-            ? 'Ищем геопозицию…'
-            : 'Геопозиция передаётся · ${hm(at)}';
+            ? tr('Ищем геопозицию…', 'Joylashuv aniqlanmoqda…')
+            : tr('Геопозиция передаётся · ${hm(at)}', 'Joylashuv uzatilmoqda · ${hm(at)}');
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
       decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20)),
@@ -267,7 +272,7 @@ class _ShiftBarState extends State<_ShiftBar> {
             Row(children: [
               Container(width: 8, height: 8, decoration: const BoxDecoration(color: AppColors.success, shape: BoxShape.circle)),
               const SizedBox(width: 6),
-              const Text('На смене', style: AppText.title),
+              Text(tr('На смене', 'Smenada'), style: AppText.title),
             ]),
             Text(sub, style: AppText.small, maxLines: 2),
           ]),
@@ -283,7 +288,7 @@ class _ShiftBarState extends State<_ShiftBar> {
               padding: const EdgeInsets.symmetric(horizontal: 14),
             ),
             onPressed: _busy ? null : _end,
-            child: Text('Завершить', style: AppText.bodyStrong.copyWith(fontSize: 14)),
+            child: Text(tr('Завершить', 'Yakunlash'), style: AppText.bodyStrong.copyWith(fontSize: 14)),
           ),
         ),
       ]),
@@ -307,10 +312,12 @@ class _LocationProblem extends StatelessWidget {
           Expanded(child: Text(st.locationProblem ?? '', style: AppText.title.copyWith(color: AppColors.error, fontSize: 17))),
         ]),
         const SizedBox(height: 8),
-        Text('Покупатель не видит, где заказ, а магазин — где вы. Разрешите доступ к геопозиции «Всегда».',
+        Text(
+            tr('Покупатель не видит, где заказ, а магазин — где вы. Разрешите доступ к геопозиции «Всегда».',
+                'Xaridor buyurtma qayerdaligini, doʻkon esa sizni koʻrmayapti. Joylashuvga «Har doim» ruxsatini bering.'),
             style: AppText.small.copyWith(color: AppColors.error, fontSize: 14)),
         const SizedBox(height: 12),
-        BigButton(label: 'Открыть настройки', height: 44, onPressed: st.openLocationSettings),
+        BigButton(label: tr('Открыть настройки', 'Sozlamalarni ochish'), height: 44, onPressed: st.openLocationSettings),
       ]),
     );
   }
@@ -328,7 +335,9 @@ class _TodayHint extends StatelessWidget {
         const Icon(Icons.my_location_rounded, color: AppColors.blue),
         const SizedBox(width: 10),
         Expanded(
-          child: Text('На смене приложение передаёт вашу геопозицию — покупатель видит курьера на карте',
+          child: Text(
+              tr('На смене приложение передаёт вашу геопозицию — покупатель видит курьера на карте',
+                  'Smenada ilova joylashuvingizni uzatadi — xaridor kuryerni xaritada koʻradi'),
               style: AppText.small.copyWith(color: AppColors.blue)),
         ),
       ]),
@@ -400,8 +409,8 @@ class _OrderCardState extends State<_OrderCard> {
               Row(children: [
                 Text('№ ${o['number']}', style: AppText.title),
                 const SizedBox(width: 8),
-                Expanded(child: Text(done ? 'в ${_hmOf(o['delivered_at'])}' : whenText(o), style: AppText.small.copyWith(fontSize: 14))),
-                if (widget.fresh) const StatusChip('Новый', tone: ChipTone.red, icon: Icons.fiber_new_rounded) else statusChip(status),
+                Expanded(child: Text(done ? tr('в ${_hmOf(o['delivered_at'])}', 'soat ${_hmOf(o['delivered_at'])}') : whenText(o), style: AppText.small.copyWith(fontSize: 14))),
+                if (widget.fresh) StatusChip(tr('Новый', 'Yangi'), tone: ChipTone.red, icon: Icons.fiber_new_rounded) else statusChip(status),
               ]),
               const SizedBox(height: 12),
               _Line(icon: Icons.storefront_rounded, text: '${s['name'] ?? o['store_name']}', sub: _storeSub(c)),
@@ -416,7 +425,7 @@ class _OrderCardState extends State<_OrderCard> {
               if (status == 'picked' || delivering) ...[
                 const SizedBox(height: 12),
                 BigButton(
-                  label: delivering ? 'Доставил' : 'Забрал заказ',
+                  label: delivering ? tr('Доставил', 'Yetkazdim') : tr('Забрал заказ', 'Buyurtmani oldim'),
                   icon: delivering ? Icons.check_circle_rounded : Icons.shopping_bag_rounded,
                   color: delivering ? AppColors.success : AppColors.primary,
                   height: 48,
@@ -439,8 +448,8 @@ class _OrderCardState extends State<_OrderCard> {
   static String _storeSub(CourierOrder c) {
     final status = statusOf(c);
     final picked = c['picked_up_at'] == null ? null : DateTime.tryParse('${c['picked_up_at']}')?.toLocal();
-    if (picked != null) return 'забран в ${hm(picked)}';
-    if (status == 'accepted' || status == 'picking') return 'заказ ещё собирают';
+    if (picked != null) return tr('забран в ${hm(picked)}', 'soat ${hm(picked)} da olindi');
+    if (status == 'accepted' || status == 'picking') return tr('заказ ещё собирают', 'buyurtma hali yigʻilmoqda');
     return '${storeOf(c)['address'] ?? ''}';
   }
 }
@@ -468,14 +477,14 @@ class _Line extends StatelessWidget {
 
 /// Плашка статуса заказа.
 Widget statusChip(String status) => switch (status) {
-      'delivering' => const StatusChip('В пути', tone: ChipTone.blue, icon: Icons.delivery_dining_rounded),
-      'picked' => const StatusChip('Собран', tone: ChipTone.green, icon: Icons.inventory_2_rounded),
-      'delivered' => const StatusChip('Доставлен', tone: ChipTone.green, icon: Icons.check_rounded),
-      'cancelled' => const StatusChip('Отменён', tone: ChipTone.red, icon: Icons.block_rounded),
+      'delivering' => StatusChip(tr('В пути', 'Yoʻlda'), tone: ChipTone.blue, icon: Icons.delivery_dining_rounded),
+      'picked' => StatusChip(tr('Собран', 'Yigʻildi'), tone: ChipTone.green, icon: Icons.inventory_2_rounded),
+      'delivered' => StatusChip(tr('Доставлен', 'Yetkazildi'), tone: ChipTone.green, icon: Icons.check_rounded),
+      'cancelled' => StatusChip(tr('Отменён', 'Bekor qilindi'), tone: ChipTone.red, icon: Icons.block_rounded),
       _ => StatusChip(statusTitle(status), tone: ChipTone.amber, icon: Icons.hourglass_top_rounded),
     };
 
 /// «Наличными 125 000 сум» или «Оплачен».
 Widget paymentChip(CourierOrder c) => c['cash'] == true
-    ? StatusChip('Наличными ${money(orderOf(c)['total'])}', tone: ChipTone.amber, icon: Icons.payments_rounded)
-    : const StatusChip('Оплачен', tone: ChipTone.green, icon: Icons.check_rounded);
+    ? StatusChip(tr('Наличными ${money(orderOf(c)['total'])}', 'Naqd ${money(orderOf(c)['total'])}'), tone: ChipTone.amber, icon: Icons.payments_rounded)
+    : StatusChip(tr('Оплачен', 'Toʻlandi'), tone: ChipTone.green, icon: Icons.check_rounded);

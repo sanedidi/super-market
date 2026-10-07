@@ -156,13 +156,13 @@ class _FamilyAskScreenState extends State<FamilyAskScreen> {
                 Center(
                   child: QtyStepper(
                     height: 48,
-                    label: qty(l.qty, l.unit.isEmpty ? 'шт' : l.unit),
+                    label: qty(l.qty, l.unit.isEmpty ? tr('шт', 'dona') : l.unit),
                     onMinus: () => change(-step),
                     onPlus: () => change(step),
                   ),
                 ),
                 const SizedBox(height: 16),
-                AppButton(label: 'Готово', onPressed: () => Navigator.pop(ctx)),
+                AppButton(label: tr('Готово', 'Tayyor'), onPressed: () => Navigator.pop(ctx)),
               ]),
             ),
           );
@@ -193,7 +193,7 @@ class _FamilyAskScreenState extends State<FamilyAskScreen> {
 
   Future<void> _send() async {
     if (_lines.isEmpty) {
-      showError(context, 'Добавьте хотя бы один товар');
+      showError(context, tr('Добавьте хотя бы один товар', 'Kamida bitta mahsulot qoʻshing'));
       return;
     }
     setState(() => _busy = true);
@@ -207,7 +207,7 @@ class _FamilyAskScreenState extends State<FamilyAskScreen> {
         'items': _lines.map((l) => l.toJson()).toList(),
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Просьба отправлена')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Просьба отправлена', 'Iltimos yuborildi'))));
       Navigator.of(context).pop(true);
     } catch (e) {
       if (mounted) showError(context, e);
@@ -235,12 +235,12 @@ class _FamilyAskScreenState extends State<FamilyAskScreen> {
             child: Row(children: [
               RoundIconButton(icon: Icons.close_rounded, bg: AppColors.white, onTap: () => Navigator.of(context).pop()),
               const SizedBox(width: 12),
-              const Expanded(child: Text('Попросить купить', style: AppText.h3)),
+              Expanded(child: Text(tr('Попросить купить', 'Xarid qilishni soʻrash'), style: AppText.h3)),
             ]),
           ),
           Expanded(
             child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
-              const _Label('Кого попросить'),
+              _Label(tr('Кого попросить', 'Kimdan soʻraymiz')),
               SizedBox(
                 height: 96,
                 child: ListView(scrollDirection: Axis.horizontal, children: [
@@ -253,14 +253,14 @@ class _FamilyAskScreenState extends State<FamilyAskScreen> {
                     ),
                   _PersonTile(
                     avatar: const IconBox(Icons.groups_outlined, size: 40, radius: 20),
-                    name: 'Всем',
+                    name: tr('Всем', 'Hammaga'),
                     selected: _assignee == null,
                     onTap: () => setState(() => _assignee = null),
                   ),
                 ]),
               ),
               const SizedBox(height: 20),
-              const _Label('Что купить'),
+              _Label(tr('Что купить', 'Nima olish kerak')),
               TextField(
                 controller: _search,
                 onChanged: _onSearch,
@@ -269,7 +269,7 @@ class _FamilyAskScreenState extends State<FamilyAskScreen> {
                 textCapitalization: TextCapitalization.sentences,
                 style: AppText.body,
                 decoration: InputDecoration(
-                  hintText: 'Товар или своими словами',
+                  hintText: tr('Товар или своими словами', 'Mahsulot yoki oʻz soʻzlaringiz bilan'),
                   isDense: true,
                   prefixIcon: const Icon(Icons.search_rounded, color: AppColors.text2),
                   prefixIconConstraints: const BoxConstraints(minWidth: 44, minHeight: 44),
@@ -291,7 +291,7 @@ class _FamilyAskScreenState extends State<FamilyAskScreen> {
                         image: ((p['images'] as List?) ?? const []).cast<String>().firstOrNull,
                         onTap: () => _addProduct(p),
                       ),
-                    _FoundRow(name: '«${_search.text.trim()}»', subtitle: 'Добавить своими словами', onTap: _addText, last: true),
+                    _FoundRow(name: '«${_search.text.trim()}»', subtitle: tr('Добавить своими словами', 'Oʻz soʻzlaringiz bilan qoʻshish'), onTap: _addText, last: true),
                   ]),
                 ),
               ],
@@ -300,7 +300,7 @@ class _FamilyAskScreenState extends State<FamilyAskScreen> {
                 Wrap(spacing: 8, runSpacing: 8, children: [
                   for (final l in _lines)
                     _ItemChip(
-                      label: '${l.name} ${l.unit.isNotEmpty && l.unit != 'шт' ? qty(l.qty, l.unit) : '×${qty(l.qty)}'}',
+                      label: '${l.name} ${l.unit.isNotEmpty && l.unit != 'шт' && l.unit != 'dona' ? qty(l.qty, l.unit) : '×${qty(l.qty)}'}',
                       onTap: () => _editQty(l),
                       onRemove: () => setState(() => _lines.remove(l)),
                     ),
@@ -318,40 +318,48 @@ class _FamilyAskScreenState extends State<FamilyAskScreen> {
                     const Icon(Icons.add_rounded, size: 20, color: AppColors.ink),
                     const SizedBox(width: 6),
                     Expanded(
-                      child: Text('Часто покупаете: ${notYet.map((s) => '${s['name']}'.toLowerCase()).join(', ')}',
+                      child: Text(
+                          tr('Часто покупаете: ${notYet.map((s) => '${s['name']}'.toLowerCase()).join(', ')}',
+                              'Koʻp olasiz: ${notYet.map((s) => '${s['name']}'.toLowerCase()).join(', ')}'),
                           maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.smallStrong.copyWith(color: AppColors.primary, fontWeight: FontWeight.w500)),
                     ),
                   ]),
                 ),
               ],
               const SizedBox(height: 20),
-              const _Label('Когда напомнить'),
+              _Label(tr('Когда напомнить', 'Qachon eslatamiz')),
               Wrap(spacing: 8, runSpacing: 8, children: [
                 if (DateTime.now().hour < 18)
-                  AppChip(label: 'Сегодня в 18:00', selected: _when == _When.today18, onTap: () => setState(() => _when = _When.today18)),
-                AppChip(label: 'Завтра в 8:00', selected: _when == _When.tomorrow8, onTap: () => setState(() => _when = _When.tomorrow8)),
-                AppChip(label: 'Рядом с магазином', selected: _atStore, onTap: () => setState(() => _atStore = !_atStore)),
-                AppChip(label: 'Сейчас', selected: _when == _When.now, onTap: () => setState(() => _when = _When.now)),
+                  AppChip(label: tr('Сегодня в 18:00', 'Bugun 18:00 da'), selected: _when == _When.today18, onTap: () => setState(() => _when = _When.today18)),
+                AppChip(label: tr('Завтра в 8:00', 'Ertaga 8:00 da'), selected: _when == _When.tomorrow8, onTap: () => setState(() => _when = _When.tomorrow8)),
+                AppChip(label: tr('Рядом с магазином', 'Doʻkon yonida'), selected: _atStore, onTap: () => setState(() => _atStore = !_atStore)),
+                AppChip(label: tr('Сейчас', 'Hozir'), selected: _when == _When.now, onTap: () => setState(() => _when = _When.now)),
               ]),
               const SizedBox(height: 20),
-              const _Label('Комментарий'),
+              _Label(tr('Комментарий', 'Izoh')),
               TextField(
                 controller: _comment,
                 minLines: 2,
                 maxLines: 4,
                 maxLength: 500,
                 textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(hintText: 'Например: хлеб только бородинский', counterText: '', fillColor: AppColors.white),
+                decoration: InputDecoration(
+                    hintText: tr('Например: хлеб только бородинский', 'Masalan: faqat tandir non'), counterText: '', fillColor: AppColors.white),
               ),
               const SizedBox(height: 16),
               AppCard(
                 child: Row(children: [
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('Если не купит до ${hhmm(_offerAt)}${_offerAt.day != DateTime.now().day ? ' завтра' : ''}', style: AppText.bodyStrong),
+                      Text(
+                          tr('Если не купит до ${hhmm(_offerAt)}${_offerAt.day != DateTime.now().day ? ' завтра' : ''}',
+                              '${_offerAt.day != DateTime.now().day ? 'Ertaga soat' : 'Soat'} ${hhmm(_offerAt)} gacha olmasa'),
+                          style: AppText.bodyStrong),
                       const SizedBox(height: 2),
                       Text(
-                        assigneeName == null ? 'Предложим заказать доставку домой' : 'Предложим: $assigneeName — заказать доставку домой',
+                        assigneeName == null
+                            ? tr('Предложим заказать доставку домой', 'Uyga yetkazib berishni taklif qilamiz')
+                            : tr('Предложим: $assigneeName — заказать доставку домой', 'Taklif: $assigneeName — uyga yetkazib berishni buyurtma qilish'),
                         style: AppText.small,
                       ),
                     ]),
@@ -365,7 +373,7 @@ class _FamilyAskScreenState extends State<FamilyAskScreen> {
       ),
       bottomNavigationBar: BottomActionBar(
         child: AppButton(
-          label: _lines.isEmpty ? 'Отправить' : 'Отправить · ${itemsWord(_lines.length)}',
+          label: _lines.isEmpty ? tr('Отправить', 'Yuborish') : tr('Отправить · ${itemsWord(_lines.length)}', 'Yuborish · ${itemsWord(_lines.length)}'),
           loading: _busy,
           onPressed: _lines.isEmpty ? null : _send,
         ),

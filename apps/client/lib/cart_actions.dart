@@ -14,9 +14,10 @@ Future<void> changeQty(BuildContext context, {required String storeId, required 
   if (state.cartStoreId != null && state.cartStoreId != storeId && qty > 0) {
     final ok = await confirmSheet(
       context,
-      title: 'Начать новую корзину?',
-      text: 'В корзине товары из «${state.cartStoreName}». Заказ оформляется из одного магазина.',
-      confirm: 'Очистить и добавить',
+      title: tr('Начать новую корзину?', 'Yangi savat boshlansinmi?'),
+      text: tr('В корзине товары из «${state.cartStoreName}». Заказ оформляется из одного магазина.',
+          'Savatda «${state.cartStoreName}» doʻkonidan mahsulotlar bor. Buyurtma bitta doʻkondan rasmiylashtiriladi.'),
+      confirm: tr('Очистить и добавить', 'Tozalab qoʻshish'),
     );
     if (!ok) return;
   }

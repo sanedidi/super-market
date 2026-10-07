@@ -26,7 +26,7 @@ class AddressesScreen extends StatelessWidget {
       appBar: AppBar(
         leading: Padding(padding: const EdgeInsets.only(left: 12), child: Center(child: RoundIconButton(icon: Icons.arrow_back_rounded, onTap: () => Navigator.of(context).pop()))),
         leadingWidth: 64,
-        title: const Text('Куда доставить?'),
+        title: Text(tr('Куда доставить?', 'Qayerga yetkazaylik?')),
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -46,12 +46,12 @@ class AddressesScreen extends StatelessWidget {
           InkWell(
             borderRadius: BorderRadius.circular(AppRadius.lg),
             onTap: () => openAddressEditor(context),
-            child: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
               child: Row(children: [
-                IconBox(Icons.add_rounded),
-                SizedBox(width: 12),
-                Text('Новый адрес на карте', style: TextStyle(fontFamily: 'Inter', fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.primary)),
+                const IconBox(Icons.add_rounded),
+                const SizedBox(width: 12),
+                Text(tr('Новый адрес на карте', 'Xaritada yangi manzil'), style: const TextStyle(fontFamily: 'Inter', fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.primary)),
               ]),
             ),
           ),
@@ -168,7 +168,7 @@ class _AddressEditScreenState extends State<AddressEditScreen> {
 
   Future<void> _save() async {
     if (_f['address']!.text.trim().isEmpty) {
-      showError(context, 'Укажите улицу и дом');
+      showError(context, tr('Укажите улицу и дом', 'Koʻcha va uyni kiriting'));
       return;
     }
     setState(() => _busy = true);
@@ -214,7 +214,7 @@ class _AddressEditScreenState extends State<AddressEditScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.address == null ? 'Новый адрес' : 'Адрес'),
+        title: Text(widget.address == null ? tr('Новый адрес', 'Yangi manzil') : tr('Адрес', 'Manzil')),
         actions: [
           if (widget.address != null) IconButton(icon: const Icon(Icons.delete_outline), onPressed: _delete),
         ],
@@ -235,15 +235,15 @@ class _AddressEditScreenState extends State<AddressEditScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Row(children: [_field('address', 'Улица, дом', flex: 3), _field('label', 'Название')]),
+                        Row(children: [_field('address', tr('Улица, дом', 'Koʻcha, uy'), flex: 3), _field('label', tr('Название', 'Nomi'))]),
                         Row(children: [
-                          _field('apartment', 'Квартира', type: TextInputType.number),
-                          _field('entrance', 'Подъезд', type: TextInputType.number),
-                          _field('floor', 'Этаж', type: TextInputType.number),
+                          _field('apartment', tr('Квартира', 'Xonadon'), type: TextInputType.number),
+                          _field('entrance', tr('Подъезд', 'Podyezd'), type: TextInputType.number),
+                          _field('floor', tr('Этаж', 'Qavat'), type: TextInputType.number),
                         ]),
-                        Row(children: [_field('comment', 'Комментарий курьеру')]),
+                        Row(children: [_field('comment', tr('Комментарий курьеру', 'Kuryerga izoh'))]),
                         const SizedBox(height: 8),
-                        AppButton(label: 'Сохранить адрес', loading: _busy, onPressed: _save),
+                        AppButton(label: tr('Сохранить адрес', 'Manzilni saqlash'), loading: _busy, onPressed: _save),
                       ],
                     ),
                   ),

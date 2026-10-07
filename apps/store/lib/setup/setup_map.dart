@@ -10,6 +10,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
+import 'package:sm_core/sm_core.dart';
 
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -33,8 +34,9 @@ Future<LatLng?> currentPoint() async {
   }
 }
 
-Future<dynamic> _osm(String path, Map<String, String> q) async {
-  final uri = Uri.https('nominatim.openstreetmap.org', path, {...q, 'format': 'json', 'accept-language': 'ru'});
+/// [lang] — язык названий: по умолчанию язык интерфейса (узбекский, если есть в OSM, иначе русский).
+Future<dynamic> _osm(String path, Map<String, String> q, {String? lang}) async {
+  final uri = Uri.https('nominatim.openstreetmap.org', path, {...q, 'format': 'json', 'accept-language': lang ?? (Lang.instance.isUz ? 'uz,ru' : 'ru')});
   final r = await http.get(uri, headers: {'User-Agent': _agent}).timeout(const Duration(seconds: 8));
   if (r.statusCode != 200) return null;
   return jsonDecode(utf8.decode(r.bodyBytes));
@@ -57,7 +59,8 @@ Future<String?> addressAt(LatLng p) async {
 /// Город точки (для рекламы брендов по городам).
 Future<String?> cityAt(LatLng p) async {
   try {
-    final d = await _osm('/reverse', {'lat': '${p.latitude}', 'lon': '${p.longitude}', 'zoom': '10', 'addressdetails': '1'}) as Map<String, dynamic>?;
+    // Город — всегда по-русски: по нему сервер подбирает рекламу брендов.
+    final d = await _osm('/reverse', {'lat': '${p.latitude}', 'lon': '${p.longitude}', 'zoom': '10', 'addressdetails': '1'}, lang: 'ru') as Map<String, dynamic>?;
     final a = d?['address'] as Map<String, dynamic>?;
     return (a?['city'] ?? a?['town'] ?? a?['village'] ?? a?['state']) as String?;
   } catch (_) {
@@ -219,7 +222,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   Future<void> _locate() async {
     final p = await currentPoint();
     if (p == null || !mounted) {
-      if (mounted) showSnack(context, 'Не удалось определить местоположение — найдите адрес или подвиньте карту');
+      if (mounted) showSnack(context, tr('Не удалось определить местоположение — найдите адрес или подвиньте карту', 'Joylashuvni aniqlab boʻlmadi — manzilni qidiring yoki xaritani suring'));
       return;
     }
     _map.move(p, 17);
@@ -249,7 +252,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
       _found = r;
       _searching = false;
     });
-    if (r.isEmpty) showSnack(context, 'Ничего не нашли — подвиньте карту к магазину');
+    if (r.isEmpty) showSnack(context, tr('Ничего не нашли — подвиньте карту к магазину', 'Hech narsa topilmadi — xaritani doʻkon tomon suring'));
   }
 
   @override
@@ -279,7 +282,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(color: AppColors.ink, borderRadius: BorderRadius.circular(12)),
-              child: Text('Вход в магазин здесь?', style: AppText.bodyStrong.copyWith(color: AppColors.white, fontSize: 14)),
+              child: Text(tr('Вход в магазин здесь?', 'Doʻkonga kirish shu yerdami?'), style: AppText.bodyStrong.copyWith(color: AppColors.white, fontSize: 14)),
             ),
           ),
         ),
@@ -301,7 +304,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                     onSubmitted: _search,
                     style: AppText.body,
                     decoration: InputDecoration(
-                      hintText: 'Найти адрес',
+                      hintText: tr('Найти адрес', 'Manzilni topish'),
                       filled: false,
                       isDense: true,
                       contentPadding: const EdgeInsets.symmetric(vertical: 12),
@@ -358,16 +361,16 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
             decoration: const BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
               Text(
-                _resolving ? 'Определяем адрес…' : (_address ?? 'Адрес не определили'),
+                _resolving ? tr('Определяем адрес…', 'Manzil aniqlanmoqda…') : (_address ?? tr('Адрес не определили', 'Manzil aniqlanmadi')),
                 style: AppText.h3,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 4),
-              const Text('Двигайте карту, чтобы метка встала точно на вход', style: AppText.small),
+              Text(tr('Двигайте карту, чтобы метка встала точно на вход', 'Belgi aynan kirish joyiga tushishi uchun xaritani suring'), style: AppText.small),
               const SizedBox(height: 16),
               BigButton(
-                label: 'Здесь вход в магазин',
+                label: tr('Здесь вход в магазин', 'Doʻkonga kirish shu yerda'),
                 icon: Icons.check_rounded,
                 onPressed: () => Navigator.of(context).pop(PickedPoint(_center, _resolving ? null : _address)),
               ),

@@ -56,7 +56,7 @@ class _CashiersScreenState extends State<CashiersScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Контроль кассиров'),
+          Text(tr('Контроль кассиров', 'Kassirlar nazorati')),
           Text('${st.store?['name'] ?? ''}', style: AppText.small),
         ]),
       ),
@@ -79,7 +79,7 @@ class _CashiersScreenState extends State<CashiersScreen> {
           if (d == null)
             _error == null
                 ? const Padding(padding: EdgeInsets.only(top: 40), child: Center(child: CircularProgressIndicator()))
-                : EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: '$_error', action: 'Повторить', onAction: _load)
+                : EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load)
           else ...[
             if (signals.isNotEmpty) ...[
               Container(
@@ -90,7 +90,8 @@ class _CashiersScreenState extends State<CashiersScreen> {
                     const Icon(Icons.report_rounded, color: AppColors.primary, size: 20),
                     const SizedBox(width: 8),
                     Text(
-                      '${signals.length} ${plural(signals.length, 'сигнал', 'сигнала', 'сигналов')}${_period == Period.today ? ' за сегодня' : ''}',
+                      tr('${signals.length} ${plural(signals.length, 'сигнал', 'сигнала', 'сигналов')}${_period == Period.today ? ' за сегодня' : ''}',
+                          '${_period == Period.today ? 'Bugun ' : ''}${signals.length} ta signal'),
                       style: AppText.bodyStrong.copyWith(color: AppColors.primary),
                     ),
                   ]),
@@ -108,7 +109,10 @@ class _CashiersScreenState extends State<CashiersScreen> {
               const SizedBox(height: 16),
             ],
             if (items.isEmpty)
-              const EmptyState(icon: Icons.point_of_sale_rounded, title: 'Продаж на кассе нет', text: 'За выбранный период кассиры не работали.')
+              EmptyState(
+                  icon: Icons.point_of_sale_rounded,
+                  title: tr('Продаж на кассе нет', 'Kassada sotuv yoʻq'),
+                  text: tr('За выбранный период кассиры не работали.', 'Tanlangan davrda kassirlar ishlamagan.'))
             else
               for (final c in items) ...[_CashierCard(c: c, onTap: () => _openShift(_lastShift(c))), const SizedBox(height: 12)],
           ],
@@ -139,7 +143,7 @@ String initials(String name) {
 String shiftLine(Map<String, dynamic> sh) {
   String hm(Object? v) => dateTime(v).split(' ').last;
   final closed = sh['closed_at'] != null;
-  return '${sh['device_name']} · ${closed ? '${hm(sh['opened_at'])}–${hm(sh['closed_at'])} · закрыта' : 'с ${hm(sh['opened_at'])} · идёт'}';
+  return '${sh['device_name']} · ${closed ? '${hm(sh['opened_at'])}–${hm(sh['closed_at'])} · ${tr('закрыта', 'yopilgan')}' : tr('с ${hm(sh['opened_at'])} · идёт', '${hm(sh['opened_at'])} dan · davom etmoqda')}';
 }
 
 class _CashierCard extends StatelessWidget {
@@ -160,13 +164,15 @@ class _CashierCard extends StatelessWidget {
             ? (AppColors.warningSoft, AppColors.warningInk)
             : (AppColors.successSoft, AppColors.successInk);
     final chips = <Widget>[
-      if (bad) StatusChip('Недостача −${money(c['shortage'], suffix: false)}', icon: Icons.error_outline_rounded, tone: ChipTone.red),
-      if (flags.contains('surplus')) StatusChip('Излишек +${money(c['surplus'], suffix: false)}', icon: Icons.add_circle_outline_rounded, tone: ChipTone.amber),
-      if (flags.contains('returns')) const StatusChip('Много возвратов', icon: Icons.replay_rounded, tone: ChipTone.amber),
-      if (flags.contains('discounts')) StatusChip('Скидки ${money(c['discounts'], suffix: false)}', icon: Icons.sell_outlined, tone: ChipTone.amber),
-      if (flags.contains('fiscal')) StatusChip('Непробитых чеков: ${c['fiscal_pending']}', icon: Icons.cloud_off_rounded, tone: ChipTone.amber),
-      if (c['open_shift'] == true) const StatusChip('Смена идёт', tone: ChipTone.blue),
-      if (flags.isEmpty && c['open_shift'] != true) const StatusChip('Касса сходится', icon: Icons.check_circle_rounded, tone: ChipTone.green),
+      if (bad) StatusChip('${tr('Недостача', 'Kamomad')} −${money(c['shortage'], suffix: false)}', icon: Icons.error_outline_rounded, tone: ChipTone.red),
+      if (flags.contains('surplus'))
+        StatusChip('${tr('Излишек', 'Ortiqcha')} +${money(c['surplus'], suffix: false)}', icon: Icons.add_circle_outline_rounded, tone: ChipTone.amber),
+      if (flags.contains('returns')) StatusChip(tr('Много возвратов', 'Qaytarishlar koʻp'), icon: Icons.replay_rounded, tone: ChipTone.amber),
+      if (flags.contains('discounts')) StatusChip('${tr('Скидки', 'Chegirmalar')} ${money(c['discounts'], suffix: false)}', icon: Icons.sell_outlined, tone: ChipTone.amber),
+      if (flags.contains('fiscal'))
+        StatusChip('${tr('Непробитых чеков', 'Urilmagan cheklar')}: ${c['fiscal_pending']}', icon: Icons.cloud_off_rounded, tone: ChipTone.amber),
+      if (c['open_shift'] == true) StatusChip(tr('Смена идёт', 'Smena davom etmoqda'), tone: ChipTone.blue),
+      if (flags.isEmpty && c['open_shift'] != true) StatusChip(tr('Касса сходится', 'Kassa mos keladi'), icon: Icons.check_circle_rounded, tone: ChipTone.green),
     ];
     return AppCard(
       onTap: shifts.isEmpty ? null : onTap,
@@ -182,7 +188,9 @@ class _CashierCard extends StatelessWidget {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('${c['full_name']}', style: AppText.bodyStrong),
               Text(
-                shifts.isEmpty ? 'без смены на кассе' : '${shiftLine(shifts.first)}${shifts.length > 1 ? ' · смен ${shifts.length}' : ''}',
+                shifts.isEmpty
+                    ? tr('без смены на кассе', 'kassada smena yoʻq')
+                    : '${shiftLine(shifts.first)}${shifts.length > 1 ? tr(' · смен ${shifts.length}', ' · ${shifts.length} ta smena') : ''}',
                 style: AppText.small,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -193,11 +201,11 @@ class _CashierCard extends StatelessWidget {
         ]),
         const SizedBox(height: 12),
         Row(children: [
-          Expanded(flex: 4, child: _Kpi('Выручка', money(c['revenue'], suffix: false))),
+          Expanded(flex: 4, child: _Kpi(tr('Выручка', 'Tushum'), money(c['revenue'], suffix: false))),
           const SizedBox(width: 8),
-          Expanded(flex: 3, child: _Kpi('Чеков', '${c['sales_count'] ?? 0}')),
+          Expanded(flex: 3, child: _Kpi(tr('Чеков', 'Cheklar'), '${c['sales_count'] ?? 0}')),
           const SizedBox(width: 8),
-          Expanded(flex: 3, child: _Kpi('Возвраты', '${c['returns_count'] ?? 0}', warn: flags.contains('returns'))),
+          Expanded(flex: 3, child: _Kpi(tr('Возвраты', 'Qaytarishlar'), '${c['returns_count'] ?? 0}', warn: flags.contains('returns'))),
         ]),
         if (chips.isNotEmpty) ...[
           const SizedBox(height: 12),

@@ -1,3 +1,5 @@
+import 'package:sm_core/sm_core.dart' show tr;
+
 import 'money.dart';
 
 /// Товар из каталога кассы (GET /pos/catalog).
@@ -5,6 +7,8 @@ class Product {
   Product({
     required this.id,
     required this.name,
+    this.nameRu = '',
+    this.nameUz = '',
     this.unit = 'шт',
     this.fractional = false,
     this.active = true,
@@ -20,7 +24,16 @@ class Product {
   });
 
   final String id;
+
+  /// Название на языке кассы (с сервера уже переведено).
   final String name;
+
+  /// Исходные названия: русское — для фискального чека (ОФД получает
+  /// названия как раньше, независимо от языка кассы), оба — для поиска.
+  final String nameRu;
+  final String nameUz;
+
+  String get fiscalName => nameRu.isNotEmpty ? nameRu : name;
   final String unit;
   final bool fractional;
   final bool active;
@@ -43,7 +56,9 @@ class Product {
   factory Product.fromJson(Map<String, dynamic> j) => Product(
         id: j['id'] as String,
         name: j['name'] as String? ?? '',
-        unit: j['unit'] as String? ?? 'шт',
+        nameRu: j['name_ru'] as String? ?? '',
+        nameUz: j['name_uz'] as String? ?? '',
+        unit: j['unit'] as String? ?? tr('шт', 'dona'),
         fractional: j['fractional'] == true,
         active: j['active'] != false,
         price: parseMoney(j['price']),
@@ -60,6 +75,8 @@ class Product {
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
+        'name_ru': nameRu,
+        'name_uz': nameUz,
         'unit': unit,
         'fractional': fractional,
         'active': active,
@@ -287,11 +304,11 @@ class Catalog {
 
   /// Поиск по названию (F2): все слова запроса — в названии.
   List<Product> search(String q, {int limit = 50}) {
-    final words = q.toLowerCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    final words = _fold(q).split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
     if (words.isEmpty) return const [];
     final out = <Product>[];
     for (final p in _byId.values) {
-      final n = p.name.toLowerCase();
+      final n = _fold('${p.name} ${p.nameRu} ${p.nameUz}');
       if (words.every(n.contains) || p.barcodes.contains(q.trim())) {
         out.add(p);
         if (out.length >= limit) break;
@@ -300,6 +317,9 @@ class Catalog {
     out.sort((a, b) => a.name.compareTo(b.name));
     return out;
   }
+
+  /// Нижний регистр и один вид апострофа: «o'g'it» с клавиатуры находит «oʻgʻit».
+  static String _fold(String s) => s.toLowerCase().replaceAll(RegExp("['`‘’ʼʻ]"), 'ʻ');
 
   /// Ответ сервера: полный каталог или изменения поверх текущего.
   void apply(Map<String, dynamic> j) {

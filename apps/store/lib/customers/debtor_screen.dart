@@ -88,7 +88,7 @@ class _DebtorScreenState extends State<DebtorScreen> {
     setState(() => _reminding = true);
     try {
       await context.read<Api>().post('/store/debtors/${widget.id}/remind', {'store_id': _storeId});
-      if (mounted) _snack('Напоминание отправлено в приложение покупателя');
+      if (mounted) _snack(tr('Напоминание отправлено в приложение покупателя', 'Eslatma xaridor ilovasiga yuborildi'));
     } on ApiError catch (e) {
       if (mounted) _snack(e.message);
     } finally {
@@ -117,7 +117,7 @@ class _DebtorScreenState extends State<DebtorScreen> {
       builder: (_) => _LimitSheet(own: c['credit_limit'] as String?, current: '${_bal?['limit'] ?? ''}'),
     );
     if (res == null) return;
-    await _patch({'credit_limit': res.$2}, res.$2 == null ? 'Лимит — по настройкам сети' : 'Лимит ${money(res.$2)}');
+    await _patch({'credit_limit': res.$2}, res.$2 == null ? tr('Лимит — по настройкам сети', 'Limit — tarmoq sozlamalari boʻyicha') : '${tr('Лимит', 'Limit')} ${money(res.$2)}');
   }
 
   Future<void> _block() async {
@@ -125,13 +125,17 @@ class _DebtorScreenState extends State<DebtorScreen> {
     final ok = await confirmSheet(
       context,
       icon: Icons.block_rounded,
-      title: blocked ? 'Убрать из стоп-листа?' : 'В стоп-лист?',
+      title: blocked ? tr('Убрать из стоп-листа?', 'Stop-listdan olib tashlansinmi?') : tr('В стоп-лист?', 'Stop-listga qoʻshilsinmi?'),
       text: blocked
-          ? 'Касса снова сможет продавать этому покупателю в долг.'
-          : 'Касса не продаст в долг по этому номеру. Долг останется — его можно принимать.',
-      confirm: blocked ? 'Убрать' : 'В стоп-лист',
+          ? tr('Касса снова сможет продавать этому покупателю в долг.', 'Kassa bu xaridorga yana qarzga sota oladi.')
+          : tr('Касса не продаст в долг по этому номеру. Долг останется — его можно принимать.',
+              'Kassa bu raqamga qarzga sotmaydi. Qarz qoladi — uni qabul qilish mumkin.'),
+      confirm: blocked ? tr('Убрать', 'Olib tashlash') : tr('В стоп-лист', 'Stop-listga'),
     );
-    if (ok) await _patch({'blocked': !blocked}, blocked ? 'Покупатель убран из стоп-листа' : 'Покупатель в стоп-листе');
+    if (ok) {
+      await _patch(
+          {'blocked': !blocked}, blocked ? tr('Покупатель убран из стоп-листа', 'Xaridor stop-listdan olib tashlandi') : tr('Покупатель в стоп-листе', 'Xaridor stop-listda'));
+    }
   }
 
   Future<void> _writeoff() async {
@@ -149,17 +153,18 @@ class _DebtorScreenState extends State<DebtorScreen> {
     final ok = await confirmSheet(
       context,
       icon: Icons.report_outlined,
-      title: accept ? 'Запись ошибочна?' : 'Запись верна?',
+      title: accept ? tr('Запись ошибочна?', 'Yozuv notoʻgʻrimi?') : tr('Запись верна?', 'Yozuv toʻgʻrimi?'),
       text: accept
-          ? 'Долг ${money(d['amount'])} по этой записи спишется, покупатель получит уведомление.'
-          : 'Долг останется, покупатель получит уведомление, что запись проверена.',
-      confirm: accept ? 'Списать долг' : 'Запись верна',
+          ? tr('Долг ${money(d['amount'])} по этой записи спишется, покупатель получит уведомление.',
+              'Bu yozuv boʻyicha ${money(d['amount'])} qarz hisobdan chiqariladi, xaridor bildirishnoma oladi.')
+          : tr('Долг останется, покупатель получит уведомление, что запись проверена.', 'Qarz qoladi, xaridor yozuv tekshirilgani haqida bildirishnoma oladi.'),
+      confirm: accept ? tr('Списать долг', 'Qarzni hisobdan chiqarish') : tr('Запись верна', 'Yozuv toʻgʻri'),
     );
     if (!ok || !mounted) return;
     try {
       await context.read<Api>().post('/store/debt-disputes/${d['id']}/resolve', {'status': accept ? 'accepted' : 'rejected'});
       if (!mounted) return;
-      _snack(accept ? 'Запись списана' : 'Спор закрыт');
+      _snack(accept ? tr('Запись списана', 'Yozuv hisobdan chiqarildi') : tr('Спор закрыт', 'Nizo yopildi'));
       await _load();
     } on ApiError catch (e) {
       if (mounted) _snack(e.message);
@@ -173,10 +178,10 @@ class _DebtorScreenState extends State<DebtorScreen> {
     final manage = st.can('debts.manage');
     if (c == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Покупатель')),
+        appBar: AppBar(title: Text(tr('Покупатель', 'Xaridor'))),
         body: _error == null
             ? const Center(child: CircularProgressIndicator())
-            : EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: '$_error', action: 'Повторить', onAction: _load),
+            : EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load),
       );
     }
     final b = _bal;
@@ -186,8 +191,8 @@ class _DebtorScreenState extends State<DebtorScreen> {
     final entries = ((c['entries'] as List?) ?? const []).cast<Map<String, dynamic>>();
     final overdue = (b?['overdue_days'] as num?)?.toInt() ?? 0;
     final status = [
-      c['verified'] == true ? 'подтверждён' : 'не подтверждён',
-      if (c['blocked'] == true) 'стоп-лист',
+      c['verified'] == true ? tr('подтверждён', 'tasdiqlangan') : tr('не подтверждён', 'tasdiqlanmagan'),
+      if (c['blocked'] == true) tr('стоп-лист', 'stop-list'),
     ].join(' · ');
     return Scaffold(
       appBar: AppBar(
@@ -206,9 +211,9 @@ class _DebtorScreenState extends State<DebtorScreen> {
                 _ => null,
               },
               itemBuilder: (_) => [
-                const PopupMenuItem(value: 'limit', child: Text('Лимит')),
-                PopupMenuItem(value: 'block', child: Text(c['blocked'] == true ? 'Убрать из стоп-листа' : 'В стоп-лист')),
-                if (debt > 0) const PopupMenuItem(value: 'writeoff', child: Text('Списать долг')),
+                PopupMenuItem(value: 'limit', child: Text(tr('Лимит', 'Limit'))),
+                PopupMenuItem(value: 'block', child: Text(c['blocked'] == true ? tr('Убрать из стоп-листа', 'Stop-listdan olib tashlash') : tr('В стоп-лист', 'Stop-listga'))),
+                if (debt > 0) PopupMenuItem(value: 'writeoff', child: Text(tr('Списать долг', 'Qarzni hisobdan chiqarish'))),
               ],
             ),
         ],
@@ -220,28 +225,30 @@ class _DebtorScreenState extends State<DebtorScreen> {
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(color: AppColors.ink, borderRadius: BorderRadius.circular(20)),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Должен магазину', style: AppText.small.copyWith(color: AppColors.muted)),
+              Text(tr('Должен магазину', 'Doʻkonga qarzi'), style: AppText.small.copyWith(color: AppColors.muted)),
               Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
                 Text(money(debt, suffix: false), style: AppText.h1.copyWith(color: AppColors.white, fontSize: 30)),
                 const SizedBox(width: 6),
-                Text('сум', style: AppText.bodyStrong.copyWith(color: AppColors.muted)),
+                Text(tr('сум', 'soʻm'), style: AppText.bodyStrong.copyWith(color: AppColors.muted)),
               ]),
               Text(
                 [
                   if (debt > 0 && b?['due_date'] != null)
-                    overdue > 0 ? 'просрочено $overdue дн. · срок был ${shortDate(b!['due_date'])}' : 'Вернуть до ${shortDate(b!['due_date'])}',
-                  'свободно ${money(b?['available'], suffix: false)}',
+                    overdue > 0
+                        ? tr('просрочено $overdue дн. · срок был ${shortDate(b!['due_date'])}', 'muddati $overdue kun oʻtgan · muddat ${shortDate(b!['due_date'])} edi')
+                        : tr('Вернуть до ${shortDate(b!['due_date'])}', '${shortDate(b!['due_date'])} gacha qaytarish'),
+                  tr('свободно ${money(b?['available'], suffix: false)}', 'boʻsh limit ${money(b?['available'], suffix: false)}'),
                 ].join(' · '),
                 style: AppText.small.copyWith(color: overdue > 0 ? AppColors.primarySoft : AppColors.muted),
               ),
               if (manage) ...[
                 const SizedBox(height: 14),
                 Row(children: [
-                  Expanded(child: SmallButton(label: 'Принять оплату', icon: Icons.payments_outlined, primary: true, onPressed: debt > 0 ? _pay : null)),
+                  Expanded(child: SmallButton(label: tr('Принять оплату', 'Toʻlovni qabul qilish'), icon: Icons.payments_outlined, primary: true, onPressed: debt > 0 ? _pay : null)),
                   const SizedBox(width: 10),
                   Expanded(
                     child: SmallButton(
-                      label: _reminding ? 'Отправляем…' : 'Напомнить',
+                      label: _reminding ? tr('Отправляем…', 'Yuborilmoqda…') : tr('Напомнить', 'Eslatish'),
                       icon: Icons.notifications_none_rounded,
                       onPressed: debt > 0 && !_reminding ? _remind : null,
                     ),
@@ -250,7 +257,7 @@ class _DebtorScreenState extends State<DebtorScreen> {
                 if (c['has_app'] != true && debt > 0)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
-                    child: Text('У покупателя нет приложения — напоминание не дойдёт, позвоните.',
+                    child: Text(tr('У покупателя нет приложения — напоминание не дойдёт, позвоните.', 'Xaridorda ilova yoʻq — eslatma yetib bormaydi, qoʻngʻiroq qiling.'),
                         style: AppText.small.copyWith(color: AppColors.muted)),
                   ),
               ],
@@ -265,7 +272,7 @@ class _DebtorScreenState extends State<DebtorScreen> {
                   const Icon(Icons.report_outlined, color: AppColors.warningInk),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text('«Это не я» · ${d['number'] != null ? 'чек № ${d['number']} · ' : ''}${money(d['amount'])}',
+                    child: Text('${tr('«Это не я»', '«Bu men emasman»')} · ${d['number'] != null ? '${tr('чек', 'chek')} № ${d['number']} · ' : ''}${money(d['amount'])}',
                         style: AppText.bodyStrong.copyWith(color: AppColors.warningInk)),
                   ),
                 ]),
@@ -273,7 +280,7 @@ class _DebtorScreenState extends State<DebtorScreen> {
                 Text(
                   [
                     shortDate(d['entry_at']),
-                    if ('${d['cashier'] ?? ''}'.isNotEmpty) 'кассир ${d['cashier']}',
+                    if ('${d['cashier'] ?? ''}'.isNotEmpty) '${tr('кассир', 'kassir')} ${d['cashier']}',
                     if ('${d['comment'] ?? ''}'.isNotEmpty) '«${d['comment']}»',
                   ].join(' · '),
                   style: AppText.small,
@@ -281,19 +288,19 @@ class _DebtorScreenState extends State<DebtorScreen> {
                 if (manage) ...[
                   const SizedBox(height: 10),
                   Row(children: [
-                    Expanded(child: SmallButton(label: 'Запись верна', icon: Icons.check_rounded, onPressed: () => _resolve(d, false))),
+                    Expanded(child: SmallButton(label: tr('Запись верна', 'Yozuv toʻgʻri'), icon: Icons.check_rounded, onPressed: () => _resolve(d, false))),
                     const SizedBox(width: 10),
-                    Expanded(child: SmallButton(label: 'Списать', icon: Icons.close_rounded, primary: true, onPressed: () => _resolve(d, true))),
+                    Expanded(child: SmallButton(label: tr('Списать', 'Chiqarish'), icon: Icons.close_rounded, primary: true, onPressed: () => _resolve(d, true))),
                   ]),
                 ],
               ]),
             ),
           ],
           const SizedBox(height: 18),
-          const Text('История долга', style: AppText.title),
+          Text(tr('История долга', 'Qarz tarixi'), style: AppText.title),
           const SizedBox(height: 10),
           if (entries.isEmpty)
-            const EmptyState(icon: Icons.receipt_long_outlined, title: 'Записей пока нет')
+            EmptyState(icon: Icons.receipt_long_outlined, title: tr('Записей пока нет', 'Hozircha yozuvlar yoʻq'))
           else
             AppCard(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
@@ -320,10 +327,10 @@ class _EntryRow extends StatelessWidget {
     final amount = n(e['amount']);
     final no = e['number'];
     final (IconData icon, String title) = switch (e['doc_type']) {
-      'sale' => (Icons.shopping_basket_outlined, 'В долг${no != null ? ' · чек № $no' : ''}'),
-      'payment' => (Icons.payments_outlined, 'Оплата${'${e['detail'] ?? ''}'.isNotEmpty ? ' · ${e['detail']}' : ''}'),
-      'return' => (Icons.assignment_return_outlined, 'Возврат${no != null ? ' № $no' : ''}'),
-      _ => (Icons.remove_circle_outline_rounded, 'Списание'),
+      'sale' => (Icons.shopping_basket_outlined, '${tr('В долг', 'Qarzga')}${no != null ? ' · ${tr('чек', 'chek')} № $no' : ''}'),
+      'payment' => (Icons.payments_outlined, '${tr('Оплата', 'Toʻlov')}${'${e['detail'] ?? ''}'.isNotEmpty ? ' · ${e['detail']}' : ''}'),
+      'return' => (Icons.assignment_return_outlined, '${tr('Возврат', 'Qaytarish')}${no != null ? ' № $no' : ''}'),
+      _ => (Icons.remove_circle_outline_rounded, tr('Списание', 'Hisobdan chiqarish')),
     };
     final sub = [
       dateTime(e['created_at']),
@@ -344,7 +351,11 @@ class _EntryRow extends StatelessWidget {
             if (dispute.isNotEmpty) ...[
               const SizedBox(height: 4),
               StatusChip(
-                switch (dispute) { 'open' => 'оспаривает', 'accepted' => 'списано по спору', _ => 'спор отклонён' },
+                switch (dispute) {
+                  'open' => tr('оспаривает', 'eʼtiroz bildirgan'),
+                  'accepted' => tr('списано по спору', 'nizo boʻyicha chiqarildi'),
+                  _ => tr('спор отклонён', 'nizo rad etildi'),
+                },
                 tone: dispute == 'open' ? ChipTone.amber : ChipTone.gray,
               ),
             ],
@@ -354,7 +365,7 @@ class _EntryRow extends StatelessWidget {
         Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
           Text('${amount > 0 ? '+ ' : '− '}${money(amount.abs(), suffix: false)}',
               style: AppText.bodyStrong.copyWith(color: amount > 0 ? AppColors.ink : AppColors.successInk)),
-          Text('долг ${money(e['balance'], suffix: false)}', style: AppText.small),
+          Text('${tr('долг', 'qarz')} ${money(e['balance'], suffix: false)}', style: AppText.small),
         ]),
       ]),
     );
@@ -426,11 +437,11 @@ class _PaySheetState extends State<_PaySheet> {
     final debt = n(widget.debt);
     String? err;
     if (v == null || v <= 0) {
-      err = 'Введите сумму больше нуля';
+      err = tr('Введите сумму больше нуля', 'Noldan katta summani kiriting');
     } else if (v > debt) {
-      err = 'Больше долга ${money(debt)}';
+      err = tr('Больше долга ${money(debt)}', 'Qarzdan (${money(debt)}) koʻp');
     } else if (_methodId == null) {
-      err = 'Выберите, как платит';
+      err = tr('Выберите, как платит', 'Toʻlov usulini tanlang');
     }
     if (err != null) {
       setState(() => _error = err);
@@ -452,7 +463,10 @@ class _PaySheetState extends State<_PaySheet> {
       final messenger = ScaffoldMessenger.of(context);
       Navigator.of(context).pop(true);
       final left = n(res['balance']);
-      messenger.showSnackBar(SnackBar(content: Text(left > 0 ? 'Оплата принята · осталось ${money(left)}' : 'Долг погашен полностью')));
+      messenger.showSnackBar(SnackBar(
+          content: Text(left > 0
+              ? tr('Оплата принята · осталось ${money(left)}', 'Toʻlov qabul qilindi · qoldi ${money(left)}')
+              : tr('Долг погашен полностью', 'Qarz toʻliq uzildi'))));
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -471,29 +485,30 @@ class _PaySheetState extends State<_PaySheet> {
       child: SafeArea(
         child: SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Принять оплату долга', style: AppText.h3),
-            Text('${name.isEmpty ? formatPhone(widget.card['phone']) : name} · долг ${money(debt)}', style: AppText.small),
+            Text(tr('Принять оплату долга', 'Qarz toʻlovini qabul qilish'), style: AppText.h3),
+            Text('${name.isEmpty ? formatPhone(widget.card['phone']) : name} · ${tr('долг', 'qarz')} ${money(debt)}', style: AppText.small),
             const SizedBox(height: 14),
             TextField(
               controller: _amount,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,\s]'))],
               style: AppText.h2,
-              decoration: const InputDecoration(labelText: 'Сумма', suffixText: 'сум'),
+              decoration: InputDecoration(labelText: tr('Сумма', 'Summa'), suffixText: tr('сум', 'soʻm')),
             ),
             const SizedBox(height: 10),
             Wrap(spacing: 8, runSpacing: 8, children: [
-              ActionChip(label: const Text('Весь долг'), onPressed: () => _quick(debt)),
-              ActionChip(label: const Text('Половина'), onPressed: () => _quick((debt / 2).roundToDouble())),
-              if (last != null && last > 0 && last < debt) ActionChip(label: const Text('Последняя покупка'), onPressed: () => _quick(last)),
+              ActionChip(label: Text(tr('Весь долг', 'Butun qarz')), onPressed: () => _quick(debt)),
+              ActionChip(label: Text(tr('Половина', 'Yarmi')), onPressed: () => _quick((debt / 2).roundToDouble())),
+              if (last != null && last > 0 && last < debt) ActionChip(label: Text(tr('Последняя покупка', 'Oxirgi xarid')), onPressed: () => _quick(last)),
             ]),
             const SizedBox(height: 16),
-            const Text('КАК ПЛАТИТ', style: AppText.caption),
+            Text(tr('КАК ПЛАТИТ', 'TOʻLOV USULI'), style: AppText.caption),
             const SizedBox(height: 8),
             if (ms == null)
               const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()))
             else if (ms.isEmpty)
-              const Text('В магазине нет способов оплаты «Наличные» или «Карта» — добавьте в панели', style: AppText.small)
+              Text(tr('В магазине нет способов оплаты «Наличные» или «Карта» — добавьте в панели', 'Doʻkonda «Naqd pul» yoki «Karta» toʻlov usuli yoʻq — panelda qoʻshing'),
+                  style: AppText.small)
             else
               for (final m in ms)
                 Padding(
@@ -507,7 +522,7 @@ class _PaySheetState extends State<_PaySheet> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(m['kind'] == 'cash' ? 'Наличными' : 'Картой', style: AppText.bodyStrong),
+                          Text(m['kind'] == 'cash' ? tr('Наличными', 'Naqd pul') : tr('Картой', 'Karta'), style: AppText.bodyStrong),
                           Text('${m['name']}', style: AppText.small),
                         ]),
                       ),
@@ -517,7 +532,7 @@ class _PaySheetState extends State<_PaySheet> {
                   ),
                 ),
             const SizedBox(height: 4),
-            TextField(controller: _note, decoration: const InputDecoration(hintText: 'Комментарий: кто принёс, если не сам покупатель')),
+            TextField(controller: _note, decoration: InputDecoration(hintText: tr('Комментарий: кто принёс, если не сам покупатель', 'Izoh: xaridorning oʻzi boʻlmasa, kim olib keldi'))),
             if (_error != null) ...[
               const SizedBox(height: 10),
               Text(_error!, style: AppText.small.copyWith(color: AppColors.error)),
@@ -526,7 +541,7 @@ class _PaySheetState extends State<_PaySheet> {
             ValueListenableBuilder(
               valueListenable: _amount,
               builder: (_, v, __) => BigButton(
-                label: 'Принять ${money(plainAmount(v.text))}',
+                label: tr('Принять ${money(plainAmount(v.text))}', '${money(plainAmount(v.text))} qabul qilish'),
                 icon: Icons.check_rounded,
                 busy: _busy,
                 onPressed: _submit,
@@ -566,8 +581,12 @@ class _LimitSheetState extends State<_LimitSheet> {
         padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
         child: SafeArea(
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Лимит покупателя', style: AppText.h3),
-            Text(widget.own == null ? 'Сейчас — по настройкам сети: ${money(widget.current)}' : 'Свой лимит этого покупателя', style: AppText.small),
+            Text(tr('Лимит покупателя', 'Xaridor limiti'), style: AppText.h3),
+            Text(
+                widget.own == null
+                    ? tr('Сейчас — по настройкам сети: ${money(widget.current)}', 'Hozir — tarmoq sozlamalari boʻyicha: ${money(widget.current)}')
+                    : tr('Свой лимит этого покупателя', 'Bu xaridorning oʻz limiti'),
+                style: AppText.small),
             const SizedBox(height: 14),
             TextField(
               controller: _v,
@@ -575,11 +594,11 @@ class _LimitSheetState extends State<_LimitSheet> {
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9\s]'))],
               style: AppText.h2,
-              decoration: const InputDecoration(labelText: 'Сколько можно в долг', suffixText: 'сум'),
+              decoration: InputDecoration(labelText: tr('Сколько можно в долг', 'Qancha qarz berish mumkin'), suffixText: tr('сум', 'soʻm')),
             ),
             const SizedBox(height: 16),
             BigButton(
-              label: 'Сохранить',
+              label: tr('Сохранить', 'Saqlash'),
               onPressed: () {
                 final v = plainAmount(_v.text);
                 if (num.tryParse(v) == null) return;
@@ -589,7 +608,7 @@ class _LimitSheetState extends State<_LimitSheet> {
             if (widget.own != null) ...[
               const SizedBox(height: 10),
               BigButton(
-                label: 'Как в настройках сети',
+                label: tr('Как в настройках сети', 'Tarmoq sozlamalaridagidek'),
                 color: AppColors.soft,
                 foreground: AppColors.ink,
                 onPressed: () => Navigator.of(context).pop((true, null)),
@@ -629,11 +648,11 @@ class _WriteoffSheetState extends State<_WriteoffSheet> {
   Future<void> _submit() async {
     final v = num.tryParse(plainAmount(_amount.text));
     if (v == null || v <= 0 || v > n(widget.debt)) {
-      setState(() => _error = 'Сумма — больше нуля и не больше долга ${money(widget.debt)}');
+      setState(() => _error = tr('Сумма — больше нуля и не больше долга ${money(widget.debt)}', 'Summa noldan katta va qarzdan (${money(widget.debt)}) koʻp boʻlmasin'));
       return;
     }
     if (_reason.text.trim().isEmpty) {
-      setState(() => _error = 'Напишите причину — её увидит владелец в истории');
+      setState(() => _error = tr('Напишите причину — её увидит владелец в истории', 'Sababini yozing — egasi uni tarixda koʻradi'));
       return;
     }
     setState(() {
@@ -650,7 +669,7 @@ class _WriteoffSheetState extends State<_WriteoffSheet> {
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       Navigator.of(context).pop(true);
-      messenger.showSnackBar(const SnackBar(content: Text('Долг списан')));
+      messenger.showSnackBar(SnackBar(content: Text(tr('Долг списан', 'Qarz hisobdan chiqarildi'))));
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -663,24 +682,25 @@ class _WriteoffSheetState extends State<_WriteoffSheet> {
         padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
         child: SafeArea(
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Списать долг', style: AppText.h3),
-            Text('Деньги не поступят — долг просто уменьшится. Долг ${money(widget.debt)}', style: AppText.small),
+            Text(tr('Списать долг', 'Qarzni hisobdan chiqarish'), style: AppText.h3),
+            Text(tr('Деньги не поступят — долг просто уменьшится. Долг ${money(widget.debt)}', 'Pul tushmaydi — qarz shunchaki kamayadi. Qarz ${money(widget.debt)}'),
+                style: AppText.small),
             const SizedBox(height: 14),
             TextField(
               controller: _amount,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,\s]'))],
               style: AppText.h2,
-              decoration: const InputDecoration(labelText: 'Сумма', suffixText: 'сум'),
+              decoration: InputDecoration(labelText: tr('Сумма', 'Summa'), suffixText: tr('сум', 'soʻm')),
             ),
             const SizedBox(height: 10),
-            TextField(controller: _reason, decoration: const InputDecoration(hintText: 'Причина: уехал, ошибка кассира, подарок…')),
+            TextField(controller: _reason, decoration: InputDecoration(hintText: tr('Причина: уехал, ошибка кассира, подарок…', 'Sabab: koʻchib ketgan, kassir xatosi, sovgʻa…'))),
             if (_error != null) ...[
               const SizedBox(height: 10),
               Text(_error!, style: AppText.small.copyWith(color: AppColors.error)),
             ],
             const SizedBox(height: 16),
-            BigButton(label: 'Списать', busy: _busy, onPressed: _submit),
+            BigButton(label: tr('Списать', 'Hisobdan chiqarish'), busy: _busy, onPressed: _submit),
           ]),
         ),
       );

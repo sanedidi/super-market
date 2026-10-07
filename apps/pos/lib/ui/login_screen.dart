@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart' show LangSwitch, tr;
 
 import '../core/catalog.dart';
 import '../core/pin.dart';
@@ -110,7 +111,7 @@ class _LoginScreenState extends State<LoginScreen> {
               Row(children: [
                 const Logo(size: 56),
                 const SizedBox(width: 16),
-                Text('Касса', style: t(22, w: FontWeight.w700, c: Colors.white)),
+                Text(tr('Касса', 'Kassa'), style: t(22, w: FontWeight.w700, c: Colors.white)),
               ]),
               const Spacer(),
               Text(s.networkName.isEmpty ? s.storeName : s.networkName, style: t(40, w: FontWeight.w700, c: Colors.white)),
@@ -118,10 +119,12 @@ class _LoginScreenState extends State<LoginScreen> {
               Text('${s.storeName} · ${s.deviceName}', style: t(18, c: Colors.white)),
               const SizedBox(height: 32),
               for (final line in [
-                if (pos.shift != null) 'Смена №${pos.shift!.number ?? '·'} открыта · ${pos.shift!.openedByName}',
-                pos.online ? 'Онлайн' : 'Нет связи — касса работает, чеки отправятся позже',
-                pos.fiscalMode ? 'Фискальный модуль готов' : 'Тестовый режим: чеки не фискальные',
-                if (pos.catalogAt != null) 'Каталог: ${pos.catalog.length} товаров, обновлён ${_ago(pos.catalogAt!)}',
+                if (pos.shift != null) tr('Смена №${pos.shift!.number ?? '·'} открыта · ${pos.shift!.openedByName}', 'Smena №${pos.shift!.number ?? '·'} ochiq · ${pos.shift!.openedByName}'),
+                pos.online ? tr('Онлайн', 'Onlayn') : tr('Нет связи — касса работает, чеки отправятся позже', 'Aloqa yoʻq — kassa ishlayapti, cheklar keyinroq yuboriladi'),
+                pos.fiscalMode ? tr('Фискальный модуль готов', 'Fiskal modul tayyor') : tr('Тестовый режим: чеки не фискальные', 'Test rejimi: cheklar fiskal emas'),
+                if (pos.catalogAt != null)
+                  tr('Каталог: ${pos.catalog.length} товаров, обновлён ${_ago(pos.catalogAt!)}',
+                      'Katalog: ${pos.catalog.length} ta mahsulot, yangilandi: ${_ago(pos.catalogAt!)}'),
               ])
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
@@ -134,57 +137,63 @@ class _LoginScreenState extends State<LoginScreen> {
             ]),
           ),
           Expanded(
-            child: Center(
-              child: SingleChildScrollView(
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Text('Кто на кассе?', style: t(28, w: FontWeight.w700)),
-                  const SizedBox(height: 24),
-                  if (list.isEmpty)
-                    SizedBox(
-                      width: 420,
-                      child: Text(
-                        'Нет кассиров с ПИНом. Владелец задаёт ПИН в панели магазина → Касса → Кассы и ПИНы.',
-                        textAlign: TextAlign.center,
-                        style: t(15, c: C.ts),
+            child: Stack(children: [
+              Center(
+                child: SingleChildScrollView(
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Text(tr('Кто на кассе?', 'Kassada kim?'), style: t(28, w: FontWeight.w700)),
+                    const SizedBox(height: 24),
+                    if (list.isEmpty)
+                      SizedBox(
+                        width: 420,
+                        child: Text(
+                          tr('Нет кассиров с ПИНом. Владелец задаёт ПИН в панели магазина → Касса → Кассы и ПИНы.',
+                              'PIN-kodli kassirlar yoʻq. Egasi PIN-kodni doʻkon panelida beradi → Kassa → Kassalar va PIN-kodlar.'),
+                          textAlign: TextAlign.center,
+                          style: t(15, c: C.ts),
+                        ),
                       ),
-                    ),
-                  Wrap(spacing: 12, runSpacing: 12, alignment: WrapAlignment.center, children: [
-                    for (var i = 0; i < list.length; i++)
-                      _CashierTile(
-                        cashier: list[i],
-                        selected: i == _sel,
-                        onTap: () => setState(() {
-                          _sel = i;
-                          _pin = '';
-                        }),
-                      ),
-                  ]),
-                  if (sel != null) ...[
-                    const SizedBox(height: 28),
-                    Text('ПИН-код · ${sel.name}', style: t(14, c: C.ts)),
-                    const SizedBox(height: 12),
-                    Row(mainAxisSize: MainAxisSize.min, children: [
-                      for (var i = 0; i < 4 || i < _pin.length; i++)
-                        Container(
-                          width: 14,
-                          height: 14,
-                          margin: const EdgeInsets.symmetric(horizontal: 6),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: i < _pin.length ? C.tp : Colors.transparent,
-                            border: Border.all(color: i < _pin.length ? C.tp : C.borderStrong, width: 2),
-                          ),
+                    Wrap(spacing: 12, runSpacing: 12, alignment: WrapAlignment.center, children: [
+                      for (var i = 0; i < list.length; i++)
+                        _CashierTile(
+                          cashier: list[i],
+                          selected: i == _sel,
+                          onTap: () => setState(() {
+                            _sel = i;
+                            _pin = '';
+                          }),
                         ),
                     ]),
-                    SizedBox(height: 28, child: Center(child: Text(_error ?? '', style: t(14, c: C.error)))),
-                    NumPad(onDigit: _digit, onBackspace: _back),
-                    const SizedBox(height: 16),
-                    Text('Забыли ПИН? Владелец меняет его в панели магазина → Касса → Кассы и ПИНы',
-                        style: t(12, c: C.ts)),
-                  ],
-                ]),
+                    if (sel != null) ...[
+                      const SizedBox(height: 28),
+                      Text(tr('ПИН-код · ${sel.name}', 'PIN-kod · ${sel.name}'), style: t(14, c: C.ts)),
+                      const SizedBox(height: 12),
+                      Row(mainAxisSize: MainAxisSize.min, children: [
+                        for (var i = 0; i < 4 || i < _pin.length; i++)
+                          Container(
+                            width: 14,
+                            height: 14,
+                            margin: const EdgeInsets.symmetric(horizontal: 6),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: i < _pin.length ? C.tp : Colors.transparent,
+                              border: Border.all(color: i < _pin.length ? C.tp : C.borderStrong, width: 2),
+                            ),
+                          ),
+                      ]),
+                      SizedBox(height: 28, child: Center(child: Text(_error ?? '', style: t(14, c: C.error)))),
+                      NumPad(onDigit: _digit, onBackspace: _back),
+                      const SizedBox(height: 16),
+                      Text(
+                          tr('Забыли ПИН? Владелец меняет его в панели магазина → Касса → Кассы и ПИНы',
+                              'PIN-kodni unutdingizmi? Egasi uni doʻkon panelida oʻzgartiradi → Kassa → Kassalar va PIN-kodlar'),
+                          style: t(12, c: C.ts)),
+                    ],
+                  ]),
+                ),
               ),
-            ),
+              const Positioned(top: 24, right: 24, child: LangSwitch()),
+            ]),
           ),
         ]),
       ),
@@ -194,11 +203,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
 String _ago(DateTime at) {
   final m = DateTime.now().difference(at).inMinutes;
-  if (m < 1) return 'только что';
-  if (m < 60) return '$m мин назад';
+  if (m < 1) return tr('только что', 'hozirgina');
+  if (m < 60) return tr('$m мин назад', '$m daqiqa oldin');
   final h = m ~/ 60;
-  if (h < 24) return '$h ч назад';
-  return '${h ~/ 24} дн назад';
+  if (h < 24) return tr('$h ч назад', '$h soat oldin');
+  return tr('${h ~/ 24} дн назад', '${h ~/ 24} kun oldin');
 }
 
 class _CashierTile extends StatelessWidget {
@@ -210,7 +219,7 @@ class _CashierTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final role = cashier.can(Perm.returns) ? 'Старший кассир' : 'Кассир';
+    final role = cashier.can(Perm.returns) ? tr('Старший кассир', 'Katta kassir') : tr('Кассир', 'Kassir');
     return Material(
       color: C.surface,
       borderRadius: BorderRadius.circular(12),

@@ -58,16 +58,22 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
     Widget body;
     if (_error != null) {
-      body = EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: _error.toString(), action: 'Повторить', onAction: _load);
+      body = EmptyState(
+          icon: Icons.wifi_off_rounded,
+          title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'),
+          text: _error.toString(),
+          action: tr('Повторить', 'Qayta urinish'),
+          onAction: _load);
     } else if (products == null) {
       body = const Center(child: CircularProgressIndicator());
     } else if (products.isEmpty) {
       body = EmptyState(
         icon: Icons.favorite_border_rounded,
-        title: state.favorites.isEmpty ? 'Пока ничего нет' : 'Нет в этом магазине',
+        title: state.favorites.isEmpty ? tr('Пока ничего нет', 'Hozircha hech narsa yoʻq') : tr('Нет в этом магазине', 'Bu doʻkonda yoʻq'),
         text: state.favorites.isEmpty
-            ? 'Нажмите ♡ в карточке товара — он появится здесь.'
-            : 'Избранные товары не продаются в «${store?.name ?? 'выбранном магазине'}». Выберите другой магазин в каталоге.',
+            ? tr('Нажмите ♡ в карточке товара — он появится здесь.', 'Mahsulot kartasida ♡ ni bosing — u shu yerda paydo boʻladi.')
+            : tr('Избранные товары не продаются в «${store?.name ?? 'выбранном магазине'}». Выберите другой магазин в каталоге.',
+                'Sevimli mahsulotlar ${store == null ? 'tanlangan doʻkonda' : '«${store.name}» doʻkonida'} sotilmaydi. Katalogda boshqa doʻkonni tanlang.'),
       );
     } else {
       body = RefreshIndicator(
@@ -78,7 +84,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                 child: Text(
-                  missing > 0 ? 'Цены в «${store.name}». Ещё $missing нет в этом магазине.' : 'Цены в «${store.name}»',
+                  missing > 0
+                      ? tr('Цены в «${store.name}». Ещё $missing нет в этом магазине.', '«${store.name}» doʻkonidagi narxlar. Yana $missing tasi bu doʻkonda yoʻq.')
+                      : tr('Цены в «${store.name}»', '«${store.name}» doʻkonidagi narxlar'),
                   style: AppText.small,
                 ),
               ),
@@ -98,7 +106,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
             child: Row(children: [
               RoundIconButton(icon: Icons.arrow_back_rounded, onTap: () => Navigator.of(context).pop()),
               const SizedBox(width: 12),
-              const Text('Избранное', style: AppText.h2),
+              Text(tr('Избранное', 'Sevimlilar'), style: AppText.h2),
             ]),
           ),
           Expanded(child: body),

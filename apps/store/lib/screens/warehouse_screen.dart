@@ -59,29 +59,29 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _load());
     }
     if (!st.can('inventory.manage')) {
-      return const SafeArea(
-        child: EmptyState(icon: Icons.lock_outline_rounded, title: 'Нет доступа к складу', text: 'Нужно право «Склад: приход и движение товара».'),
+      return SafeArea(
+        child: EmptyState(icon: Icons.lock_outline_rounded, title: tr('Нет доступа к складу', 'Omborga kirish huquqi yoʻq'), text: tr('Нужно право «Склад: приход и движение товара».', '«Ombor: kirim va tovar harakati» huquqi kerak.')),
       );
     }
     return SafeArea(
       child: RefreshIndicator(
         onRefresh: _load,
         child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
-          const Text('Склад', style: AppText.h1),
+          Text(tr('Склад', 'Ombor'), style: AppText.h1),
           const SizedBox(height: 16),
           if (_summary != null) ...[
             AppCard(
               child: Row(children: [
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('Товаров на складе', style: AppText.small),
+                    Text(tr('Товаров на складе', 'Ombordagi mahsulotlar'), style: AppText.small),
                     Text('${_summary!['products'] ?? 0}', style: AppText.h3),
                   ]),
                 ),
                 if (_summary!['cost_value'] != null)
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      const Text('По себестоимости', style: AppText.small),
+                      Text(tr('По себестоимости', 'Tannarx boʻyicha'), style: AppText.small),
                       Text(money(_summary!['cost_value']), style: AppText.h3),
                     ]),
                   ),
@@ -100,8 +100,8 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Приход по фото накладной', style: AppText.bodyStrong.copyWith(color: AppColors.white, fontSize: 16)),
-                  Text('ИИ прочитает поставщика и товары', style: AppText.small.copyWith(color: AppColors.muted)),
+                  Text(tr('Приход по фото накладной', 'Yuk xati rasmi orqali kirim'), style: AppText.bodyStrong.copyWith(color: AppColors.white, fontSize: 16)),
+                  Text(tr('ИИ прочитает поставщика и товары', 'SI yetkazib beruvchi va mahsulotlarni oʻqiydi'), style: AppText.small.copyWith(color: AppColors.muted)),
                 ]),
               ),
               const Icon(Icons.chevron_right_rounded, color: AppColors.white),
@@ -110,27 +110,27 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
           const SizedBox(height: 10),
           AppCard(
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SupplierReturnsScreen())),
-            child: const Row(children: [
-              IconBox(Icons.assignment_return_rounded, bg: AppColors.warningSoft, fg: AppColors.warningInk),
-              SizedBox(width: 12),
+            child: Row(children: [
+              const IconBox(Icons.assignment_return_rounded, bg: AppColors.warningSoft, fg: AppColors.warningInk),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Возврат поставщику', style: AppText.bodyStrong),
-                  Text('Брак, просрочка, пересорт', style: AppText.small),
+                  Text(tr('Возврат поставщику', 'Yetkazib beruvchiga qaytarish'), style: AppText.bodyStrong),
+                  Text(tr('Брак, просрочка, пересорт', 'Yaroqsiz, muddati oʻtgan, aralash tovar'), style: AppText.small),
                 ]),
               ),
-              Icon(Icons.chevron_right_rounded, color: AppColors.muted),
+              const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
             ]),
           ),
           const SizedBox(height: 24),
-          const Text('Накладные', style: AppText.h3),
+          Text(tr('Накладные', 'Yuk xatlari'), style: AppText.h3),
           const SizedBox(height: 12),
           if (_error != null)
-            EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: _error.toString(), action: 'Повторить', onAction: _load)
+            EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: _error.toString(), action: tr('Повторить', 'Qayta urinish'), onAction: _load)
           else if (_scans == null)
             const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()))
           else if (_scans!.isEmpty)
-            const EmptyState(icon: Icons.receipt_long_rounded, title: 'Накладных пока нет', text: 'Сфотографируйте накладную поставщика — приход заполнится сам.')
+            EmptyState(icon: Icons.receipt_long_rounded, title: tr('Накладных пока нет', 'Hozircha yuk xatlari yoʻq'), text: tr('Сфотографируйте накладную поставщика — приход заполнится сам.', 'Yetkazib beruvchining yuk xatini suratga oling — kirim oʻzi toʻldiriladi.'))
           else
             AppCard(
               padding: const EdgeInsets.symmetric(horizontal: 4),
