@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { BrowserRouter, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { App as AntApp, Button, ConfigProvider, Drawer, Grid, type MenuProps } from 'antd'
-import { CloseOutlined, DeleteOutlined, DownOutlined, LogoutOutlined, MenuOutlined, PushpinOutlined } from '@ant-design/icons'
+import { CloseOutlined, DeleteOutlined, DownOutlined, LogoutOutlined, MenuOutlined, PushpinOutlined, TranslationOutlined } from '@ant-design/icons'
 import ruRU from 'antd/locale/ru_RU'
 import uzUZ from 'antd/locale/uz_UZ'
 import dayjs from 'dayjs'
@@ -11,7 +11,7 @@ import 'dayjs/locale/uz-latn'
 import { ApiError, configureApi, type AppName } from './api'
 import { AuthProvider, LoginPage, useAuth } from './auth'
 import { StorePasswordGate } from './passwordLogin'
-import { getLang, i18nEnabled, LangSwitch, tr } from './i18n'
+import { getLang, i18nEnabled, setLang, tr } from './i18n'
 import './theme.css'
 import logo from './logo.png'
 
@@ -320,14 +320,34 @@ function Sidebar({
       </nav>
 
       <div className="sm-user">
-        {i18nEnabled && expanded && (
-          <div className="sm-lang" style={{ display: 'flex', justifyContent: 'center', padding: '0 0 8px' }}>
-            <LangSwitch />
-          </div>
-        )}
         {userMenu && (
           <div className="sm-user-menu">
-            <button onClick={() => logout()}>
+            {/* Язык — личная настройка сотрудника (Figma «Панель магазина · язык», WЯ1). */}
+            {i18nEnabled && (
+              <>
+                <div className="sm-user-lang">
+                  <div className="sm-user-lang-label">
+                    <TranslationOutlined /> Til · Язык
+                  </div>
+                  <div className="sm-lang-seg" role="radiogroup" aria-label="Til · Язык">
+                    {(['uz', 'ru'] as const).map((l) => (
+                      <button
+                        key={l}
+                        type="button"
+                        role="radio"
+                        aria-checked={getLang() === l}
+                        className={getLang() === l ? 'on' : ''}
+                        onClick={() => setLang(l)}
+                      >
+                        {l === 'uz' ? 'Oʻzbekcha' : 'Русский'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="sm-user-menu-sep" />
+              </>
+            )}
+            <button className="sm-logout" onClick={() => logout()}>
               <LogoutOutlined /> {tr('Выйти', 'Chiqish')}
             </button>
           </div>
