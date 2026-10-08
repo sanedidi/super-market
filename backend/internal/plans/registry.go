@@ -25,6 +25,8 @@ const (
 	FeaturePromotions       = "promotions"
 	FeatureInvoiceScans     = "invoice_scans"
 	FeatureReportsPro       = "reports_pro"
+	FeatureABCXYZ           = "abc_xyz"
+	FeatureBrandAds         = "brand_ads"
 	FeatureCrowd            = "crowd"
 	FeatureShowcaseCustom   = "showcase_custom"
 	FeatureShowcaseManual   = "showcase_manual"
@@ -82,7 +84,10 @@ var Features = []Feature{
 		i18n.Text{RU: "Super Market распознаёт накладную поставщика и делает приход", UZ: "Super Market yetkazib beruvchi nakladnoyini taniydi va kirim qiladi"}},
 	{FeatureReportsPro, GroupReports,
 		i18n.Text{RU: "Расширенные отчёты", UZ: "Kengaytirilgan hisobotlar"},
-		i18n.Text{RU: "Прибыль и убытки, движение денег, ABC/XYZ-анализ", UZ: "Foyda va zarar, pul harakati, ABC/XYZ-tahlil"}},
+		i18n.Text{RU: "Прибыль и убытки, движение денег", UZ: "Foyda va zarar, pul harakati"}},
+	{FeatureABCXYZ, GroupReports,
+		i18n.Text{RU: "ABC/XYZ-анализ", UZ: "ABC/XYZ-tahlil"},
+		i18n.Text{RU: "Какие товары приносят деньги, какие стоят и что скоро закончится", UZ: "Qaysi mahsulotlar pul keltiradi, qaysilari turib qolgan va nima tez orada tugaydi"}},
 	{FeatureCrowd, GroupDelivery,
 		i18n.Text{RU: "Доставка «по пути»", UZ: "«Yoʻl-yoʻlakay» yetkazish"},
 		i18n.Text{RU: "Заказы магазина могут брать курьеры «по пути», не только свои", UZ: "Doʻkon buyurtmalarini oʻz kuryerlaridan tashqari «yoʻl-yoʻlakay» kuryerlar ham olishi mumkin"}},
@@ -104,6 +109,9 @@ var Features = []Feature{
 	{FeatureShowcaseStatsAll, GroupShowcase,
 		i18n.Text{RU: "Полная статистика витрины", UZ: "Toʻliq vitrina statistikasi"},
 		i18n.Text{RU: "Продажи с витрины, по дням и по магазинам", UZ: "Vitrinadan sotuvlar, kunlar va doʻkonlar boʻyicha"}},
+	{FeatureBrandAds, GroupShowcase,
+		i18n.Text{RU: "Реклама брендов", UZ: "Brendlar reklamasi"},
+		i18n.Text{RU: "Доля магазина с рекламы брендов и настройки: скрыть бренды, исключить категории", UZ: "Brendlar reklamasidan doʻkon ulushi va sozlamalar: brendlarni yashirish, toifalarni chiqarib tashlash"}},
 	{FeatureAdsOff, GroupShowcase,
 		i18n.Text{RU: "Меньше рекламы брендов", UZ: "Brendlar reklamasi kamroq"},
 		i18n.Text{RU: "Магазин может уменьшить или выключить рекламу брендов на своей главной", UZ: "Doʻkon oʻz bosh sahifasida brendlar reklamasini kamaytirishi yoki oʻchirishi mumkin"}},

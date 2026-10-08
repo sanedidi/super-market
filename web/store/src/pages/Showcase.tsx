@@ -1,6 +1,7 @@
 // «Витрина приложения»: сеть настраивает свою главную в приложении поверх
-// шаблона Super Market в пределах тарифа «Старт / Бизнес / Про» (Figma
-// «Витрина · монетизация»).
+// шаблона Super Market в пределах своего тарифа (Figma «Витрина ·
+// монетизация»). Тарифы и что в них входит настраивает супер-админ —
+// названия тарифов здесь не зашиты, «на каком тарифе есть» считается по списку.
 import { useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -10,7 +11,7 @@ import dayjs from 'dayjs'
 import { ApiError, HomeEditor, HomeStatsPanel, api, errorText, money, tr, type HomeBlock, type LayoutEditor } from '@sm/shared'
 
 interface Plan {
-  key: 'start' | 'business' | 'pro'
+  key: string
   name: string
   price_uzs: string
   custom: boolean
@@ -97,8 +98,8 @@ function PlanBar({ data, blocks, onCompare }: { data: ShowcaseData; blocks: Home
       ) : (
         <span className="smh-meter-label">
           {tr(
-            'На тарифе «Старт» покупатели видят автоматическую витрину Super Market. Своя витрина — с тарифа «Бизнес».',
-            '«Start» tarifida xaridorlar Super Market avtomatik vitrinasini koʻradi. Oʻz vitrinangiz — «Biznes» tarifidan boshlab.',
+            'На вашем тарифе покупатели видят автоматическую витрину Super Market. Своя витрина — на тарифе выше.',
+            'Tarifingizda xaridorlar Super Market avtomatik vitrinasini koʻradi. Oʻz vitrinangiz — yuqoriroq tarifda.',
           )}
         </span>
       )}
@@ -135,22 +136,22 @@ const FEATURE_TEXT: Record<string, { title: string; text: (i: LimitInfo, p: Plan
   },
   manual: {
     title: tr('Подборка «вручную» не входит в тариф', '«Qoʻlda» tanlash tarifga kirmaydi'),
-    text: () => tr('Собирайте полки из своих товаров в нужном порядке — с тарифа «Бизнес».', 'Javonlarni oʻz mahsulotlaringizdan kerakli tartibda tuzing — «Biznes» tarifidan boshlab.'),
+    text: () => tr('Собирайте полки из своих товаров в нужном порядке.', 'Javonlarni oʻz mahsulotlaringizdan kerakli tartibda tuzing.'),
   },
   schedule: {
-    title: tr('Расписание блоков — в тарифе «Про»', 'Bloklar jadvali — «Pro» tarifida'),
+    title: tr('Расписание блоков не входит в тариф', 'Bloklar jadvali tarifga kirmaydi'),
     text: () => tr('Блок сам включится и выключится по датам: акции к праздникам без ручных правок.', 'Blok sanalar boʻyicha oʻzi yoqiladi va oʻchadi: bayram aksiyalari qoʻlda tahrirlashsiz.'),
   },
   per_store: {
-    title: tr('Своя витрина у каждого магазина — в тарифе «Про»', 'Har bir doʻkon uchun alohida vitrina — «Pro» tarifida'),
+    title: tr('Своя витрина у каждого магазина не входит в тариф', 'Har bir doʻkon uchun alohida vitrina tarifga kirmaydi'),
     text: () =>
       tr(
-        'По умолчанию у всех магазинов сети одна витрина. На «Про» можно сделать отдельную для любого магазина.',
-        'Odatda tarmoqning barcha doʻkonlarida bitta vitrina boʻladi. «Pro» tarifida istalgan doʻkon uchun alohida vitrina qilish mumkin.',
+        'По умолчанию у всех магазинов сети одна витрина. На тарифе выше можно сделать отдельную для любого магазина.',
+        'Odatda tarmoqning barcha doʻkonlarida bitta vitrina boʻladi. Yuqoriroq tarifda istalgan doʻkon uchun alohida vitrina qilish mumkin.',
       ),
   },
   custom: {
-    title: tr('Своя витрина — с тарифа «Бизнес»', 'Oʻz vitrinangiz — «Biznes» tarifidan boshlab'),
+    title: tr('Своя витрина не входит в тариф', 'Oʻz vitrinangiz tarifga kirmaydi'),
     text: () =>
       tr(
         'Порядок блоков, свои полки, баннеры и промо-полоска. Сейчас покупатели видят автоматическую витрину Super Market.',
@@ -159,11 +160,39 @@ const FEATURE_TEXT: Record<string, { title: string; text: (i: LimitInfo, p: Plan
   },
 }
 
-function nextPlan(data: ShowcaseData, feature: string): Plan | undefined {
+/** Первый по порядку тариф выше текущего, где есть функция (или лимит больше used). */
+function needPlan(data: ShowcaseData, feature: string, used = 0): Plan | undefined {
   const cur = data.plan.effective
-  const order = data.plans
-  const need = feature === 'schedule' || feature === 'per_store' || cur.key === 'business' ? 'pro' : 'business'
-  return order.find((p) => p.key === need) ?? order[order.length - 1]
+  const ok = (p: Plan) => {
+    switch (feature) {
+      case 'banners':
+      case 'shelves':
+      case 'promos':
+        return p.custom && (p[feature] === null || (p[feature] as number) > used)
+      case 'stats':
+        return p.stats !== 'none'
+      case 'stats_full':
+        return p.stats === 'full'
+      case 'manual':
+      case 'schedule':
+      case 'per_store':
+      case 'custom':
+        return !!p[feature]
+      default:
+        return p.custom
+    }
+  }
+  return data.plans.find((p) => p.key !== cur.key && ok(p))
+}
+
+function nextPlan(data: ShowcaseData, feature: string, used = 0): Plan | undefined {
+  return needPlan(data, feature, used) ?? data.plans[data.plans.length - 1]
+}
+
+/** «Тариф X» для замка в списке блоков. */
+function lockName(data: ShowcaseData, feature: string, used = 0) {
+  const p = needPlan(data, feature, used)
+  return p ? `«${p.name}»` : tr('тариф выше', 'yuqoriroq tarif')
 }
 
 function LimitModal({ info, data, onClose, onPlans }: { info: LimitInfo | null; data?: ShowcaseData; onClose: () => void; onPlans: (key?: string) => void }) {
@@ -174,7 +203,7 @@ function LimitModal({ info, data, onClose, onPlans }: { info: LimitInfo | null; 
     const lim = info.limit ?? cur[info.feature] ?? 0
     info = { ...info, limit: lim, used: info.used ?? Math.max(data.usage[info.feature], lim) }
   }
-  const target = nextPlan(data, info.feature)
+  const target = nextPlan(data, info.feature, info.used ?? 0)
   const withPlan = ['banners', 'shelves', 'promos'].includes(info.feature)
   return (
     <Modal open onCancel={onClose} footer={null} width={480} centered>
@@ -391,13 +420,13 @@ export function ShowcasePage() {
         addInfo={(t, blocks, raw) => {
           const d = raw as ShowcaseData
           const plan = d.plan.effective
-          if (!plan.custom) return { lock: tr('«Бизнес»', '«Biznes»'), feature: 'custom' }
+          if (!plan.custom) return { lock: lockName(d, 'custom'), feature: 'custom' }
           const c = ownCounts(blocks, d.template_ids)
           const left = (used: number, lim: number | null, what: string, feature: string) =>
             lim === null
               ? { hint: `${what}: ${tr('без лимита', 'cheklovsiz')}` }
               : used >= lim
-                ? { lock: tr('«Про»', '«Pro»'), hint: tr(`Лимит ${lim} из ${lim} — уже все`, `Cheklov ${lim} / ${lim} — hammasi band`), feature }
+                ? { lock: lockName(d, feature, used), hint: tr(`Лимит ${lim} из ${lim} — уже все`, `Cheklov ${lim} / ${lim} — hammasi band`), feature }
                 : { hint: tr(`Осталось ${lim - used} из ${lim}`, `${lim} tadan ${lim - used} ta qoldi`) }
           switch (t) {
             case 'shelf':
@@ -405,12 +434,12 @@ export function ShowcasePage() {
             case 'scheduled':
               return plan.schedule
                 ? left(c.shelves, plan.shelves, tr('Свои полки', 'Oʻz javonlaringiz'), 'shelves')
-                : { lock: tr('«Про»', '«Pro»'), hint: tr('Полка сама включится и выключится по датам', 'Javon sanalar boʻyicha oʻzi yoqiladi va oʻchadi'), feature: 'schedule' }
+                : { lock: lockName(d, 'schedule'), hint: tr('Полка сама включится и выключится по датам', 'Javon sanalar boʻyicha oʻzi yoqiladi va oʻchadi'), feature: 'schedule' }
             case 'promo':
               return left(c.promos, plan.promos, tr('Промо-полоски', 'Promo-chiziqlar'), 'promos')
             case 'banners':
               return plan.banners === 0
-                ? { lock: tr('«Бизнес»', '«Biznes»'), feature: 'banners' }
+                ? { lock: lockName(d, 'banners'), feature: 'banners' }
                 : { hint: `${tr('Свои баннеры', 'Oʻz bannerlaringiz')}: ${d.usage.banners}${plan.banners === null ? '' : tr(` из ${plan.banners}`, ` / ${plan.banners}`)}` }
             default:
               return blocks.some((b) => b.type === t) ? { hint: tr('Уже на главной', 'Bosh sahifada allaqachon bor') } : undefined
@@ -456,7 +485,7 @@ export function ShowcasePage() {
           subtitle={storeId ? data?.stores.find((s) => s.id === storeId)?.name : tr('все магазины сети', 'tarmoqning barcha doʻkonlari')}
           onUpgrade={() => {
             setStats(false)
-            setPlans({ open: true, highlight: p?.key === 'business' ? 'pro' : 'business' })
+            setPlans({ open: true, highlight: data ? needPlan(data, p?.stats === 'basic' ? 'stats_full' : 'stats')?.key : undefined })
           }}
         />
       </Drawer>

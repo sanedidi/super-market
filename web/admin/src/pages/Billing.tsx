@@ -1,149 +1,31 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Alert, App, Button, Card, Checkbox, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Typography } from 'antd'
+import { Alert, App, Button, Card, Checkbox, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography } from 'antd'
 import dayjs from 'dayjs'
-import { ActiveTag, CrudPage, LoadError, PageTitle, StatusTag, api, date, dateTime, money, useAction, useItem, usePaged } from '@sm/shared'
+import { LoadError, PageTitle, StatusTag, api, date, dateTime, money, useAction, useItem, useList, usePaged } from '@sm/shared'
 import { SearchSelect } from '../components'
 import { useUrlState } from '../hooks'
-
-interface Tariff {
-  id: string
-  name: string
-  min_stores: number
-  price_per_store: string
-  is_active: boolean
-}
-
-export function Tariffs() {
-  return (
-    <>
-      <CrudPage<Tariff>
-        title="Тарифы подписки"
-        path="/admin/billing/tariffs"
-        canDelete
-        createLabel="Новый тариф"
-        columns={[
-          { title: 'Название', dataIndex: 'name' },
-          { title: 'От магазинов', dataIndex: 'min_stores' },
-          { title: 'Цена за магазин в месяц', dataIndex: 'price_per_store', render: (v) => `${money(v)} $` },
-          { title: 'Статус', dataIndex: 'is_active', render: (v) => <ActiveTag active={v} /> },
-        ]}
-        form={(editing) => (
-          <>
-            <Form.Item name="name" label="Название" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="min_stores" label="Действует от числа магазинов" rules={[{ required: true }]}>
-              <InputNumber min={1} precision={0} style={{ width: '100%' }} />
-            </Form.Item>
-            <Form.Item name="price_per_store" label="Цена за магазин в месяц, $" rules={[{ required: true }]}>
-              <InputNumber min={0} step={1} precision={2} style={{ width: '100%' }} />
-            </Form.Item>
-            {editing && (
-              <Form.Item name="is_active" label="Активен" valuePropName="checked">
-                <Switch />
-              </Form.Item>
-            )}
-          </>
-        )}
-      />
-      <Typography.Paragraph type="secondary" style={{ marginTop: 16 }}>
-        Для сети действует тариф с наибольшим «от магазинов», не превышающим число её активных магазинов. Новая цена применяется к
-        следующим счетам. Действующие тарифы сразу показываются на сайте super-market.uz в блоке «Тарифы».
-      </Typography.Paragraph>
-    </>
-  )
-}
-
-const SHOWCASE_NAMES: Record<string, string> = { business: 'Бизнес', pro: 'Про' }
-
-interface Settings {
-  usd_rate: string
-  grace_days: number
-  auto_charge_balance: boolean
-  showcase_trial_plan: string
-  showcase_trial_days: number
-}
+import { BillingSettingsForm, type Plan } from './Plans'
+import { NetworkPlanModal, PlanCell, type NetworkBilling } from './NetworkPlan'
 
 export function BillingSettings() {
-  const { data } = useItem<Settings>('/admin/billing/settings')
-  const [form] = Form.useForm()
-  useEffect(() => {
-    if (data) form.setFieldsValue({ ...data, usd_rate: Number(data.usd_rate) })
-  }, [data, form])
-  const save = useAction((v: Settings) => api.put('/admin/billing/settings', { ...v, usd_rate: String(v.usd_rate) }), { success: 'Сохранено' })
+  const plans = useList<Plan>('/admin/plans')
   return (
     <>
       <PageTitle title="Настройки подписки" />
       <Card style={{ maxWidth: 520 }}>
-        <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v)}>
-          <Form.Item name="usd_rate" label="Курс доллара для счетов, сум" rules={[{ required: true }]}>
-            <InputNumber min={1} precision={2} style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="grace_days" label="Дней на оплату счёта" rules={[{ required: true }]} extra="После этого магазины сети скрываются из приложения.">
-            <InputNumber min={0} max={60} precision={0} style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="auto_charge_balance" valuePropName="checked">
-            <Checkbox>Оплачивать счета с баланса платформы автоматически</Checkbox>
-          </Form.Item>
-          <Form.Item label="Пробный период витрины" extra="Начинается, когда сеть впервые открывает «Витрину приложения». 0 дней — без пробного.">
-            <Space>
-              <Form.Item name="showcase_trial_plan" noStyle>
-                <Select style={{ width: 140 }} options={[{ value: 'business', label: '«Бизнес»' }, { value: 'pro', label: '«Про»' }]} />
-              </Form.Item>
-              <Form.Item name="showcase_trial_days" noStyle>
-                <InputNumber min={0} max={365} precision={0} addonAfter="дней" style={{ width: 150 }} />
-              </Form.Item>
-            </Space>
-          </Form.Item>
-          <Button type="primary" htmlType="submit" loading={save.isPending}>
-            Сохранить
-          </Button>
-        </Form>
+        <BillingSettingsForm plans={plans.data ?? []} />
       </Card>
     </>
   )
-}
-
-interface NetworkBilling {
-  network_id: string
-  network_name: string
-  kind: string
-  status: string
-  stores_count: number
-  custom_price_per_store: string | null
-  price_per_store: string
-  monthly_usd: string
-  billing_from: string
-  balance_available: string
-  balance_pending: string
-  unpaid_uzs: string
-  overdue: boolean
 }
 
 export function BillingNetworks() {
   const [overdueParam, setOverdue] = useUrlState('overdue')
   const overdue = overdueParam === 'true'
   const list = usePaged<NetworkBilling>('/admin/billing/networks', { overdue: overdue || undefined })
-  const [editing, setEditing] = useState<NetworkBilling | null>(null)
-  const [form] = Form.useForm()
-  const save = useAction(
-    (v: { custom: boolean; price?: number; billing_from?: dayjs.Dayjs }) =>
-      api.patch(`/admin/billing/networks/${editing!.network_id}`, {
-        ...(v.custom ? { custom_price_per_store: v.price ?? 0 } : { clear_custom_price: true }),
-        billing_from: v.billing_from ? v.billing_from.startOf('month').format('YYYY-MM-DD') : undefined,
-      }),
-    { success: 'Сохранено' },
-  )
-  const open = (n: NetworkBilling) => {
-    setEditing(n)
-    form.setFieldsValue({
-      custom: n.custom_price_per_store !== null,
-      price: n.custom_price_per_store ? Number(n.custom_price_per_store) : undefined,
-      billing_from: dayjs(n.billing_from),
-    })
-  }
-  const custom = Form.useWatch('custom', form)
+  const plans = useList<Plan>('/admin/plans')
+  const [editing, setEditing] = useState<string | null>(null)
   return (
     <>
       <PageTitle title="Сети и оплата">
@@ -168,16 +50,17 @@ export function BillingNetworks() {
                 </>
               ),
             },
+            { title: 'Тариф', render: (_, n) => <PlanCell b={n} plans={plans.data} /> },
             { title: 'Магазинов', dataIndex: 'stores_count' },
             {
               title: 'Цена за магазин',
               render: (_, n) => (
                 <>
-                  {money(n.price_per_store)} $ {n.custom_price_per_store !== null && <Tag color="purple">индивидуальная</Tag>}
+                  {money(n.price_per_store)} сум {n.custom_price_uzs !== null && <Tag color="purple">своя цена</Tag>}
                 </>
               ),
             },
-            { title: 'В месяц', dataIndex: 'monthly_usd', render: (v) => `${money(v)} $` },
+            { title: 'В месяц', dataIndex: 'monthly_uzs', render: (v) => `${money(v)} сум` },
             { title: 'Платит с', dataIndex: 'billing_from', render: date },
             { title: 'Баланс', render: (_, n) => <>{money(n.balance_available)} <Typography.Text type="secondary">(+{money(n.balance_pending)} в пути)</Typography.Text></> },
             {
@@ -196,37 +79,15 @@ export function BillingNetworks() {
             {
               key: 'edit',
               render: (_, n) => (
-                <Button size="small" onClick={() => open(n)}>
-                  Условия
+                <Button size="small" onClick={() => setEditing(n.network_id)}>
+                  Тариф
                 </Button>
               ),
             },
           ]}
         />
       </Card>
-      <Modal
-        open={editing !== null}
-        title={`Условия: ${editing?.network_name}`}
-        onCancel={() => setEditing(null)}
-        onOk={() => form.submit()}
-        okText="Сохранить"
-        confirmLoading={save.isPending}
-        forceRender
-      >
-        <Form form={form} layout="vertical" onFinish={(v) => save.mutate(v, { onSuccess: () => setEditing(null) })}>
-          <Form.Item name="custom" valuePropName="checked">
-            <Checkbox>Индивидуальная цена</Checkbox>
-          </Form.Item>
-          {custom && (
-            <Form.Item name="price" label="Цена за магазин в месяц, $" rules={[{ required: true }]}>
-              <InputNumber min={0} precision={2} style={{ width: '100%' }} />
-            </Form.Item>
-          )}
-          <Form.Item name="billing_from" label="Платит с месяца" extra="До этого месяца подписка бесплатна.">
-            <DatePicker picker="month" format="MM.YYYY" style={{ width: '100%' }} />
-          </Form.Item>
-        </Form>
-      </Modal>
+      <NetworkPlanModal networkId={editing} onClose={() => setEditing(null)} />
     </>
   )
 }
@@ -238,9 +99,13 @@ interface Invoice {
   period: string
   stores_count: number
   price_per_store: string
-  amount_usd: string
-  rate: string
+  currency: 'UZS' | 'USD'
+  amount_usd: string | null
+  rate: string | null
   amount_uzs: string
+  plan_key: string | null
+  plan_name: string
+  ad_share_uzs: string
   showcase_plan: string | null
   showcase_uzs: string
   status: string
@@ -323,10 +188,24 @@ export function Invoices() {
               title: 'Сумма',
               render: (_, i) => (
                 <>
-                  {money(i.amount_usd)} $ <Typography.Text type="secondary">({money(i.amount_uzs)} сум)</Typography.Text>
+                  <b>{money(i.amount_uzs)} сум</b>
+                  {i.currency === 'USD' ? (
+                    <Typography.Text type="secondary"> ({money(i.amount_usd)} $ по курсу {money(i.rate)})</Typography.Text>
+                  ) : (
+                    <div>
+                      <Typography.Text type="secondary">
+                        «{i.plan_name}»: {i.stores_count} × {money(i.price_per_store)} сум
+                      </Typography.Text>
+                    </div>
+                  )}
                   {Number(i.showcase_uzs) > 0 && (
                     <div>
-                      <Typography.Text type="secondary">в т. ч. витрина «{SHOWCASE_NAMES[i.showcase_plan ?? ''] ?? i.showcase_plan}»: {money(i.showcase_uzs)} сум</Typography.Text>
+                      <Typography.Text type="secondary">в т. ч. витрина «{i.showcase_plan}»: {money(i.showcase_uzs)} сум</Typography.Text>
+                    </div>
+                  )}
+                  {Number(i.ad_share_uzs) > 0 && (
+                    <div>
+                      <Typography.Text type="secondary">зачтено с рекламы брендов: {money(i.ad_share_uzs)} сум</Typography.Text>
                     </div>
                   )}
                 </>

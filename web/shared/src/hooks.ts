@@ -84,6 +84,22 @@ export function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
+/**
+ * Ошибки тарифа: функции нет в тарифе (plan_feature), упёрлись в лимит
+ * (tariff_limit) или тариф требует больше магазинов (plan_min_stores).
+ * Панель магазина регистрирует обработчик — окно «Лимит тарифа» с
+ * переходом в «Tarif»; без обработчика — обычное сообщение.
+ */
+export function isPlanError(e: unknown): e is ApiError {
+  return e instanceof ApiError && (e.code === 'plan_feature' || e.code === 'tariff_limit' || e.code === 'plan_min_stores')
+}
+
+let planErrorHandler: ((e: ApiError) => void) | null = null
+
+export function setPlanErrorHandler(fn: ((e: ApiError) => void) | null) {
+  planErrorHandler = fn
+}
+
 /** Мутация с сообщением об успехе/ошибке и сбросом кэша списков. */
 export function useAction<In, Out = unknown>(fn: (input: In) => Promise<Out>, opts: { success?: string; invalidate?: QueryKey[] } = {}) {
   const qc = useQueryClient()
@@ -95,6 +111,9 @@ export function useAction<In, Out = unknown>(fn: (input: In) => Promise<Out>, op
       if (opts.invalidate) opts.invalidate.forEach((k) => qc.invalidateQueries({ queryKey: k }))
       else qc.invalidateQueries()
     },
-    onError: (e) => message.error(errorText(e)),
+    onError: (e) => {
+      if (planErrorHandler && isPlanError(e)) planErrorHandler(e)
+      else message.error(errorText(e))
+    },
   })
 }

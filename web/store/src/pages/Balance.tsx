@@ -15,6 +15,7 @@ const entryKinds: Record<string, string> = {
   subscription: tr('Подписка', 'Obuna'),
   adjustment: tr('Корректировка', 'Tuzatish'),
   ad_share: tr('Доля с рекламы брендов', 'Brendlar reklamasidan ulush'),
+  commission: tr('Комиссия Super Market', 'Super Market komissiyasi'),
 }
 
 export function BalancePage() {
@@ -164,11 +165,11 @@ function PayoutModal({ open, onClose, available }: { open: boolean; onClose: () 
 }
 
 function AdShareLine() {
-  const { can } = useStore()
+  const { can, has } = useStore()
   const q = useQuery({
     queryKey: ['/store/ads'],
     queryFn: () => api.get<{ month_share: string; share_pct: string; share_to_subscription: boolean; month_views: number }>('/store/ads'),
-    enabled: can('showcase.manage'),
+    enabled: can('showcase.manage') && has('brand_ads'),
     retry: false,
   })
   const d = q.data
@@ -202,11 +203,21 @@ function Subscription({ billing }: { billing?: Billing }) {
     <>
       {billing && (
         <Descriptions size="small" bordered column={{ xs: 1, sm: 1, md: 3, lg: 3, xl: 3, xxl: 3 }} style={{ marginBottom: 16 }}>
+          <Descriptions.Item label={tr('Тариф', 'Tarif')}>
+            <Link to="/plan">{billing.plan_name}</Link>
+            {billing.effective_plan_key !== billing.plan_key && billing.trial_until && (
+              <Tag color="gold" style={{ marginLeft: 6 }}>
+                {tr(`пробный до ${date(billing.trial_until)}`, `sinov ${date(billing.trial_until)} gacha`)}
+              </Tag>
+            )}
+          </Descriptions.Item>
           <Descriptions.Item label={tr('Магазинов', 'Doʻkonlar')}>{billing.stores_count}</Descriptions.Item>
           <Descriptions.Item label={tr('Цена за магазин', 'Bitta doʻkon narxi')}>
-            {money(billing.price_per_store)} $ {billing.custom_price_per_store && <Tag color="blue">{tr('индивидуальная', 'individual')}</Tag>}
+            {money(billing.price_per_store)} {tr('сум', 'soʻm')} {billing.custom_price_uzs !== null && <Tag color="blue">{tr('индивидуальная', 'individual')}</Tag>}
           </Descriptions.Item>
-          <Descriptions.Item label={tr('В месяц', 'Oyiga')}>{money(billing.monthly_usd)} $</Descriptions.Item>
+          <Descriptions.Item label={tr('В месяц', 'Oyiga')}>
+            {money(billing.monthly_uzs)} {tr('сум', 'soʻm')}
+          </Descriptions.Item>
           <Descriptions.Item label={tr('Оплата с', 'Toʻlov boshlanishi')}>{date(billing.billing_from)}</Descriptions.Item>
           <Descriptions.Item label={tr('Долг', 'Qarz')}>
             {money(billing.unpaid_uzs)} {tr('сум', 'soʻm')}
@@ -225,8 +236,19 @@ function Subscription({ billing }: { billing?: Billing }) {
         columns={[
           { title: tr('Период', 'Davr'), dataIndex: 'period' },
           { title: tr('Магазинов', 'Doʻkonlar'), dataIndex: 'stores_count', align: 'right' },
-          { title: tr('Сумма, $', 'Summa, $'), dataIndex: 'amount_usd', align: 'right', render: (v: string) => money(v) },
-          { title: tr('Курс', 'Kurs'), dataIndex: 'rate', align: 'right', render: (v: string) => money(v) },
+          {
+            title: tr('Тариф', 'Tarif'),
+            render: (_, r) =>
+              r.currency === 'USD' ? (
+                <span>
+                  {money(r.amount_usd)} $ × {money(r.rate)}
+                </span>
+              ) : (
+                <span>
+                  {r.plan_name} · {money(r.price_per_store)} {tr('сум', 'soʻm')}
+                </span>
+              ),
+          },
           {
             title: tr('Витрина, сум', 'Vitrina, soʻm'),
             dataIndex: 'showcase_uzs',

@@ -501,7 +501,8 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 Ошибки тарифа:
 - 403 `plan_feature` — функции нет в тарифе: `details.feature`, `feature_name`, `plan`, `plan_name`, `need_plan`, `need_plan_name`
   (первый открытый тариф, где она есть). Сейчас так закрыты: долги (`/store/debtors*`, `/store/debt-*`, `/pos/debtors*`,
-  `/pos/debt-payments`, продажа в долг из панели), расширенные отчёты (`profit-loss`, `cash-flow`, `abc-xyz`), накладные по
+  `/pos/debt-payments`, продажа в долг из панели), расширенные отчёты (`profit-loss`, `cash-flow`), ABC/XYZ-анализ (`abc-xyz`, функция `abc_xyz`),
+  реклама брендов в панели (`/store/ads`, функция `brand_ads`; доля с рекламы зачисляется на любом тарифе), накладные по
   фото, создание и правка акций, crowd-доставка (`/store/crowd/lookup|verify` и сами заказы не уходят курьерам «по пути»).
 - 409 `tariff_limit` — лимит: `details.feature` (ключ лимита), `limit`, `used`, `plan`, `plan_name`, `need_plan`. Лимиты
   магазинов, касс, сотрудников (без владельца и курьеров) и курьеров проверяются при добавлении и при смене роли/статуса —

@@ -8,6 +8,8 @@ import {
   BookOutlined,
   CarOutlined,
   CalculatorOutlined,
+  CrownOutlined,
+  LockOutlined,
   DashboardOutlined,
   DollarOutlined,
   InboxOutlined,
@@ -54,10 +56,12 @@ import { StoreAdsPage } from './pages/StoreAds'
 import { PosDevicesPage, PosShiftsPage } from './pages/Pos'
 import { DebtSettingsPage, DebtorsPage } from './pages/Debts'
 import { OrderAlerts } from './notify'
+import { FEATURE_BY_PATH, LockedFeature, PlanErrorHost, PlanPage } from './pages/Plan'
 
 const TITLE = tr('Панель магазина', 'Doʻkon paneli')
 
-type Item = { key: string; label: string; perm?: string | string[]; icon?: ReactNode; children?: Item[] }
+// feature — функция тарифа: без неё у пункта замок, страница — с предложением тарифа.
+type Item = { key: string; label: string; perm?: string | string[]; feature?: string; icon?: ReactNode; children?: Item[] }
 
 // Меню как в Dokondor: группы разделов; perm — какое право нужно, чтобы видеть пункт.
 // Права совпадают с правами сервера на чтение раздела (docs/api.md, «Права на чтение»).
@@ -66,9 +70,9 @@ const MENU: Item[] = [
   { key: '/start', label: tr('Начало работы', 'Ishni boshlash'), icon: <RocketOutlined />, perm: 'inventory.manage' },
   { key: '/orders', label: tr('Онлайн-заказы', 'Onlayn buyurtmalar'), icon: <ShoppingCartOutlined />, perm: 'orders.manage' },
   { key: '/couriers', label: tr('Курьеры', 'Kuryerlar'), icon: <CarOutlined />, perm: 'orders.manage' },
-  { key: '/crowd', label: tr('Курьеры по пути', 'Yoʻlakay kuryerlar'), icon: <SafetyCertificateOutlined />, perm: 'orders.manage' },
+  { key: '/crowd', label: tr('Курьеры по пути', 'Yoʻlakay kuryerlar'), icon: <SafetyCertificateOutlined />, perm: 'orders.manage', feature: 'crowd' },
   { key: '/showcase', label: tr('Витрина приложения', 'Ilova vitrinasi'), icon: <LayoutOutlined />, perm: 'showcase.manage' },
-  { key: '/brand-ads', label: tr('Реклама брендов', 'Brendlar reklamasi'), icon: <NotificationOutlined />, perm: 'showcase.manage' },
+  { key: '/brand-ads', label: tr('Реклама брендов', 'Brendlar reklamasi'), icon: <NotificationOutlined />, perm: 'showcase.manage', feature: 'brand_ads' },
   {
     key: 'sales',
     label: tr('Продажи', 'Sotuvlar'),
@@ -77,7 +81,7 @@ const MENU: Item[] = [
       { key: '/sales/pos', label: tr('Продажи POS', 'POS sotuvlari'), perm: ['sales.pos', 'sales.return', 'reports.view'] },
       { key: '/sales/returns', label: tr('Возвраты', 'Qaytarishlar'), perm: ['sales.pos', 'sales.return', 'reports.view'] },
       { key: '/sales/prices', label: tr('Установка цен', 'Narxlarni belgilash'), perm: 'prices.manage' },
-      { key: '/sales/promotions', label: tr('Акции в приложении', 'Ilovadagi aksiyalar'), perm: 'prices.manage' },
+      { key: '/sales/promotions', label: tr('Акции в приложении', 'Ilovadagi aksiyalar'), perm: 'prices.manage', feature: 'promotions' },
     ],
   },
   {
@@ -89,7 +93,7 @@ const MENU: Item[] = [
       { key: '/pos/shifts', label: tr('Смены', 'Smenalar'), perm: ['reports.view', 'finance.manage'] },
     ],
   },
-  { key: '/debts', label: tr('Долги покупателей', 'Xaridorlar qarzlari'), icon: <AuditOutlined />, perm: ['debts.manage', 'debts.give'] },
+  { key: '/debts', label: tr('Долги покупателей', 'Xaridorlar qarzlari'), icon: <AuditOutlined />, perm: ['debts.manage', 'debts.give'], feature: 'debts' },
   {
     key: 'purchases',
     label: tr('Закупки', 'Xaridlar'),
@@ -129,9 +133,9 @@ const MENU: Item[] = [
     label: tr('Отчёты', 'Hisobotlar'),
     icon: <BarChartOutlined />,
     children: [
-      { key: '/reports/cash-flow', label: tr('Денежный поток', 'Pul oqimi'), perm: 'reports.view' },
-      { key: '/reports/profit-loss', label: tr('Прибыль и убыток', 'Foyda va zarar'), perm: 'reports.view' },
-      { key: '/reports/abc-xyz', label: tr('ABC/XYZ-анализ', 'ABC/XYZ tahlili'), perm: 'reports.view' },
+      { key: '/reports/cash-flow', label: tr('Денежный поток', 'Pul oqimi'), perm: 'reports.view', feature: 'reports_pro' },
+      { key: '/reports/profit-loss', label: tr('Прибыль и убыток', 'Foyda va zarar'), perm: 'reports.view', feature: 'reports_pro' },
+      { key: '/reports/abc-xyz', label: tr('ABC/XYZ-анализ', 'ABC/XYZ tahlili'), perm: 'reports.view', feature: 'abc_xyz' },
     ],
   },
   {
@@ -159,24 +163,25 @@ const MENU: Item[] = [
     children: [
       { key: '/settings/stores', label: tr('Магазины', 'Doʻkonlar'), perm: 'stores.manage' },
       { key: '/settings/delivery', label: tr('Доставка', 'Yetkazib berish'), perm: 'stores.manage' },
-      { key: '/settings/debts', label: tr('Долги покупателей', 'Xaridorlar qarzlari'), perm: ['debts.manage', 'debts.give'] },
+      { key: '/settings/debts', label: tr('Долги покупателей', 'Xaridorlar qarzlari'), perm: ['debts.manage', 'debts.give'], feature: 'debts' },
       { key: '/settings/roles', label: tr('Роли', 'Rollar'), perm: 'staff.manage' },
       { key: '/settings/employees', label: tr('Сотрудники', 'Xodimlar'), perm: 'staff.manage' },
     ],
   },
   { key: '/balance', label: tr('Баланс и подписка', 'Balans va obuna'), icon: <WalletOutlined />, perm: 'payouts.manage' },
+  { key: '/plan', label: tr('Тариф', 'Tarif'), icon: <CrownOutlined /> },
 ]
 
-function filterMenu(items: Item[], can: (p: string) => boolean): MenuItem[] {
+function filterMenu(items: Item[], can: (p: string) => boolean, has: (f: string) => boolean): MenuItem[] {
   const allowed = (i: Item) => allowedBy(i.perm, can)
   const out: MenuItem[] = []
   for (const i of items) {
     if (!allowed(i)) continue
     if (i.children) {
-      const children = filterMenu(i.children, can)
+      const children = filterMenu(i.children, can, has)
       if (children.length) out.push({ key: i.key, label: i.label, icon: i.icon, children })
     } else {
-      out.push({ key: i.key, label: i.label, icon: i.icon })
+      out.push({ key: i.key, label: i.label, icon: i.icon, extra: i.feature && !has(i.feature) ? <LockOutlined /> : undefined })
     }
   }
   return out
@@ -199,12 +204,17 @@ function permFor(path: string): Item['perm'] {
 
 /** Не пускает на страницу без права, даже по прямой ссылке. */
 function Guard() {
-  const { can, me } = useStore()
+  const { can, me, has, planLoading } = useStore()
   const { pathname } = useLocation()
   if (!me) return <Spin style={{ display: 'block', marginTop: 48 }} />
-  if (!allowedBy(permFor(pathname.replace(/\/$/, '') || '/'), can)) {
+  const path = pathname.replace(/\/$/, '') || '/'
+  if (!allowedBy(permFor(path), can)) {
     return <Result status="403" title={tr('Нет доступа', 'Ruxsat yoʻq')} subTitle={tr('У вашей роли нет права на этот раздел. Обратитесь к владельцу сети.', 'Rolingizda bu boʻlimga huquq yoʻq. Tarmoq egasiga murojaat qiling.')} />
   }
+  // Страница закрыта тарифом — показываем, что даёт функция и на каком тарифе есть.
+  const feature = Object.entries(FEATURE_BY_PATH).find(([p]) => path === p || path.startsWith(p + '/'))?.[1]
+  if (feature && planLoading) return <Spin style={{ display: 'block', marginTop: 48 }} />
+  if (feature && !has(feature)) return <LockedFeature feature={feature} />
   return <Outlet />
 }
 
@@ -213,6 +223,7 @@ function Header() {
   return (
     <Flex align="center" gap={12} wrap={false} style={{ minWidth: 0 }}>
       <OrderAlerts />
+      <PlanErrorHost />
       {stores.length > 0 && (
         <Select
           value={storeId || undefined}
@@ -227,8 +238,8 @@ function Header() {
 }
 
 export function StoreRoutes() {
-  const { can, me } = useStore()
-  const menu = me ? filterMenu(MENU, can) : []
+  const { can, me, has } = useStore()
+  const menu = me ? filterMenu(MENU, can, has) : []
   return (
     <SetupGate>
     <Routes>
@@ -295,6 +306,7 @@ export function StoreRoutes() {
         <Route path="settings/employees" element={<EmployeesPage />} />
 
         <Route path="balance" element={<BalancePage />} />
+        <Route path="plan" element={<PlanPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
        </Route>
       </Route>

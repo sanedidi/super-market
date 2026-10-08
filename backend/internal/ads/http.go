@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
+	"github.com/sanedidi/super-market/backend/internal/plans"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 )
 
@@ -45,7 +46,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/admin/ads/invoices/{id}/document", m.document)
 	})
 	r.Group(func(r chi.Router) {
-		r.Use(m.auth.Require(identity.AppStore))
+		r.Use(m.auth.Require(identity.AppStore), m.auth.Feature(plans.FeatureBrandAds))
 		r.With(m.auth.Allow(identity.PermShowcaseManage)).Get("/store/ads", m.networkAds)
 		r.With(m.auth.Allow(identity.PermShowcaseManage)).Put("/store/ads", m.saveNetworkAds)
 	})

@@ -1,7 +1,7 @@
 // Контекст панели: кто вошёл (сеть, права) и выбранный магазин.
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useItem, useList } from '@sm/shared'
-import type { Me, Store } from './types'
+import type { Me, MyPlan, Store } from './types'
 
 interface StoreCtx {
   me: Me | undefined
@@ -12,6 +12,12 @@ interface StoreCtx {
   store: Store | undefined
   setStoreId: (id: string) => void
   can: (perm: string) => boolean
+  /** Тариф сети («Tarif»); undefined, пока грузится. */
+  plan: MyPlan | undefined
+  /** Тариф ещё грузится (страницы с функцией тарифа ждут его, чтобы не мигать). */
+  planLoading: boolean
+  /** Функция входит в действующий тариф. Пока тариф грузится — да (без мигания замков). */
+  has: (feature: string) => boolean
 }
 
 const Ctx = createContext<StoreCtx>({
@@ -22,6 +28,9 @@ const Ctx = createContext<StoreCtx>({
   store: undefined,
   setStoreId: () => {},
   can: () => false,
+  plan: undefined,
+  planLoading: false,
+  has: () => true,
 })
 
 const KEY = 'sm_store_selected'
@@ -45,6 +54,7 @@ function save(id: string) {
 export function StoreProvider({ children }: { children: ReactNode }) {
   const me = useItem<Me>('/store/me')
   const stores = useList<Store>('/store/stores')
+  const plan = useItem<MyPlan>(me.data ? '/store/plan' : null)
   const [picked, setPicked] = useState(readSaved)
   const list = useMemo(() => stores.data ?? [], [stores.data])
 
@@ -65,6 +75,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setPicked(id)
     },
     can: (perm) => !!me.data && (me.data.is_owner || me.data.permissions.includes(perm)),
+    plan: plan.data,
+    planLoading: plan.isLoading,
+    has: (f) => !plan.data || plan.data.current.features.some((x) => x.key === f && x.included),
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

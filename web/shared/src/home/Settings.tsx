@@ -446,9 +446,9 @@ export function BlockSettings({
         <div className="smh-locked">
           <LockFilled />
           <b>{tr('Расписание блоков', 'Bloklar jadvali')}</b>
-          <span>{tr('Блок сам включится и выключится по датам. Доступно в тарифе «Про».', 'Blok sanalar boʻyicha oʻzi yoqiladi va oʻchadi. «Pro» tarifida mavjud.')}</span>
+          <span>{tr('Блок сам включится и выключится по датам. Не входит в ваш тариф.', 'Blok sanalar boʻyicha oʻzi yoqiladi va oʻchadi. Tarifingizga kirmaydi.')}</span>
           <Button type="primary" danger onClick={() => onUpgrade?.('schedule')}>
-            {tr('Перейти на «Про»', '«Pro» tarifiga oʻtish')}
+            {tr('Сравнить тарифы', 'Tariflarni solishtirish')}
           </Button>
         </div>
       ) : (

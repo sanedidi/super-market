@@ -71,10 +71,10 @@ function Blocks({ analytics }: { analytics: boolean }) {
 
 /** Долги покупателей: сколько должны и сколько просрочено. */
 function DebtsBlock() {
-  const { storeId, can } = useStore()
+  const { storeId, can, has } = useStore()
   const nav = useNavigate()
   const d = useItem<{ total: string; count: number; overdue: string; overdue_count: number; open_disputes: number }>(
-    can('debts.manage') ? '/store/debtors/summary' : null,
+    can('debts.manage') && has('debts') ? '/store/debtors/summary' : null,
     { store_id: storeId },
   ).data
   if (!d || d.count === 0) return null
