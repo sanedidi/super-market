@@ -65,8 +65,12 @@ func TestProfileAndPush(t *testing.T) {
 	}), 200, "delivery")
 
 	if c := a.expect(a.do("GET", "/client/config", "", nil), 200, "config"); c.Body["push_enabled"] != false || c.str("support_url") != "https://t.me/sm_support" ||
-		c.str("offer_url") != "https://super-market.uz/offer" || c.str("bot_url") != "https://t.me/sm_test_bot" {
+		c.str("offer_url") != "https://super-market.uz/offer/ru" || c.str("bot_url") != "https://t.me/sm_test_bot" {
 		t.Fatalf("config = %v", c.Body)
+	}
+	// Документы сайта: по умолчанию узбекские, русская версия — /ru.
+	if c := a.expect(a.doLang("uz", "GET", "/client/config", "", nil), 200, "config uz"); c.str("offer_url") != "https://super-market.uz/offer" {
+		t.Fatalf("config uz = %v", c.Body)
 	}
 	// Запрос кода: через сколько можно запросить снова и ссылка на бота.
 	if rc := a.expect(a.do("POST", "/auth/otp/request", "", map[string]any{"phone": "+998900000099"}), 200, "request code"); rc.Body["resend_in"].(float64) != 60 ||
@@ -154,7 +158,7 @@ func TestProfileAndPush(t *testing.T) {
 		titles = append(titles, s)
 	}
 	rows.Close()
-	if strings.Join(titles, ";") != "Buyurtma №1 to‘landi;Buyurtma №1 qabul qilindi" {
+	if strings.Join(titles, ";") != "Buyurtma №1 toʻlandi;Buyurtma №1 qabul qilindi" {
 		t.Fatalf("outbox = %v", titles)
 	}
 
@@ -164,7 +168,7 @@ func TestProfileAndPush(t *testing.T) {
 	if n, err := d.Tick(ctx); err != nil || n != 2 {
 		t.Fatalf("tick = %d, %v", n, err)
 	}
-	if len(fcm.sent) != 2 || fcm.sent[0] != devToken+"|Buyurtma №1 to‘landi|"+orderID {
+	if len(fcm.sent) != 2 || fcm.sent[0] != devToken+"|Buyurtma №1 toʻlandi|"+orderID {
 		t.Fatalf("fcm = %v", fcm.sent)
 	}
 	if s := sqlStr(t, pool, `SELECT string_agg(status || ':' || channel || ':' || devices, ',' ORDER BY id) FROM notifications_outbox`); s != "sent:push:iPhone,sent:push:iPhone" {
@@ -207,7 +211,7 @@ func TestProfileAndPush(t *testing.T) {
 		t.Fatal(err)
 	}
 	list := a.expect(a.do("GET", "/client/notifications", client, nil), 200, "notifications").items()
-	if len(list) != 4 || list[0]["kind"] != "test" || list[3]["title"] != "Buyurtma №1 to‘landi" || list[3]["read"] != false {
+	if len(list) != 4 || list[0]["kind"] != "test" || list[3]["title"] != "Buyurtma №1 toʻlandi" || list[3]["read"] != false {
 		t.Fatalf("notifications = %v", list)
 	}
 	if u := a.expect(a.do("GET", "/client/notifications/unread", client, nil), 200, "unread"); u.Body["count"].(float64) != 4 {

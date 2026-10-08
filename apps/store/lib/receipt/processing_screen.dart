@@ -78,30 +78,30 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(backgroundColor: AppColors.bg, title: const Text('Новый приход')),
+      appBar: AppBar(backgroundColor: AppColors.bg, title: Text(tr('Новый приход', 'Yangi kirim'))),
       body: SafeArea(
         child: ListView(padding: const EdgeInsets.all(16), children: [
           AppCard(
             padding: const EdgeInsets.all(20),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Row(children: [
-                IconBox(Icons.auto_awesome_rounded, bg: AppColors.primarySoft, fg: AppColors.primary, size: 40, iconSize: 22, radius: 12),
-                SizedBox(width: 10),
+              Row(children: [
+                const IconBox(Icons.auto_awesome_rounded, bg: AppColors.primarySoft, fg: AppColors.primary, size: 40, iconSize: 22, radius: 12),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('ИИ читает накладную', style: AppText.title),
-                    Text('Обычно 10–30 секунд', style: AppText.small),
+                    Text(tr('ИИ читает накладную', 'Sunʼiy intellekt yuk xatini oʻqimoqda'), style: AppText.title),
+                    Text(tr('Обычно 10–30 секунд', 'Odatda 10–30 soniya'), style: AppText.small),
                   ]),
                 ),
               ]),
               const SizedBox(height: 14),
-              row(0, 'Читаем текст накладной'),
-              row(1, 'Находим поставщика, номер и итог'),
-              row(2, 'Сопоставляем товары с каталогом'),
+              row(0, tr('Читаем текст накладной', 'Yuk xati matnini oʻqiyapmiz')),
+              row(1, tr('Находим поставщика, номер и итог', 'Yetkazib beruvchi, raqam va jamini topyapmiz')),
+              row(2, tr('Сопоставляем товары с каталогом', 'Mahsulotlarni katalog bilan solishtiryapmiz')),
             ]),
           ),
           const SizedBox(height: 16),
-          const Text('Можно закрыть экран — накладная сохранится в разделе «Склад → Накладные».',
+          Text(tr('Можно закрыть экран — накладная сохранится в разделе «Склад → Накладные».', 'Ekranni yopish mumkin — yuk xati «Ombor → Yuk xatlari» boʻlimida saqlanadi.'),
               style: AppText.small, textAlign: TextAlign.center),
         ]),
       ),

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/phone"
 	"github.com/sanedidi/super-market/backend/internal/platform/telegram"
 )
@@ -42,10 +43,22 @@ func NewBot(svc *Service, api BotAPI, log *slog.Logger) *Bot {
 	return &Bot{svc: svc, api: api, log: log.With("component", "telegram_bot"), pending: map[int64]string{}}
 }
 
-var shareContactKeyboard = &telegram.ReplyMarkup{
-	Keyboard:        [][]telegram.KeyboardButton{{{Text: "Поделиться номером", RequestContact: true}}},
-	ResizeKeyboard:  true,
-	OneTimeKeyboard: true,
+// shareContactKeyboard — кнопка «Поделиться номером» на языке lang.
+func shareContactKeyboard(lang string) *telegram.ReplyMarkup {
+	return &telegram.ReplyMarkup{
+		Keyboard:        [][]telegram.KeyboardButton{{{Text: i18n.Pick(lang, "Поделиться номером", "Raqamni ulashish"), RequestContact: true}}},
+		ResizeKeyboard:  true,
+		OneTimeKeyboard: true,
+	}
+}
+
+// botLang — язык ответов бота: язык интерфейса Telegram у пользователя
+// (узбекский — по-узбекски, иначе по-русски, как запросы без языка).
+func botLang(u *telegram.User) string {
+	if u != nil && strings.HasPrefix(strings.ToLower(u.LanguageCode), i18n.UZ) {
+		return i18n.UZ
+	}
+	return i18n.RU
 }
 
 // Run читает обновления, пока не отменён ctx. Ошибки сети не
@@ -82,6 +95,8 @@ func (b *Bot) Handle(ctx context.Context, u telegram.Update) error {
 	if m == nil || m.From == nil || m.Chat.Type != "private" {
 		return nil
 	}
+	lang := botLang(m.From)
+	ctx = i18n.WithLang(ctx, lang)
 
 	if m.Contact == nil {
 		if payload, ok := strings.CutPrefix(m.Text, "/start "); ok {
@@ -90,27 +105,30 @@ func (b *Bot) Handle(ctx context.Context, u telegram.Update) error {
 			}
 		}
 		return b.api.SendMessage(ctx, m.Chat.ID,
-			"Здравствуйте! Чтобы получать коды для входа, нажмите кнопку «Поделиться номером» ниже.",
-			shareContactKeyboard)
+			i18n.Pick(lang, "Здравствуйте! Чтобы получать коды для входа, нажмите кнопку «Поделиться номером» ниже.",
+				"Assalomu alaykum! Kirish kodlarini olish uchun pastdagi «Raqamni ulashish» tugmasini bosing."),
+			shareContactKeyboard(lang))
 	}
 
 	// Принимаем только свой номер: переслать чужой контакт нельзя.
 	if m.Contact.UserID != m.From.ID {
 		return b.api.SendMessage(ctx, m.Chat.ID,
-			"Можно привязать только свой номер. Нажмите кнопку «Поделиться номером».",
-			shareContactKeyboard)
+			i18n.Pick(lang, "Можно привязать только свой номер. Нажмите кнопку «Поделиться номером».",
+				"Faqat oʻz raqamingizni ulash mumkin. «Raqamni ulashish» tugmasini bosing."),
+			shareContactKeyboard(lang))
 	}
 
 	ph, err := phone.Normalize(m.Contact.PhoneNumber)
 	if err != nil {
-		return b.api.SendMessage(ctx, m.Chat.ID, "Не удалось распознать номер телефона.", nil)
+		return b.api.SendMessage(ctx, m.Chat.ID, i18n.Pick(lang, "Не удалось распознать номер телефона.", "Telefon raqamini aniqlab boʻlmadi."), nil)
 	}
 	if err := b.svc.LinkTelegram(ctx, ph, m.Chat.ID, m.From.ID); err != nil {
 		return err
 	}
 	b.log.Info("номер привязан", "tg_user_id", m.From.ID)
 	if err := b.api.SendMessage(ctx, m.Chat.ID,
-		fmt.Sprintf("Готово! Номер %s привязан. Теперь коды для входа будут приходить сюда.", ph),
+		i18n.Pick(lang, fmt.Sprintf("Готово! Номер %s привязан. Теперь коды для входа будут приходить сюда.", ph),
+			fmt.Sprintf("Tayyor! %s raqami ulandi. Endi kirish kodlari shu yerga keladi.", ph)),
 		&telegram.ReplyMarkup{RemoveKeyboard: true}); err != nil {
 		return err
 	}
@@ -141,8 +159,10 @@ func (b *Bot) deeplink(ctx context.Context, chatID, tgUserID int64, payload stri
 		}
 		b.pending[tgUserID] = payload
 		b.mu.Unlock()
+		lang := i18n.FromContext(ctx)
 		return true, b.api.SendMessage(ctx, chatID,
-			"Здравствуйте! Чтобы продолжить, нажмите кнопку «Поделиться номером» ниже.", shareContactKeyboard)
+			i18n.Pick(lang, "Здравствуйте! Чтобы продолжить, нажмите кнопку «Поделиться номером» ниже.",
+				"Assalomu alaykum! Davom etish uchun pastdagi «Raqamni ulashish» tugmasini bosing."), shareContactKeyboard(lang))
 	}
 	return b.runDeeplink(ctx, chatID, ph, payload)
 }
@@ -156,7 +176,8 @@ func (b *Bot) runDeeplink(ctx context.Context, chatID int64, ph, payload string)
 	text, err := h(ctx, ph, code)
 	if err != nil {
 		b.log.Info("deeplink отклонён", "prefix", prefix, "err", err)
-		text = "Не получилось: " + errText(err)
+		lang := i18n.FromContext(ctx)
+		text = i18n.Pick(lang, "Не получилось: ", "Boʻlmadi: ") + errText(err, lang)
 	}
 	return true, b.api.SendMessage(ctx, chatID, text, nil)
 }
@@ -171,10 +192,10 @@ func (s *Service) LinkTelegram(ctx context.Context, ph string, chatID, tgUserID 
 	return err
 }
 
-func errText(err error) string {
+func errText(err error, lang string) string {
 	var ae *apperr.Error
 	if errors.As(err, &ae) {
-		return ae.Message
+		return ae.Text(lang)
 	}
-	return "попробуйте позже"
+	return i18n.Pick(lang, "попробуйте позже", "keyinroq urinib koʻring")
 }

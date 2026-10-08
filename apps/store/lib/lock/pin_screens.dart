@@ -166,7 +166,7 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
     if (_pin != _first) {
       HapticFeedback.heavyImpact();
       setState(() {
-        _error = 'Не совпадает — введите ещё раз';
+        _error = tr('Не совпадает — введите ещё раз', 'Mos kelmadi — qaytadan kiriting');
         _pin = '';
       });
       return;
@@ -181,7 +181,7 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
     if (!mounted) return;
     if (widget.change) {
       Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Код изменён')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Код изменён', 'Kod oʻzgartirildi'))));
     }
   }
 
@@ -191,14 +191,14 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
       (ctx) => Column(mainAxisSize: MainAxisSize.min, children: [
         const IconBox(Icons.face_unlock_rounded, bg: AppColors.primarySoft, fg: AppColors.primary, size: 72, iconSize: 40, radius: 36),
         const SizedBox(height: 16),
-        const Text('Входить по Face ID?', style: AppText.h3, textAlign: TextAlign.center),
+        Text(tr('Входить по Face ID?', 'Face ID orqali kirasizmi?'), style: AppText.h3, textAlign: TextAlign.center),
         const SizedBox(height: 6),
-        Text('Приложение откроется, как только посмотрите на экран. Код из 4 цифр останется запасным вариантом.',
+        Text(tr('Приложение откроется, как только посмотрите на экран. Код из 4 цифр останется запасным вариантом.', 'Ekranga qarashingiz bilan ilova ochiladi. 4 raqamli kod zaxira usuli boʻlib qoladi.'),
             style: AppText.body.copyWith(color: AppColors.text2), textAlign: TextAlign.center),
         const SizedBox(height: 20),
-        SheetButton(label: 'Включить Face ID', onPressed: () => Navigator.pop(ctx, true)),
+        SheetButton(label: tr('Включить Face ID', 'Face ID ni yoqish'), onPressed: () => Navigator.pop(ctx, true)),
         const SizedBox(height: 10),
-        SheetButton(label: 'Не сейчас', primary: false, onPressed: () => Navigator.pop(ctx, false)),
+        SheetButton(label: tr('Не сейчас', 'Hozir emas'), primary: false, onPressed: () => Navigator.pop(ctx, false)),
       ]),
     );
     if (on == true) await lock.setBiometrics(true);
@@ -206,8 +206,8 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final title = _repeat ? 'Повторите код' : (widget.change ? 'Новый код' : 'Придумайте код');
-    final sub = _error ?? (_repeat ? 'Введите те же $pinLength цифры' : '$pinLength цифры — для входа в приложение на этом телефоне');
+    final title = _repeat ? tr('Повторите код', 'Kodni takrorlang') : (widget.change ? tr('Новый код', 'Yangi kod') : tr('Придумайте код', 'Kod oʻylab toping'));
+    final sub = _error ?? (_repeat ? tr('Введите те же $pinLength цифры', 'Oʻsha $pinLength ta raqamni kiriting') : tr('$pinLength цифры — для входа в приложение на этом телефоне', '$pinLength ta raqam — shu telefonda ilovaga kirish uchun'));
     return Scaffold(
       appBar: widget.change || _repeat
           ? AppBar(
@@ -245,7 +245,7 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
                 const SizedBox(height: 12),
                 TextButton(
                   onPressed: () => signOut(context),
-                  child: Text('Войти под другим логином', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
+                  child: Text(tr('Войти под другим логином', 'Boshqa login bilan kirish'), style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
                 ),
               ],
             ]),
@@ -321,7 +321,7 @@ class _LockScreenState extends State<LockScreen> {
       case PinCheck.reset:
         final messenger = ScaffoldMessenger.of(context);
         await signOut(context);
-        messenger.showSnackBar(const SnackBar(content: Text('5 неверных кодов — войдите снова по логину и паролю')));
+        messenger.showSnackBar(SnackBar(content: Text(tr('5 неверных кодов — войдите снова по логину и паролю', '5 marta notoʻgʻri kod — login va parol bilan qayta kiring'))));
     }
   }
 
@@ -329,9 +329,9 @@ class _LockScreenState extends State<LockScreen> {
     final ok = await confirmSheet(
       context,
       icon: Icons.lock_reset_rounded,
-      title: 'Забыли код?',
-      text: 'Войдите снова по логину и паролю, затем придумайте новый код.',
-      confirm: 'Войти по логину',
+      title: tr('Забыли код?', 'Kodni unutdingizmi?'),
+      text: tr('Войдите снова по логину и паролю, затем придумайте новый код.', 'Login va parol bilan qayta kiring, soʻng yangi kod oʻylab toping.'),
+      confirm: tr('Войти по логину', 'Login bilan kirish'),
     );
     if (ok && mounted) await signOut(context);
   }
@@ -361,13 +361,13 @@ class _LockScreenState extends State<LockScreen> {
               ),
               const SizedBox(height: 16),
               Text(
-                _wrong ? 'Неверный код' : (first.isEmpty ? 'Введите код' : '$first, введите код'),
+                _wrong ? tr('Неверный код', 'Notoʻgʻri kod') : (first.isEmpty ? tr('Введите код', 'Kodni kiriting') : tr('$first, введите код', '$first, kodni kiriting')),
                 style: AppText.h3.copyWith(fontSize: 22, color: _wrong ? AppColors.error : AppColors.ink),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 4),
               Text(
-                _wrong || lock.fails > 0 ? 'Осталось попыток: ${lock.attemptsLeft}' : sub,
+                _wrong || lock.fails > 0 ? tr('Осталось попыток: ${lock.attemptsLeft}', 'Qolgan urinishlar: ${lock.attemptsLeft}') : sub,
                 style: AppText.small.copyWith(fontSize: 14, color: _wrong || lock.fails > 0 ? AppColors.error : AppColors.text2),
               ),
               const SizedBox(height: 16),
@@ -377,7 +377,7 @@ class _LockScreenState extends State<LockScreen> {
               const SizedBox(height: 12),
               TextButton(
                 onPressed: _forgot,
-                child: Text('Забыли код? Войти по логину', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
+                child: Text(tr('Забыли код? Войти по логину', 'Kodni unutdingizmi? Login bilan kirish'), style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
               ),
             ]),
           ),
@@ -397,7 +397,7 @@ class LockSettingsScreen extends StatelessWidget {
     final d = await showSheet<Duration>(
       context,
       (ctx) => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        const SheetHeader(title: 'Спрашивать код', text: 'Через сколько после сворачивания приложения снова просить код.'),
+        SheetHeader(title: tr('Спрашивать код', 'Kodni soʻrash'), text: tr('Через сколько после сворачивания приложения снова просить код.', 'Ilova yigʻilgandan keyin qancha vaqtda kod qayta soʻralsin.')),
         const SizedBox(height: 8),
         for (final o in lockAfterOptions)
           ListTile(
@@ -415,7 +415,7 @@ class LockSettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final lock = context.watch<AppLock>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Код и Face ID')),
+      appBar: AppBar(title: Text(tr('Код и Face ID', 'Kod va Face ID'))),
       body: ListView(padding: const EdgeInsets.all(16), children: [
         AppCard(
           padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -423,25 +423,25 @@ class LockSettingsScreen extends StatelessWidget {
             if (lock.bioAvailable)
               SwitchListTile(
                 secondary: const Icon(Icons.face_unlock_rounded),
-                title: const Text('Входить по Face ID', style: AppText.bodyStrong),
+                title: Text(tr('Входить по Face ID', 'Face ID orqali kirish'), style: AppText.bodyStrong),
                 value: lock.bioEnabled,
                 activeTrackColor: AppColors.success,
                 onChanged: (v) async {
                   final ok = await lock.setBiometrics(v);
                   if (!ok && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Face ID не подтверждён')));
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Face ID не подтверждён', 'Face ID tasdiqlanmadi'))));
                   }
                 },
               ),
             ListTile(
               leading: const Icon(Icons.pin_rounded),
-              title: const Text('Сменить код', style: AppText.bodyStrong),
+              title: Text(tr('Сменить код', 'Kodni oʻzgartirish'), style: AppText.bodyStrong),
               trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
               onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PinSetupScreen(change: true))),
             ),
             ListTile(
               leading: const Icon(Icons.timer_outlined),
-              title: const Text('Спрашивать код', style: AppText.bodyStrong),
+              title: Text(tr('Спрашивать код', 'Kodni soʻrash'), style: AppText.bodyStrong),
               trailing: Text('${lockAfterTitle(lock.lockAfter)} ›', style: AppText.small.copyWith(fontSize: 15)),
               onTap: () => _pickAfter(context, lock),
             ),
@@ -457,8 +457,8 @@ class LockSettingsScreen extends StatelessWidget {
             Expanded(
               child: Text(
                 lock.bioAvailable
-                    ? 'Код и Face ID работают только на этом телефоне. Если Face ID не прошёл — просим код из 4 цифр.'
-                    : 'Код работает только на этом телефоне. Face ID или отпечаток на этом телефоне не настроены.',
+                    ? tr('Код и Face ID работают только на этом телефоне. Если Face ID не прошёл — просим код из 4 цифр.', 'Kod va Face ID faqat shu telefonda ishlaydi. Face ID oʻtmasa — 4 raqamli kod soʻraladi.')
+                    : tr('Код работает только на этом телефоне. Face ID или отпечаток на этом телефоне не настроены.', 'Kod faqat shu telefonda ishlaydi. Bu telefonda Face ID yoki barmoq izi sozlanmagan.'),
                 style: AppText.small.copyWith(color: AppColors.ink),
               ),
             ),

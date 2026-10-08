@@ -175,7 +175,7 @@ class _AddSheetState extends State<_AddSheet> {
   Future<void> _add() async {
     final qty = parseNum(_qty.text);
     if (qty == null || num.parse(qty) <= 0) {
-      showMessage(context, 'Укажите количество');
+      showMessage(context, tr('Укажите количество', 'Miqdorni kiriting'));
       return;
     }
     final body = <String, dynamic>{'product_id': widget.p.id, 'qty': qty, 'add': true, 'source': widget.source};
@@ -206,7 +206,7 @@ class _AddSheetState extends State<_AddSheet> {
     final canBind = context.read<StoreState>().can('catalog.manage');
     final sub = [
       if (p.barcode != null) p.barcode!,
-      p.own ? 'свой товар сети' : 'найден в общем каталоге',
+      p.own ? tr('свой товар сети', 'tarmoqning oʻz mahsuloti') : tr('найден в общем каталоге', 'umumiy katalogda topildi'),
     ].join(' · ');
     final markup = _markup;
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -226,19 +226,19 @@ class _AddSheetState extends State<_AddSheet> {
       ],
       const SizedBox(height: 16),
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(child: QtyStepper(label: 'Количество, ${p.unit}', controller: _qty, fractional: p.fractional, onChanged: () => setState(() {}))),
+        Expanded(child: QtyStepper(label: tr('Количество, ${p.unit}', 'Miqdor, ${p.unit}'), controller: _qty, fractional: p.fractional, onChanged: () => setState(() {}))),
         const SizedBox(width: 12),
-        Expanded(child: NumField(label: 'Цена закупки, сум', controller: _cost, hint: '—', onChanged: (_) => setState(() {}))),
+        Expanded(child: NumField(label: tr('Цена закупки, сум', 'Xarid narxi, soʻm'), controller: _cost, hint: '—', onChanged: (_) => setState(() {}))),
       ]),
       const SizedBox(height: 12),
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(child: NumField(label: 'Цена продажи, сум', controller: _price, onChanged: (_) => setState(() {}))),
+        Expanded(child: NumField(label: tr('Цена продажи, сум', 'Sotuv narxi, soʻm'), controller: _price, onChanged: (_) => setState(() {}))),
         const SizedBox(width: 12),
         Expanded(
           child: NumField(
-            label: 'Штрихкод',
+            label: tr('Штрихкод', 'Shtrix-kod'),
             controller: _barcode,
-            hint: 'нет',
+            hint: tr('нет', 'yoʻq'),
             digitsOnly: true,
             enabled: widget.bind == null && p.barcode == null && canBind,
           ),
@@ -246,11 +246,12 @@ class _AddSheetState extends State<_AddSheet> {
       ]),
       const SizedBox(height: 10),
       Text(
-        'Цена продажи подставлена из каталога — можно изменить.${markup == null ? '' : ' Наценка $markup.'}',
+        tr('Цена продажи подставлена из каталога — можно изменить.${markup == null ? '' : ' Наценка $markup.'}',
+            'Sotuv narxi katalogdan olindi — oʻzgartirish mumkin.${markup == null ? '' : ' Ustama $markup.'}'),
         style: AppText.small,
       ),
       const SizedBox(height: 16),
-      BigButton(label: 'Добавить · ${plainQty(parseNum(_qty.text) ?? '0')} ${p.unit}', icon: Icons.add_rounded, busy: _busy, onPressed: _add),
+      BigButton(label: tr('Добавить · ${plainQty(parseNum(_qty.text) ?? '0')} ${p.unit}', 'Qoʻshish · ${plainQty(parseNum(_qty.text) ?? '0')} ${p.unit}'), icon: Icons.add_rounded, busy: _busy, onPressed: _add),
     ]);
   }
 }
@@ -349,7 +350,7 @@ class _PickSheetState extends State<_PickSheet> {
     final fromPhoto = widget.candidates.isNotEmpty && _q.text.trim().isEmpty;
     final sel = _selected;
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      const Text('Какой это товар?', style: AppText.h3),
+      Text(tr('Какой это товар?', 'Bu qaysi mahsulot?'), style: AppText.h3),
       const SizedBox(height: 12),
       Container(
         padding: const EdgeInsets.all(12),
@@ -363,16 +364,16 @@ class _PickSheetState extends State<_PickSheet> {
           _debounce?.cancel();
           _debounce = Timer(const Duration(milliseconds: 350), _search);
         },
-        decoration: const InputDecoration(prefixIcon: Icon(Icons.search_rounded), hintText: 'Название или штрихкод'),
+        decoration: InputDecoration(prefixIcon: const Icon(Icons.search_rounded), hintText: tr('Название или штрихкод', 'Nomi yoki shtrix-kod')),
       ),
       const SizedBox(height: 10),
-      Text(fromPhoto ? 'Super Market: похожие товары в каталоге' : 'Товары в каталоге', style: AppText.caption),
+      Text(fromPhoto ? tr('Super Market: похожие товары в каталоге', 'Super Market: katalogdagi oʻxshash mahsulotlar') : tr('Товары в каталоге', 'Katalogdagi mahsulotlar'), style: AppText.caption),
       if (_loading)
         const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()))
       else if (_items.isEmpty)
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 12),
-          child: Text('Ничего не найдено. Измените поиск или создайте новый товар.', style: AppText.small),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Text(tr('Ничего не найдено. Измените поиск или создайте новый товар.', 'Hech narsa topilmadi. Qidiruvni oʻzgartiring yoki yangi mahsulot yarating.'), style: AppText.small),
         )
       else
         for (final p in _items)
@@ -391,7 +392,7 @@ class _PickSheetState extends State<_PickSheet> {
                     Text(p.name, style: AppText.bodyStrong, maxLines: 1, overflow: TextOverflow.ellipsis),
                     Text(
                       [
-                        if (p.score != null && p.score! > 0) 'совпадение по фото ${p.score}%',
+                        if (p.score != null && p.score! > 0) tr('совпадение по фото ${p.score}%', 'rasm boʻyicha moslik ${p.score}%'),
                         if (p.barcode != null) p.barcode!,
                         if (p.price != null) money(p.price),
                       ].join(' · '),
@@ -412,8 +413,8 @@ class _PickSheetState extends State<_PickSheet> {
             value: _bind,
             onChanged: (v) => setState(() => _bind = v),
             activeTrackColor: AppColors.success,
-            title: const Text('Привязать штрихкод к товару', style: AppText.bodyStrong),
-            subtitle: Text('${widget.code} → ${sel?.name ?? 'выберите товар'}', style: AppText.small, maxLines: 1, overflow: TextOverflow.ellipsis),
+            title: Text(tr('Привязать штрихкод к товару', 'Shtrix-kodni mahsulotga bogʻlash'), style: AppText.bodyStrong),
+            subtitle: Text('${widget.code} → ${sel?.name ?? tr('выберите товар', 'mahsulotni tanlang')}', style: AppText.small, maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
         ),
       ],
@@ -421,13 +422,13 @@ class _PickSheetState extends State<_PickSheet> {
       Row(children: [
         if (canManage) ...[
           Expanded(
-            child: SmallButton(label: 'Новый товар', icon: Icons.add_rounded, onPressed: () => Navigator.of(context).pop(const PickResult(create: true))),
+            child: SmallButton(label: tr('Новый товар', 'Yangi mahsulot'), icon: Icons.add_rounded, onPressed: () => Navigator.of(context).pop(const PickResult(create: true))),
           ),
           const SizedBox(width: 12),
         ],
         Expanded(
           child: SmallButton(
-            label: 'Выбрать',
+            label: tr('Выбрать', 'Tanlash'),
             icon: Icons.check_rounded,
             primary: true,
             onPressed: sel == null ? null : () => Navigator.of(context).pop(PickResult(product: sel, bind: widget.code != null && canManage && _bind)),
@@ -487,7 +488,7 @@ class _LineSheetState extends State<_LineSheet> {
     final l = widget.line;
     final qty = parseNum(_qty.text);
     if (qty == null || num.parse(qty) <= 0) {
-      showMessage(context, 'Укажите количество');
+      showMessage(context, tr('Укажите количество', 'Miqdorni kiriting'));
       return;
     }
     final body = <String, dynamic>{'product_id': l['product_id']};
@@ -518,27 +519,27 @@ class _LineSheetState extends State<_LineSheet> {
       ]),
       const SizedBox(height: 16),
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(child: QtyStepper(label: 'Количество, ${l['unit_short'] ?? 'шт'}', controller: _qty, fractional: l['is_fractional'] == true)),
+        Expanded(child: QtyStepper(label: tr('Количество, ${l['unit_short'] ?? 'шт'}', 'Miqdor, ${l['unit_short'] ?? 'dona'}'), controller: _qty, fractional: l['is_fractional'] == true)),
         const SizedBox(width: 12),
-        Expanded(child: NumField(label: 'Цена закупки, сум', controller: _cost, hint: '—')),
+        Expanded(child: NumField(label: tr('Цена закупки, сум', 'Xarid narxi, soʻm'), controller: _cost, hint: '—')),
       ]),
       const SizedBox(height: 12),
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(child: NumField(label: 'Цена продажи, сум', controller: _price)),
+        Expanded(child: NumField(label: tr('Цена продажи, сум', 'Sotuv narxi, soʻm'), controller: _price)),
         const SizedBox(width: 12),
-        Expanded(child: NumField(label: 'Штрихкод', controller: _barcode, hint: 'нет', digitsOnly: true, enabled: l['barcode'] == null && canBind)),
+        Expanded(child: NumField(label: tr('Штрихкод', 'Shtrix-kod'), controller: _barcode, hint: tr('нет', 'yoʻq'), digitsOnly: true, enabled: l['barcode'] == null && canBind)),
       ]),
       const SizedBox(height: 16),
       Row(children: [
         Expanded(
           child: SmallButton(
-            label: 'Убрать',
+            label: tr('Убрать', 'Olib tashlash'),
             icon: Icons.delete_outline_rounded,
             onPressed: _busy ? null : () => _run(() => widget.start.deleteLine('${l['product_id']}')),
           ),
         ),
         const SizedBox(width: 12),
-        Expanded(child: SmallButton(label: 'Сохранить', icon: Icons.check_rounded, primary: true, onPressed: _busy ? null : _save)),
+        Expanded(child: SmallButton(label: tr('Сохранить', 'Saqlash'), icon: Icons.check_rounded, primary: true, onPressed: _busy ? null : _save)),
       ]),
     ]);
   }

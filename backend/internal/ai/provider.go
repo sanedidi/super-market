@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 const (
@@ -56,6 +57,7 @@ var client = &http.Client{Timeout: 150 * time.Second}
 type ErrService struct {
 	Status int
 	Msg    string
+	MsgUz  string // то же по-узбекски; пусто — Msg
 }
 
 func (e *ErrService) Error() string { return e.Msg }
@@ -73,7 +75,7 @@ func (c Conn) do(ctx context.Context, method, path string, body any, out any) er
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.base()+path, rd)
 	if err != nil {
-		return &ErrService{Msg: "неверный адрес сервиса"}
+		return &ErrService{Msg: "неверный адрес сервиса", MsgUz: "xizmat manzili notoʻgʻri"}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.Provider == ProviderAnthropic {
@@ -85,17 +87,19 @@ func (c Conn) do(ctx context.Context, method, path string, body any, out any) er
 	resp, err := client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return &ErrService{Msg: "сервис не ответил вовремя"}
+			return &ErrService{Msg: "сервис не ответил вовремя", MsgUz: "xizmat oʻz vaqtida javob bermadi"}
 		}
-		return &ErrService{Msg: "не удалось подключиться к сервису: проверьте адрес"}
+		return &ErrService{Msg: "не удалось подключиться к сервису: проверьте адрес", MsgUz: "xizmatga ulanib boʻlmadi: manzilni tekshiring"}
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if resp.StatusCode/100 != 2 {
-		return &ErrService{Status: resp.StatusCode, Msg: serviceError(resp.StatusCode, raw)}
+		msg := serviceError(resp.StatusCode, raw)
+		return &ErrService{Status: resp.StatusCode, Msg: msg.RU, MsgUz: msg.UZ}
 	}
 	if err := json.Unmarshal(raw, out); err != nil {
-		return &ErrService{Msg: "сервис вернул непонятный ответ — это точно API с протоколом " + protoName(c.Provider) + "?"}
+		return &ErrService{Msg: "сервис вернул непонятный ответ — это точно API с протоколом " + protoName(c.Provider) + "?",
+			MsgUz: "xizmat tushunarsiz javob qaytardi — bu haqiqatan " + protoName(c.Provider) + " protokolidagi APImi?"}
 	}
 	return nil
 }
@@ -107,8 +111,8 @@ func protoName(p string) string {
 	return "OpenAI"
 }
 
-// serviceError — понятная причина вместо кода ответа.
-func serviceError(status int, raw []byte) string {
+// serviceError — понятная причина вместо кода ответа (по-русски и по-узбекски).
+func serviceError(status int, raw []byte) i18n.Text {
 	var e struct {
 		Error any `json:"error"`
 	}
@@ -126,23 +130,24 @@ func serviceError(status int, raw []byte) string {
 	if len(detail) > 200 {
 		detail = detail[:200]
 	}
-	var msg string
+	var msg i18n.Text
 	switch status {
 	case 401, 403:
-		msg = "ключ не подходит к этому сервису"
+		msg = i18n.Text{RU: "ключ не подходит к этому сервису", UZ: "kalit bu xizmatga mos kelmaydi"}
 	case 404:
-		msg = "сервис не найден по этому адресу или модель недоступна"
+		msg = i18n.Text{RU: "сервис не найден по этому адресу или модель недоступна", UZ: "bu manzilda xizmat topilmadi yoki model mavjud emas"}
 	case 402, 429:
-		msg = "сервис отказал: закончились средства или превышен лимит"
+		msg = i18n.Text{RU: "сервис отказал: закончились средства или превышен лимит", UZ: "xizmat rad etdi: mablagʻ tugagan yoki limitdan oshib ketilgan"}
 	default:
 		if status >= 500 {
-			msg = fmt.Sprintf("сервис временно недоступен (%d)", status)
+			msg = i18n.Text{RU: fmt.Sprintf("сервис временно недоступен (%d)", status), UZ: fmt.Sprintf("xizmat vaqtincha ishlamayapti (%d)", status)}
 		} else {
-			msg = fmt.Sprintf("сервис отклонил запрос (%d)", status)
+			msg = i18n.Text{RU: fmt.Sprintf("сервис отклонил запрос (%d)", status), UZ: fmt.Sprintf("xizmat soʻrovni rad etdi (%d)", status)}
 		}
 	}
 	if detail != "" {
-		msg += ": " + detail
+		msg.RU += ": " + detail
+		msg.UZ += ": " + detail
 	}
 	return msg
 }
@@ -208,7 +213,7 @@ type Usage struct {
 // Vision — запрос к модели с фото; ответ — текст модели и потраченные токены.
 func (c Conn) Vision(ctx context.Context, system, prompt string, images []Image) (string, Usage, error) {
 	if c.Model == "" {
-		return "", Usage{}, &ErrService{Msg: "не выбрана модель"}
+		return "", Usage{}, &ErrService{Msg: "не выбрана модель", MsgUz: "model tanlanmagan"}
 	}
 	if c.Provider == ProviderAnthropic {
 		content := []map[string]any{}
@@ -273,7 +278,7 @@ func (c Conn) Vision(ctx context.Context, system, prompt string, images []Image)
 	}
 	u := Usage{Input: out.Usage.Prompt, Output: out.Usage.Completion}
 	if len(out.Choices) == 0 {
-		return "", u, &ErrService{Msg: "модель вернула пустой ответ"}
+		return "", u, &ErrService{Msg: "модель вернула пустой ответ", MsgUz: "model boʻsh javob qaytardi"}
 	}
 	return out.Choices[0].Message.Content, u, nil
 }
@@ -292,7 +297,7 @@ func ExtractJSON(s string) ([]byte, error) {
 func AsAppErr(err error) error {
 	var se *ErrService
 	if errors.As(err, &se) {
-		return apperr.New(http.StatusBadGateway, "ai_error", se.Msg)
+		return apperr.New(http.StatusBadGateway, "ai_error", se.Msg).Uz(se.MsgUz)
 	}
 	return err
 }

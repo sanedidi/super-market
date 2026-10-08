@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:sm_core/sm_core.dart' show tr;
 
 import '../core/catalog.dart';
 import '../core/debts.dart';
@@ -42,7 +43,7 @@ class _DebtPaymentDialogState extends State<_DebtPaymentDialog> {
   Future<void> _lookup() async {
     final phone = uzPhone(_phone);
     if (phone == null) {
-      setState(() => _error = 'Наберите 9 цифр номера: 90 123 45 67');
+      setState(() => _error = tr('Наберите 9 цифр номера: 90 123 45 67', 'Raqamning 9 ta raqamini tering: 90 123 45 67'));
       return;
     }
     setState(() {
@@ -55,7 +56,7 @@ class _DebtPaymentDialogState extends State<_DebtPaymentDialog> {
       setState(() {
         _busy = false;
         _who = w;
-        if (w.debt <= 0) _error = 'У покупателя нет долга в этом магазине';
+        if (w.debt <= 0) _error = tr('У покупателя нет долга в этом магазине', 'Xaridorning bu doʻkonda qarzi yoʻq');
         if (pos.catalog.method('cash') == null) _kind = 'card';
       });
     } on ApiError catch (e) {
@@ -72,7 +73,7 @@ class _DebtPaymentDialogState extends State<_DebtPaymentDialog> {
     final m = _method;
     if (w == null || _busy) return;
     if (m == null) {
-      setState(() => _error = 'В магазине нет такого способа оплаты');
+      setState(() => _error = tr('В магазине нет такого способа оплаты', 'Doʻkonda bunday toʻlov usuli yoʻq'));
       return;
     }
     setState(() {
@@ -85,8 +86,8 @@ class _DebtPaymentDialogState extends State<_DebtPaymentDialog> {
       setState(() {
         _busy = false;
         _done = r.balance > 0
-            ? 'Принято ${fmtMoney(r.amount)} · остаток долга ${fmtMoney(r.balance)}'
-            : 'Принято ${fmtMoney(r.amount)} · долг погашен полностью';
+            ? tr('Принято ${fmtMoney(r.amount)} · остаток долга ${fmtMoney(r.balance)}', 'Qabul qilindi ${fmtMoney(r.amount)} · qarz qoldigʻi ${fmtMoney(r.balance)}')
+            : tr('Принято ${fmtMoney(r.amount)} · долг погашен полностью', 'Qabul qilindi ${fmtMoney(r.amount)} · qarz toʻliq toʻlandi');
       });
     } catch (e) {
       if (!mounted) return;
@@ -168,9 +169,9 @@ class _DebtPaymentDialogState extends State<_DebtPaymentDialog> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(32, 28, 32, 28),
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Text('Погашение долга', style: t(26, w: FontWeight.w700)),
+              Text(tr('Погашение долга', 'Qarzni toʻlash'), style: t(26, w: FontWeight.w700)),
               const SizedBox(height: 4),
-              Text(w == null ? 'Номер телефона покупателя' : '${w.name.isEmpty ? 'Покупатель' : w.name} · ${fmtUzPhone(w.phone)}',
+              Text(w == null ? tr('Номер телефона покупателя', 'Xaridorning telefon raqami') : '${w.name.isEmpty ? tr('Покупатель', 'Xaridor') : w.name} · ${fmtUzPhone(w.phone)}',
                   style: t(13, c: C.ts)),
               const SizedBox(height: 20),
               if (_done != null) ..._doneView() else if (w == null) ..._phoneView() else ..._payView(w),
@@ -192,7 +193,7 @@ class _DebtPaymentDialogState extends State<_DebtPaymentDialog> {
 
   Widget _hint() => Padding(
         padding: const EdgeInsets.only(top: 10),
-        child: Text(_error ?? (_busy ? 'Подождите…' : 'Enter — дальше · Esc — назад'), style: t(12, c: _error != null ? C.error : C.ts)),
+        child: Text(_error ?? (_busy ? tr('Подождите…', 'Kuting…') : tr('Enter — дальше · Esc — назад', 'Enter — keyingi · Esc — orqaga')), style: t(12, c: _error != null ? C.error : C.ts)),
       );
 
   List<Widget> _phoneView() => [
@@ -200,7 +201,7 @@ class _DebtPaymentDialogState extends State<_DebtPaymentDialog> {
         const SizedBox(height: 12),
         _NumPad(onKey: _key),
         const SizedBox(height: 12),
-        _Primary(label: _busy ? 'Ищем…' : 'Найти · Enter', onTap: _phone.length == 9 && !_busy ? _lookup : null),
+        _Primary(label: _busy ? tr('Ищем…', 'Qidirilmoqda…') : tr('Найти · Enter', 'Topish · Enter'), onTap: _phone.length == 9 && !_busy ? _lookup : null),
         _hint(),
       ];
 
@@ -241,31 +242,31 @@ class _DebtPaymentDialogState extends State<_DebtPaymentDialog> {
         child: Row(children: [
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Долг в магазине', style: t(12, c: C.ts)),
+              Text(tr('Долг в магазине', 'Doʻkondagi qarz'), style: t(12, c: C.ts)),
               Text(fmtMoney(w.debt), style: t(26, w: FontWeight.w800, c: w.debt > 0 ? C.brand : C.tp)),
             ]),
           ),
-          if (w.overdueDays > 0) Text('просрочка ${w.overdueDays} дн.', style: t(13, w: FontWeight.w600, c: C.warning)),
-          if (w.dueDate != null && w.overdueDays == 0) Text('срок ${w.dueDate}', style: t(13, c: C.ts)),
+          if (w.overdueDays > 0) Text(tr('просрочка ${w.overdueDays} дн.', '${w.overdueDays} kun kechikkan'), style: t(13, w: FontWeight.w600, c: C.warning)),
+          if (w.dueDate != null && w.overdueDays == 0) Text(tr('срок ${w.dueDate}', 'muddat ${w.dueDate}'), style: t(13, c: C.ts)),
         ]),
       ),
       if (!w.online) ...[
         const SizedBox(height: 6),
-        Text('Нет связи: долг из каталога кассы и чеков этой смены', style: t(12, c: C.warning)),
+        Text(tr('Нет связи: долг из каталога кассы и чеков этой смены', 'Aloqa yoʻq: qarz kassa katalogi va shu smena cheklaridan olindi'), style: t(12, c: C.warning)),
       ],
       const SizedBox(height: 12),
-      _box(_amount.isEmpty ? 'Принять · весь долг' : 'Принять', sum > 0 ? fmtMoney(sum) : '—'),
+      _box(_amount.isEmpty ? tr('Принять · весь долг', 'Qabul qilish · butun qarz') : tr('Принять', 'Qabul qilish'), sum > 0 ? fmtMoney(sum) : '—'),
       if (valid && sum < w.debt)
         Padding(
           padding: const EdgeInsets.only(top: 6),
-          child: Text('Останется долг ${fmtMoney(w.debt - sum)}', style: t(13, c: C.ts)),
+          child: Text(tr('Останется долг ${fmtMoney(w.debt - sum)}', 'Qarz qoladi: ${fmtMoney(w.debt - sum)}'), style: t(13, c: C.ts)),
         ),
       const SizedBox(height: 12),
-      Row(children: [kind('cash', 'F1', 'Наличные'), const SizedBox(width: 10), kind('card', 'F2', 'Карта')]),
+      Row(children: [kind('cash', 'F1', tr('Наличные', 'Naqd pul')), const SizedBox(width: 10), kind('card', 'F2', tr('Карта', 'Karta'))]),
       const SizedBox(height: 12),
       _NumPad(onKey: _key, extra: '000'),
       const SizedBox(height: 12),
-      _Primary(label: _busy ? 'Сохраняем…' : 'Принять ${fmtMoney(sum)} · Enter', onTap: valid && !_busy ? _pay : null),
+      _Primary(label: _busy ? tr('Сохраняем…', 'Saqlanmoqda…') : tr('Принять ${fmtMoney(sum)} · Enter', '${fmtMoney(sum)} qabul qilish · Enter'), onTap: valid && !_busy ? _pay : null),
       _hint(),
     ];
   }
@@ -277,9 +278,9 @@ class _DebtPaymentDialogState extends State<_DebtPaymentDialog> {
           child: Text(_done!, style: t(20, w: FontWeight.w700, c: C.success)),
         ),
         const SizedBox(height: 8),
-        Text('Квитанция печатается. Покупатель увидит оплату в приложении после отправки на сервер.', style: t(12, c: C.ts)),
+        Text(tr('Квитанция печатается. Покупатель увидит оплату в приложении после отправки на сервер.', 'Kvitansiya chop etilmoqda. Xaridor toʻlovni serverga yuborilgach ilovada koʻradi.'), style: t(12, c: C.ts)),
         const SizedBox(height: 12),
-        _Primary(label: 'Готово · Enter', onTap: () => Navigator.of(context).pop()),
+        _Primary(label: tr('Готово · Enter', 'Tayyor · Enter'), onTap: () => Navigator.of(context).pop()),
       ];
 }
 

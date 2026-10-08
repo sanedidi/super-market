@@ -15,6 +15,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/media"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 const (
@@ -80,7 +81,7 @@ type PhotoInput struct {
 }
 
 // errPhotosOff — сервис распознавания не настроен (текст для магазина, без технических подробностей).
-var errPhotosOff = apperr.Conflict("ai_not_configured", "Поиск товаров по фото пока не включён — добавляйте товары штрихкодом, из каталога или поиском")
+var errPhotosOff = apperr.Conflict("ai_not_configured", "Поиск товаров по фото пока не включён — добавляйте товары штрихкодом, из каталога или поиском").Uz("Rasm orqali mahsulot qidirish hozircha yoqilmagan — mahsulotlarni shtrix-kod, katalog yoki qidiruv orqali qoʻshing")
 
 // CreatePhoto — фото загружены (/store/uploads); Super Market ищет на них товары.
 func (s *Service) CreatePhoto(ctx context.Context, p *identity.Principal, in PhotoInput) (Photo, error) {
@@ -88,13 +89,13 @@ func (s *Service) CreatePhoto(ctx context.Context, p *identity.Principal, in Pho
 		return Photo{}, err
 	}
 	if len(in.Images) == 0 || len(in.Images) > 6 {
-		return Photo{}, apperr.Validation("images: от 1 до 6 фото")
+		return Photo{}, apperr.Validation("images: от 1 до 6 фото").Uz("images: 1 dan 6 tagacha rasm")
 	}
 	keys := make([]string, 0, len(in.Images))
 	for _, u := range in.Images {
 		k, ok := media.KeyFromURL(u)
 		if !ok {
-			return Photo{}, apperr.Validation("images: фото должно быть загружено через /store/uploads")
+			return Photo{}, apperr.Validation("images: фото должно быть загружено через /store/uploads").Uz("images: rasm /store/uploads orqali yuklangan boʻlishi kerak")
 		}
 		keys = append(keys, k)
 	}
@@ -110,31 +111,33 @@ func (s *Service) CreatePhoto(ctx context.Context, p *identity.Principal, in Pho
 		SELECT network_id, id, $3, $4 FROM stores WHERE id = $1 AND network_id = $2
 		RETURNING id`, in.StoreID, p.NetworkID, p.EmployeeID, keys).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Photo{}, apperr.NotFound("магазин не найден")
+		return Photo{}, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	if err != nil {
 		return Photo{}, err
 	}
-	s.startPhoto(id, p.NetworkID)
+	s.startPhoto(id, p.NetworkID, i18n.FromContext(ctx))
 	return s.GetPhoto(ctx, p, id)
 }
 
-func (s *Service) startPhoto(id, networkID string) {
+// lang — язык того, кто загрузил фото: на нём сохраняется текст ошибки.
+func (s *Service) startPhoto(id, networkID, lang string) {
 	s.run(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 		defer cancel()
 		if err := s.processPhoto(ctx, id, networkID); err != nil {
 			// Магазину — понятный текст; технические причины (ключ, модель, сеть) — только в лог.
-			msg := "Super Market не смог разобрать фото — попробуйте ещё раз чуть позже"
+			msg := i18n.Pick(lang, "Super Market не смог разобрать фото — попробуйте ещё раз чуть позже",
+				"Super Market rasmni aniqlay olmadi — birozdan keyin qayta urinib koʻring")
 			var se *ai.ErrService
 			var ae *apperr.Error
 			switch {
 			case errors.As(err, &se) && strings.HasPrefix(se.Msg, "на фото"):
-				msg = se.Msg
+				msg = i18n.Pick(lang, se.Msg, se.MsgUz)
 			case errors.As(err, &ae) && ae.Code == "ai_not_configured":
-				msg = errPhotosOff.Message
+				msg = errPhotosOff.Text(lang)
 			case errors.As(err, &ae) && ae.Status < 500:
-				msg = ae.Message
+				msg = ae.Text(lang)
 			default:
 				s.log.Error("start photo", "id", id, "err", err)
 			}
@@ -164,7 +167,7 @@ func (s *Service) processPhoto(ctx context.Context, id, networkID string) error 
 	for _, k := range keys {
 		data, mime, err := s.media.Read(ctx, k)
 		if err != nil {
-			return apperr.Validation("фото не найдено в хранилище")
+			return apperr.Validation("фото не найдено в хранилище").Uz("rasm serverda topilmadi")
 		}
 		images = append(images, ai.Image{MIME: mime, Data: data})
 	}
@@ -229,10 +232,12 @@ func match(ctx context.Context, q db.Querier, networkID string, it ai.ShelfItem)
 	name := strings.ToLower(strings.TrimSpace(it.Name))
 	brand := strings.ToLower(strings.TrimSpace(it.Brand))
 	rows, err := q.Query(ctx, `
-		SELECT p.id, least(100, round(greatest(similarity(lower(p.name), $2), word_similarity($2, lower(p.name))) * 100
+		SELECT p.id, least(100, round(greatest(similarity(lower(p.name), $2), word_similarity($2, lower(p.name)),
+		                                     similarity(lower(p.name_uz), $2), word_similarity($2, lower(p.name_uz))) * 100
 		       + CASE WHEN $3 <> '' AND (lower(b.name) = $3 OR lower(p.name) LIKE '%' || $3 || '%') THEN 15 ELSE 0 END))::int AS s
 		FROM products p LEFT JOIN brands b ON b.id = p.brand_id
-		WHERE `+visible+` AND (lower(p.name) % $2 OR $2 <% lower(p.name) OR ($3 <> '' AND lower(b.name) = $3))
+		WHERE `+visible+` AND (lower(p.name) % $2 OR $2 <% lower(p.name) OR lower(p.name_uz) % $2 OR $2 <% lower(p.name_uz)
+		                       OR ($3 <> '' AND lower(b.name) = $3))
 		ORDER BY s DESC, p.name LIMIT 4`, networkID, name, brand)
 	if err != nil {
 		return nil, 0, nil, err
@@ -264,7 +269,7 @@ func (s *Service) GetPhoto(ctx context.Context, p *identity.Principal, id string
 		SELECT id, store_id, status, error, images, created_at FROM start_photos WHERE id = $1 AND network_id = $2`, id, p.NetworkID).
 		Scan(&ph.ID, &ph.StoreID, &ph.Status, &ph.Error, &ph.Images, &ph.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return ph, apperr.NotFound("фото не найдено")
+		return ph, apperr.NotFound("фото не найдено").Uz("rasm topilmadi")
 	}
 	if err != nil {
 		return ph, err
@@ -391,7 +396,7 @@ func (s *Service) products(ctx context.Context, p *identity.Principal, st store,
 		return out, cats, nil
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT p.id, p.name, p.images[1], u.short_name, COALESCE(sp.price, np.price, p.base_price)::text,
+		SELECT p.id, loc(p.name, p.name_uz), p.images[1], loc(u.short_name, u.short_name_uz), COALESCE(sp.price, np.price, p.base_price)::text,
 		       (SELECT min(pb.barcode) FROM product_barcodes pb WHERE pb.product_id = p.id), p.category_id
 		FROM products p
 		JOIN units u ON u.id = p.unit_id
@@ -422,7 +427,7 @@ func (s *Service) RetryPhoto(ctx context.Context, p *identity.Principal, id stri
 		return ph, err
 	}
 	if ph.Status != PhotoFailed {
-		return ph, apperr.Conflict("photo_not_failed", "повторить можно только после ошибки")
+		return ph, apperr.Conflict("photo_not_failed", "повторить можно только после ошибки").Uz("faqat xatolikdan keyin qayta urinish mumkin")
 	}
 	if _, err := s.ai.Conn(ctx); err != nil {
 		return ph, err
@@ -430,6 +435,6 @@ func (s *Service) RetryPhoto(ctx context.Context, p *identity.Principal, id stri
 	if _, err := s.pool.Exec(ctx, `UPDATE start_photos SET status = 'processing', error = '' WHERE id = $1`, id); err != nil {
 		return ph, err
 	}
-	s.startPhoto(id, p.NetworkID)
+	s.startPhoto(id, p.NetworkID, i18n.FromContext(ctx))
 	return s.GetPhoto(ctx, p, id)
 }

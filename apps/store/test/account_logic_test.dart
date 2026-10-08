@@ -1,7 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sm_store/account/account_logic.dart';
+import 'package:sm_core/sm_core.dart' as sm_i18n;
 
 void main() {
+  // Проверки написаны на русском; язык по умолчанию в приложениях — узбекский.
+  setUpAll(() => sm_i18n.Lang.instance.debugUse(sm_i18n.Lang.ru));
+
   test('deletionReason: вариант, комментарий, не длиннее 500', () {
     expect(deletionReason(null, ''), '');
     expect(deletionReason('Магазин закрыт', '  '), 'Магазин закрыт');

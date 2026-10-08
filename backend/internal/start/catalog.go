@@ -10,6 +10,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 // Каталог с галочками: дерево «категория → подкатегория → бренд → товар».
@@ -18,13 +19,13 @@ import (
 
 // Товары каталога, которые магазин может завести: общий каталог и свои товары сети.
 const catalogWhere = `p.is_active AND (p.network_id IS NULL OR p.network_id = $1)
-	AND ($2 = '' OR lower(p.name) LIKE '%' || lower($2) || '%'
+	AND ($2 = '' OR lower(p.name) LIKE '%' || lower($2) || '%' OR lower(p.name_uz) LIKE '%' || lower($2) || '%'
 	     OR EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND pb.barcode = $2))`
 
 const categoryPaths = `WITH RECURSIVE cp AS (
-		SELECT id, ARRAY[id::text] AS ids, ARRAY[name] AS names FROM categories WHERE parent_id IS NULL
+		SELECT id, ARRAY[id::text] AS ids, ARRAY[loc(name, name_uz)] AS names FROM categories WHERE parent_id IS NULL
 		UNION ALL
-		SELECT c.id, cp.ids || c.id::text, cp.names || c.name FROM categories c JOIN cp ON c.parent_id = cp.id)`
+		SELECT c.id, cp.ids || c.id::text, cp.names || loc(c.name, c.name_uz) FROM categories c JOIN cp ON c.parent_id = cp.id)`
 
 type CatalogGroup struct {
 	// Путь категории от корня до категории товаров (последняя — сама категория).
@@ -107,7 +108,7 @@ func (s *Service) Catalog(ctx context.Context, p *identity.Principal, storeID, q
 		if err := rows.Scan(&g.CategoryIDs, &g.CategoryNames, &g.BrandID, &brand, &g.Count, &g.Selected); err != nil {
 			return out, err
 		}
-		g.BrandName = "Без бренда"
+		g.BrandName = i18n.T(ctx, "Без бренда", "Brendsiz")
 		if brand != nil {
 			g.BrandName = *brand
 		}
@@ -121,10 +122,10 @@ func (s *Service) Catalog(ctx context.Context, p *identity.Principal, storeID, q
 // CatalogItems — товары одной группы (категория + бренд) по названию.
 func (s *Service) CatalogItems(ctx context.Context, p *identity.Principal, f CatalogFilter) ([]CatalogItem, error) {
 	if !httpx.IsUUID(f.CategoryID) {
-		return nil, apperr.Validation("category_id: неверный id")
+		return nil, apperr.Validation("category_id: неверный id").Uz("category_id: id notoʻgʻri")
 	}
 	if !validBrand(f.BrandID) {
-		return nil, apperr.Validation("brand_id: неверный id")
+		return nil, apperr.Validation("brand_id: неверный id").Uz("brand_id: id notoʻgʻri")
 	}
 	st, err := s.store(ctx, s.pool, p, f.StoreID)
 	if err != nil {
@@ -135,7 +136,7 @@ func (s *Service) CatalogItems(ctx context.Context, p *identity.Principal, f Cat
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT p.id, p.name, p.images[1], u.short_name, COALESCE(sp.price, np.price, p.base_price)::text,
+		SELECT p.id, loc(p.name, p.name_uz), p.images[1], loc(u.short_name, u.short_name_uz), COALESCE(sp.price, np.price, p.base_price)::text,
 		       (SELECT min(pb.barcode) FROM product_barcodes pb WHERE pb.product_id = p.id),
 		       p.network_id IS NOT NULL, l.product_id IS NOT NULL
 		FROM products p
@@ -145,7 +146,7 @@ func (s *Service) CatalogItems(ctx context.Context, p *identity.Principal, f Cat
 		LEFT JOIN start_lines l ON l.draft_id::text = $7 AND l.product_id = p.id
 		WHERE `+catalogWhere+` AND p.category_id = $3
 		  AND ($4 = '' OR ($4 = 'none' AND p.brand_id IS NULL) OR p.brand_id::text = $4)
-		ORDER BY p.name, p.id LIMIT $8 OFFSET $9`,
+		ORDER BY loc(p.name, p.name_uz), p.id LIMIT $8 OFFSET $9`,
 		p.NetworkID, strings.TrimSpace(f.Query), f.CategoryID, f.BrandID, st.PriceTypeID, st.ID, draft, f.Page.Limit, f.Page.Offset)
 	if err != nil {
 		return nil, err
@@ -180,13 +181,13 @@ const selectMax = 2000
 func (s *Service) Select(ctx context.Context, p *identity.Principal, in SelectInput) (SelectResult, error) {
 	var out SelectResult
 	if in.CategoryID == "" && in.BrandID == "" {
-		return out, apperr.Validation("укажите category_id или brand_id")
+		return out, apperr.Validation("укажите category_id или brand_id").Uz("category_id yoki brand_id ni kiriting")
 	}
 	if in.CategoryID != "" && !httpx.IsUUID(in.CategoryID) {
-		return out, apperr.Validation("category_id: неверный id")
+		return out, apperr.Validation("category_id: неверный id").Uz("category_id: id notoʻgʻri")
 	}
 	if !validBrand(in.BrandID) {
-		return out, apperr.Validation("brand_id: неверный id")
+		return out, apperr.Validation("brand_id: неверный id").Uz("brand_id: id notoʻgʻri")
 	}
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		st, err := s.store(ctx, tx, p, in.StoreID)
@@ -208,7 +209,7 @@ func (s *Service) Select(ctx context.Context, p *identity.Principal, in SelectIn
 				return nil
 			}
 			if status == StatusPosting {
-				return apperr.Conflict("draft_posting", "черновик сейчас проводится")
+				return apperr.Conflict("draft_posting", "черновик сейчас проводится").Uz("qoralama hozir oʻtkazilmoqda")
 			}
 			draft = *id
 		}
@@ -227,7 +228,7 @@ func (s *Service) Select(ctx context.Context, p *identity.Principal, in SelectIn
 				return err
 			}
 			if n > selectMax {
-				return apperr.Validation("в разделе слишком много товаров — откройте его и отметьте подразделы")
+				return apperr.Validation("в разделе слишком много товаров — откройте его и отметьте подразделы").Uz("boʻlimda mahsulotlar juda koʻp — uni oching va ichki boʻlimlarni belgilang")
 			}
 			tag, err := tx.Exec(ctx, `
 				INSERT INTO start_lines (draft_id, product_id, qty, source, added_by)

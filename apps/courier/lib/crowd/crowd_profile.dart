@@ -18,7 +18,7 @@ class CrowdProfileScreen extends StatelessWidget {
     final st = context.watch<CrowdState>();
     final me = st.me ?? const {};
     final name = '${me['full_name'] ?? ''}'.trim();
-    final shown = name.isEmpty ? 'Курьер ${me['code'] ?? ''}' : name;
+    final shown = name.isEmpty ? tr('Курьер ${me['code'] ?? ''}', 'Kuryer ${me['code'] ?? ''}') : name;
     final initials = name.isEmpty ? 'SM' : name.split(' ').where((w) => w.isNotEmpty).take(2).map((w) => w[0].toUpperCase()).join();
     final level = (me['level'] as Map?) ?? const {};
     final stats = (me['stats'] as Map?) ?? const {};
@@ -41,8 +41,8 @@ class CrowdProfileScreen extends StatelessWidget {
               Text(shown, style: AppText.h3),
               const SizedBox(height: 6),
               st.verified
-                  ? const StatusChip('Личность подтверждена', icon: Icons.verified_rounded, tone: ChipTone.green)
-                  : const StatusChip('Не верифицирован', icon: Icons.hourglass_top_rounded, tone: ChipTone.amber),
+                  ? StatusChip(tr('Личность подтверждена', 'Shaxs tasdiqlangan'), icon: Icons.verified_rounded, tone: ChipTone.green)
+                  : StatusChip(tr('Не верифицирован', 'Tasdiqlanmagan'), icon: Icons.hourglass_top_rounded, tone: ChipTone.amber),
             ]),
           ),
         ]),
@@ -55,7 +55,10 @@ class CrowdProfileScreen extends StatelessWidget {
               Row(children: [
                 Expanded(child: Text('${level['title'] ?? ''}', style: AppText.title)),
                 if (level['next'] != null)
-                  Text('${stats['delivered'] ?? 0} из ${(level['next'] as Map)['after']} доставок', style: AppText.small.copyWith(fontWeight: FontWeight.w600)),
+                  Text(
+                      tr('${stats['delivered'] ?? 0} из ${(level['next'] as Map)['after']} доставок',
+                          '${stats['delivered'] ?? 0} / ${(level['next'] as Map)['after']} yetkazish'),
+                      style: AppText.small.copyWith(fontWeight: FontWeight.w600)),
               ]),
               const SizedBox(height: 10),
               ClipRRect(
@@ -68,15 +71,15 @@ class CrowdProfileScreen extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Row(children: [
-            _Stat(value: '${stats['delivered'] ?? 0}', label: 'доставок', icon: Icons.local_shipping_rounded, fg: AppColors.primary, bg: AppColors.primarySoft),
+            _Stat(value: '${stats['delivered'] ?? 0}', label: tr('доставок', 'yetkazish'), icon: Icons.local_shipping_rounded, fg: AppColors.primary, bg: AppColors.primarySoft),
             const SizedBox(width: 12),
-            _Stat(value: '${stats['ontime_pct'] ?? 100}%', label: 'вовремя', icon: Icons.schedule_rounded, fg: AppColors.success, bg: AppColors.successSoft),
+            _Stat(value: '${stats['ontime_pct'] ?? 100}%', label: tr('вовремя', 'oʻz vaqtida'), icon: Icons.schedule_rounded, fg: AppColors.success, bg: AppColors.successSoft),
           ]),
           const SizedBox(height: 12),
           Row(children: [
-            _Stat(value: '${stats['cancels'] ?? 0}', label: 'отмен', icon: Icons.cancel_rounded, fg: AppColors.warningInk, bg: AppColors.warningSoft),
+            _Stat(value: '${stats['cancels'] ?? 0}', label: tr('отмен', 'bekor qilingan'), icon: Icons.cancel_rounded, fg: AppColors.warningInk, bg: AppColors.warningSoft),
             const SizedBox(width: 12),
-            _Stat(value: '${stats['violations'] ?? 0}', label: 'нарушений', icon: Icons.gpp_good_rounded, fg: AppColors.blue, bg: AppColors.blueSoft),
+            _Stat(value: '${stats['violations'] ?? 0}', label: tr('нарушений', 'qoidabuzarlik'), icon: Icons.gpp_good_rounded, fg: AppColors.blue, bg: AppColors.blueSoft),
           ]),
           const SizedBox(height: 12),
           if (ver != null)
@@ -88,9 +91,9 @@ class CrowdProfileScreen extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Проверен в ${ver['store_name']}', style: AppText.bodyStrong),
+                    Text(tr('Проверен в ${ver['store_name']}', '${ver['store_name']} doʻkonida tekshirilgan'), style: AppText.bodyStrong),
                     Text(
-                      [if (at != null) '${at.day.toString().padLeft(2, '0')}.${at.month.toString().padLeft(2, '0')}.${at.year}', ver['doc_type'] == 'passport' ? 'паспорт' : 'ID-карта'].join(' · '),
+                      [if (at != null) '${at.day.toString().padLeft(2, '0')}.${at.month.toString().padLeft(2, '0')}.${at.year}', ver['doc_type'] == 'passport' ? tr('паспорт', 'pasport') : tr('ID-карта', 'ID-karta')].join(' · '),
                       style: AppText.small,
                     ),
                   ]),
@@ -105,9 +108,16 @@ class CrowdProfileScreen extends StatelessWidget {
           child: Column(children: [
             ListTile(
               leading: const Icon(Icons.directions_walk_rounded, color: AppColors.dark),
-              title: const Text('Транспорт', style: AppText.body),
+              title: Text(tr('Транспорт', 'Transport'), style: AppText.body),
               trailing: Text(vehicleTitles[st.vehicle] ?? st.vehicle, style: AppText.body.copyWith(color: AppColors.text2)),
               onTap: () => _vehicle(context, st),
+            ),
+            const Divider(height: 1, indent: 56, color: AppColors.line),
+            ListTile(
+              leading: const Icon(Icons.language_rounded, color: AppColors.dark),
+              title: Text(tr('Язык', 'Til'), style: AppText.body),
+              trailing: Text(Lang.names[Lang.instance.code]!, style: AppText.body.copyWith(color: AppColors.text2)),
+              onTap: () => _language(context, st),
             ),
             const Divider(height: 1, indent: 56, color: AppColors.line),
             ListTile(
@@ -123,30 +133,31 @@ class CrowdProfileScreen extends StatelessWidget {
           decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20)),
           clipBehavior: Clip.antiAlias,
           child: Column(children: [
-            _LinkTile(icon: Icons.description_rounded, title: 'Условия для курьеров', onTap: () => openLink(context, courierTermsUrl)),
+            _LinkTile(icon: Icons.description_rounded, title: tr('Условия для курьеров', 'Kuryerlar uchun shartlar'), onTap: () => openLink(context, courierTermsUrl)),
             const Divider(height: 1, indent: 56, color: AppColors.line),
-            _LinkTile(icon: Icons.policy_rounded, title: 'Политика конфиденциальности', onTap: () => openLink(context, privacyUrl)),
+            _LinkTile(icon: Icons.policy_rounded, title: tr('Политика конфиденциальности', 'Maxfiylik siyosati'), onTap: () => openLink(context, privacyUrl)),
             const Divider(height: 1, indent: 56, color: AppColors.line),
             _LinkTile(
               icon: Icons.logout_rounded,
-              title: 'Выйти',
+              title: tr('Выйти', 'Chiqish'),
               onTap: () async {
                 final ok = await confirmSheet(
                   context,
                   icon: Icons.logout_rounded,
-                  title: 'Выйти из приложения?',
-                  text: 'Лента перестанет искать заказы. Войти снова можно по номеру телефона.',
-                  confirm: 'Выйти',
+                  title: tr('Выйти из приложения?', 'Ilovadan chiqasizmi?'),
+                  text: tr('Лента перестанет искать заказы. Войти снова можно по номеру телефона.',
+                      'Lenta buyurtma qidirishni toʻxtatadi. Telefon raqami orqali qayta kirish mumkin.'),
+                  confirm: tr('Выйти', 'Chiqish'),
                 );
                 if (ok) await st.logout();
               },
             ),
             const Divider(height: 1, indent: 56, color: AppColors.line),
-            _LinkTile(icon: Icons.person_remove_rounded, title: 'Удалить аккаунт', color: AppColors.primary, onTap: () => _delete(context, st)),
+            _LinkTile(icon: Icons.person_remove_rounded, title: tr('Удалить аккаунт', 'Akkauntni oʻchirish'), color: AppColors.primary, onTap: () => _delete(context, st)),
           ]),
         ),
         const SizedBox(height: 18),
-        Text('Super Market Курьер · версия $appVersion', textAlign: TextAlign.center, style: AppText.small.copyWith(color: AppColors.muted)),
+        Text(tr('Super Market Курьер · версия $appVersion', 'Super Market Kuryer · versiya $appVersion'), textAlign: TextAlign.center, style: AppText.small.copyWith(color: AppColors.muted)),
       ]),
     );
   }
@@ -156,10 +167,13 @@ class CrowdProfileScreen extends StatelessWidget {
     final ok = await confirmSheet(
       context,
       icon: Icons.person_remove_rounded,
-      title: 'Удалить аккаунт?',
-      text: 'Удалим имя, данные документа и последнюю геопозицию, выйдем на всех устройствах. '
-          'История доставок останется без ваших данных. Отменить нельзя.',
-      confirm: 'Удалить аккаунт',
+      title: tr('Удалить аккаунт?', 'Akkauntni oʻchirasizmi?'),
+      text: tr(
+          'Удалим имя, данные документа и последнюю геопозицию, выйдем на всех устройствах. '
+              'История доставок останется без ваших данных. Отменить нельзя.',
+          'Ism, hujjat maʼlumotlari va oxirgi joylashuvingizni oʻchiramiz, barcha qurilmalardan chiqamiz. '
+              'Yetkazishlar tarixi maʼlumotlaringizsiz qoladi. Buni bekor qilib boʻlmaydi.'),
+      confirm: tr('Удалить аккаунт', 'Akkauntni oʻchirish'),
     );
     if (!ok || !context.mounted) return;
     try {
@@ -175,6 +189,17 @@ class CrowdProfileScreen extends StatelessWidget {
       }
     } catch (e) {
       if (context.mounted) showMessage(context, e);
+    }
+  }
+
+  /// Язык приложения; сервер запоминает его для уведомлений.
+  Future<void> _language(BuildContext context, CrowdState st) async {
+    final code = await pickLanguage(context);
+    if (code == null || !st.api.loggedIn) return;
+    try {
+      await st.api.put('/me/language', {'language': code});
+    } catch (_) {
+      // Не сохранилось на сервере — уведомления придут на прежнем языке.
     }
   }
 

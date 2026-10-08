@@ -91,7 +91,7 @@ func (m *Module) salesBreakdown(w http.ResponseWriter, r *http.Request) {
 		limit := 0
 		if v := q.Get("limit"); v != "" {
 			if limit, err = strconv.Atoi(v); err != nil || limit < 1 {
-				return SalesBreakdown{}, apperr.Validation("limit: от 1 до 50")
+				return SalesBreakdown{}, apperr.Validation("limit: от 1 до 50").Uz("limit: 1 dan 50 gacha")
 			}
 		}
 		return m.svc.SalesBreakdown(r.Context(), identity.FromContext(r.Context()), BreakdownFilter{

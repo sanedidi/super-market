@@ -17,7 +17,10 @@ import YandexMapsMobile
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     // Ключ MapKit — до регистрации плагинов, иначе yandex_mapkit падает при старте.
-    YMKMapKit.setLocale("ru_RU")
+    // Язык карты — язык приложения (Lang в sm_core хранит его в shared_preferences,
+    // ключ flutter.sm_lang). Меняется со следующего запуска.
+    let lang = UserDefaults.standard.string(forKey: "flutter.sm_lang") ?? "uz"
+    YMKMapKit.setLocale(lang == "ru" ? "ru_RU" : "uz_UZ")
     // Ключ задаётся в ios/Flutter/Secrets.xcconfig (не хранится в git), см. apps/README.md.
     let key = Bundle.main.object(forInfoDictionaryKey: "YandexMapkitApiKey") as? String ?? ""
     YMKMapKit.setApiKey(key)

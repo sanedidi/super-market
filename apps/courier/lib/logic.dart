@@ -1,8 +1,15 @@
 // Логика без Flutter-виджетов: подписи статусов, группы заказов, адрес,
 // время доставки. Покрыто тестами (test/logic_test.dart).
 
+import 'package:sm_core/sm_core.dart';
+
 /// Транспорт курьера: ключ API → подпись.
-const vehicleTitles = {'foot': 'Пешком', 'bike': 'Велосипед', 'scooter': 'Самокат', 'car': 'Авто'};
+Map<String, String> get vehicleTitles => {
+      'foot': tr('Пешком', 'Piyoda'),
+      'bike': tr('Велосипед', 'Velosiped'),
+      'scooter': tr('Самокат', 'Samokat'),
+      'car': tr('Авто', 'Avto'),
+    };
 
 /// Заказ курьера из API: {order, store, customer_name, items_count, picked_up_at, cash}.
 typedef CourierOrder = Map<String, dynamic>;
@@ -14,12 +21,12 @@ String idOf(CourierOrder c) => '${orderOf(c)['id'] ?? ''}';
 
 /// Короткая подпись статуса для курьера.
 String statusTitle(String status) => switch (status) {
-      'accepted' => 'Принят',
-      'picking' => 'Собирают',
-      'picked' => 'Собран',
-      'delivering' => 'В пути',
-      'delivered' => 'Доставлен',
-      'cancelled' => 'Отменён',
+      'accepted' => tr('Принят', 'Qabul qilindi'),
+      'picking' => tr('Собирают', 'Yigʻilmoqda'),
+      'picked' => tr('Собран', 'Yigʻildi'),
+      'delivering' => tr('В пути', 'Yoʻlda'),
+      'delivered' => tr('Доставлен', 'Yetkazildi'),
+      'cancelled' => tr('Отменён', 'Bekor qilindi'),
       _ => status,
     };
 
@@ -48,9 +55,9 @@ String statusTitle(String status) => switch (status) {
 String flatDetails(Map<String, dynamic> o) {
   String v(String k) => '${o[k] ?? ''}'.trim();
   return [
-    if (v('entrance').isNotEmpty) 'подъезд ${v('entrance')}',
-    if (v('floor').isNotEmpty) 'этаж ${v('floor')}',
-    if (v('apartment').isNotEmpty) 'кв. ${v('apartment')}',
+    if (v('entrance').isNotEmpty) tr('подъезд ${v('entrance')}', 'podʼezd ${v('entrance')}'),
+    if (v('floor').isNotEmpty) tr('этаж ${v('floor')}', 'qavat ${v('floor')}'),
+    if (v('apartment').isNotEmpty) tr('кв. ${v('apartment')}', 'xonadon ${v('apartment')}'),
   ].join(' · ').replaceFirstMapped(RegExp('^.'), (m) => m[0]!.toUpperCase());
 }
 
@@ -64,8 +71,8 @@ String whenText(Map<String, dynamic> o) {
   final to = _time(o['delivery_to']);
   if (from != null && to != null) return '${hm(from)}–${hm(to)}';
   final eta = _time(o['eta_at']);
-  if (eta != null) return 'к ${hm(eta)}';
-  return 'как можно скорее';
+  if (eta != null) return tr('к ${hm(eta)}', '${hm(eta)} gacha');
+  return tr('как можно скорее', 'imkon qadar tez');
 }
 
 /// «3 товара».
@@ -76,14 +83,15 @@ String itemsText(int n) {
       : (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14))
           ? 'товара'
           : 'товаров';
-  return '$n $w';
+  return tr('$n $w', '$n ta mahsulot');
 }
 
 /// «1,2 км» или «450 м».
 String distanceText(num? meters) {
   if (meters == null || meters <= 0) return '';
-  if (meters < 1000) return '${meters.round()} м';
-  return '${(meters / 1000).toStringAsFixed(1).replaceAll('.', ',')} км';
+  if (meters < 1000) return tr('${meters.round()} м', '${meters.round()} m');
+  final km = (meters / 1000).toStringAsFixed(1).replaceAll('.', ',');
+  return tr('$km км', '$km km');
 }
 
 /// Новые заказы, которых не было в прошлом списке (для вибрации).
@@ -97,7 +105,11 @@ const privacyUrl = 'https://super-market.uz/privacy';
 const courierTermsUrl = 'https://super-market.uz/courier-terms';
 
 /// Варианты причины в запросе на удаление аккаунта штатного курьера.
-const deletionReasons = ['Больше здесь не работаю', 'Не пользуюсь приложением', 'Другое'];
+List<String> get deletionReasons => [
+      tr('Больше здесь не работаю', 'Endi bu yerda ishlamayman'),
+      tr('Не пользуюсь приложением', 'Ilovadan foydalanmayman'),
+      tr('Другое', 'Boshqa'),
+    ];
 
 /// Тело POST /courier/me/deletion-request: причина необязательна, до 500 символов.
 Map<String, dynamic> deletionRequestBody(String? reason) {

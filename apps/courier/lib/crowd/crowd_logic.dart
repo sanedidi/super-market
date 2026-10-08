@@ -1,12 +1,14 @@
 // Логика режима «по пути» без виджетов. Покрыто тестами (test/crowd_logic_test.dart).
 
+import 'package:sm_core/sm_core.dart';
+
 /// «350 м», «1,2 км».
 String meters(num? m) {
   if (m == null) return '';
-  if (m < 1000) return '${(m / 10).round() * 10} м';
+  if (m < 1000) return tr('${(m / 10).round() * 10} м', '${(m / 10).round() * 10} m');
   final tenths = (m / 100).round();
   final text = tenths % 10 == 0 ? '${tenths ~/ 10}' : '${tenths ~/ 10},${tenths % 10}';
-  return '$text км';
+  return tr('$text км', '$text km');
 }
 
 /// Содержимое QR для продавца: проверка личности и выдача заказа.
@@ -26,11 +28,17 @@ double levelProgress(Map<String, dynamic> me) {
 /// «Ещё 13 доставок вовремя — и уровень «Надёжный»: заказы до 400 000 сум и 2 заказа сразу.»
 String levelHint(Map<String, dynamic> me, String Function(Object?) money) {
   final next = (me['level'] as Map?)?['next'] as Map?;
-  if (next == null) return 'Максимальный уровень: заказы на любую сумму до лимита и несколько заказов сразу.';
+  if (next == null) {
+    return tr('Максимальный уровень: заказы на любую сумму до лимита и несколько заказов сразу.',
+        'Eng yuqori daraja: limitgacha istalgan summadagi buyurtmalar va bir vaqtda bir nechta buyurtma.');
+  }
   final left = (next['remaining'] as num?)?.toInt() ?? 0;
   final parallel = (next['parallel'] as num?)?.toInt() ?? 1;
-  return 'Ещё ${deliveriesWord(left)} вовремя — и уровень «${next['title']}»: заказы до ${money(next['limit'])} и '
-      '$parallel ${parallel == 1 ? 'заказ' : 'заказа'} сразу.';
+  return tr(
+      'Ещё ${deliveriesWord(left)} вовремя — и уровень «${next['title']}»: заказы до ${money(next['limit'])} и '
+          '$parallel ${parallel == 1 ? 'заказ' : 'заказа'} сразу.',
+      'Yana $left ta buyurtmani oʻz vaqtida yetkazing — «${next['title']}» darajasi: ${money(next['limit'])} gacha buyurtmalar va '
+          'bir vaqtda $parallel ta buyurtma.');
 }
 
 String deliveriesWord(int n) {
@@ -48,11 +56,11 @@ String ledgerTitle(Map<String, dynamic> e) {
   final note = '${e['note'] ?? ''}'.trim();
   if (note.isNotEmpty) return note;
   return switch ('${e['kind']}') {
-    'delivery' => 'Доставка',
-    'wait_bonus' => 'Доплата за ожидание',
-    'penalty' => 'Штраф',
-    'payout' => 'Выплата',
-    _ => 'Корректировка',
+    'delivery' => tr('Доставка', 'Yetkazib berish'),
+    'wait_bonus' => tr('Доплата за ожидание', 'Kutish uchun qoʻshimcha'),
+    'penalty' => tr('Штраф', 'Jarima'),
+    'payout' => tr('Выплата', 'Toʻlov'),
+    _ => tr('Корректировка', 'Tuzatish'),
   };
 }
 
@@ -60,8 +68,8 @@ String ledgerTitle(Map<String, dynamic> e) {
 String minutesLeft(DateTime? until, DateTime now) {
   if (until == null) return '';
   final m = until.difference(now).inSeconds;
-  if (m <= 0) return 'время вышло';
-  return 'осталось ${(m / 60).ceil()} мин';
+  if (m <= 0) return tr('время вышло', 'vaqt tugadi');
+  return tr('осталось ${(m / 60).ceil()} мин', '${(m / 60).ceil()} daqiqa qoldi');
 }
 
 /// Почему аккаунт «по пути» пока нельзя удалить (409 на DELETE /crowd/me, Figma Ш6):
@@ -71,13 +79,15 @@ String minutesLeft(DateTime? until, DateTime now) {
     case 'active_order':
       final n = details['order_number'];
       return (
-        title: 'Сначала завершите заказ',
-        text: '${n == null ? 'Заказ' : 'Заказ № $n'} ещё в пути. Удалить аккаунт можно после вручения или отмены заказа.',
+        title: tr('Сначала завершите заказ', 'Avval buyurtmani yakunlang'),
+        text: tr('${n == null ? 'Заказ' : 'Заказ № $n'} ещё в пути. Удалить аккаунт можно после вручения или отмены заказа.',
+            '${n == null ? 'Buyurtma' : 'Buyurtma № $n'} hali yoʻlda. Akkauntni buyurtma topshirilgan yoki bekor qilinganidan keyin oʻchirish mumkin.'),
       );
     case 'unpaid_balance':
       return (
-        title: 'Сначала получите выплату',
-        text: 'К выплате ${money(details['balance'])} (выплата в понедельник). Удалить аккаунт можно после выплаты.',
+        title: tr('Сначала получите выплату', 'Avval toʻlovni oling'),
+        text: tr('К выплате ${money(details['balance'])} (выплата в понедельник). Удалить аккаунт можно после выплаты.',
+            'Sizga ${money(details['balance'])} toʻlanadi (dushanba kuni). Akkauntni toʻlovdan keyin oʻchirish mumkin.'),
       );
   }
   return null;

@@ -5,14 +5,15 @@ package money
 
 import (
 	"encoding/json"
-	"errors"
 	"regexp"
 	"strings"
+
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 var re = regexp.MustCompile(`^\d{1,12}(\.\d{1,2})?$`)
 
-var ErrInvalid = errors.New("ожидается неотрицательная сумма, например 15000 или 15000.50")
+var ErrInvalid = i18n.NewError("ожидается неотрицательная сумма, например 15000 или 15000.50", "manfiy boʻlmagan summa kerak, masalan 15000 yoki 15000.50")
 
 // Amount — сумма. В JSON принимается и числом (15000), и строкой ("15000.50").
 type Amount string
@@ -37,7 +38,7 @@ func (a Amount) Valid() bool { return re.MatchString(string(a)) }
 var qtyRe = regexp.MustCompile(`^\d{1,11}(\.\d{1,3})?$`)
 
 // ErrInvalidQty — неверное количество.
-var ErrInvalidQty = errors.New("ожидается неотрицательное количество, до 3 знаков после точки")
+var ErrInvalidQty = i18n.NewError("ожидается неотрицательное количество, до 3 знаков после точки", "manfiy boʻlmagan miqdor kerak, nuqtadan keyin 3 xonagacha")
 
 // Qty — количество товара (шт, кг, л). В JSON — число или строка.
 type Qty string
@@ -67,11 +68,11 @@ func (r *Rate) UnmarshalJSON(b []byte) error {
 	s := strings.TrimSpace(string(b))
 	if strings.HasPrefix(s, `"`) {
 		if err := json.Unmarshal(b, &s); err != nil {
-			return errors.New("неверный курс")
+			return i18n.NewError("неверный курс", "kurs notoʻgʻri")
 		}
 	}
 	if !rateRe.MatchString(s) || strings.Trim(s, "0.") == "" {
-		return errors.New("курс должен быть положительным числом")
+		return i18n.NewError("курс должен быть положительным числом", "kurs musbat son boʻlishi kerak")
 	}
 	*r = Rate(s)
 	return nil
@@ -91,7 +92,7 @@ func (p *Price) UnmarshalJSON(b []byte) error {
 		}
 	}
 	if !priceRe.MatchString(s) {
-		return errors.New("ожидается неотрицательная цена, до 4 знаков после точки")
+		return i18n.NewError("ожидается неотрицательная цена, до 4 знаков после точки", "manfiy boʻlmagan narx kerak, nuqtadan keyin 4 xonagacha")
 	}
 	*p = Price(s)
 	return nil

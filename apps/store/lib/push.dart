@@ -89,7 +89,7 @@ class Push {
           if (ctx == null || n == null) return;
           ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
             content: Text([n.title, n.body].whereType<String>().join('\n')),
-            action: SnackBarAction(label: 'Открыть', onPressed: () => _open(m)),
+            action: SnackBarAction(label: tr('Открыть', 'Ochish'), onPressed: () => _open(m)),
           ));
         });
       }

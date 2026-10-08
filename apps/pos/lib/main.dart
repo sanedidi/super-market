@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart' show Lang, tr;
 
 import 'data/api.dart';
 import 'data/store.dart';
@@ -20,6 +21,7 @@ const appVersion = '0.3.0';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Lang.instance.init();
   final dir = Directory('${(await getApplicationSupportDirectory()).path}${Platform.pathSeparator}pos');
   await dir.create(recursive: true);
   final pos = PosController(store: FileStore(dir), api: PosApi(apiUrl), appVersion: appVersion);
@@ -34,26 +36,29 @@ class PosApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final stage = context.select<PosController, Stage>((p) => p.stage);
     final revoked = context.select<PosController, bool>((p) => p.revoked);
-    return MaterialApp(
-      title: 'Super Market · Касса',
-      debugShowCheckedModeBanner: false,
-      theme: posTheme(),
-      locale: const Locale('ru'),
-      supportedLocales: const [Locale('ru'), Locale('uz'), Locale('en')],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      home: revoked && stage != Stage.activate
-          ? const RevokedScreen()
-          : switch (stage) {
-              Stage.loading => const Scaffold(body: Center(child: CircularProgressIndicator())),
-              Stage.activate => const ActivationScreen(),
-              Stage.login => const LoginScreen(),
-              Stage.openShift => const OpenShiftScreen(),
-              Stage.work => const SaleScreen(),
-            },
+    return ListenableBuilder(
+      listenable: Lang.instance,
+      builder: (context, _) => MaterialApp(
+        title: tr('Super Market · Касса', 'Super Market · Kassa'),
+        debugShowCheckedModeBanner: false,
+        theme: posTheme(),
+        locale: Lang.instance.locale,
+        supportedLocales: Lang.locales,
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        home: revoked && stage != Stage.activate
+            ? const RevokedScreen()
+            : switch (stage) {
+                Stage.loading => const Scaffold(body: Center(child: CircularProgressIndicator())),
+                Stage.activate => const ActivationScreen(),
+                Stage.login => const LoginScreen(),
+                Stage.openShift => const OpenShiftScreen(),
+                Stage.work => const SaleScreen(),
+              },
+      ),
     );
   }
 }

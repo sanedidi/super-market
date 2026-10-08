@@ -78,10 +78,10 @@ class _DebtSettingsScreenState extends State<DebtSettingsScreen> {
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9\s]'))],
               style: AppText.h2,
-              decoration: InputDecoration(suffixText: days ? 'дней' : 'сум'),
+              decoration: InputDecoration(suffixText: days ? tr('дней', 'kun') : tr('сум', 'soʻm')),
             ),
             const SizedBox(height: 16),
-            BigButton(label: 'Сохранить', onPressed: () => Navigator.of(ctx).pop(plainAmount(ctl.text))),
+            BigButton(label: tr('Сохранить', 'Saqlash'), onPressed: () => Navigator.of(ctx).pop(plainAmount(ctl.text))),
           ]),
         ),
       ),
@@ -110,22 +110,23 @@ class _DebtSettingsScreenState extends State<DebtSettingsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Настройки долгов'),
+          Text(tr('Настройки долгов', 'Qarz sozlamalari')),
           Text('${st.networkName} · ${st.store?['name'] ?? ''}', style: AppText.small),
         ]),
       ),
       body: s == null
           ? (_error == null
               ? const Center(child: CircularProgressIndicator())
-              : EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: '$_error', action: 'Повторить', onAction: _load))
+              : EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load))
           : ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
-              const Text('ЭТОТ МАГАЗИН', style: AppText.caption),
+              Text(tr('ЭТОТ МАГАЗИН', 'USHBU DOʻKON'), style: AppText.caption),
               const SizedBox(height: 8),
               AppCard(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: SwitchListTile(
-                  title: const Text('Даёт в долг', style: AppText.bodyStrong),
-                  subtitle: const Text('кнопка «В долг» на кассе. Покупатели эту настройку не видят', style: AppText.small),
+                  title: Text(tr('Даёт в долг', 'Qarzga beradi'), style: AppText.bodyStrong),
+                  subtitle: Text(tr('кнопка «В долг» на кассе. Покупатели эту настройку не видят', 'kassadagi «Qarzga» tugmasi. Xaridorlar bu sozlamani koʻrmaydi'),
+                      style: AppText.small),
                   value: here?['debt_enabled'] == true,
                   onChanged: _busy || st.storeId == null
                       ? null
@@ -133,38 +134,44 @@ class _DebtSettingsScreenState extends State<DebtSettingsScreen> {
                 ),
               ),
               const SizedBox(height: 18),
-              const Text('ДЛЯ ВСЕЙ СЕТИ', style: AppText.caption),
+              Text(tr('ДЛЯ ВСЕЙ СЕТИ', 'BUTUN TARMOQ UCHUN'), style: AppText.caption),
               const SizedBox(height: 8),
               AppCard(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Column(children: [
-                  row('Лимит по умолчанию', 'на одного покупателя', money(s['default_limit'], suffix: false),
-                      () => _number('default_limit', 'Лимит по умолчанию', 'Сколько можно в долг подтверждённому покупателю')),
+                  row(tr('Лимит по умолчанию', 'Standart limit'), tr('на одного покупателя', 'bitta xaridor uchun'), money(s['default_limit'], suffix: false),
+                      () => _number('default_limit', tr('Лимит по умолчанию', 'Standart limit'),
+                          tr('Сколько можно в долг подтверждённому покупателю', 'Tasdiqlangan xaridorga qancha qarz berish mumkin'))),
                   const Divider(height: 1, indent: 16, endIndent: 16),
-                  row('Лимит без кода', 'для «не подтверждённых»', money(s['unverified_limit'], suffix: false),
-                      () => _number('unverified_limit', 'Лимит без кода', 'Пока покупатель не подтвердил номер кодом')),
+                  row(tr('Лимит без кода', 'Kodsiz limit'), tr('для «не подтверждённых»', '«tasdiqlanmaganlar» uchun'), money(s['unverified_limit'], suffix: false),
+                      () => _number('unverified_limit', tr('Лимит без кода', 'Kodsiz limit'),
+                          tr('Пока покупатель не подтвердил номер кодом', 'Xaridor raqamini kod bilan tasdiqlamaguncha'))),
                   const Divider(height: 1, indent: 16, endIndent: 16),
-                  row('Срок возврата', 'с первой неоплаченной покупки', '$term ${plural(term, 'день', 'дня', 'дней')}',
-                      () => _number('term_days', 'Срок возврата', 'Дней с первой неоплаченной покупки', days: true)),
+                  row(tr('Срок возврата', 'Qaytarish muddati'), tr('с первой неоплаченной покупки', 'birinchi toʻlanmagan xariddan'),
+                      tr('$term ${plural(term, 'день', 'дня', 'дней')}', '$term kun'),
+                      () => _number('term_days', tr('Срок возврата', 'Qaytarish muddati'), tr('Дней с первой неоплаченной покупки', 'Birinchi toʻlanmagan xariddan boshlab kunlar'),
+                          days: true)),
                   const Divider(height: 1, indent: 16, endIndent: 16),
                   SwitchListTile(
-                    title: const Text('Код при первом долге', style: AppText.bodyStrong),
-                    subtitle: const Text('Telegram или приложение на номер покупателя', style: AppText.small),
+                    title: Text(tr('Код при первом долге', 'Birinchi qarzda kod'), style: AppText.bodyStrong),
+                    subtitle: Text(tr('Telegram или приложение на номер покупателя', 'Xaridor raqamiga Telegram yoki ilova orqali'), style: AppText.small),
                     value: s['require_code'] == true,
                     onChanged: _busy ? null : (v) => _save((api) => api.put('/store/debt-settings', {'require_code': v})),
                   ),
                   const Divider(height: 1, indent: 16, endIndent: 16),
                   SwitchListTile(
-                    title: const Text('Доп. напоминания', style: AppText.bodyStrong),
-                    subtitle: const Text('за 3 дня и после просрочки. В день оплаты — всегда, в 10:00', style: AppText.small),
+                    title: Text(tr('Доп. напоминания', 'Qoʻshimcha eslatmalar'), style: AppText.bodyStrong),
+                    subtitle: Text(tr('за 3 дня и после просрочки. В день оплаты — всегда, в 10:00', '3 kun oldin va muddat oʻtgach. Toʻlov kuni — doim, soat 10:00 da'),
+                        style: AppText.small),
                     value: s['extra_reminders'] == true,
                     onChanged: _busy ? null : (v) => _save((api) => api.put('/store/debt-settings', {'extra_reminders': v})),
                   ),
                 ]),
               ),
               const SizedBox(height: 14),
-              const Text(
-                'Выключите «Даёт в долг» — кнопка на кассе пропадёт. Старые долги останутся: их можно принимать и видеть в списке.',
+              Text(
+                tr('Выключите «Даёт в долг» — кнопка на кассе пропадёт. Старые долги останутся: их можно принимать и видеть в списке.',
+                    '«Qarzga beradi»ni oʻchirsangiz, kassadagi tugma yoʻqoladi. Eski qarzlar qoladi: ularni qabul qilish va roʻyxatda koʻrish mumkin.'),
                 style: AppText.small,
               ),
             ]),

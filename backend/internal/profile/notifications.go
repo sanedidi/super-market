@@ -51,10 +51,10 @@ type ReadInput struct {
 // MarkRead отмечает прочитанными выбранные уведомления или все сразу.
 func (s *Service) MarkRead(ctx context.Context, userID string, in ReadInput) (int, error) {
 	if !in.All && len(in.IDs) == 0 {
-		return 0, apperr.Validation("ids или all: true")
+		return 0, apperr.Validation("ids или all: true").Uz("ids yoki all: true")
 	}
 	if len(in.IDs) > 200 {
-		return 0, apperr.Validation("ids: не больше 200")
+		return 0, apperr.Validation("ids: не больше 200").Uz("ids: koʻpi bilan 200 ta")
 	}
 	ids := in.IDs
 	if ids == nil {

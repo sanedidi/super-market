@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart' show tr;
 
 import '../core/limits.dart';
 import '../state/pos.dart';
@@ -129,7 +130,7 @@ class TopBar extends StatelessWidget {
     final s = pos.catalog.settings;
     final shift = pos.shift;
     final shiftText = [
-      if (shift != null) 'Смена ${shift.number ?? '·'}',
+      if (shift != null) tr('Смена ${shift.number ?? '·'}', 'Smena ${shift.number ?? '·'}'),
       if (pos.cashier != null) pos.cashier!.name,
     ].join(' · ');
     return Container(
@@ -143,19 +144,19 @@ class TopBar extends StatelessWidget {
         const SizedBox(width: 16),
         Text(shiftText, style: t(13, c: C.ts)),
         const Spacer(),
-        if (pos.revoked) const _Dot('Касса отключена в панели', C.error),
+        if (pos.revoked) _Dot(tr('Касса отключена в панели', 'Kassa panelda oʻchirilgan'), C.error),
         if (pos.printError != null) ...[
-          Tooltip(message: pos.printError!, child: const _Dot('Принтер', C.error)),
+          Tooltip(message: pos.printError!, child: _Dot(tr('Принтер', 'Printer'), C.error)),
           const SizedBox(width: 16),
         ],
         _connection(pos),
         const SizedBox(width: 16),
-        _Dot(pos.fiscalMode ? 'ФМ' : 'Тестовый режим', pos.fiscalMode ? C.success : C.warning),
+        _Dot(pos.fiscalMode ? tr('ФМ', 'FM') : tr('Тестовый режим', 'Test rejimi'), pos.fiscalMode ? C.success : C.warning),
         const SizedBox(width: 16),
-        _Dot('Очередь ${pos.queue}', pos.queue == 0 ? C.td : C.warning),
+        _Dot(tr('Очередь ${pos.queue}', 'Navbat ${pos.queue}'), pos.queue == 0 ? C.td : C.warning),
         if (pos.failed > 0) ...[
           const SizedBox(width: 16),
-          _Dot('Не принято ${pos.failed}', C.error),
+          _Dot(tr('Не принято ${pos.failed}', 'Qabul qilinmagan ${pos.failed}'), C.error),
         ],
       ]),
     );
@@ -164,9 +165,9 @@ class TopBar extends StatelessWidget {
 
 Widget _connection(PosController pos) {
   final off = pos.offlineLimit;
-  if (pos.online && off.state != LimitState.warn) return const _Dot('Онлайн', C.success);
-  if (off.state == LimitState.ok) return const _Dot('Нет связи', C.warning);
-  return _Dot('Нет связи ${fmtDuration(off.age)}', C.error);
+  if (pos.online && off.state != LimitState.warn) return _Dot(tr('Онлайн', 'Onlayn'), C.success);
+  if (off.state == LimitState.ok) return _Dot(tr('Нет связи', 'Aloqa yoʻq'), C.warning);
+  return _Dot(tr('Нет связи ${fmtDuration(off.age)}', 'Aloqa yoʻq ${fmtDuration(off.age)}'), C.error);
 }
 
 /// Полоса под верхней строкой: смена скоро 24 часа или касса давно без связи
@@ -185,9 +186,10 @@ class LimitBanner extends StatelessWidget {
         icon: Icons.schedule_rounded,
         bg: C.warningSoft,
         fg: C.warning,
-        title: 'Смена идёт ${fmtDuration(sh.age)}.',
-        text: 'Через ${fmtDuration(sh.left)} касса перестанет продавать — закройте смену и напечатайте Z-отчёт.',
-        action: 'Закрыть смену · F11',
+        title: tr('Смена идёт ${fmtDuration(sh.age)}.', 'Smena ${fmtDuration(sh.age)} davom etmoqda.'),
+        text: tr('Через ${fmtDuration(sh.left)} касса перестанет продавать — закройте смену и напечатайте Z-отчёт.',
+            '${fmtDuration(sh.left)} dan keyin kassa sotishni toʻxtatadi — smenani yoping va Z-hisobotni chop eting.'),
+        action: tr('Закрыть смену · F11', 'Smenani yopish · F11'),
         onAction: onCloseShift,
       );
     }
@@ -197,10 +199,13 @@ class LimitBanner extends StatelessWidget {
         icon: Icons.wifi_off_rounded,
         bg: const Color(0xFFEFF8FF),
         fg: const Color(0xFF175CD3),
-        title: 'Нет связи ${fmtDuration(off.age)}.',
-        text: 'Продавать можно: ${off.queue} ${_plural(off.queue, 'чек сохранён', 'чека сохранены', 'чеков сохранены')} в кассе и уйдут сами. '
-            'Без связи — ещё ${fmtDuration(off.left)}.',
-        action: 'Проверить связь',
+        title: tr('Нет связи ${fmtDuration(off.age)}.', 'Aloqa yoʻq: ${fmtDuration(off.age)}.'),
+        text: tr(
+            'Продавать можно: ${off.queue} ${_plural(off.queue, 'чек сохранён', 'чека сохранены', 'чеков сохранены')} в кассе и уйдут сами. '
+                'Без связи — ещё ${fmtDuration(off.left)}.',
+            'Sotish mumkin: ${off.queue} ta chek kassada saqlangan va oʻzi yuboriladi. '
+                'Aloqasiz yana ${fmtDuration(off.left)} ishlash mumkin.'),
+        action: tr('Проверить связь', 'Aloqani tekshirish'),
         onAction: () => pos.sync(catalog: true),
       );
     }
@@ -272,33 +277,35 @@ class LimitLock extends StatelessWidget {
     String hm(DateTime d) {
       final l = d.toLocal();
       final now = DateTime.now();
-      final day = l.year == now.year && l.month == now.month && l.day == now.day ? 'сегодня' : 'вчера';
+      final day = l.year == now.year && l.month == now.month && l.day == now.day ? tr('сегодня', 'bugun') : tr('вчера', 'kecha');
       return '$day ${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
     }
 
     final (icon, title, text, rows, primary, onPrimary, secondary) = shiftBlocked
         ? (
             Icons.lock_clock_rounded,
-            'Смена идёт больше 24 часов',
-            'По закону смена кассы не может длиться дольше 24 часов. Закройте смену — напечатается Z-отчёт, и следующий кассир откроет новую.',
+            tr('Смена идёт больше 24 часов', 'Smena 24 soatdan oshdi'),
+            tr('По закону смена кассы не может длиться дольше 24 часов. Закройте смену — напечатается Z-отчёт, и следующий кассир откроет новую.',
+                'Qonunga koʻra kassa smenasi 24 soatdan oshmasligi kerak. Smenani yoping — Z-hisobot chop etiladi va keyingi kassir yangisini ochadi.'),
             [
-              ('Смена ${pos.shift!.number ?? ''} открыта', hm(pos.shift!.openedAt)),
-              ('Чеков за смену', '${pos.report.salesCount}'),
-              ('Отложенные чеки', 'сохранятся'),
+              (tr('Смена ${pos.shift!.number ?? ''} открыта', 'Smena ${pos.shift!.number ?? ''} ochilgan'), hm(pos.shift!.openedAt)),
+              (tr('Чеков за смену', 'Smenadagi cheklar'), '${pos.report.salesCount}'),
+              (tr('Отложенные чеки', 'Kechiktirilgan cheklar'), tr('сохранятся', 'saqlanib qoladi')),
             ],
-            'Закрыть смену · Enter',
+            tr('Закрыть смену · Enter', 'Smenani yopish · Enter'),
             onCloseShift,
-            'Сменить кассира',
+            tr('Сменить кассира', 'Kassirni almashtirish'),
           )
         : (
             Icons.cloud_off_rounded,
-            'Касса без связи больше 24 часов',
-            'Чеки нельзя хранить в кассе дольше суток — их нужно отправить в ОФД. Подключите интернет: продажи откроются сами, как только очередь уйдёт.',
+            tr('Касса без связи больше 24 часов', 'Kassa 24 soatdan ortiq aloqasiz'),
+            tr('Чеки нельзя хранить в кассе дольше суток — их нужно отправить в ОФД. Подключите интернет: продажи откроются сами, как только очередь уйдёт.',
+                'Cheklarni kassada bir sutkadan ortiq saqlab boʻlmaydi — ularni OFDga yuborish kerak. Internetga ulaning: navbat yuborilishi bilan sotuv oʻzi ochiladi.'),
             [
-              ('Чеков ждут отправки', '${off.queue}'),
-              if (off.since != null) ('Самый старый', hm(off.since!)),
+              (tr('Чеков ждут отправки', 'Yuborilishini kutayotgan cheklar'), '${off.queue}'),
+              if (off.since != null) (tr('Самый старый', 'Eng eskisi'), hm(off.since!)),
             ],
-            'Проверить связь · Enter',
+            tr('Проверить связь · Enter', 'Aloqani tekshirish · Enter'),
             () {
               pos.sync(catalog: true);
             },

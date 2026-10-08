@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart' show Lang, pickLanguage, tr;
 
 import '../core/journal.dart';
 import '../core/money.dart';
@@ -31,15 +32,15 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
   Future<void> _confirmMove() async {
     final amount = parseMoney(_input);
     if (amount <= 0) {
-      setState(() => _error = 'Наберите сумму');
+      setState(() => _error = tr('Наберите сумму', 'Summani tering'));
       return;
     }
     if (_move == 'out' && amount > pos.report.expectedCash) {
-      setState(() => _error = 'В ящике меньше, чем ${fmtMoney(amount)}');
+      setState(() => _error = tr('В ящике меньше, чем ${fmtMoney(amount)}', 'Gʻaladonda ${fmtMoney(amount)} dan kam'));
       return;
     }
     final kind = _move!;
-    await pos.cashMove(kind, amount, kind == 'in' ? 'Размен' : 'Инкассация');
+    await pos.cashMove(kind, amount, kind == 'in' ? tr('Размен', 'Mayda pul') : tr('Инкассация', 'Inkassatsiya'));
     setState(() {
       _move = null;
       _input = '';
@@ -53,7 +54,8 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
 
   Future<void> _printX() async {
     if (!pos.printer.enabled) {
-      setState(() => _error = 'Принтер не выбран — откройте «Оборудование» (6). Отчёт — слева.');
+      setState(() => _error = tr('Принтер не выбран — откройте «Оборудование» (6). Отчёт — слева.',
+          'Printer tanlanmagan — «Uskunalar» (6) boʻlimini oching. Hisobot — chapda.'));
       return;
     }
     final ok = await pos.printX();
@@ -67,6 +69,10 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
   Future<void> _debtPayment() async {
     if (!pos.canTakeDebtPayment) return;
     await showDebtPaymentDialog(context, pos);
+  }
+
+  Future<void> _language() async {
+    await pickLanguage(context);
   }
 
   Future<void> _quickKeys() async {
@@ -119,6 +125,8 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
         _debtPayment();
       case '8':
         _quickKeys();
+      case '9':
+        _language();
       default:
         return false;
     }
@@ -145,20 +153,20 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
                   width: 480,
                   child: SingleChildScrollView(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                    Text('Меню смены', style: t(22, w: FontWeight.w700)),
+                    Text(tr('Меню смены', 'Smena menyusi'), style: t(22, w: FontWeight.w700)),
                     const SizedBox(height: 12),
                     KeyCard(
                       keyLabel: '1',
-                      title: 'Внесение',
-                      subtitle: 'добавить размен в ящик',
+                      title: tr('Внесение', 'Kiritish'),
+                      subtitle: tr('добавить размен в ящик', 'gʻaladonga mayda pul qoʻshish'),
                       style: _move == 'in' ? KeyCardStyle.active : KeyCardStyle.normal,
                       onTap: () => setState(() => _move = 'in'),
                     ),
                     const SizedBox(height: 10),
                     KeyCard(
                       keyLabel: '2',
-                      title: 'Изъятие',
-                      subtitle: 'инкассация, выдача из ящика',
+                      title: tr('Изъятие', 'Olish'),
+                      subtitle: tr('инкассация, выдача из ящика', 'inkassatsiya, gʻaladondan berish'),
                       style: _move == 'out' ? KeyCardStyle.active : KeyCardStyle.normal,
                       onTap: () => setState(() => _move = 'out'),
                     ),
@@ -173,12 +181,13 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
                         ),
                         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                           Row(children: [
-                            Expanded(child: Text('${_move == 'in' ? 'Внесение' : 'Изъятие'} · сумма', style: t(14, c: C.ts))),
+                            Expanded(child: Text(tr('${_move == 'in' ? 'Внесение' : 'Изъятие'} · сумма', '${_move == 'in' ? 'Kiritish' : 'Olish'} · summa'), style: t(14, c: C.ts))),
                             Text(_input.isEmpty ? '—' : fmtMoney(parseMoney(_input)), style: t(32, w: FontWeight.w700)),
                           ]),
                           const SizedBox(height: 6),
                           Text(
-                            'Причина: ${_move == 'in' ? 'Размен' : 'Инкассация'} · Enter — подтвердить · Esc — отмена',
+                            tr('Причина: ${_move == 'in' ? 'Размен' : 'Инкассация'} · Enter — подтвердить · Esc — отмена',
+                                'Sabab: ${_move == 'in' ? 'Mayda pul' : 'Inkassatsiya'} · Enter — tasdiqlash · Esc — bekor qilish'),
                             style: t(12, c: C.ts),
                           ),
                         ]),
@@ -187,27 +196,29 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
                     const SizedBox(height: 10),
                     KeyCard(
                       keyLabel: '3',
-                      title: 'Печать X-отчёта',
-                      subtitle: pos.printer.enabled ? pos.printer.title : 'принтер не выбран',
+                      title: tr('Печать X-отчёта', 'X-hisobotni chop etish'),
+                      subtitle: pos.printer.enabled ? pos.printer.title : tr('принтер не выбран', 'printer tanlanmagan'),
                       style: pos.printer.enabled ? KeyCardStyle.normal : KeyCardStyle.dim,
                       onTap: _printX,
                     ),
                     const SizedBox(height: 10),
-                    KeyCard(keyLabel: '4', title: 'Сменить кассира', subtitle: 'вход по ПИНу', onTap: _changeCashier),
+                    KeyCard(keyLabel: '4', title: tr('Сменить кассира', 'Kassirni almashtirish'), subtitle: tr('вход по ПИНу', 'PIN-kod bilan kirish'), onTap: _changeCashier),
                     const SizedBox(height: 10),
-                    KeyCard(keyLabel: '5', title: 'Закрыть смену', subtitle: 'пересчёт наличных и Z-отчёт', onTap: _close),
+                    KeyCard(keyLabel: '5', title: tr('Закрыть смену', 'Smenani yopish'), subtitle: tr('пересчёт наличных и Z-отчёт', 'naqd pulni sanash va Z-hisobot'), onTap: _close),
                     const SizedBox(height: 10),
-                    KeyCard(keyLabel: '6', title: 'Оборудование', subtitle: 'принтер, ящик, фискальный модуль', onTap: _equipment),
+                    KeyCard(keyLabel: '6', title: tr('Оборудование', 'Uskunalar'), subtitle: tr('принтер, ящик, фискальный модуль', 'printer, gʻaladon, fiskal modul'), onTap: _equipment),
                     if (pos.canTakeDebtPayment) ...[
                       const SizedBox(height: 10),
-                      KeyCard(keyLabel: '7', title: 'Погашение долга', subtitle: 'покупатель по номеру · наличные или карта', onTap: _debtPayment),
+                      KeyCard(keyLabel: '7', title: tr('Погашение долга', 'Qarzni toʻlash'), subtitle: tr('покупатель по номеру · наличные или карта', 'xaridor raqami boʻyicha · naqd yoki karta'), onTap: _debtPayment),
                     ],
                     if (pos.canQuickKeys) ...[
                       const SizedBox(height: 10),
-                      KeyCard(keyLabel: '8', title: 'Быстрые кнопки', subtitle: 'товары на плитках экрана продажи', onTap: _quickKeys),
+                      KeyCard(keyLabel: '8', title: tr('Быстрые кнопки', 'Tezkor tugmalar'), subtitle: tr('товары на плитках экрана продажи', 'sotuv ekranidagi mahsulot tugmalari'), onTap: _quickKeys),
                     ],
                     const SizedBox(height: 10),
-                    KeyCard(keyLabel: 'Esc', title: 'Назад к продаже', onTap: () => Navigator.of(context).pop()),
+                    KeyCard(keyLabel: '9', title: 'Til · Язык', subtitle: Lang.names[Lang.instance.code]!, onTap: _language),
+                    const SizedBox(height: 10),
+                    KeyCard(keyLabel: 'Esc', title: tr('Назад к продаже', 'Sotuvga qaytish'), onTap: () => Navigator.of(context).pop()),
                     if (_error != null) ...[
                       const SizedBox(height: 12),
                       Text(_error!, style: t(14, c: C.error)),
@@ -257,34 +268,34 @@ class XReportView extends StatelessWidget {
     return Panel(
       child: SingleChildScrollView(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Смена №${s.number ?? '·'} · с $opened · ${s.openedByName}', style: t(26, w: FontWeight.w700)),
-          Text('X-отчёт без закрытия смены', style: t(13, c: C.ts)),
+          Text(tr('Смена №${s.number ?? '·'} · с $opened · ${s.openedByName}', 'Smena №${s.number ?? '·'} · $opened dan · ${s.openedByName}'), style: t(26, w: FontWeight.w700)),
+          Text(tr('X-отчёт без закрытия смены', 'Smenani yopmasdan X-hisobot'), style: t(13, c: C.ts)),
           const SizedBox(height: 16),
           Row(children: [
-            stat('Продажи', fmtMoney(r.salesTotal), '${r.salesCount} чеков'),
+            stat(tr('Продажи', 'Sotuvlar'), fmtMoney(r.salesTotal), tr('${r.salesCount} чеков', '${r.salesCount} ta chek')),
             const SizedBox(width: 12),
-            stat('Возвраты', r.returnsTotal == 0 ? '0' : '−${fmtMoney(r.returnsTotal)}', '${r.returnsCount} чеков'),
+            stat(tr('Возвраты', 'Qaytarishlar'), r.returnsTotal == 0 ? '0' : '−${fmtMoney(r.returnsTotal)}', tr('${r.returnsCount} чеков', '${r.returnsCount} ta chek')),
             const SizedBox(width: 12),
-            stat('Средний чек', fmtMoney(r.average), ''),
+            stat(tr('Средний чек', 'Oʻrtacha chek'), fmtMoney(r.average), ''),
           ]),
           const SizedBox(height: 16),
-          Text('По способам оплаты', style: t(15, w: FontWeight.w700)),
+          Text(tr('По способам оплаты', 'Toʻlov usullari boʻyicha'), style: t(15, w: FontWeight.w700)),
           for (final m in r.byMethod.values)
-            row(m.name, m.returns == 0 ? fmtMoney(m.sales) : '${fmtMoney(m.sales)}  (возвраты −${fmtMoney(m.returns)})'),
-          if (r.discounts > 0) row('Скидки', fmtMoney(r.discounts)),
+            row(m.name, m.returns == 0 ? fmtMoney(m.sales) : tr('${fmtMoney(m.sales)}  (возвраты −${fmtMoney(m.returns)})', '${fmtMoney(m.sales)}  (qaytarishlar −${fmtMoney(m.returns)})')),
+          if (r.discounts > 0) row(tr('Скидки', 'Chegirmalar'), fmtMoney(r.discounts)),
           if (r.debtGivenCount > 0 || r.debtPaidCount > 0) ...[
             const SizedBox(height: 12),
-            Text('Долги покупателей', style: t(15, w: FontWeight.w700)),
-            if (r.debtGivenCount > 0) row('Отпущено в долг · ${r.debtGivenCount} чеков', fmtMoney(r.debtGiven)),
-            if (r.debtPaidCash > 0) row('Погашено наличными', '+${fmtMoney(r.debtPaidCash)}'),
-            if (r.debtPaidOther > 0) row('Погашено картой и др.', '+${fmtMoney(r.debtPaidOther)}'),
+            Text(tr('Долги покупателей', 'Xaridorlar qarzlari'), style: t(15, w: FontWeight.w700)),
+            if (r.debtGivenCount > 0) row(tr('Отпущено в долг · ${r.debtGivenCount} чеков', 'Qarzga berildi · ${r.debtGivenCount} ta chek'), fmtMoney(r.debtGiven)),
+            if (r.debtPaidCash > 0) row(tr('Погашено наличными', 'Naqd pulda toʻlandi'), '+${fmtMoney(r.debtPaidCash)}'),
+            if (r.debtPaidOther > 0) row(tr('Погашено картой и др.', 'Karta va b. bilan toʻlandi'), '+${fmtMoney(r.debtPaidOther)}'),
           ],
           const SizedBox(height: 12),
-          Text('Движение наличных', style: t(15, w: FontWeight.w700)),
-          row('Размен на начало', fmtMoney(s.openingCash)),
+          Text(tr('Движение наличных', 'Naqd pul harakati'), style: t(15, w: FontWeight.w700)),
+          row(tr('Размен на начало', 'Boshidagi mayda pul'), fmtMoney(s.openingCash)),
           for (final m in r.moves)
             row(
-              '${m.kind == 'in' ? 'Внесение' : 'Изъятие'} ${m.at.toLocal().hour.toString().padLeft(2, '0')}:${m.at.toLocal().minute.toString().padLeft(2, '0')} · ${m.reason}',
+              '${m.kind == 'in' ? tr('Внесение', 'Kiritish') : tr('Изъятие', 'Olish')} ${m.at.toLocal().hour.toString().padLeft(2, '0')}:${m.at.toLocal().minute.toString().padLeft(2, '0')} · ${m.reason}',
               '${m.kind == 'in' ? '+' : '−'}${fmtMoney(m.amount)}',
             ),
           const SizedBox(height: 12),
@@ -292,7 +303,9 @@ class XReportView extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(color: C.subtle, borderRadius: BorderRadius.circular(8)),
-            child: Text('Сколько должно быть в ящике, кассир увидит только после пересчёта при закрытии смены',
+            child: Text(
+                tr('Сколько должно быть в ящике, кассир увидит только после пересчёта при закрытии смены',
+                    'Gʻaladonda qancha boʻlishi kerakligini kassir faqat smenani yopishda sanab chiqqach koʻradi'),
                 style: t(12, c: C.ts)),
           ),
         ]),

@@ -52,17 +52,22 @@ class _ShiftScreenState extends State<ShiftScreen> {
     return Scaffold(
       appBar: AppBar(
         title: sh == null
-            ? const Text('Смена')
+            ? Text(tr('Смена', 'Smena'))
             : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('${sh['opened_by_name']}'),
-                Text('Смена № ${sh['number']} · ${shiftLine(sh)}', style: AppText.small, maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text('${tr('Смена', 'Smena')} № ${sh['number']} · ${shiftLine(sh)}', style: AppText.small, maxLines: 1, overflow: TextOverflow.ellipsis),
               ]),
       ),
       body: sh == null
           ? Center(
               child: _error == null
                   ? const CircularProgressIndicator()
-                  : EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить смену', text: '$_error', action: 'Повторить', onAction: _load),
+                  : EmptyState(
+                      icon: Icons.wifi_off_rounded,
+                      title: tr('Не удалось загрузить смену', 'Smenani yuklab boʻlmadi'),
+                      text: '$_error',
+                      action: tr('Повторить', 'Qayta urinish'),
+                      onAction: _load),
             )
           : RefreshIndicator(onRefresh: _load, child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: _body(sh))),
     );
@@ -78,28 +83,28 @@ class _ShiftScreenState extends State<ShiftScreen> {
     final card = salesTotal - n(r['cash_sales']);
     String sum(num v) => money(v, suffix: false);
     final (chipText, chipTone) = !closed
-        ? ('Смена идёт', ChipTone.blue)
+        ? (tr('Смена идёт', 'Smena davom etmoqda'), ChipTone.blue)
         : diff < 0
-            ? ('Недостача', ChipTone.red)
+            ? (tr('Недостача', 'Kamomad'), ChipTone.red)
             : diff > 0
-                ? ('Излишек', ChipTone.amber)
-                : ('Сходится', ChipTone.green);
+                ? (tr('Излишек', 'Ortiqcha'), ChipTone.amber)
+                : (tr('Сходится', 'Mos keladi'), ChipTone.green);
     return [
       AppCard(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            const Expanded(child: Text('Наличные в кассе', style: AppText.title)),
+            Expanded(child: Text(tr('Наличные в кассе', 'Kassadagi naqd pul'), style: AppText.title)),
             StatusChip(chipText, icon: chipTone == ChipTone.red ? Icons.error_outline_rounded : null, tone: chipTone),
           ]),
           const SizedBox(height: 10),
-          _Kv('На начало смены', sum(n(sh['opening_cash']))),
-          _Kv('Продажи наличными', '+ ${sum(n(r['cash_sales']))}'),
-          if (n(r['cash_returns']) > 0) _Kv('Возвраты наличными', '− ${sum(n(r['cash_returns']))}'),
-          if (cashIn > 0) _Kv('Внесено', '+ ${sum(cashIn)}'),
-          if (cashOut > 0) _Kv('Изъято из кассы', '− ${sum(cashOut)}'),
+          _Kv(tr('На начало смены', 'Smena boshida'), sum(n(sh['opening_cash']))),
+          _Kv(tr('Продажи наличными', 'Naqd pulga sotuvlar'), '+ ${sum(n(r['cash_sales']))}'),
+          if (n(r['cash_returns']) > 0) _Kv(tr('Возвраты наличными', 'Naqd pul bilan qaytarishlar'), '− ${sum(n(r['cash_returns']))}'),
+          if (cashIn > 0) _Kv(tr('Внесено', 'Kiritildi'), '+ ${sum(cashIn)}'),
+          if (cashOut > 0) _Kv(tr('Изъято из кассы', 'Kassadan olindi'), '− ${sum(cashOut)}'),
           const Divider(height: 20),
-          _Kv(closed ? 'Должно быть' : 'Должно быть сейчас', sum(n(sh['expected_cash'] ?? r['expected_cash'])), strong: true),
-          if (closed) _Kv('Посчитал кассир', sum(n(sh['counted_cash'])), strong: true),
+          _Kv(closed ? tr('Должно быть', 'Boʻlishi kerak') : tr('Должно быть сейчас', 'Hozir boʻlishi kerak'), sum(n(sh['expected_cash'] ?? r['expected_cash'])), strong: true),
+          if (closed) _Kv(tr('Посчитал кассир', 'Kassir sanadi'), sum(n(sh['counted_cash'])), strong: true),
           if (closed && diff != 0) ...[
             const SizedBox(height: 8),
             Container(
@@ -107,11 +112,11 @@ class _ShiftScreenState extends State<ShiftScreen> {
               decoration: BoxDecoration(color: diff < 0 ? AppColors.primarySoft : AppColors.warningSoft, borderRadius: BorderRadius.circular(14)),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
-                  Expanded(child: Text('Разница', style: AppText.bodyStrong.copyWith(color: diff < 0 ? AppColors.primary : AppColors.warningInk))),
+                  Expanded(child: Text(tr('Разница', 'Farq'), style: AppText.bodyStrong.copyWith(color: diff < 0 ? AppColors.primary : AppColors.warningInk))),
                   Text('${diff < 0 ? '−' : '+'} ${money(diff.abs())}',
                       style: AppText.title.copyWith(color: diff < 0 ? AppColors.primary : AppColors.warningInk)),
                 ]),
-                if ('${sh['diff_reason'] ?? ''}'.isNotEmpty) Text('Кассир: «${sh['diff_reason']}»', style: AppText.small),
+                if ('${sh['diff_reason'] ?? ''}'.isNotEmpty) Text(tr('Кассир: «${sh['diff_reason']}»', 'Kassir: «${sh['diff_reason']}»'), style: AppText.small),
               ]),
             ),
           ],
@@ -121,14 +126,22 @@ class _ShiftScreenState extends State<ShiftScreen> {
       AppCard(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
         child: Column(children: [
-          _Line(Icons.receipt_long_rounded, 'Чеков', n(r['sales_count']) > 0 ? 'средний чек ${sum(salesTotal / n(r['sales_count']))}' : 'продаж не было',
+          _Line(
+              Icons.receipt_long_rounded,
+              tr('Чеков', 'Cheklar'),
+              n(r['sales_count']) > 0
+                  ? tr('средний чек ${sum(salesTotal / n(r['sales_count']))}', 'oʻrtacha chek ${sum(salesTotal / n(r['sales_count']))}')
+                  : tr('продаж не было', 'sotuv boʻlmagan'),
               '${r['sales_count'] ?? 0}'),
-          _Line(Icons.payments_outlined, 'Выручка', card > 0 ? 'из них картой ${sum(card)}' : 'всё наличными', sum(salesTotal)),
-          _Line(Icons.sell_outlined, 'Скидки', 'сумма скидок за смену', sum(n(r['discounts'])),
+          _Line(Icons.payments_outlined, tr('Выручка', 'Tushum'), card > 0 ? tr('из них картой ${sum(card)}', 'shundan karta bilan ${sum(card)}') : tr('всё наличными', 'hammasi naqd pulda'),
+              sum(salesTotal)),
+          _Line(Icons.sell_outlined, tr('Скидки', 'Chegirmalar'), tr('сумма скидок за смену', 'smenadagi chegirmalar summasi'), sum(n(r['discounts'])),
               bg: n(r['discounts']) > 0 ? AppColors.warningSoft : null, fg: n(r['discounts']) > 0 ? AppColors.warningInk : null),
-          _Line(Icons.replay_rounded, 'Возвраты', '${r['returns_count'] ?? 0} ${plural((r['returns_count'] as num? ?? 0).toInt(), 'возврат', 'возврата', 'возвратов')}',
+          _Line(Icons.replay_rounded, tr('Возвраты', 'Qaytarishlar'),
+              '${r['returns_count'] ?? 0} ${tr(plural((r['returns_count'] as num? ?? 0).toInt(), 'возврат', 'возврата', 'возвратов'), 'ta qaytarish')}',
               sum(n(r['returns_total']))),
-          _Line(Icons.cloud_off_rounded, 'Непробитые чеки', n(r['fiscal_pending']) > 0 ? 'ждут отправки в ОФД' : 'все чеки отправлены в ОФД',
+          _Line(Icons.cloud_off_rounded, tr('Непробитые чеки', 'Urilmagan cheklar'),
+              n(r['fiscal_pending']) > 0 ? tr('ждут отправки в ОФД', 'OFDga yuborilishi kutilmoqda') : tr('все чеки отправлены в ОФД', 'barcha cheklar OFDga yuborilgan'),
               '${r['fiscal_pending'] ?? 0}',
               bg: n(r['fiscal_pending']) > 0 ? AppColors.warningSoft : AppColors.successSoft,
               fg: n(r['fiscal_pending']) > 0 ? AppColors.warningInk : AppColors.successInk),
@@ -138,7 +151,7 @@ class _ShiftScreenState extends State<ShiftScreen> {
         const SizedBox(height: 16),
         AppCard(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('События смены', style: AppText.title),
+            Text(tr('События смены', 'Smena hodisalari'), style: AppText.title),
             const SizedBox(height: 10),
             for (final e in _events)
               Padding(

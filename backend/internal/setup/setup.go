@@ -80,7 +80,7 @@ type Delivery struct {
 // Get — состояние настройки. storeID пуст — первый доступный магазин.
 func (s *Service) Get(ctx context.Context, p *identity.Principal, storeID string) (State, error) {
 	if storeID != "" && (!httpx.IsUUID(storeID) || !p.CanAccessStore(storeID)) {
-		return State{}, apperr.NotFound("магазин не найден")
+		return State{}, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	out := State{CanSetup: p.Can(identity.PermStoresManage), WorkingHours: []delivery.WorkingHours{}, Delivery: Delivery{MinOrderAmount: "0.00"}}
 	if err := s.pool.QueryRow(ctx, `
@@ -109,7 +109,7 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, storeID string
 		FROM stores s WHERE id = $1 AND network_id = $2`, storeID, p.NetworkID).
 		Scan(&st.ID, &st.Name, &st.Phone, &st.Address, &st.Lat, &st.Lng, &hoursSet, &declined, &out.Wishes)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return out, apperr.NotFound("магазин не найден")
+		return out, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	if err != nil {
 		return out, err
@@ -161,18 +161,18 @@ func (s *Service) SaveStore(ctx context.Context, p *identity.Principal, in Store
 	in.Name, in.Address, in.Phone = strings.TrimSpace(in.Name), strings.TrimSpace(in.Address), strings.TrimSpace(in.Phone)
 	switch {
 	case in.Name == "":
-		return State{}, apperr.Validation("name: укажите название магазина")
+		return State{}, apperr.Validation("name: укажите название магазина").Uz("name: doʻkon nomini kiriting")
 	case len([]rune(in.Name)) > 120:
-		return State{}, apperr.Validation("name: не длиннее 120 символов")
+		return State{}, apperr.Validation("name: не длиннее 120 символов").Uz("name: 120 belgidan oshmasin")
 	case in.Address == "":
-		return State{}, apperr.Validation("address: укажите адрес")
+		return State{}, apperr.Validation("address: укажите адрес").Uz("address: manzilni kiriting")
 	case in.Lat == nil || in.Lng == nil:
-		return State{}, apperr.Validation("lat/lng: поставьте метку на карте")
+		return State{}, apperr.Validation("lat/lng: поставьте метку на карте").Uz("lat/lng: xaritada belgi qoʻying")
 	}
 	if in.Phone != "" {
 		n, err := phone.Normalize(in.Phone)
 		if err != nil {
-			return State{}, apperr.Validation("phone: номер в формате +998 XX XXX XX XX")
+			return State{}, apperr.Validation("phone: номер в формате +998 XX XXX XX XX").Uz("phone: raqam +998 XX XXX XX XX formatida")
 		}
 		in.Phone = n
 	}
@@ -235,7 +235,7 @@ func (s *Service) SaveDelivery(ctx context.Context, p *identity.Principal, in De
 		return State{}, err
 	}
 	if !httpx.IsUUID(in.StoreID) || !p.CanAccessStore(in.StoreID) {
-		return State{}, apperr.NotFound("магазин не найден")
+		return State{}, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	switch in.Mode {
 	case "none":
@@ -250,16 +250,16 @@ func (s *Service) SaveDelivery(ctx context.Context, p *identity.Principal, in De
 		return s.Get(ctx, p, in.StoreID)
 	case "deliver":
 	default:
-		return State{}, apperr.Validation("mode: ожидается deliver или none")
+		return State{}, apperr.Validation("mode: ожидается deliver или none").Uz("mode: deliver yoki none boʻlishi kerak")
 	}
 	if in.RadiusM < 100 || in.RadiusM > 100_000 {
-		return State{}, apperr.Validation("delivery_radius_m: от 100 метров до 100 км")
+		return State{}, apperr.Validation("delivery_radius_m: от 100 метров до 100 км").Uz("delivery_radius_m: 100 metrdan 100 km gacha")
 	}
 	if in.Fee == nil {
-		return State{}, apperr.Validation("fee: укажите стоимость доставки (0 — бесплатно)")
+		return State{}, apperr.Validation("fee: укажите стоимость доставки (0 — бесплатно)").Uz("fee: yetkazib berish narxini kiriting (0 — bepul)")
 	}
 	if (in.EtaMin == nil) != (in.EtaMax == nil) {
-		return State{}, apperr.Validation("eta_min/eta_max: задаются вместе")
+		return State{}, apperr.Validation("eta_min/eta_max: задаются вместе").Uz("eta_min/eta_max: birga kiritiladi")
 	}
 	cur, err := s.dlv.GetSettings(ctx, p, in.StoreID)
 	if err != nil {

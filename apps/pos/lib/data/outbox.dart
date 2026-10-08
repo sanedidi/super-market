@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:sm_core/sm_core.dart' show tr;
+
 import '../core/journal.dart';
 import '../core/money.dart';
 import 'api.dart';
@@ -9,7 +11,7 @@ import 'store.dart';
 /// (смена, продажа, изъятие), сначала пишется сюда, а потом уходит по порядку.
 /// Повтор безопасен: сервер узнаёт события по client_uid.
 class OutboxItem {
-  OutboxItem({required this.seq, required this.kind, required this.body, required this.cashier, this.error, DateTime? at})
+  OutboxItem({required this.seq, required this.kind, required this.body, required this.cashier, this.error, this.errorCode, DateTime? at})
       : at = at ?? DateTime.now();
 
   final int seq;
@@ -23,10 +25,13 @@ class OutboxItem {
   final String cashier;
   String? error;
 
+  /// Код ошибки сервера (текст [error] — на языке кассы, код — нет).
+  String? errorCode;
+
   String get fileName => '${seq.toString().padLeft(10, '0')}.json';
 
   Map<String, dynamic> toJson() =>
-      {'seq': seq, 'kind': kind, 'body': body, 'cashier': cashier, 'error': error, 'at': at.toUtc().toIso8601String()};
+      {'seq': seq, 'kind': kind, 'body': body, 'cashier': cashier, 'error': error, 'error_code': errorCode, 'at': at.toUtc().toIso8601String()};
 
   factory OutboxItem.fromJson(Map<String, dynamic> j) => OutboxItem(
         seq: j['seq'] as int,
@@ -34,6 +39,7 @@ class OutboxItem {
         body: j['body'] as Map<String, dynamic>,
         cashier: j['cashier'] as String? ?? '',
         error: j['error'] as String?,
+        errorCode: j['error_code'] as String?,
         at: DateTime.tryParse(j['at'] as String? ?? '')?.toLocal(),
       );
 }
@@ -149,6 +155,7 @@ class Outbox {
           }
           // Сервер не принял событие — откладываем в «ошибки», очередь идёт дальше.
           item.error = e.message;
+          item.errorCode = e.code;
           await store.writeJson('$_failedDir${Platform.pathSeparator}${item.fileName}', item.toJson());
           await store.delete('$_dir${Platform.pathSeparator}${item.fileName}');
           _pending.removeAt(0);
@@ -167,7 +174,7 @@ class Outbox {
     if (id != null) return id;
     // Открытие смены ещё в очереди впереди — ждём. Иначе оно не прошло.
     if (_pending.any((i) => i.kind == 'shift_open' && i.body['client_uid'] == uid)) throw _Wait();
-    throw ApiError(400, 'shift_not_sent', 'Смена не дошла до сервера');
+    throw ApiError(400, 'shift_not_sent', tr('Смена не дошла до сервера', 'Smena serverga yetib bormadi'));
   }
 
   Future<void> _send(OutboxItem item) async {
@@ -209,7 +216,7 @@ class Outbox {
         }, cashier: item.cashier);
       }
       default: {
-        throw ApiError(400, 'unknown', 'Неизвестное событие ${item.kind}');
+        throw ApiError(400, 'unknown', tr('Неизвестное событие ${item.kind}', 'Nomaʼlum hodisa: ${item.kind}'));
       }
     }
   }
@@ -218,6 +225,7 @@ class Outbox {
   Future<void> retry(OutboxItem item) async {
     _failed.remove(item);
     item.error = null;
+    item.errorCode = null;
     await store.delete('$_failedDir${Platform.pathSeparator}${item.fileName}');
     await store.writeJson('$_dir${Platform.pathSeparator}${item.fileName}', item.toJson());
     _pending

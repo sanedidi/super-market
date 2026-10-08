@@ -7,6 +7,7 @@ import 'package:sm_pos/core/journal.dart';
 import 'package:sm_pos/core/money.dart';
 import 'package:sm_pos/core/pin.dart';
 import 'package:sm_pos/core/quick.dart';
+import 'package:sm_core/sm_core.dart' as sm_i18n;
 
 Product prod(String id, int price, {bool fractional = false, bool marked = false, int vat = 1200, int? plu}) => Product(
       id: id,
@@ -20,6 +21,9 @@ Product prod(String id, int price, {bool fractional = false, bool marked = false
     );
 
 void main() {
+  // Проверки написаны на русском; язык по умолчанию в приложениях — узбекский.
+  setUpAll(() => sm_i18n.Lang.instance.debugUse(sm_i18n.Lang.ru));
+
   group('деньги', () {
     test('разбор и формат', () {
       expect(parseMoney('15000.00'), 1500000);

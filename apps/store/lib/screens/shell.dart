@@ -57,12 +57,12 @@ class _ShellState extends State<Shell> {
           selectedIndex: _tab,
           onDestinationSelected: _go,
           height: 68,
-          destinations: const [
-            NavigationDestination(icon: Icon(Icons.home_rounded), label: 'Главная'),
-            NavigationDestination(icon: Icon(Icons.receipt_long_rounded), label: 'Заказы'),
-            NavigationDestination(icon: Icon(Icons.inventory_2_rounded), label: 'Склад'),
-            NavigationDestination(icon: Icon(Icons.account_balance_wallet_rounded), label: 'Финансы'),
-            NavigationDestination(icon: Icon(Icons.menu_rounded), label: 'Ещё'),
+          destinations: [
+            NavigationDestination(icon: const Icon(Icons.home_rounded), label: tr('Главная', 'Asosiy')),
+            NavigationDestination(icon: const Icon(Icons.receipt_long_rounded), label: tr('Заказы', 'Buyurtmalar')),
+            NavigationDestination(icon: const Icon(Icons.inventory_2_rounded), label: tr('Склад', 'Ombor')),
+            NavigationDestination(icon: const Icon(Icons.account_balance_wallet_rounded), label: tr('Финансы', 'Moliya')),
+            NavigationDestination(icon: const Icon(Icons.menu_rounded), label: tr('Ещё', 'Yana')),
           ],
         ),
       ),

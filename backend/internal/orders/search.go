@@ -106,7 +106,7 @@ func (s *Service) Search(ctx context.Context, lat, lng float64, q string, onlyDe
 		), m AS (
 			SELECT p.id FROM products p
 			WHERE p.network_id IS NULL AND p.is_active
-			  AND (lower(p.name) LIKE '%' || lower($2) || '%'
+			  AND (lower(p.name) LIKE '%' || lower($2) || '%' OR lower(p.name_uz) LIKE '%' || lower($2) || '%'
 			       OR EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND pb.barcode = $2))
 		), stock AS (
 			SELECT st.id AS store_id, b.product_id, sum(b.qty_remaining) AS qty
@@ -119,7 +119,8 @@ func (s *Service) Search(ctx context.Context, lat, lng float64, q string, onlyDe
 			                         WHERE st.id = k.store_id AND r.product_id = k.product_id), 0) AS qty
 			FROM stock k
 		)
-		SELECT a.store_id, p.id, p.name, p.description, br.name, p.category_id, u.short_name, u.is_fractional, p.images,
+		SELECT a.store_id, p.id, loc(p.name, p.name_uz), loc(p.description, p.description_uz), br.name, p.category_id,
+		       loc(u.short_name, u.short_name_uz), u.is_fractional, p.images,
 		       p.created_at, a.qty::text,
 		       COALESCE(sp.price, np.price, p.base_price) AS regular,
 		       `+catalog.PromoPriceExpr("a.store_id")+` AS promo

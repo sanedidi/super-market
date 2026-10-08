@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart' show tr;
 
 import '../core/money.dart';
 import '../state/pos.dart';
@@ -19,11 +20,11 @@ class CloseShiftScreen extends StatefulWidget {
 /// Купюры сума; последняя строка — монеты и мелочь суммой.
 const _notes = [200000, 100000, 50000, 20000, 10000, 5000, 2000, 1000];
 
-final _reasons = <LogicalKeyboardKey, String>{
-  LogicalKeyboardKey.f2: 'Сдача без мелочи',
-  LogicalKeyboardKey.f3: 'Ошибка в чеке',
-  LogicalKeyboardKey.f4: 'Другое',
-};
+Map<LogicalKeyboardKey, String> get _reasons => {
+      LogicalKeyboardKey.f2: tr('Сдача без мелочи', 'Qaytim mayda pulsiz berildi'),
+      LogicalKeyboardKey.f3: tr('Ошибка в чеке', 'Chekdagi xato'),
+      LogicalKeyboardKey.f4: tr('Другое', 'Boshqa'),
+    };
 
 class _CloseShiftScreenState extends State<CloseShiftScreen> {
   final List<String> _counts = List.filled(_notes.length + 1, '');
@@ -52,7 +53,7 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
     final pos = context.read<PosController>();
     final diff = _counted - pos.report.expectedCash;
     if (diff != 0 && _reason == null) {
-      setState(() => _error = 'Расхождение ${fmtMoney(diff)} — выберите причину: F2, F3 или F4');
+      setState(() => _error = tr('Расхождение ${fmtMoney(diff)} — выберите причину: F2, F3 или F4', 'Farq ${fmtMoney(diff)} — sababni tanlang: F2, F3 yoki F4'));
       return;
     }
     setState(() => _busy = true);
@@ -133,8 +134,10 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
                 Expanded(
                   child: Panel(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                      Text('Закрытие смены №${pos.shift!.number ?? '·'} · пересчитайте наличные', style: t(24, w: FontWeight.w700)),
-                      Text('Наберите количество купюр и Enter — курсор перейдёт ниже. ↑↓ — к другой строке.',
+                      Text(tr('Закрытие смены №${pos.shift!.number ?? '·'} · пересчитайте наличные', 'Smena №${pos.shift!.number ?? '·'} yopilmoqda · naqd pulni sanang'), style: t(24, w: FontWeight.w700)),
+                      Text(
+                          tr('Наберите количество купюр и Enter — курсор перейдёт ниже. ↑↓ — к другой строке.',
+                              'Kupyuralar sonini tering va Enter — kursor pastga oʻtadi. ↑↓ — boshqa qatorga.'),
                           style: t(13, c: C.ts)),
                       const SizedBox(height: 12),
                       Expanded(
@@ -152,7 +155,7 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
                                 ),
                                 child: Row(children: [
                                   Expanded(
-                                    child: Text(i < _notes.length ? fmtMoney(_notes[i] * 100) : 'Монеты и мелочь (сумма)',
+                                    child: Text(i < _notes.length ? fmtMoney(_notes[i] * 100) : tr('Монеты и мелочь (сумма)', 'Tangalar va mayda pul (summa)'),
                                         style: t(16)),
                                   ),
                                   Container(
@@ -187,9 +190,12 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
                       color: C.dark,
                       padding: const EdgeInsets.all(24),
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('Посчитано в ящике', style: t(15, c: Colors.white70)),
+                        Text(tr('Посчитано в ящике', 'Gʻaladonda sanaldi'), style: t(15, c: Colors.white70)),
                         Text(fmtMoney(_counted), style: t(56, w: FontWeight.w800, c: Colors.white)),
-                        Text(_revealed ? 'сверено с кассой — ниже результат' : 'после пересчёта Enter — сверить с кассой',
+                        Text(
+                            _revealed
+                                ? tr('сверено с кассой — ниже результат', 'kassa bilan solishtirildi — natija pastda')
+                                : tr('после пересчёта Enter — сверить с кассой', 'sanagach Enter — kassa bilan solishtirish'),
                             style: t(13, c: Colors.white60)),
                       ]),
                     ),
@@ -201,8 +207,12 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
                     if (_error != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(_error!, style: t(14, c: C.error))),
                     KeyCard(
                       keyLabel: 'Enter',
-                      title: _revealed ? 'Закрыть смену' : 'Сверить с кассой',
-                      subtitle: _revealed ? (pos.printer.enabled ? 'и напечатать Z-отчёт' : 'Z-отчёт — когда подключите принтер') : 'покажем, сколько должно быть',
+                      title: _revealed ? tr('Закрыть смену', 'Smenani yopish') : tr('Сверить с кассой', 'Kassa bilan solishtirish'),
+                      subtitle: _revealed
+                          ? (pos.printer.enabled
+                              ? tr('и напечатать Z-отчёт', 'va Z-hisobotni chop etish')
+                              : tr('Z-отчёт — когда подключите принтер', 'Z-hisobot — printer ulanganda'))
+                          : tr('покажем, сколько должно быть', 'qancha boʻlishi kerakligini koʻrsatamiz'),
                       style: KeyCardStyle.primary,
                       onTap: () {
                         if (_revealed) {
@@ -215,8 +225,8 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
                     const SizedBox(height: 10),
                     KeyCard(
                       keyLabel: 'Esc',
-                      title: 'Назад',
-                      subtitle: 'смена останется открытой',
+                      title: tr('Назад', 'Orqaga'),
+                      subtitle: tr('смена останется открытой', 'smena ochiq qoladi'),
                       onTap: () => Navigator.of(context).pop(),
                     ),
                   ]),
@@ -242,7 +252,7 @@ class _Result extends StatelessWidget {
     if (diff == 0) {
       return Panel(
         color: C.successSoft,
-        child: Text('✓ Должно быть ${fmtMoney(expected)} — сходится', style: t(16, w: FontWeight.w600, c: C.success)),
+        child: Text(tr('✓ Должно быть ${fmtMoney(expected)} — сходится', '✓ Boʻlishi kerak: ${fmtMoney(expected)} — mos keldi'), style: t(16, w: FontWeight.w600, c: C.success)),
       );
     }
     final short = diff < 0;
@@ -250,14 +260,15 @@ class _Result extends StatelessWidget {
       color: C.errorSoft,
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Row(children: [
-          Expanded(child: Text('Должно быть ${fmtMoney(expected)}', style: t(15, c: C.error))),
+          Expanded(child: Text(tr('Должно быть ${fmtMoney(expected)}', 'Boʻlishi kerak: ${fmtMoney(expected)}'), style: t(15, c: C.error))),
           Text('${short ? '' : '+'}${fmtMoney(diff)}', style: t(32, w: FontWeight.w800, c: C.error)),
         ]),
         const SizedBox(height: 6),
         Text(
           reason == null
-              ? '${short ? 'Недостача' : 'Излишек'}. Причина обязательна: F2 — сдача без мелочи · F3 — ошибка в чеке · F4 — другое'
-              : 'Причина: $reason · Enter — закрыть смену',
+              ? tr('${short ? 'Недостача' : 'Излишек'}. Причина обязательна: F2 — сдача без мелочи · F3 — ошибка в чеке · F4 — другое',
+                  '${short ? 'Kamomad' : 'Ortiqcha'}. Sabab majburiy: F2 — qaytim mayda pulsiz · F3 — chekdagi xato · F4 — boshqa')
+              : tr('Причина: $reason · Enter — закрыть смену', 'Sabab: $reason · Enter — smenani yopish'),
           style: t(13, c: C.error),
         ),
       ]),
@@ -279,8 +290,9 @@ class _QueueNote extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       child: Text(
         ok
-            ? '✓ Все чеки отправлены — неотправленных нет'
-            : 'В очереди $queue${failed > 0 ? ', не принято сервером $failed' : ''} — отправятся сами, когда будет связь',
+            ? tr('✓ Все чеки отправлены — неотправленных нет', '✓ Barcha cheklar yuborildi — yuborilmagan chek yoʻq')
+            : tr('В очереди $queue${failed > 0 ? ', не принято сервером $failed' : ''} — отправятся сами, когда будет связь',
+                'Navbatda $queue${failed > 0 ? ', server qabul qilmagan: $failed' : ''} — aloqa paydo boʻlganda oʻzi yuboriladi'),
         style: t(13, c: ok ? C.success : C.warning),
       ),
     );

@@ -23,6 +23,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
@@ -73,16 +74,16 @@ func (s *Service) GetSettings(ctx context.Context) (Settings, error) {
 
 func (s *Service) SaveSettings(ctx context.Context, in SettingsInput) (Settings, error) {
 	if in.USDRate != nil && money.D(string(*in.USDRate)).Sign() <= 0 {
-		return Settings{}, apperr.Validation("usd_rate: курс больше нуля")
+		return Settings{}, apperr.Validation("usd_rate: курс больше нуля").Uz("usd_rate: kurs noldan katta boʻlsin")
 	}
 	if in.GraceDays != nil && (*in.GraceDays < 0 || *in.GraceDays > 60) {
-		return Settings{}, apperr.Validation("grace_days: от 0 до 60 дней")
+		return Settings{}, apperr.Validation("grace_days: от 0 до 60 дней").Uz("grace_days: 0 dan 60 kungacha")
 	}
 	if in.ShowcaseTrialDays != nil && (*in.ShowcaseTrialDays < 0 || *in.ShowcaseTrialDays > 365) {
-		return Settings{}, apperr.Validation("showcase_trial_days: от 0 до 365 дней")
+		return Settings{}, apperr.Validation("showcase_trial_days: от 0 до 365 дней").Uz("showcase_trial_days: 0 dan 365 kungacha")
 	}
 	if in.ShowcaseTrialPlan != nil && *in.ShowcaseTrialPlan != "business" && *in.ShowcaseTrialPlan != "pro" {
-		return Settings{}, apperr.Validation("showcase_trial_plan: business или pro")
+		return Settings{}, apperr.Validation("showcase_trial_plan: business или pro").Uz("showcase_trial_plan: business yoki pro")
 	}
 	var rate *string
 	if in.USDRate != nil {
@@ -164,7 +165,7 @@ func (s *Service) getTariff(ctx context.Context, id string) (Tariff, error) {
 	}
 	t, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[Tariff])
 	if errors.Is(err, pgx.ErrNoRows) {
-		return t, apperr.NotFound("тариф не найден")
+		return t, apperr.NotFound("тариф не найден").Uz("tarif topilmadi")
 	}
 	return t, err
 }
@@ -173,10 +174,10 @@ func (s *Service) getTariff(ctx context.Context, id string) (Tariff, error) {
 // следующего счёта; выставленные счета не пересчитываются.
 func (s *Service) SaveTariff(ctx context.Context, id string, in TariffInput) (Tariff, error) {
 	if in.Name != nil && strings.TrimSpace(*in.Name) == "" {
-		return Tariff{}, apperr.Validation("name: обязательное поле")
+		return Tariff{}, apperr.Validation("name: обязательное поле").Uz("name: majburiy maydon")
 	}
 	if in.MinStores != nil && *in.MinStores < 1 {
-		return Tariff{}, apperr.Validation("min_stores: от 1")
+		return Tariff{}, apperr.Validation("min_stores: от 1").Uz("min_stores: kamida 1")
 	}
 	var price *string
 	if in.PricePerStore != nil {
@@ -186,7 +187,7 @@ func (s *Service) SaveTariff(ctx context.Context, id string, in TariffInput) (Ta
 	var err error
 	if id == "" {
 		if in.Name == nil || in.MinStores == nil || price == nil {
-			return Tariff{}, apperr.Validation("name, min_stores и price_per_store обязательны")
+			return Tariff{}, apperr.Validation("name, min_stores и price_per_store обязательны").Uz("name, min_stores va price_per_store majburiy")
 		}
 		err = s.pool.QueryRow(ctx, `INSERT INTO tariffs (name, min_stores, price_per_store) VALUES ($1, $2, $3::numeric) RETURNING id`,
 			strings.TrimSpace(*in.Name), *in.MinStores, *price).Scan(&id)
@@ -201,11 +202,11 @@ func (s *Service) SaveTariff(ctx context.Context, id string, in TariffInput) (Ta
 			price_per_store = COALESCE($4::numeric, price_per_store), is_active = COALESCE($5, is_active) WHERE id = $1`,
 			id, name, in.MinStores, price, in.IsActive)
 		if err == nil && tag.RowsAffected() == 0 {
-			return Tariff{}, apperr.NotFound("тариф не найден")
+			return Tariff{}, apperr.NotFound("тариф не найден").Uz("tarif topilmadi")
 		}
 	}
 	if db.IsUniqueViolation(err, "tariffs_min_stores_active") {
-		return Tariff{}, apperr.Conflict("duplicate_tariff", "активный тариф с таким числом магазинов уже есть")
+		return Tariff{}, apperr.Conflict("duplicate_tariff", "активный тариф с таким числом магазинов уже есть").Uz("bunday doʻkonlar soniga ega faol tarif allaqachon bor")
 	}
 	if err != nil {
 		return Tariff{}, err
@@ -269,7 +270,7 @@ func (s *Service) ListNetworks(ctx context.Context, overdueOnly bool, page httpx
 
 func (s *Service) NetworkBilling(ctx context.Context, networkID string) (NetworkBilling, error) {
 	if !httpx.IsUUID(networkID) {
-		return NetworkBilling{}, apperr.NotFound("сеть не найдена")
+		return NetworkBilling{}, apperr.NotFound("сеть не найдена").Uz("tarmoq topilmadi")
 	}
 	rows, err := s.pool.Query(ctx, networkBillingSQL+` WHERE n.id = $1`, networkID)
 	if err != nil {
@@ -277,7 +278,7 @@ func (s *Service) NetworkBilling(ctx context.Context, networkID string) (Network
 	}
 	b, err := pgx.CollectExactlyOneRow(rows, scanNetworkBilling)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return b, apperr.NotFound("сеть не найдена")
+		return b, apperr.NotFound("сеть не найдена").Uz("tarmoq topilmadi")
 	}
 	return b, err
 }
@@ -297,7 +298,7 @@ func (s *Service) SaveNetworkBilling(ctx context.Context, networkID string, in N
 	if in.BillingFrom != nil {
 		t, err := time.Parse("2006-01-02", *in.BillingFrom)
 		if err != nil {
-			return NetworkBilling{}, apperr.Validation("billing_from: дата YYYY-MM-DD")
+			return NetworkBilling{}, apperr.Validation("billing_from: дата YYYY-MM-DD").Uz("billing_from: sana YYYY-MM-DD koʻrinishida boʻlsin")
 		}
 		t = time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
 		from = &t
@@ -350,7 +351,7 @@ const invoiceSelect = `
 
 func (s *Service) ListInvoices(ctx context.Context, networkID, status string, page httpx.Page) ([]Invoice, error) {
 	if status != "" && status != "unpaid" && status != "paid" && status != "cancelled" && status != "overdue" {
-		return nil, apperr.Validation("status: unpaid, paid, cancelled или overdue")
+		return nil, apperr.Validation("status: unpaid, paid, cancelled или overdue").Uz("status: unpaid, paid, cancelled yoki overdue")
 	}
 	rows, err := s.pool.Query(ctx, invoiceSelect+`
 		WHERE ($1 = '' OR i.network_id::text = $1)
@@ -365,7 +366,7 @@ func (s *Service) ListInvoices(ctx context.Context, networkID, status string, pa
 
 func (s *Service) getInvoice(ctx context.Context, q db.Querier, id string) (Invoice, error) {
 	if !httpx.IsUUID(id) {
-		return Invoice{}, apperr.NotFound("счёт не найден")
+		return Invoice{}, apperr.NotFound("счёт не найден").Uz("hisob topilmadi")
 	}
 	rows, err := q.Query(ctx, invoiceSelect+` WHERE i.id = $1`, id)
 	if err != nil {
@@ -373,7 +374,7 @@ func (s *Service) getInvoice(ctx context.Context, q db.Querier, id string) (Invo
 	}
 	inv, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[Invoice])
 	if errors.Is(err, pgx.ErrNoRows) {
-		return inv, apperr.NotFound("счёт не найден")
+		return inv, apperr.NotFound("счёт не найден").Uz("hisob topilmadi")
 	}
 	return inv, err
 }
@@ -434,9 +435,12 @@ func (s *Service) GenerateInvoices(ctx context.Context, now time.Time) (int, err
 		return 0, err
 	}
 	for _, c := range list {
-		s.notify.NetworkOwners(ctx, c.network, identity.PermPayoutsManage, fmt.Sprintf(
-			"Счёт за подписку за %s: %s $ (%s сум к оплате). Оплатить до %s. Если на балансе платформы хватает денег, счёт оплатится автоматически.",
-			period.Format("01.2006"), c.usd, c.uzs, c.due))
+		s.notify.NetworkOwners(ctx, c.network, identity.PermPayoutsManage, i18n.Text{
+			RU: fmt.Sprintf("Счёт за подписку за %s: %s $ (%s сум к оплате). Оплатить до %s. Если на балансе платформы хватает денег, счёт оплатится автоматически.",
+				period.Format("01.2006"), c.usd, c.uzs, c.due),
+			UZ: fmt.Sprintf("%s uchun obuna hisobi: %s $ (toʻlash uchun %s soʻm). %s gacha toʻlang. Platforma balansida pul yetarli boʻlsa, hisob avtomatik toʻlanadi.",
+				period.Format("01.2006"), c.usd, c.uzs, c.due),
+		})
 	}
 	return len(list), nil
 }
@@ -553,14 +557,14 @@ func (s *Service) payFromBalance(ctx context.Context, id string) error {
 			return err
 		}
 		if status != "unpaid" {
-			return apperr.Conflict("not_unpaid", "счёт уже оплачен или отменён")
+			return apperr.Conflict("not_unpaid", "счёт уже оплачен или отменён").Uz("hisob allaqachon toʻlangan yoki bekor qilingan")
 		}
 		avail, err := available(ctx, tx, inv.NetworkID)
 		if err != nil {
 			return err
 		}
 		if money.D(avail).Cmp(money.D(inv.AmountUZS)) < 0 {
-			return apperr.Conflict("insufficient_balance", "на балансе недостаточно денег").
+			return apperr.Conflict("insufficient_balance", "на балансе недостаточно денег").Uz("balansda pul yetarli emas").
 				WithDetails(map[string]any{"available": avail, "required": inv.AmountUZS})
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO balance_entries (network_id, kind, status, amount, invoice_id, note)
@@ -580,7 +584,7 @@ func (s *Service) PayInvoice(ctx context.Context, p *identity.Principal, id stri
 	}
 	inv, err := s.getInvoice(ctx, s.pool, id)
 	if err != nil || inv.NetworkID != p.NetworkID {
-		return Invoice{}, apperr.NotFound("счёт не найден")
+		return Invoice{}, apperr.NotFound("счёт не найден").Uz("hisob topilmadi")
 	}
 	if err := s.payFromBalance(ctx, id); err != nil {
 		return Invoice{}, err
@@ -600,7 +604,7 @@ func (s *Service) CancelInvoice(ctx context.Context, id, note string) (Invoice, 
 
 func (s *Service) setInvoiceStatus(ctx context.Context, id, status, note string) (Invoice, error) {
 	if !httpx.IsUUID(id) {
-		return Invoice{}, apperr.NotFound("счёт не найден")
+		return Invoice{}, apperr.NotFound("счёт не найден").Uz("hisob topilmadi")
 	}
 	tag, err := s.pool.Exec(ctx, `UPDATE subscription_invoices SET status = $2, note = $3,
 		paid_via = CASE WHEN $2 = 'paid' THEN 'manual' END, paid_at = CASE WHEN $2 = 'paid' THEN now() END
@@ -612,7 +616,7 @@ func (s *Service) setInvoiceStatus(ctx context.Context, id, status, note string)
 		if _, err := s.getInvoice(ctx, s.pool, id); err != nil {
 			return Invoice{}, err
 		}
-		return Invoice{}, apperr.Conflict("not_unpaid", "счёт уже оплачен или отменён")
+		return Invoice{}, apperr.Conflict("not_unpaid", "счёт уже оплачен или отменён").Uz("hisob allaqachon toʻlangan yoki bekor qilingan")
 	}
 	return s.getInvoice(ctx, s.pool, id)
 }

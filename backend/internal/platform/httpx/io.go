@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 // maxBody — предел размера JSON-запроса.
@@ -24,9 +25,9 @@ func Decode(r *http.Request, dst any) error {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
 		if errors.Is(err, io.EOF) {
-			return apperr.Validation("пустое тело запроса")
+			return apperr.Validation("пустое тело запроса").Uz("soʻrov tanasi boʻsh")
 		}
-		return apperr.Validation("неверный JSON: " + err.Error())
+		return apperr.Validation("неверный JSON: " + err.Error()).Uz("JSON notoʻgʻri: " + i18n.ErrorText(err, i18n.UZ))
 	}
 	return nil
 }
@@ -35,11 +36,11 @@ func Decode(r *http.Request, dst any) error {
 // любая другая ошибка — 500 без подробностей (подробности уходят в лог).
 func Fail(w http.ResponseWriter, r *http.Request, log *slog.Logger, err error) {
 	if e, ok := apperr.As(err); ok {
-		WriteJSON(w, e.Status, ErrorBody{Error: ErrorDetail{Code: e.Code, Message: e.Message, Details: e.Details}})
+		WriteJSON(w, e.Status, ErrorBody{Error: ErrorDetail{Code: e.Code, Message: e.Text(i18n.FromContext(r.Context())), Details: e.Details}})
 		return
 	}
 	log.Error("внутренняя ошибка", "method", r.Method, "path", r.URL.Path, "err", err)
-	WriteError(w, http.StatusInternalServerError, "internal", "внутренняя ошибка сервера")
+	WriteError(w, http.StatusInternalServerError, "internal", i18n.T(r.Context(), "внутренняя ошибка сервера", "serverning ichki xatosi"))
 }
 
 var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -51,7 +52,7 @@ func IsUUID(s string) bool { return uuidRe.MatchString(s) }
 func PathID(r *http.Request, name string) (string, error) {
 	id := chi.URLParam(r, name)
 	if !IsUUID(id) {
-		return "", apperr.NotFound("запись не найдена")
+		return "", apperr.NotFound("запись не найдена").Uz("yozuv topilmadi")
 	}
 	return id, nil
 }

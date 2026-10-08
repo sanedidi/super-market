@@ -161,9 +161,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 hasScrollBody: false,
                 child: EmptyState(
                   icon: Icons.add_location_alt_outlined,
-                  title: 'Куда доставить?',
-                  text: 'Укажите адрес — покажем магазины, которые привезут продукты к вам.',
-                  action: 'Добавить адрес',
+                  title: tr('Куда доставить?', 'Qayerga yetkazaylik?'),
+                  text: tr('Укажите адрес — покажем магазины, которые привезут продукты к вам.',
+                      'Manzilni kiriting — sizga mahsulot yetkazib beradigan doʻkonlarni koʻrsatamiz.'),
+                  action: tr('Добавить адрес', 'Manzil qoʻshish'),
                   onAction: () => openAddressEditor(context),
                 ),
               )
@@ -190,20 +191,21 @@ class _HomeScreenState extends State<HomeScreen> {
           SliverToBoxAdapter(
             child: EmptyState(
               icon: Icons.wifi_off_rounded,
-              title: 'Не удалось загрузить магазины',
+              title: tr('Не удалось загрузить магазины', 'Doʻkonlarni yuklab boʻlmadi'),
               text: state.storesError.toString(),
-              action: 'Повторить',
+              action: tr('Повторить', 'Qayta urinish'),
               onAction: () => state.loadStores(force: true),
             ),
           ),
         ];
       }
-      return const [
+      return [
         SliverToBoxAdapter(
           child: EmptyState(
             icon: Icons.storefront_outlined,
-            title: 'Рядом пока никого',
-            text: 'По этому адресу магазины ещё не доставляют. Попробуйте другой адрес.',
+            title: tr('Рядом пока никого', 'Yaqin atrofda hozircha hech kim yoʻq'),
+            text: tr('По этому адресу магазины ещё не доставляют. Попробуйте другой адрес.',
+                'Bu manzilga hozircha doʻkonlar yetkazib bermaydi. Boshqa manzilni sinab koʻring.'),
           ),
         ),
       ];
@@ -238,13 +240,14 @@ String storeSubtitle(Store s) => [s.address.isNotEmpty ? s.address : s.networkNa
 /// Строка «25–40 мин · 7 000 сум · от 50 000 сум».
 List<(IconData, String)> storeMeta(Store s) => [
       if (s.etaText != null) (Icons.schedule_rounded, s.etaText!),
-      (Icons.local_shipping_outlined, s.freeDelivery ? 'Бесплатно' : money(s.deliveryFee)),
-      if ((num.tryParse(s.minOrder) ?? 0) > 0) (Icons.shopping_basket_outlined, 'от ${money(s.minOrder)}'),
+      (Icons.local_shipping_outlined, s.freeDelivery ? tr('Бесплатно', 'Bepul') : money(s.deliveryFee)),
+      if ((num.tryParse(s.minOrder) ?? 0) > 0) (Icons.shopping_basket_outlined, tr('от ${money(s.minOrder)}', '${money(s.minOrder)} dan')),
     ];
 
 /// Все товары со скидкой в магазине.
-Future<void> openDeals(BuildContext context, Store store, {String title = 'Горячие скидки', String filter = 'discount'}) {
-  return Navigator.of(context).push(MaterialPageRoute(builder: (_) => CategoryScreen(store: store, filter: filter, title: title)));
+Future<void> openDeals(BuildContext context, Store store, {String? title, String filter = 'discount'}) {
+  return Navigator.of(context)
+      .push(MaterialPageRoute(builder: (_) => CategoryScreen(store: store, filter: filter, title: title ?? tr('Горячие скидки', 'Qaynoq chegirmalar'))));
 }
 
 /// Магазин для баннеров и скидок: из «Скидок недели», иначе выбранный на главной.
@@ -327,14 +330,14 @@ class _ExpressHeader extends SliverPersistentHeaderDelegate {
                   child: s != null && !s.delivers ? _noDeliveryBlock(s) : Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
                     Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.end, children: [
-                        Text(s == null ? 'Доставка из магазинов рядом' : 'Привезём за',
+                        Text(s == null ? tr('Доставка из магазинов рядом', 'Yaqindagi doʻkonlardan yetkazish') : tr('Привезём за', 'Yetkazib berish vaqti'),
                             maxLines: 1, style: AppText.body.copyWith(color: const Color(0xB3FFFFFF), fontSize: 16)),
                         SizedBox(
                           height: 54,
                           child: FittedBox(
                             fit: BoxFit.scaleDown,
                             alignment: Alignment.centerLeft,
-                            child: Text(s?.etaText ?? '30–60 мин',
+                            child: Text(s?.etaText ?? tr('30–60 мин', '30–60 daq'),
                                 style: const TextStyle(fontFamily: 'Inter', fontSize: 44, fontWeight: FontWeight.w800, color: AppColors.white, letterSpacing: -1, height: 1.1)),
                           ),
                         ),
@@ -361,7 +364,7 @@ class _ExpressHeader extends SliverPersistentHeaderDelegate {
                   const Icon(Icons.search_rounded, color: AppColors.text2, size: 24),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text('Найти во всех магазинах',
+                    child: Text(tr('Найти во всех магазинах', 'Barcha doʻkonlardan qidirish'),
                         maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.body.copyWith(fontSize: 16, color: AppColors.muted)),
                   ),
                 ]),
@@ -377,15 +380,15 @@ class _ExpressHeader extends SliverPersistentHeaderDelegate {
 /// Шапка магазина, который не доставляет: «Не доставляет» и «Хочу доставку».
 Widget _noDeliveryBlock(Store s) {
   return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.end, children: [
-    Text([s.name, s.distanceText, if (!s.isOpen) 'закрыто'].join(' · '),
+    Text([s.name, s.distanceText, if (!s.isOpen) tr('закрыто', 'yopiq')].join(' · '),
         maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.body.copyWith(color: const Color(0xB3FFFFFF), fontSize: 15)),
-    const SizedBox(
+    SizedBox(
       height: 46,
       child: FittedBox(
         fit: BoxFit.scaleDown,
         alignment: Alignment.centerLeft,
-        child: Text('Не доставляет',
-            style: TextStyle(fontFamily: 'Inter', fontSize: 40, fontWeight: FontWeight.w800, color: AppColors.white, letterSpacing: -1, height: 1.1)),
+        child: Text(tr('Не доставляет', 'Yetkazmaydi'),
+            style: const TextStyle(fontFamily: 'Inter', fontSize: 40, fontWeight: FontWeight.w800, color: AppColors.white, letterSpacing: -1, height: 1.1)),
       ),
     ),
     const SizedBox(height: 10),
@@ -417,7 +420,7 @@ class _AddressPill extends StatelessWidget {
             const SizedBox(width: 4),
             Flexible(
               // У гостя только точка на карте — просим указать адрес.
-              child: Text(address == null || address!.isGuestPoint ? 'Укажите адрес доставки' : address!.title,
+              child: Text(address == null || address!.isGuestPoint ? tr('Укажите адрес доставки', 'Yetkazish manzilini kiriting') : address!.title,
                   maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong.copyWith(color: AppColors.white)),
             ),
             const Icon(Icons.expand_more_rounded, size: 22, color: AppColors.white),
@@ -508,25 +511,26 @@ int orderStep(String status) => switch (status) {
       _ => 3,
     };
 
-const _shortStatus = {
-  'awaiting_payment': 'ждёт оплаты',
-  'paid': 'оплачен',
-  'accepted': 'принят',
-  'picking': 'собирается',
-  'picked': 'собран',
-  'delivering': 'в пути',
-};
+String? _shortStatus(String status) => switch (status) {
+      'awaiting_payment' => tr('ждёт оплаты', 'toʻlov kutilmoqda'),
+      'paid' => tr('оплачен', 'toʻlandi'),
+      'accepted' => tr('принят', 'qabul qilindi'),
+      'picking' => tr('собирается', 'yigʻilmoqda'),
+      'picked' => tr('собран', 'yigʻildi'),
+      'delivering' => tr('в пути', 'yoʻlda'),
+      _ => null,
+    };
 
 /// Подпись под номером заказа: курьер и сколько ждать, окно доставки или магазин.
 String orderTrackerSubtitle(Map<String, dynamic> o, {DateTime? now}) {
   final courier = '${o['courier_name'] ?? ''}'.trim().split(' ').first;
   final eta = DateTime.tryParse('${o['eta_at'] ?? ''}');
   final parts = <String>[
-    if (courier.isNotEmpty) 'Курьер $courier',
+    if (courier.isNotEmpty) tr('Курьер $courier', 'Kuryer $courier'),
     if (eta != null && o['status'] == 'delivering')
       switch (eta.difference(now ?? DateTime.now()).inMinutes) {
-        <= 1 => 'будет с минуты на минуту',
-        final m => 'будет через $m мин',
+        <= 1 => tr('будет с минуты на минуту', 'hozir yetib keladi'),
+        final m => tr('будет через $m мин', '$m daqiqada yetib keladi'),
       },
   ];
   if (parts.isNotEmpty) return parts.join(' · ');
@@ -543,7 +547,7 @@ class OrderTrackerCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final status = '${order['status']}';
     final step = orderStep(status);
-    const labels = ['Принят', 'Собран', 'В пути', 'У двери'];
+    final labels = [tr('Принят', 'Qabul'), tr('Собран', 'Yigʻildi'), tr('В пути', 'Yoʻlda'), tr('У двери', 'Eshikda')];
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: Material(
@@ -575,7 +579,7 @@ class OrderTrackerCard extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Заказ № ${order['number']} ${_shortStatus[status] ?? ''}'.trim(),
+                    Text(tr('Заказ № ${order['number']} ${_shortStatus(status) ?? ''}', 'Buyurtma № ${order['number']} ${_shortStatus(status) ?? ''}').trim(),
                         maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong.copyWith(fontSize: 16)),
                     Text(orderTrackerSubtitle(order), maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.small),
                   ]),
@@ -657,7 +661,7 @@ class _CategoryCircles extends StatelessWidget {
             children: [
               circle(
                 bg: const Color(0xFFFFE9EA),
-                label: 'Скидки',
+                label: tr('Скидки', 'Chegirmalar'),
                 onTap: () => openDeals(context, store),
                 child: const Icon(Icons.local_offer_rounded, color: AppColors.primary, size: 30),
               ),
@@ -705,8 +709,8 @@ class FreeDeliveryStrip extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Доставка 0 сум от ${money(freeFrom)}', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.smallStrong.copyWith(fontSize: 14)),
-                  Text(left > 0 ? 'Ещё ${money(left)} до бесплатной' : 'Доставка этого заказа бесплатная',
+                  Text(tr('Доставка 0 сум от ${money(freeFrom)}', '${money(freeFrom)} dan yetkazish 0 soʻm'), maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.smallStrong.copyWith(fontSize: 14)),
+                  Text(left > 0 ? tr('Ещё ${money(left)} до бесплатной', 'Bepul yetkazishgacha yana ${money(left)}') : tr('Доставка этого заказа бесплатная', 'Bu buyurtma bepul yetkaziladi'),
                       maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.caption),
                 ]),
               ),
@@ -727,7 +731,10 @@ class _HitsHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.only(top: 24, bottom: 12),
-        child: SectionHeader(title: 'Хиты недели', action: 'Все', onAction: () => openDeals(context, store, title: 'Хиты недели', filter: 'hits')),
+        child: SectionHeader(
+            title: tr('Хиты недели', 'Hafta xitlari'),
+            action: tr('Все', 'Hammasi'),
+            onAction: () => openDeals(context, store, title: tr('Хиты недели', 'Hafta xitlari'), filter: 'hits')),
       );
 }
 
@@ -747,7 +754,7 @@ class _HitsGrid extends StatelessWidget {
         if (items.isEmpty) {
           return SliverToBoxAdapter(
             child: snap.connectionState == ConnectionState.done
-                ? Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Text('Скоро здесь появятся популярные товары', style: AppText.small))
+                ? Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Text(tr('Скоро здесь появятся популярные товары', 'Tez orada bu yerda ommabop mahsulotlar paydo boʻladi'), style: AppText.small))
                 : const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
           );
         }
@@ -796,13 +803,16 @@ void pickStore(BuildContext context, AppState state) {
         controller: scroll,
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
         children: [
-          const Text('Магазины рядом', style: AppText.h2),
+          Text(tr('Магазины рядом', 'Yaqindagi doʻkonlar'), style: AppText.h2),
           if (state.address != null) ...[
             const SizedBox(height: 2),
-            Text('${state.address!.title} · ${storesWord(state.stores.length + state.others.length)} до 10 км', style: AppText.small),
+            Text(
+                tr('${state.address!.title} · ${storesWord(state.stores.length + state.others.length)} до 10 км',
+                    '${state.address!.title} · 10 km gacha ${storesWord(state.stores.length + state.others.length)}'),
+                style: AppText.small),
           ],
           const SizedBox(height: 12),
-          if (state.stores.isNotEmpty) section(Icons.local_shipping_rounded, 'Привезут · ${state.stores.length}', AppColors.successInk),
+          if (state.stores.isNotEmpty) section(Icons.local_shipping_rounded, tr('Привезут · ${state.stores.length}', 'Yetkazib beradi · ${state.stores.length}'), AppColors.successInk),
           for (final s in state.stores) ...[
             StoreCard(
               name: s.name,
@@ -817,10 +827,10 @@ void pickStore(BuildContext context, AppState state) {
           ],
           if (state.others.isNotEmpty) ...[
             const SizedBox(height: 6),
-            section(Icons.storefront_rounded, 'Пока не доставляют · ${state.others.length}', AppColors.text2),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(4, 0, 4, 10),
-              child: Text('Можно посмотреть товары и цены и попросить доставку', style: AppText.small),
+            section(Icons.storefront_rounded, tr('Пока не доставляют · ${state.others.length}', 'Hozircha yetkazmaydi · ${state.others.length}'), AppColors.text2),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
+              child: Text(tr('Можно посмотреть товары и цены и попросить доставку', 'Mahsulot va narxlarni koʻrib, yetkazib berishni soʻrash mumkin'), style: AppText.small),
             ),
             for (final s in state.others) ...[
               StoreCard(
@@ -828,7 +838,7 @@ void pickStore(BuildContext context, AppState state) {
                 subtitle: s.address.isNotEmpty ? s.address : s.networkName,
                 logoUrl: s.logoUrl,
                 closed: !s.isOpen,
-                meta: [(Icons.block_rounded, 'Не доставляет'), (Icons.place_outlined, s.distanceText)],
+                meta: [(Icons.block_rounded, tr('Не доставляет', 'Yetkazmaydi')), (Icons.place_outlined, s.distanceText)],
                 onTap: () => open(ctx, s),
               ),
               const SizedBox(height: 10),
@@ -877,16 +887,16 @@ class SpecialOffers extends StatelessWidget {
           ),
         );
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const SectionHeader(title: 'Специальные предложения'),
+      SectionHeader(title: tr('Специальные предложения', 'Maxsus takliflar')),
       const SizedBox(height: 12),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Row(children: [
-          tile('Горячие скидки', Icons.local_offer_rounded, 'discount', hot: true),
+          tile(tr('Горячие скидки', 'Qaynoq chegirmalar'), Icons.local_offer_rounded, 'discount', hot: true),
           const SizedBox(width: 10),
-          tile('Новинки !', Icons.new_releases_rounded, 'new', color: const Color(0xFFEEF3FB)),
+          tile(tr('Новинки !', 'Yangiliklar !'), Icons.new_releases_rounded, 'new', color: const Color(0xFFEEF3FB)),
           const SizedBox(width: 10),
-          tile('Хиты продаж', Icons.local_fire_department_rounded, 'hits', color: const Color(0xFFFFF4E6)),
+          tile(tr('Хиты продаж', 'Sotuv xitlari'), Icons.local_fire_department_rounded, 'hits', color: const Color(0xFFFFF4E6)),
         ]),
       ),
     ]);
@@ -909,8 +919,8 @@ class _Deals extends StatelessWidget {
       padding: const EdgeInsets.only(top: 28),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         SectionHeader(
-          title: 'Скидки недели',
-          action: store == null ? null : 'Все',
+          title: tr('Скидки недели', 'Hafta chegirmalari'),
+          action: store == null ? null : tr('Все', 'Hammasi'),
           onAction: store == null ? null : () => openDeals(context, store),
         ),
         const SizedBox(height: 12),
@@ -954,9 +964,9 @@ class _CategorySectionsListState extends State<CategorySectionsList> {
         if (snap.hasError) {
           return EmptyState(
             icon: Icons.wifi_off_rounded,
-            title: 'Не удалось загрузить каталог',
+            title: tr('Не удалось загрузить каталог', 'Katalogni yuklab boʻlmadi'),
             text: snap.error.toString(),
-            action: 'Повторить',
+            action: tr('Повторить', 'Qayta urinish'),
             onAction: () => setState(() => state.categoriesOf(store, force: true)),
           );
         }
@@ -968,7 +978,10 @@ class _CategorySectionsListState extends State<CategorySectionsList> {
           ];
         }
         if (sections.isEmpty) {
-          return const EmptyState(icon: Icons.inventory_2_outlined, title: 'Товаров пока нет', text: 'Магазин ещё не выложил товары в приложение.');
+          return EmptyState(
+              icon: Icons.inventory_2_outlined,
+              title: tr('Товаров пока нет', 'Hozircha mahsulotlar yoʻq'),
+              text: tr('Магазин ещё не выложил товары в приложение.', 'Doʻkon hali ilovaga mahsulot joylamagan.'));
         }
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           for (final sec in sections)

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 // Links — ссылки для приложения: поддержка, политика, оферта, бот входа.
@@ -54,9 +56,34 @@ type AppConfig struct {
 	CourierAppURL   string `json:"courier_app_url"`
 }
 
-func (s *Service) Config() AppConfig {
-	return AppConfig{PushEnabled: s.pushEnabled, SupportURL: s.links.Support, PrivacyURL: s.links.Privacy, OfferURL: s.links.Offer, BotURL: s.links.Bot,
-		CourierTermsURL: s.links.CourierTerms, CourierAppURL: s.links.CourierApp}
+func (s *Service) Config(ctx context.Context) AppConfig {
+	lang := i18n.FromContext(ctx)
+	return AppConfig{PushEnabled: s.pushEnabled, SupportURL: s.links.Support, PrivacyURL: DocURL(lang, s.links.Privacy), OfferURL: DocURL(lang, s.links.Offer), BotURL: s.links.Bot,
+		CourierTermsURL: DocURL(lang, s.links.CourierTerms), CourierAppURL: s.links.CourierApp}
+}
+
+// siteDocs — документы сайта, у которых есть две версии: узбекская по
+// адресу без суффикса и русская с /ru (web/site, deploy/nginx.conf).
+var siteDocs = map[string]bool{"/privacy": true, "/offer": true, "/offer/stores": true, "/courier-terms": true, "/delete-account": true}
+
+// DocURL — ссылка на документ сайта на языке lang. Чужие ссылки и страницы
+// без языковых версий возвращаются как есть. Запрос без языка (старые версии
+// приложений, они на русском) получает русскую версию.
+func DocURL(lang, raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || raw == "" || !(u.Host == "super-market.uz" || strings.HasSuffix(u.Host, ".super-market.uz")) {
+		return raw
+	}
+	path := strings.TrimSuffix(u.Path, "/")
+	path = strings.TrimSuffix(strings.TrimSuffix(path, "/ru"), "/uz")
+	if !siteDocs[path] {
+		return raw
+	}
+	if lang == i18n.RU {
+		path += "/ru"
+	}
+	u.Path = path
+	return u.String()
 }
 
 type Notifications struct {
@@ -90,7 +117,8 @@ type Profile struct {
 }
 
 func (s *Service) Get(ctx context.Context, userID string) (Profile, error) {
-	p := Profile{SupportURL: s.links.Support, PrivacyURL: s.links.Privacy, OfferURL: s.links.Offer, CourierAppURL: s.links.CourierApp}
+	lang := i18n.FromContext(ctx)
+	p := Profile{SupportURL: s.links.Support, PrivacyURL: DocURL(lang, s.links.Privacy), OfferURL: DocURL(lang, s.links.Offer), CourierAppURL: s.links.CourierApp}
 	err := s.pool.QueryRow(ctx, `
 		SELECT u.phone, u.full_name, c.first_name, c.last_name, c.terms_accepted_at, c.language, c.city, to_char(c.birth_date, 'YYYY-MM-DD'), c.gender, c.notify_orders, c.notify_promos, c.promos_consent_at,
 		       EXISTS (SELECT 1 FROM telegram_links tl WHERE tl.phone = u.phone)
@@ -99,7 +127,7 @@ func (s *Service) Get(ctx context.Context, userID string) (Profile, error) {
 		&p.Phone, &p.FullName, &p.FirstName, &p.LastName, &p.TermsAcceptedAt, &p.Language, &p.City, &p.BirthDate, &p.Gender,
 		&p.Notifications.Orders, &p.Notifications.Promos, &p.Notifications.PromosConsentAt, &p.TelegramLinked)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return p, apperr.NotFound("профиль не найден")
+		return p, apperr.NotFound("профиль не найден").Uz("profil topilmadi")
 	}
 	return p, err
 }
@@ -134,18 +162,18 @@ func (s *Service) Update(ctx context.Context, userID string, in UpdateInput) (Pr
 	name, city := trim(in.FullName), trim(in.City)
 	first, last := trim(in.FirstName), trim(in.LastName)
 	if name != nil && len([]rune(*name)) > 100 {
-		return Profile{}, apperr.Validation("full_name: не длиннее 100 символов")
+		return Profile{}, apperr.Validation("full_name: не длиннее 100 символов").Uz("full_name: 100 belgidan oshmasin")
 	}
 	for _, f := range []struct {
 		v    *string
 		name string
 	}{{first, "first_name"}, {last, "last_name"}} {
 		if f.v != nil && len([]rune(*f.v)) > 60 {
-			return Profile{}, apperr.Validation(f.name + ": не длиннее 60 символов")
+			return Profile{}, apperr.Validation(f.name + ": не длиннее 60 символов").Uz(f.name + ": 60 belgidan oshmasin")
 		}
 	}
 	if first != nil && *first == "" {
-		return Profile{}, apperr.Validation("first_name: не может быть пустым")
+		return Profile{}, apperr.Validation("first_name: не может быть пустым").Uz("first_name: boʻsh boʻlishi mumkin emas")
 	}
 	// Полное имя: из имени и фамилии, если они пришли; иначе из full_name —
 	// тогда первое слово становится именем.
@@ -154,21 +182,21 @@ func (s *Service) Update(ctx context.Context, userID string, in UpdateInput) (Pr
 		first, last = &f, &l
 	}
 	if city != nil && len([]rune(*city)) > 60 {
-		return Profile{}, apperr.Validation("city: не длиннее 60 символов")
+		return Profile{}, apperr.Validation("city: не длиннее 60 символов").Uz("city: 60 belgidan oshmasin")
 	}
 	if in.Language != nil && *in.Language != "ru" && *in.Language != "uz" {
-		return Profile{}, apperr.Validation("language: ru или uz")
+		return Profile{}, apperr.Validation("language: ru или uz").Uz("language: ru yoki uz")
 	}
 	var birth *time.Time
 	if in.BirthDate != nil && strings.TrimSpace(*in.BirthDate) != "" {
 		d, err := time.Parse("2006-01-02", strings.TrimSpace(*in.BirthDate))
 		if err != nil || d.Year() < 1900 || d.After(time.Now()) {
-			return Profile{}, apperr.Validation("birth_date: дата ГГГГ-ММ-ДД, не в будущем")
+			return Profile{}, apperr.Validation("birth_date: дата ГГГГ-ММ-ДД, не в будущем").Uz("birth_date: sana YYYY-MM-DD, kelajakda boʻlmasin")
 		}
 		birth = &d
 	}
 	if in.Gender != nil && *in.Gender != "" && *in.Gender != "male" && *in.Gender != "female" {
-		return Profile{}, apperr.Validation("gender: male, female или пусто")
+		return Profile{}, apperr.Validation("gender: male, female или пусто").Uz("gender: male, female yoki boʻsh")
 	}
 	var orders, promos *bool
 	if n := in.Notifications; n != nil {
@@ -277,10 +305,10 @@ type DeviceInput struct {
 func (s *Service) RegisterDevice(ctx context.Context, userID, sessionID string, in DeviceInput) error {
 	in.Token = strings.TrimSpace(in.Token)
 	if len(in.Token) < 20 || len(in.Token) > 4096 {
-		return apperr.Validation("token: неверный токен устройства")
+		return apperr.Validation("token: неверный токен устройства").Uz("token: qurilma tokeni notoʻgʻri")
 	}
 	if in.Platform != "ios" && in.Platform != "android" {
-		return apperr.Validation("platform: ios или android")
+		return apperr.Validation("platform: ios или android").Uz("platform: ios yoki android")
 	}
 	if in.Language == "" {
 		if err := s.pool.QueryRow(ctx, `SELECT language FROM customers WHERE user_id = $1`, userID).Scan(&in.Language); err != nil {
@@ -288,7 +316,7 @@ func (s *Service) RegisterDevice(ctx context.Context, userID, sessionID string, 
 		}
 	}
 	if in.Language != "ru" && in.Language != "uz" {
-		return apperr.Validation("language: ru или uz")
+		return apperr.Validation("language: ru или uz").Uz("language: ru yoki uz")
 	}
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO devices (user_id, session_id, token, platform, language)
@@ -321,7 +349,7 @@ func DeleteClient(ctx context.Context, tx pgx.Tx, userID string) error {
 	var active int64
 	err := tx.QueryRow(ctx, `SELECT number FROM orders WHERE customer_id = $1 AND status IN `+activeStatuses+` LIMIT 1`, userID).Scan(&active)
 	if err == nil {
-		return apperr.Conflict("active_order", fmt.Sprintf("Дождитесь завершения заказа №%d — потом аккаунт можно удалить", active)).
+		return apperr.Conflict("active_order", fmt.Sprintf("Дождитесь завершения заказа №%d — потом аккаунт можно удалить", active)).Uz(fmt.Sprintf("№%d buyurtma yakunlanishini kuting — keyin akkauntni oʻchirish mumkin", active)).
 			WithDetails(map[string]any{"account": "client", "order_number": active})
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {

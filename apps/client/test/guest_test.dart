@@ -27,6 +27,11 @@ Future<Api> _signedIn(Map<String, dynamic> body) async {
 }
 
 void main() {
+  // Тексты проверяются по-русски (язык по умолчанию — узбекский).
+  setUpAll(() async {
+    SharedPreferences.setMockInitialValues({'sm_lang': 'ru'});
+    await Lang.instance.init();
+  });
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   test('согласие на акции: спрашиваем, только если покупатель их не включал', () {

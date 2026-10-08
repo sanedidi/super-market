@@ -197,7 +197,7 @@ class _Stepper extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text.rich(TextSpan(children: [
-        TextSpan(text: 'Шаг $step из 3', style: AppText.small.copyWith(color: AppColors.primary, fontWeight: FontWeight.w600)),
+        TextSpan(text: tr('Шаг $step из 3', '$step-qadam, jami 3 ta'), style: AppText.small.copyWith(color: AppColors.primary, fontWeight: FontWeight.w600)),
         TextSpan(text: ' · $label', style: AppText.small),
       ])),
       const SizedBox(height: 8),
@@ -281,7 +281,7 @@ class _Welcome extends StatelessWidget {
               ]),
             ),
             const SizedBox(width: 8),
-            _tag(required ? 'обязательно' : 'можно позже', required: required),
+            _tag(required ? tr('обязательно', 'majburiy') : tr('можно позже', 'keyinroq ham mumkin'), required: required),
           ]),
         );
     return Scaffold(
@@ -292,35 +292,35 @@ class _Welcome extends StatelessWidget {
             child: ListView(padding: const EdgeInsets.fromLTRB(16, 32, 16, 24), children: [
               const Center(child: IconBox(Icons.storefront_rounded, bg: AppColors.primarySoft, fg: AppColors.primary, size: 88, iconSize: 44, radius: 44)),
               const SizedBox(height: 16),
-              const Text('Добро пожаловать в Super Market!', style: AppText.h2, textAlign: TextAlign.center),
+              Text(tr('Добро пожаловать в Super Market!', 'Super Marketga xush kelibsiz!'), style: AppText.h2, textAlign: TextAlign.center),
               const SizedBox(height: 8),
-              Text('Настроим магазин за 3 шага — после этого покупатели увидят его в приложении.',
+              Text(tr('Настроим магазин за 3 шага — после этого покупатели увидят его в приложении.', 'Doʻkonni 3 qadamda sozlaymiz — shundan soʻng xaridorlar uni ilovada koʻradi.'),
                   style: AppText.body.copyWith(color: AppColors.text2), textAlign: TextAlign.center),
               const SizedBox(height: 24),
               AppCard(
                 padding: const EdgeInsets.all(4),
                 child: Column(children: [
-                  row(1, 'Магазин и адрес', 'Название, телефон и точка на карте', true),
+                  row(1, tr('Магазин и адрес', 'Doʻkon va manzil'), tr('Название, телефон и точка на карте', 'Nomi, telefon va xaritadagi nuqta'), true),
                   const Divider(height: 1, color: AppColors.line),
-                  row(2, 'Часы работы', 'Покупатели увидят «открыто» или «закрыто»', true),
+                  row(2, tr('Часы работы', 'Ish vaqti'), tr('Покупатели увидят «открыто» или «закрыто»', 'Xaridorlar «ochiq» yoki «yopiq» ekanini koʻradi'), true),
                   const Divider(height: 1, color: AppColors.line),
-                  row(3, 'Доставка', 'Радиус, цена и за сколько привезёте', false),
+                  row(3, tr('Доставка', 'Yetkazib berish'), tr('Радиус, цена и за сколько привезёте', 'Radius, narx va qancha vaqtda yetkazasiz'), false),
                 ]),
               ),
               const SizedBox(height: 16),
-              const Row(children: [
-                Icon(Icons.devices_rounded, size: 20, color: AppColors.text2),
-                SizedBox(width: 10),
-                Expanded(child: Text('Около 3 минут. Начали здесь — можно закончить в веб-панели, всё сохранится.', style: AppText.small)),
+              Row(children: [
+                const Icon(Icons.devices_rounded, size: 20, color: AppColors.text2),
+                const SizedBox(width: 10),
+                Expanded(child: Text(tr('Около 3 минут. Начали здесь — можно закончить в веб-панели, всё сохранится.', 'Taxminan 3 daqiqa. Shu yerda boshlab, veb-panelda tugatish mumkin — hammasi saqlanadi.'), style: AppText.small)),
               ]),
             ]),
           ),
           _Bottom(children: [
-            BigButton(label: 'Начать настройку', onPressed: onStart),
+            BigButton(label: tr('Начать настройку', 'Sozlashni boshlash'), onPressed: onStart),
             const SizedBox(height: 4),
             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Flexible(child: Text(networkName.isEmpty ? 'Вы — владелец' : 'Сеть «$networkName»', style: AppText.small, overflow: TextOverflow.ellipsis)),
-              TextButton(onPressed: onSignOut, child: Text('Выйти', style: AppText.small.copyWith(fontWeight: FontWeight.w600, color: AppColors.primary))),
+              Flexible(child: Text(networkName.isEmpty ? tr('Вы — владелец', 'Siz — egasisiz') : tr('Сеть «$networkName»', '«$networkName» tarmogʻi'), style: AppText.small, overflow: TextOverflow.ellipsis)),
+              TextButton(onPressed: onSignOut, child: Text(tr('Выйти', 'Chiqish'), style: AppText.small.copyWith(fontWeight: FontWeight.w600, color: AppColors.primary))),
             ]),
           ]),
         ]),
@@ -373,18 +373,18 @@ class _StoreStepState extends State<_StoreStep> {
   Future<void> _save() async {
     final phoneDigits = uzLocalDigits(_phone.text);
     final phone = phoneDigits.isEmpty ? '' : normalizeUzPhone(_phone.text);
-    setState(() => _phoneError = phone == null ? 'Номер из 9 цифр: 90 123 45 67' : null);
+    setState(() => _phoneError = phone == null ? tr('Номер из 9 цифр: 90 123 45 67', '9 xonali raqam: 90 123 45 67') : null);
     if (phone == null) return;
     if (_name.text.trim().isEmpty) {
-      showSnack(context, 'Укажите название магазина');
+      showSnack(context, tr('Укажите название магазина', 'Doʻkon nomini kiriting'));
       return;
     }
     if (_address.text.trim().isEmpty) {
-      showSnack(context, 'Укажите адрес');
+      showSnack(context, tr('Укажите адрес', 'Manzilni kiriting'));
       return;
     }
     if (_point == null) {
-      showSnack(context, 'Поставьте метку на вход в магазин');
+      showSnack(context, tr('Поставьте метку на вход в магазин', 'Doʻkon kirish joyiga belgi qoʻying'));
       return;
     }
     setState(() => _busy = true);
@@ -409,32 +409,32 @@ class _StoreStepState extends State<_StoreStep> {
   @override
   Widget build(BuildContext context) {
     return _StepPage(
-      title: 'Ваш магазин',
-      sub: 'Так его увидят покупатели',
+      title: tr('Ваш магазин', 'Doʻkoningiz'),
+      sub: tr('Так его увидят покупатели', 'Xaridorlar uni shunday koʻradi'),
       step: 1,
-      label: 'Магазин',
+      label: tr('Магазин', 'Doʻkon'),
       onBack: widget.onBack,
-      bottom: [BigButton(label: 'Дальше', busy: _busy, onPressed: _save)],
+      bottom: [BigButton(label: tr('Дальше', 'Keyingi'), busy: _busy, onPressed: _save)],
       children: [
         AppCard(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const _Label('Название магазина'),
+            _Label(tr('Название магазина', 'Doʻkon nomi')),
             TextField(controller: _name, textCapitalization: TextCapitalization.sentences, maxLength: 120, decoration: const InputDecoration(counterText: '')),
             const SizedBox(height: 14),
-            const _Label('Телефон магазина'),
+            _Label(tr('Телефон магазина', 'Doʻkon telefoni')),
             PhoneField(controller: _phone, errorText: _phoneError),
             const SizedBox(height: 6),
-            const Text('Покупатели и курьеры смогут позвонить в магазин', style: AppText.small),
+            Text(tr('Покупатели и курьеры смогут позвонить в магазин', 'Xaridorlar va kuryerlar doʻkonga qoʻngʻiroq qila oladi'), style: AppText.small),
           ]),
         ),
         const SizedBox(height: 16),
         AppCard(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const _Label('Адрес'),
+            _Label(tr('Адрес', 'Manzil')),
             TextField(
               controller: _address,
               textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(hintText: 'Чиланзар, 9-й квартал, 12', prefixIcon: Icon(Icons.search_rounded, color: AppColors.muted)),
+              decoration: InputDecoration(hintText: tr('Чиланзар, 9-й квартал, 12', 'Chilonzor, 9-mavze, 12'), prefixIcon: const Icon(Icons.search_rounded, color: AppColors.muted)),
             ),
             const SizedBox(height: 12),
             if (_point != null)
@@ -453,7 +453,7 @@ class _StoreStepState extends State<_StoreStep> {
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       const Icon(Icons.open_in_full_rounded, size: 16),
                       const SizedBox(width: 6),
-                      Text('Уточнить на карте', style: AppText.bodyStrong.copyWith(fontSize: 14)),
+                      Text(tr('Уточнить на карте', 'Xaritada aniqlashtirish'), style: AppText.bodyStrong.copyWith(fontSize: 14)),
                     ]),
                   ),
                 ),
@@ -471,7 +471,7 @@ class _StoreStepState extends State<_StoreStep> {
                       child: Column(mainAxisSize: MainAxisSize.min, children: [
                         const Icon(Icons.add_location_alt_rounded, size: 36, color: AppColors.primary),
                         const SizedBox(height: 8),
-                        Text('Поставить метку на карте', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
+                        Text(tr('Поставить метку на карте', 'Xaritada belgi qoʻyish'), style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
                       ]),
                     ),
                   ),
@@ -481,7 +481,7 @@ class _StoreStepState extends State<_StoreStep> {
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Icon(_point == null ? Icons.info_outline_rounded : Icons.check_circle_rounded, size: 18, color: _point == null ? AppColors.text2 : AppColors.success),
               const SizedBox(width: 8),
-              const Expanded(child: Text('Метка на входе в магазин — по ней покупатели найдут вас, а курьер подъедет к двери', style: AppText.small)),
+              Expanded(child: Text(tr('Метка на входе в магазин — по ней покупатели найдут вас, а курьер подъедет к двери', 'Belgi — doʻkon kirish joyida: xaridorlar sizni shu boʻyicha topadi, kuryer esa eshik oldiga keladi'), style: AppText.small)),
             ]),
           ]),
         ),
@@ -539,9 +539,9 @@ class _HoursStepState extends State<_HoursStep> {
   }
 
   Future<void> _pickDay(int w) async {
-    final o = await _time('${dayNames[w]} — открытие', _days[w].opens);
+    final o = await _time(tr('${dayNames[w]} — открытие', '${dayNames[w]} — ochilish'), _days[w].opens);
     if (o == null || !mounted) return;
-    final c = await _time('${dayNames[w]} — закрытие', _days[w].closes);
+    final c = await _time(tr('${dayNames[w]} — закрытие', '${dayNames[w]} — yopilish'), _days[w].closes);
     if (c == null || !mounted) return;
     _edit(w, _days[w].copyWith(opens: o, closes: c));
   }
@@ -566,29 +566,29 @@ class _HoursStepState extends State<_HoursStep> {
   @override
   Widget build(BuildContext context) {
     return _StepPage(
-      title: 'Часы работы',
-      sub: 'Когда магазин открыт для покупателей',
+      title: tr('Часы работы', 'Ish vaqti'),
+      sub: tr('Когда магазин открыт для покупателей', 'Doʻkon xaridorlar uchun qachon ochiq'),
       step: 2,
-      label: 'Часы работы',
+      label: tr('Часы работы', 'Ish vaqti'),
       onBack: widget.onBack,
-      bottom: [BigButton(label: 'Дальше', busy: _busy, onPressed: _save)],
+      bottom: [BigButton(label: tr('Дальше', 'Keyingi'), busy: _busy, onPressed: _save)],
       children: [
         Wrap(spacing: 8, runSpacing: 8, children: [
-          for (final (p, l) in const [
-            (HoursPreset.daily, 'Каждый день'),
-            (HoursPreset.monSat, 'Пн–Сб'),
-            (HoursPreset.round, 'Круглосуточно'),
-            (HoursPreset.custom, 'По дням'),
+          for (final (p, l) in [
+            (HoursPreset.daily, tr('Каждый день', 'Har kuni')),
+            (HoursPreset.monSat, tr('Пн–Сб', 'Du–Sh')),
+            (HoursPreset.round, tr('Круглосуточно', 'Kecha-kunduz')),
+            (HoursPreset.custom, tr('По дням', 'Kunlar boʻyicha')),
           ])
             _Pill(l, selected: _preset == p, onTap: () => _choose(p)),
         ]),
         const SizedBox(height: 16),
         if (_preset == HoursPreset.round)
-          const AppCard(
+          AppCard(
             child: Row(children: [
-              IconBox(Icons.all_inclusive_rounded, bg: AppColors.successSoft, fg: AppColors.successInk),
-              SizedBox(width: 12),
-              Expanded(child: Text('Магазин работает 24 часа без выходных — покупатели всегда видят «открыто»', style: AppText.body)),
+              const IconBox(Icons.all_inclusive_rounded, bg: AppColors.successSoft, fg: AppColors.successInk),
+              const SizedBox(width: 12),
+              Expanded(child: Text(tr('Магазин работает 24 часа без выходных — покупатели всегда видят «открыто»', 'Doʻkon dam olish kunlarisiz 24 soat ishlaydi — xaridorlar doim «ochiq»ni koʻradi'), style: AppText.body)),
             ]),
           )
         else ...[
@@ -624,7 +624,7 @@ class _HoursStepState extends State<_HoursStep> {
                         ),
                       )
                     else
-                      const Text('Выходной', style: AppText.small),
+                      Text(tr('Выходной', 'Dam olish'), style: AppText.small),
                   ]),
                 ),
             ]),
@@ -638,13 +638,13 @@ class _HoursStepState extends State<_HoursStep> {
                 _preset = presetOf(_days);
               }),
               icon: const Icon(Icons.content_copy_rounded, size: 18, color: AppColors.primary),
-              label: Text('Скопировать понедельник на все дни', style: AppText.bodyStrong.copyWith(color: AppColors.primary, fontSize: 14)),
+              label: Text(tr('Скопировать понедельник на все дни', 'Dushanbani barcha kunlarga nusxalash'), style: AppText.bodyStrong.copyWith(color: AppColors.primary, fontSize: 14)),
             ),
           ),
-          const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Icon(Icons.nightlight_round, size: 18, color: AppColors.text2),
-            SizedBox(width: 8),
-            Expanded(child: Text('Работаете после полуночи? Укажите, например, 08:00 – 02:00', style: AppText.small)),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Icon(Icons.nightlight_round, size: 18, color: AppColors.text2),
+            const SizedBox(width: 8),
+            Expanded(child: Text(tr('Работаете после полуночи? Укажите, например, 08:00 – 02:00', 'Yarim tundan keyin ishlaysizmi? Masalan, 08:00 – 02:00 deb koʻrsating'), style: AppText.small)),
           ]),
         ],
       ],
@@ -708,7 +708,7 @@ class _DeliveryStepState extends State<_DeliveryStep> {
     final Map<String, dynamic> body;
     if (_deliver) {
       if (_digits(_fee).isEmpty) {
-        showSnack(context, 'Укажите стоимость доставки — 0, если бесплатно');
+        showSnack(context, tr('Укажите стоимость доставки — 0, если бесплатно', 'Yetkazib berish narxini kiriting — bepul boʻlsa, 0'));
         return;
       }
       final e = etas[_eta];
@@ -765,7 +765,7 @@ class _DeliveryStepState extends State<_DeliveryStep> {
           controller: c,
           keyboardType: TextInputType.number,
           inputFormatters: [LengthLimitingTextInputFormatter(13), _MoneyFormatter()],
-          decoration: InputDecoration(hintText: hint, suffixText: 'сум'),
+          decoration: InputDecoration(hintText: hint, suffixText: tr('сум', 'soʻm')),
         ),
       ]);
 
@@ -773,41 +773,42 @@ class _DeliveryStepState extends State<_DeliveryStep> {
   Widget build(BuildContext context) {
     final s = widget.s;
     return _StepPage(
-      title: 'Доставка',
-      sub: 'Можно настроить позже',
+      title: tr('Доставка', 'Yetkazib berish'),
+      sub: tr('Можно настроить позже', 'Keyinroq sozlash mumkin'),
       step: 3,
-      label: 'Доставка',
+      label: tr('Доставка', 'Yetkazib berish'),
       onBack: widget.onBack,
       bottom: [
-        BigButton(label: 'Готово', busy: _busy, onPressed: _save),
-        if (!s.deliveryDone) TextButton(onPressed: _busy ? null : widget.onSkip, child: Text('Пропустить, настрою позже', style: AppText.bodyStrong.copyWith(fontSize: 16))),
+        BigButton(label: tr('Готово', 'Tayyor'), busy: _busy, onPressed: _save),
+        if (!s.deliveryDone) TextButton(onPressed: _busy ? null : widget.onSkip, child: Text(tr('Пропустить, настрою позже', 'Oʻtkazib yuborish, keyin sozlayman'), style: AppText.bodyStrong.copyWith(fontSize: 16))),
       ],
       children: [
-        _option(true, Icons.delivery_dining_rounded, 'Доставляем сами', 'Своими курьерами или курьерами по пути'),
-        _option(false, Icons.storefront_rounded, 'Пока без доставки',
-            'Покупатели увидят магазин и цены, но заказать не смогут. По кнопке «Хочу доставку» вы узнаете, сколько людей её ждут'),
+        _option(true, Icons.delivery_dining_rounded, tr('Доставляем сами', 'Oʻzimiz yetkazamiz'), tr('Своими курьерами или курьерами по пути', 'Oʻz kuryerlarimiz yoki yoʻlakay kuryerlar orqali')),
+        _option(false, Icons.storefront_rounded, tr('Пока без доставки', 'Hozircha yetkazib berishsiz'),
+            tr('Покупатели увидят магазин и цены, но заказать не смогут. По кнопке «Хочу доставку» вы узнаете, сколько людей её ждут',
+                'Xaridorlar doʻkon va narxlarni koʻradi, lekin buyurtma bera olmaydi. «Yetkazishni xohlayman» tugmasi orqali uni qancha odam kutayotganini bilasiz')),
         if (_deliver) ...[
           const SizedBox(height: 4),
           AppCard(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const _Label('Куда доставляем'),
+              _Label(tr('Куда доставляем', 'Qayerga yetkazamiz')),
               Wrap(spacing: 8, runSpacing: 8, children: [
                 for (final r in radii) _Pill(radiusLabel(r), selected: _radius == r, onTap: () => setState(() => _radius = r)),
-                _Pill(radii.contains(_radius) ? 'Другое' : radiusLabel(_radius), selected: !radii.contains(_radius), onTap: _otherRadius),
+                _Pill(radii.contains(_radius) ? tr('Другое', 'Boshqa') : radiusLabel(_radius), selected: !radii.contains(_radius), onTap: _otherRadius),
               ]),
               if (s.lat != null) ...[const SizedBox(height: 12), MapPreview(point: LatLng(s.lat!, s.lng!), radiusM: _radius, height: 170)],
               const SizedBox(height: 14),
               Row(children: [
-                Expanded(child: _money('Стоимость доставки', _fee)),
+                Expanded(child: _money(tr('Стоимость доставки', 'Yetkazib berish narxi'), _fee)),
                 const SizedBox(width: 10),
-                Expanded(child: _money('Бесплатно от', _free, hint: 'не нужно')),
+                Expanded(child: _money(tr('Бесплатно от', 'Bepul (summadan)'), _free, hint: tr('не нужно', 'shart emas'))),
               ]),
               const SizedBox(height: 14),
-              _money('Минимальный заказ', _min),
+              _money(tr('Минимальный заказ', 'Eng kam buyurtma'), _min),
               const SizedBox(height: 6),
-              const Text('Заказ на меньшую сумму оформить нельзя', style: AppText.small),
+              Text(tr('Заказ на меньшую сумму оформить нельзя', 'Bundan kam summaga buyurtma berib boʻlmaydi'), style: AppText.small),
               const SizedBox(height: 14),
-              const _Label('Привезём за'),
+              _Label(tr('Привезём за', 'Yetkazish vaqti')),
               Wrap(spacing: 8, runSpacing: 8, children: [
                 for (var i = 0; i < etas.length; i++) _Pill(etaLabel(etas[i]), selected: _eta == i, onTap: () => setState(() => _eta = i)),
               ]),
@@ -815,10 +816,14 @@ class _DeliveryStepState extends State<_DeliveryStep> {
           ),
         ],
         const SizedBox(height: 16),
-        const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Icon(Icons.info_outline_rounded, size: 18, color: AppColors.text2),
-          SizedBox(width: 8),
-          Expanded(child: Text('Зоны на карте, цену по расстоянию и доставку ко времени можно настроить потом в веб-панели, раздел «Доставка»', style: AppText.small)),
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Icon(Icons.info_outline_rounded, size: 18, color: AppColors.text2),
+          const SizedBox(width: 8),
+          Expanded(
+              child: Text(
+                  tr('Зоны на карте, цену по расстоянию и доставку ко времени можно настроить потом в веб-панели, раздел «Доставка»',
+                      'Xaritadagi hududlar, masofaga qarab narx va belgilangan vaqtga yetkazishni keyinroq veb-panelning «Yetkazib berish» boʻlimida sozlash mumkin'),
+                  style: AppText.small)),
         ]),
       ],
     );
@@ -848,7 +853,7 @@ class _RadiusDialogState extends State<_RadiusDialog> {
   void _done() {
     final m = radiusFromKm(_c.text);
     if (m == null) {
-      setState(() => _error = 'От 0,1 до 100 км');
+      setState(() => _error = tr('От 0,1 до 100 км', '0,1 dan 100 km gacha'));
       return;
     }
     Navigator.of(context).pop(m);
@@ -857,17 +862,17 @@ class _RadiusDialogState extends State<_RadiusDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Радиус доставки'),
+      title: Text(tr('Радиус доставки', 'Yetkazib berish radiusi')),
       content: TextField(
         controller: _c,
         autofocus: true,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
         onSubmitted: (_) => _done(),
-        decoration: InputDecoration(suffixText: 'км', errorText: _error),
+        decoration: InputDecoration(suffixText: tr('км', 'km'), errorText: _error),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Отмена')),
-        TextButton(onPressed: _done, child: const Text('Готово')),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(tr('Отмена', 'Bekor qilish'))),
+        TextButton(onPressed: _done, child: Text(tr('Готово', 'Tayyor'))),
       ],
     );
   }
@@ -911,30 +916,32 @@ class _Done extends StatelessWidget {
             child: ListView(padding: const EdgeInsets.fromLTRB(16, 24, 16, 24), children: [
               const Center(child: IconBox(Icons.check_rounded, bg: AppColors.success, fg: AppColors.white, size: 80, iconSize: 44, radius: 40)),
               const SizedBox(height: 12),
-              const Text('Магазин настроен!', style: AppText.h2, textAlign: TextAlign.center),
+              Text(tr('Магазин настроен!', 'Doʻkon sozlandi!'), style: AppText.h2, textAlign: TextAlign.center),
               const SizedBox(height: 6),
-              Text('Покупатели рядом уже видят «${s.storeName}» в приложении Super Market',
+              Text(tr('Покупатели рядом уже видят «${s.storeName}» в приложении Super Market', 'Yaqin atrofdagi xaridorlar «${s.storeName}»ni Super Market ilovasida allaqachon koʻrmoqda'),
                   style: AppText.body.copyWith(color: AppColors.text2), textAlign: TextAlign.center),
               const SizedBox(height: 20),
               AppCard(
                 padding: const EdgeInsets.all(4),
                 child: Column(children: [
                   row(1, Icons.storefront_rounded, s.storeName, [s.address, if (s.phone.isNotEmpty) formatPhone(s.phone)].join(' · ')),
-                  row(2, Icons.schedule_rounded, 'Часы работы', hoursText(s.hours)),
-                  row(3, Icons.delivery_dining_rounded, 'Доставка', deliveryText(s)),
+                  row(2, Icons.schedule_rounded, tr('Часы работы', 'Ish vaqti'), hoursText(s.hours)),
+                  row(3, Icons.delivery_dining_rounded, tr('Доставка', 'Yetkazib berish'), deliveryText(s)),
                 ]),
               ),
               const SizedBox(height: 16),
-              const AppCard(
+              AppCard(
                 color: AppColors.primarySoft,
                 child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  IconBox(Icons.rocket_launch_rounded, bg: AppColors.white, fg: AppColors.primary, size: 40, iconSize: 22, radius: 12),
-                  SizedBox(width: 12),
+                  const IconBox(Icons.rocket_launch_rounded, bg: AppColors.white, fg: AppColors.primary, size: 40, iconSize: 22, radius: 12),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('Следующий шаг — товары', style: AppText.bodyStrong),
-                      SizedBox(height: 3),
-                      Text('Отметьте, что уже стоит на полках: по фото, штрихкоду или галочками в каталоге. Пока товаров нет, магазин в приложении пустой.',
+                      Text(tr('Следующий шаг — товары', 'Keyingi qadam — mahsulotlar'), style: AppText.bodyStrong),
+                      const SizedBox(height: 3),
+                      Text(
+                          tr('Отметьте, что уже стоит на полках: по фото, штрихкоду или галочками в каталоге. Пока товаров нет, магазин в приложении пустой.',
+                              'Javonlarda nima borligini belgilang: rasm, shtrix-kod yoki katalogdagi belgilar orqali. Mahsulotlar boʻlmaguncha, ilovadagi doʻkon boʻsh turadi.'),
                           style: AppText.small),
                     ]),
                   ),
@@ -943,8 +950,8 @@ class _Done extends StatelessWidget {
             ]),
           ),
           _Bottom(children: [
-            BigButton(label: 'Внести товары', icon: Icons.rocket_launch_rounded, busy: busy, onPressed: onStart),
-            TextButton(onPressed: busy ? null : onHome, child: Text('На главную', style: AppText.bodyStrong.copyWith(fontSize: 16))),
+            BigButton(label: tr('Внести товары', 'Mahsulotlarni kiritish'), icon: Icons.rocket_launch_rounded, busy: busy, onPressed: onStart),
+            TextButton(onPressed: busy ? null : onHome, child: Text(tr('На главную', 'Bosh sahifaga'), style: AppText.bodyStrong.copyWith(fontSize: 16))),
           ]),
         ]),
       ),
@@ -965,21 +972,23 @@ class SetupWaitingScreen extends StatelessWidget {
       body: SafeArea(
         child: Column(children: [
           const Spacer(),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 24),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Column(children: [
-              IconBox(Icons.hourglass_top_rounded, bg: AppColors.white, fg: AppColors.text2, size: 80, iconSize: 40, radius: 40),
-              SizedBox(height: 16),
-              Text('Магазин ещё настраивается', style: AppText.h2, textAlign: TextAlign.center),
-              SizedBox(height: 8),
-              Text('Владелец указывает адрес и часы работы. Как только он закончит, здесь появятся заказы, склад и касса.',
+              const IconBox(Icons.hourglass_top_rounded, bg: AppColors.white, fg: AppColors.text2, size: 80, iconSize: 40, radius: 40),
+              const SizedBox(height: 16),
+              Text(tr('Магазин ещё настраивается', 'Doʻkon hali sozlanmoqda'), style: AppText.h2, textAlign: TextAlign.center),
+              const SizedBox(height: 8),
+              Text(
+                  tr('Владелец указывает адрес и часы работы. Как только он закончит, здесь появятся заказы, склад и касса.',
+                      'Egasi manzil va ish vaqtini kiritmoqda. U tugatishi bilan bu yerda buyurtmalar, ombor va kassa paydo boʻladi.'),
                   style: AppText.body, textAlign: TextAlign.center),
             ]),
           ),
           const Spacer(),
           _Bottom(children: [
-            BigButton(label: 'Обновить', icon: Icons.refresh_rounded, color: AppColors.primarySoft, foreground: AppColors.primary, busy: st.loading, onPressed: st.load),
-            TextButton(onPressed: () => signOut(context), child: Text('Выйти', style: AppText.bodyStrong.copyWith(fontSize: 16))),
+            BigButton(label: tr('Обновить', 'Yangilash'), icon: Icons.refresh_rounded, color: AppColors.primarySoft, foreground: AppColors.primary, busy: st.loading, onPressed: st.load),
+            TextButton(onPressed: () => signOut(context), child: Text(tr('Выйти', 'Chiqish'), style: AppText.bodyStrong.copyWith(fontSize: 16))),
           ]),
         ]),
       ),
@@ -1078,7 +1087,7 @@ class _SetupHomeBlockState extends State<SetupHomeBlock> {
                 child: Row(children: [
                   const Icon(Icons.favorite_rounded, color: AppColors.primary, size: 18),
                   const SizedBox(width: 8),
-                  Expanded(child: Text('${buyersWord(s.wishes)} рядом нажали «Хочу доставку»', style: AppText.bodyStrong.copyWith(fontSize: 13))),
+                  Expanded(child: Text(tr('${buyersWord(s.wishes)} рядом нажали «Хочу доставку»', 'Yaqin atrofdagi ${buyersWord(s.wishes)} «Yetkazishni xohlayman»ni bosdi'), style: AppText.bodyStrong.copyWith(fontSize: 13))),
                 ]),
               ),
             ],
@@ -1091,8 +1100,8 @@ class _SetupHomeBlockState extends State<SetupHomeBlock> {
       child: AppCard(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            const Expanded(child: Text('Настройка магазина', style: AppText.title)),
-            Text('${s.doneCount} из 3', style: AppText.bodyStrong.copyWith(color: AppColors.success)),
+            Expanded(child: Text(tr('Настройка магазина', 'Doʻkonni sozlash'), style: AppText.title)),
+            Text(tr('${s.doneCount} из 3', '${s.doneCount} / 3'), style: AppText.bodyStrong.copyWith(color: AppColors.success)),
           ]),
           const SizedBox(height: 10),
           Row(children: [
@@ -1104,17 +1113,28 @@ class _SetupHomeBlockState extends State<SetupHomeBlock> {
             ],
           ]),
           const SizedBox(height: 8),
-          if (s.storeDone) done('Магазин и адрес', 1) else todo('Магазин и адрес', 'Поставьте точку на карте — без неё покупатели не найдут магазин', 'Указать', 1),
-          if (s.hoursDone) done('Часы работы', 2) else todo('Часы работы', 'Укажите, когда магазин открыт', 'Указать', 2),
+          if (s.storeDone)
+            done(tr('Магазин и адрес', 'Doʻkon va manzil'), 1)
+          else
+            todo(tr('Магазин и адрес', 'Doʻkon va manzil'), tr('Поставьте точку на карте — без неё покупатели не найдут магазин', 'Xaritada nuqta qoʻying — busiz xaridorlar doʻkonni topa olmaydi'), tr('Указать', 'Koʻrsatish'), 1),
+          if (s.hoursDone)
+            done(tr('Часы работы', 'Ish vaqti'), 2)
+          else
+            todo(tr('Часы работы', 'Ish vaqti'), tr('Укажите, когда магазин открыт', 'Doʻkon qachon ochiqligini koʻrsating'), tr('Указать', 'Koʻrsatish'), 2),
           if (s.deliveryDone)
-            done('Доставка', 3)
+            done(tr('Доставка', 'Yetkazib berish'), 3)
           else ...[
-            todo('Доставка', s.storeDone && s.hoursDone ? 'Сейчас покупатели видят «Магазин не доставляет»' : 'Радиус, цена и за сколько привезёте',
-                'Настроить доставку', 3),
+            todo(
+                tr('Доставка', 'Yetkazib berish'),
+                s.storeDone && s.hoursDone
+                    ? tr('Сейчас покупатели видят «Магазин не доставляет»', 'Hozir xaridorlar «Doʻkon yetkazib bermaydi» yozuvini koʻradi')
+                    : tr('Радиус, цена и за сколько привезёте', 'Radius, narx va qancha vaqtda yetkazasiz'),
+                tr('Настроить доставку', 'Yetkazib berishni sozlash'),
+                3),
             TextButton(
               onPressed: _busy ? null : _noDelivery,
               style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
-              child: Text('Пока без доставки — убрать из списка', style: AppText.small.copyWith(fontWeight: FontWeight.w600)),
+              child: Text(tr('Пока без доставки — убрать из списка', 'Hozircha yetkazib berishsiz — roʻyxatdan olib tashlash'), style: AppText.small.copyWith(fontWeight: FontWeight.w600)),
             ),
           ],
         ]),

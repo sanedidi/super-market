@@ -79,7 +79,7 @@ func (a *Authenticator) Allow(perms ...string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			p := FromContext(r.Context())
 			if p == nil {
-				httpx.Fail(w, r, a.log, apperr.Unauthorized("нужен токен авторизации"))
+				httpx.Fail(w, r, a.log, apperr.Unauthorized("нужен токен авторизации").Uz("avtorizatsiya tokeni kerak"))
 				return
 			}
 			if err := p.RequireAny(perms...); err != nil {
@@ -94,21 +94,21 @@ func (a *Authenticator) Allow(perms ...string) func(http.Handler) http.Handler {
 func (a *Authenticator) authenticate(r *http.Request, apps ...string) (*Principal, error) {
 	raw, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok || raw == "" {
-		return nil, apperr.Unauthorized("нужен токен авторизации")
+		return nil, apperr.Unauthorized("нужен токен авторизации").Uz("avtorizatsiya tokeni kerak")
 	}
 	claims, err := a.svc.signer.Verify(raw)
 	switch {
 	case errors.Is(err, token.ErrExpired):
-		return nil, apperr.New(http.StatusUnauthorized, "token_expired", "срок токена истёк, обновите его")
+		return nil, apperr.New(http.StatusUnauthorized, "token_expired", "срок токена истёк, обновите его").Uz("token muddati tugagan, uni yangilang")
 	case err != nil:
-		return nil, apperr.Unauthorized("неверный токен")
+		return nil, apperr.Unauthorized("неверный токен").Uz("token notoʻgʻri")
 	case !slices.Contains(apps, claims.App):
-		return nil, apperr.Forbidden("токен выдан для другого приложения")
+		return nil, apperr.Forbidden("токен выдан для другого приложения").Uz("token boshqa ilova uchun berilgan")
 	}
 	return a.svc.loadPrincipal(r.Context(), claims)
 }
 
-var errSession = apperr.Unauthorized("сессия закрыта, войдите заново")
+var errSession = apperr.Unauthorized("сессия закрыта, войдите заново").Uz("sessiya yopilgan, qaytadan kiring")
 
 func (s *Service) loadPrincipal(ctx context.Context, c token.Claims) (*Principal, error) {
 	p := &Principal{UserID: c.UserID, SessionID: c.SessionID, App: c.App}
@@ -177,7 +177,7 @@ func EmployeePrincipal(ctx context.Context, q interface {
 		WHERE e.id = $1 AND e.status = 'active'`, employeeID).Scan(
 		&p.UserID, &p.NetworkID, &p.NetworkKind, &p.Permissions, &p.IsOwner, &p.AllStores, &p.StoreIDs)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, apperr.NotFound("сотрудник не найден")
+		return nil, apperr.NotFound("сотрудник не найден").Uz("xodim topilmadi")
 	}
 	if err != nil {
 		return nil, err

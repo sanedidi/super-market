@@ -41,7 +41,7 @@ var ikpuRe = regexp.MustCompile(`^[0-9]{17}$`)
 // товары, супер-админ — общие товары платформы (scope = admin).
 func (s *Service) SetProductTax(ctx context.Context, p *identity.Principal, productID string, in TaxInput) (ProductTax, error) {
 	if !httpx.IsUUID(productID) {
-		return ProductTax{}, apperr.NotFound("товар не найден")
+		return ProductTax{}, apperr.NotFound("товар не найден").Uz("mahsulot topilmadi")
 	}
 	admin := p.App == identity.AppAdmin
 	if !admin {
@@ -52,14 +52,14 @@ func (s *Service) SetProductTax(ctx context.Context, p *identity.Principal, prod
 	if in.IKPU != nil {
 		v := strings.TrimSpace(*in.IKPU)
 		if v != "" && !ikpuRe.MatchString(v) {
-			return ProductTax{}, apperr.Validation("ikpu: 17 цифр из справочника tasnif.soliq.uz")
+			return ProductTax{}, apperr.Validation("ikpu: 17 цифр из справочника tasnif.soliq.uz").Uz("ikpu: tasnif.soliq.uz maʼlumotnomasidagi 17 ta raqam")
 		}
 		in.IKPU = &v
 	}
 	if in.PackageCode != nil {
 		v := strings.TrimSpace(*in.PackageCode)
 		if len(v) > 20 {
-			return ProductTax{}, apperr.Validation("package_code: до 20 символов")
+			return ProductTax{}, apperr.Validation("package_code: до 20 символов").Uz("package_code: 20 belgigacha")
 		}
 		in.PackageCode = &v
 	}
@@ -67,7 +67,7 @@ func (s *Service) SetProductTax(ctx context.Context, p *identity.Principal, prod
 	if in.VATRate != nil {
 		d := money.D(string(*in.VATRate))
 		if !in.VATRate.Valid() || d.Sign() < 0 || d.Cmp(money.D("100")) > 0 {
-			return ProductTax{}, apperr.Validation("vat_rate: от 0 до 100")
+			return ProductTax{}, apperr.Validation("vat_rate: от 0 до 100").Uz("vat_rate: 0 dan 100 gacha")
 		}
 		v := d.Money()
 		vat = &v
@@ -82,9 +82,9 @@ func (s *Service) SetProductTax(ctx context.Context, p *identity.Principal, prod
 		&out.ProductID, &out.IKPU, &out.PackageCode, &out.VATRate, &out.Marked)
 	if errors.Is(err, pgx.ErrNoRows) {
 		if admin {
-			return out, apperr.NotFound("товар платформы не найден")
+			return out, apperr.NotFound("товар платформы не найден").Uz("platforma mahsuloti topilmadi")
 		}
-		return out, apperr.NotFound("товар не найден среди товаров сети — общие товары правит Super Market")
+		return out, apperr.NotFound("товар не найден среди товаров сети — общие товары правит Super Market").Uz("mahsulot tarmoq mahsulotlari orasida topilmadi — umumiy mahsulotlarni Super Market tahrirlaydi")
 	}
 	return out, err
 }
@@ -107,10 +107,10 @@ func (s *Service) SetPLU(ctx context.Context, p *identity.Principal, productID s
 		return nil, err
 	}
 	if !httpx.IsUUID(productID) {
-		return nil, apperr.NotFound("товар не найден")
+		return nil, apperr.NotFound("товар не найден").Uz("mahsulot topilmadi")
 	}
 	if in.PLU != nil && (*in.PLU < 1 || *in.PLU > 99999) {
-		return nil, apperr.Validation("plu: от 1 до 99999")
+		return nil, apperr.Validation("plu: от 1 до 99999").Uz("plu: 1 dan 99999 gacha")
 	}
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		var ok bool
@@ -119,12 +119,12 @@ func (s *Service) SetPLU(ctx context.Context, p *identity.Principal, productID s
 			return err
 		}
 		if !ok {
-			return apperr.NotFound("товар не найден")
+			return apperr.NotFound("товар не найден").Uz("mahsulot topilmadi")
 		}
 		_, err := tx.Exec(ctx, `INSERT INTO pos_plu (network_id, product_id, plu) VALUES ($1, $2, $3)
 			ON CONFLICT (network_id, product_id) DO UPDATE SET plu = EXCLUDED.plu`, p.NetworkID, productID, in.PLU)
 		if db.IsUniqueViolation(err, "pos_plu_code_idx") {
-			return apperr.Conflict("plu_taken", "этот код уже у другого товара")
+			return apperr.Conflict("plu_taken", "этот код уже у другого товара").Uz("bu kod boshqa mahsulotda bor")
 		}
 		return err
 	})
@@ -147,16 +147,16 @@ func (s *Service) SetPaymentKind(ctx context.Context, p *identity.Principal, met
 	switch in.Kind {
 	case "cash", "card", "qr", "other":
 	default:
-		return PaymentMethod{}, apperr.Validation("kind: cash, card, qr или other")
+		return PaymentMethod{}, apperr.Validation("kind: cash, card, qr или other").Uz("kind: cash, card, qr yoki other")
 	}
 	if !httpx.IsUUID(methodID) {
-		return PaymentMethod{}, apperr.NotFound("способ оплаты не найден")
+		return PaymentMethod{}, apperr.NotFound("способ оплаты не найден").Uz("toʻlov usuli topilmadi")
 	}
 	var m PaymentMethod
 	err := s.pool.QueryRow(ctx, `UPDATE payment_methods SET kind = $3 WHERE id = $1 AND network_id = $2 RETURNING id, name, kind`,
 		methodID, p.NetworkID, in.Kind).Scan(&m.ID, &m.Name, &m.Kind)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return m, apperr.NotFound("способ оплаты не найден")
+		return m, apperr.NotFound("способ оплаты не найден").Uz("toʻlov usuli topilmadi")
 	}
 	return m, err
 }
@@ -183,11 +183,11 @@ func (s *Service) SaveSettings(ctx context.Context, p *identity.Principal, in Ne
 		return NetworkSettings{}, err
 	}
 	if len(in.WeightPrefixes) > 10 {
-		return NetworkSettings{}, apperr.Validation("weight_prefixes: не больше 10")
+		return NetworkSettings{}, apperr.Validation("weight_prefixes: не больше 10").Uz("weight_prefixes: koʻpi bilan 10 ta")
 	}
 	for _, x := range in.WeightPrefixes {
 		if !prefixRe.MatchString(x) {
-			return NetworkSettings{}, apperr.Validation("weight_prefixes: две цифры от 20 до 29")
+			return NetworkSettings{}, apperr.Validation("weight_prefixes: две цифры от 20 до 29").Uz("weight_prefixes: 20 dan 29 gacha ikki xonali son")
 		}
 	}
 	if in.WeightPrefixes == nil {
@@ -195,7 +195,7 @@ func (s *Service) SaveSettings(ctx context.Context, p *identity.Principal, in Ne
 	}
 	in.ReceiptHeader, in.ReceiptFooter = strings.TrimSpace(in.ReceiptHeader), strings.TrimSpace(in.ReceiptFooter)
 	if len([]rune(in.ReceiptHeader)) > 500 || len([]rune(in.ReceiptFooter)) > 500 {
-		return NetworkSettings{}, apperr.Validation("текст чека: до 500 символов")
+		return NetworkSettings{}, apperr.Validation("текст чека: до 500 символов").Uz("chek matni: 500 belgigacha")
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE networks SET pos_weight_prefixes = $2, receipt_header = $3, receipt_footer = $4 WHERE id = $1`,
 		p.NetworkID, in.WeightPrefixes, in.ReceiptHeader, in.ReceiptFooter); err != nil {

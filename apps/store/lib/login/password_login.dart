@@ -45,7 +45,7 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
     final password = _password.text;
     if (login.isEmpty || password.isEmpty) {
       setState(() {
-        _error = 'Введите логин и пароль';
+        _error = tr('Введите логин и пароль', 'Login va parolni kiriting');
         _hint = null;
       });
       return;
@@ -63,14 +63,16 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
       final left = e.details['attempts_left'];
       setState(() {
         if (e.code == 'invalid_credentials') {
-          _error = 'Неверный логин или пароль';
-          _hint = left is num ? 'Осталось ${_attempts(left.toInt())}, потом вход закроется на 15 минут' : null;
+          _error = tr('Неверный логин или пароль', 'Login yoki parol notoʻgʻri');
+          _hint = left is num
+              ? tr('Осталось ${_attempts(left.toInt())}, потом вход закроется на 15 минут', 'Yana ${left.toInt()} ta urinish qoldi, soʻng kirish 15 daqiqaga yopiladi')
+              : null;
         } else {
           _error = e.message;
         }
       });
     } catch (_) {
-      if (mounted) setState(() => _error = 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз');
+      if (mounted) setState(() => _error = tr('Нет связи с сервером. Проверьте интернет и попробуйте ещё раз', 'Server bilan aloqa yoʻq. Internetni tekshirib, qayta urinib koʻring'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -90,16 +92,20 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
               constraints: const BoxConstraints(maxWidth: 420),
               child: AutofillGroup(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: IconBox(Icons.storefront_rounded, bg: AppColors.primary, fg: AppColors.white, size: 56, iconSize: 30, radius: 18),
+                  const Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      IconBox(Icons.storefront_rounded, bg: AppColors.primary, fg: AppColors.white, size: 56, iconSize: 30, radius: 18),
+                      LangSwitch(),
+                    ],
                   ),
                   const SizedBox(height: 16),
-                  const Text('Вход в магазин', style: TextStyle(fontFamily: 'Inter', fontSize: 28, height: 1.2, fontWeight: FontWeight.w700, color: AppColors.ink)),
+                  Text(tr('Вход в магазин', 'Doʻkonga kirish'), style: const TextStyle(fontFamily: 'Inter', fontSize: 28, height: 1.2, fontWeight: FontWeight.w700, color: AppColors.ink)),
                   const SizedBox(height: 6),
-                  Text('Логин и пароль выдаёт Super Market при подключении магазина.', style: AppText.body.copyWith(color: AppColors.text2)),
+                  Text(tr('Логин и пароль выдаёт Super Market при подключении магазина.', 'Login va parolni doʻkon ulanayotganda Super Market beradi.'), style: AppText.body.copyWith(color: AppColors.text2)),
                   const SizedBox(height: 24),
-                  const Text('Логин', style: AppText.caption),
+                  Text(tr('Логин', 'Login'), style: AppText.caption),
                   const SizedBox(height: 8),
                   TextField(
                     controller: _login,
@@ -115,13 +121,13 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
                     style: AppText.body.copyWith(fontSize: 17),
                     onChanged: (_) => setState(() => _error = null),
                     onSubmitted: (_) => _passwordFocus.requestFocus(),
-                    decoration: const InputDecoration(
-                      hintText: 'например, olma',
-                      prefixIcon: Icon(Icons.person_rounded, color: AppColors.muted),
+                    decoration: InputDecoration(
+                      hintText: tr('например, olma', 'masalan, olma'),
+                      prefixIcon: const Icon(Icons.person_rounded, color: AppColors.muted),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text('Пароль', style: AppText.caption),
+                  Text(tr('Пароль', 'Parol'), style: AppText.caption),
                   const SizedBox(height: 8),
                   TextField(
                     controller: _password,
@@ -139,7 +145,7 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
                     decoration: InputDecoration(
                       prefixIcon: const Icon(Icons.lock_rounded, color: AppColors.muted),
                       suffixIcon: IconButton(
-                        tooltip: _hide ? 'Показать пароль' : 'Скрыть пароль',
+                        tooltip: _hide ? tr('Показать пароль', 'Parolni koʻrsatish') : tr('Скрыть пароль', 'Parolni yashirish'),
                         icon: Icon(_hide ? Icons.visibility_rounded : Icons.visibility_off_rounded, color: AppColors.muted),
                         onPressed: () => setState(() => _hide = !_hide),
                       ),
@@ -154,7 +160,7 @@ class _PasswordLoginScreenState extends State<PasswordLoginScreen> {
                     if (_hint != null) Text(_hint!, style: AppText.small),
                   ],
                   const SizedBox(height: 16),
-                  BigButton(label: 'Войти', icon: Icons.login_rounded, busy: _busy, onPressed: _submit),
+                  BigButton(label: tr('Войти', 'Kirish'), icon: Icons.login_rounded, busy: _busy, onPressed: _submit),
                   const SizedBox(height: 16),
                   const _SupportNote(),
                 ]),
@@ -181,7 +187,7 @@ class _SupportNote extends StatelessWidget {
         const SizedBox(width: 10),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Забыли пароль? Напишите в поддержку Super Market — сбросим и пришлём новый. После входа — свой код из 4 цифр или Face ID.',
+            Text(tr('Забыли пароль? Напишите в поддержку Super Market — сбросим и пришлём новый. После входа — свой код из 4 цифр или Face ID.', 'Parolni unutdingizmi? Super Market qoʻllab-quvvatlash xizmatiga yozing — tiklab, yangisini yuboramiz. Kirgandan soʻng — oʻzingizning 4 raqamli kodingiz yoki Face ID.'),
                 style: AppText.small.copyWith(color: AppColors.ink)),
             const SizedBox(height: 6),
             Wrap(spacing: 16, children: [
@@ -226,9 +232,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   List<(bool, String)> get _checks {
     final p = _pw.text;
     return [
-      (p.length >= 8 && p.length <= 72, 'Не меньше 8 символов'),
-      (RegExp(r'\p{L}', unicode: true).hasMatch(p) && RegExp(r'\d').hasMatch(p), 'Есть буквы и цифры'),
-      (p.isNotEmpty && p == _repeat.text, 'Пароли совпадают'),
+      (p.length >= 8 && p.length <= 72, tr('Не меньше 8 символов', 'Kamida 8 ta belgi')),
+      (RegExp(r'\p{L}', unicode: true).hasMatch(p) && RegExp(r'\d').hasMatch(p), tr('Есть буквы и цифры', 'Harflar va raqamlar bor')),
+      (p.isNotEmpty && p == _repeat.text, tr('Пароли совпадают', 'Parollar mos keladi')),
     ];
   }
 
@@ -248,7 +254,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     } on ApiError catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (_) {
-      if (mounted) setState(() => _error = 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз');
+      if (mounted) setState(() => _error = tr('Нет связи с сервером. Проверьте интернет и попробуйте ещё раз', 'Server bilan aloqa yoʻq. Internetni tekshirib, qayta urinib koʻring'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -274,7 +280,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
         decoration: InputDecoration(
           prefixIcon: const Icon(Icons.lock_rounded, color: AppColors.muted),
           suffixIcon: IconButton(
-            tooltip: _hide ? 'Показать пароль' : 'Скрыть пароль',
+            tooltip: _hide ? tr('Показать пароль', 'Parolni koʻrsatish') : tr('Скрыть пароль', 'Parolni yashirish'),
             icon: Icon(_hide ? Icons.visibility_rounded : Icons.visibility_off_rounded, color: AppColors.muted),
             onPressed: () => setState(() => _hide = !_hide),
           ),
@@ -301,14 +307,14 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                     child: IconBox(Icons.key_rounded, bg: AppColors.primary, fg: AppColors.white, size: 56, iconSize: 30, radius: 18),
                   ),
                   const SizedBox(height: 16),
-                  const Text('Свой пароль', style: TextStyle(fontFamily: 'Inter', fontSize: 28, height: 1.2, fontWeight: FontWeight.w700, color: AppColors.ink)),
+                  Text(tr('Свой пароль', 'Oʻz parolingiz'), style: const TextStyle(fontFamily: 'Inter', fontSize: 28, height: 1.2, fontWeight: FontWeight.w700, color: AppColors.ink)),
                   const SizedBox(height: 6),
-                  Text('Вы вошли по временному паролю. Придумайте новый — его будете знать только вы.',
+                  Text(tr('Вы вошли по временному паролю. Придумайте новый — его будете знать только вы.', 'Siz vaqtinchalik parol bilan kirdingiz. Yangisini oʻylab toping — uni faqat siz bilasiz.'),
                       style: AppText.body.copyWith(color: AppColors.text2)),
                   const SizedBox(height: 24),
-                  _field(_pw, 'Новый пароль', autofocus: true),
+                  _field(_pw, tr('Новый пароль', 'Yangi parol'), autofocus: true),
                   const SizedBox(height: 16),
-                  _field(_repeat, 'Повторите пароль', action: TextInputAction.done),
+                  _field(_repeat, tr('Повторите пароль', 'Parolni takrorlang'), action: TextInputAction.done),
                   const SizedBox(height: 14),
                   for (final (ok, text) in checks)
                     Padding(
@@ -324,11 +330,11 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                     Text(_error!, style: AppText.bodyStrong.copyWith(color: AppColors.error)),
                   ],
                   const SizedBox(height: 16),
-                  BigButton(label: 'Сохранить', icon: Icons.check_rounded, busy: _busy, onPressed: ready ? _save : null),
+                  BigButton(label: tr('Сохранить', 'Saqlash'), icon: Icons.check_rounded, busy: _busy, onPressed: ready ? _save : null),
                   const SizedBox(height: 8),
                   TextButton(
                     onPressed: _busy ? null : () => signOut(context),
-                    child: Text('Выйти', style: AppText.bodyStrong.copyWith(color: AppColors.text2)),
+                    child: Text(tr('Выйти', 'Chiqish'), style: AppText.bodyStrong.copyWith(color: AppColors.text2)),
                   ),
                   const SizedBox(height: 8),
                   Container(
@@ -338,7 +344,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                       const Icon(Icons.info_rounded, size: 20, color: AppColors.blue),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Text('Дальше — код из 4 цифр или Face ID для быстрого входа на этом телефоне.',
+                        child: Text(tr('Дальше — код из 4 цифр или Face ID для быстрого входа на этом телефоне.', 'Keyin — shu telefonda tez kirish uchun 4 raqamli kod yoki Face ID.'),
                             style: AppText.small.copyWith(color: AppColors.ink)),
                       ),
                     ]),

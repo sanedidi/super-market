@@ -9,6 +9,7 @@ import { useItem, useList, errorText } from '../hooks'
 import { BannerUpload } from '../crop'
 import { CATALOG_VIEWS, COLORS, ICONS, LINKS, SHAPES, SHELF_VIEWS, SOURCES, typeMeta } from './meta'
 import type { BlockLink, HomeBlock } from './types'
+import { tr } from '../i18n'
 
 export interface EditorPaths {
   products: string
@@ -99,13 +100,13 @@ function ColorPicker({ value, onChange }: { value?: string; onChange: (v: HomeBl
 function LinkPicker({ value, onChange, paths }: { value?: BlockLink | null; onChange: (v: BlockLink) => void; paths: EditorPaths }) {
   const t = value?.type ?? 'none'
   return (
-    <Field label="При нажатии открыть">
+    <Field label={tr('При нажатии открыть', 'Bosilganda ochish')}>
       <Select value={t} options={LINKS} onChange={(type) => onChange({ type })} style={{ width: '100%' }} />
       {t === 'category' && (
-        <RemoteSelect path={paths.categories} value={value?.id} onChange={(id) => onChange({ type: t, id: id as string })} placeholder="Категория" style={{ width: '100%', marginTop: 8 }} />
+        <RemoteSelect path={paths.categories} value={value?.id} onChange={(id) => onChange({ type: t, id: id as string })} placeholder={tr('Категория', 'Kategoriya')} style={{ width: '100%', marginTop: 8 }} />
       )}
       {t === 'product' && (
-        <RemoteSelect search path={paths.products} value={value?.id} onChange={(id) => onChange({ type: t, id: id as string })} placeholder="Найти товар" style={{ width: '100%', marginTop: 8 }} />
+        <RemoteSelect search path={paths.products} value={value?.id} onChange={(id) => onChange({ type: t, id: id as string })} placeholder={tr('Найти товар', 'Mahsulotni topish')} style={{ width: '100%', marginTop: 8 }} />
       )}
       {t === 'url' && (
         <Input value={value?.url} onChange={(e) => onChange({ type: t, url: e.target.value })} placeholder="https://" style={{ marginTop: 8 }} />
@@ -119,10 +120,10 @@ function ShelfSettings({ b, change, paths, features, onUpgrade }: { b: HomeBlock
   const ids = b.product_ids ?? []
   return (
     <>
-      <Field label="Заголовок">
+      <Field label={tr('Заголовок', 'Sarlavha')}>
         <Input value={b.title} maxLength={40} onChange={(e) => change({ title: e.target.value })} />
       </Field>
-      <Field label="Откуда брать товары">
+      <Field label={tr('Откуда брать товары', 'Mahsulotlar qayerdan olinsin')}>
         <Segmented
           block
           options={SOURCES.map((o) => (o.value === 'manual' && manualLocked ? { ...o, label: <span><LockFilled /> {o.label}</span> } : o))}
@@ -131,18 +132,18 @@ function ShelfSettings({ b, change, paths, features, onUpgrade }: { b: HomeBlock
         />
       </Field>
       {b.source === 'category' && (
-        <Field label="Категория">
-          <RemoteSelect path={paths.categories} value={b.category_id} onChange={(v) => change({ category_id: v as string })} placeholder="Выберите категорию" style={{ width: '100%' }} />
+        <Field label={tr('Категория', 'Kategoriya')}>
+          <RemoteSelect path={paths.categories} value={b.category_id} onChange={(v) => change({ category_id: v as string })} placeholder={tr('Выберите категорию', 'Kategoriyani tanlang')} style={{ width: '100%' }} />
         </Field>
       )}
       {b.source === 'manual' && (
-        <Field label="Товары подборки" hint="Порядок — как в приложении. До 30 товаров.">
+        <Field label={tr('Товары подборки', 'Tanlov mahsulotlari')} hint={tr('Порядок — как в приложении. До 30 товаров.', 'Tartib — ilovadagidek. 30 tagacha mahsulot.')}>
           <Ordered ids={ids} onChange={(next) => change({ product_ids: next })} render={(id) => <ProductName path={paths.products} id={id} />} />
           <RemoteSelect
             search
             path={paths.products}
             value={null}
-            placeholder="+ Добавить товар"
+            placeholder={tr('+ Добавить товар', '+ Mahsulot qoʻshish')}
             filter={(p) => !ids.includes(String(p.id))}
             onChange={(id) => id && change({ product_ids: [...ids, id as string].slice(0, 30) })}
             style={{ width: '100%' }}
@@ -150,15 +151,15 @@ function ShelfSettings({ b, change, paths, features, onUpgrade }: { b: HomeBlock
         </Field>
       )}
       <div className="smh-pair">
-        <Field label="Сколько товаров">
+        <Field label={tr('Сколько товаров', 'Mahsulotlar soni')}>
           <InputNumber min={1} max={20} value={b.limit} onChange={(v) => change({ limit: v ?? 6 })} style={{ width: 96 }} />
         </Field>
-        <Field label="Вид">
+        <Field label={tr('Вид', 'Koʻrinish')}>
           <Segmented options={SHELF_VIEWS} value={b.view} onChange={(v) => change({ view: v as string })} />
         </Field>
       </div>
-      {b.source !== 'manual' && <Toggle title="Кнопка «Все»" text="Открывает полный список" checked={b.show_all !== false} onChange={(v) => change({ show_all: v })} />}
-      <Toggle title="Скрывать, если пусто" text="Нет товаров — блок не показывается" checked={!b.show_empty} onChange={(v) => change({ show_empty: !v })} />
+      {b.source !== 'manual' && <Toggle title={tr('Кнопка «Все»', '«Hammasi» tugmasi')} text={tr('Открывает полный список', 'Toʻliq roʻyxatni ochadi')} checked={b.show_all !== false} onChange={(v) => change({ show_all: v })} />}
+      <Toggle title={tr('Скрывать, если пусто', 'Boʻsh boʻlsa, yashirish')} text={tr('Нет товаров — блок не показывается', 'Mahsulot yoʻq — blok koʻrsatilmaydi')} checked={!b.show_empty} onChange={(v) => change({ show_empty: !v })} />
     </>
   )
 }
@@ -176,9 +177,9 @@ interface AdminBanner {
 
 function bannerState(x?: AdminBanner): { text: string; ok: boolean } {
   if (!x) return { text: '', ok: false }
-  if (x.moderation === 'pending') return { text: 'На модерации', ok: false }
-  if (x.moderation === 'rejected') return { text: `Отклонён: ${x.reject_reason}`, ok: false }
-  return { text: x.is_active ? 'Активен' : 'Выключен', ok: x.is_active }
+  if (x.moderation === 'pending') return { text: tr('На модерации', 'Moderatsiyada'), ok: false }
+  if (x.moderation === 'rejected') return { text: tr(`Отклонён: ${x.reject_reason}`, `Rad etilgan: ${x.reject_reason}`), ok: false }
+  return { text: x.is_active ? tr('Активен', 'Faol') : tr('Выключен', 'Oʻchirilgan'), ok: x.is_active }
 }
 
 /** Новый баннер из фото: загрузка, название, подпись на фото. */
@@ -211,12 +212,12 @@ function NewBanner({ path, onCreated }: { path: string; onCreated: (id: string) 
   return (
     <div className="smh-new-banner">
       <img src={url} alt="" />
-      <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Название, например −20% на овощи" maxLength={60} />
-      <Toggle title="Подпись на фото" text="Название поверх фото с затемнением" checked={showText} onChange={setShowText} />
+      <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={tr('Название, например −20% на овощи', 'Nomi, masalan, sabzavotlarga −20%')} maxLength={60} />
+      <Toggle title={tr('Подпись на фото', 'Rasmdagi yozuv')} text={tr('Название поверх фото с затемнением', 'Nomi rasm ustida, qoraytirilgan holda')} checked={showText} onChange={setShowText} />
       <div style={{ display: 'flex', gap: 8 }}>
-        <Button onClick={() => setUrl('')}>Отмена</Button>
+        <Button onClick={() => setUrl('')}>{tr('Отмена', 'Bekor qilish')}</Button>
         <Button type="primary" loading={busy} disabled={!title.trim()} onClick={save}>
-          Добавить баннер
+          {tr('Добавить баннер', 'Banner qoʻshish')}
         </Button>
       </div>
     </div>
@@ -229,35 +230,35 @@ function BannerSettings({ b, change, paths }: { b: HomeBlock; change: Change; pa
   const byId = new Map((all.data ?? []).map((x) => [x.id, x]))
   return (
     <>
-      <Field label="Размер">
+      <Field label={tr('Размер', 'Oʻlcham')}>
         <Segmented
           block
           options={[
-            { value: 'big', label: 'Большой · фото' },
-            { value: 'strip', label: 'Узкая лента' },
+            { value: 'big', label: tr('Большой · фото', 'Katta · rasm') },
+            { value: 'strip', label: tr('Узкая лента', 'Tor lenta') },
           ]}
           value={b.size}
           onChange={(v) =>
-            change(v === 'strip' ? { size: 'strip', title: b.title || 'Осенняя ярмарка: −25% на фрукты', icon: b.icon ?? 'tag', color: b.color ?? 'red' } : { size: 'big' })
+            change(v === 'strip' ? { size: 'strip', title: b.title || tr('Осенняя ярмарка: −25% на фрукты', 'Kuzgi yarmarka: mevalarga −25%'), icon: b.icon ?? 'tag', color: b.color ?? 'red' } : { size: 'big' })
           }
         />
       </Field>
       {b.size === 'strip' ? (
         <>
-          <Field label="Текст">
+          <Field label={tr('Текст', 'Matn')}>
             <Input value={b.title} maxLength={60} onChange={(e) => change({ title: e.target.value })} />
           </Field>
-          <Field label="Иконка">
+          <Field label={tr('Иконка', 'Belgi')}>
             <IconPicker value={b.icon} onChange={(icon) => change({ icon })} />
           </Field>
-          <Field label="Цвет">
+          <Field label={tr('Цвет', 'Rang')}>
             <ColorPicker value={b.color} onChange={(color) => change({ color })} />
           </Field>
           <LinkPicker value={b.link} onChange={(link) => change({ link })} paths={paths} />
         </>
       ) : (
         <>
-          <Field label="Баннеры (листаются по порядку)" hint={ids.length ? undefined : 'Ничего не выбрано — показываются все активные баннеры.'}>
+          <Field label={tr('Баннеры (листаются по порядку)', 'Bannerlar (tartib bilan almashadi)')} hint={ids.length ? undefined : tr('Ничего не выбрано — показываются все активные баннеры.', 'Hech narsa tanlanmagan — barcha faol bannerlar koʻrsatiladi.')}>
             <Ordered
               ids={ids}
               onChange={(next) => change({ banner_ids: next })}
@@ -276,16 +277,16 @@ function BannerSettings({ b, change, paths }: { b: HomeBlock; change: Change; pa
             />
             <Select
               value={null}
-              placeholder="+ Добавить загруженный баннер"
+              placeholder={tr('+ Добавить загруженный баннер', '+ Yuklangan bannerni qoʻshish')}
               options={(all.data ?? [])
                 .filter((x) => !ids.includes(x.id) && x.moderation !== 'rejected')
-                .map((x) => ({ value: x.id, label: `${x.title}${x.moderation === 'pending' ? ' · на модерации' : ''}` }))}
+                .map((x) => ({ value: x.id, label: `${x.title}${x.moderation === 'pending' ? tr(' · на модерации', ' · moderatsiyada') : ''}` }))}
               onChange={(id) => id && change({ banner_ids: [...ids, id].slice(0, 10) })}
               style={{ width: '100%' }}
             />
           </Field>
           <NewBanner path={paths.banners} onCreated={(id) => { all.refetch(); change({ banner_ids: [...ids, id].slice(0, 10) }) }} />
-          <Toggle title="Автопрокрутка" text="Листать каждые 5 секунд" checked={b.autoplay !== false} onChange={(v) => change({ autoplay: v })} />
+          <Toggle title={tr('Автопрокрутка', 'Avtoaylantirish')} text={tr('Листать каждые 5 секунд', 'Har 5 soniyada almashtirish')} checked={b.autoplay !== false} onChange={(v) => change({ autoplay: v })} />
         </>
       )}
     </>
@@ -295,31 +296,36 @@ function BannerSettings({ b, change, paths }: { b: HomeBlock; change: Change; pa
 function PromoSettings({ b, change, paths }: { b: HomeBlock; change: Change; paths: EditorPaths; features?: unknown; onUpgrade?: unknown }) {
   return (
     <>
-      <Field label="Что показывать">
+      <Field label={tr('Что показывать', 'Nima koʻrsatilsin')}>
         <Segmented
           block
           options={[
-            { value: 'custom', label: 'Свой текст' },
-            { value: 'free_delivery', label: 'До бесплатной доставки' },
+            { value: 'custom', label: tr('Свой текст', 'Oʻz matningiz') },
+            { value: 'free_delivery', label: tr('До бесплатной доставки', 'Bepul yetkazib berishgacha') },
           ]}
           value={b.kind}
-          onChange={(v) => change(v === 'custom' ? { kind: 'custom', title: b.title || 'Скидка 10% на первый заказ', color: b.color ?? 'yellow', icon: b.icon ?? 'percent' } : { kind: 'free_delivery' })}
+          onChange={(v) => change(v === 'custom' ? { kind: 'custom', title: b.title || tr('Скидка 10% на первый заказ', 'Birinchi buyurtmaga 10% chegirma'), color: b.color ?? 'yellow', icon: b.icon ?? 'percent' } : { kind: 'free_delivery' })}
         />
       </Field>
       {b.kind === 'free_delivery' ? (
-        <div className="smh-note">Текст считается сам: «Доставка 0 сум от …» и сколько ещё набрать. Блок скрыт, если у магазина нет бесплатной доставки.</div>
+        <div className="smh-note">
+          {tr(
+            'Текст считается сам: «Доставка 0 сум от …» и сколько ещё набрать. Блок скрыт, если у магазина нет бесплатной доставки.',
+            'Matn oʻzi hisoblanadi: «… dan yetkazib berish 0 soʻm» va yana qancha xarid qilish kerakligi. Doʻkonda bepul yetkazib berish boʻlmasa, blok yashiriladi.',
+          )}
+        </div>
       ) : (
         <>
-          <Field label="Текст">
+          <Field label={tr('Текст', 'Matn')}>
             <Input value={b.title} maxLength={60} onChange={(e) => change({ title: e.target.value })} />
           </Field>
-          <Field label="Подпись">
-            <Input value={b.subtitle} maxLength={80} onChange={(e) => change({ subtitle: e.target.value })} placeholder="Необязательно" />
+          <Field label={tr('Подпись', 'Izoh')}>
+            <Input value={b.subtitle} maxLength={80} onChange={(e) => change({ subtitle: e.target.value })} placeholder={tr('Необязательно', 'Ixtiyoriy')} />
           </Field>
-          <Field label="Иконка">
+          <Field label={tr('Иконка', 'Belgi')}>
             <IconPicker value={b.icon} onChange={(icon) => change({ icon })} />
           </Field>
-          <Field label="Цвет">
+          <Field label={tr('Цвет', 'Rang')}>
             <ColorPicker value={b.color} onChange={(color) => change({ color })} />
           </Field>
           <LinkPicker value={b.link} onChange={(link) => change({ link })} paths={paths} />
@@ -345,26 +351,26 @@ function CategoryPick({ value, onChange, path, placeholder }: { value?: string[]
 function IconsSettings({ b, change, paths }: { b: HomeBlock; change: Change; paths: EditorPaths; features?: unknown; onUpgrade?: unknown }) {
   return (
     <>
-      <Field label="Какие разделы">
+      <Field label={tr('Какие разделы', 'Qaysi boʻlimlar')}>
         <Segmented
           block
           options={[
-            { value: 'auto', label: 'Все разделы магазина' },
-            { value: 'manual', label: 'Выбрать' },
+            { value: 'auto', label: tr('Все разделы магазина', 'Doʻkonning barcha boʻlimlari') },
+            { value: 'manual', label: tr('Выбрать', 'Tanlash') },
           ]}
           value={b.mode}
           onChange={(v) => change({ mode: v as string })}
         />
       </Field>
       {b.mode === 'manual' && (
-        <Field label="Категории" hint="В этом порядке; категории без товаров в магазине не показываются.">
-          <CategoryPick path={paths.categories} value={b.category_ids} onChange={(category_ids) => change({ category_ids })} placeholder="Выберите категории" />
+        <Field label={tr('Категории', 'Kategoriyalar')} hint={tr('В этом порядке; категории без товаров в магазине не показываются.', 'Shu tartibda; doʻkonda mahsuloti yoʻq kategoriyalar koʻrsatilmaydi.')}>
+          <CategoryPick path={paths.categories} value={b.category_ids} onChange={(category_ids) => change({ category_ids })} placeholder={tr('Выберите категории', 'Kategoriyalarni tanlang')} />
         </Field>
       )}
-      <Field label="Вид">
+      <Field label={tr('Вид', 'Koʻrinish')}>
         <Segmented block options={SHAPES} value={b.shape} onChange={(v) => change({ shape: v as HomeBlock['shape'] })} />
       </Field>
-      <Toggle title="«Скидки» первой иконкой" checked={b.show_deals !== false} onChange={(v) => change({ show_deals: v })} />
+      <Toggle title={tr('«Скидки» первой иконкой', '«Chegirmalar» birinchi belgi boʻlib')} checked={b.show_deals !== false} onChange={(v) => change({ show_deals: v })} />
     </>
   )
 }
@@ -372,26 +378,26 @@ function IconsSettings({ b, change, paths }: { b: HomeBlock; change: Change; pat
 function CatalogSettings({ b, change, paths }: { b: HomeBlock; change: Change; paths: EditorPaths; features?: unknown; onUpgrade?: unknown }) {
   return (
     <>
-      <Field label="Разделы">
+      <Field label={tr('Разделы', 'Boʻlimlar')}>
         <Segmented
           block
           options={[
-            { value: 'all', label: 'Все' },
-            { value: 'selected', label: 'Выбранные' },
+            { value: 'all', label: tr('Все', 'Hammasi') },
+            { value: 'selected', label: tr('Выбранные', 'Tanlanganlar') },
           ]}
           value={b.mode}
           onChange={(v) => change({ mode: v as string })}
         />
       </Field>
       {b.mode === 'selected' && (
-        <Field label="Разделы каталога">
-          <CategoryPick path={paths.categories} value={b.category_ids} onChange={(category_ids) => change({ category_ids })} placeholder="Выберите разделы" />
+        <Field label={tr('Разделы каталога', 'Katalog boʻlimlari')}>
+          <CategoryPick path={paths.categories} value={b.category_ids} onChange={(category_ids) => change({ category_ids })} placeholder={tr('Выберите разделы', 'Boʻlimlarni tanlang')} />
         </Field>
       )}
-      <Field label="Вид">
+      <Field label={tr('Вид', 'Koʻrinish')}>
         <Segmented block options={CATALOG_VIEWS} value={b.view} onChange={(v) => change({ view: v as string })} />
       </Field>
-      <Toggle title="Картинки категорий" text="Без картинки — иконка" checked={b.show_images !== false} onChange={(v) => change({ show_images: v })} />
+      <Toggle title={tr('Картинки категорий', 'Kategoriya rasmlari')} text={tr('Без картинки — иконка', 'Rasm boʻlmasa — belgi')} checked={b.show_images !== false} onChange={(v) => change({ show_images: v })} />
     </>
   )
 }
@@ -431,7 +437,7 @@ export function BlockSettings({
         <span className="smh-block-icon">{meta.icon}</span>
         <div>
           <b>{meta.title}</b>
-          <span>Настройки блока</span>
+          <span>{tr('Настройки блока', 'Blok sozlamalari')}</span>
         </div>
       </div>
       <Body b={b} change={change} paths={paths} features={features} onUpgrade={onUpgrade} />
@@ -439,20 +445,20 @@ export function BlockSettings({
       {features?.schedule === false && !scheduled ? (
         <div className="smh-locked">
           <LockFilled />
-          <b>Расписание блоков</b>
-          <span>Блок сам включится и выключится по датам. Доступно в тарифе «Про».</span>
+          <b>{tr('Расписание блоков', 'Bloklar jadvali')}</b>
+          <span>{tr('Блок сам включится и выключится по датам. Доступно в тарифе «Про».', 'Blok sanalar boʻyicha oʻzi yoqiladi va oʻchadi. «Pro» tarifida mavjud.')}</span>
           <Button type="primary" danger onClick={() => onUpgrade?.('schedule')}>
-            Перейти на «Про»
+            {tr('Перейти на «Про»', '«Pro» tarifiga oʻtish')}
           </Button>
         </div>
       ) : (
       <>
-      <Field label="Показывать">
+      <Field label={tr('Показывать', 'Koʻrsatish')}>
         <Segmented
           block
           options={[
-            { value: 'always', label: 'Всегда' },
-            { value: 'schedule', label: 'По расписанию' },
+            { value: 'always', label: tr('Всегда', 'Doim') },
+            { value: 'schedule', label: tr('По расписанию', 'Jadval boʻyicha') },
           ]}
           value={scheduled ? 'schedule' : 'always'}
           onChange={(v) =>
@@ -473,18 +479,18 @@ export function BlockSettings({
       )}
       {canPin && (
         <Toggle
-          title="Закрепить для магазинов"
-          text="Сети не смогут убрать или выключить блок в своей витрине"
+          title={tr('Закрепить для магазинов', 'Doʻkonlar uchun qadash')}
+          text={tr('Сети не смогут убрать или выключить блок в своей витрине', 'Tarmoqlar blokni oʻz vitrinasidan olib tashlay yoki oʻchira olmaydi')}
           checked={!!b.pinned}
           onChange={(v) => change({ pinned: v })}
         />
       )}
       <Button danger block icon={<DeleteOutlined />} onClick={onDelete} style={{ marginTop: 8 }}>
-        Удалить блок
+        {tr('Удалить блок', 'Blokni oʻchirish')}
       </Button>
       {b.pinned && (
         <div className="smh-field-hint" style={{ marginTop: 8 }}>
-          <PushpinFilled /> Блок закреплён платформой
+          <PushpinFilled /> {tr('Блок закреплён платформой', 'Blok platforma tomonidan qadalgan')}
         </div>
       )}
     </div>

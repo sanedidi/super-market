@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:sm_core/sm_core.dart';
 
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -17,14 +18,26 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final _page = PageController();
   int _index = 0;
 
-  static const _pages = [
-    ('assets/images/onboarding_1.svg', 'Магазины рядом с вами',
-        'Смотрите на карте, какие магазины доставляют по вашему адресу, и выбирайте удобный.'),
-    ('assets/images/onboarding_2.svg', 'Цены как на полке',
-        'Тысячи продуктов из любимых магазинов — по тем же ценам, что и в зале.'),
-    ('assets/images/onboarding_3.svg', 'Привезём к двери',
-        'Курьер доставит заказ по вашему адресу. Оплата картой через Payme или Click.'),
-  ];
+  List<(String, String, String)> get _pages => [
+        (
+          'assets/images/onboarding_1.svg',
+          tr('Магазины рядом с вами', 'Yaqiningizdagi doʻkonlar'),
+          tr('Смотрите на карте, какие магазины доставляют по вашему адресу, и выбирайте удобный.',
+              'Xaritada qaysi doʻkonlar manzilingizga yetkazib berishini koʻring va qulayini tanlang.')
+        ),
+        (
+          'assets/images/onboarding_2.svg',
+          tr('Цены как на полке', 'Narxlar peshtaxtadagidek'),
+          tr('Тысячи продуктов из любимых магазинов — по тем же ценам, что и в зале.',
+              'Sevimli doʻkonlaringizdan minglab mahsulotlar — savdo zalidagi narxlarda.')
+        ),
+        (
+          'assets/images/onboarding_3.svg',
+          tr('Привезём к двери', 'Eshigingizgacha yetkazamiz'),
+          tr('Курьер доставит заказ по вашему адресу. Оплата картой через Payme или Click.',
+              'Kuryer buyurtmani manzilingizga yetkazadi. Toʻlov Payme yoki Click orqali karta bilan.')
+        ),
+      ];
 
   @override
   void dispose() {
@@ -48,10 +61,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         child: Column(children: [
           SizedBox(
             height: 52,
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: last ? null : TextButton(onPressed: widget.onDone, child: const Text('Пропустить')),
-            ),
+            child: Row(children: [
+              // Язык — до входа: выбор сохраняется на устройстве.
+              const Padding(padding: EdgeInsets.only(left: 16), child: LangSwitch()),
+              const Spacer(),
+              if (!last) TextButton(onPressed: widget.onDone, child: Text(tr('Пропустить', 'Oʻtkazib yuborish'))),
+            ]),
           ),
           Expanded(
             child: PageView.builder(
@@ -100,7 +115,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ]),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 32, 16, 16),
-            child: AppButton(label: last ? 'Начать покупки' : 'Далее', onPressed: _next),
+            child: AppButton(label: last ? tr('Начать покупки', 'Xaridni boshlash') : tr('Далее', 'Keyingi'), onPressed: _next),
           ),
         ]),
       ),

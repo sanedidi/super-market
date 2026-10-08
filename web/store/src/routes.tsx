@@ -20,7 +20,7 @@ import {
   ShoppingOutlined,
   WalletOutlined,
 } from '@ant-design/icons'
-import { Shell, type MenuItem } from '@sm/shared'
+import { Shell, tr, type MenuItem } from '@sm/shared'
 import { useStore } from './ctx'
 import { DashboardPage } from './pages/Dashboard'
 import { StartPage } from './pages/start/Start'
@@ -55,116 +55,116 @@ import { PosDevicesPage, PosShiftsPage } from './pages/Pos'
 import { DebtSettingsPage, DebtorsPage } from './pages/Debts'
 import { OrderAlerts } from './notify'
 
-const TITLE = 'Панель магазина'
+const TITLE = tr('Панель магазина', 'Doʻkon paneli')
 
 type Item = { key: string; label: string; perm?: string | string[]; icon?: ReactNode; children?: Item[] }
 
 // Меню как в Dokondor: группы разделов; perm — какое право нужно, чтобы видеть пункт.
 // Права совпадают с правами сервера на чтение раздела (docs/api.md, «Права на чтение»).
 const MENU: Item[] = [
-  { key: '/', label: 'Главная', icon: <DashboardOutlined /> },
-  { key: '/start', label: 'Начало работы', icon: <RocketOutlined />, perm: 'inventory.manage' },
-  { key: '/orders', label: 'Онлайн-заказы', icon: <ShoppingCartOutlined />, perm: 'orders.manage' },
-  { key: '/couriers', label: 'Курьеры', icon: <CarOutlined />, perm: 'orders.manage' },
-  { key: '/crowd', label: 'Курьеры по пути', icon: <SafetyCertificateOutlined />, perm: 'orders.manage' },
-  { key: '/showcase', label: 'Витрина приложения', icon: <LayoutOutlined />, perm: 'showcase.manage' },
-  { key: '/brand-ads', label: 'Реклама брендов', icon: <NotificationOutlined />, perm: 'showcase.manage' },
+  { key: '/', label: tr('Главная', 'Bosh sahifa'), icon: <DashboardOutlined /> },
+  { key: '/start', label: tr('Начало работы', 'Ishni boshlash'), icon: <RocketOutlined />, perm: 'inventory.manage' },
+  { key: '/orders', label: tr('Онлайн-заказы', 'Onlayn buyurtmalar'), icon: <ShoppingCartOutlined />, perm: 'orders.manage' },
+  { key: '/couriers', label: tr('Курьеры', 'Kuryerlar'), icon: <CarOutlined />, perm: 'orders.manage' },
+  { key: '/crowd', label: tr('Курьеры по пути', 'Yoʻlakay kuryerlar'), icon: <SafetyCertificateOutlined />, perm: 'orders.manage' },
+  { key: '/showcase', label: tr('Витрина приложения', 'Ilova vitrinasi'), icon: <LayoutOutlined />, perm: 'showcase.manage' },
+  { key: '/brand-ads', label: tr('Реклама брендов', 'Brendlar reklamasi'), icon: <NotificationOutlined />, perm: 'showcase.manage' },
   {
     key: 'sales',
-    label: 'Продажи',
+    label: tr('Продажи', 'Sotuvlar'),
     icon: <ShoppingOutlined />,
     children: [
-      { key: '/sales/pos', label: 'Продажи POS', perm: ['sales.pos', 'sales.return', 'reports.view'] },
-      { key: '/sales/returns', label: 'Возвраты', perm: ['sales.pos', 'sales.return', 'reports.view'] },
-      { key: '/sales/prices', label: 'Установка цен', perm: 'prices.manage' },
-      { key: '/sales/promotions', label: 'Акции в приложении', perm: 'prices.manage' },
+      { key: '/sales/pos', label: tr('Продажи POS', 'POS sotuvlari'), perm: ['sales.pos', 'sales.return', 'reports.view'] },
+      { key: '/sales/returns', label: tr('Возвраты', 'Qaytarishlar'), perm: ['sales.pos', 'sales.return', 'reports.view'] },
+      { key: '/sales/prices', label: tr('Установка цен', 'Narxlarni belgilash'), perm: 'prices.manage' },
+      { key: '/sales/promotions', label: tr('Акции в приложении', 'Ilovadagi aksiyalar'), perm: 'prices.manage' },
     ],
   },
   {
     key: 'pos',
-    label: 'Касса',
+    label: tr('Касса', 'Kassa'),
     icon: <CalculatorOutlined />,
     children: [
-      { key: '/pos/devices', label: 'Кассы и ПИНы', perm: ['stores.manage', 'staff.manage'] },
-      { key: '/pos/shifts', label: 'Смены', perm: ['reports.view', 'finance.manage'] },
+      { key: '/pos/devices', label: tr('Кассы и ПИНы', 'Kassalar va PIN-kodlar'), perm: ['stores.manage', 'staff.manage'] },
+      { key: '/pos/shifts', label: tr('Смены', 'Smenalar'), perm: ['reports.view', 'finance.manage'] },
     ],
   },
-  { key: '/debts', label: 'Долги покупателей', icon: <AuditOutlined />, perm: ['debts.manage', 'debts.give'] },
+  { key: '/debts', label: tr('Долги покупателей', 'Xaridorlar qarzlari'), icon: <AuditOutlined />, perm: ['debts.manage', 'debts.give'] },
   {
     key: 'purchases',
-    label: 'Закупки',
+    label: tr('Закупки', 'Xaridlar'),
     icon: <InboxOutlined />,
     children: [
-      { key: docPaths.income, label: 'Приход товара', perm: 'inventory.manage' },
-      { key: docPaths.supplier_return, label: 'Возврат поставщику', perm: 'inventory.manage' },
+      { key: docPaths.income, label: tr('Приход товара', 'Mahsulot kirimi'), perm: 'inventory.manage' },
+      { key: docPaths.supplier_return, label: tr('Возврат поставщику', 'Yetkazib beruvchiga qaytarish'), perm: 'inventory.manage' },
     ],
   },
   {
     key: 'stock',
-    label: 'Склад',
+    label: tr('Склад', 'Ombor'),
     icon: <AppstoreOutlined />,
     children: [
-      { key: '/stock/balance', label: 'Остатки' },
-      { key: docPaths.transfer, label: 'Между складами', perm: 'inventory.manage' },
-      { key: docPaths.inventory, label: 'Инвентаризация', perm: 'inventory.manage' },
-      { key: docPaths.write_off, label: 'Списание', perm: 'inventory.manage' },
-      { key: docPaths.posting, label: 'Оприходование', perm: 'inventory.manage' },
-      { key: '/stock/movements', label: 'История движения' },
+      { key: '/stock/balance', label: tr('Остатки', 'Qoldiqlar') },
+      { key: docPaths.transfer, label: tr('Между складами', 'Omborlar oʻrtasida'), perm: 'inventory.manage' },
+      { key: docPaths.inventory, label: tr('Инвентаризация', 'Inventarizatsiya'), perm: 'inventory.manage' },
+      { key: docPaths.write_off, label: tr('Списание', 'Hisobdan chiqarish'), perm: 'inventory.manage' },
+      { key: docPaths.posting, label: tr('Оприходование', 'Kirim qilish'), perm: 'inventory.manage' },
+      { key: '/stock/movements', label: tr('История движения', 'Harakatlar tarixi') },
     ],
   },
   {
     key: 'finance',
-    label: 'Финансы',
+    label: tr('Финансы', 'Moliya'),
     icon: <DollarOutlined />,
     children: [
-      { key: '/finance/cashboxes', label: 'Кассы', perm: 'finance.manage' },
-      { key: '/finance/operations', label: 'Кассовые операции', perm: 'finance.manage' },
-      { key: '/finance/handovers', label: 'Сдача кассы', perm: 'finance.manage' },
-      { key: '/finance/transfers', label: 'Из кассы в кассу', perm: 'finance.manage' },
-      { key: '/finance/rates', label: 'Курс валюты', perm: 'finance.manage' },
+      { key: '/finance/cashboxes', label: tr('Кассы', 'Kassalar'), perm: 'finance.manage' },
+      { key: '/finance/operations', label: tr('Кассовые операции', 'Kassa operatsiyalari'), perm: 'finance.manage' },
+      { key: '/finance/handovers', label: tr('Сдача кассы', 'Kassani topshirish'), perm: 'finance.manage' },
+      { key: '/finance/transfers', label: tr('Из кассы в кассу', 'Kassadan kassaga'), perm: 'finance.manage' },
+      { key: '/finance/rates', label: tr('Курс валюты', 'Valyuta kursi'), perm: 'finance.manage' },
     ],
   },
   {
     key: 'reports',
-    label: 'Отчёты',
+    label: tr('Отчёты', 'Hisobotlar'),
     icon: <BarChartOutlined />,
     children: [
-      { key: '/reports/cash-flow', label: 'Денежный поток', perm: 'reports.view' },
-      { key: '/reports/profit-loss', label: 'Прибыль и убыток', perm: 'reports.view' },
-      { key: '/reports/abc-xyz', label: 'ABC/XYZ-анализ', perm: 'reports.view' },
+      { key: '/reports/cash-flow', label: tr('Денежный поток', 'Pul oqimi'), perm: 'reports.view' },
+      { key: '/reports/profit-loss', label: tr('Прибыль и убыток', 'Foyda va zarar'), perm: 'reports.view' },
+      { key: '/reports/abc-xyz', label: tr('ABC/XYZ-анализ', 'ABC/XYZ tahlili'), perm: 'reports.view' },
     ],
   },
   {
     key: 'dirs',
-    label: 'Справочники',
+    label: tr('Справочники', 'Maʼlumotnomalar'),
     icon: <BookOutlined />,
     children: [
-      { key: '/dirs/counterparties', label: 'Контрагенты', perm: ['counterparties.manage', 'inventory.manage', 'finance.manage'] },
-      { key: '/dirs/counterparty-types', label: 'Типы контрагентов', perm: 'counterparties.manage' },
-      { key: '/dirs/products', label: 'Товары' },
-      { key: '/dirs/brands', label: 'Бренды' },
-      { key: '/dirs/colors', label: 'Цвета' },
-      { key: '/dirs/categories', label: 'Категории' },
-      { key: '/dirs/units', label: 'Единицы' },
-      { key: '/dirs/price-types', label: 'Типы цен', perm: ['catalog.manage', 'prices.manage'] },
-      { key: '/dirs/warehouses', label: 'Склады', perm: ['stores.manage', 'inventory.manage'] },
-      { key: '/dirs/payment-methods', label: 'Способы оплаты', perm: 'finance.manage' },
-      { key: '/dirs/reasons', label: 'Финансовые причины', perm: 'finance.manage' },
+      { key: '/dirs/counterparties', label: tr('Контрагенты', 'Kontragentlar'), perm: ['counterparties.manage', 'inventory.manage', 'finance.manage'] },
+      { key: '/dirs/counterparty-types', label: tr('Типы контрагентов', 'Kontragent turlari'), perm: 'counterparties.manage' },
+      { key: '/dirs/products', label: tr('Товары', 'Mahsulotlar') },
+      { key: '/dirs/brands', label: tr('Бренды', 'Brendlar') },
+      { key: '/dirs/colors', label: tr('Цвета', 'Ranglar') },
+      { key: '/dirs/categories', label: tr('Категории', 'Kategoriyalar') },
+      { key: '/dirs/units', label: tr('Единицы', 'Oʻlchov birliklari') },
+      { key: '/dirs/price-types', label: tr('Типы цен', 'Narx turlari'), perm: ['catalog.manage', 'prices.manage'] },
+      { key: '/dirs/warehouses', label: tr('Склады', 'Omborlar'), perm: ['stores.manage', 'inventory.manage'] },
+      { key: '/dirs/payment-methods', label: tr('Способы оплаты', 'Toʻlov usullari'), perm: 'finance.manage' },
+      { key: '/dirs/reasons', label: tr('Финансовые причины', 'Moliyaviy sabablar'), perm: 'finance.manage' },
     ],
   },
   {
     key: 'settings',
-    label: 'Настройки',
+    label: tr('Настройки', 'Sozlamalar'),
     icon: <SettingOutlined />,
     children: [
-      { key: '/settings/stores', label: 'Магазины', perm: 'stores.manage' },
-      { key: '/settings/delivery', label: 'Доставка', perm: 'stores.manage' },
-      { key: '/settings/debts', label: 'Долги покупателей', perm: ['debts.manage', 'debts.give'] },
-      { key: '/settings/roles', label: 'Роли', perm: 'staff.manage' },
-      { key: '/settings/employees', label: 'Сотрудники', perm: 'staff.manage' },
+      { key: '/settings/stores', label: tr('Магазины', 'Doʻkonlar'), perm: 'stores.manage' },
+      { key: '/settings/delivery', label: tr('Доставка', 'Yetkazib berish'), perm: 'stores.manage' },
+      { key: '/settings/debts', label: tr('Долги покупателей', 'Xaridorlar qarzlari'), perm: ['debts.manage', 'debts.give'] },
+      { key: '/settings/roles', label: tr('Роли', 'Rollar'), perm: 'staff.manage' },
+      { key: '/settings/employees', label: tr('Сотрудники', 'Xodimlar'), perm: 'staff.manage' },
     ],
   },
-  { key: '/balance', label: 'Баланс и подписка', icon: <WalletOutlined />, perm: 'payouts.manage' },
+  { key: '/balance', label: tr('Баланс и подписка', 'Balans va obuna'), icon: <WalletOutlined />, perm: 'payouts.manage' },
 ]
 
 function filterMenu(items: Item[], can: (p: string) => boolean): MenuItem[] {
@@ -203,7 +203,7 @@ function Guard() {
   const { pathname } = useLocation()
   if (!me) return <Spin style={{ display: 'block', marginTop: 48 }} />
   if (!allowedBy(permFor(pathname.replace(/\/$/, '') || '/'), can)) {
-    return <Result status="403" title="Нет доступа" subTitle="У вашей роли нет права на этот раздел. Обратитесь к владельцу сети." />
+    return <Result status="403" title={tr('Нет доступа', 'Ruxsat yoʻq')} subTitle={tr('У вашей роли нет права на этот раздел. Обратитесь к владельцу сети.', 'Rolingizda bu boʻlimga huquq yoʻq. Tarmoq egasiga murojaat qiling.')} />
   }
   return <Outlet />
 }
@@ -219,7 +219,7 @@ function Header() {
           onChange={setStoreId}
           style={{ minWidth: 160, maxWidth: 280 }}
           options={stores.map((s) => ({ value: s.id, label: s.name }))}
-          aria-label="Магазин"
+          aria-label={tr('Магазин', 'Doʻkon')}
         />
       )}
     </Flex>
@@ -237,7 +237,7 @@ export function StoreRoutes() {
           title={TITLE}
           menu={menu}
           header={<Header />}
-          user={me ? { name: me.network.name, subtitle: me.is_owner ? 'Владелец сети' : 'Сотрудник' } : undefined}
+          user={me ? { name: me.network.name, subtitle: me.is_owner ? tr('Владелец сети', 'Tarmoq egasi') : tr('Сотрудник', 'Xodim') } : undefined}
         />}>
        <Route element={<Guard />}>
         <Route index element={<DashboardPage />} />
@@ -280,10 +280,10 @@ export function StoreRoutes() {
         <Route path="dirs/counterparties" element={<CounterpartiesPage />} />
         <Route path="dirs/counterparty-types" element={<CounterpartyTypesPage />} />
         <Route path="dirs/products" element={<ProductsPage />} />
-        <Route path="dirs/brands" element={<DictPage kind="brands" title="Бренды" />} />
-        <Route path="dirs/colors" element={<DictPage kind="colors" title="Цвета" />} />
-        <Route path="dirs/categories" element={<DictPage kind="categories" title="Категории" />} />
-        <Route path="dirs/units" element={<DictPage kind="units" title="Единицы измерения" />} />
+        <Route path="dirs/brands" element={<DictPage kind="brands" title={tr('Бренды', 'Brendlar')} />} />
+        <Route path="dirs/colors" element={<DictPage kind="colors" title={tr('Цвета', 'Ranglar')} />} />
+        <Route path="dirs/categories" element={<DictPage kind="categories" title={tr('Категории', 'Kategoriyalar')} />} />
+        <Route path="dirs/units" element={<DictPage kind="units" title={tr('Единицы измерения', 'Oʻlchov birliklari')} />} />
         <Route path="dirs/price-types" element={<PriceTypesPage />} />
         <Route path="dirs/warehouses" element={<WarehousesPage />} />
         <Route path="dirs/payment-methods" element={<PaymentMethodsPage />} />

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { App } from 'antd'
 import { api, ApiError, type List } from './api'
+import { tr } from './i18n'
 
 type Params = Record<string, string | number | boolean | undefined | null>
 
@@ -76,7 +77,7 @@ export function errorText(e: unknown): string {
   if (e instanceof ApiError) {
     const d = e.details
     if (e.code === 'insufficient_stock' && d.available !== undefined) {
-      return `${e.message}: доступно ${d.available}, нужно ${d.required}`
+      return tr(`${e.message}: доступно ${d.available}, нужно ${d.required}`, `${e.message}: mavjud ${d.available}, kerak ${d.required}`)
     }
     return e.message
   }

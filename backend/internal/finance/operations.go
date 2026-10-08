@@ -12,6 +12,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
@@ -78,20 +79,20 @@ func (s *Service) CreateCashOperation(ctx context.Context, p *identity.Principal
 		return CashOperation{}, err
 	}
 	if in.Kind != "income" && in.Kind != "expense" {
-		return CashOperation{}, apperr.Validation("kind: ожидается income или expense")
+		return CashOperation{}, apperr.Validation("kind: ожидается income или expense").Uz("kind: income yoki expense boʻlishi kerak")
 	}
 	if !httpx.IsUUID(in.CashboxID) {
-		return CashOperation{}, apperr.Validation("cashbox_id: касса не найдена")
+		return CashOperation{}, apperr.Validation("cashbox_id: касса не найдена").Uz("cashbox_id: kassa topilmadi")
 	}
 	if !in.Amount.Valid() || strings.Trim(string(in.Amount), "0.") == "" {
-		return CashOperation{}, apperr.Validation("amount: сумма должна быть больше нуля")
+		return CashOperation{}, apperr.Validation("amount: сумма должна быть больше нуля").Uz("amount: summa noldan katta boʻlishi kerak")
 	}
 	if in.CounterpartyID == nil && in.ReasonID == nil {
-		return CashOperation{}, apperr.Validation("укажите контрагента или финансовую причину")
+		return CashOperation{}, apperr.Validation("укажите контрагента или финансовую причину").Uz("kontragent yoki moliyaviy sababni tanlang")
 	}
 	for name, id := range map[string]*string{"counterparty_id": in.CounterpartyID, "reason_id": in.ReasonID} {
 		if id != nil && !httpx.IsUUID(*id) {
-			return CashOperation{}, apperr.Validation(name + ": запись не найдена")
+			return CashOperation{}, apperr.Validation(name + ": запись не найдена").Uz(name + ": yozuv topilmadi")
 		}
 	}
 
@@ -102,7 +103,7 @@ func (s *Service) CreateCashOperation(ctx context.Context, p *identity.Principal
 			return err
 		}
 		if !cb.IsActive || !canUseCashbox(p, cb) {
-			return apperr.Validation("cashbox_id: касса не найдена или отключена")
+			return apperr.Validation("cashbox_id: касса не найдена или отключена").Uz("cashbox_id: kassa topilmadi yoki oʻchirilgan")
 		}
 		if in.CounterpartyID != nil {
 			if err := CheckCounterparty(ctx, tx, p.NetworkID, *in.CounterpartyID); err != nil {
@@ -115,7 +116,7 @@ func (s *Service) CreateCashOperation(ctx context.Context, p *identity.Principal
 			err := tx.QueryRow(ctx, `SELECT kind, is_active FROM financial_reasons WHERE id = $1 AND network_id = $2`,
 				*in.ReasonID, p.NetworkID).Scan(&kind, &active)
 			if errors.Is(err, pgx.ErrNoRows) || (err == nil && (!active || kind != in.Kind)) {
-				return apperr.Validation("reason_id: причина не найдена или другого вида")
+				return apperr.Validation("reason_id: причина не найдена или другого вида").Uz("reason_id: sabab topilmadi yoki boshqa turdagi")
 			}
 			if err != nil {
 				return err
@@ -171,7 +172,7 @@ func (s *Service) CreateCashOperation(ctx context.Context, p *identity.Principal
 		return CashOperation{}, err
 	}
 	rows, err := s.pool.Query(ctx, cashOpSelect+` WHERE o.id = $1`, id)
-	return one[CashOperation](rows, err, "операция не найдена")
+	return one[CashOperation](rows, err, i18n.Text{RU: "операция не найдена", UZ: "operatsiya topilmadi"})
 }
 
 func canUseCashbox(p *identity.Principal, cb cashboxRef) bool {
@@ -232,10 +233,10 @@ func (s *Service) CreateTransfer(ctx context.Context, p *identity.Principal, kin
 		return CashTransfer{}, err
 	}
 	if !httpx.IsUUID(in.FromID) || (in.ToID != "" && !httpx.IsUUID(in.ToID)) {
-		return CashTransfer{}, apperr.Validation("касса не найдена")
+		return CashTransfer{}, apperr.Validation("касса не найдена").Uz("kassa topilmadi")
 	}
 	if !in.Amount.Valid() || strings.Trim(string(in.Amount), "0.") == "" {
-		return CashTransfer{}, apperr.Validation("amount: сумма должна быть больше нуля")
+		return CashTransfer{}, apperr.Validation("amount: сумма должна быть больше нуля").Uz("amount: summa noldan katta boʻlishi kerak")
 	}
 
 	var id string
@@ -245,42 +246,42 @@ func (s *Service) CreateTransfer(ctx context.Context, p *identity.Principal, kin
 			return err
 		}
 		if !from.IsActive || !canUseCashbox(p, from) {
-			return apperr.Validation("from_id: касса не найдена или отключена")
+			return apperr.Validation("from_id: касса не найдена или отключена").Uz("from_id: kassa topilmadi yoki oʻchirilgan")
 		}
 		toID := in.ToID
 		if kind == "handover" {
 			if from.IsMain {
-				return apperr.Validation("from_id: сдают кассу магазина, а не главную")
+				return apperr.Validation("from_id: сдают кассу магазина, а не главную").Uz("from_id: asosiy kassani emas, doʻkon kassasini topshirish kerak")
 			}
 			if toID == "" {
 				err := tx.QueryRow(ctx, `SELECT id FROM cashboxes WHERE network_id = $1 AND is_main AND currency = $2`,
 					p.NetworkID, from.Currency).Scan(&toID)
 				if errors.Is(err, pgx.ErrNoRows) {
-					return apperr.Validation("нет главной кассы в валюте " + from.Currency)
+					return apperr.Validation("нет главной кассы в валюте " + from.Currency).Uz(from.Currency + " valyutasida asosiy kassa yoʻq")
 				}
 				if err != nil {
 					return err
 				}
 			}
 		} else if toID == "" {
-			return apperr.Validation("to_id: обязательное поле")
+			return apperr.Validation("to_id: обязательное поле").Uz("to_id: majburiy maydon")
 		}
 		if toID == from.ID {
-			return apperr.Validation("кассы должны быть разными")
+			return apperr.Validation("кассы должны быть разными").Uz("kassalar har xil boʻlishi kerak")
 		}
 		to, err := lockCashbox(ctx, tx, p.NetworkID, toID)
 		if err != nil {
 			return err
 		}
 		if !to.IsActive {
-			return apperr.Validation("to_id: касса отключена")
+			return apperr.Validation("to_id: касса отключена").Uz("to_id: kassa oʻchirilgan")
 		}
 		if kind == "handover" && !to.IsMain {
-			return apperr.Validation("to_id: сдача кассы — только в главную кассу")
+			return apperr.Validation("to_id: сдача кассы — только в главную кассу").Uz("to_id: kassa faqat asosiy kassaga topshiriladi")
 		}
 		// Сдавать в главную может кассир без доступа к ней; в прочие кассы — только с доступом.
 		if kind == "transfer" && !canUseCashbox(p, to) {
-			return apperr.Validation("to_id: касса не найдена")
+			return apperr.Validation("to_id: касса не найдена").Uz("to_id: kassa topilmadi")
 		}
 
 		amountTo := string(in.Amount)
@@ -299,7 +300,7 @@ func (s *Service) CreateTransfer(ctx context.Context, p *identity.Principal, kin
 				return err
 			}
 			if strings.Trim(amountTo, "0.") == "" {
-				return apperr.Validation("amount: слишком маленькая сумма для перевода по курсу")
+				return apperr.Validation("amount: слишком маленькая сумма для перевода по курсу").Uz("amount: kurs boʻyicha oʻtkazish uchun summa juda kichik")
 			}
 		}
 
@@ -323,7 +324,7 @@ func (s *Service) CreateTransfer(ctx context.Context, p *identity.Principal, kin
 		return CashTransfer{}, err
 	}
 	rows, err := s.pool.Query(ctx, transferSelect+` WHERE t.id = $1`, id)
-	return one[CashTransfer](rows, err, "перемещение не найдено")
+	return one[CashTransfer](rows, err, i18n.Text{RU: "перемещение не найдено", UZ: "oʻtkazma topilmadi"})
 }
 
 // ----------------------------------------------------- движение по кассе

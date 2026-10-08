@@ -17,6 +17,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 	"github.com/sanedidi/super-market/backend/internal/push"
 )
@@ -34,11 +35,20 @@ const (
 	StatusExpired         = "expired"
 )
 
-var statusTitles = map[string]string{
-	StatusAwaitingPayment: "Ожидает оплаты", StatusPaid: "Оплачен", StatusAccepted: "Принят",
-	StatusPicking: "Собирается", StatusPicked: "Собран", StatusDelivering: "В пути",
-	StatusDelivered: "Доставлен", StatusCancelled: "Отменён", StatusExpired: "Не оплачен",
+var statusTitles = map[string]i18n.Text{
+	StatusAwaitingPayment: {RU: "Ожидает оплаты", UZ: "Toʻlov kutilmoqda"},
+	StatusPaid:            {RU: "Оплачен", UZ: "Toʻlangan"},
+	StatusAccepted:        {RU: "Принят", UZ: "Qabul qilindi"},
+	StatusPicking:         {RU: "Собирается", UZ: "Yigʻilmoqda"},
+	StatusPicked:          {RU: "Собран", UZ: "Yigʻildi"},
+	StatusDelivering:      {RU: "В пути", UZ: "Yoʻlda"},
+	StatusDelivered:       {RU: "Доставлен", UZ: "Yetkazildi"},
+	StatusCancelled:       {RU: "Отменён", UZ: "Bekor qilindi"},
+	StatusExpired:         {RU: "Не оплачен", UZ: "Toʻlanmagan"},
 }
+
+// cashNewTitle — заголовок нового заказа с оплатой наличными курьеру.
+var cashNewTitle = i18n.Text{RU: "Новый · наличными курьеру", UZ: "Yangi · kuryerga naqd pul"}
 
 type OrderItem struct {
 	Line               int     `json:"line"`
@@ -123,7 +133,7 @@ const orderSelect = `
 	       o.payment_provider,
 	       (SELECT p.status FROM payments p WHERE p.order_id = o.id ORDER BY (p.status IN ('paid', 'refund_pending', 'refunded')) DESC, p.created_at DESC LIMIT 1),
 	       o.paid_at, o.accepted_at, o.delivered_at, o.delivery_from, o.delivery_to,
-	       o.courier_id, COALESCE(ce.full_name, CASE WHEN o.crowd_courier_id IS NOT NULL THEN COALESCE(NULLIF(cc.full_name, ''), 'Курьер по пути') END),
+	       o.courier_id, COALESCE(ce.full_name, CASE WHEN o.crowd_courier_id IS NOT NULL THEN COALESCE(NULLIF(cc.full_name, ''), loc('Курьер по пути', 'Yoʻl-yoʻlakay kuryer')) END),
 	       o.eta_at, o.cancel_reason, o.fiscal_status, o.created_at,
 	       o.crowd_courier_id, cu.phone, o.crowd_pickup_until,
 	       (o.status = 'picked' AND o.courier_id IS NULL AND o.crowd_courier_id IS NULL AND s.crowd_enabled
@@ -141,28 +151,41 @@ func scanOrder(row pgx.CollectableRow) (Order, error) {
 		&o.PaidAt, &o.AcceptedAt, &o.DeliveredAt, &o.DeliveryFrom, &o.DeliveryTo,
 		&o.CourierID, &o.CourierName, &o.EtaAt, &o.CancelReason, &o.FiscalStatus, &o.CreatedAt,
 		&o.CrowdCourierID, &o.CrowdCourierPhone, &o.CrowdPickupUntil, &o.CrowdOpen)
-	o.StatusTitle = statusTitles[o.Status]
+	o.StatusTitle = statusTitles[o.Status].RU
 	o.DeliveryMode = "staff"
 	if o.CrowdCourierID != nil {
 		o.DeliveryMode = "crowd"
 	}
 	if o.Status == StatusPaid && o.PaymentProvider == CashOnDelivery {
-		o.StatusTitle = "Новый · наличными курьеру"
+		o.StatusTitle = cashNewTitle.RU
 	}
 	return o, err
 }
 
+// scanOrderCtx — scanOrder с названием статуса на языке запроса.
+func scanOrderCtx(ctx context.Context) pgx.RowToFunc[Order] {
+	lang := i18n.FromContext(ctx)
+	return func(row pgx.CollectableRow) (Order, error) {
+		o, err := scanOrder(row)
+		o.StatusTitle = statusTitles[o.Status].In(lang)
+		if o.Status == StatusPaid && o.PaymentProvider == CashOnDelivery {
+			o.StatusTitle = cashNewTitle.In(lang)
+		}
+		return o, err
+	}
+}
+
 func (s *Service) getOrder(ctx context.Context, q db.Querier, id string) (Order, error) {
 	if !httpx.IsUUID(id) {
-		return Order{}, apperr.NotFound("заказ не найден")
+		return Order{}, apperr.NotFound("заказ не найден").Uz("buyurtma topilmadi")
 	}
 	rows, err := q.Query(ctx, orderSelect+` WHERE o.id = $1`, id)
 	if err != nil {
 		return Order{}, err
 	}
-	o, err := pgx.CollectExactlyOneRow(rows, scanOrder)
+	o, err := pgx.CollectExactlyOneRow(rows, scanOrderCtx(ctx))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Order{}, apperr.NotFound("заказ не найден")
+		return Order{}, apperr.NotFound("заказ не найден").Uz("buyurtma topilmadi")
 	}
 	if err != nil {
 		return Order{}, err
@@ -172,7 +195,7 @@ func (s *Service) getOrder(ctx context.Context, q db.Querier, id string) (Order,
 		o.PaymentDeadline = &d
 	}
 	rows, err = q.Query(ctx, `
-		SELECT i.line, i.product_id, p.name, u.short_name, i.qty::text, i.price::text, i.total::text,
+		SELECT i.line, i.product_id, loc(p.name, p.name_uz), loc(u.short_name, u.short_name_uz), i.qty::text, i.price::text, i.total::text,
 		       i.picked_warehouse_id, i.from_other_warehouse,
 		       CASE WHEN i.regular_price > i.price THEN i.regular_price::text END
 		FROM order_items i JOIN products p ON p.id = i.product_id JOIN units u ON u.id = p.unit_id
@@ -185,11 +208,11 @@ func (s *Service) getOrder(ctx context.Context, q db.Querier, id string) (Order,
 	}
 	rows, err = q.Query(ctx, `
 		SELECT h.status,
-		       CASE WHEN h.actor = 'client' THEN 'Покупатель'
-		            WHEN h.actor = 'payment' THEN 'Оплата'
-		            WHEN h.actor = 'system' THEN 'Система'
-		            WHEN h.actor = 'admin' THEN 'Супер-админ'
-		            WHEN h.actor LIKE 'store:%' THEN COALESCE(e.full_name, 'Магазин')
+		       CASE WHEN h.actor = 'client' THEN loc('Покупатель', 'Xaridor')
+		            WHEN h.actor = 'payment' THEN loc('Оплата', 'Toʻlov')
+		            WHEN h.actor = 'system' THEN loc('Система', 'Tizim')
+		            WHEN h.actor = 'admin' THEN loc('Супер-админ', 'Super-admin')
+		            WHEN h.actor LIKE 'store:%' THEN COALESCE(e.full_name, loc('Магазин', 'Doʻkon'))
 		            ELSE h.actor END,
 		       h.note, h.created_at
 		FROM order_status_history h
@@ -247,7 +270,7 @@ func (s *Service) ClientListOrders(ctx context.Context, p *identity.Principal, p
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, scanOrder)
+	return pgx.CollectRows(rows, scanOrderCtx(ctx))
 }
 
 func (s *Service) ClientGetOrder(ctx context.Context, p *identity.Principal, id string) (Order, error) {
@@ -258,7 +281,7 @@ func (s *Service) ClientGetOrder(ctx context.Context, p *identity.Principal, id 
 	var owner string
 	var handoff *string
 	if err := s.pool.QueryRow(ctx, `SELECT customer_id, handoff_code FROM orders WHERE id = $1`, id).Scan(&owner, &handoff); err != nil || owner != p.UserID {
-		return Order{}, apperr.NotFound("заказ не найден")
+		return Order{}, apperr.NotFound("заказ не найден").Uz("buyurtma topilmadi")
 	}
 	if o.CrowdCourierID != nil && (o.Status == StatusPicked || o.Status == StatusDelivering) {
 		o.HandoffCode = handoff
@@ -277,11 +300,11 @@ func (s *Service) ClientCancel(ctx context.Context, p *identity.Principal, id st
 // --------------------------------------------------------------- магазин
 
 func (s *Service) StoreList(ctx context.Context, p *identity.Principal, f ListFilter) ([]Order, error) {
-	if f.Status != "" && statusTitles[f.Status] == "" {
-		return nil, apperr.Validation("status: неизвестный статус")
+	if f.Status != "" && statusTitles[f.Status].RU == "" {
+		return nil, apperr.Validation("status: неизвестный статус").Uz("status: nomaʼlum holat")
 	}
 	if f.Sort != "" && f.Sort != "delivery" {
-		return nil, apperr.Validation("sort: пусто или delivery")
+		return nil, apperr.Validation("sort: пусто или delivery").Uz("sort: boʻsh yoki delivery")
 	}
 	number, phone := searchTerms(f.Query)
 	rows, err := s.pool.Query(ctx, orderSelect+`
@@ -298,7 +321,7 @@ func (s *Service) StoreList(ctx context.Context, p *identity.Principal, f ListFi
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, scanOrder)
+	return pgx.CollectRows(rows, scanOrderCtx(ctx))
 }
 
 func (s *Service) StoreGet(ctx context.Context, p *identity.Principal, id string) (Order, error) {
@@ -307,7 +330,7 @@ func (s *Service) StoreGet(ctx context.Context, p *identity.Principal, id string
 		return Order{}, err
 	}
 	if o.NetworkID != p.NetworkID || !p.CanAccessStore(o.StoreID) || o.Status == StatusAwaitingPayment || o.Status == StatusExpired {
-		return Order{}, apperr.NotFound("заказ не найден")
+		return Order{}, apperr.NotFound("заказ не найден").Uz("buyurtma topilmadi")
 	}
 	return o, nil
 }
@@ -318,7 +341,7 @@ func lockOrder(ctx context.Context, tx pgx.Tx, id string, allowed ...string) (Or
 	err := tx.QueryRow(ctx, `SELECT id, network_id, store_id, warehouse_id, status, total::text FROM orders WHERE id = $1 FOR UPDATE`, id).
 		Scan(&o.ID, &o.NetworkID, &o.StoreID, &o.WarehouseID, &o.Status, &o.Total)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return o, apperr.NotFound("заказ не найден")
+		return o, apperr.NotFound("заказ не найден").Uz("buyurtma topilmadi")
 	}
 	if err != nil {
 		return o, err
@@ -328,7 +351,8 @@ func lockOrder(ctx context.Context, tx pgx.Tx, id string, allowed ...string) (Or
 			return o, nil
 		}
 	}
-	return o, apperr.Conflict("wrong_status", "действие недоступно в статусе «"+statusTitles[o.Status]+"»").
+	return o, apperr.Conflict("wrong_status", "действие недоступно в статусе «"+statusTitles[o.Status].RU+"»").
+		Uz("«" + statusTitles[o.Status].In(i18n.UZ) + "» holatida bu amal mavjud emas").
 		WithDetails(map[string]any{"status": o.Status})
 }
 
@@ -424,7 +448,7 @@ func (s *Service) Picked(ctx context.Context, p *identity.Principal, id string, 
 	override := map[int]string{}
 	for _, l := range lines {
 		if !httpx.IsUUID(l.WarehouseID) {
-			return Order{}, apperr.Validation("items: неверный warehouse_id в строке " + strconv.Itoa(l.Line))
+			return Order{}, apperr.Validation("items: неверный warehouse_id в строке " + strconv.Itoa(l.Line)).Uz("items: " + strconv.Itoa(l.Line) + "-qatorda warehouse_id notoʻgʻri")
 		}
 		override[l.Line] = l.WarehouseID
 	}
@@ -461,7 +485,7 @@ func (s *Service) Picked(ctx context.Context, p *identity.Principal, id string, 
 				err := tx.QueryRow(ctx, `SELECT store_id FROM warehouses WHERE id = $1 AND network_id = $2 AND is_active`,
 					w, o.NetworkID).Scan(&storeID)
 				if errors.Is(err, pgx.ErrNoRows) || (err == nil && !p.CanAccessStore(storeID)) {
-					return apperr.Validation("items: склад не найден в строке " + strconv.Itoa(it.line))
+					return apperr.Validation("items: склад не найден в строке " + strconv.Itoa(it.line)).Uz("items: " + strconv.Itoa(it.line) + "-qatorda ombor topilmadi")
 				}
 				if err != nil {
 					return err
@@ -472,7 +496,7 @@ func (s *Service) Picked(ctx context.Context, p *identity.Principal, id string, 
 			taken, err := inventory.TakeFIFO(ctx, tx, o.NetworkID, wh, it.product, it.qty, inventory.DocOrder, id)
 			var ae *apperr.Error
 			if errors.As(err, &ae) && ae.Code == "insufficient_stock" {
-				return apperr.New(409, "insufficient_stock", "недостаточно товара на складе — выберите другой склад для строки").
+				return apperr.New(409, "insufficient_stock", "недостаточно товара на складе — выберите другой склад для строки").Uz("omborda mahsulot yetarli emas — qator uchun boshqa omborni tanlang").
 					WithDetails(map[string]any{"line": it.line, "product_id": it.product, "warehouse_id": wh, "required": it.qty})
 			}
 			if err != nil {
@@ -510,7 +534,7 @@ func (s *Service) StoreCancel(ctx context.Context, p *identity.Principal, id, re
 		return Order{}, err
 	}
 	if strings.TrimSpace(reason) == "" {
-		return Order{}, apperr.Validation("reason: укажите причину отмены")
+		return Order{}, apperr.Validation("reason: укажите причину отмены").Uz("reason: bekor qilish sababini kiriting")
 	}
 	if _, err := s.StoreGet(ctx, p, id); err != nil {
 		return Order{}, err
@@ -525,7 +549,7 @@ func (s *Service) StoreCancel(ctx context.Context, p *identity.Principal, id, re
 // AdminCancel — супер-админ отменяет зависший заказ.
 func (s *Service) AdminCancel(ctx context.Context, id, reason string) (Order, error) {
 	if strings.TrimSpace(reason) == "" {
-		return Order{}, apperr.Validation("reason: укажите причину отмены")
+		return Order{}, apperr.Validation("reason: укажите причину отмены").Uz("reason: bekor qilish sababini kiriting")
 	}
 	return s.cancel(ctx, id, "admin", strings.TrimSpace(reason), []string{StatusAwaitingPayment, StatusPaid, StatusAccepted, StatusPicking})
 }
@@ -576,17 +600,17 @@ func (s *Service) RegisterFiscal(ctx context.Context, p *identity.Principal, id,
 	}
 	number, sign = strings.TrimSpace(number), strings.TrimSpace(sign)
 	if number == "" || sign == "" {
-		return apperr.Validation("укажите fiscal_number и fiscal_sign из чека")
+		return apperr.Validation("укажите fiscal_number и fiscal_sign из чека").Uz("chekdagi fiscal_number va fiscal_sign ni kiriting")
 	}
 	o, err := s.StoreGet(ctx, p, id)
 	if err != nil {
 		return err
 	}
 	if o.FiscalStatus == "registered" {
-		return apperr.Conflict("already_registered", "чек уже зарегистрирован")
+		return apperr.Conflict("already_registered", "чек уже зарегистрирован").Uz("chek allaqachon roʻyxatdan oʻtgan")
 	}
 	if o.Status != StatusPicked && o.Status != StatusDelivering && o.Status != StatusDelivered {
-		return apperr.Conflict("wrong_status", "чек пробивается после сборки заказа")
+		return apperr.Conflict("wrong_status", "чек пробивается после сборки заказа").Uz("chek buyurtma yigʻilgandan keyin chiqariladi")
 	}
 	_, err = s.pool.Exec(ctx, `UPDATE orders SET fiscal_status = 'registered', fiscal_number = $2, fiscal_sign = $3, fiscal_at = now()
 		WHERE id = $1`, id, number, sign)
@@ -617,16 +641,16 @@ func StaleSQL(param string) string {
 }
 
 func (s *Service) AdminList(ctx context.Context, f AdminFilter) ([]Order, error) {
-	if f.Status != "" && statusTitles[f.Status] == "" {
-		return nil, apperr.Validation("status: неизвестный статус")
+	if f.Status != "" && statusTitles[f.Status].RU == "" {
+		return nil, apperr.Validation("status: неизвестный статус").Uz("status: nomaʼlum holat")
 	}
 	for name, id := range map[string]string{"network_id": f.NetworkID, "store_id": f.StoreID} {
 		if id != "" && !httpx.IsUUID(id) {
-			return nil, apperr.Validation(name + ": неверный id")
+			return nil, apperr.Validation(name + ": неверный id").Uz(name + ": id notoʻgʻri")
 		}
 	}
 	if f.Provider != "" && f.Provider != "payme" && f.Provider != "click" && f.Provider != CashOnDelivery {
-		return nil, apperr.Validation("payment_provider: payme, click или cash")
+		return nil, apperr.Validation("payment_provider: payme, click или cash").Uz("payment_provider: payme, click yoki cash")
 	}
 	// Номер заказа — только цифры; телефон ищем по цифрам от трёх.
 	q := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(f.Query), "№"))
@@ -645,7 +669,7 @@ func (s *Service) AdminList(ctx context.Context, f AdminFilter) ([]Order, error)
 		phone = digits
 	}
 	if q != "" && number == nil && phone == "" {
-		return nil, apperr.Validation("q: номер заказа или телефон покупателя")
+		return nil, apperr.Validation("q: номер заказа или телефон покупателя").Uz("q: buyurtma raqami yoki xaridor telefoni")
 	}
 	rows, err := s.pool.Query(ctx, orderSelect+`
 		WHERE ($1 = '' OR o.status = $1)
@@ -661,7 +685,7 @@ func (s *Service) AdminList(ctx context.Context, f AdminFilter) ([]Order, error)
 	if err != nil {
 		return nil, err
 	}
-	list, err := pgx.CollectRows(rows, scanOrder)
+	list, err := pgx.CollectRows(rows, scanOrderCtx(ctx))
 	for i := range list {
 		s.markOverdue(&list[i])
 	}
@@ -693,10 +717,10 @@ func (s *Service) PayableAmount(ctx context.Context, q db.Querier, orderID strin
 	var status, total string
 	err := q.QueryRow(ctx, `SELECT status, total::text FROM orders WHERE id = $1`, orderID).Scan(&status, &total)
 	if err != nil {
-		return "", apperr.NotFound("заказ не найден")
+		return "", apperr.NotFound("заказ не найден").Uz("buyurtma topilmadi")
 	}
 	if status != StatusAwaitingPayment {
-		return "", apperr.Conflict("not_awaiting_payment", "заказ не ждёт оплаты")
+		return "", apperr.Conflict("not_awaiting_payment", "заказ не ждёт оплаты").Uz("buyurtma toʻlovni kutmayapti")
 	}
 	return total, nil
 }
@@ -731,14 +755,23 @@ func (s *Service) notifyNewOrder(orderID, storeID, total string, cash bool) {
 		var number int64
 		var from, to *time.Time
 		_ = s.pool.QueryRow(ctx, `SELECT number, delivery_from, delivery_to FROM orders WHERE id = $1`, orderID).Scan(&number, &from, &to)
-		text := fmt.Sprintf("Новый заказ №%d на %s сум. Примите его в течение %d минут.", number, total, int(s.cfg.AcceptTimeout.Minutes()))
+		mins := int(s.cfg.AcceptTimeout.Minutes())
+		text := i18n.Text{
+			RU: fmt.Sprintf("Новый заказ №%d на %s сум. Примите его в течение %d минут.", number, total, mins),
+			UZ: fmt.Sprintf("Yangi buyurtma №%d, %s soʻm. Uni %d daqiqa ichida qabul qiling.", number, total, mins),
+		}
 		if from != nil && to != nil {
 			f, t := from.In(delivery.Tashkent), to.In(delivery.Tashkent)
-			text = fmt.Sprintf("Новый заказ №%d на %s сум ко времени: %s, %s–%s. Примите его не позже чем за час до начала.",
-				number, total, f.Format("02.01"), f.Format("15:04"), t.Format("15:04"))
+			text = i18n.Text{
+				RU: fmt.Sprintf("Новый заказ №%d на %s сум ко времени: %s, %s–%s. Примите его не позже чем за час до начала.",
+					number, total, f.Format("02.01"), f.Format("15:04"), t.Format("15:04")),
+				UZ: fmt.Sprintf("Yangi buyurtma №%d, %s soʻm, belgilangan vaqtga: %s, %s–%s. Uni boshlanishidan kamida bir soat oldin qabul qiling.",
+					number, total, f.Format("02.01"), f.Format("15:04"), t.Format("15:04")),
+			}
 		}
 		if cash {
-			text += " Оплата наличными курьеру."
+			text.RU += " Оплата наличными курьеру."
+			text.UZ += " Toʻlov kuryerga naqd pulda."
 		}
 		s.notify.StoreStaff(ctx, storeID, identity.PermOrdersManage, text)
 	}()
@@ -828,7 +861,8 @@ func (s *Service) AlertUnaccepted(ctx context.Context) error {
 			x.number, mins, x.network, x.store, x.phone, x.total, x.id)
 		s.notify.SuperAdmins(ctx, text)
 		if err := push.EnqueueStaff(ctx, s.pool, x.storeID, identity.PermOrdersManage, "store_order_late",
-			fmt.Sprintf("Заказ №%d ждёт %d мин", x.number, mins), "Покупатель ждёт — примите или отмените заказ",
+			i18n.Text{RU: fmt.Sprintf("Заказ №%d ждёт %d мин", x.number, mins), UZ: fmt.Sprintf("№%d buyurtma %d daqiqadan beri kutmoqda", x.number, mins)},
+			i18n.Text{RU: "Покупатель ждёт — примите или отмените заказ", UZ: "Xaridor kutmoqda — buyurtmani qabul qiling yoki bekor qiling"},
 			map[string]string{"type": "order", "order_id": x.id}); err != nil {
 			s.log.Warn("push сотрудникам", "err", err)
 		}

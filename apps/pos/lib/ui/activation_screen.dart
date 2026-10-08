@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart' show LangSwitch, tr;
 
 import '../core/codes.dart';
 import '../data/api.dart';
@@ -30,7 +31,7 @@ class _ActivationScreenState extends State<ActivationScreen> {
   Future<void> _submit() async {
     final code = fixLayout(_ctrl.text).toUpperCase().replaceAll(RegExp('[^0-9A-Z]'), '');
     if (code.length != 8) {
-      setState(() => _error = 'Код — 8 символов, как в панели магазина');
+      setState(() => _error = tr('Код — 8 символов, как в панели магазина', 'Kod — 8 ta belgi, doʻkon panelidagidek'));
       return;
     }
     setState(() {
@@ -49,55 +50,59 @@ class _ActivationScreenState extends State<ActivationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const _Steps(),
-          const SizedBox(height: 24),
-          Container(
-            width: 576,
-            padding: const EdgeInsets.all(40),
-            decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(24)),
-            child: Column(children: [
-              const Logo(size: 72),
-              const SizedBox(height: 20),
-              Text('Подключите кассу', style: t(28, w: FontWeight.w700)),
-              const SizedBox(height: 16),
-              Text(
-                'Владелец создаёт кассу в панели магазина → «Кассы» и видит код. Он действует сутки.',
-                textAlign: TextAlign.center,
-                style: t(14, c: C.ts),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: 360,
-                child: TextField(
-                  controller: _ctrl,
-                  autofocus: true,
-                  enabled: !_busy,
+      body: Stack(children: [
+        Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const _Steps(),
+            const SizedBox(height: 24),
+            Container(
+              width: 576,
+              padding: const EdgeInsets.all(40),
+              decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(24)),
+              child: Column(children: [
+                const Logo(size: 72),
+                const SizedBox(height: 20),
+                Text(tr('Подключите кассу', 'Kassani ulang'), style: t(28, w: FontWeight.w700)),
+                const SizedBox(height: 16),
+                Text(
+                  tr('Владелец создаёт кассу в панели магазина → «Кассы» и видит код. Он действует сутки.',
+                      'Egasi doʻkon panelida → «Kassalar» boʻlimida kassa yaratadi va kodni koʻradi. Kod bir sutka amal qiladi.'),
                   textAlign: TextAlign.center,
-                  textCapitalization: TextCapitalization.characters,
-                  inputFormatters: [_CodeFormatter()],
-                  style: t(32, w: FontWeight.w700).copyWith(letterSpacing: 6),
-                  decoration: const InputDecoration(hintText: 'XXXX-XXXX', contentPadding: EdgeInsets.symmetric(vertical: 16)),
-                  onSubmitted: (_) => _submit(),
+                  style: t(14, c: C.ts),
                 ),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(_error!, style: t(14, c: C.error)),
-              ],
-              const SizedBox(height: 20),
-              FilledButton(
-                onPressed: _busy ? null : _submit,
-                style: FilledButton.styleFrom(backgroundColor: C.brand, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18)),
-                child: Text(_busy ? 'Подключаем…' : 'Подключить · Enter', style: t(15, w: FontWeight.w700, c: Colors.white)),
-              ),
-              const SizedBox(height: 24),
-              Text('Нет интернета? Подключение нужно один раз — дальше касса работает и без него.', style: t(12, c: C.ts)),
-            ]),
-          ),
-        ]),
-      ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: 360,
+                  child: TextField(
+                    controller: _ctrl,
+                    autofocus: true,
+                    enabled: !_busy,
+                    textAlign: TextAlign.center,
+                    textCapitalization: TextCapitalization.characters,
+                    inputFormatters: [_CodeFormatter()],
+                    style: t(32, w: FontWeight.w700).copyWith(letterSpacing: 6),
+                    decoration: const InputDecoration(hintText: 'XXXX-XXXX', contentPadding: EdgeInsets.symmetric(vertical: 16)),
+                    onSubmitted: (_) => _submit(),
+                  ),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(_error!, style: t(14, c: C.error)),
+                ],
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: _busy ? null : _submit,
+                  style: FilledButton.styleFrom(backgroundColor: C.brand, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18)),
+                  child: Text(_busy ? tr('Подключаем…', 'Ulanmoqda…') : tr('Подключить · Enter', 'Ulash · Enter'), style: t(15, w: FontWeight.w700, c: Colors.white)),
+                ),
+                const SizedBox(height: 24),
+                Text(tr('Нет интернета? Подключение нужно один раз — дальше касса работает и без него.', 'Internet yoʻqmi? Ulanish bir marta kerak — keyin kassa usiz ham ishlaydi.'), style: t(12, c: C.ts)),
+              ]),
+            ),
+          ]),
+        ),
+        const Positioned(top: 24, right: 24, child: LangSwitch()),
+      ]),
     );
   }
 }
@@ -118,11 +123,11 @@ class _Steps extends StatelessWidget {
         ]);
     final dash = Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Text('—', style: t(14, c: C.td)));
     return Row(mainAxisSize: MainAxisSize.min, children: [
-      step(1, 'Код кассы', true),
+      step(1, tr('Код кассы', 'Kassa kodi'), true),
       dash,
-      step(2, 'Вход кассира', false),
+      step(2, tr('Вход кассира', 'Kassir kirishi'), false),
       dash,
-      step(3, 'Открытие смены', false),
+      step(3, tr('Открытие смены', 'Smenani ochish'), false),
     ]);
   }
 }
@@ -154,18 +159,22 @@ class RevokedScreen extends StatelessWidget {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             const Logo(size: 72),
             const SizedBox(height: 20),
-            Text('Касса отключена', style: t(28, w: FontWeight.w700)),
+            Text(tr('Касса отключена', 'Kassa oʻchirilgan'), style: t(28, w: FontWeight.w700)),
             const SizedBox(height: 12),
             Text(
-              'Эту кассу отключили в панели магазина или подключили на другом компьютере. '
-              'Создайте кассу в панели: «Касса → Кассы и ПИНы → Новая касса», и введите новый код.',
+              tr(
+                  'Эту кассу отключили в панели магазина или подключили на другом компьютере. '
+                      'Создайте кассу в панели: «Касса → Кассы и ПИНы → Новая касса», и введите новый код.',
+                  'Bu kassa doʻkon panelida oʻchirilgan yoki boshqa kompyuterda ulangan. '
+                      'Panelda kassa yarating: «Kassa → Kassalar va PIN-kodlar → Yangi kassa» va yangi kodni kiriting.'),
               textAlign: TextAlign.center,
               style: t(14, c: C.ts),
             ),
             if (pos.queue > 0 || pos.shift != null) ...[
               const SizedBox(height: 12),
               Text(
-                'Неотправленные чеки (${pos.queue}) и смена сохранены на кассе — после подключения они уйдут на сервер.',
+                tr('Неотправленные чеки (${pos.queue}) и смена сохранены на кассе — после подключения они уйдут на сервер.',
+                    'Yuborilmagan cheklar (${pos.queue}) va smena kassada saqlangan — ulangandan keyin serverga yuboriladi.'),
                 textAlign: TextAlign.center,
                 style: t(13, c: C.warning),
               ),
@@ -174,7 +183,7 @@ class RevokedScreen extends StatelessWidget {
             FilledButton(
               onPressed: pos.reconnect,
               style: FilledButton.styleFrom(backgroundColor: C.brand, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18)),
-              child: Text('Ввести новый код', style: t(15, w: FontWeight.w700, c: Colors.white)),
+              child: Text(tr('Ввести новый код', 'Yangi kodni kiritish'), style: t(15, w: FontWeight.w700, c: Colors.white)),
             ),
           ]),
         ),

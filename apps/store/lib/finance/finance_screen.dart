@@ -83,11 +83,12 @@ class _FinanceScreenState extends State<FinanceScreen> {
     final rep = st.can('reports.view');
     final pay = st.can('payouts.manage');
     if (!fin && !rep && !pay) {
-      return const SafeArea(
+      return SafeArea(
         child: EmptyState(
           icon: Icons.lock_outline_rounded,
-          title: 'Нет доступа к финансам',
-          text: 'Нужно право «Финансы», «Отчёты» или «Вывод денег с платформы».',
+          title: tr('Нет доступа к финансам', 'Moliyaga ruxsat yoʻq'),
+          text: tr('Нужно право «Финансы», «Отчёты» или «Вывод денег с платформы».',
+              '«Moliya», «Hisobotlar» yoki «Platformadan pul yechib olish» huquqi kerak.'),
         ),
       );
     }
@@ -95,10 +96,10 @@ class _FinanceScreenState extends State<FinanceScreen> {
       child: RefreshIndicator(
         onRefresh: _load,
         child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
-          const Text('Финансы', style: AppText.h1),
+          Text(tr('Финансы', 'Moliya'), style: AppText.h1),
           const SizedBox(height: 16),
           if (_error != null) ...[
-            SectionCard(color: AppColors.errorSoft, children: [Text('Не удалось загрузить: $_error', style: AppText.small)]),
+            SectionCard(color: AppColors.errorSoft, children: [Text(tr('Не удалось загрузить: $_error', 'Yuklab boʻlmadi: $_error'), style: AppText.small)]),
             const SizedBox(height: 16),
           ],
           if (fin) ..._cashSection(),
@@ -114,12 +115,12 @@ class _FinanceScreenState extends State<FinanceScreen> {
   List<Widget> _cashSection() {
     final boxes = _cashboxes;
     return [
-      const Text('Кассы', style: AppText.h3),
+      Text(tr('Кассы', 'Kassalar'), style: AppText.h3),
       const SizedBox(height: 10),
       if (boxes == null)
         const _Loading()
       else if (boxes.isEmpty)
-        const AppCard(child: Text('У магазина нет активной кассы', style: AppText.small))
+        AppCard(child: Text(tr('У магазина нет активной кассы', 'Doʻkonda faol kassa yoʻq'), style: AppText.small))
       else
         for (final c in boxes) ...[
           AppCard(
@@ -130,14 +131,14 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text('${c['name']}', style: AppText.bodyStrong),
-                    Text(c['currency'] == 'USD' ? 'Касса в долларах' : 'Остаток в кассе', style: AppText.small),
+                    Text(c['currency'] == 'USD' ? tr('Касса в долларах', 'Dollardagi kassa') : tr('Остаток в кассе', 'Kassadagi qoldiq'), style: AppText.small),
                   ]),
                 ),
                 Text(c['currency'] == 'USD' ? '\$${money(c['balance'], suffix: false)}' : money(c['balance']), style: AppText.title),
               ]),
               const SizedBox(height: 12),
               SmallButton(
-                label: 'Сдать кассу',
+                label: tr('Сдать кассу', 'Kassani topshirish'),
                 icon: Icons.outbox_rounded,
                 primary: n(c['balance']) > 0,
                 onPressed: n(c['balance']) > 0 ? () => _handover(c) : null,
@@ -150,7 +151,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
         AppCard(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('ПОСЛЕДНИЕ СДАЧИ', style: AppText.caption),
+            Text(tr('ПОСЛЕДНИЕ СДАЧИ', 'SOʻNGGI TOPSHIRISHLAR'), style: AppText.caption),
             const SizedBox(height: 4),
             for (final h in _handovers!)
               Padding(
@@ -179,11 +180,11 @@ class _FinanceScreenState extends State<FinanceScreen> {
     final pl = _pl;
     return [
       Row(children: [
-        const Expanded(child: Text('Прибыль и убыток', style: AppText.h3)),
+        Expanded(child: Text(tr('Прибыль и убыток', 'Foyda va zarar'), style: AppText.h3)),
         if (pl != null)
           TextButton(
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProfitScreen(initial: _period))),
-            child: const Text('Подробно'),
+            child: Text(tr('Подробно', 'Batafsil')),
           ),
       ]),
       const SizedBox(height: 6),
@@ -205,19 +206,22 @@ class _FinanceScreenState extends State<FinanceScreen> {
         AppCard(
           onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProfitScreen(initial: _period))),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Чистая прибыль', style: AppText.small),
+            Text(tr('Чистая прибыль', 'Sof foyda'), style: AppText.small),
             Text(
               money(pl['net_profit']),
               style: AppText.h1.copyWith(fontSize: 30, color: n(pl['net_profit']) < 0 ? AppColors.error : AppColors.ink),
             ),
             const SizedBox(height: 12),
             Row(children: [
-              Expanded(child: _Kpi('Выручка', money((pl['revenue'] as Map?)?['total']))),
+              Expanded(child: _Kpi(tr('Выручка', 'Tushum'), money((pl['revenue'] as Map?)?['total']))),
               const SizedBox(width: 8),
-              Expanded(child: _Kpi('Валовая прибыль', money(pl['gross_profit']))),
+              Expanded(child: _Kpi(tr('Валовая прибыль', 'Yalpi foyda'), money(pl['gross_profit']))),
             ]),
             const SizedBox(height: 8),
-            Text('Продаж: ${pl['sales_count'] ?? 0} · онлайн-заказов: ${pl['orders_count'] ?? 0}', style: AppText.small),
+            Text(
+                tr('Продаж: ${pl['sales_count'] ?? 0} · онлайн-заказов: ${pl['orders_count'] ?? 0}',
+                    'Sotuvlar: ${pl['sales_count'] ?? 0} · onlayn buyurtmalar: ${pl['orders_count'] ?? 0}'),
+                style: AppText.small),
           ]),
         ),
       const SizedBox(height: 24),
@@ -230,7 +234,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
     final b = _balance;
     final bill = _billing;
     return [
-      const Text('Баланс и подписка', style: AppText.h3),
+      Text(tr('Баланс и подписка', 'Balans va obuna'), style: AppText.h3),
       const SizedBox(height: 10),
       if (b == null || bill == null)
         const _Loading()
@@ -246,21 +250,22 @@ class _FinanceScreenState extends State<FinanceScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('К выводу', style: AppText.small),
+                  Text(tr('К выводу', 'Yechish mumkin'), style: AppText.small),
                   Text(money(b['available']), style: AppText.title),
                 ]),
               ),
               const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
             ]),
             const SizedBox(height: 8),
-            Text('Ждёт доставки: ${money(b['pending'])}', style: AppText.small),
+            Text(tr('Ждёт доставки: ${money(b['pending'])}', 'Yetkazilishini kutmoqda: ${money(b['pending'])}'), style: AppText.small),
             const Divider(height: 24),
             Row(children: [
               Expanded(
                 child: Text(
                   subscriptionReadOnly
-                      ? 'Подписка · магазинов ${bill['stores_count'] ?? 0}'
-                      : 'Подписка: \$${money(bill['monthly_usd'], suffix: false)} в месяц · магазинов ${bill['stores_count'] ?? 0}',
+                      ? tr('Подписка · магазинов ${bill['stores_count'] ?? 0}', 'Obuna · doʻkonlar: ${bill['stores_count'] ?? 0}')
+                      : tr('Подписка: \$${money(bill['monthly_usd'], suffix: false)} в месяц · магазинов ${bill['stores_count'] ?? 0}',
+                          'Obuna: oyiga \$${money(bill['monthly_usd'], suffix: false)} · doʻkonlar: ${bill['stores_count'] ?? 0}'),
                   style: AppText.body,
                 ),
               ),

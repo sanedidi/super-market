@@ -4,6 +4,7 @@
 // адресу и определение адреса по точке не работают.
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Spin } from 'antd'
+import { getLang, tr } from './i18n'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 declare global {
@@ -26,12 +27,12 @@ export function loadYmaps(): Promise<any> {
   if (!loading) {
     loading = new Promise((resolve, reject) => {
       const s = document.createElement('script')
-      s.src = `https://api-maps.yandex.ru/2.1/?lang=ru_RU${KEY ? `&apikey=${encodeURIComponent(KEY)}` : ''}`
+      s.src = `https://api-maps.yandex.ru/2.1/?lang=${getLang() === 'uz' ? 'uz_UZ' : 'ru_RU'}${KEY ? `&apikey=${encodeURIComponent(KEY)}` : ''}`
       s.async = true
       s.onload = () => window.ymaps.ready(() => resolve(window.ymaps))
       s.onerror = () => {
         loading = null
-        reject(new Error('Не удалось загрузить Яндекс Карты'))
+        reject(new Error(tr('Не удалось загрузить Яндекс Карты', 'Yandex Xaritalarni yuklab boʻlmadi')))
       }
       document.head.appendChild(s)
     })
@@ -119,12 +120,12 @@ export function MapPointPicker({ value, onChange, onAddress, onCity, height = 28
     }
     m.events.add('click', (e: any) => set(e.get('coords')))
     const search = m.controls.get('searchControl')
-    search?.options.set({ noPlacemark: true, placeholderContent: 'Поиск адреса' })
+    search?.options.set({ noPlacemark: true, placeholderContent: tr('Поиск адреса', 'Manzilni qidirish') })
     search?.events.add('resultselect', (e: any) => {
       const r = search.getResultsArray()[e.get('index')]
       if (r) set(r.geometry.getCoordinates())
     })
-    const pm = new ymaps.Placemark([start.lat, start.lng], { hintContent: 'Магазин' }, { draggable: true, preset: 'islands#darkBlueShoppingIcon', visible: !!value })
+    const pm = new ymaps.Placemark([start.lat, start.lng], { hintContent: tr('Магазин', 'Doʻkon') }, { draggable: true, preset: 'islands#darkBlueShoppingIcon', visible: !!value })
     pm.events.add('dragend', () => set(pm.geometry.getCoordinates()))
     m.geoObjects.add(pm)
     mark.current = pm
@@ -161,7 +162,7 @@ export function MapPointPicker({ value, onChange, onAddress, onCity, height = 28
     <div className="sm-map" style={{ height }}>
       <div ref={box} style={{ position: 'absolute', inset: 0 }} />
       {!ymaps && <Spin style={{ position: 'absolute', inset: 0, margin: 'auto', height: 32 }} />}
-      {ymaps && !value && <div className="sm-map-hint">Нажмите на карту, чтобы поставить точку</div>}
+      {ymaps && !value && <div className="sm-map-hint">{tr('Нажмите на карту, чтобы поставить точку', 'Nuqta qoʻyish uchun xaritani bosing')}</div>}
     </div>
   )
 }

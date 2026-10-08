@@ -141,7 +141,7 @@ func (s *Service) abcScope(p *identity.Principal, f AbcFilter) (scope, error) {
 		return sc, err
 	}
 	if sc.to.Sub(sc.from) > abcMaxDays*24*time.Hour {
-		return sc, apperr.Validation("period: не больше года")
+		return sc, apperr.Validation("period: не больше года").Uz("period: bir yildan oshmasin")
 	}
 	return sc, nil
 }
@@ -162,10 +162,10 @@ func (s *Service) AbcXyz(ctx context.Context, p *identity.Principal, f AbcFilter
 		f.By = "revenue"
 	case "revenue", "profit", "qty":
 	default:
-		return AbcXyz{}, apperr.Validation("by: revenue, profit или qty")
+		return AbcXyz{}, apperr.Validation("by: revenue, profit или qty").Uz("by: revenue, profit yoki qty")
 	}
 	if f.CategoryID != "" && !httpx.IsUUID(f.CategoryID) {
-		return AbcXyz{}, apperr.Validation("category_id: неверный id")
+		return AbcXyz{}, apperr.Validation("category_id: неверный id").Uz("category_id: id notoʻgʻri")
 	}
 	sc, err := s.abcScope(p, f)
 	if err != nil {
@@ -211,7 +211,7 @@ func (s *Service) AbcXyz(ctx context.Context, p *identity.Principal, f AbcFilter
 			SELECT id FROM categories WHERE $6 <> '' AND id::text = $6
 			UNION ALL SELECT c.id FROM categories c JOIN cats ON c.parent_id = cats.id
 		), `+salesLinesCTE+`
-		SELECT l.product_id, p.name, COALESCE(c.name, ''), u.short_name, p.images[1],
+		SELECT l.product_id, loc(p.name, p.name_uz), COALESCE(loc(c.name, c.name_uz), ''), loc(u.short_name, u.short_name_uz), p.images[1],
 		       GREATEST(floor(extract(epoch FROM l.at - $5) / 604800), 0)::int,
 		       sum(l.qty)::text, sum(l.revenue)::numeric(18,2)::text, sum(l.revenue - l.cost)::numeric(18,2)::text,
 		       COALESCE(sum(l.qty) FILTER (WHERE l.at >= $7), 0)::text
@@ -419,7 +419,7 @@ func (s *Service) AbcXyz(ctx context.Context, p *identity.Principal, f AbcFilter
 		}
 		if len(ids) > 0 {
 			prow, err := s.pool.Query(ctx, `
-				SELECT p.id, p.name, COALESCE(c.name, ''), u.short_name, p.images[1]
+				SELECT p.id, loc(p.name, p.name_uz), COALESCE(loc(c.name, c.name_uz), ''), loc(u.short_name, u.short_name_uz), p.images[1]
 				FROM products p JOIN units u ON u.id = p.unit_id LEFT JOIN categories c ON c.id = p.category_id
 				WHERE p.id = ANY($1::uuid[])`, ids)
 			if err != nil {

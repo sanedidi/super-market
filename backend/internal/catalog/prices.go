@@ -13,6 +13,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
@@ -26,13 +27,14 @@ type PriceType struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-const defaultPriceTypeName = "Розничная"
+// defaultPriceTypeName — название создаётся на языке того, кто создаёт сеть.
+var defaultPriceTypeName = i18n.Text{RU: "Розничная", UZ: "Chakana"}
 
 // CreateDefaultPriceType создаёт тип «Розничная» для новой сети.
 // Вызывается из tenant в транзакции создания сети.
 func CreateDefaultPriceType(ctx context.Context, q db.Querier, networkID string) error {
 	_, err := q.Exec(ctx, `INSERT INTO price_types (network_id, name, is_default) VALUES ($1, $2, true)`,
-		networkID, defaultPriceTypeName)
+		networkID, defaultPriceTypeName.Ctx(ctx))
 	return err
 }
 
@@ -57,16 +59,16 @@ func (s *Service) CreatePriceType(ctx context.Context, pr *identity.Principal, i
 		return PriceType{}, err
 	}
 	if in.Name == nil || strings.TrimSpace(*in.Name) == "" {
-		return PriceType{}, apperr.Validation("name: обязательное поле")
+		return PriceType{}, apperr.Validation("name: обязательное поле").Uz("name: majburiy maydon")
 	}
 	if in.IsDefault != nil && *in.IsDefault {
-		return PriceType{}, apperr.Validation("is_default: назначается изменением существующего типа")
+		return PriceType{}, apperr.Validation("is_default: назначается изменением существующего типа").Uz("is_default: mavjud turni tahrirlash orqali belgilanadi")
 	}
 	var id string
 	err := s.pool.QueryRow(ctx, `INSERT INTO price_types (network_id, name) VALUES ($1, $2) RETURNING id`,
 		pr.NetworkID, strings.TrimSpace(*in.Name)).Scan(&id)
 	if db.IsUniqueViolation(err, "") {
-		return PriceType{}, apperr.Conflict("already_exists", "тип цены с таким названием уже есть")
+		return PriceType{}, apperr.Conflict("already_exists", "тип цены с таким названием уже есть").Uz("bunday nomli narx turi allaqachon bor")
 	}
 	if err != nil {
 		return PriceType{}, err
@@ -79,10 +81,10 @@ func (s *Service) UpdatePriceType(ctx context.Context, pr *identity.Principal, i
 		return PriceType{}, err
 	}
 	if in.Name != nil && strings.TrimSpace(*in.Name) == "" {
-		return PriceType{}, apperr.Validation("name: не может быть пустым")
+		return PriceType{}, apperr.Validation("name: не может быть пустым").Uz("name: boʻsh boʻlishi mumkin emas")
 	}
 	if in.IsDefault != nil && !*in.IsDefault {
-		return PriceType{}, apperr.Validation("is_default: чтобы снять, назначьте по умолчанию другой тип")
+		return PriceType{}, apperr.Validation("is_default: чтобы снять, назначьте по умолчанию другой тип").Uz("is_default: olib tashlash uchun boshqa turni asosiy qiling")
 	}
 	var out PriceType
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -92,7 +94,7 @@ func (s *Service) UpdatePriceType(ctx context.Context, pr *identity.Principal, i
 		}
 		makeDefault := in.IsDefault != nil && *in.IsDefault
 		if in.IsActive != nil && !*in.IsActive && (cur.IsDefault || makeDefault) {
-			return apperr.Conflict("default_price_type", "тип по умолчанию нельзя отключить")
+			return apperr.Conflict("default_price_type", "тип по умолчанию нельзя отключить").Uz("asosiy turni oʻchirib qoʻyib boʻlmaydi")
 		}
 		if makeDefault && !cur.IsDefault {
 			if _, err := tx.Exec(ctx, `UPDATE price_types SET is_default = false WHERE network_id = $1 AND is_default`, pr.NetworkID); err != nil {
@@ -109,7 +111,7 @@ func (s *Service) UpdatePriceType(ctx context.Context, pr *identity.Principal, i
 			       is_default = is_default OR $5
 			WHERE id = $1 AND network_id = $2`, id, pr.NetworkID, name, in.IsActive, makeDefault)
 		if db.IsUniqueViolation(err, "") {
-			return apperr.Conflict("already_exists", "тип цены с таким названием уже есть")
+			return apperr.Conflict("already_exists", "тип цены с таким названием уже есть").Uz("bunday nomli narx turi allaqachon bor")
 		}
 		if err != nil {
 			return err
@@ -122,7 +124,7 @@ func (s *Service) UpdatePriceType(ctx context.Context, pr *identity.Principal, i
 
 func (s *Service) getPriceType(ctx context.Context, q db.Querier, networkID, id string) (PriceType, error) {
 	if !httpx.IsUUID(id) {
-		return PriceType{}, apperr.NotFound("тип цены не найден")
+		return PriceType{}, apperr.NotFound("тип цены не найден").Uz("narx turi topilmadi")
 	}
 	rows, err := q.Query(ctx, `SELECT id, name, is_default, is_active, created_at FROM price_types
 		WHERE id = $1 AND network_id = $2`, id, networkID)
@@ -131,7 +133,7 @@ func (s *Service) getPriceType(ctx context.Context, q db.Querier, networkID, id 
 	}
 	pt, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[PriceType])
 	if errors.Is(err, pgx.ErrNoRows) {
-		return PriceType{}, apperr.NotFound("тип цены не найден")
+		return PriceType{}, apperr.NotFound("тип цены не найден").Uz("narx turi topilmadi")
 	}
 	return pt, err
 }
@@ -149,7 +151,7 @@ func (s *Service) resolvePriceType(ctx context.Context, networkID, storeID, expl
 		JOIN price_types pt ON pt.network_id = s.network_id AND pt.is_default
 		WHERE s.id = $1 AND s.network_id = $2`, storeID, networkID).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", apperr.NotFound("магазин не найден")
+		return "", apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	return id, err
 }
@@ -237,13 +239,13 @@ func (s *Service) getPriceDoc(ctx context.Context, q db.Querier, pr *identity.Pr
 	}
 	d, err := pgx.CollectExactlyOneRow(rows, scanPriceDoc)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !canUseDocStore(pr, d.StoreID)) {
-		return PriceDocument{}, apperr.NotFound("документ не найден")
+		return PriceDocument{}, apperr.NotFound("документ не найден").Uz("hujjat topilmadi")
 	}
 	if err != nil {
 		return PriceDocument{}, err
 	}
 	rows, err = q.Query(ctx, `
-		SELECT i.product_id, p.name, i.new_price::text, i.previous_price::text,
+		SELECT i.product_id, loc(p.name, p.name_uz), i.new_price::text, i.previous_price::text,
 		       COALESCE(sp.price, np.price, p.base_price)::text
 		FROM price_document_items i
 		JOIN products p ON p.id = i.product_id
@@ -251,7 +253,7 @@ func (s *Service) getPriceDoc(ctx context.Context, q db.Querier, pr *identity.Pr
 		LEFT JOIN prices sp ON d.store_id IS NOT NULL AND sp.product_id = i.product_id
 		                   AND sp.price_type_id = d.price_type_id AND sp.store_id = d.store_id
 		LEFT JOIN prices np ON np.product_id = i.product_id AND np.price_type_id = d.price_type_id AND np.store_id IS NULL
-		WHERE i.document_id = $1 ORDER BY p.name`, id)
+		WHERE i.document_id = $1 ORDER BY loc(p.name, p.name_uz)`, id)
 	if err != nil {
 		return PriceDocument{}, err
 	}
@@ -265,13 +267,13 @@ func (s *Service) CreatePriceDoc(ctx context.Context, pr *identity.Principal, in
 		return PriceDocument{}, err
 	}
 	if in.PriceTypeID == nil {
-		return PriceDocument{}, apperr.Validation("price_type_id: обязательное поле")
+		return PriceDocument{}, apperr.Validation("price_type_id: обязательное поле").Uz("price_type_id: majburiy maydon")
 	}
 	if in.StoreID != nil && !httpx.IsUUID(*in.StoreID) {
-		return PriceDocument{}, apperr.Validation("store_id: магазин не найден")
+		return PriceDocument{}, apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
 	}
 	if !canUseDocStore(pr, in.StoreID) {
-		return PriceDocument{}, apperr.Forbidden("нет доступа к магазину или ко всей сети")
+		return PriceDocument{}, apperr.Forbidden("нет доступа к магазину или ко всей сети").Uz("doʻkonga yoki butun tarmoqqa ruxsat yoʻq")
 	}
 	note := ""
 	if in.Note != nil {
@@ -282,10 +284,10 @@ func (s *Service) CreatePriceDoc(ctx context.Context, pr *identity.Principal, in
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		pt, err := s.getPriceType(ctx, tx, pr.NetworkID, *in.PriceTypeID)
 		if err != nil {
-			return apperr.Validation("price_type_id: тип цены не найден")
+			return apperr.Validation("price_type_id: тип цены не найден").Uz("price_type_id: narx turi topilmadi")
 		}
 		if !pt.IsActive {
-			return apperr.Validation("price_type_id: тип цены отключён")
+			return apperr.Validation("price_type_id: тип цены отключён").Uz("price_type_id: narx turi oʻchirilgan")
 		}
 		// Номер документа — следующий в сети. Блокировка сети исключает дубли.
 		if _, err := tx.Exec(ctx, `SELECT 1 FROM networks WHERE id = $1 FOR UPDATE`, pr.NetworkID); err != nil {
@@ -298,7 +300,7 @@ func (s *Service) CreatePriceDoc(ctx context.Context, pr *identity.Principal, in
 			        $2, $3, $4, $5)
 			RETURNING id`, pr.NetworkID, pt.ID, in.StoreID, note, pr.EmployeeID).Scan(&id)
 		if db.IsForeignKeyViolation(err) {
-			return apperr.Validation("store_id: магазин не найден")
+			return apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
 		}
 		if err != nil {
 			return err
@@ -320,7 +322,7 @@ func (s *Service) UpdatePriceDoc(ctx context.Context, pr *identity.Principal, id
 		return PriceDocument{}, err
 	}
 	if in.PriceTypeID != nil || in.StoreID != nil {
-		return PriceDocument{}, apperr.Validation("тип цены и магазин документа не меняются — создайте новый документ")
+		return PriceDocument{}, apperr.Validation("тип цены и магазин документа не меняются — создайте новый документ").Uz("hujjatning narx turi va doʻkoni oʻzgarmaydi — yangi hujjat yarating")
 	}
 	var out PriceDocument
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -350,13 +352,13 @@ func (s *Service) lockDraft(ctx context.Context, tx pgx.Tx, pr *identity.Princip
 	err := tx.QueryRow(ctx, `SELECT status, store_id FROM price_documents WHERE id = $1 AND network_id = $2 FOR UPDATE`,
 		id, pr.NetworkID).Scan(&status, &storeID)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !canUseDocStore(pr, storeID)) {
-		return apperr.NotFound("документ не найден")
+		return apperr.NotFound("документ не найден").Uz("hujjat topilmadi")
 	}
 	if err != nil {
 		return err
 	}
 	if status != "draft" {
-		return apperr.Conflict("document_posted", "документ уже проведён")
+		return apperr.Conflict("document_posted", "документ уже проведён").Uz("hujjat allaqachon oʻtkazilgan")
 	}
 	return nil
 }
@@ -368,14 +370,14 @@ func (s *Service) replaceItems(ctx context.Context, tx pgx.Tx, pr *identity.Prin
 	seen := map[string]bool{}
 	for i, it := range *in.Items {
 		if !httpx.IsUUID(it.ProductID) {
-			return apperr.Validation("items: неверный product_id в строке " + strconv.Itoa(i+1))
+			return apperr.Validation("items: неверный product_id в строке " + strconv.Itoa(i+1)).Uz("items: " + strconv.Itoa(i+1) + "-qatorda product_id notoʻgʻri")
 		}
 		if seen[it.ProductID] {
-			return apperr.Validation("items: товар повторяется в строке " + strconv.Itoa(i+1))
+			return apperr.Validation("items: товар повторяется в строке " + strconv.Itoa(i+1)).Uz("items: " + strconv.Itoa(i+1) + "-qatorda mahsulot takrorlanadi")
 		}
 		seen[it.ProductID] = true
 		if !it.NewPrice.Valid() {
-			return apperr.Validation("items: не указана цена в строке " + strconv.Itoa(i+1))
+			return apperr.Validation("items: не указана цена в строке " + strconv.Itoa(i+1)).Uz("items: " + strconv.Itoa(i+1) + "-qatorda narx koʻrsatilmagan")
 		}
 		tag, err := tx.Exec(ctx, `
 			INSERT INTO price_document_items (document_id, product_id, new_price)
@@ -386,7 +388,7 @@ func (s *Service) replaceItems(ctx context.Context, tx pgx.Tx, pr *identity.Prin
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return apperr.Validation("items: товар не найден в строке " + strconv.Itoa(i+1))
+			return apperr.Validation("items: товар не найден в строке " + strconv.Itoa(i+1)).Uz("items: " + strconv.Itoa(i+1) + "-qatorda mahsulot topilmadi")
 		}
 	}
 	return nil
@@ -407,7 +409,7 @@ func (s *Service) PostPriceDoc(ctx context.Context, pr *identity.Principal, id s
 			return err
 		}
 		if n == 0 {
-			return apperr.Validation("в документе нет строк")
+			return apperr.Validation("в документе нет строк").Uz("hujjatda qator yoʻq")
 		}
 		// Прежняя цена на уровне документа (сеть или магазин).
 		if _, err := tx.Exec(ctx, `
@@ -460,7 +462,7 @@ func CheckPriceType(ctx context.Context, q db.Querier, networkID, id string) err
 	var active bool
 	err := q.QueryRow(ctx, `SELECT is_active FROM price_types WHERE id = $1 AND network_id = $2`, id, networkID).Scan(&active)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !active) {
-		return apperr.Validation("price_type_id: тип цены не найден или отключён")
+		return apperr.Validation("price_type_id: тип цены не найден или отключён").Uz("price_type_id: narx turi topilmadi yoki oʻchirilgan")
 	}
 	return err
 }
@@ -478,7 +480,7 @@ type ProductForSale struct {
 func EffectivePrice(ctx context.Context, q db.Querier, networkID, storeID, priceTypeID, productID string) (ProductForSale, error) {
 	var p ProductForSale
 	err := q.QueryRow(ctx, `
-		SELECT p.id, p.name, u.is_fractional, p.is_active,
+		SELECT p.id, loc(p.name, p.name_uz), u.is_fractional, p.is_active,
 		       COALESCE(sp.price, np.price, p.base_price)::text
 		FROM products p
 		JOIN units u ON u.id = p.unit_id
@@ -487,7 +489,7 @@ func EffectivePrice(ctx context.Context, q db.Querier, networkID, storeID, price
 		WHERE p.id = $4 AND (p.network_id IS NULL OR p.network_id = $1)`,
 		networkID, storeID, priceTypeID, productID).Scan(&p.ID, &p.Name, &p.IsFractional, &p.IsActive, &p.Price)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return p, apperr.Validation("товар не найден")
+		return p, apperr.Validation("товар не найден").Uz("mahsulot topilmadi")
 	}
 	return p, err
 }

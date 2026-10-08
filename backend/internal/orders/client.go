@@ -24,6 +24,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
@@ -89,7 +90,7 @@ func (s *Service) ListAddresses(ctx context.Context, p *identity.Principal) ([]A
 
 func (s *Service) getAddress(ctx context.Context, p *identity.Principal, id string) (Address, error) {
 	if !httpx.IsUUID(id) {
-		return Address{}, apperr.Validation("address_id: адрес не найден")
+		return Address{}, apperr.Validation("address_id: адрес не найден").Uz("address_id: manzil topilmadi")
 	}
 	rows, err := s.pool.Query(ctx, addressSelect+` WHERE user_id = $1 AND id = $2`, p.UserID, id)
 	if err != nil {
@@ -97,7 +98,7 @@ func (s *Service) getAddress(ctx context.Context, p *identity.Principal, id stri
 	}
 	a, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[Address])
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Address{}, apperr.Validation("address_id: адрес не найден")
+		return Address{}, apperr.Validation("address_id: адрес не найден").Uz("address_id: manzil topilmadi")
 	}
 	return a, err
 }
@@ -108,10 +109,10 @@ func validCoords(lat, lng float64) bool {
 
 func (s *Service) SaveAddress(ctx context.Context, p *identity.Principal, id string, in AddressInput) (Address, error) {
 	if strings.TrimSpace(in.Address) == "" {
-		return Address{}, apperr.Validation("address: обязательное поле")
+		return Address{}, apperr.Validation("address: обязательное поле").Uz("address: majburiy maydon")
 	}
 	if !validCoords(in.Lat, in.Lng) {
-		return Address{}, apperr.Validation("lat/lng: укажите точку на карте")
+		return Address{}, apperr.Validation("lat/lng: укажите точку на карте").Uz("lat/lng: xaritada nuqtani belgilang")
 	}
 	var err error
 	if id == "" {
@@ -120,7 +121,7 @@ func (s *Service) SaveAddress(ctx context.Context, p *identity.Principal, id str
 			return Address{}, err
 		}
 		if n >= 20 {
-			return Address{}, apperr.Validation("не больше 20 адресов")
+			return Address{}, apperr.Validation("не больше 20 адресов").Uz("koʻpi bilan 20 ta manzil")
 		}
 		err = s.pool.QueryRow(ctx, `
 			INSERT INTO customer_addresses (user_id, label, address, entrance, floor, apartment, comment, location)
@@ -136,7 +137,7 @@ func (s *Service) SaveAddress(ctx context.Context, p *identity.Principal, id str
 			id, p.UserID, strings.TrimSpace(in.Label), strings.TrimSpace(in.Address), in.Entrance, in.Floor, in.Apartment,
 			in.Comment, in.Lat, in.Lng)
 		if err == nil && tag.RowsAffected() == 0 {
-			return Address{}, apperr.NotFound("адрес не найден")
+			return Address{}, apperr.NotFound("адрес не найден").Uz("manzil topilmadi")
 		}
 	}
 	if err != nil {
@@ -148,7 +149,7 @@ func (s *Service) SaveAddress(ctx context.Context, p *identity.Principal, id str
 func (s *Service) DeleteAddress(ctx context.Context, p *identity.Principal, id string) error {
 	tag, err := s.pool.Exec(ctx, `DELETE FROM customer_addresses WHERE id = $1 AND user_id = $2`, id, p.UserID)
 	if err == nil && tag.RowsAffected() == 0 {
-		return apperr.NotFound("адрес не найден")
+		return apperr.NotFound("адрес не найден").Uz("manzil topilmadi")
 	}
 	return err
 }
@@ -177,7 +178,7 @@ func (s *Service) storeForBrowse(ctx context.Context, q db.Querier, storeID stri
 func (s *Service) clientStore(ctx context.Context, q db.Querier, storeID string, online bool) (storeInfo, error) {
 	var st storeInfo
 	if !httpx.IsUUID(storeID) {
-		return st, apperr.NotFound("магазин не найден")
+		return st, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	err := q.QueryRow(ctx, `
 		SELECT s.network_id, s.default_warehouse_id, COALESCE(s.online_price_type_id, pt.id), s.name, s.accepts_online
@@ -190,9 +191,9 @@ func (s *Service) clientStore(ctx context.Context, q db.Querier, storeID string,
 		Scan(&st.NetworkID, &st.WarehouseID, &st.PriceTypeID, &st.Name, &st.AcceptsOnline)
 	if errors.Is(err, pgx.ErrNoRows) {
 		if online {
-			return st, apperr.NotFound("магазин не найден или не принимает заказы")
+			return st, apperr.NotFound("магазин не найден или не принимает заказы").Uz("doʻkon topilmadi yoki buyurtma qabul qilmayapti")
 		}
-		return st, apperr.NotFound("магазин не найден")
+		return st, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	return st, err
 }
@@ -264,7 +265,7 @@ func (s *Service) preview(ctx context.Context, q db.Querier, p *identity.Princip
 		return out, err
 	}
 	if len(in.Items) == 0 || len(in.Items) > 200 {
-		return out, apperr.Validation("items: от 1 до 200 товаров")
+		return out, apperr.Validation("items: от 1 до 200 товаров").Uz("items: 1 dan 200 tagacha mahsulot")
 	}
 
 	subtotal := money.D("0")
@@ -273,11 +274,11 @@ func (s *Service) preview(ctx context.Context, q db.Querier, p *identity.Princip
 	for i, it := range in.Items {
 		ls := strconv.Itoa(i + 1)
 		if !httpx.IsUUID(it.ProductID) || seen[it.ProductID] {
-			return out, apperr.Validation("items: неверный или повторяющийся товар в строке " + ls)
+			return out, apperr.Validation("items: неверный или повторяющийся товар в строке " + ls).Uz("items: " + ls + "-qatorda mahsulot notoʻgʻri yoki takrorlangan")
 		}
 		seen[it.ProductID] = true
 		if !it.Qty.Valid() || money.D(string(it.Qty)).Sign() <= 0 {
-			return out, apperr.Validation("items: количество должно быть больше нуля в строке " + ls)
+			return out, apperr.Validation("items: количество должно быть больше нуля в строке " + ls).Uz("items: " + ls + "-qatorda miqdor noldan katta boʻlishi kerak")
 		}
 		qty := money.D(string(it.Qty))
 		line := PreviewLine{ProductID: it.ProductID, Qty: qty.Fixed(3)}
@@ -371,14 +372,14 @@ type Created struct {
 	PaymentURL string `json:"payment_url"`
 }
 
-var problemMessages = map[string]string{
-	"items":               "часть товаров недоступна или закончилась",
-	"store_closed":        "магазин сейчас закрыт",
-	"min_order_amount":    "сумма меньше минимального заказа",
-	"not_deliverable":     "магазин не доставляет по этому адресу",
-	"store_not_accepting": "магазин не принимает онлайн-заказы",
-	"slot_full":           "на выбранное время заказов больше не принимаем",
-	"slot_unavailable":    "выбранное время доставки недоступно",
+var problemMessages = map[string]i18n.Text{
+	"items":               {RU: "часть товаров недоступна или закончилась", UZ: "baʼzi mahsulotlar mavjud emas yoki tugagan"},
+	"store_closed":        {RU: "магазин сейчас закрыт", UZ: "doʻkon hozir yopiq"},
+	"min_order_amount":    {RU: "сумма меньше минимального заказа", UZ: "summa minimal buyurtmadan kam"},
+	"not_deliverable":     {RU: "магазин не доставляет по этому адресу", UZ: "doʻkon bu manzilga yetkazib bermaydi"},
+	"store_not_accepting": {RU: "магазин не принимает онлайн-заказы", UZ: "doʻkon onlayn buyurtmalarni qabul qilmayapti"},
+	"slot_full":           {RU: "на выбранное время заказов больше не принимаем", UZ: "tanlangan vaqtga boshqa buyurtma qabul qilinmaydi"},
+	"slot_unavailable":    {RU: "выбранное время доставки недоступно", UZ: "tanlangan yetkazib berish vaqti mavjud emas"},
 }
 
 // CreateOrder оформляет заказ: пересчитывает корзину, резервирует товар,
@@ -386,10 +387,10 @@ var problemMessages = map[string]string{
 func (s *Service) CreateOrder(ctx context.Context, p *identity.Principal, in CheckoutInput) (Created, error) {
 	cash := in.PaymentProvider == CashOnDelivery
 	if in.PaymentProvider != payments.ProviderPayme && in.PaymentProvider != payments.ProviderClick && !cash {
-		return Created{}, apperr.Validation("payment_provider: ожидается payme, click или cash")
+		return Created{}, apperr.Validation("payment_provider: ожидается payme, click или cash").Uz("payment_provider: payme, click yoki cash boʻlishi kerak")
 	}
 	if !cash && !s.payments.Enabled(in.PaymentProvider) {
-		return Created{}, apperr.Validation("payment_provider: способ оплаты временно недоступен")
+		return Created{}, apperr.Validation("payment_provider: способ оплаты временно недоступен").Uz("payment_provider: toʻlov usuli vaqtincha mavjud emas")
 	}
 	var phone string
 	var blocked bool
@@ -436,10 +437,13 @@ func (s *Service) CreateOrder(ctx context.Context, p *identity.Principal, in Che
 		}
 		if !pv.CanOrder {
 			msgs := make([]string, 0, len(pv.Problems))
+			msgsUz := make([]string, 0, len(pv.Problems))
 			for _, pr := range pv.Problems {
-				msgs = append(msgs, problemMessages[pr])
+				msgs = append(msgs, problemMessages[pr].RU)
+				msgsUz = append(msgsUz, problemMessages[pr].In(i18n.UZ))
 			}
 			return apperr.Conflict("cannot_order", "нельзя оформить заказ: "+strings.Join(msgs, "; ")).
+				Uz("buyurtmani rasmiylashtirib boʻlmaydi: " + strings.Join(msgsUz, "; ")).
 				WithDetails(map[string]any{"problems": pv.Problems, "preview": pv})
 		}
 		addr, err := s.getAddress(ctx, p, in.AddressID)
@@ -528,7 +532,7 @@ func (s *Service) PaymentURL(ctx context.Context, p *identity.Principal, id stri
 		return "", err
 	}
 	if o.Status != StatusAwaitingPayment {
-		return "", apperr.Conflict("not_awaiting_payment", "заказ не ждёт оплаты")
+		return "", apperr.Conflict("not_awaiting_payment", "заказ не ждёт оплаты").Uz("buyurtma toʻlovni kutmayapti")
 	}
 	return s.payments.CheckoutURL(o.PaymentProvider, o.ID, o.Total)
 }

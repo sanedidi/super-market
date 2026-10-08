@@ -3,19 +3,19 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Alert, Button, Card, Input, Space, Statistic, Table, Typography } from 'antd'
 import { HistoryOutlined } from '@ant-design/icons'
-import { LoadError, PageTitle, RemoteSelect, dateTime, money, qty, useItem, usePaged } from '@sm/shared'
+import { LoadError, PageTitle, RemoteSelect, dateTime, money, qty, tr, useItem, usePaged } from '@sm/shared'
 import { useStore } from '../ctx'
 import { NeedStore, ProductSelect, docTypeTitles, unitPrice } from '../ui'
 import type { Movement, StockRow, StockSummary, Warehouse } from '../types'
 
 /** Виды складских документов в истории движения. */
 const stockDocTitles: Record<string, string> = {
-  income: 'Приход',
-  supplier_return: 'Возврат поставщику',
-  transfer: 'Перемещение',
-  write_off: 'Списание',
-  posting: 'Оприходование',
-  inventory: 'Инвентаризация',
+  income: tr('Приход', 'Kirim'),
+  supplier_return: tr('Возврат поставщику', 'Yetkazib beruvchiga qaytarish'),
+  transfer: tr('Перемещение', 'Koʻchirish'),
+  write_off: tr('Списание', 'Hisobdan chiqarish'),
+  posting: tr('Оприходование', 'Kirimga olish'),
+  inventory: tr('Инвентаризация', 'Inventarizatsiya'),
 }
 
 export function StockPage() {
@@ -33,23 +33,23 @@ export function StockPage() {
 
   return (
     <NeedStore>
-      <PageTitle title="Остатки">
+      <PageTitle title={tr('Остатки', 'Qoldiqlar')}>
         <RemoteSelect<Warehouse>
           path="/store/warehouses"
           params={{ store_id: storeId }}
           value={warehouseId}
           onChange={setWarehouseId}
           allowClear
-          placeholder="Все склады магазина"
+          placeholder={tr('Все склады магазина', 'Doʻkonning barcha omborlari')}
         />
-        <Input.Search placeholder="Товар или штрихкод" allowClear onSearch={setQ} style={{ width: 240 }} />
+        <Input.Search placeholder={tr('Товар или штрихкод', 'Mahsulot yoki shtrix-kod')} allowClear onSearch={setQ} style={{ width: 240 }} />
       </PageTitle>
       <LoadError error={summary.error} retry={() => summary.refetch()} />
       <Card style={{ marginBottom: 16 }} loading={summary.isLoading}>
         <Space size={48} wrap>
-          <Statistic title="Позиций" value={summary.data?.positions ?? 0} />
-          <Statistic title="Товаров" value={summary.data?.products ?? 0} />
-          {seesCost && <Statistic title="Себестоимость остатков, сум" value={money(summary.data?.cost_value)} />}
+          <Statistic title={tr('Позиций', 'Pozitsiyalar')} value={summary.data?.positions ?? 0} />
+          <Statistic title={tr('Товаров', 'Mahsulotlar')} value={summary.data?.products ?? 0} />
+          {seesCost && <Statistic title={tr('Себестоимость остатков, сум', 'Qoldiqlar tannarxi, soʻm')} value={money(summary.data?.cost_value)} />}
         </Space>
       </Card>
       <LoadError error={list.error} retry={() => list.refetch()} />
@@ -61,19 +61,19 @@ export function StockPage() {
           scroll={{ x: true }}
           pagination={list.pagination}
           columns={[
-            { title: 'Товар', dataIndex: 'product_name' },
-            { title: 'Склад', dataIndex: 'warehouse_name' },
+            { title: tr('Товар', 'Mahsulot'), dataIndex: 'product_name' },
+            { title: tr('Склад', 'Ombor'), dataIndex: 'warehouse_name' },
             {
-              title: 'Остаток',
+              title: tr('Остаток', 'Qoldiq'),
               dataIndex: 'qty',
               align: 'right',
               render: (v, r) => <Typography.Text type={Number(v) <= 0 ? 'danger' : undefined}>{qty(v, r.unit_short)}</Typography.Text>,
             },
             ...(seesCost
               ? [
-                  { title: 'Ср. себестоимость', dataIndex: 'avg_cost', align: 'right' as const, render: (v: string) => money(v) },
-                  { title: 'Ср. себест., $', dataIndex: 'avg_cost_usd', align: 'right' as const, render: (v: string) => unitPrice(v) },
-                  { title: 'Сумма', dataIndex: 'total_cost', align: 'right' as const, render: (v: string) => money(v) },
+                  { title: tr('Ср. себестоимость', 'Oʻrtacha tannarx'), dataIndex: 'avg_cost', align: 'right' as const, render: (v: string) => money(v) },
+                  { title: tr('Ср. себест., $', 'Oʻrt. tannarx, $'), dataIndex: 'avg_cost_usd', align: 'right' as const, render: (v: string) => unitPrice(v) },
+                  { title: tr('Сумма', 'Summa'), dataIndex: 'total_cost', align: 'right' as const, render: (v: string) => money(v) },
                 ]
               : []),
             {
@@ -83,7 +83,7 @@ export function StockPage() {
                 <Button
                   size="small"
                   icon={<HistoryOutlined />}
-                  title="История движения"
+                  title={tr('История движения', 'Harakat tarixi')}
                   onClick={() =>
                     nav(`/stock/movements?warehouse_id=${r.warehouse_id}&product_id=${r.product_id}&name=${encodeURIComponent(r.product_name)}`)
                   }
@@ -133,13 +133,13 @@ export function MovementsPage() {
 
   return (
     <NeedStore>
-      <PageTitle title="История движения">
+      <PageTitle title={tr('История движения', 'Harakat tarixi')}>
         <RemoteSelect<Warehouse>
           path="/store/warehouses"
           params={{ store_id: storeId }}
           value={warehouseId}
           onChange={setWarehouseId}
-          placeholder="Склад"
+          placeholder={tr('Склад', 'Ombor')}
         />
         <div style={{ width: 280 }}>
           <ProductSelect
@@ -152,7 +152,7 @@ export function MovementsPage() {
           />
         </div>
       </PageTitle>
-      {!ready && <Alert type="info" showIcon message="Выберите склад и товар" />}
+      {!ready && <Alert type="info" showIcon message={tr('Выберите склад и товар', 'Ombor va mahsulotni tanlang')} />}
       <LoadError error={list.error} retry={() => list.refetch()} />
       {ready && (
         <Card styles={{ body: { padding: 0 } }}>
@@ -163,9 +163,9 @@ export function MovementsPage() {
             scroll={{ x: true }}
             pagination={list.pagination}
             columns={[
-              { title: 'Дата', dataIndex: 'created_at', render: dateTime },
+              { title: tr('Дата', 'Sana'), dataIndex: 'created_at', render: dateTime },
               {
-                title: 'Документ',
+                title: tr('Документ', 'Hujjat'),
                 dataIndex: 'doc_type',
                 render: (v: string, r) => (
                   <>
@@ -175,7 +175,7 @@ export function MovementsPage() {
                 ),
               },
               {
-                title: 'Количество',
+                title: tr('Количество', 'Miqdor'),
                 dataIndex: 'qty',
                 align: 'right',
                 render: (v: string) => (
@@ -183,9 +183,9 @@ export function MovementsPage() {
                 ),
               },
               ...(seesCost
-                ? [{ title: 'Себестоимость', dataIndex: 'unit_cost', align: 'right' as const, render: (v: string) => unitPrice(v) }]
+                ? [{ title: tr('Себестоимость', 'Tannarx'), dataIndex: 'unit_cost', align: 'right' as const, render: (v: string) => unitPrice(v) }]
                 : []),
-              { title: 'Остаток после', dataIndex: 'balance_after', align: 'right', render: (v: string | null) => qty(v) },
+              { title: tr('Остаток после', 'Keyingi qoldiq'), dataIndex: 'balance_after', align: 'right', render: (v: string | null) => qty(v) },
             ]}
           />
         </Card>

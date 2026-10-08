@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart';
 
 import '../catalog.dart';
 import '../guest.dart';
@@ -57,13 +58,13 @@ class _CatalogScreenState extends State<CatalogScreen> {
       return Scaffold(
         body: SafeArea(
           child: Column(children: [
-            PageHeader(title: 'Каталог', onBack: () => state.setTab(0)),
+            PageHeader(title: tr('Каталог', 'Katalog'), onBack: () => state.setTab(0)),
             Expanded(
               child: EmptyState(
                 icon: Icons.storefront_outlined,
-                title: state.address == null ? 'Сначала укажите адрес' : 'Рядом нет магазинов',
-                text: 'Каталог зависит от того, какие магазины доставляют к вам.',
-                action: 'Выбрать адрес',
+                title: state.address == null ? tr('Сначала укажите адрес', 'Avval manzilni kiriting') : tr('Рядом нет магазинов', 'Yaqinda doʻkonlar yoʻq'),
+                text: tr('Каталог зависит от того, какие магазины доставляют к вам.', 'Katalog sizga qaysi doʻkonlar yetkazib berishiga bogʻliq.'),
+                action: tr('Выбрать адрес', 'Manzilni tanlash'),
                 onAction: () => openAddressPicker(context),
               ),
             ),
@@ -78,7 +79,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
         bottom: false,
         child: Column(children: [
           PageHeader(
-            title: 'Каталог',
+            title: tr('Каталог', 'Katalog'),
             onBack: () => state.setTab(0),
             trailing: RoundIconButton(icon: Icons.search_rounded, onTap: () => openSearch(context)),
           ),
@@ -96,12 +97,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                      child: AppSearchField(hint: 'Найти во всех магазинах', onTap: () => openSearch(context)),
+                      child: AppSearchField(hint: tr('Найти во всех магазинах', 'Barcha doʻkonlardan qidirish'), onTap: () => openSearch(context)),
                     ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Wrap(spacing: 8, runSpacing: 8, children: [
-                        AppChip(label: 'Специальные предложения', selected: _active == '_special', onTap: () => _jump('_special', _specialKey)),
+                        AppChip(label: tr('Специальные предложения', 'Maxsus takliflar'), selected: _active == '_special', onTap: () => _jump('_special', _specialKey)),
                         for (final s in sections) AppChip(label: s.title, selected: _active == s.id, onTap: () => _jump(s.id, _keys[s.id]!)),
                       ]),
                     ),

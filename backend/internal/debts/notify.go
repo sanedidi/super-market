@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
@@ -25,20 +26,24 @@ func quietSendAfter(now time.Time) time.Time {
 
 // notifyBuyer ставит push покупателю с этим номером, если у него есть
 // аккаунт в приложении. titleFmt получает название магазина, bodyFmt — сумму.
-// Нажатие открывает долг в этом магазине.
-func notifyBuyer(ctx context.Context, q db.Querier, ph, storeID, kind, titleFmt, bodyFmt string, amount money.Dec) error {
+// Текст — на языке покупателя (customers.language). Нажатие открывает долг в
+// этом магазине.
+func notifyBuyer(ctx context.Context, q db.Querier, ph, storeID, kind string, titleFmt, bodyFmt i18n.Text, amount money.Dec) error {
 	data, _ := json.Marshal(map[string]string{"type": "debt", "store_id": storeID})
 	var storeName string
 	if err := q.QueryRow(ctx, `SELECT name FROM stores WHERE id = $1`, storeID).Scan(&storeName); err != nil {
 		return err
 	}
-	title := fmt.Sprintf(titleFmt, storeName)
-	body := fmt.Sprintf(bodyFmt, money.Group(amount.Money()))
+	sum := money.Group(amount.Money())
+	titleUz, bodyUz := titleFmt.In(i18n.UZ), bodyFmt.In(i18n.UZ)
 	_, err := q.Exec(ctx, `
 		INSERT INTO notifications_outbox (user_id, kind, title, body, data, send_after)
-		SELECT c.user_id, $2, $3, $4, $5::jsonb, $6
+		SELECT c.user_id, $2,
+		       CASE WHEN c.language = 'uz' THEN $7 ELSE $3 END,
+		       CASE WHEN c.language = 'uz' THEN $8 ELSE $4 END, $5::jsonb, $6
 		FROM users u JOIN customers c ON c.user_id = u.id AND c.deleted_at IS NULL
-		WHERE u.phone = $1`, ph, kind, title, body, string(data), quietSendAfter(time.Now()))
+		WHERE u.phone = $1`, ph, kind, fmt.Sprintf(titleFmt.RU, storeName), fmt.Sprintf(bodyFmt.RU, sum), string(data), quietSendAfter(time.Now()),
+		fmt.Sprintf(titleUz, storeName), fmt.Sprintf(bodyUz, sum))
 	return err
 }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 	"github.com/sanedidi/super-market/backend/internal/push"
 	"github.com/sanedidi/super-market/backend/internal/reports"
@@ -110,12 +111,12 @@ func (s *Service) Day(ctx context.Context, p *identity.Principal, date, storeID 
 	if date != "" {
 		d, err := time.ParseInLocation("2006-01-02", date, tashkent)
 		if err != nil {
-			return out, apperr.Validation("date: дата YYYY-MM-DD")
+			return out, apperr.Validation("date: дата YYYY-MM-DD").Uz("date: sana YYYY-MM-DD koʻrinishida boʻlsin")
 		}
 		day = d
 	}
 	if storeID != "" && (!httpx.IsUUID(storeID) || !p.CanAccessStore(storeID)) {
-		return out, apperr.NotFound("магазин не найден")
+		return out, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	out.Date = day.Format("2006-01-02")
 	prevDay := day.AddDate(0, 0, -1)
@@ -192,6 +193,7 @@ const scope = `network_id = $1 AND ($2 OR store_id = ANY($3::uuid[])) AND ($4 = 
 func (s *Service) alerts(ctx context.Context, p *identity.Principal, day time.Time, storeID string) ([]Alert, error) {
 	out := []Alert{}
 	args := []any{p.NetworkID, p.SeesAllStores(), p.StoreIDs, storeID}
+	uz := i18n.FromContext(ctx) == i18n.UZ
 
 	// Недостачи на закрытии смен.
 	rows, err := s.pool.Query(ctx, `
@@ -208,7 +210,11 @@ func (s *Service) alerts(ctx context.Context, p *identity.Principal, day time.Ti
 			rows.Close()
 			return nil, err
 		}
-		out = append(out, Alert{Kind: "shortage", Level: "red", Title: "Недостача " + money.Group(amount) + " сум",
+		title := "Недостача " + money.Group(amount) + " сум"
+		if uz {
+			title = "Kamomad " + money.Group(amount) + " soʻm"
+		}
+		out = append(out, Alert{Kind: "shortage", Level: "red", Title: title,
 			Text: shortName(who) + " · " + store + ", " + device, Target: "shift", ID: &id})
 	}
 	rows.Close()
@@ -233,7 +239,8 @@ func (s *Service) alerts(ctx context.Context, p *identity.Principal, day time.Ti
 			       COALESCE(top.name, ''), COALESCE(top.qty, ''), COALESCE(top.unit, '')
 			FROM (SELECT 1) one
 			LEFT JOIN LATERAL (
-				SELECT pr.name, trim(trailing '.' FROM trim(trailing '0' FROM low.stock::text)) AS qty, u.short_name AS unit
+				SELECT loc(pr.name, pr.name_uz) AS name, trim(trailing '.' FROM trim(trailing '0' FROM low.stock::text)) AS qty,
+				       loc(u.short_name, u.short_name_uz) AS unit
 				FROM low JOIN products pr ON pr.id = low.product_id JOIN units u ON u.id = pr.unit_id
 				ORDER BY low.stock / NULLIF(low.q, 0) LIMIT 1) top ON true`,
 			append(args, day.AddDate(0, 0, 1-reports.CoverWindowDays), day.AddDate(0, 0, 1), reports.CoverMinSold, reports.CoverWindowDays, lowStockDays)...).
@@ -245,8 +252,13 @@ func (s *Service) alerts(ctx context.Context, p *identity.Principal, day time.Ti
 			if qty == "" {
 				qty = "0"
 			}
-			out = append(out, Alert{Kind: "low_stock", Level: "amber", Title: fmt.Sprintf("%d %s заканчива%s", n, plural(n, "товар", "товара", "товаров"), map[bool]string{true: "ется", false: "ются"}[n%10 == 1 && n%100 != 11]),
-				Text: name + " — осталось " + qty + " " + unit, Target: "stock"})
+			a := Alert{Kind: "low_stock", Level: "amber", Title: fmt.Sprintf("%d %s заканчива%s", n, plural(n, "товар", "товара", "товаров"), map[bool]string{true: "ется", false: "ются"}[n%10 == 1 && n%100 != 11]),
+				Text: name + " — осталось " + qty + " " + unit, Target: "stock"}
+			if uz {
+				a.Title = fmt.Sprintf("%d ta mahsulot tugayapti", n)
+				a.Text = name + " — " + qty + " " + unit + " qoldi"
+			}
+			out = append(out, a)
 		}
 	}
 
@@ -269,6 +281,13 @@ func (s *Service) alerts(ctx context.Context, p *identity.Principal, day time.Ti
 			if len(long) > 1 {
 				text += fmt.Sprintf(" · ещё %d %s", len(long)-1, plural(len(long)-1, "поставщик", "поставщика", "поставщиков"))
 			}
+			if uz {
+				title = fmt.Sprintf("%s: %d kundan beri toʻlanmagan", x.Name, *x.DaysUnpaid)
+				text = "qarz " + money.Group(x.Balance) + " soʻm"
+				if len(long) > 1 {
+					text += fmt.Sprintf(" · yana %d ta yetkazib beruvchi", len(long)-1)
+				}
+			}
 			id := x.ID
 			out = append(out, Alert{Kind: "supplier", Level: "amber", Title: title, Text: text, Target: "supplier", ID: &id})
 		}
@@ -287,7 +306,15 @@ func (s *Service) alerts(ctx context.Context, p *identity.Principal, day time.Ti
 			if due.Before(day) {
 				text, level = "просрочен с "+ruDate(due)+" · "+money.Group(amount)+" сум", "red"
 			}
-			out = append(out, Alert{Kind: "billing", Level: level, Title: "Счёт за подписку", Text: text, Target: "billing"})
+			title := "Счёт за подписку"
+			if uz {
+				title = "Obuna hisobi"
+				text = uzDate(due) + " gacha toʻlang · " + money.Group(amount) + " soʻm"
+				if due.Before(day) {
+					text = uzDate(due) + " dan beri muddati oʻtgan · " + money.Group(amount) + " soʻm"
+				}
+			}
+			out = append(out, Alert{Kind: "billing", Level: level, Title: title, Text: text, Target: "billing"})
 		} else if err != pgx.ErrNoRows {
 			return nil, err
 		}
@@ -301,8 +328,13 @@ func (s *Service) alerts(ctx context.Context, p *identity.Principal, day time.Ti
 			return nil, err
 		}
 		if n > 0 {
-			out = append(out, Alert{Kind: "orders", Level: "red", Title: fmt.Sprintf("%d %s ждут приёма", n, plural(n, "заказ", "заказа", "заказов")),
-				Text: fmt.Sprintf("оплачены больше %d минут назад", orderWaitMinutes), Target: "orders"})
+			a := Alert{Kind: "orders", Level: "red", Title: fmt.Sprintf("%d %s ждут приёма", n, plural(n, "заказ", "заказа", "заказов")),
+				Text: fmt.Sprintf("оплачены больше %d минут назад", orderWaitMinutes), Target: "orders"}
+			if uz {
+				a.Title = fmt.Sprintf("%d ta buyurtma qabul qilinishini kutmoqda", n)
+				a.Text = fmt.Sprintf("%d daqiqadan koʻproq oldin toʻlangan", orderWaitMinutes)
+			}
+			out = append(out, a)
 		}
 	}
 	return out, nil
@@ -361,7 +393,7 @@ func (s *Service) SaveSettings(ctx context.Context, p *identity.Principal, in Se
 		return Settings{}, err
 	}
 	if in.Hour < 0 || in.Hour > 23 {
-		return Settings{}, apperr.Validation("hour: от 0 до 23")
+		return Settings{}, apperr.Validation("hour: от 0 до 23").Uz("hour: 0 dan 23 gacha")
 	}
 	_, err := s.pool.Exec(ctx, `INSERT INTO owner_summary_settings (employee_id, enabled, hour) VALUES ($1, $2, $3)
 		ON CONFLICT (employee_id) DO UPDATE SET enabled = $2, hour = $3, updated_at = now()`, p.EmployeeID, in.Enabled, in.Hour)
@@ -413,12 +445,20 @@ func (s *Service) send(ctx context.Context, employeeID string, enabled bool, tod
 	if err != nil {
 		return err
 	}
+	// Итоги — на языке получателя (users.language).
+	var lang string
+	if err := s.pool.QueryRow(ctx, `SELECT u.language FROM employees e JOIN users u ON u.id = e.user_id WHERE e.id = $1`, employeeID).Scan(&lang); err != nil {
+		return err
+	}
+	ctx = i18n.WithLang(ctx, lang)
 	sum, err := s.Day(ctx, p, today.Format("2006-01-02"), "")
 	if err != nil {
 		return err
 	}
-	title, body := PushText(sum, today)
-	if err := push.EnqueueEmployee(ctx, s.pool, employeeID, "owner_summary", title, body,
+	title, body := PushText(sum, today, lang)
+	t := i18n.Text{RU: title, UZ: title}
+	b := i18n.Text{RU: body, UZ: body}
+	if err := push.EnqueueEmployee(ctx, s.pool, employeeID, "owner_summary", t, b,
 		map[string]string{"type": "summary", "date": sum.Date}); err != nil {
 		return err
 	}
@@ -428,7 +468,11 @@ func (s *Service) send(ctx context.Context, employeeID string, enabled bool, tod
 }
 
 // PushText — «Итоги дня · 2 октября» / «Выручка 6,1 млн (+12% к вчера), прибыль 1,2 млн. Недостача 45 000 у кассира, …».
-func PushText(s Summary, day time.Time) (string, string) {
+// lang — язык получателя; s уже посчитан на этом языке.
+func PushText(s Summary, day time.Time, lang string) (string, string) {
+	if lang == i18n.UZ {
+		return pushTextUz(s, day)
+	}
 	title := "Итоги дня · " + ruDate(day)
 	var b strings.Builder
 	b.WriteString("Выручка " + Short(s.Revenue))
@@ -482,6 +526,56 @@ func Short(v string) string {
 var months = [...]string{"января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"}
 
 func ruDate(t time.Time) string { return fmt.Sprintf("%d %s", t.Day(), months[t.Month()-1]) }
+
+var monthsUz = [...]string{"yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"}
+
+// uzDate — «2-oktabr».
+func uzDate(t time.Time) string { return fmt.Sprintf("%d-%s", t.Day(), monthsUz[t.Month()-1]) }
+
+// pushTextUz — «Kun yakunlari · 2-oktabr» / «Tushum 6,1 mln (kechaga nisbatan +12%), foyda 1,2 mln. Kassirda kamomad 45 000 soʻm, …».
+func pushTextUz(s Summary, day time.Time) (string, string) {
+	title := "Kun yakunlari · " + uzDate(day)
+	var b strings.Builder
+	b.WriteString("Tushum " + shortUz(s.Revenue))
+	if s.ChangePct != nil {
+		sign := "+"
+		if *s.ChangePct < 0 {
+			sign = "−"
+		}
+		fmt.Fprintf(&b, " (kechaga nisbatan %s%d%%)", sign, abs(*s.ChangePct))
+	}
+	b.WriteString(", foyda " + shortUz(s.Profit) + ".")
+	var notes []string
+	for _, a := range s.Alerts {
+		switch a.Kind {
+		case "shortage":
+			notes = append(notes, "kassirda "+lowerFirst(a.Title))
+		case "low_stock", "orders":
+			notes = append(notes, a.Title)
+		case "supplier":
+			notes = append(notes, "yetkazib beruvchiga toʻlanmagan qarz")
+		case "billing":
+			notes = append(notes, "obuna hisobi")
+		}
+		if len(notes) == 3 {
+			break
+		}
+	}
+	if len(notes) > 0 {
+		n := []rune(strings.Join(notes, ", "))
+		b.WriteString(" " + strings.ToUpper(string(n[:1])) + string(n[1:]) + ".")
+	}
+	return title, b.String()
+}
+
+// shortUz — Short с «mln» вместо «млн».
+func shortUz(v string) string {
+	s := Short(v)
+	if strings.HasSuffix(s, " млн") {
+		return strings.TrimSuffix(s, " млн") + " mln"
+	}
+	return s
+}
 
 func abs(v int) int {
 	if v < 0 {

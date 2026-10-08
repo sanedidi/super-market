@@ -30,6 +30,8 @@ class NewProductScreen extends StatefulWidget {
   });
 
   final StartApi start;
+
+  /// Название по фото полки — в русское поле (так его отдаёт распознавание).
   final String? name;
   final String? barcode;
   final String? brandId;
@@ -55,7 +57,9 @@ class _Option {
 class _NewProductScreenState extends State<NewProductScreen> {
   final _picker = ImagePicker();
   final _photos = <Uint8List>[];
-  late final _name = TextEditingController(text: widget.name ?? '');
+  // Название на двух языках: name — русский, name_uz — узбекский.
+  late final _nameRu = TextEditingController(text: widget.name ?? '');
+  final _nameUz = TextEditingController();
   late final _barcode = TextEditingController(text: widget.barcode ?? '');
   final _qty = TextEditingController(text: '1');
   final _cost = TextEditingController();
@@ -78,7 +82,8 @@ class _NewProductScreenState extends State<NewProductScreen> {
 
   @override
   void dispose() {
-    _name.dispose();
+    _nameRu.dispose();
+    _nameUz.dispose();
     _barcode.dispose();
     _qty.dispose();
     _cost.dispose();
@@ -115,7 +120,11 @@ class _NewProductScreenState extends State<NewProductScreen> {
         _categories = options;
         _brands = brands;
         _units = res[2].where((u) => u['is_active'] != false).toList();
-        _unitId ??= _units.where((u) => u['short_name'] == 'шт').map((u) => u['id'] as String).firstOrNull ??
+        // short_name приходит на языке запроса — «шт» или «dona».
+        _unitId ??= _units
+                .where((u) => u['short_name'] == 'шт' || u['short_name'] == 'dona' || u['short_name_ru'] == 'шт')
+                .map((u) => u['id'] as String)
+                .firstOrNull ??
             (_units.isEmpty ? null : _units.first['id'] as String);
       });
     } catch (e) {
@@ -144,7 +153,7 @@ class _NewProductScreenState extends State<NewProductScreen> {
       final bytes = await x.readAsBytes();
       if (mounted) setState(() => _photos.add(bytes));
     } catch (_) {
-      if (mounted) showMessage(context, 'Нет доступа к камере. Разрешите доступ в настройках телефона.');
+      if (mounted) showMessage(context, tr('Нет доступа к камере. Разрешите доступ в настройках телефона.', 'Kameraga ruxsat yoʻq. Telefon sozlamalarida ruxsat bering.'));
     }
   }
 
@@ -154,15 +163,16 @@ class _NewProductScreenState extends State<NewProductScreen> {
   }
 
   Future<void> _save() async {
-    final name = _name.text.trim();
+    final nameRu = _nameRu.text.trim();
+    final nameUz = _nameUz.text.trim();
     final price = parseNum(_price.text);
     final qty = parseNum(_qty.text);
-    if (name.isEmpty || _categoryId == null || _unitId == null || price == null || num.parse(price) <= 0) {
-      showMessage(context, 'Заполните название, категорию и цену продажи');
+    if ((nameRu.isEmpty && nameUz.isEmpty) || _categoryId == null || _unitId == null || price == null || num.parse(price) <= 0) {
+      showMessage(context, tr('Заполните название, категорию и цену продажи', 'Nomi, kategoriya va sotuv narxini toʻldiring'));
       return;
     }
     if (widget.withLine && (qty == null || num.parse(qty) <= 0)) {
-      showMessage(context, 'Укажите количество');
+      showMessage(context, tr('Укажите количество', 'Miqdorni kiriting'));
       return;
     }
     final api = context.read<Api>();
@@ -175,7 +185,9 @@ class _NewProductScreenState extends State<NewProductScreen> {
       }
       final code = _barcode.text.trim();
       final p = await api.post('/store/products', {
-        'name': name,
+        // Только узбекское — сервер запишет его и в name.
+        if (nameRu.isNotEmpty) 'name': nameRu,
+        if (nameUz.isNotEmpty) 'name_uz': nameUz,
         'category_id': _categoryId,
         'unit_id': _unitId,
         if (_brandId != null) 'brand_id': _brandId,
@@ -200,6 +212,36 @@ class _NewProductScreenState extends State<NewProductScreen> {
 
   Widget _label(String t) => Padding(padding: const EdgeInsets.only(top: 14, bottom: 6), child: Text(t, style: AppText.small));
 
+  /// Поля названия: сначала на языке интерфейса, у каждого — «Перевести автоматически».
+  List<Widget> _nameFields() {
+    final api = widget.start.api;
+    final ru = [
+      _label(tr('Название (рус.)', 'Nomi (rus.)')),
+      TextField(
+        controller: _nameRu,
+        textCapitalization: TextCapitalization.sentences,
+        decoration: InputDecoration(
+          fillColor: AppColors.white,
+          hintText: tr('Вид, бренд, вкус, объём — «Квас Navruz 1,5 л»', 'Turi, brendi, taʼmi, hajmi — «Kvas Navruz 1,5 l»'),
+          suffixIcon: TranslateButton(api: api, source: _nameUz, target: _nameRu, to: Lang.ru),
+        ),
+      ),
+    ];
+    final uz = [
+      _label(tr('Название (узб.)', 'Nomi (oʻzb.)')),
+      TextField(
+        controller: _nameUz,
+        textCapitalization: TextCapitalization.sentences,
+        decoration: InputDecoration(
+          fillColor: AppColors.white,
+          hintText: tr('Вид, бренд, вкус, объём — «Navruz kvasi 1,5 l»', 'Turi, brendi, taʼmi, hajmi — «Navruz kvasi 1,5 l»'),
+          suffixIcon: TranslateButton(api: api, source: _nameRu, target: _nameUz, to: Lang.uz),
+        ),
+      ),
+    ];
+    return Lang.instance.isUz ? [...uz, ...ru] : [...ru, ...uz];
+  }
+
   Widget _select(String? value, String hint, VoidCallback onTap) => Material(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(16),
@@ -218,14 +260,14 @@ class _NewProductScreenState extends State<NewProductScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final unitShort = _units.where((u) => u['id'] == _unitId).map((u) => '${u['short_name']}').firstOrNull ?? 'шт';
+    final unitShort = _units.where((u) => u['id'] == _unitId).map((u) => '${u['short_name']}').firstOrNull ?? tr('шт', 'dona');
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppColors.bg,
         leading: IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.of(context).pop()),
-        title: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Новый товар'),
-          Text('Нет в общем каталоге — уйдёт на модерацию', style: AppText.small),
+        title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(tr('Новый товар', 'Yangi mahsulot')),
+          Text(tr('Нет в общем каталоге — уйдёт на модерацию', 'Umumiy katalogda yoʻq — moderatsiyaga yuboriladi'), style: AppText.small),
         ]),
       ),
       body: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
@@ -254,7 +296,7 @@ class _NewProductScreenState extends State<NewProductScreen> {
                   child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                     const Icon(Icons.add_a_photo_rounded),
                     const SizedBox(height: 4),
-                    Text(_photos.isEmpty ? 'Фото' : 'Ещё фото', style: AppText.caption),
+                    Text(_photos.isEmpty ? tr('Фото', 'Rasm') : tr('Ещё фото', 'Yana rasm'), style: AppText.caption),
                   ]),
                 ),
               ),
@@ -268,23 +310,18 @@ class _NewProductScreenState extends State<NewProductScreen> {
             child: Row(children: [
               const Icon(Icons.auto_awesome_rounded, color: AppColors.blue, size: 18),
               const SizedBox(width: 8),
-              Expanded(child: Text('Super Market заполнил поля по фото — проверьте', style: AppText.small.copyWith(color: AppColors.blue))),
+              Expanded(child: Text(tr('Super Market заполнил поля по фото — проверьте', 'Super Market maydonlarni rasm boʻyicha toʻldirdi — tekshiring'), style: AppText.small.copyWith(color: AppColors.blue))),
             ]),
           ),
         ],
-        _label('Название'),
-        TextField(
-          controller: _name,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(fillColor: AppColors.white, hintText: 'Вид, бренд, вкус, объём — «Квас Navruz 1,5 л»'),
-        ),
-        _label('Категория'),
-        _select(_title(_categories, _categoryId), 'Выберите категорию',
-            () => _choose('Категория', _categories, (v) => _categoryId = v)),
-        _label('Бренд'),
-        _select(_title(_brands, _brandId), 'Без бренда', () => _choose('Бренд', _brands, (v) => _brandId = v, allowNone: true)),
+        ..._nameFields(),
+        _label(tr('Категория', 'Kategoriya')),
+        _select(_title(_categories, _categoryId), tr('Выберите категорию', 'Kategoriyani tanlang'),
+            () => _choose(tr('Категория', 'Kategoriya'), _categories, (v) => _categoryId = v)),
+        _label(tr('Бренд', 'Brend')),
+        _select(_title(_brands, _brandId), tr('Без бренда', 'Brendsiz'), () => _choose(tr('Бренд', 'Brend'), _brands, (v) => _brandId = v, allowNone: true)),
         if (_units.length > 1) ...[
-          _label('Единица'),
+          _label(tr('Единица', 'Oʻlchov birligi')),
           Wrap(spacing: 8, runSpacing: 8, children: [
             for (final u in _units)
               ChoiceChip(
@@ -295,34 +332,36 @@ class _NewProductScreenState extends State<NewProductScreen> {
               ),
           ]),
         ],
-        _label('Штрихкод'),
+        _label(tr('Штрихкод', 'Shtrix-kod')),
         TextField(
           controller: _barcode,
           keyboardType: TextInputType.number,
           decoration: InputDecoration(
             fillColor: AppColors.white,
-            hintText: 'Нет',
+            hintText: tr('Нет', 'Yoʻq'),
             suffixIcon: IconButton(icon: const Icon(Icons.qr_code_scanner_rounded), onPressed: _scan),
           ),
         ),
         const SizedBox(height: 14),
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           if (widget.withLine) ...[
-            Expanded(child: NumField(label: 'Кол-во, $unitShort', controller: _qty)),
+            Expanded(child: NumField(label: tr('Кол-во, $unitShort', 'Miqdor, $unitShort'), controller: _qty)),
             const SizedBox(width: 10),
-            Expanded(child: NumField(label: 'Закупка', controller: _cost, hint: '—')),
+            Expanded(child: NumField(label: tr('Закупка', 'Xarid'), controller: _cost, hint: '—')),
             const SizedBox(width: 10),
           ],
-          Expanded(child: NumField(label: 'Продажа', controller: _price)),
+          Expanded(child: NumField(label: tr('Продажа', 'Sotuv'), controller: _price)),
         ]),
       ]),
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            BigButton(label: widget.withLine ? 'Создать и добавить' : 'Создать товар', icon: Icons.add_rounded, busy: _busy, onPressed: _save),
+            BigButton(label: widget.withLine ? tr('Создать и добавить', 'Yaratish va qoʻshish') : tr('Создать товар', 'Mahsulot yaratish'), icon: Icons.add_rounded, busy: _busy, onPressed: _save),
             const SizedBox(height: 8),
-            const Text('Пока товар на модерации, его можно продавать на кассе. В приложении покупателя он появится после одобрения',
+            Text(
+                tr('Пока товар на модерации, его можно продавать на кассе. В приложении покупателя он появится после одобрения',
+                    'Mahsulot moderatsiyada boʻlsa ham, uni kassada sotish mumkin. Xaridor ilovasida u tasdiqlangandan keyin paydo boʻladi'),
                 style: AppText.small, textAlign: TextAlign.center),
           ]),
         ),
@@ -355,13 +394,13 @@ class _OptionSheetState extends State<_OptionSheet> {
       TextField(
         autofocus: widget.options.length > 12,
         onChanged: (v) => setState(() => _q = v.trim()),
-        decoration: const InputDecoration(prefixIcon: Icon(Icons.search_rounded), hintText: 'Поиск'),
+        decoration: InputDecoration(prefixIcon: const Icon(Icons.search_rounded), hintText: tr('Поиск', 'Qidirish')),
       ),
       const SizedBox(height: 8),
       if (widget.allowNone)
         ListTile(
           contentPadding: EdgeInsets.zero,
-          title: const Text('Без бренда', style: AppText.body),
+          title: Text(tr('Без бренда', 'Brendsiz'), style: AppText.body),
           onTap: () => Navigator.of(context).pop(const _Option('', '')),
         ),
       for (final o in list)
@@ -370,7 +409,7 @@ class _OptionSheetState extends State<_OptionSheet> {
           title: Text(o.title, style: AppText.body),
           onTap: () => Navigator.of(context).pop(o),
         ),
-      if (list.isEmpty) const Padding(padding: EdgeInsets.all(16), child: Text('Ничего не найдено', style: AppText.small)),
+      if (list.isEmpty) Padding(padding: const EdgeInsets.all(16), child: Text(tr('Ничего не найдено', 'Hech narsa topilmadi'), style: AppText.small)),
     ]);
   }
 }
@@ -400,7 +439,7 @@ class _ScanOnceScreenState extends State<ScanOnceScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.ink,
         foregroundColor: AppColors.white,
-        title: Text('Штрихкод', style: AppText.title.copyWith(color: AppColors.white)),
+        title: Text(tr('Штрихкод', 'Shtrix-kod'), style: AppText.title.copyWith(color: AppColors.white)),
       ),
       body: Stack(fit: StackFit.expand, children: [
         MobileScanner(

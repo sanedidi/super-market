@@ -68,7 +68,7 @@ class _HandoverSheetState extends State<_HandoverSheet> {
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       Navigator.of(context).pop(true);
-      messenger.showSnackBar(const SnackBar(content: Text('Касса сдана в главную кассу')));
+      messenger.showSnackBar(SnackBar(content: Text(tr('Касса сдана в главную кассу', 'Kassa asosiy kassaga topshirildi'))));
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -83,9 +83,12 @@ class _HandoverSheetState extends State<_HandoverSheet> {
       padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
       child: SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Сдать кассу', style: AppText.h3),
+          Text(tr('Сдать кассу', 'Kassani topshirish'), style: AppText.h3),
           const SizedBox(height: 4),
-          Text('${c['name']} → главная касса сети. В кассе сейчас ${money(c['balance'])}.', style: AppText.small),
+          Text(
+              tr('${c['name']} → главная касса сети. В кассе сейчас ${money(c['balance'])}.',
+                  '${c['name']} → tarmoqning asosiy kassasi. Hozir kassada ${money(c['balance'])}.'),
+              style: AppText.small),
           const SizedBox(height: 16),
           TextField(
             controller: _amount,
@@ -93,12 +96,12 @@ class _HandoverSheetState extends State<_HandoverSheet> {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,\s]'))],
             style: AppText.h2,
-            decoration: InputDecoration(labelText: 'Сумма', suffixText: c['currency'] == 'USD' ? 'USD' : 'сум', errorText: _error),
+            decoration: InputDecoration(labelText: tr('Сумма', 'Summa'), suffixText: c['currency'] == 'USD' ? 'USD' : tr('сум', 'soʻm'), errorText: _error),
           ),
           const SizedBox(height: 12),
-          TextField(controller: _note, decoration: const InputDecoration(labelText: 'Комментарий (необязательно)')),
+          TextField(controller: _note, decoration: InputDecoration(labelText: tr('Комментарий (необязательно)', 'Izoh (ixtiyoriy)'))),
           const SizedBox(height: 20),
-          BigButton(label: 'Сдать', icon: Icons.outbox_rounded, busy: _busy, onPressed: _submit),
+          BigButton(label: tr('Сдать', 'Topshirish'), icon: Icons.outbox_rounded, busy: _busy, onPressed: _submit),
         ]),
       ),
     );

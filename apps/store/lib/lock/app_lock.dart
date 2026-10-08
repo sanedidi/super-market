@@ -11,6 +11,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sm_core/sm_core.dart';
 
 const pinLength = 4;
 
@@ -20,18 +21,18 @@ const maxPinAttempts = 5;
 /// Когда спрашивать код после сворачивания: сразу, через 1 или 5 минут.
 const lockAfterOptions = [Duration.zero, Duration(minutes: 1), Duration(minutes: 5)];
 
-String lockAfterTitle(Duration d) => d == Duration.zero ? 'Сразу' : 'Через ${d.inMinutes} мин';
+String lockAfterTitle(Duration d) => d == Duration.zero ? tr('Сразу', 'Darhol') : tr('Через ${d.inMinutes} мин', '${d.inMinutes} daqiqadan keyin');
 
 /// Хэш кода с солью.
 String hashPin(String pin, String salt) => sha256.convert(utf8.encode('$salt:$pin')).toString();
 
 /// Почему код не подходит (В3): null — подходит.
 String? weakPin(String pin) {
-  if (pin.length != pinLength || !RegExp(r'^\d+$').hasMatch(pin)) return 'Код — $pinLength цифры';
-  if (pin.split('').toSet().length == 1) return 'Слишком простой код — цифры не должны повторяться';
+  if (pin.length != pinLength || !RegExp(r'^\d+$').hasMatch(pin)) return tr('Код — $pinLength цифры', 'Kod — $pinLength ta raqam');
+  if (pin.split('').toSet().length == 1) return tr('Слишком простой код — цифры не должны повторяться', 'Kod juda oddiy — raqamlar takrorlanmasin');
   const seq = '01234567890';
   const rev = '09876543210';
-  if (seq.contains(pin) || rev.contains(pin)) return 'Слишком простой код — не используйте 1234';
+  if (seq.contains(pin) || rev.contains(pin)) return tr('Слишком простой код — не используйте 1234', 'Kod juda oddiy — 1234 dan foydalanmang');
   return null;
 }
 
@@ -151,7 +152,7 @@ class AppLock extends ChangeNotifier {
   /// Открыть по Face ID (если включён).
   Future<bool> unlockWithBiometrics() async {
     if (!bioEnabled || !bioAvailable || !locked) return false;
-    final ok = await hold(() => biometrics.authenticate('Вход в Super Market Магазин'));
+    final ok = await hold(() => biometrics.authenticate(tr('Вход в Super Market Магазин', 'Super Market Doʻkon ilovasiga kirish')));
     if (ok) {
       fails = 0;
       locked = false;
@@ -165,7 +166,7 @@ class AppLock extends ChangeNotifier {
   Future<bool> setBiometrics(bool on) async {
     if (on) {
       if (!bioAvailable) return false;
-      final ok = await hold(() => biometrics.authenticate('Включить вход по Face ID'));
+      final ok = await hold(() => biometrics.authenticate(tr('Включить вход по Face ID', 'Face ID orqali kirishni yoqish')));
       if (!ok) return false;
     }
     bioEnabled = on;

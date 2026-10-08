@@ -2,7 +2,22 @@ import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Button, ColorPicker, Flex, Form, Image, Input, InputNumber, Modal, Segmented, Space, Switch, Tag, Typography, type TableColumnType } from 'antd'
 import { PictureOutlined } from '@ant-design/icons'
-import { ActiveTag, CrudPage, ImageUpload, ProductTree, ProductViewSwitch, RemoteSelect, StatusTag, api, money, useAction, useProductView } from '@sm/shared'
+import {
+  ActiveTag,
+  CrudPage,
+  FormTranslate,
+  ImageUpload,
+  ProductTree,
+  ProductViewSwitch,
+  RemoteSelect,
+  StatusTag,
+  api,
+  money,
+  useAction,
+  useProductView,
+  withRawRu,
+  type Lang,
+} from '@sm/shared'
 import { SearchSelect } from '../components'
 
 interface Dict {
@@ -15,6 +30,24 @@ interface Dict {
   hex?: string | null
   short_name?: string
   is_fractional?: boolean
+  // Узбекский перевод (у брендов его нет).
+  name_uz?: string | null
+  short_name_uz?: string | null
+}
+
+/** Справочники, у которых есть узбекские названия. */
+const TRANSLATED = ['categories', 'colors', 'units']
+
+/** Кнопка автоперевода внутри формы CrudPage: форма берётся из контекста. */
+function Tr({ from, into, to }: { from: string; into: string; to: Lang }) {
+  const form = Form.useFormInstance()
+  return <FormTranslate form={form} from={from} into={into} to={to} />
+}
+
+/** Значок «нет перевода» — только если сервер прислал поле, а оно пустое. */
+function NoUz({ v }: { v: string | null | undefined }) {
+  if (v === undefined || (v ?? '').trim()) return null
+  return <Tag color="orange">нет перевода</Tag>
 }
 
 const dictTitles: Record<string, string> = {
@@ -33,6 +66,7 @@ export function Dictionary() {
 function DictionaryPage({ kind }: { kind: string }) {
   const path = `/admin/catalog/${kind}`
   const [q, setQ] = useState('')
+  const uz = TRANSLATED.includes(kind)
   const columns = [
     ...(kind === 'categories'
       ? [
@@ -45,6 +79,23 @@ function DictionaryPage({ kind }: { kind: string }) {
         ]
       : []),
     { title: 'Название', dataIndex: 'name' },
+    ...(uz
+      ? [
+          {
+            title: 'Перевод',
+            key: 'uz',
+            render: (_: unknown, r: Dict) =>
+              (r.name_uz ?? '').trim() ? (
+                <>
+                  {r.name_uz}
+                  {kind === 'units' && r.short_name_uz ? ` (${r.short_name_uz})` : ''}
+                </>
+              ) : (
+                <NoUz v={r.name_uz} />
+              ),
+          },
+        ]
+      : []),
     ...(kind === 'categories'
       ? [
           { title: 'Родитель', dataIndex: 'parent_name', render: (n: string | null) => n || '—' },
@@ -82,8 +133,13 @@ function DictionaryPage({ kind }: { kind: string }) {
       form={(editing) => (
         <>
           <Form.Item name="name" label="Название" rules={[{ required: true }]}>
-            <Input />
+            <Input suffix={uz ? <Tr from="name_uz" into="name" to="ru" /> : undefined} />
           </Form.Item>
+          {uz && (
+            <Form.Item name="name_uz" label="Название (узб.)" extra="Латиница. Пусто — в приложении будет русское название">
+              <Input suffix={<Tr from="name" into="name_uz" to="uz" />} />
+            </Form.Item>
+          )}
           {kind === 'categories' && (
             <>
               <Form.Item name="parent_id" label="Родительская категория">
@@ -111,7 +167,10 @@ function DictionaryPage({ kind }: { kind: string }) {
           {kind === 'units' && (
             <>
               <Form.Item name="short_name" label="Кратко (шт, кг)" rules={[{ required: true }]}>
-                <Input />
+                <Input suffix={<Tr from="short_name_uz" into="short_name" to="ru" />} />
+              </Form.Item>
+              <Form.Item name="short_name_uz" label="Сокр. (узб.)">
+                <Input placeholder="dona, kg" suffix={<Tr from="short_name" into="short_name_uz" to="uz" />} />
               </Form.Item>
               <Form.Item name="is_fractional" label="Дробное количество" valuePropName="checked">
                 <Switch />
@@ -148,6 +207,11 @@ interface Product {
   rejection_reason: string
   is_active: boolean
   attributes: Record<string, unknown> | null
+  // Узбекский перевод; для правки сервер отдаёт и сырые русские name_ru/description_ru.
+  name_uz?: string | null
+  description_uz?: string | null
+  name_ru?: string
+  description_ru?: string
 }
 
 // Характеристики для карточки товара в приложении.
@@ -204,7 +268,7 @@ const treeName: TableColumnType<Product> = {
         </Flex>
       )}
       <div>
-        {p.name}
+        {p.name} <NoUz v={p.name_uz} />
         {p.network_id && (
           <div>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -291,7 +355,7 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
             title: 'Товар',
             render: (_, p) => (
               <>
-                {p.name}
+                {p.name} <NoUz v={p.name_uz} />
                 <br />
                 <Typography.Text type="secondary">{[p.brand_name, p.category_name].filter(Boolean).join(' · ')}</Typography.Text>
               </>
@@ -335,7 +399,7 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
               ]
             : []),
         ]}
-        toForm={(p) => ({ ...p, ...attrsToForm(p.attributes), images: p.images ?? [], barcodes: p.barcodes?.join('\n') })}
+        toForm={(p) => ({ ...withRawRu(p), ...attrsToForm(p.attributes), images: p.images ?? [], barcodes: p.barcodes?.join('\n') })}
         toBody={(raw) => {
           const { rest: v, attrs } = formToAttrs(raw)
           return {
@@ -354,7 +418,10 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
         form={(editing) => (
           <>
             <Form.Item name="name" label="Название" rules={[{ required: true }]}>
-              <Input />
+              <Input suffix={<Tr from="name_uz" into="name" to="ru" />} />
+            </Form.Item>
+            <Form.Item name="name_uz" label="Название (узб.)" extra="Латиница. Пусто — в приложении будет русское название">
+              <Input suffix={<Tr from="name" into="name_uz" to="uz" />} />
             </Form.Item>
             <Form.Item name="category_id" label="Категория" rules={[{ required: true }]}>
               <SearchSelect path="/admin/catalog/categories" known={{ id: editing?.category_id, label: editing?.category_name }} />
@@ -380,7 +447,26 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
                 <RemoteSelect path="/admin/catalog/colors" allowClear style={{ width: 200 }} />
               </Form.Item>
             </Space>
-            <Form.Item name="description" label="Описание">
+            <Form.Item
+              name="description"
+              label={
+                <Space size={4}>
+                  Описание
+                  <Tr from="description_uz" into="description" to="ru" />
+                </Space>
+              }
+            >
+              <Input.TextArea rows={2} />
+            </Form.Item>
+            <Form.Item
+              name="description_uz"
+              label={
+                <Space size={4}>
+                  Описание (узб.)
+                  <Tr from="description" into="description_uz" to="uz" />
+                </Space>
+              }
+            >
               <Input.TextArea rows={2} />
             </Form.Item>
             <Form.Item name="barcodes" label="Штрихкоды" extra="По одному в строке">

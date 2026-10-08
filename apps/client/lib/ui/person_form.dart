@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sm_core/sm_core.dart';
 
 import 'theme.dart';
 
@@ -104,7 +105,7 @@ class _PersonFormState extends State<PersonForm> {
       firstDate: DateTime(1900),
       lastDate: now,
       initialEntryMode: DatePickerEntryMode.calendarOnly,
-      helpText: 'Дата рождения',
+      helpText: tr('Дата рождения', 'Tugʻilgan sana'),
     );
     if (d == null) return;
     widget.data.birthDate = d;
@@ -115,7 +116,7 @@ class _PersonFormState extends State<PersonForm> {
   Widget build(BuildContext context) {
     final d = widget.data;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      const FieldLabel('Имя'),
+      FieldLabel(tr('Имя', 'Ism')),
       TextField(
         controller: _first,
         autofocus: widget.autofocus,
@@ -123,36 +124,36 @@ class _PersonFormState extends State<PersonForm> {
         textCapitalization: TextCapitalization.words,
         textInputAction: TextInputAction.next,
         style: AppText.body.copyWith(fontSize: 16),
-        decoration: outlinedField('Например, Азиз'),
+        decoration: outlinedField(tr('Например, Азиз', 'Masalan, Aziz')),
         onChanged: (v) {
           d.firstName = v;
           _changed();
         },
       ),
       const SizedBox(height: 16),
-      const FieldLabel('Фамилия'),
+      FieldLabel(tr('Фамилия', 'Familiya')),
       TextField(
         controller: _last,
         maxLength: 60,
         textCapitalization: TextCapitalization.words,
         style: AppText.body.copyWith(fontSize: 16),
-        decoration: outlinedField('Например, Каримов'),
+        decoration: outlinedField(tr('Например, Каримов', 'Masalan, Karimov')),
         onChanged: (v) {
           d.lastName = v;
           _changed();
         },
       ),
       const SizedBox(height: 16),
-      const FieldLabel('Дата рождения'),
+      FieldLabel(tr('Дата рождения', 'Tugʻilgan sana')),
       InkWell(
         borderRadius: BorderRadius.circular(AppRadius.lg),
         onTap: _pickDate,
         child: InputDecorator(
-          decoration: outlinedField('ДД.ММ.ГГГГ',
+          decoration: outlinedField(tr('ДД.ММ.ГГГГ', 'KK.OO.YYYY'),
               suffix: d.birthDate == null
                   ? const Icon(Icons.calendar_today_outlined, color: AppColors.text2)
                   : IconButton(
-                      tooltip: 'Очистить',
+                      tooltip: tr('Очистить', 'Tozalash'),
                       icon: const Icon(Icons.close_rounded, color: AppColors.text2),
                       onPressed: () {
                         d.birthDate = null;
@@ -164,7 +165,7 @@ class _PersonFormState extends State<PersonForm> {
         ),
       ),
       const SizedBox(height: 16),
-      const FieldLabel('Пол'),
+      FieldLabel(tr('Пол', 'Jins')),
       GenderSwitch(
         value: d.gender,
         onChanged: (v) {
@@ -208,7 +209,7 @@ class GenderSwitch extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(color: AppColors.soft, borderRadius: BorderRadius.circular(AppRadius.lg)),
-      child: Row(children: [option('male', 'Мужской'), option('female', 'Женский')]),
+      child: Row(children: [option('male', tr('Мужской', 'Erkak')), option('female', tr('Женский', 'Ayol'))]),
     );
   }
 }

@@ -10,10 +10,10 @@ import 'start_logic.dart';
 
 /// Подпись источника строки: общий каталог или новый товар на модерации.
 (String, Color?) lineOrigin(Map<String, dynamic> l) {
-  if (l['own'] != true) return ('общий каталог', null);
-  if (l['moderation'] == 'approved') return ('свой товар', null);
-  if (l['moderation'] == 'rejected') return ('новый · отклонён', AppColors.error);
-  return ('новый · на модерации', AppColors.warningInk);
+  if (l['own'] != true) return (tr('общий каталог', 'umumiy katalog'), null);
+  if (l['moderation'] == 'approved') return (tr('свой товар', 'oʻz mahsulotingiz'), null);
+  if (l['moderation'] == 'rejected') return (tr('новый · отклонён', 'yangi · rad etildi'), AppColors.error);
+  return (tr('новый · на модерации', 'yangi · moderatsiyada'), AppColors.warningInk);
 }
 
 /// Строка списка: фото, название, источник; справа — штуки и закупка → продажа.
@@ -103,10 +103,13 @@ class _StartReviewScreenState extends State<StartReviewScreen> {
     final d = _d!;
     final ok = await confirmSheet(
       context,
-      title: 'Провести ${goods(_n('products'))}?',
-      text: 'Товары встанут на склад «${d['warehouse_name']}» по закупочным ценам, цены продажи установятся в магазине.'
-          '${_n('no_cost') > 0 ? ' Без закупки: ${goods(_n('no_cost'))} — их себестоимость будет 0.' : ''}',
-      confirm: 'Провести',
+      title: tr('Провести ${goods(_n('products'))}?', '${goods(_n('products'))}ni oʻtkazasizmi?'),
+      text: tr(
+          'Товары встанут на склад «${d['warehouse_name']}» по закупочным ценам, цены продажи установятся в магазине.'
+              '${_n('no_cost') > 0 ? ' Без закупки: ${goods(_n('no_cost'))} — их себестоимость будет 0.' : ''}',
+          'Mahsulotlar «${d['warehouse_name']}» omboriga xarid narxlarida kirim qilinadi, sotuv narxlari doʻkonda belgilanadi.'
+              '${_n('no_cost') > 0 ? ' Xarid narxisiz: ${goods(_n('no_cost'))} — ularning tannarxi 0 boʻladi.' : ''}'),
+      confirm: tr('Провести', 'Oʻtkazish'),
       icon: Icons.check_circle_outline_rounded,
     );
     if (!ok || !mounted) return;
@@ -132,12 +135,12 @@ class _StartReviewScreenState extends State<StartReviewScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.bg,
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Проверка'),
-          if (d != null) Text('${goods(_n('products'))} · ${plainQty(_t['qty'])} шт', style: AppText.small),
+          Text(tr('Проверка', 'Tekshirish')),
+          if (d != null) Text(tr('${goods(_n('products'))} · ${plainQty(_t['qty'])} шт', '${goods(_n('products'))} · ${plainQty(_t['qty'])} dona'), style: AppText.small),
         ]),
       ),
       body: _error != null && d == null
-          ? EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: _error.toString(), action: 'Повторить', onAction: _load)
+          ? EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: _error.toString(), action: tr('Повторить', 'Qayta urinish'), onAction: _load)
           : d == null
               ? const Center(child: CircularProgressIndicator())
               : RefreshIndicator(
@@ -151,8 +154,8 @@ class _StartReviewScreenState extends State<StartReviewScreen> {
                           const SizedBox(width: 10),
                           Expanded(
                             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text('У ${goods(_n('no_cost'))} нет закупочной цены', style: AppText.bodyStrong.copyWith(color: AppColors.warningInk)),
-                              Text('Без неё не посчитать прибыль. Можно провести и так', style: AppText.small.copyWith(color: AppColors.warningInk)),
+                              Text(tr('У ${goods(_n('no_cost'))} нет закупочной цены', '${goods(_n('no_cost'))}da xarid narxi yoʻq'), style: AppText.bodyStrong.copyWith(color: AppColors.warningInk)),
+                              Text(tr('Без неё не посчитать прибыль. Можно провести и так', 'Usiz foydani hisoblab boʻlmaydi. Shunday ham oʻtkazish mumkin'), style: AppText.small.copyWith(color: AppColors.warningInk)),
                             ]),
                           ),
                           TextButton(
@@ -160,38 +163,40 @@ class _StartReviewScreenState extends State<StartReviewScreen> {
                               setState(() => _onlyNoCost = !_onlyNoCost);
                               _load();
                             },
-                            child: Text(_onlyNoCost ? 'Все' : 'Показать', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
+                            child: Text(_onlyNoCost ? tr('Все', 'Hammasi') : tr('Показать', 'Koʻrsatish'), style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
                           ),
                         ]),
                       ),
                       const SizedBox(height: 12),
                     ],
                     if (_n('pending') > 0) ...[
-                      Text('Новых товаров на модерации: ${_n('pending')} — встанут на склад сразу, покупатели увидят их после проверки.',
+                      Text(
+                          tr('Новых товаров на модерации: ${_n('pending')} — встанут на склад сразу, покупатели увидят их после проверки.',
+                              'Moderatsiyadagi yangi mahsulotlar: ${_n('pending')} — omborga darhol kiritiladi, xaridorlar ularni tekshiruvdan keyin koʻradi.'),
                           style: AppText.small),
                       const SizedBox(height: 12),
                     ],
                     AppCard(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 6),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
                           child: Row(children: [
-                            Expanded(child: Text('ТОВАР', style: AppText.caption)),
-                            Text('КОЛ-ВО · ЗАКУПКА → ПРОДАЖА', style: AppText.caption),
+                            Expanded(child: Text(tr('ТОВАР', 'MAHSULOT'), style: AppText.caption)),
+                            Text(tr('КОЛ-ВО · ЗАКУПКА → ПРОДАЖА', 'MIQDOR · XARID → SOTUV'), style: AppText.caption),
                           ]),
                         ),
                         if (lines.isEmpty)
-                          const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Text('Список пуст', style: AppText.small)),
+                          Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Text(tr('Список пуст', 'Roʻyxat boʻsh'), style: AppText.small)),
                         for (final l in lines) StartLineTile(line: l, onTap: () => _edit(l)),
                       ]),
                     ),
                     const SizedBox(height: 12),
                     AppCard(
                       child: Column(children: [
-                        _row('Оприходование · склад «${d['warehouse_name']}»', money(_t['cost_total'])),
-                        _row('Установка цен', priced == 0 ? 'цены каталога' : '$priced ${plural(priced, 'цена', 'цены', 'цен')}'),
-                        _row('Будут видны покупателям', goods(_n('products') - _n('pending'))),
+                        _row(tr('Оприходование · склад «${d['warehouse_name']}»', 'Kirim · «${d['warehouse_name']}» ombori'), money(_t['cost_total'])),
+                        _row(tr('Установка цен', 'Narxlarni belgilash'), priced == 0 ? tr('цены каталога', 'katalog narxlari') : tr('$priced ${plural(priced, 'цена', 'цены', 'цен')}', '$priced ta narx')),
+                        _row(tr('Будут видны покупателям', 'Xaridorlarga koʻrinadi'), goods(_n('products') - _n('pending'))),
                       ]),
                     ),
                   ]),
@@ -202,7 +207,7 @@ class _StartReviewScreenState extends State<StartReviewScreen> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                 child: BigButton(
-                  label: 'Провести · ${money(_t['cost_total'])}',
+                  label: tr('Провести · ${money(_t['cost_total'])}', 'Oʻtkazish · ${money(_t['cost_total'])}'),
                   icon: Icons.check_circle_outline_rounded,
                   busy: _busy,
                   onPressed: _n('products') == 0 || d['status'] != 'open' ? null : _post,
@@ -248,11 +253,14 @@ class StartDoneScreen extends StatelessWidget {
         child: ListView(padding: const EdgeInsets.fromLTRB(24, 80, 24, 24), children: [
           const Center(child: IconBox(Icons.check_circle_rounded, bg: AppColors.successSoft, fg: AppColors.success, size: 96, iconSize: 56, radius: 48)),
           const SizedBox(height: 20),
-          const Text('Магазин готов к работе', style: AppText.h2, textAlign: TextAlign.center),
+          Text(tr('Магазин готов к работе', 'Doʻkon ishga tayyor'), style: AppText.h2, textAlign: TextAlign.center),
           const SizedBox(height: 8),
           Text(
-            '${goods(n('products'))} на складе «$warehouse». ${n('visible')} уже видят покупатели в приложении'
-            '${n('pending') > 0 ? ', ${n('pending')} новых — после модерации' : ''}.',
+            tr(
+                '${goods(n('products'))} на складе «$warehouse». ${n('visible')} уже видят покупатели в приложении'
+                    '${n('pending') > 0 ? ', ${n('pending')} новых — после модерации' : ''}.',
+                '«$warehouse» omborida ${goods(n('products'))}. Ulardan ${n('visible')} tasini xaridorlar ilovada allaqachon koʻrmoqda'
+                    '${n('pending') > 0 ? ', ${n('pending')} ta yangisi — moderatsiyadan keyin' : ''}.'),
             style: AppText.small,
             textAlign: TextAlign.center,
           ),
@@ -261,16 +269,16 @@ class StartDoneScreen extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(16)),
             child: Column(children: [
-              for (final doc in docs) row('Оприходование № ${doc['number']}', docs.length == 1 ? money(r['cost_total']) : ''),
-              if (price != null) row('Установка цен № ${price['number']}', 'проведена'),
+              for (final doc in docs) row(tr('Оприходование № ${doc['number']}', 'Kirim № ${doc['number']}'), docs.length == 1 ? money(r['cost_total']) : ''),
+              if (price != null) row(tr('Установка цен № ${price['number']}', 'Narx belgilash № ${price['number']}'), tr('проведена', 'oʻtkazildi')),
             ]),
           ),
           const SizedBox(height: 12),
-          const Text('В приложении товары видны, когда магазин принимает онлайн-заказы и открыт.', style: AppText.small, textAlign: TextAlign.center),
+          Text(tr('В приложении товары видны, когда магазин принимает онлайн-заказы и открыт.', 'Doʻkon ochiq va onlayn buyurtmalarni qabul qilayotganda mahsulotlar ilovada koʻrinadi.'), style: AppText.small, textAlign: TextAlign.center),
           const SizedBox(height: 24),
-          BigButton(label: 'На главную', onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst)),
+          BigButton(label: tr('На главную', 'Bosh sahifaga'), onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst)),
           const SizedBox(height: 12),
-          BigButton(label: 'Добавить ещё товары', color: AppColors.soft, foreground: AppColors.ink, onPressed: () => Navigator.of(context).pop()),
+          BigButton(label: tr('Добавить ещё товары', 'Yana mahsulot qoʻshish'), color: AppColors.soft, foreground: AppColors.ink, onPressed: () => Navigator.of(context).pop()),
         ]),
       ),
     );

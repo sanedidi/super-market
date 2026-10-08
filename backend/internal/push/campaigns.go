@@ -122,7 +122,7 @@ var sections = map[string]string{
 
 func uuidOrEmpty(field, v string) error {
 	if v != "" && !httpx.IsUUID(v) {
-		return apperr.Validation(field + ": неверный id")
+		return apperr.Validation(field + ": неверный id").Uz(field + ": id notoʻgʻri")
 	}
 	return nil
 }
@@ -133,12 +133,12 @@ func (s *Service) storeName(ctx context.Context, id string) (string, error) {
 		return "ближайший магазин", nil
 	}
 	if !httpx.IsUUID(id) {
-		return "", apperr.Validation("target.store_id: выберите магазин")
+		return "", apperr.Validation("target.store_id: выберите магазин").Uz("target.store_id: doʻkonni tanlang")
 	}
 	var name, addr string
 	err := s.pool.QueryRow(ctx, `SELECT name, address FROM stores WHERE id = $1 AND status = 'active'`, id).Scan(&name, &addr)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", apperr.Validation("target.store_id: магазин не найден или закрыт")
+		return "", apperr.Validation("target.store_id: магазин не найден или закрыт").Uz("target.store_id: doʻkon topilmadi yoki yopilgan")
 	}
 	if addr != "" {
 		name += " · " + addr
@@ -148,12 +148,12 @@ func (s *Service) storeName(ctx context.Context, id string) (string, error) {
 
 func (s *Service) one(ctx context.Context, field, query, id string) (string, error) {
 	if !httpx.IsUUID(id) {
-		return "", apperr.Validation(field + ": не выбрано")
+		return "", apperr.Validation(field + ": не выбрано").Uz(field + ": tanlanmagan")
 	}
 	var name string
 	err := s.pool.QueryRow(ctx, query, id).Scan(&name)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", apperr.Validation(field + ": не найдено")
+		return "", apperr.Validation(field + ": не найдено").Uz(field + ": topilmadi")
 	}
 	return name, err
 }
@@ -235,20 +235,20 @@ func (s *Service) checkTarget(ctx context.Context, t *Target) (string, error) {
 				return "Главная → " + b.Title, nil
 			}
 		}
-		return "", apperr.Validation("target.block_id: выберите блок главной")
+		return "", apperr.Validation("target.block_id: выберите блок главной").Uz("target.block_id: bosh sahifa blokini tanlang")
 	case "url":
 		u, err := url.Parse(t.URL)
 		if err != nil || u.Scheme != "https" || u.Host == "" || len(t.URL) > 500 {
-			return "", apperr.Validation("target.url: нужна ссылка https://…")
+			return "", apperr.Validation("target.url: нужна ссылка https://…").Uz("target.url: https://… havola kerak")
 		}
 		*t = Target{Type: "url", URL: t.URL}
 		return "Ссылка " + u.Host, nil
 	default:
-		return "", apperr.Validation("target.type: неизвестный переход")
+		return "", apperr.Validation("target.type: неизвестный переход").Uz("target.type: nomaʼlum oʻtish")
 	}
 	// Магазин и его товары.
 	if t.Type == "store" && t.StoreID == "nearest" {
-		return "", apperr.Validation("target.store_id: выберите конкретный магазин")
+		return "", apperr.Validation("target.store_id: выберите конкретный магазин").Uz("target.store_id: aniq doʻkonni tanlang")
 	}
 	store, err := s.storeName(ctx, t.StoreID)
 	if err != nil {
@@ -263,14 +263,14 @@ func (s *Service) checkTarget(ctx context.Context, t *Target) (string, error) {
 		*t = Target{Type: "deals", StoreID: t.StoreID}
 		return "Скидки: " + short, nil
 	case "category":
-		name, err := s.one(ctx, "target.category_id", `SELECT name FROM categories WHERE id = $1 AND is_active`, t.CategoryID)
+		name, err := s.one(ctx, "target.category_id", `SELECT loc(name, name_uz) FROM categories WHERE id = $1 AND is_active`, t.CategoryID)
 		if err != nil {
 			return "", err
 		}
 		*t = Target{Type: "category", StoreID: t.StoreID, CategoryID: t.CategoryID}
 		return short + " → " + name, nil
 	default: // product
-		name, err := s.one(ctx, "target.product_id", `SELECT name FROM products WHERE id = $1 AND network_id IS NULL`, t.ProductID)
+		name, err := s.one(ctx, "target.product_id", `SELECT loc(name, name_uz) FROM products WHERE id = $1 AND network_id IS NULL`, t.ProductID)
 		if err != nil {
 			return "", err
 		}
@@ -310,7 +310,7 @@ func (s *Service) checkAudience(ctx context.Context, a *Audience) (string, error
 		return "Один клиент · " + name, nil
 	case "filter":
 	default:
-		return "", apperr.Validation("audience.type: all, filter или one")
+		return "", apperr.Validation("audience.type: all, filter или one").Uz("audience.type: all, filter yoki one")
 	}
 	parts := []string{}
 	if a.City != "" {
@@ -319,7 +319,7 @@ func (s *Service) checkAudience(ctx context.Context, a *Audience) (string, error
 	if a.Language != "" {
 		l, ok := languages[a.Language]
 		if !ok {
-			return "", apperr.Validation("audience.language: ru или uz")
+			return "", apperr.Validation("audience.language: ru или uz").Uz("audience.language: ru yoki uz")
 		}
 		parts = append(parts, l)
 	}
@@ -333,7 +333,7 @@ func (s *Service) checkAudience(ctx context.Context, a *Audience) (string, error
 	case a.StoreID != "":
 		name, err := s.storeName(ctx, a.StoreID)
 		if err != nil {
-			return "", apperr.Validation("audience.store_id: магазин не найден")
+			return "", apperr.Validation("audience.store_id: магазин не найден").Uz("audience.store_id: doʻkon topilmadi")
 		}
 		a.NetworkID = ""
 		parts = append(parts, "покупатели "+strings.SplitN(name, " · ", 2)[0])
@@ -349,7 +349,7 @@ func (s *Service) checkAudience(ctx context.Context, a *Audience) (string, error
 		a.Days = 0
 	case "within", "not_within":
 		if a.Days < 1 || a.Days > 365 {
-			return "", apperr.Validation("audience.days: от 1 до 365")
+			return "", apperr.Validation("audience.days: от 1 до 365").Uz("audience.days: 1 dan 365 gacha")
 		}
 		if a.Orders == "within" {
 			parts = append(parts, fmt.Sprintf("заказывали за %d дн.", a.Days))
@@ -360,7 +360,7 @@ func (s *Service) checkAudience(ctx context.Context, a *Audience) (string, error
 		a.Days = 0
 		parts = append(parts, "ни разу не заказывали")
 	default:
-		return "", apperr.Validation("audience.orders: within, not_within или never")
+		return "", apperr.Validation("audience.orders: within, not_within или never").Uz("audience.orders: within, not_within yoki never")
 	}
 	a.UserID = ""
 	if len(parts) == 0 {
@@ -434,10 +434,10 @@ func (s *Service) check(ctx context.Context, in *CampaignInput) (Reach, error) {
 	in.Title = strings.TrimSpace(in.Title)
 	in.Body = strings.TrimSpace(in.Body)
 	if n := utf8.RuneCountInString(in.Title); n == 0 || n > 65 {
-		return Reach{}, apperr.Validation("title: от 1 до 65 символов")
+		return Reach{}, apperr.Validation("title: от 1 до 65 символов").Uz("title: 1 dan 65 tagacha belgi")
 	}
 	if n := utf8.RuneCountInString(in.Body); n == 0 || n > 240 {
-		return Reach{}, apperr.Validation("body: от 1 до 240 символов")
+		return Reach{}, apperr.Validation("body: от 1 до 240 символов").Uz("body: 1 dan 240 tagacha belgi")
 	}
 	tt, err := s.checkTarget(ctx, &in.Target)
 	if err != nil {
@@ -451,10 +451,10 @@ func (s *Service) check(ctx context.Context, in *CampaignInput) (Reach, error) {
 	want := now
 	if in.SendAt != nil {
 		if in.SendAt.Before(now.Add(-time.Minute)) {
-			return Reach{}, apperr.Validation("send_at: время уже прошло")
+			return Reach{}, apperr.Validation("send_at: время уже прошло").Uz("send_at: vaqt allaqachon oʻtgan")
 		}
 		if in.SendAt.After(now.AddDate(0, 3, 0)) {
-			return Reach{}, apperr.Validation("send_at: не дальше трёх месяцев")
+			return Reach{}, apperr.Validation("send_at: не дальше трёх месяцев").Uz("send_at: uch oydan uzoq boʻlmasin")
 		}
 		want = *in.SendAt
 	}
@@ -483,7 +483,7 @@ func (s *Service) Create(ctx context.Context, adminID string, in CampaignInput) 
 		return Campaign{}, err
 	}
 	if r.Recipients == 0 {
-		return Campaign{}, apperr.Validation("audience: под фильтр не попал ни один покупатель")
+		return Campaign{}, apperr.Validation("audience: под фильтр не попал ни один покупатель").Uz("audience: filtrga birorta ham xaridor tushmadi")
 	}
 	tj, _ := json.Marshal(in.Target)
 	aj, _ := json.Marshal(in.Audience)
@@ -526,7 +526,7 @@ func (s *Service) Get(ctx context.Context, id string) (Campaign, error) {
 	}
 	c, err := pgx.CollectExactlyOneRow(rows, scanCampaign)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return c, apperr.NotFound("рассылка не найдена")
+		return c, apperr.NotFound("рассылка не найдена").Uz("ommaviy xabar topilmadi")
 	}
 	return c, err
 }
@@ -535,7 +535,7 @@ func (s *Service) List(ctx context.Context, status string, page httpx.Page) ([]C
 	switch status {
 	case "", "scheduled", "sending", "sent", "cancelled":
 	default:
-		return nil, apperr.Validation("status: scheduled, sending, sent или cancelled")
+		return nil, apperr.Validation("status: scheduled, sending, sent или cancelled").Uz("status: scheduled, sending, sent yoki cancelled")
 	}
 	rows, err := s.pool.Query(ctx, campaignSelect+`
 		WHERE ($1 = '' OR p.status = $1)
@@ -554,7 +554,7 @@ func (s *Service) Cancel(ctx context.Context, id string) (Campaign, error) {
 	}
 	c, err := s.Get(ctx, id)
 	if err == nil && tag.RowsAffected() == 0 {
-		return c, apperr.Conflict("campaign_started", "рассылка уже отправляется или отменена — отменить нельзя")
+		return c, apperr.Conflict("campaign_started", "рассылка уже отправляется или отменена — отменить нельзя").Uz("ommaviy xabar allaqachon yuborilmoqda yoki bekor qilingan — bekor qilib boʻlmaydi")
 	}
 	return c, err
 }
@@ -584,7 +584,7 @@ func (s *Service) Recipients(ctx context.Context, id, status, q string, page htt
 	case "pending":
 		cond = "AND n.status = 'pending'"
 	default:
-		return nil, apperr.Validation("status: sent, not_sent или pending")
+		return nil, apperr.Validation("status: sent, not_sent или pending").Uz("status: sent, not_sent yoki pending")
 	}
 	q = strings.TrimSpace(q)
 	digits := strings.Map(func(r rune) rune {
@@ -662,13 +662,13 @@ func (s *Service) FindCustomer(ctx context.Context, rawPhone, selfID string) (Cu
 	where, arg := "u.phone = $1", any(nil)
 	if rawPhone == "" {
 		if selfID == "" {
-			return c, apperr.Validation("phone: укажите телефон")
+			return c, apperr.Validation("phone: укажите телефон").Uz("phone: telefonni kiriting")
 		}
 		where, arg = "u.id = $1", selfID
 	} else {
 		p, err := phone.Normalize(rawPhone)
 		if err != nil {
-			return c, apperr.Validation("phone: неверный номер")
+			return c, apperr.Validation("phone: неверный номер").Uz("phone: raqam notoʻgʻri")
 		}
 		arg = p
 	}
@@ -680,9 +680,9 @@ func (s *Service) FindCustomer(ctx context.Context, rawPhone, selfID string) (Cu
 		WHERE `+where+` AND c.deleted_at IS NULL`, arg).Scan(&c.UserID, &c.Phone, &c.Name, &c.PromosOn, &c.Orders, &c.LastOrderAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		if rawPhone == "" {
-			return c, apperr.NotFound("ваш номер не входил в приложение покупателя — войдите в него и разрешите уведомления")
+			return c, apperr.NotFound("ваш номер не входил в приложение покупателя — войдите в него и разрешите уведомления").Uz("raqamingiz bilan xaridor ilovasiga kirilmagan — unga kiring va bildirishnomalarga ruxsat bering")
 		}
-		return c, apperr.NotFound("покупатель с таким номером не найден")
+		return c, apperr.NotFound("покупатель с таким номером не найден").Uz("bunday raqamli xaridor topilmadi")
 	}
 	if err != nil {
 		return c, err
@@ -732,7 +732,7 @@ func (s *Service) Test(ctx context.Context, adminID string, in TestInput) (TestR
 		in.Body = "Если вы это видите — push работает"
 	}
 	if utf8.RuneCountInString(in.Title) > 65 || utf8.RuneCountInString(in.Body) > 240 {
-		return TestResult{}, apperr.Validation("title до 65, body до 240 символов")
+		return TestResult{}, apperr.Validation("title до 65, body до 240 символов").Uz("title 65 tagacha, body 240 tagacha belgi")
 	}
 	if _, err := s.checkTarget(ctx, &in.Target); err != nil {
 		return TestResult{}, err
@@ -747,10 +747,10 @@ func (s *Service) Test(ctx context.Context, adminID string, in TestInput) (TestR
 		return res, err
 	}
 	if len(devs) == 0 {
-		return res, apperr.Conflict("no_devices", "у покупателя нет устройств с разрешёнными уведомлениями")
+		return res, apperr.Conflict("no_devices", "у покупателя нет устройств с разрешёнными уведомлениями").Uz("xaridorda bildirishnomalarga ruxsat berilgan qurilma yoʻq")
 	}
 	if s.fcm == nil {
-		return res, apperr.Conflict("push_disabled", "push не настроен на сервере: нет FCM_CREDENTIALS")
+		return res, apperr.Conflict("push_disabled", "push не настроен на сервере: нет FCM_CREDENTIALS").Uz("serverda push sozlanmagan: FCM_CREDENTIALS yoʻq")
 	}
 	data := in.Target.Data()
 	msg := Message{Title: in.Title, Body: in.Body, Data: MessageData(data)}

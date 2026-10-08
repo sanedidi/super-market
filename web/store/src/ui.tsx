@@ -2,7 +2,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Alert, DatePicker, InputNumber, Select, Typography, type InputNumberProps, type SelectProps } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
-import { useList, money } from '@sm/shared'
+import { useList, money, tr } from '@sm/shared'
 import { useStore } from './ctx'
 import type { Product } from './types'
 
@@ -20,12 +20,12 @@ export function RangeFilter({ value, onChange, allowClear = false }: { value: Ra
       allowClear={allowClear}
       onChange={(v) => onChange(v && v[0] && v[1] ? [v[0], v[1]] : null)}
       presets={[
-        { label: 'Сегодня', value: today() },
-        { label: 'Вчера', value: [dayjs().subtract(1, 'day').startOf('day'), dayjs().subtract(1, 'day').startOf('day')] },
-        { label: '7 дней', value: [dayjs().subtract(6, 'day').startOf('day'), dayjs().startOf('day')] },
-        { label: 'Этот месяц', value: thisMonth() },
+        { label: tr('Сегодня', 'Bugun'), value: today() },
+        { label: tr('Вчера', 'Kecha'), value: [dayjs().subtract(1, 'day').startOf('day'), dayjs().subtract(1, 'day').startOf('day')] },
+        { label: tr('7 дней', '7 kun'), value: [dayjs().subtract(6, 'day').startOf('day'), dayjs().startOf('day')] },
+        { label: tr('Этот месяц', 'Shu oy'), value: thisMonth() },
         {
-          label: 'Прошлый месяц',
+          label: tr('Прошлый месяц', 'Oʻtgan oy'),
           value: [dayjs().subtract(1, 'month').startOf('month'), dayjs().subtract(1, 'month').endOf('month').startOf('day')],
         },
       ]}
@@ -74,11 +74,11 @@ export function ProductSelect({
     <Select
       showSearch
       value={value || undefined}
-      placeholder="Название или штрихкод"
+      placeholder={tr('Название или штрихкод', 'Nomi yoki shtrix-kod')}
       filterOption={false}
       onSearch={setQ}
       loading={isFetching}
-      notFoundContent={isFetching ? 'Поиск…' : 'Не найдено'}
+      notFoundContent={isFetching ? tr('Поиск…', 'Qidirilmoqda…') : tr('Не найдено', 'Topilmadi')}
       style={{ width: '100%', minWidth: 220 }}
       options={options}
       optionRender={(o) => (
@@ -106,8 +106,8 @@ export function NeedStore({ children }: { children: ReactNode }) {
       <Alert
         type="info"
         showIcon
-        message="Магазинов пока нет"
-        description="Создайте первый магазин в разделе «Настройки → Магазины»."
+        message={tr('Магазинов пока нет', 'Hozircha doʻkonlar yoʻq')}
+        description={tr('Создайте первый магазин в разделе «Настройки → Магазины».', 'Birinchi doʻkonni «Sozlamalar → Doʻkonlar» boʻlimida yarating.')}
       />
     )
   return <>{children}</>
@@ -115,17 +115,17 @@ export function NeedStore({ children }: { children: ReactNode }) {
 
 /** Названия документов в журналах движений. */
 export const docTypeTitles: Record<string, string> = {
-  stock_document: 'Складской документ',
-  sale: 'Продажа',
-  customer_return: 'Возврат покупателя',
-  order: 'Онлайн-заказ',
-  cash_operation: 'Кассовая операция',
-  cash_transfer: 'Перемещение денег',
-  payout: 'Вывод',
-  counterparty: 'Контрагент',
+  stock_document: tr('Складской документ', 'Ombor hujjati'),
+  sale: tr('Продажа', 'Sotuv'),
+  customer_return: tr('Возврат покупателя', 'Xaridor qaytarishi'),
+  order: tr('Онлайн-заказ', 'Onlayn buyurtma'),
+  cash_operation: tr('Кассовая операция', 'Kassa operatsiyasi'),
+  cash_transfer: tr('Перемещение денег', 'Pul koʻchirish'),
+  payout: tr('Вывод', 'Pul yechib olish'),
+  counterparty: tr('Контрагент', 'Kontragent'),
 }
 
-export const kindTitles: Record<string, string> = { income: 'Приход', expense: 'Расход' }
+export const kindTitles: Record<string, string> = { income: tr('Приход', 'Kirim'), expense: tr('Расход', 'Chiqim') }
 
 /** Сумма со знаком и цветом. */
 export function Signed({ v }: { v: string | number }) {

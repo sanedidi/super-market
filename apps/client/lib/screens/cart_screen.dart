@@ -16,22 +16,23 @@ import 'order_screen.dart';
 import 'payment_screen.dart';
 import 'root_shell.dart';
 
-const _problemText = {
-  'out_of_stock': 'Закончился',
-  'not_enough': 'Столько нет в наличии',
-  'fractional': 'Только целое количество',
-  'unavailable': 'Недоступен',
-};
+Map<String, String> get _problemText => {
+      'out_of_stock': tr('Закончился', 'Tugadi'),
+      'not_enough': tr('Столько нет в наличии', 'Bunchasi mavjud emas'),
+      'fractional': tr('Только целое количество', 'Faqat butun miqdor'),
+      'unavailable': tr('Недоступен', 'Mavjud emas'),
+    };
 
-const _orderProblemText = {
-  'items': 'Часть товаров недоступна — уберите их или уменьшите количество',
-  'store_closed': 'Магазин сейчас закрыт',
-  'min_order_amount': 'Сумма меньше минимального заказа',
-  'not_deliverable': 'Магазин не доставляет по этому адресу',
-  'store_not_accepting': 'Магазин сейчас не принимает заказы',
-  'slot_full': 'На выбранное время заказов больше нет — выберите другое',
-  'slot_unavailable': 'Выбранное время уже недоступно — выберите другое',
-};
+Map<String, String> get _orderProblemText => {
+      'items': tr('Часть товаров недоступна — уберите их или уменьшите количество',
+          'Baʼzi mahsulotlar mavjud emas — ularni olib tashlang yoki miqdorini kamaytiring'),
+      'store_closed': tr('Магазин сейчас закрыт', 'Doʻkon hozir yopiq'),
+      'min_order_amount': tr('Сумма меньше минимального заказа', 'Summa minimal buyurtmadan kam'),
+      'not_deliverable': tr('Магазин не доставляет по этому адресу', 'Doʻkon bu manzilga yetkazib bermaydi'),
+      'store_not_accepting': tr('Магазин сейчас не принимает заказы', 'Doʻkon hozir buyurtma qabul qilmayapti'),
+      'slot_full': tr('На выбранное время заказов больше нет — выберите другое', 'Tanlangan vaqtga joy qolmadi — boshqa vaqtni tanlang'),
+      'slot_unavailable': tr('Выбранное время уже недоступно — выберите другое', 'Tanlangan vaqt endi mavjud emas — boshqa vaqtni tanlang'),
+    };
 
 /// Тело предпросмотра и заказа.
 Map<String, dynamic> _orderBody(AppState s, {String provider = 'payme', String comment = '', Slot? slot}) => {
@@ -50,7 +51,7 @@ bool _needsSetup(AppState s) => s.isGuest || s.address == null || s.address!.isG
 
 /// Текст проблемы заказа для показа.
 String _problemMessage(String pr, Map<String, dynamic>? delivery) => pr == 'min_order_amount' && delivery != null
-    ? 'Минимальный заказ — ${money(delivery['min_order_amount'])}'
+    ? tr('Минимальный заказ — ${money(delivery['min_order_amount'])}', 'Minimal buyurtma — ${money(delivery['min_order_amount'])}')
     : (_orderProblemText[pr] ?? pr);
 
 /// Корзина (Figma «08 Корзина»): время доставки чипами, условия доставки,
@@ -170,7 +171,10 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   Future<void> _clear() async {
-    final ok = await confirmSheet(context, title: 'Очистить корзину?', text: 'Все товары из корзины будут удалены.', confirm: 'Очистить');
+    final ok = await confirmSheet(context,
+        title: tr('Очистить корзину?', 'Savat tozalansinmi?'),
+        text: tr('Все товары из корзины будут удалены.', 'Savatdagi barcha mahsulotlar oʻchiriladi.'),
+        confirm: tr('Очистить', 'Tozalash'));
     if (!ok || !mounted) return;
     context.read<AppState>().clearCart();
     Navigator.of(context).pop();
@@ -194,12 +198,12 @@ class _CartScreenState extends State<CartScreen> {
     _sig = sig;
 
     final chips = <Widget>[
-      AppChip(label: 'Как можно скорее', selected: _slot == null, onTap: () => _setSlot(null)),
+      AppChip(label: tr('Как можно скорее', 'Imkon qadar tez'), selected: _slot == null, onTap: () => _setSlot(null)),
       for (final sl in _slots)
         AppChip(label: sl.range, selected: _slot?.fromRaw == sl.fromRaw, onTap: () => _setSlot(sl)),
       if (_slot != null && !_slots.any((x) => x.fromRaw == _slot!.fromRaw))
         AppChip(label: '${dayLabel(_slot!.from).split(',').first}, ${_slot!.range}', selected: true, onTap: () => _otherTime(cartStore?.etaText)),
-      AppChip(label: 'Другое время', selected: false, onTap: () => _otherTime(cartStore?.etaText)),
+      AppChip(label: tr('Другое время', 'Boshqa vaqt'), selected: false, onTap: () => _otherTime(cartStore?.etaText)),
     ];
 
     return Scaffold(
@@ -212,17 +216,17 @@ class _CartScreenState extends State<CartScreen> {
               RoundIconButton(icon: Icons.chevron_left_rounded, onTap: () => Navigator.of(context).pop()),
               const Spacer(),
               if (s.cartCount > 0)
-                IconButton(tooltip: 'Очистить корзину', icon: const Icon(Icons.delete_rounded, color: AppColors.dark, size: 28), onPressed: _clear),
+                IconButton(tooltip: tr('Очистить корзину', 'Savatni tozalash'), icon: const Icon(Icons.delete_rounded, color: AppColors.dark, size: 28), onPressed: _clear),
             ]),
           ),
-          const Padding(padding: EdgeInsets.fromLTRB(16, 12, 16, 12), child: Text('Корзина', style: AppText.h1)),
+          Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 12), child: Text(tr('Корзина', 'Savat'), style: AppText.h1)),
           Expanded(
             child: s.cartCount == 0
                 ? EmptyState(
                     icon: Icons.shopping_cart_outlined,
-                    title: 'В корзине пусто',
-                    text: 'Добавьте товары из каталога магазина рядом.',
-                    action: 'В каталог',
+                    title: tr('В корзине пусто', 'Savat boʻsh'),
+                    text: tr('Добавьте товары из каталога магазина рядом.', 'Yaqindagi doʻkon katalogidan mahsulot qoʻshing.'),
+                    action: tr('В каталог', 'Katalogga'),
                     onAction: () {
                       s.setTab(1);
                       Navigator.of(context).pop();
@@ -274,7 +278,7 @@ class _CartScreenState extends State<CartScreen> {
                         ),
                       if (suggest.isNotEmpty && s.cartStoreId != null) ...[
                         const SizedBox(height: 24),
-                        const SectionHeader(title: 'Не забудьте'),
+                        SectionHeader(title: tr('Не забудьте', 'Unutmang')),
                         const SizedBox(height: 12),
                         ProductCarousel(products: suggest, store: (id: s.cartStoreId!, name: s.cartStoreName ?? '')),
                       ],
@@ -288,9 +292,9 @@ class _CartScreenState extends State<CartScreen> {
           : BottomActionBar(
               child: p == null && _needsSetup(s)
                   // Гость: сумма по ценам каталога, «Оформить» попросит войти.
-                  ? AppButton(label: 'Оформить · ${money(s.cartTotal)}', onPressed: _checkout)
+                  ? AppButton(label: tr('Оформить · ${money(s.cartTotal)}', 'Rasmiylashtirish · ${money(s.cartTotal)}'), onPressed: _checkout)
                   : AppButton(
-                      label: p == null ? 'Считаем…' : 'Оформить · ${money(p['total'])}',
+                      label: p == null ? tr('Считаем…', 'Hisoblanmoqda…') : tr('Оформить · ${money(p['total'])}', 'Rasmiylashtirish · ${money(p['total'])}'),
                       onPressed: p == null ? null : _checkout,
                     ),
             ),
@@ -317,8 +321,8 @@ class _DeliveryTerms extends StatelessWidget {
     final left = subtotal < min
         ? '${money(subtotal, suffix: false)} / ${money(min)}'
         : freeLeft > 0
-            ? 'Ещё ${money(freeLeft)} до бесплатной'
-            : 'Минимальная сумма набрана';
+            ? tr('Ещё ${money(freeLeft)} до бесплатной', 'Bepul yetkazishgacha yana ${money(freeLeft)}')
+            : tr('Минимальная сумма набрана', 'Minimal summa yigʻildi');
     return Material(
       color: AppColors.soft,
       borderRadius: BorderRadius.circular(AppRadius.xl),
@@ -329,7 +333,7 @@ class _DeliveryTerms extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Row(children: [
-              const Expanded(child: Text('Условия доставки', style: AppText.title)),
+              Expanded(child: Text(tr('Условия доставки', 'Yetkazib berish shartlari'), style: AppText.title)),
               if (onTap != null) const Icon(Icons.chevron_right_rounded, color: AppColors.text2),
             ]),
             const SizedBox(height: 12),
@@ -340,7 +344,7 @@ class _DeliveryTerms extends StatelessWidget {
             const SizedBox(height: 8),
             Row(children: [
               Expanded(child: Text(left, style: AppText.small)),
-              Text(fee == 0 ? 'Бесплатно' : money(fee), style: AppText.small.copyWith(color: fee == 0 ? AppColors.successInk : null)),
+              Text(fee == 0 ? tr('Бесплатно', 'Bepul') : money(fee), style: AppText.small.copyWith(color: fee == 0 ? AppColors.successInk : null)),
               const SizedBox(width: 6),
               const Icon(Icons.directions_car_filled_rounded, size: 16, color: AppColors.text2),
             ]),
@@ -377,7 +381,7 @@ class _LineTile extends StatelessWidget {
             if (problem != null)
               Text(_problemText[problem] ?? problem, style: AppText.small.copyWith(color: AppColors.error))
             else if (server?['old_price'] != null)
-              Text('было ${money(mulMoney('${server!['old_price']}', '${line.qty}'))}',
+              Text(tr('было ${money(mulMoney('${server!['old_price']}', '${line.qty}'))}', 'edi ${money(mulMoney('${server!['old_price']}', '${line.qty}'))}'),
                   style: AppText.caption.copyWith(color: AppColors.muted, decoration: TextDecoration.lineThrough, decorationColor: AppColors.muted)),
             const SizedBox(height: 2),
             Text(money(mulMoney(p.price, '${line.qty}')), style: AppText.price),
@@ -484,7 +488,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Future<void> _changeAddress() async {
     final s = context.read<AppState>();
     if (s.cartStoreId == null) return;
-    await pickDeliveryAddress(context, storeId: s.cartStoreId!, storeName: s.cartStoreName ?? 'Магазин');
+    await pickDeliveryAddress(context, storeId: s.cartStoreId!, storeName: s.cartStoreName ?? tr('Магазин', 'Doʻkon'));
     if (mounted) _refresh();
   }
 
@@ -508,7 +512,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final cartStore = s.stores.where((x) => x.id == s.cartStoreId).firstOrNull;
     final a = s.address;
     final timeTitle = _slot == null
-        ? (cartStore?.etaText == null ? 'Как можно скорее' : 'Как можно скорее · ${cartStore!.etaText}')
+        ? (cartStore?.etaText == null ? tr('Как можно скорее', 'Imkon qadar tez') : tr('Как можно скорее · ${cartStore!.etaText}', 'Imkon qadar tez · ${cartStore!.etaText}'))
         : '${dayLabel(_slot!.from).split(',').first}, ${_slot!.range}';
 
     return PopScope(
@@ -525,20 +529,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               child: RoundIconButton(icon: Icons.chevron_left_rounded, onTap: () => Navigator.of(context).pop(_slot)),
             ),
             const SizedBox(height: 12),
-            const Text('Оформление\nзаказа', style: AppText.h1),
+            Text(tr('Оформление\nзаказа', 'Buyurtmani\nrasmiylashtirish'), style: AppText.h1),
             const SizedBox(height: 16),
             _Card(
               icon: Icons.directions_car_filled_rounded,
               title: timeTitle,
-              subtitle: 'Доставка · ${fee == 0 ? 'бесплатно' : money(fee)}',
+              subtitle: tr('Доставка · ${fee == 0 ? 'бесплатно' : money(fee)}', 'Yetkazish · ${fee == 0 ? 'bepul' : money(fee)}'),
               onTap: () => _changeTime(cartStore?.etaText),
             ),
             const SizedBox(height: 24),
-            const Text('Адрес доставки', style: AppText.h3),
+            Text(tr('Адрес доставки', 'Yetkazish manzili'), style: AppText.h3),
             const SizedBox(height: 12),
             _Card(
               icon: Icons.location_on_rounded,
-              title: a?.title ?? 'Выберите адрес',
+              title: a?.title ?? tr('Выберите адрес', 'Manzilni tanlang'),
               subtitle: a != null && a.label.isNotEmpty ? a.address : null,
               onTap: _changeAddress,
             ),
@@ -547,7 +551,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               controller: _comment,
               maxLines: null,
               decoration: InputDecoration(
-                hintText: 'Комментарий курьеру: подъезд, этаж, позвонить заранее',
+                hintText: tr('Комментарий курьеру: подъезд, этаж, позвонить заранее', 'Kuryerga izoh: podyezd, qavat, oldindan qoʻngʻiroq qilish'),
                 filled: true,
                 fillColor: AppColors.soft,
                 prefixIcon: const Icon(Icons.chat_bubble_outline_rounded, color: AppColors.text2),
@@ -555,11 +559,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            const Text('Способ оплаты', style: AppText.h3),
+            Text(tr('Способ оплаты', 'Toʻlov usuli'), style: AppText.h3),
             const SizedBox(height: 12),
             // ВРЕМЕННО: «Наличные курьеру» — убрать, когда заработают Payme и Click.
             _PayOption(
-              title: 'Наличными курьеру',
+              title: tr('Наличными курьеру', 'Kuryerga naqd pulda'),
               icon: Icons.payments_rounded,
               color: AppColors.successInk,
               selected: _provider == 'cash',
@@ -572,7 +576,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               Expanded(child: _PayOption(title: 'Click', color: const Color(0xFF0073E6), selected: _provider == 'click', onTap: () => setState(() => _provider = 'click'))),
             ]),
             const SizedBox(height: 24),
-            const Text('Итого', style: AppText.h3),
+            Text(tr('Итого', 'Jami'), style: AppText.h3),
             const SizedBox(height: 12),
             if (_error != null)
               Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(_error!, style: AppText.small.copyWith(color: AppColors.error))),
@@ -583,11 +587,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(color: AppColors.soft, borderRadius: BorderRadius.circular(AppRadius.xl)),
                 child: Column(children: [
-                  _row('Товары', money(discount > 0 ? addMoney(['${p['subtotal']}', '${p['discount']}']) : p['subtotal'])),
-                  if (discount > 0) _row('Скидка', '−${money(discount)}', valueColor: AppColors.primary),
-                  _row('Доставка', fee == 0 ? 'Бесплатно' : money(fee), valueColor: fee == 0 ? AppColors.successInk : null),
+                  _row(tr('Товары', 'Mahsulotlar'), money(discount > 0 ? addMoney(['${p['subtotal']}', '${p['discount']}']) : p['subtotal'])),
+                  if (discount > 0) _row(tr('Скидка', 'Chegirma'), '−${money(discount)}', valueColor: AppColors.primary),
+                  _row(tr('Доставка', 'Yetkazish'), fee == 0 ? tr('Бесплатно', 'Bepul') : money(fee), valueColor: fee == 0 ? AppColors.successInk : null),
                   const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Divider(color: AppColors.line)),
-                  _row('К оплате', money(p['total']), bold: true),
+                  _row(tr('К оплате', 'Toʻlov uchun'), money(p['total']), bold: true),
                   for (final pr in problems)
                     Padding(
                       padding: const EdgeInsets.only(top: 12),
@@ -603,7 +607,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         ),
         bottomNavigationBar: BottomActionBar(
           child: AppButton(
-            label: p == null ? 'Считаем…' : 'Заказать · ${money(p['total'])}',
+            label: p == null ? tr('Считаем…', 'Hisoblanmoqda…') : tr('Заказать · ${money(p['total'])}', 'Buyurtma berish · ${money(p['total'])}'),
             loading: _busy,
             onPressed: p == null || p['can_order'] != true ? null : _order,
           ),

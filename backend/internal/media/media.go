@@ -18,6 +18,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 // MaxSize — предел размера одного фото.
@@ -45,7 +46,7 @@ func NewService(store *S3, baseURL string) *Service {
 	return &Service{store: store, baseURL: strings.TrimRight(baseURL, "/"), now: time.Now}
 }
 
-var ErrDisabled = apperr.New(http.StatusServiceUnavailable, "media_disabled", "хранилище фото не настроено")
+var ErrDisabled = apperr.New(http.StatusServiceUnavailable, "media_disabled", "хранилище фото не настроено").Uz("rasm saqlash xizmati sozlanmagan")
 
 func (s *Service) ensure(ctx context.Context) error {
 	if s.store == nil {
@@ -64,15 +65,15 @@ func (s *Service) ensure(ctx context.Context) error {
 // Upload сохраняет картинку и возвращает её ключ.
 func (s *Service) Upload(ctx context.Context, data []byte) (string, error) {
 	if len(data) == 0 {
-		return "", apperr.Validation("file: пустой файл")
+		return "", apperr.Validation("file: пустой файл").Uz("file: fayl boʻsh")
 	}
 	if len(data) > MaxSize {
-		return "", apperr.Validation("file: не больше 8 МБ")
+		return "", apperr.Validation("file: не больше 8 МБ").Uz("file: 8 MB dan oshmasin")
 	}
 	ct := http.DetectContentType(data)
 	ext, ok := types[ct]
 	if !ok {
-		return "", apperr.Validation("file: нужна картинка JPG, PNG, WEBP или GIF")
+		return "", apperr.Validation("file: нужна картинка JPG, PNG, WEBP или GIF").Uz("file: JPG, PNG, WEBP yoki GIF rasm kerak")
 	}
 	if err := s.ensure(ctx); err != nil {
 		return "", err
@@ -162,14 +163,14 @@ func (m *Module) upload(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			var tooBig *http.MaxBytesError
 			if errors.As(err, &tooBig) {
-				return uploadResult{}, apperr.Validation("file: не больше 8 МБ")
+				return uploadResult{}, apperr.Validation("file: не больше 8 МБ").Uz("file: 8 MB dan oshmasin")
 			}
-			return uploadResult{}, apperr.Validation("file: прикрепите картинку (multipart, поле file)")
+			return uploadResult{}, apperr.Validation("file: прикрепите картинку (multipart, поле file)").Uz("file: rasmni biriktiring (multipart, file maydoni)")
 		}
 		defer f.Close()
 		data, err := io.ReadAll(io.LimitReader(f, MaxSize+1))
 		if err != nil {
-			return uploadResult{}, apperr.Validation("file: не удалось прочитать файл")
+			return uploadResult{}, apperr.Validation("file: не удалось прочитать файл").Uz("file: faylni oʻqib boʻlmadi")
 		}
 		key, err := m.svc.Upload(r.Context(), data)
 		if err != nil {
@@ -182,11 +183,11 @@ func (m *Module) upload(w http.ResponseWriter, r *http.Request) {
 func (m *Module) get(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "*")
 	if !keyRe.MatchString(key) {
-		httpx.WriteError(w, http.StatusNotFound, "not_found", "файл не найден")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", i18n.T(r.Context(), "файл не найден", "fayl topilmadi"))
 		return
 	}
 	if m.svc.store == nil {
-		httpx.WriteError(w, http.StatusNotFound, "not_found", "файл не найден")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", i18n.T(r.Context(), "файл не найден", "fayl topilmadi"))
 		return
 	}
 	// Ключ уникален и не меняется — браузер и CDN кэшируют навсегда.
@@ -196,12 +197,12 @@ func (m *Module) get(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := m.svc.store.Get(r.Context(), key)
 	if errors.Is(err, ErrNotFound) {
-		httpx.WriteError(w, http.StatusNotFound, "not_found", "файл не найден")
+		httpx.WriteError(w, http.StatusNotFound, "not_found", i18n.T(r.Context(), "файл не найден", "fayl topilmadi"))
 		return
 	}
 	if err != nil {
 		m.log.Error("media: чтение", "key", key, "err", err)
-		httpx.WriteError(w, http.StatusBadGateway, "media_unavailable", "хранилище фото недоступно")
+		httpx.WriteError(w, http.StatusBadGateway, "media_unavailable", i18n.T(r.Context(), "хранилище фото недоступно", "rasm saqlash xizmati ishlamayapti"))
 		return
 	}
 	defer res.Body.Close()

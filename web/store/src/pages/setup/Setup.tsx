@@ -25,7 +25,7 @@ import {
   ShopOutlined,
 } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
-import { Brand, MapPointPicker, PhoneInput, errorText, phoneRule, useAuth, useFitMap, useYmaps, type LatLng } from '@sm/shared'
+import { Brand, LangSwitch, MapPointPicker, PhoneInput, errorText, phoneRule, tr, useAuth, useFitMap, useYmaps, type LatLng } from '@sm/shared'
 import { useStore } from '../../ctx'
 import { buyers, firstStep, hoursText, setupApi, type SetupState, type WorkingHours } from './api'
 
@@ -69,8 +69,8 @@ export function SetupPage() {
     gcTime: 0,
   })
   if (st.isLoading) return <Spin style={{ display: 'block', marginTop: 96 }} />
-  if (st.error || !st.data) return <Result status="warning" title="Не удалось открыть настройку" subTitle={errorText(st.error)} />
-  if (!st.data.can_setup) return <Result status="403" title="Нет доступа" subTitle="Настраивать магазин может владелец или сотрудник с правом «Магазины»." />
+  if (st.error || !st.data) return <Result status="warning" title={tr('Не удалось открыть настройку', 'Sozlamani ochib boʻlmadi')} subTitle={errorText(st.error)} />
+  if (!st.data.can_setup) return <Result status="403" title={tr('Нет доступа', 'Ruxsat yoʻq')} subTitle={tr('Настраивать магазин может владелец или сотрудник с правом «Магазины».', 'Doʻkonni egasi yoki «Doʻkonlar» huquqiga ega xodim sozlashi mumkin.')} />
   const step = Number(sp.get('step'))
   return <SetupWizard initial={st.data} startStep={step === 1 || step === 2 || step === 3 ? step : undefined} />
 }
@@ -79,11 +79,12 @@ export function SetupPage() {
 
 function Top({ right }: { right: ReactNode }) {
   const { me } = useStore()
-  const who = [me?.full_name, me?.is_owner ? 'владелец' : me?.role_name?.toLowerCase()].filter(Boolean).join(' · ')
+  const who = [me?.full_name, me?.is_owner ? tr('владелец', 'egasi') : me?.role_name?.toLowerCase()].filter(Boolean).join(' · ')
   return (
     <div className="sm-setup-top">
-      <Brand title="Super Market" subtitle="Панель магазина" />
+      <Brand title="Super Market" subtitle={tr('Панель магазина', 'Doʻkon paneli')} />
       <span className="sm-setup-top-user">{who}</span>
+      <LangSwitch size="middle" />
       {right}
     </div>
   )
@@ -96,19 +97,19 @@ function SetupWaiting({ onRefresh, loading }: { onRefresh: () => void; loading: 
       <Top
         right={
           <Button icon={<LogoutOutlined />} onClick={() => void logout()}>
-            Выйти
+            {tr('Выйти', 'Chiqish')}
           </Button>
         }
       />
       <Flex justify="center" style={{ padding: '96px 16px' }}>
         <div className="sm-setup-main" style={{ width: 520, textAlign: 'center' }}>
           <HourglassOutlined style={{ fontSize: 40, color: '#667085' }} />
-          <h2 style={{ marginTop: 16 }}>Магазин ещё настраивается</h2>
+          <h2 style={{ marginTop: 16 }}>{tr('Магазин ещё настраивается', 'Doʻkon hali sozlanmoqda')}</h2>
           <Typography.Paragraph type="secondary" style={{ margin: '8px 0 20px' }}>
-            Владелец указывает адрес и часы работы. Как только он закончит, здесь появятся заказы, склад и касса.
+            {tr('Владелец указывает адрес и часы работы. Как только он закончит, здесь появятся заказы, склад и касса.', 'Egasi manzil va ish vaqtini kiritmoqda. U tugatishi bilan bu yerda buyurtmalar, ombor va kassa paydo boʻladi.')}
           </Typography.Paragraph>
           <Button icon={<ReloadOutlined />} loading={loading} onClick={onRefresh}>
-            Обновить
+            {tr('Обновить', 'Yangilash')}
           </Button>
         </div>
       </Flex>
@@ -117,18 +118,18 @@ function SetupWaiting({ onRefresh, loading }: { onRefresh: () => void; loading: 
 }
 
 const STEPS = [
-  ['Магазин и адрес', 'Название, телефон, точка'],
-  ['Часы работы', 'Когда открыт магазин'],
-  ['Доставка', 'Можно настроить позже'],
+  [tr('Магазин и адрес', 'Doʻkon va manzil'), tr('Название, телефон, точка', 'Nomi, telefon, nuqta')],
+  [tr('Часы работы', 'Ish vaqti'), tr('Когда открыт магазин', 'Doʻkon qachon ochiq')],
+  [tr('Доставка', 'Yetkazib berish'), tr('Можно настроить позже', 'Keyinroq sozlash mumkin')],
 ] as const
 
 function StepsCard({ step, s }: { step: number; s: SetupState }) {
   const done = [s.steps.store, s.steps.hours, s.steps.delivery]
   return (
     <aside className="sm-setup-steps">
-      <h3>Настройка магазина</h3>
+      <h3>{tr('Настройка магазина', 'Doʻkonni sozlash')}</h3>
       <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-        3 шага · около 3 минут
+        {tr('3 шага · около 3 минут', '3 qadam · taxminan 3 daqiqa')}
       </Typography.Text>
       <Flex vertical gap={4} style={{ marginTop: 12 }}>
         {STEPS.map(([t, sub], i) => {
@@ -156,7 +157,7 @@ function StepsCard({ step, s }: { step: number; s: SetupState }) {
         }}
       >
         <MobileOutlined style={{ fontSize: 16 }} />
-        <span>Всё сохраняется по шагам — можно продолжить в приложении «SM Магазин»</span>
+        <span>{tr('Всё сохраняется по шагам — можно продолжить в приложении «SM Магазин»', 'Hammasi qadamma-qadam saqlanadi — «SM Магазин» ilovasida davom ettirish mumkin')}</span>
       </Flex>
     </aside>
   )
@@ -188,11 +189,11 @@ function SetupWizard({ initial, required = false, startStep }: { initial: SetupS
         right={
           required ? (
             <Button icon={<LogoutOutlined />} onClick={() => void logout()}>
-              Выйти
+              {tr('Выйти', 'Chiqish')}
             </Button>
           ) : (
             <Button icon={<HomeOutlined />} onClick={() => nav('/')}>
-              На главную
+              {tr('На главную', 'Bosh sahifaga')}
             </Button>
           )
         }
@@ -276,28 +277,28 @@ function StoreStep({ s, onSaved }: { s: SetupState; onSaved: (n: SetupState) => 
         geo: st && st.lat !== null && st.lng !== null ? { lat: st.lat, lng: st.lng } : null,
       }}
     >
-      <Head title="Ваш магазин" sub="Так его увидят покупатели в приложении Super Market" />
+      <Head title={tr('Ваш магазин', 'Doʻkoningiz')} sub={tr('Так его увидят покупатели в приложении Super Market', 'Xaridorlar uni Super Market ilovasida shunday koʻradi')} />
       <Flex gap={16} wrap>
         <Form.Item
           name="name"
-          label="Название магазина"
+          label={tr('Название магазина', 'Doʻkon nomi')}
           style={{ flex: 1, minWidth: 220 }}
-          rules={[{ required: true, whitespace: true, message: 'Укажите название' }]}
+          rules={[{ required: true, whitespace: true, message: tr('Укажите название', 'Nomini kiriting') }]}
         >
           <Input maxLength={120} />
         </Form.Item>
-        <Form.Item name="phone" label="Телефон магазина" extra="Покупатели и курьеры смогут позвонить" style={{ flex: 1, minWidth: 220 }} rules={[phoneRule()]}>
+        <Form.Item name="phone" label={tr('Телефон магазина', 'Doʻkon telefoni')} extra={tr('Покупатели и курьеры смогут позвонить', 'Xaridorlar va kuryerlar qoʻngʻiroq qila oladi')} style={{ flex: 1, minWidth: 220 }} rules={[phoneRule()]}>
           <PhoneInput />
         </Form.Item>
       </Flex>
-      <Form.Item name="address" label="Адрес" rules={[{ required: true, whitespace: true, message: 'Укажите адрес' }]}>
-        <Input placeholder="Чиланзар, 9-й квартал, 12" allowClear />
+      <Form.Item name="address" label={tr('Адрес', 'Manzil')} rules={[{ required: true, whitespace: true, message: tr('Укажите адрес', 'Manzilni kiriting') }]}>
+        <Input placeholder={tr('Чиланзар, 9-й квартал, 12', 'Chilonzor, 9-mavze, 12')} allowClear />
       </Form.Item>
       <Form.Item
         name="geo"
-        label="Точка на карте"
-        extra="Нажмите на карту, найдите адрес через поиск или перетащите метку на вход — по ней покупатели найдут магазин, а курьер подъедет к двери"
-        rules={[{ required: true, message: 'Поставьте метку на вход в магазин' }]}
+        label={tr('Точка на карте', 'Xaritadagi nuqta')}
+        extra={tr('Нажмите на карту, найдите адрес через поиск или перетащите метку на вход — по ней покупатели найдут магазин, а курьер подъедет к двери', 'Xaritani bosing, manzilni qidiruv orqali toping yoki belgini kirish joyiga suring — u orqali xaridorlar doʻkonni topadi, kuryer esa eshik oldiga keladi')}
+        rules={[{ required: true, message: tr('Поставьте метку на вход в магазин', 'Belgini doʻkon kirish joyiga qoʻying') }]}
       >
         <MapPointPicker
           height={300}
@@ -312,7 +313,7 @@ function StoreStep({ s, onSaved }: { s: SetupState; onSaved: (n: SetupState) => 
       <div className="sm-setup-foot">
         <span className="sm-grow" />
         <Button type="primary" htmlType="submit" loading={busy} icon={<ArrowRightOutlined />} iconPosition="end">
-          Дальше
+          {tr('Дальше', 'Keyingi')}
         </Button>
       </div>
     </Form>
@@ -325,7 +326,10 @@ type Day = { on: boolean; opens: Dayjs; closes: Dayjs }
 type Preset = 'daily' | 'mon_sat' | 'round' | 'custom'
 
 const WEEK = [1, 2, 3, 4, 5, 6, 0] // понедельник первым
-const DAY_NAME = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота']
+const DAY_NAME = tr(
+  'Воскресенье Понедельник Вторник Среда Четверг Пятница Суббота',
+  'Yakshanba Dushanba Seshanba Chorshanba Payshanba Juma Shanba',
+).split(' ')
 const t = (v: string) => dayjs(v, 'HH:mm')
 const fmt = (d: Dayjs) => d.format('HH:mm')
 
@@ -368,37 +372,37 @@ function HoursStep({ s, onBack, onSaved }: { s: SetupState; onBack: () => void; 
     let hours: WorkingHours[] = []
     if (preset !== 'round') {
       hours = days.flatMap((d, w) => (d.on ? [{ weekday: w, opens: fmt(d.opens), closes: fmt(d.closes) }] : []))
-      if (hours.length === 0) return void message.error('Отметьте хотя бы один рабочий день или выберите «Круглосуточно»')
+      if (hours.length === 0) return void message.error(tr('Отметьте хотя бы один рабочий день или выберите «Круглосуточно»', 'Kamida bitta ish kunini belgilang yoki «Kecha-kunduz» ni tanlang'))
       const bad = hours.find((h) => h.opens === h.closes)
-      if (bad) return void message.error(`${DAY_NAME[bad.weekday]}: время открытия и закрытия совпадает`)
+      if (bad) return void message.error(tr(`${DAY_NAME[bad.weekday]}: время открытия и закрытия совпадает`, `${DAY_NAME[bad.weekday]}: ochilish va yopilish vaqti bir xil`))
     }
     void run(() => setupApi.hours(s.store!.id, hours), onSaved)
   }
 
   return (
     <>
-      <Head title="Часы работы" sub="Покупатели увидят «открыто» или «закрыто», а заказы ко времени — только в эти часы" />
+      <Head title={tr('Часы работы', 'Ish vaqti')} sub={tr('Покупатели увидят «открыто» или «закрыто», а заказы ко времени — только в эти часы', 'Xaridorlar «ochiq» yoki «yopiq» ni koʻradi, vaqtga buyurtmalar esa faqat shu soatlarda')} />
       <Segmented<Preset>
         value={preset}
         onChange={choose}
         options={[
-          { label: 'Каждый день', value: 'daily' },
-          { label: 'Пн–Сб', value: 'mon_sat' },
-          { label: 'Круглосуточно', value: 'round' },
-          { label: 'По дням', value: 'custom' },
+          { label: tr('Каждый день', 'Har kuni'), value: 'daily' },
+          { label: tr('Пн–Сб', 'Du–Sh'), value: 'mon_sat' },
+          { label: tr('Круглосуточно', 'Kecha-kunduz'), value: 'round' },
+          { label: tr('По дням', 'Kunlar boʻyicha'), value: 'custom' },
         ]}
         style={{ marginBottom: 16 }}
       />
       {preset === 'round' ? (
-        <Alert type="info" showIcon message="Магазин работает 24 часа без выходных" description="Покупатели всегда видят «открыто»." />
+        <Alert type="info" showIcon message={tr('Магазин работает 24 часа без выходных', 'Doʻkon dam olish kunlarisiz 24 soat ishlaydi')} description={tr('Покупатели всегда видят «открыто».', 'Xaridorlar doim «ochiq» ni koʻradi.')} />
       ) : (
         <>
           <div className="sm-setup-days">
             <div className="sm-setup-day">
-              <span>День</span>
-              <span>Работает</span>
-              <span>Открытие</span>
-              <span>Закрытие</span>
+              <span>{tr('День', 'Kun')}</span>
+              <span>{tr('Работает', 'Ishlaydi')}</span>
+              <span>{tr('Открытие', 'Ochilish')}</span>
+              <span>{tr('Закрытие', 'Yopilish')}</span>
             </div>
             {WEEK.map((w) => {
               const d = days[w]
@@ -407,7 +411,7 @@ function HoursStep({ s, onBack, onSaved }: { s: SetupState; onBack: () => void; 
                   <Typography.Text strong={d.on} type={d.on ? undefined : 'secondary'}>
                     {DAY_NAME[w]}
                   </Typography.Text>
-                  <Switch checked={d.on} onChange={(on) => edit(w, { on })} aria-label={`${DAY_NAME[w]} — работает`} />
+                  <Switch checked={d.on} onChange={(on) => edit(w, { on })} aria-label={tr(`${DAY_NAME[w]} — работает`, `${DAY_NAME[w]} — ishlaydi`)} />
                   <TimePicker
                     format="HH:mm"
                     minuteStep={5}
@@ -442,10 +446,10 @@ function HoursStep({ s, onBack, onSaved }: { s: SetupState; onBack: () => void; 
                 })
               }
             >
-              Скопировать понедельник на все дни
+              {tr('Скопировать понедельник на все дни', 'Dushanbani barcha kunlarga nusxalash')}
             </Button>
             <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-              <MoonOutlined /> После полуночи: например, 08:00 – 02:00
+              <MoonOutlined /> {tr('После полуночи: например, 08:00 – 02:00', 'Yarim tundan keyin: masalan, 08:00 – 02:00')}
             </Typography.Text>
           </Flex>
         </>
@@ -453,10 +457,10 @@ function HoursStep({ s, onBack, onSaved }: { s: SetupState; onBack: () => void; 
       <div className="sm-setup-foot">
         <span className="sm-grow" />
         <Button icon={<ArrowLeftOutlined />} onClick={onBack}>
-          Назад
+          {tr('Назад', 'Orqaga')}
         </Button>
         <Button type="primary" loading={busy} icon={<ArrowRightOutlined />} iconPosition="end" onClick={submit}>
-          Дальше
+          {tr('Дальше', 'Keyingi')}
         </Button>
       </div>
     </>
@@ -472,7 +476,7 @@ const ETAS: [number, number][] = [
   [35, 50],
   [60, 120],
 ]
-const etaLabel = ([a, b]: [number, number]) => (a >= 60 ? `${a / 60}–${b / 60} часа` : `${a}–${b} мин`)
+const etaLabel = ([a, b]: [number, number]) => (a >= 60 ? tr(`${a / 60}–${b / 60} часа`, `${a / 60}–${b / 60} soat`) : tr(`${a}–${b} мин`, `${a}–${b} daqiqa`))
 const plain = (v: string | null | undefined) => (v ? String(Number(v)) : '')
 
 function DeliveryStep({ s, onBack, onFinish }: { s: SetupState; onBack: () => void; onFinish: (msg?: string) => Promise<void> }) {
@@ -492,10 +496,10 @@ function DeliveryStep({ s, onBack, onFinish }: { s: SetupState; onBack: () => vo
     if (mode === 'none') {
       return void run(
         () => setupApi.delivery({ store_id: st.id, mode: 'none' }),
-        () => void onFinish('Магазин настроен. Покупатели видят его в приложении, заказы — когда включите доставку'),
+        () => void onFinish(tr('Магазин настроен. Покупатели видят его в приложении, заказы — когда включите доставку', 'Doʻkon sozlandi. Xaridorlar uni ilovada koʻradi, buyurtmalar — yetkazib berishni yoqqaningizda')),
       )
     }
-    if (fee === '') return void message.error('Укажите стоимость доставки — 0, если бесплатно')
+    if (fee === '') return void message.error(tr('Укажите стоимость доставки — 0, если бесплатно', 'Yetkazib berish narxini kiriting — bepul boʻlsa, 0'))
     void run(
       () =>
         setupApi.delivery({
@@ -508,7 +512,7 @@ function DeliveryStep({ s, onBack, onFinish }: { s: SetupState; onBack: () => vo
           eta_min: eta[0],
           eta_max: eta[1],
         }),
-      () => void onFinish('Магазин настроен — покупатели рядом могут заказывать'),
+      () => void onFinish(tr('Магазин настроен — покупатели рядом могут заказывать', 'Doʻkon sozlandi — yaqin atrofdagi xaridorlar buyurtma bera oladi')),
     )
   }
 
@@ -536,16 +540,16 @@ function DeliveryStep({ s, onBack, onFinish }: { s: SetupState; onBack: () => vo
 
   return (
     <>
-      <Head title="Доставка" sub="Можно пропустить — магазин всё равно появится у покупателей, но заказать из него будет нельзя" />
+      <Head title={tr('Доставка', 'Yetkazib berish')} sub={tr('Можно пропустить — магазин всё равно появится у покупателей, но заказать из него будет нельзя', 'Oʻtkazib yuborish mumkin — doʻkon baribir xaridorlarda koʻrinadi, lekin undan buyurtma berib boʻlmaydi')} />
       <Flex gap={16} wrap>
-        {option('deliver', <CarOutlined />, 'Доставляем сами', 'Своими курьерами или курьерами по пути')}
-        {option('none', <ShopOutlined />, 'Пока без доставки', 'Покупатели увидят магазин и цены. Кнопка «Хочу доставку» покажет, сколько людей её ждут')}
+        {option('deliver', <CarOutlined />, tr('Доставляем сами', 'Oʻzimiz yetkazamiz'), tr('Своими курьерами или курьерами по пути', 'Oʻz kuryerlarimiz yoki yoʻlakay kuryerlar'))}
+        {option('none', <ShopOutlined />, tr('Пока без доставки', 'Hozircha yetkazib berishsiz'), tr('Покупатели увидят магазин и цены. Кнопка «Хочу доставку» покажет, сколько людей её ждут', 'Xaridorlar doʻkon va narxlarni koʻradi. «Yetkazib berishni xohlayman» tugmasi uni qancha odam kutayotganini koʻrsatadi'))}
       </Flex>
       {mode === 'deliver' && (
         <Flex gap={24} wrap style={{ marginTop: 20 }}>
           <Flex vertical gap={16} style={{ flex: 1, minWidth: 280 }}>
             <div>
-              <Label>Куда доставляем</Label>
+              <Label>{tr('Куда доставляем', 'Qayergacha yetkazamiz')}</Label>
               <Flex gap={8} wrap align="center">
                 <Segmented<number | 'other'>
                   value={other ? 'other' : radius}
@@ -558,10 +562,10 @@ function DeliveryStep({ s, onBack, onFinish }: { s: SetupState; onBack: () => vo
                   }}
                   options={[
                     ...RADII.map((r) => ({
-                      label: `${r / 1000} км`,
+                      label: `${r / 1000} ${tr('км', 'km')}`,
                       value: r,
                     })),
-                    { label: 'Другое', value: 'other' as const },
+                    { label: tr('Другое', 'Boshqa'), value: 'other' as const },
                   ]}
                 />
                 {other && (
@@ -571,7 +575,7 @@ function DeliveryStep({ s, onBack, onFinish }: { s: SetupState; onBack: () => vo
                     step={0.5}
                     value={radius / 1000}
                     onChange={(v) => v && setRadius(Math.round(v * 1000))}
-                    suffix="км"
+                    suffix={tr('км', 'km')}
                     style={{ width: 130 }}
                   />
                 )}
@@ -579,23 +583,23 @@ function DeliveryStep({ s, onBack, onFinish }: { s: SetupState; onBack: () => vo
             </div>
             <Flex gap={12} wrap>
               <div style={{ flex: 1, minWidth: 140 }}>
-                <Label>Стоимость доставки</Label>
+                <Label>{tr('Стоимость доставки', 'Yetkazib berish narxi')}</Label>
                 <Money value={fee} onChange={setFee} />
               </div>
               <div style={{ flex: 1, minWidth: 140 }}>
-                <Label>Бесплатно от</Label>
-                <Money value={freeFrom} onChange={setFreeFrom} placeholder="не нужно" />
+                <Label>{tr('Бесплатно от', 'Bepul (summadan)')}</Label>
+                <Money value={freeFrom} onChange={setFreeFrom} placeholder={tr('не нужно', 'kerak emas')} />
               </div>
             </Flex>
             <div>
-              <Label>Минимальный заказ</Label>
+              <Label>{tr('Минимальный заказ', 'Minimal buyurtma')}</Label>
               <Money value={minOrder} onChange={setMinOrder} />
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                Заказ на меньшую сумму оформить нельзя
+                {tr('Заказ на меньшую сумму оформить нельзя', 'Kamroq summaga buyurtma berib boʻlmaydi')}
               </Typography.Text>
             </div>
             <div>
-              <Label>Привезём за</Label>
+              <Label>{tr('Привезём за', 'Yetkazish vaqti')}</Label>
               <Segmented<string>
                 value={eta.join('-')}
                 onChange={(v) => setEta(ETAS.find((e) => e.join('-') === v)!)}
@@ -610,20 +614,24 @@ function DeliveryStep({ s, onBack, onFinish }: { s: SetupState; onBack: () => vo
         </Flex>
       )}
       <Typography.Text type="secondary" style={{ display: 'block', marginTop: 16, fontSize: 13 }}>
-        <InfoCircleOutlined /> Зоны на карте, цену по расстоянию и доставку ко времени можно настроить потом в разделе «Доставка»
+        <InfoCircleOutlined />{' '}
+        {tr(
+          'Зоны на карте, цену по расстоянию и доставку ко времени можно настроить потом в разделе «Доставка»',
+          'Xaritadagi hududlar, masofaga qarab narx va vaqtga yetkazib berishni keyinroq «Yetkazib berish» boʻlimida sozlash mumkin',
+        )}
       </Typography.Text>
       <div className="sm-setup-foot">
         {!s.steps.delivery && (
           <Button type="link" style={{ paddingLeft: 0, color: '#667085' }} onClick={() => void onFinish()}>
-            Пропустить, настрою позже
+            {tr('Пропустить, настрою позже', 'Oʻtkazib yuborish, keyinroq sozlayman')}
           </Button>
         )}
         <span className="sm-grow" />
         <Button icon={<ArrowLeftOutlined />} onClick={onBack}>
-          Назад
+          {tr('Назад', 'Orqaga')}
         </Button>
         <Button type="primary" loading={busy} icon={<CheckOutlined />} onClick={submit}>
-          Готово
+          {tr('Готово', 'Tayyor')}
         </Button>
       </div>
     </>
@@ -655,7 +663,7 @@ function Money({ value, onChange, placeholder }: { value: string; onChange: (v: 
       value={value === '' ? null : value}
       onChange={(v) => onChange(v ?? '')}
       placeholder={placeholder}
-      suffix="сум"
+      suffix={tr('сум', 'soʻm')}
       formatter={(v) => (v ? String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') : '')}
       parser={(v) => (v ?? '').replace(/\s/g, '')}
       style={{ width: '100%' }}
@@ -683,7 +691,7 @@ function RadiusMap({ lat, lng, radius }: { lat: number; lng: number; radius: num
       },
     )
     m.geoObjects.add(c)
-    m.geoObjects.add(new ymaps.Placemark([lat, lng], { hintContent: 'Магазин' }, { preset: 'islands#redShoppingIcon' }))
+    m.geoObjects.add(new ymaps.Placemark([lat, lng], { hintContent: tr('Магазин', 'Doʻkon') }, { preset: 'islands#redShoppingIcon' }))
     circle.current = c
     setMap(m)
     return () => {
@@ -762,10 +770,10 @@ export function SetupChecklist({ s }: { s: SetupState }) {
       <Flex justify="space-between" align="center" gap={12} wrap style={{ marginBottom: 16 }}>
         <div>
           <Typography.Title level={5} style={{ margin: 0 }}>
-            Настройка магазина · {n} из 3
+            {tr(`Настройка магазина · ${n} из 3`, `Doʻkonni sozlash · ${n} / 3`)}
           </Typography.Title>
           <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-            {onlyDelivery ? 'Осталась доставка — без неё покупатели видят «Магазин не доставляет»' : 'Заполните, чтобы покупатели нашли магазин в приложении'}
+            {onlyDelivery ? tr('Осталась доставка — без неё покупатели видят «Магазин не доставляет»', 'Yetkazib berish qoldi — usiz xaridorlar «Doʻkon yetkazib bermaydi» ni koʻradi') : tr('Заполните, чтобы покупатели нашли магазин в приложении', 'Xaridorlar doʻkonni ilovada topishi uchun toʻldiring')}
           </Typography.Text>
         </div>
         <Flex gap={6}>
@@ -785,26 +793,26 @@ export function SetupChecklist({ s }: { s: SetupState }) {
       <div className="sm-setup-check">
         {col(
           s.steps.store,
-          'Магазин и адрес',
+          tr('Магазин и адрес', 'Doʻkon va manzil'),
           s.steps.store
             ? [st.address, st.phone && st.phone.replace(/^\+998(\d\d)(\d{3})(\d\d)(\d\d)$/, '+998 $1 $2 $3 $4')].filter(Boolean).join(' · ')
-            : 'Поставьте точку на карте — без неё покупатели не найдут магазин',
+            : tr('Поставьте точку на карте — без неё покупатели не найдут магазин', 'Xaritada nuqta qoʻying — usiz xaridorlar doʻkonni topa olmaydi'),
           <Button type={s.steps.store ? 'link' : 'primary'} style={s.steps.store ? { padding: 0, color: '#E11D2A' } : undefined} onClick={() => go(1)}>
-            {s.steps.store ? 'Изменить' : 'Указать'}
+            {s.steps.store ? tr('Изменить', 'Tahrirlash') : tr('Указать', 'Koʻrsatish')}
           </Button>,
         )}
         {col(
           s.steps.hours,
-          'Часы работы',
-          s.steps.hours ? hoursText(s.working_hours) : 'Укажите, когда магазин открыт',
+          tr('Часы работы', 'Ish vaqti'),
+          s.steps.hours ? hoursText(s.working_hours) : tr('Укажите, когда магазин открыт', 'Doʻkon qachon ochiqligini koʻrsating'),
           <Button type={s.steps.hours ? 'link' : 'primary'} style={s.steps.hours ? { padding: 0, color: '#E11D2A' } : undefined} onClick={() => go(2)}>
-            {s.steps.hours ? 'Изменить' : 'Указать'}
+            {s.steps.hours ? tr('Изменить', 'Tahrirlash') : tr('Указать', 'Koʻrsatish')}
           </Button>,
         )}
         {col(
           s.steps.delivery,
-          'Доставка',
-          s.steps.delivery ? 'Готово' : onlyDelivery ? 'Сейчас покупатели видят «Магазин не доставляет»' : 'Радиус, цена и за сколько привезёте',
+          tr('Доставка', 'Yetkazib berish'),
+          s.steps.delivery ? tr('Готово', 'Tayyor') : onlyDelivery ? tr('Сейчас покупатели видят «Магазин не доставляет»', 'Hozir xaridorlar «Doʻkon yetkazib bermaydi» ni koʻradi') : tr('Радиус, цена и за сколько привезёте', 'Radius, narx va qancha vaqtda yetkazasiz'),
           !s.steps.delivery && (
             <Flex vertical gap={10} align="flex-start">
               {s.wishes > 0 && (
@@ -818,12 +826,16 @@ export function SetupChecklist({ s }: { s: SetupState }) {
                     fontSize: 13,
                   }}
                 >
-                  <HeartFilled /> {buyers(s.wishes)} рядом {s.wishes % 10 === 1 && s.wishes % 100 !== 11 ? 'ждёт' : 'ждут'} доставку
+                  <HeartFilled />{' '}
+                  {tr(
+                    `${buyers(s.wishes)} рядом ${s.wishes % 10 === 1 && s.wishes % 100 !== 11 ? 'ждёт' : 'ждут'} доставку`,
+                    `Yaqin atrofda ${buyers(s.wishes)} yetkazib berishni kutmoqda`,
+                  )}
                 </span>
               )}
               <Flex gap={12} align="center" wrap>
                 <Button type="primary" onClick={() => go(3)} disabled={!s.steps.store}>
-                  Настроить доставку
+                  {tr('Настроить доставку', 'Yetkazib berishni sozlash')}
                 </Button>
                 <Button
                   type="link"
@@ -836,7 +848,7 @@ export function SetupChecklist({ s }: { s: SetupState }) {
                     )
                   }
                 >
-                  Без доставки
+                  {tr('Без доставки', 'Yetkazib berishsiz')}
                 </Button>
               </Flex>
             </Flex>

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart' show Lang, tr;
 
 import '../core/cart.dart';
 import '../core/limits.dart';
@@ -89,11 +90,11 @@ class _SaleScreenState extends State<SaleScreen> {
   Future<void> _quickKeys() async {
     final pos = context.read<PosController>();
     if (!pos.canQuickKeys) {
-      sale.notice('Быстрые кнопки настраивает владелец или сотрудник с правом «Настройка кассы»');
+      sale.notice(tr('Быстрые кнопки настраивает владелец или сотрудник с правом «Настройка кассы»', 'Tezkor tugmalarni egasi yoki «Kassa sozlamalari» huquqiga ega xodim sozlaydi'));
       return;
     }
     if (!sale.cart.isEmpty && sale.mode == SaleMode.sale) {
-      sale.notice('Сначала завершите или отложите чек (F7)');
+      sale.notice(tr('Сначала завершите или отложите чек (F7)', 'Avval chekni yakunlang yoki kechiktiring (F7)'));
       return;
     }
     await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const QuickKeysScreen()));
@@ -240,8 +241,8 @@ class _Header extends StatelessWidget {
     final cart = sale.cart;
     final paid = sale.paid;
 
-    var title = cart.isEmpty ? 'Новый чек' : 'Чек №${pos.nextSeq} · ${cart.count} ${_positions(cart.count)}';
-    var note = cart.isEmpty ? 'Сканируйте товар, нажмите плитку или наберите код' : 'новые сверху · нажмите строку, ещё раз — карточка товара';
+    var title = cart.isEmpty ? tr('Новый чек', 'Yangi chek') : tr('Чек №${pos.nextSeq} · ${cart.count} ${_positions(cart.count)}', 'Chek №${pos.nextSeq} · ${cart.count} ta pozitsiya');
+    var note = cart.isEmpty ? tr('Сканируйте товар, нажмите плитку или наберите код', 'Mahsulotni skanerlang, tugmani bosing yoki kodni tering') : tr('новые сверху · нажмите строку, ещё раз — карточка товара', 'yangilari tepada · qatorni bosing, yana bir bor — mahsulot kartochkasi');
     var noteColor = C.ts;
     var bg = C.surface;
     String rightNote = '', right = '';
@@ -250,21 +251,21 @@ class _Header extends StatelessWidget {
     if (sale.mode == SaleMode.paid && paid != null && sale.msg == null) {
       final r = paid.record;
       final cash = r.received > 0;
-      title = 'Чек №${r.seq} · ${cash ? 'сдача покупателю' : 'чек пробит'}';
-      note = '✓ ${paid.label}${pos.fiscalMode ? '' : ' · тестовый режим, не фискальный'}';
+      title = tr('Чек №${r.seq} · ${cash ? 'сдача покупателю' : 'чек пробит'}', 'Chek №${r.seq} · ${cash ? 'xaridorga qaytim' : 'chek chiqarildi'}');
+      note = '✓ ${paid.label}${pos.fiscalMode ? '' : tr(' · тестовый режим, не фискальный', ' · test rejimi, fiskal emas')}';
       noteColor = C.success;
       bg = C.successSoft;
-      rightNote = cash ? 'Сдача · получено ${fmtMoney(r.received)}' : 'Итог';
+      rightNote = cash ? tr('Сдача · получено ${fmtMoney(r.received)}', 'Qaytim · olindi ${fmtMoney(r.received)}') : tr('Итог', 'Jami');
       right = fmtMoney(cash ? r.change : r.total);
       rightColor = cash ? C.success : C.tp;
     } else if (sale.mode == SaleMode.held) {
-      title = 'Отложенные чеки';
-      note = 'Цифра — вернуть чек · Esc — назад';
+      title = tr('Отложенные чеки', 'Kechiktirilgan cheklar');
+      note = tr('Цифра — вернуть чек · Esc — назад', 'Raqam — chekni qaytarish · Esc — orqaga');
     } else if (sale.msg != null) {
       final m = sale.msg!;
       switch (m.kind) {
         case MsgKind.ok:
-          note = '${m.note.isEmpty ? 'Добавлено' : m.note}: ${m.title}';
+          note = '${m.note.isEmpty ? tr('Добавлено', 'Qoʻshildi') : m.note}: ${m.title}';
           noteColor = C.success;
         case MsgKind.error:
           note = '✕ ${m.title}${m.note.isEmpty ? '' : ' · ${m.note}'}';
@@ -315,8 +316,8 @@ class _CartList extends StatelessWidget {
           padding: const EdgeInsets.all(24),
           child: Text(
             dim
-                ? 'Чек пробит · следующий покупатель — сканируйте товар или нажмите плитку'
-                : 'Сканируйте штрихкод, нажмите товар справа\nили наберите код и «Код» · F2 — поиск по названию',
+                ? tr('Чек пробит · следующий покупатель — сканируйте товар или нажмите плитку', 'Chek chiqarildi · keyingi xaridor — mahsulotni skanerlang yoki tugmani bosing')
+                : tr('Сканируйте штрихкод, нажмите товар справа\nили наберите код и «Код» · F2 — поиск по названию', 'Shtrix-kodni skanerlang, oʻngdagi mahsulotni bosing\nyoki kodni terib «Kod»ni bosing · F2 — nomi boʻyicha qidirish'),
             textAlign: TextAlign.center,
             style: t(16, c: C.td),
           ),
@@ -359,8 +360,8 @@ class _LineRow extends StatelessWidget {
     final p = line.product;
     final extras = [
       if (line.hasDiscount)
-        line.discountBp != null ? 'скидка ${fmtMoney(line.discountBp!)}%' : 'скидка ${fmtMoney(line.discount)}',
-      if (p.marked) 'маркировка ✓',
+        line.discountBp != null ? tr('скидка ${fmtMoney(line.discountBp!)}%', 'chegirma ${fmtMoney(line.discountBp!)}%') : tr('скидка ${fmtMoney(line.discount)}', 'chegirma ${fmtMoney(line.discount)}'),
+      if (p.marked) tr('маркировка ✓', 'markirovka ✓'),
     ];
     // Без двойного нажатия: оно задерживало кнопки − / + (Flutter ждёт второе
     // нажатие) и открывало карточку, если кассир быстро жал «+» дважды.
@@ -398,7 +399,7 @@ class _LineRow extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               Text(
-                p.fractional ? '${fmtMoney(line.price)} сум / ${p.unit}' : '${fmtMoney(line.price)} сум',
+                p.fractional ? tr('${fmtMoney(line.price)} сум / ${p.unit}', '${fmtMoney(line.price)} soʻm / ${p.unit}') : tr('${fmtMoney(line.price)} сум', '${fmtMoney(line.price)} soʻm'),
                 style: t(13, c: C.ts),
               ),
             ]),
@@ -459,13 +460,13 @@ class _Actions extends StatelessWidget {
       decoration: const BoxDecoration(color: C.subtle, border: Border(top: BorderSide(color: C.border))),
       padding: const EdgeInsets.all(14),
       child: Row(children: [
-        btn('Удалить строку', 'Del', Cmd.del, enabled: active && sale.cart.selected != null),
+        btn(tr('Удалить строку', 'Qatorni oʻchirish'), 'Del', Cmd.del, enabled: active && sale.cart.selected != null),
         gap,
-        btn('Скидка', 'F6', Cmd.discountLine, enabled: active),
+        btn(tr('Скидка', 'Chegirma'), 'F6', Cmd.discountLine, enabled: active),
         gap,
-        btn(sale.mode == SaleMode.held ? 'Назад к чеку' : (active ? 'Отложить' : 'Отложенные'), 'F7', Cmd.hold),
+        btn(sale.mode == SaleMode.held ? tr('Назад к чеку', 'Chekka qaytish') : (active ? tr('Отложить', 'Kechiktirish') : tr('Отложенные', 'Kechiktirilganlar')), 'F7', Cmd.hold),
         gap,
-        btn('Меню смены', 'F11', Cmd.shiftMenu),
+        btn(tr('Меню смены', 'Smena menyusi'), 'F11', Cmd.shiftMenu),
       ]),
     );
   }
@@ -524,7 +525,7 @@ class _HeldList extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.all(20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Покупатель отошёл за товаром — обслужите следующего. Нажмите чек или его цифру, чтобы вернуть.',
+        Text(tr('Покупатель отошёл за товаром — обслужите следующего. Нажмите чек или его цифру, чтобы вернуть.', 'Xaridor mahsulot olishga ketdi — keyingisiga xizmat koʻrsating. Qaytarish uchun chekni yoki uning raqamini bosing.'),
             style: t(13, c: C.ts)),
         const SizedBox(height: 16),
         for (var i = 0; i < pos.held.length && i < 9; i++)
@@ -541,7 +542,8 @@ class _HeldList extends StatelessWidget {
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(
-                      '${_hm(pos.held[i].at)} · ${pos.held[i].cart.count} ${_positions(pos.held[i].cart.count)}',
+                      tr('${_hm(pos.held[i].at)} · ${pos.held[i].cart.count} ${_positions(pos.held[i].cart.count)}',
+                          '${_hm(pos.held[i].at)} · ${pos.held[i].cart.count} ta pozitsiya'),
                       style: t(16, w: FontWeight.w600),
                     ),
                     Text(
@@ -558,7 +560,7 @@ class _HeldList extends StatelessWidget {
             ),
           ),
         const SizedBox(height: 8),
-        Text('Отложенный чек хранится до конца смены.', style: t(12, c: C.ts)),
+        Text(tr('Отложенный чек хранится до конца смены.', 'Kechiktirilgan chek smena oxirigacha saqlanadi.'), style: t(12, c: C.ts)),
       ]),
     );
   }
@@ -583,7 +585,7 @@ class _Right extends StatelessWidget {
       Expanded(child: _Tiles(onQuickKeys: onQuickKeys)),
       const SizedBox(height: 6),
       Text(
-        'Нажатие — +1 в чек · цифры, потом плитка — столько штук · долгое нажатие — настроить кнопки',
+        tr('Нажатие — +1 в чек · цифры, потом плитка — столько штук · долгое нажатие — настроить кнопки', 'Bosish — chekka +1 · raqamlar, keyin tugma — shuncha dona · uzoq bosish — tugmalarni sozlash'),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: t(11.5, c: C.ts),
@@ -656,7 +658,7 @@ class _Tabs extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Разделы', style: t(22, w: FontWeight.w700)),
+              Text(tr('Разделы', 'Boʻlimlar'), style: t(22, w: FontWeight.w700)),
               const SizedBox(height: 16),
               ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 480),
@@ -693,12 +695,12 @@ class _Tabs extends StatelessWidget {
               ),
               const SizedBox(width: 8),
             ],
-            if (tabs.length > visible) _Chip('Ещё ›', onTap: () => _more(context, sale, tabs)),
+            if (tabs.length > visible) _Chip(tr('Ещё ›', 'Yana ›'), onTap: () => _more(context, sale, tabs)),
           ]),
         ),
       ),
       const SizedBox(width: 8),
-      _Chip('⌕  Поиск', trailing: 'F2', onTap: () => sale.command(Cmd.search)),
+      _Chip(tr('⌕  Поиск', '⌕  Qidirish'), trailing: 'F2', onTap: () => sale.command(Cmd.search)),
     ]);
   }
 }
@@ -720,7 +722,7 @@ class _Tiles extends StatelessWidget {
         decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(12)),
         alignment: Alignment.center,
         child: Text(
-          'Здесь появятся самые продаваемые товары магазина.\nЗакрепить свои: долгое нажатие здесь или F11 → «Быстрые кнопки».',
+          tr('Здесь появятся самые продаваемые товары магазина.\nЗакрепить свои: долгое нажатие здесь или F11 → «Быстрые кнопки».', 'Bu yerda doʻkonning eng koʻp sotiladigan mahsulotlari chiqadi.\nOʻzingiznikini qadash: shu yerda uzoq bosing yoki F11 → «Tezkor tugmalar».'),
           textAlign: TextAlign.center,
           style: t(15, c: C.ts),
         ),
@@ -774,7 +776,7 @@ class _Pad extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
               onTap: () => sale.pad(k),
               child: Center(
-                child: Text(k, style: t(k.length > 2 ? 15 : 22, w: FontWeight.w600, c: enter ? Colors.white : C.tp)),
+                child: Text(_padLabel(k), style: t(k.length > 2 ? 15 : 22, w: FontWeight.w600, c: enter ? Colors.white : C.tp)),
               ),
             ),
           ),
@@ -793,9 +795,9 @@ class _Pad extends StatelessWidget {
           border: Border.all(color: input.isEmpty ? C.borderStrong : const Color(0xFF12B76A)),
         ),
         child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Количество, вес или код', style: t(11, w: FontWeight.w500, c: C.ts)),
+          Text(tr('Количество, вес или код', 'Miqdor, vazn yoki kod'), style: t(11, w: FontWeight.w500, c: C.ts)),
           Text(
-            input.isEmpty ? '—' : '$input  — нажмите товар, × или «Код»',
+            input.isEmpty ? '—' : tr('$input  — нажмите товар, × или «Код»', '$input  — mahsulotni, × yoki «Kod»ni bosing'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: t(16, w: FontWeight.w600),
@@ -814,6 +816,13 @@ class _Pad extends StatelessWidget {
   }
 }
 
+/// Подпись клавиши: «Код» и «Ввод» — ключи команд (см. SaleController.pad), на экране — на языке кассы.
+String _padLabel(String k) => switch (k) {
+      'Код' => tr('Код', 'Kod'),
+      'Ввод' => tr('Ввод', 'Kiritish'),
+      _ => k,
+    };
+
 /// Итог и кнопка «Оплатить».
 class _PayColumn extends StatelessWidget {
   const _PayColumn();
@@ -829,19 +838,20 @@ class _PayColumn extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
         decoration: BoxDecoration(color: C.dark, borderRadius: BorderRadius.circular(16)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text(paid ? 'Следующий покупатель' : 'К оплате', style: t(14, c: Colors.white70)),
+          Text(paid ? tr('Следующий покупатель', 'Keyingi xaridor') : tr('К оплате', 'Toʻlovga'), style: t(14, c: Colors.white70)),
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
             child: Text(
-              paid ? 'Сканируйте' : fmtMoney(cart.total),
+              paid ? tr('Сканируйте', 'Skanerlang') : fmtMoney(cart.total),
               style: t(paid ? 30 : 44, w: FontWeight.w800, c: Colors.white, h: 1.1),
             ),
           ),
           Text(
             paid
-                ? 'новый чек начнётся сам'
-                : '${cart.count} ${_positions(cart.count)}${cart.discount > 0 ? ' · скидка ${fmtMoney(cart.discount)}' : ''}',
+                ? tr('новый чек начнётся сам', 'yangi chek oʻzi boshlanadi')
+                : tr('${cart.count} ${_positions(cart.count)}${cart.discount > 0 ? ' · скидка ${fmtMoney(cart.discount)}' : ''}',
+                    '${cart.count} ta pozitsiya${cart.discount > 0 ? ' · chegirma ${fmtMoney(cart.discount)}' : ''}'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: t(12, c: Colors.white60),
@@ -863,12 +873,12 @@ class _PayColumn extends StatelessWidget {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
                   FittedBox(
                     fit: BoxFit.scaleDown,
-                    child: Text('Оплатить', style: t(30, w: FontWeight.w700, c: Colors.white)),
+                    child: Text(tr('Оплатить', 'Toʻlash'), style: t(30, w: FontWeight.w700, c: Colors.white)),
                   ),
                   const SizedBox(height: 4),
-                  Text('${fmtMoney(cart.total)} сум', style: t(19, w: FontWeight.w600, c: const Color(0xFFFFE4E6))),
+                  Text(tr('${fmtMoney(cart.total)} сум', '${fmtMoney(cart.total)} soʻm'), style: t(19, w: FontWeight.w600, c: const Color(0xFFFFE4E6))),
                   const SizedBox(height: 10),
-                  Text('Enter · наличные, карта, QR, в долг', maxLines: 2, style: t(12, c: const Color(0xFFFFD5D9))),
+                  Text(tr('Enter · наличные, карта, QR, в долг', 'Enter · naqd, karta, QR, qarzga'), maxLines: 2, style: t(12, c: const Color(0xFFFFD5D9))),
                 ]),
               ),
             ),
@@ -891,7 +901,7 @@ class _SearchPanel extends StatefulWidget {
 
 class _SearchPanelState extends State<_SearchPanel> {
   /// Раскладка: кириллица или латиница (узбекская латиница и английский).
-  bool _latin = false;
+  bool _latin = Lang.instance.isUz;
 
   static const _cyr = [
     ['Й', 'Ц', 'У', 'К', 'Е', 'Н', 'Г', 'Ш', 'Щ', 'З', 'Х'],
@@ -940,7 +950,7 @@ class _SearchPanelState extends State<_SearchPanel> {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  sale.query.isEmpty ? 'Название, бренд или штрихкод' : '${sale.query}|',
+                  sale.query.isEmpty ? tr('Название, бренд или штрихкод', 'Nomi, brendi yoki shtrix-kodi') : '${sale.query}|',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: sale.query.isEmpty ? t(16, c: C.td) : t(20, w: FontWeight.w600),
@@ -950,7 +960,7 @@ class _SearchPanelState extends State<_SearchPanel> {
           ),
         ),
         const SizedBox(width: 12),
-        _Chip('Закрыть', trailing: 'Esc', onTap: sale.closeSearch),
+        _Chip(tr('Закрыть', 'Yopish'), trailing: 'Esc', onTap: sale.closeSearch),
       ]),
       const SizedBox(height: 12),
       Expanded(
@@ -960,7 +970,7 @@ class _SearchPanelState extends State<_SearchPanel> {
           child: sale.results.isEmpty
               ? Center(
                   child: Text(
-                    sale.query.trim().isEmpty ? 'Начните набирать название' : 'Ничего не найдено',
+                    sale.query.trim().isEmpty ? tr('Начните набирать название', 'Nomini terishni boshlang') : tr('Ничего не найдено', 'Hech narsa topilmadi'),
                     style: t(15, c: C.td),
                   ),
                 )
@@ -970,7 +980,7 @@ class _SearchPanelState extends State<_SearchPanel> {
                     if (i == 0) {
                       return Padding(
                         padding: const EdgeInsets.fromLTRB(18, 14, 18, 6),
-                        child: Text('Найдено ${sale.results.length} · нажмите — в чек', style: t(13, w: FontWeight.w500, c: C.ts)),
+                        child: Text(tr('Найдено ${sale.results.length} · нажмите — в чек', 'Topildi: ${sale.results.length} · bosing — chekka'), style: t(13, w: FontWeight.w500, c: C.ts)),
                       );
                     }
                     final p = sale.results[i - 1];
@@ -1023,7 +1033,7 @@ class _SearchPanelState extends State<_SearchPanel> {
           Expanded(
             child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               key(_latin ? 'LAT → RU' : 'RU → LAT', () => setState(() => _latin = !_latin), flex: 2, color: grey, size: 14),
-              key('Пробел', () => sale.searchType(' '), flex: 5, textColor: C.ts, size: 15),
+              key(tr('Пробел', 'Probel'), () => sale.searchType(' '), flex: 5, textColor: C.ts, size: 15),
               if (!_latin) ...[
                 key('Ғ', () => sale.searchType('ғ'), color: grey),
                 key('Қ', () => sale.searchType('қ'), color: grey),
@@ -1031,7 +1041,7 @@ class _SearchPanelState extends State<_SearchPanel> {
                 key('Oʻ', () => sale.searchType('oʻ'), color: grey, size: 16),
                 key('Gʻ', () => sale.searchType('gʻ'), color: grey, size: 16),
               ],
-              key('Найти', () => sale.pickResult(), flex: 2, color: C.dark, textColor: Colors.white, size: 15),
+              key(tr('Найти', 'Topish'), () => sale.pickResult(), flex: 2, color: C.dark, textColor: Colors.white, size: 15),
             ]),
           ),
         ]),

@@ -55,17 +55,17 @@ class _CatalogSectionsScreenState extends State<CatalogSectionsScreen> {
     return Scaffold(
         appBar: AppBar(
           backgroundColor: AppColors.bg,
-          title: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Каталог'),
-            Text('Отметьте, что есть в магазине', style: AppText.small),
+          title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(tr('Каталог', 'Katalog')),
+            Text(tr('Отметьте, что есть в магазине', 'Doʻkonda bor narsalarni belgilang'), style: AppText.small),
           ]),
         ),
         body: _error != null && s == null
-            ? EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: _error.toString(), action: 'Повторить', onAction: _load)
+            ? EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: _error.toString(), action: tr('Повторить', 'Qayta urinish'), onAction: _load)
             : s == null
                 ? const Center(child: CircularProgressIndicator())
                 : s.isEmpty
-                    ? const EmptyState(icon: Icons.category_outlined, title: 'Каталог пуст')
+                    ? EmptyState(icon: Icons.category_outlined, title: tr('Каталог пуст', 'Katalog boʻsh'))
                     : RefreshIndicator(
                         onRefresh: _load,
                         child: ListView.separated(
@@ -81,10 +81,10 @@ class _CatalogSectionsScreenState extends State<CatalogSectionsScreen> {
                               Expanded(
                                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                   Text(s[i].name, style: AppText.bodyStrong),
-                                  Text('${s[i].leaves.length} ${plural(s[i].leaves.length, 'подраздел', 'подраздела', 'подразделов')}', style: AppText.small),
+                                  Text(tr('${s[i].leaves.length} ${plural(s[i].leaves.length, 'подраздел', 'подраздела', 'подразделов')}', '${s[i].leaves.length} ta kichik boʻlim'), style: AppText.small),
                                 ]),
                               ),
-                              Text('${s[i].selected} из ${s[i].count}', style: AppText.small),
+                              Text(tr('${s[i].selected} из ${s[i].count}', '${s[i].selected} / ${s[i].count}'), style: AppText.small),
                               const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
                             ]),
                           ),
@@ -176,7 +176,7 @@ class _CatalogSectionScreenState extends State<CatalogSectionScreen> {
         for (final e in _picked.entries) {'product_id': e.key, 'qty': plainQty(e.value), 'add': true, 'source': 'catalog'},
       ]);
       if (!mounted) return;
-      showMessage(context, 'В список добавлено: ${goods(_picked.length)}');
+      showMessage(context, tr('В список добавлено: ${goods(_picked.length)}', 'Roʻyxatga qoʻshildi: ${goods(_picked.length)}'));
       Navigator.of(context).pop(true);
     } catch (e) {
       if (mounted) showMessage(context, e);
@@ -201,7 +201,7 @@ class _CatalogSectionScreenState extends State<CatalogSectionScreen> {
         backgroundColor: AppColors.bg,
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(widget.section.name),
-          const Text('Каталог · отметьте, что есть в магазине', style: AppText.small),
+          Text(tr('Каталог · отметьте, что есть в магазине', 'Katalog · doʻkonda bor narsalarni belgilang'), style: AppText.small),
         ]),
       ),
       body: Column(children: [
@@ -209,7 +209,7 @@ class _CatalogSectionScreenState extends State<CatalogSectionScreen> {
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
           child: TextField(
             onChanged: (v) => setState(() => _q = v.trim()),
-            decoration: const InputDecoration(fillColor: AppColors.white, prefixIcon: Icon(Icons.search_rounded), hintText: 'Поиск в разделе'),
+            decoration: InputDecoration(fillColor: AppColors.white, prefixIcon: const Icon(Icons.search_rounded), hintText: tr('Поиск в разделе', 'Boʻlimda qidirish')),
           ),
         ),
         if (leaves.length > 1)
@@ -254,12 +254,14 @@ class _CatalogSectionScreenState extends State<CatalogSectionScreen> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             BigButton(
-              label: count == 0 ? 'Отметьте товары' : 'Добавить ${goods(count)} · ${plainQty(pieces)} шт',
+              label: count == 0
+                  ? tr('Отметьте товары', 'Mahsulotlarni belgilang')
+                  : tr('Добавить ${goods(count)} · ${plainQty(pieces)} шт', 'Qoʻshish: ${goods(count)} · ${plainQty(pieces)} dona'),
               busy: _busy,
               onPressed: count == 0 ? null : _add,
             ),
             const SizedBox(height: 6),
-            const Text('Закупочные цены — на шаге «Проверить и провести»', style: AppText.small),
+            Text(tr('Закупочные цены — на шаге «Проверить и провести»', 'Xarid narxlari — «Tekshirish va oʻtkazish» qadamida'), style: AppText.small),
           ]),
         ),
       ),
@@ -286,7 +288,7 @@ class _CatalogSectionScreenState extends State<CatalogSectionScreen> {
                   }
                 }
               }),
-              child: Text(allPicked ? 'Снять все' : 'Отметить все', style: AppText.bodyStrong.copyWith(color: AppColors.primary, fontSize: 14)),
+              child: Text(allPicked ? tr('Снять все', 'Hammasini olib tashlash') : tr('Отметить все', 'Hammasini belgilash'), style: AppText.bodyStrong.copyWith(color: AppColors.primary, fontSize: 14)),
             ),
         ]),
         for (final it in items) _itemRow(it),
@@ -313,7 +315,7 @@ class _CatalogSectionScreenState extends State<CatalogSectionScreen> {
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('${it['name']}', style: AppText.bodyStrong, maxLines: 2, overflow: TextOverflow.ellipsis),
-              Text(inDraft ? 'уже в списке' : 'цена ${money(it['current_price'])}', style: AppText.small),
+              Text(inDraft ? tr('уже в списке', 'roʻyxatda bor') : tr('цена ${money(it['current_price'])}', 'narx ${money(it['current_price'])}'), style: AppText.small),
             ]),
           ),
           if (picked)
@@ -373,14 +375,14 @@ class _StartSearchScreenState extends State<StartSearchScreen> {
 
   Future<void> _open(ProductRef p) async {
     final ok = await addProductSheet(context, widget.start, p, source: 'search');
-    if (ok && mounted) showMessage(context, '${p.name} — в списке');
+    if (ok && mounted) showMessage(context, tr('${p.name} — в списке', '${p.name} — roʻyxatda'));
   }
 
   @override
   Widget build(BuildContext context) {
     final items = _items;
     return Scaffold(
-        appBar: AppBar(backgroundColor: AppColors.bg, title: const Text('Поиск товара')),
+        appBar: AppBar(backgroundColor: AppColors.bg, title: Text(tr('Поиск товара', 'Mahsulot qidirish'))),
         body: Column(children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
@@ -391,15 +393,15 @@ class _StartSearchScreenState extends State<StartSearchScreen> {
                 _debounce?.cancel();
                 _debounce = Timer(const Duration(milliseconds: 350), _search);
               },
-              decoration: const InputDecoration(fillColor: AppColors.white, prefixIcon: Icon(Icons.search_rounded), hintText: 'Название, бренд или штрихкод'),
+              decoration: InputDecoration(fillColor: AppColors.white, prefixIcon: const Icon(Icons.search_rounded), hintText: tr('Название, бренд или штрихкод', 'Nomi, brendi yoki shtrix-kod')),
             ),
           ),
           if (_loading) const LinearProgressIndicator(minHeight: 2),
           Expanded(
             child: items == null
-                ? const EmptyState(icon: Icons.search_rounded, title: 'Найдите товар', text: 'Введите название или бренд — например «Coca-Cola 1,5»')
+                ? EmptyState(icon: Icons.search_rounded, title: tr('Найдите товар', 'Mahsulotni toping'), text: tr('Введите название или бренд — например «Coca-Cola 1,5»', 'Nomi yoki brendini kiriting — masalan, «Coca-Cola 1,5»'))
                 : items.isEmpty
-                    ? const EmptyState(icon: Icons.search_off_rounded, title: 'Ничего не найдено', text: 'Нет в каталоге? Создайте новый товар на экране «Начало работы».')
+                    ? EmptyState(icon: Icons.search_off_rounded, title: tr('Ничего не найдено', 'Hech narsa topilmadi'), text: tr('Нет в каталоге? Создайте новый товар на экране «Начало работы».', 'Katalogda yoʻqmi? «Ishni boshlash» ekranida yangi mahsulot yarating.'))
                     : ListView.separated(
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                         itemCount: items.length,

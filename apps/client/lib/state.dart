@@ -92,11 +92,11 @@ class Store {
   /// «25–35 мин» или null.
   String? get etaText {
     if (etaMin == null && etaMax == null) return null;
-    if (etaMin != null && etaMax != null && etaMin != etaMax) return '$etaMin–$etaMax мин';
-    return '${etaMax ?? etaMin} мин';
+    if (etaMin != null && etaMax != null && etaMin != etaMax) return tr('$etaMin–$etaMax мин', '$etaMin–$etaMax daq');
+    return tr('${etaMax ?? etaMin} мин', '${etaMax ?? etaMin} daq');
   }
 
-  String get distanceText => distanceM < 1000 ? '$distanceM м' : '${(distanceM / 1000).toStringAsFixed(1)} км';
+  String get distanceText => distanceM < 1000 ? tr('$distanceM м', '$distanceM m') : tr('${(distanceM / 1000).toStringAsFixed(1)} км', '${(distanceM / 1000).toStringAsFixed(1)} km');
 }
 
 class CartLine {
@@ -138,8 +138,22 @@ class AppState extends ChangeNotifier {
         pendingBlock = null;
       }
     });
+    Lang.instance.addListener(_onLangChanged);
   }
   final Api api;
+
+  /// Сменили язык: названия магазинов, категорий и товаров сервер отдаёт на
+  /// языке запроса — перезагружаем то, что закэшировано.
+  void _onLangChanged() {
+    _categories.clear();
+    if (address != null) loadStores(force: true);
+  }
+
+  @override
+  void dispose() {
+    Lang.instance.removeListener(_onLangChanged);
+    super.dispose();
+  }
 
   /// Гость: вход не выполнен. Можно смотреть магазины и товары и собирать
   /// корзину; оформление, избранное, семья и разделы профиля — после входа
@@ -225,7 +239,7 @@ class AppState extends ChangeNotifier {
       final m = s.etaMin ?? s.etaMax;
       if (m != null && (best == null || m < best)) best = m;
     }
-    return best == null ? null : '$best мин';
+    return best == null ? null : tr('$best мин', '$best daq');
   }
   bool storesLoading = false;
   Object? storesError;
@@ -441,6 +455,20 @@ class AppState extends ChangeNotifier {
     profile = results[0] as Map<String, dynamic>;
     stats = results[1] as Map<String, dynamic>;
     notifyListeners();
+    syncLanguage();
+  }
+
+  /// Язык приложения — главный: если в профиле на сервере другой (сменили
+  /// до входа или на другом устройстве), записываем туда язык приложения —
+  /// на нём сервер шлёт уведомления.
+  Future<void> syncLanguage() async {
+    final p = profile;
+    if (isGuest || p == null || p['language'] == Lang.instance.code) return;
+    try {
+      await updateProfile({'language': Lang.instance.code});
+    } catch (_) {
+      // Не критично: попробуем при следующей загрузке профиля.
+    }
   }
 
   /// Долги покупателя в магазинах (/client/debts): итог, магазины, ближайший срок.

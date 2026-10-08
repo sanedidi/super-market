@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:sm_core/sm_core.dart';
 
 import 'theme.dart';
 
@@ -356,7 +357,7 @@ class ProductCard extends StatelessWidget {
                   right: 4,
                   top: 4,
                   child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                    const AppBadge(label: 'АКЦИЯ', kind: BadgeKind.sale),
+                    AppBadge(label: tr('АКЦИЯ', 'AKSIYA'), kind: BadgeKind.sale),
                     const SizedBox(height: 4),
                     AppBadge(label: discount!, kind: BadgeKind.discount),
                   ]),
@@ -460,8 +461,8 @@ class StoreCard extends StatelessWidget {
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
                   Flexible(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong)),
-                  if (recommended) ...[const SizedBox(width: 6), const AppBadge(label: 'Рядом', kind: BadgeKind.success)],
-                  if (closed) ...[const SizedBox(width: 6), const AppBadge(label: 'Закрыт', kind: BadgeKind.neutral)],
+                  if (recommended) ...[const SizedBox(width: 6), AppBadge(label: tr('Рядом', 'Yaqin'), kind: BadgeKind.success)],
+                  if (closed) ...[const SizedBox(width: 6), AppBadge(label: tr('Закрыт', 'Yopiq'), kind: BadgeKind.neutral)],
                 ]),
                 const SizedBox(height: 2),
                 Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.small),
@@ -741,7 +742,7 @@ class AppTabBar extends StatelessWidget {
   final int cartCount;
 
   static const _icons = ['house', 'boxes-stacked', 'map', 'cart-shopping', 'user'];
-  static const _labels = ['Главная', 'Каталог', 'Карта', 'Корзина', 'Профиль'];
+  static List<String> get _labels => [tr('Главная', 'Bosh sahifa'), tr('Каталог', 'Katalog'), tr('Карта', 'Xarita'), tr('Корзина', 'Savat'), tr('Профиль', 'Profil')];
   static const _inactive = Color(0xFFB4B4BA);
 
   /// Высота панели без нижнего отступа безопасной зоны.

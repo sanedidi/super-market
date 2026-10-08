@@ -104,7 +104,7 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
       final bytes = await x.readAsBytes();
       if (mounted) setState(() => _shots.add(bytes));
     } catch (e) {
-      if (mounted) showMessage(context, 'Нет доступа к камере или фото. Разрешите доступ в настройках телефона.');
+      if (mounted) showMessage(context, tr('Нет доступа к камере или фото. Разрешите доступ в настройках телефона.', 'Kamera yoki rasmlarga ruxsat yoʻq. Telefon sozlamalarida ruxsat bering.'));
     }
   }
 
@@ -139,7 +139,7 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
 
   Future<void> _manual() async {
     final code = await promptSheet(context,
-        title: 'Штрихкод', text: 'Введите цифры под штрихкодом', confirm: 'Найти', hint: '4780012345678', keyboardType: TextInputType.number);
+        title: tr('Штрихкод', 'Shtrix-kod'), text: tr('Введите цифры под штрихкодом', 'Shtrix-kod ostidagi raqamlarni kiriting'), confirm: tr('Найти', 'Topish'), hint: '4780012345678', keyboardType: TextInputType.number);
     if (code != null && code.trim().isNotEmpty) await _handle(code.trim());
   }
 
@@ -152,7 +152,7 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
       if (p != null) {
         added = await addProductSheet(context, widget.start, p, code: code);
       } else {
-        final r = await pickProductSheet(context, widget.start, info: 'Штрихкод $code — нет в каталоге', code: code);
+        final r = await pickProductSheet(context, widget.start, info: tr('Штрихкод $code — нет в каталоге', 'Shtrix-kod $code — katalogda yoʻq'), code: code);
         if (!mounted || r == null) return;
         if (r.create) {
           final created = await Navigator.of(context).push<ProductRef>(
@@ -206,9 +206,9 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Text('Сфотографируйте товар или целую полку', style: AppText.bodyStrong.copyWith(color: AppColors.white), textAlign: TextAlign.center),
+                    Text(tr('Сфотографируйте товар или целую полку', 'Mahsulotni yoki butun javonni suratga oling'), style: AppText.bodyStrong.copyWith(color: AppColors.white), textAlign: TextAlign.center),
                     const SizedBox(height: 6),
-                    Text('Super Market найдёт товары в каталоге. Можно снять несколько фото подряд',
+                    Text(tr('Super Market найдёт товары в каталоге. Можно снять несколько фото подряд', 'Super Market mahsulotlarni katalogdan topadi. Ketma-ket bir nechta rasm olish mumkin'),
                         style: AppText.small.copyWith(color: AppColors.muted), textAlign: TextAlign.center),
                   ]),
                 )
@@ -218,7 +218,7 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
                   itemCount: _shots.length,
                   itemBuilder: (_, i) => Stack(children: [
                     Positioned.fill(child: ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.memory(_shots[i], fit: BoxFit.cover))),
-                    Positioned(left: 8, top: 8, child: StatusChip('Фото ${i + 1}')),
+                    Positioned(left: 8, top: 8, child: StatusChip(tr('Фото ${i + 1}', 'Rasm ${i + 1}'))),
                     Positioned(
                       right: 4,
                       top: 4,
@@ -258,8 +258,8 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
                     child: _busy
                         ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.white))
                         : Column(mainAxisSize: MainAxisSize.min, children: [
-                            Text('Готово', style: AppText.bodyStrong.copyWith(color: AppColors.white)),
-                            if (_shots.isNotEmpty) Text('${_shots.length} фото', style: AppText.caption.copyWith(color: AppColors.white, fontSize: 11)),
+                            Text(tr('Готово', 'Tayyor'), style: AppText.bodyStrong.copyWith(color: AppColors.white)),
+                            if (_shots.isNotEmpty) Text(tr('${_shots.length} фото', '${_shots.length} ta rasm'), style: AppText.caption.copyWith(color: AppColors.white, fontSize: 11)),
                           ]),
                   ),
                 ),
@@ -281,7 +281,7 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
             right: RoundIcon(
               icon: _torch ? Icons.flashlight_off_rounded : Icons.flashlight_on_rounded,
               color: AppColors.white,
-              tooltip: 'Фонарик',
+              tooltip: tr('Фонарик', 'Chiroq'),
               onTap: () {
                 scanner?.toggleTorch();
                 setState(() => _torch = !_torch);
@@ -298,15 +298,15 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
             child: Center(child: Container(height: 2, margin: const EdgeInsets.symmetric(horizontal: 14), color: AppColors.primary)),
           ),
           const SizedBox(height: 14),
-          Text('Наведите на штрихкод', style: AppText.bodyStrong.copyWith(color: AppColors.white)),
+          Text(tr('Наведите на штрихкод', 'Shtrix-kodga qarating'), style: AppText.bodyStrong.copyWith(color: AppColors.white)),
           const Spacer(),
           if (_added > 0) ...[
-            StatusChip('Добавлено: ${goods(_added)}', icon: Icons.check_circle_rounded, tone: ChipTone.green),
+            StatusChip(tr('Добавлено: ${goods(_added)}', 'Qoʻshildi: ${goods(_added)}'), icon: Icons.check_circle_rounded, tone: ChipTone.green),
             const SizedBox(height: 12),
           ],
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: SmallButton(label: 'Ввести штрихкод вручную', icon: Icons.keyboard_rounded, onPressed: _manual),
+            child: SmallButton(label: tr('Ввести штрихкод вручную', 'Shtrix-kodni qoʻlda kiritish'), icon: Icons.keyboard_rounded, onPressed: _manual),
           ),
         ]),
       ),
@@ -337,7 +337,7 @@ class _ModeSwitch extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(color: AppColors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(24)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [item(StartMode.photo, 'Фото'), item(StartMode.barcode, 'Штрихкод')]),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [item(StartMode.photo, tr('Фото', 'Rasm')), item(StartMode.barcode, tr('Штрихкод', 'Shtrix-kod'))]),
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart';
 
 import '../state.dart';
 import '../ui/theme.dart';
@@ -13,7 +14,7 @@ Future<void> pickStore(BuildContext context) async {
     backgroundColor: AppColors.white,
     builder: (ctx) => SafeArea(
       child: ListView(shrinkWrap: true, padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), children: [
-        const Text('Магазин', style: AppText.h3),
+        Text(tr('Магазин', 'Doʻkon'), style: AppText.h3),
         const SizedBox(height: 8),
         for (final s in st.stores)
           ListTile(

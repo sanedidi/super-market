@@ -1,17 +1,22 @@
 // Справочники: контрагенты, типы, каталог платформы, типы цен, склады, способы оплаты, причины.
 import { useState } from 'react'
 import { Form, Input, Radio, Select, Switch, Tag, Typography } from 'antd'
-import { ActiveTag, CrudPage, PhoneInput, RemoteSelect, formatPhone, money, phoneRule, useList } from '@sm/shared'
+import { ActiveTag, CrudPage, PhoneInput, RemoteSelect, formatPhone, money, phoneRule, tr, useList } from '@sm/shared'
 import { useStore } from '../ctx'
 import { NeedStore } from '../ui'
 import { EntriesTable } from './Finance'
 import type { Cashbox, Counterparty, CounterpartyType, DictItem, PaymentMethod, PriceType, Reason, Warehouse } from '../types'
 
-const required = [{ required: true, whitespace: true, message: 'Обязательное поле' }]
+const required = [{ required: true, whitespace: true, message: tr('Обязательное поле', 'Majburiy maydon') }]
 
 const activeField = (
-  <Form.Item name="is_active" label="Статус">
-    <Radio.Group options={[{ value: true, label: 'Активен' }, { value: false, label: 'Отключён' }]} />
+  <Form.Item name="is_active" label={tr('Статус', 'Holat')}>
+    <Radio.Group
+      options={[
+        { value: true, label: tr('Активен', 'Faol') },
+        { value: false, label: tr('Отключён', 'Oʻchirilgan') },
+      ]}
+    />
   </Form.Item>
 )
 
@@ -23,21 +28,21 @@ export function CounterpartiesPage() {
   const manage = can('counterparties.manage')
   return (
     <CrudPage<Counterparty>
-      title="Контрагенты"
+      title={tr('Контрагенты', 'Kontragentlar')}
       path="/store/finance/counterparties"
       canDelete
       params={{ q: q || undefined }}
-      createLabel="Новый контрагент"
+      createLabel={tr('Новый контрагент', 'Yangi kontragent')}
       canCreate={manage}
       canEdit={manage}
-      toolbar={<Input.Search placeholder="Название или телефон" allowClear onSearch={setQ} style={{ width: 240 }} />}
+      toolbar={<Input.Search placeholder={tr('Название или телефон', 'Nomi yoki telefon')} allowClear onSearch={setQ} style={{ width: 240 }} />}
       columns={[
-        { title: 'Название', dataIndex: 'name' },
-        { title: 'Тип', dataIndex: 'type_name' },
-        { title: 'Телефон', dataIndex: 'phone', render: (v: string) => formatPhone(v) || '—' },
-        { title: 'ИНН', dataIndex: 'inn' },
+        { title: tr('Название', 'Nomi'), dataIndex: 'name' },
+        { title: tr('Тип', 'Turi'), dataIndex: 'type_name' },
+        { title: tr('Телефон', 'Telefon'), dataIndex: 'phone', render: (v: string) => formatPhone(v) || '—' },
+        { title: tr('ИНН', 'STIR'), dataIndex: 'inn' },
         {
-          title: 'Сальдо',
+          title: tr('Сальдо', 'Saldo'),
           dataIndex: 'balance',
           align: 'right',
           render: (v: string) => {
@@ -45,36 +50,36 @@ export function CounterpartiesPage() {
             if (!n) return money(0)
             return (
               <Typography.Text type={n > 0 ? 'danger' : 'success'}>
-                {money(Math.abs(n))} {n > 0 ? '(мы должны)' : '(должны нам)'}
+                {money(Math.abs(n))} {n > 0 ? tr('(мы должны)', '(biz qarzdormiz)') : tr('(должны нам)', '(bizga qarzdor)')}
               </Typography.Text>
             )
           },
         },
-        { title: 'Статус', dataIndex: 'is_active', render: (v: boolean) => <ActiveTag active={v} /> },
+        { title: tr('Статус', 'Holat'), dataIndex: 'is_active', render: (v: boolean) => <ActiveTag active={v} /> },
       ]}
       expandable={{
         expandedRowRender: (r) => (
           <>
-            <Typography.Text strong>Акт сверки</Typography.Text>
+            <Typography.Text strong>{tr('Акт сверки', 'Solishtirish dalolatnomasi')}</Typography.Text>
             <EntriesTable path={`/store/finance/counterparties/${r.id}/entries`} />
           </>
         ),
       }}
       form={(editing) => (
         <>
-          <Form.Item name="name" label="Название" rules={required}>
+          <Form.Item name="name" label={tr('Название', 'Nomi')} rules={required}>
             <Input />
           </Form.Item>
-          <Form.Item name="type_id" label="Тип">
+          <Form.Item name="type_id" label={tr('Тип', 'Turi')}>
             <RemoteSelect<CounterpartyType> path="/store/finance/counterparty-types" filter={(t) => t.is_active} allowClear />
           </Form.Item>
-          <Form.Item name="phone" label="Телефон" rules={[phoneRule()]}>
+          <Form.Item name="phone" label={tr('Телефон', 'Telefon')} rules={[phoneRule()]}>
             <PhoneInput />
           </Form.Item>
-          <Form.Item name="inn" label="ИНН">
+          <Form.Item name="inn" label={tr('ИНН', 'STIR')}>
             <Input />
           </Form.Item>
-          <Form.Item name="note" label="Примечание">
+          <Form.Item name="note" label={tr('Примечание', 'Izoh')}>
             <Input.TextArea rows={2} />
           </Form.Item>
           {editing && activeField}
@@ -89,16 +94,16 @@ export function CounterpartiesPage() {
 export function CounterpartyTypesPage() {
   return (
     <CrudPage<CounterpartyType>
-      title="Типы контрагентов"
+      title={tr('Типы контрагентов', 'Kontragent turlari')}
       path="/store/finance/counterparty-types"
       canDelete
       columns={[
-        { title: 'Название', dataIndex: 'name' },
-        { title: 'Статус', dataIndex: 'is_active', render: (v: boolean) => <ActiveTag active={v} /> },
+        { title: tr('Название', 'Nomi'), dataIndex: 'name' },
+        { title: tr('Статус', 'Holat'), dataIndex: 'is_active', render: (v: boolean) => <ActiveTag active={v} /> },
       ]}
       form={(editing) => (
         <>
-          <Form.Item name="name" label="Название" rules={required}>
+          <Form.Item name="name" label={tr('Название', 'Nomi')} rules={required}>
             <Input />
           </Form.Item>
           {editing && activeField}
@@ -114,17 +119,17 @@ export function DictPage({ kind, title }: { kind: 'brands' | 'colors' | 'categor
   const all = useList<DictItem>(kind === 'categories' ? '/store/catalog/categories' : null)
   const parentName = (id?: string | null) => (id ? ((all.data ?? []).find((c) => c.id === id)?.name ?? '') : '')
   const columns = [
-    { title: 'Название', dataIndex: 'name' },
+    { title: tr('Название', 'Nomi'), dataIndex: 'name' },
     ...(kind === 'units'
       ? [
-          { title: 'Кратко', dataIndex: 'short_name' },
-          { title: 'Дробное', dataIndex: 'is_fractional', render: (v: boolean) => (v ? 'Да' : 'Нет') },
+          { title: tr('Кратко', 'Qisqa nomi'), dataIndex: 'short_name' },
+          { title: tr('Дробное', 'Kasrli'), dataIndex: 'is_fractional', render: (v: boolean) => (v ? tr('Да', 'Ha') : tr('Нет', 'Yoʻq')) },
         ]
       : []),
     ...(kind === 'colors'
       ? [
           {
-            title: 'Цвет',
+            title: tr('Цвет', 'Rang'),
             dataIndex: 'hex',
             render: (v: string) =>
               v ? (
@@ -138,13 +143,13 @@ export function DictPage({ kind, title }: { kind: 'brands' | 'colors' | 'categor
           },
         ]
       : []),
-    ...(kind === 'categories' ? [{ title: 'Родитель', dataIndex: 'parent_id', render: (v: string | null) => parentName(v) || '—' }] : []),
+    ...(kind === 'categories' ? [{ title: tr('Родитель', 'Yuqori kategoriya'), dataIndex: 'parent_id', render: (v: string | null) => parentName(v) || '—' }] : []),
   ]
   return (
     <>
       <CrudPage<DictItem> title={title} path={`/store/catalog/${kind}`} columns={columns} />
       <Typography.Paragraph type="secondary" style={{ marginTop: 12 }}>
-        Справочник общий для всей платформы — его ведёт администратор.
+        {tr('Справочник общий для всей платформы — его ведёт администратор.', 'Bu maʼlumotnoma butun platforma uchun umumiy — uni administrator yuritadi.')}
       </Typography.Paragraph>
     </>
   )
@@ -157,25 +162,25 @@ export function PriceTypesPage() {
   const manage = can('catalog.manage')
   return (
     <CrudPage<PriceType>
-      title="Типы цен"
+      title={tr('Типы цен', 'Narx turlari')}
       path="/store/price-types"
       canDelete={(r) => !r.is_default}
       canCreate={manage}
       canEdit={manage}
       columns={[
-        { title: 'Название', dataIndex: 'name' },
-        { title: 'По умолчанию', dataIndex: 'is_default', render: (v: boolean) => (v ? <Tag color="green">Да</Tag> : '') },
-        { title: 'Статус', dataIndex: 'is_active', render: (v: boolean) => <ActiveTag active={v} /> },
+        { title: tr('Название', 'Nomi'), dataIndex: 'name' },
+        { title: tr('По умолчанию', 'Standart'), dataIndex: 'is_default', render: (v: boolean) => (v ? <Tag color="green">{tr('Да', 'Ha')}</Tag> : '') },
+        { title: tr('Статус', 'Holat'), dataIndex: 'is_active', render: (v: boolean) => <ActiveTag active={v} /> },
       ]}
       form={(editing) => (
         <>
-          <Form.Item name="name" label="Название" rules={required}>
+          <Form.Item name="name" label={tr('Название', 'Nomi')} rules={required}>
             <Input />
           </Form.Item>
           {editing && !editing.is_default && (
             <>
               {activeField}
-              <Form.Item name="is_default" label="Сделать типом по умолчанию" valuePropName="checked">
+              <Form.Item name="is_default" label={tr('Сделать типом по умолчанию', 'Standart tur qilish')} valuePropName="checked">
                 <Switch />
               </Form.Item>
             </>
@@ -199,20 +204,24 @@ export function WarehousesPage() {
   return (
     <NeedStore>
       <CrudPage<Warehouse>
-        title={`Склады${store ? ' — ' + store.name : ''}`}
+        title={tr('Склады', 'Omborlar') + (store ? ' — ' + store.name : '')}
         path="/store/warehouses"
         canDelete={(r) => !r.is_default}
         params={{ store_id: storeId }}
-        createLabel="Новый склад"
+        createLabel={tr('Новый склад', 'Yangi ombor')}
         canCreate={manage}
         canEdit={manage}
         columns={[
-          { title: 'Название', dataIndex: 'name', render: (v: string, r) => (r.is_default ? <>{v} <Tag color="blue">По умолчанию</Tag></> : v) },
-          { title: 'Статус', dataIndex: 'is_active', render: (v: boolean) => <ActiveTag active={v} /> },
+          {
+            title: tr('Название', 'Nomi'),
+            dataIndex: 'name',
+            render: (v: string, r) => (r.is_default ? <>{v} <Tag color="blue">{tr('По умолчанию', 'Standart')}</Tag></> : v),
+          },
+          { title: tr('Статус', 'Holat'), dataIndex: 'is_active', render: (v: boolean) => <ActiveTag active={v} /> },
         ]}
         form={(editing) => (
           <>
-            <Form.Item name="name" label="Название" rules={required}>
+            <Form.Item name="name" label={tr('Название', 'Nomi')} rules={required}>
               <Input />
             </Form.Item>
             {editing && !editing.is_default && activeField}
@@ -231,22 +240,22 @@ export function PaymentMethodsPage() {
   return (
     <NeedStore>
       <CrudPage<PaymentMethod>
-        title="Способы оплаты"
+        title={tr('Способы оплаты', 'Toʻlov usullari')}
         path="/store/finance/payment-methods"
         canDelete
         params={{ store_id: storeId }}
-        createLabel="Новый способ"
+        createLabel={tr('Новый способ', 'Yangi usul')}
         columns={[
-          { title: 'Название', dataIndex: 'name' },
-          { title: 'Касса', dataIndex: 'cashbox_name' },
-          { title: 'Статус', dataIndex: 'is_active', render: (v: boolean) => <ActiveTag active={v} /> },
+          { title: tr('Название', 'Nomi'), dataIndex: 'name' },
+          { title: tr('Касса', 'Kassa'), dataIndex: 'cashbox_name' },
+          { title: tr('Статус', 'Holat'), dataIndex: 'is_active', render: (v: boolean) => <ActiveTag active={v} /> },
         ]}
         form={(editing) => (
           <>
-            <Form.Item name="name" label="Название" rules={required}>
-              <Input placeholder="Наличные, Терминал, Click…" />
+            <Form.Item name="name" label={tr('Название', 'Nomi')} rules={required}>
+              <Input placeholder={tr('Наличные, Терминал, Click…', 'Naqd pul, Terminal, Click…')} />
             </Form.Item>
-            <Form.Item name="cashbox_id" label="Касса, куда поступают деньги" rules={[{ required: true, message: 'Выберите кассу' }]}>
+            <Form.Item name="cashbox_id" label={tr('Касса, куда поступают деньги', 'Pul tushadigan kassa')} rules={[{ required: true, message: tr('Выберите кассу', 'Kassani tanlang') }]}>
               <RemoteSelect<Cashbox>
                 path="/store/finance/cashboxes"
                 filter={(c) => c.is_active && c.store_id === storeId}
@@ -266,28 +275,28 @@ export function PaymentMethodsPage() {
 export function ReasonsPage() {
   return (
     <CrudPage<Reason>
-      title="Финансовые причины"
+      title={tr('Финансовые причины', 'Moliyaviy sabablar')}
       path="/store/finance/reasons"
       canDelete
       columns={[
-        { title: 'Название', dataIndex: 'name' },
+        { title: tr('Название', 'Nomi'), dataIndex: 'name' },
         {
-          title: 'Вид',
+          title: tr('Вид', 'Turi'),
           dataIndex: 'kind',
-          render: (v: string) => (v === 'income' ? <Tag color="green">Доход</Tag> : <Tag color="red">Расход</Tag>),
+          render: (v: string) => (v === 'income' ? <Tag color="green">{tr('Доход', 'Daromad')}</Tag> : <Tag color="red">{tr('Расход', 'Xarajat')}</Tag>),
         },
-        { title: 'Статус', dataIndex: 'is_active', render: (v: boolean) => <ActiveTag active={v} /> },
+        { title: tr('Статус', 'Holat'), dataIndex: 'is_active', render: (v: boolean) => <ActiveTag active={v} /> },
       ]}
       form={(editing) => (
         <>
-          <Form.Item name="name" label="Название" rules={required}>
-            <Input placeholder="Аренда, зарплата, коммунальные…" />
+          <Form.Item name="name" label={tr('Название', 'Nomi')} rules={required}>
+            <Input placeholder={tr('Аренда, зарплата, коммунальные…', 'Ijara, ish haqi, kommunal…')} />
           </Form.Item>
-          <Form.Item name="kind" label="Вид" initialValue="expense" rules={[{ required: true }]}>
+          <Form.Item name="kind" label={tr('Вид', 'Turi')} initialValue="expense" rules={[{ required: true }]}>
             <Select
               options={[
-                { value: 'expense', label: 'Расход' },
-                { value: 'income', label: 'Доход' },
+                { value: 'expense', label: tr('Расход', 'Xarajat') },
+                { value: 'income', label: tr('Доход', 'Daromad') },
               ]}
             />
           </Form.Item>

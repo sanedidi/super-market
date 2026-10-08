@@ -75,7 +75,7 @@ class _FamilyRequestScreenState extends State<FamilyRequestScreen> {
       if (!mounted) return;
       setState(() => _r = r as Map<String, dynamic>);
       if (r['status'] == 'bought') {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Всё куплено — отправили уведомление')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Всё куплено — отправили уведомление', 'Hammasi olindi — bildirishnoma yuborildi'))));
       }
       _loadQuote();
     } catch (e) {
@@ -113,16 +113,16 @@ class _FamilyRequestScreenState extends State<FamilyRequestScreen> {
     if (state.cartCount > 0 && state.familyRequestId != widget.id) {
       final ok = await confirmSheet(
         context,
-        title: 'Заменить корзину?',
-        text: 'В корзине уже есть товары. Положим вместо них товары из просьбы.',
-        confirm: 'Заменить',
+        title: tr('Заменить корзину?', 'Savat almashtirilsinmi?'),
+        text: tr('В корзине уже есть товары. Положим вместо них товары из просьбы.', 'Savatda allaqachon mahsulotlar bor. Ular oʻrniga iltimosdagi mahsulotlarni qoʻyamiz.'),
+        confirm: tr('Заменить', 'Almashtirish'),
       );
       if (!ok || !mounted) return;
     }
     state.fillCartFromRequest(widget.id, Store(q['store'] as Map<String, dynamic>), lines);
     final missing = (q['lines'] as List).length - lines.length;
     if (missing > 0) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Не нашли в магазине: ${itemsWord(missing)} — купите их отдельно')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Не нашли в магазине: ${itemsWord(missing)} — купите их отдельно', 'Doʻkonda topilmadi: ${itemsWord(missing)} — ularni alohida xarid qiling'))));
     }
     await openCart(context);
     if (mounted) _load();
@@ -140,15 +140,19 @@ class _FamilyRequestScreenState extends State<FamilyRequestScreen> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            AppListRow(icon: Icons.snooze_rounded, title: 'Напомнить через час', onTap: () => Navigator.pop(ctx, 'snooze'), divider: canCancel),
+            AppListRow(icon: Icons.snooze_rounded, title: tr('Напомнить через час', 'Bir soatdan keyin eslatish'), onTap: () => Navigator.pop(ctx, 'snooze'), divider: canCancel),
             if (canCancel)
-              AppListRow(icon: Icons.close_rounded, iconColor: AppColors.error, title: 'Отменить просьбу', divider: false, onTap: () => Navigator.pop(ctx, 'cancel')),
+              AppListRow(
+                  icon: Icons.close_rounded,
+                  iconColor: AppColors.error,
+                  title: tr('Отменить просьбу', 'Iltimosni bekor qilish'),
+                  divider: false, onTap: () => Navigator.pop(ctx, 'cancel')),
           ]),
         ),
       ),
     );
-    if (a == 'snooze') await _action('snooze', {'minutes': 60}, 'Напомним через час');
-    if (a == 'cancel') await _action('cancel', null, 'Просьба отменена');
+    if (a == 'snooze') await _action('snooze', {'minutes': 60}, tr('Напомним через час', 'Bir soatdan keyin eslatamiz'));
+    if (a == 'cancel') await _action('cancel', null, tr('Просьба отменена', 'Iltimos bekor qilindi'));
   }
 
   @override
@@ -160,7 +164,12 @@ class _FamilyRequestScreenState extends State<FamilyRequestScreen> {
         appBar: AppBar(backgroundColor: AppColors.bg),
         body: _error == null
             ? const Center(child: CircularProgressIndicator())
-            : EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: _error.toString(), action: 'Повторить', onAction: _load),
+            : EmptyState(
+                    icon: Icons.wifi_off_rounded,
+                    title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'),
+                    text: _error.toString(),
+                    action: tr('Повторить', 'Qayta urinish'),
+                    onAction: _load),
       );
     }
     final items = ((r['items'] as List?) ?? const []).cast<Map<String, dynamic>>();
@@ -190,7 +199,7 @@ class _FamilyRequestScreenState extends State<FamilyRequestScreen> {
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text('${r['title']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.title),
-                  Text('${created == null ? '' : capitalize(whenText(created).split(' в ').first)} · ${itemsWord(items.length)}', style: AppText.small),
+                  Text('${created == null ? '' : capitalize(whenText(created).split(tr(' в ', ' soat ')).first)} · ${itemsWord(items.length)}', style: AppText.small),
                 ]),
               ),
               if (_active) IconButton(onPressed: _busy ? null : _more, icon: const Icon(Icons.more_horiz_rounded)),
@@ -215,7 +224,7 @@ class _FamilyRequestScreenState extends State<FamilyRequestScreen> {
                         Text('$author${created == null ? '' : ' · ${hhmm(created)}'}',
                             style: AppText.caption.copyWith(color: avatarTone('${r['author_id'] ?? ''}').fg, fontWeight: FontWeight.w600)),
                         const SizedBox(height: 4),
-                        Text(comment.isEmpty ? 'Купи, пожалуйста: ${r['summary']}' : comment, style: AppText.body),
+                        Text(comment.isEmpty ? tr('Купи, пожалуйста: ${r['summary']}', 'Iltimos, olib kel: ${r['summary']}') : comment, style: AppText.body),
                       ]),
                     ),
                   ),
@@ -229,15 +238,22 @@ class _FamilyRequestScreenState extends State<FamilyRequestScreen> {
                       if (remind != null)
                         _InfoRow(
                           icon: Icons.schedule_rounded,
-                          title: remind.isAfter(DateTime.now()) ? 'Напомним ${whenText(remind)}' : 'Напомнили ${whenText(remind)}',
-                          subtitle: offer == null ? 'Уведомление придёт на телефон' : 'Если не успеете — предложим доставку после ${hhmm(offer.toLocal())}',
+                          title: remind.isAfter(DateTime.now())
+                              ? tr('Напомним ${whenText(remind)}', 'Eslatamiz: ${whenText(remind)}')
+                              : tr('Напомнили ${whenText(remind)}', 'Eslatildi: ${whenText(remind)}'),
+                          subtitle: offer == null
+                              ? tr('Уведомление придёт на телефон', 'Bildirishnoma telefonga keladi')
+                              : tr('Если не успеете — предложим доставку после ${hhmm(offer.toLocal())}',
+                                  'Ulgurmasangiz — soat ${hhmm(offer.toLocal())} dan keyin yetkazib berishni taklif qilamiz'),
                           divider: r['remind_at_store'] == true,
                         ),
                       if (r['remind_at_store'] == true)
                         _InfoRow(
                           icon: Icons.location_on_outlined,
-                          title: remind == null ? 'Напомним у магазина' : 'И рядом с магазином',
-                          subtitle: storeName == null ? 'Когда будете рядом с магазином' : '$storeName рядом с вашим адресом',
+                          title: remind == null ? tr('Напомним у магазина', 'Doʻkon yonida eslatamiz') : tr('И рядом с магазином', 'Va doʻkon yonida'),
+                          subtitle: storeName == null
+                              ? tr('Когда будете рядом с магазином', 'Doʻkon yonida boʻlganingizda')
+                              : tr('$storeName рядом с вашим адресом', '$storeName manzilingizga yaqin'),
                         ),
                     ]),
                   ),
@@ -245,8 +261,8 @@ class _FamilyRequestScreenState extends State<FamilyRequestScreen> {
                   AppCard(
                     child: AppListRow(
                       icon: Icons.local_shipping_outlined,
-                      title: 'Заказано домой',
-                      subtitle: 'Посмотреть заказ',
+                      title: tr('Заказано домой', 'Uyga buyurtma qilindi'),
+                      subtitle: tr('Посмотреть заказ', 'Buyurtmani koʻrish'),
                       divider: false,
                       onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => OrderScreen(id: r['order_id'] as String))),
                     ),
@@ -281,21 +297,22 @@ class _FamilyRequestScreenState extends State<FamilyRequestScreen> {
           : BottomActionBar(
               top: canOrder
                   ? Text(
-                      'Не успеваете? Привезём домой${storeName == null ? '' : ' из «$storeName»'} — $author получит уведомление.',
+                      tr('Не успеваете? Привезём домой${storeName == null ? '' : ' из «$storeName»'} — $author получит уведомление.',
+                          'Ulgurmayapsizmi? ${storeName == null ? '' : '«$storeName» doʻkonidan '}uyga yetkazamiz — $author bildirishnoma oladi.'),
                       textAlign: TextAlign.center,
                       style: AppText.caption,
                     )
                   : null,
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 if (canOrder) ...[
-                  AppButton(label: 'Заказать домой · ${money(quote['total'])}', onPressed: _busy ? null : _orderHome),
+                  AppButton(label: tr('Заказать домой · ${money(quote['total'])}', 'Uyga buyurtma · ${money(quote['total'])}'), onPressed: _busy ? null : _orderHome),
                   const SizedBox(height: 10),
                 ],
                 AppButton(
-                  label: 'Куплю сам — отмечу в магазине',
+                  label: tr('Куплю сам — отмечу в магазине', 'Oʻzim olaman — doʻkonda belgilayman'),
                   type: AppButtonType.secondary,
                   onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Отмечайте товары галочкой — автор увидит, что куплено')));
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Отмечайте товары галочкой — автор увидит, что куплено', 'Mahsulotlarni belgilab boring — muallif nima olinganini koʻradi'))));
                     Navigator.of(context).pop();
                   },
                 ),
@@ -348,8 +365,8 @@ class _ItemRow extends StatelessWidget {
     final q = item['qty'];
     final product = quote?['product'] as Map<String, dynamic>?;
     final sub = [
-      if (item['product_id'] == null) 'добавлено текстом',
-      if (bought && item['bought_by_name'] != null) 'купил(а) ${item['bought_by_name']}',
+      if (item['product_id'] == null) tr('добавлено текстом', 'matn bilan qoʻshilgan'),
+      if (bought && item['bought_by_name'] != null) tr('купил(а) ${item['bought_by_name']}', '${item['bought_by_name']} oldi'),
     ].join(' · ');
     return InkWell(
       onTap: enabled ? onTap : null,
@@ -385,7 +402,8 @@ class _ItemRow extends StatelessWidget {
           const SizedBox(width: 8),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
             if (product != null && !bought) Text(money(mulMoney(product['price'] as String, '${quote!['qty']}')), style: AppText.bodyStrong),
-            Text(unit.isEmpty || unit == 'шт' ? '×${qty(q)}' : qty(q, unit), style: AppText.caption),
+            // Единицы приходят на языке приложения: «шт» / «dona».
+            Text(unit.isEmpty || unit == 'шт' || unit == 'dona' ? '×${qty(q)}' : qty(q, unit), style: AppText.caption),
           ]),
         ]),
       ),

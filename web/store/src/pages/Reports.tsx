@@ -1,7 +1,7 @@
 // Отчёты: денежный поток и прибыль/убыток.
 import { useState, type ReactNode } from 'react'
 import { Alert, Card, Col, Descriptions, Row, Select, Space, Statistic, Table, Typography } from 'antd'
-import { PageTitle, date, errorText, money, periodParams, useItem } from '@sm/shared'
+import { PageTitle, date, errorText, money, periodParams, tr, useItem } from '@sm/shared'
 import dayjs from 'dayjs'
 import { useStore } from '../ctx'
 import { RangeFilter, thisMonth, type Range } from '../ui'
@@ -26,7 +26,7 @@ export function useReportFilters(initial: () => Range = thisMonth) {
         onChange={setStore}
         style={{ minWidth: 200 }}
         options={[
-          ...(seesAll ? [{ value: '', label: 'Вся сеть' }] : []),
+          ...(seesAll ? [{ value: '', label: tr('Вся сеть', 'Butun tarmoq') }] : []),
           ...stores.map((s) => ({ value: s.id, label: s.name })),
         ]}
       />
@@ -39,7 +39,7 @@ function Period({ from, to }: { from: string; to: string }) {
   // to не включается — показываем последний день периода.
   return (
     <Typography.Text type="secondary">
-      Период: {date(from)} — {date(dayjs(to).subtract(1, 'second').toISOString())}
+      {tr('Период:', 'Davr:')} {date(from)} — {date(dayjs(to).subtract(1, 'second').toISOString())}
     </Typography.Text>
   )
 }
@@ -51,7 +51,7 @@ export function CashFlowPage() {
 
   return (
     <>
-      <PageTitle title="Денежный поток">{filters}</PageTitle>
+      <PageTitle title={tr('Денежный поток', 'Pul oqimi')}>{filters}</PageTitle>
       {error && <Alert type="error" showIcon message={errorText(error)} style={{ marginBottom: 16 }} />}
       {data && (
         <div style={{ marginBottom: 12 }}>
@@ -63,24 +63,24 @@ export function CashFlowPage() {
         const lines = (data?.lines ?? []).filter((l) => l.currency === cur)
         const t = (k: keyof CashboxFlow) => boxes.reduce((s, b) => s + Number(b[k] ?? 0), 0)
         return (
-          <Card key={cur} title={`Валюта: ${cur}`} style={{ marginBottom: 16 }} loading={isLoading}>
+          <Card key={cur} title={tr(`Валюта: ${cur}`, `Valyuta: ${cur}`)} style={{ marginBottom: 16 }} loading={isLoading}>
             <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
               <Col xs={12} md={6}>
-                <Statistic title="На начало" value={money(t('opening'))} />
+                <Statistic title={tr('На начало', 'Davr boshida')} value={money(t('opening'))} />
               </Col>
               <Col xs={12} md={6}>
-                <Statistic title="Приход" value={money(t('income'))} valueStyle={{ color: '#17b26a' }} />
+                <Statistic title={tr('Приход', 'Kirim')} value={money(t('income'))} valueStyle={{ color: '#17b26a' }} />
               </Col>
               <Col xs={12} md={6}>
-                <Statistic title="Расход" value={money(t('expense'))} valueStyle={{ color: '#b3261e' }} />
+                <Statistic title={tr('Расход', 'Chiqim')} value={money(t('expense'))} valueStyle={{ color: '#b3261e' }} />
               </Col>
               <Col xs={12} md={6}>
-                <Statistic title="На конец" value={money(t('closing'))} />
+                <Statistic title={tr('На конец', 'Davr oxirida')} value={money(t('closing'))} />
               </Col>
             </Row>
             <Row gutter={[16, 16]}>
               <Col xs={24} xl={12}>
-                <Typography.Title level={5}>По кассам</Typography.Title>
+                <Typography.Title level={5}>{tr('По кассам', 'Kassalar boʻyicha')}</Typography.Title>
                 <Table<CashboxFlow>
                   rowKey="id"
                   size="small"
@@ -88,27 +88,27 @@ export function CashFlowPage() {
                   dataSource={boxes}
                   scroll={{ x: true }}
                   columns={[
-                    { title: 'Касса', dataIndex: 'name' },
-                    { title: 'Начало', dataIndex: 'opening', align: 'right', render: (v) => money(v) },
-                    { title: 'Приход', dataIndex: 'income', align: 'right', render: (v) => money(v) },
-                    { title: 'Расход', dataIndex: 'expense', align: 'right', render: (v) => money(v) },
-                    { title: 'Конец', dataIndex: 'closing', align: 'right', render: (v) => <b>{money(v)}</b> },
+                    { title: tr('Касса', 'Kassa'), dataIndex: 'name' },
+                    { title: tr('Начало', 'Boshida'), dataIndex: 'opening', align: 'right', render: (v) => money(v) },
+                    { title: tr('Приход', 'Kirim'), dataIndex: 'income', align: 'right', render: (v) => money(v) },
+                    { title: tr('Расход', 'Chiqim'), dataIndex: 'expense', align: 'right', render: (v) => money(v) },
+                    { title: tr('Конец', 'Oxirida'), dataIndex: 'closing', align: 'right', render: (v) => <b>{money(v)}</b> },
                   ]}
                 />
               </Col>
               <Col xs={24} xl={12}>
-                <Typography.Title level={5}>По статьям</Typography.Title>
+                <Typography.Title level={5}>{tr('По статьям', 'Moddalar boʻyicha')}</Typography.Title>
                 <Table
                   rowKey={(r) => r.category}
                   size="small"
                   pagination={false}
                   dataSource={lines}
                   scroll={{ x: true }}
-                  locale={{ emptyText: 'Движений нет' }}
+                  locale={{ emptyText: tr('Движений нет', 'Harakatlar yoʻq') }}
                   columns={[
-                    { title: 'Статья', dataIndex: 'title' },
-                    { title: 'Приход', dataIndex: 'income', align: 'right', render: (v: string) => (Number(v) ? money(v) : '—') },
-                    { title: 'Расход', dataIndex: 'expense', align: 'right', render: (v: string) => (Number(v) ? money(v) : '—') },
+                    { title: tr('Статья', 'Modda'), dataIndex: 'title' },
+                    { title: tr('Приход', 'Kirim'), dataIndex: 'income', align: 'right', render: (v: string) => (Number(v) ? money(v) : '—') },
+                    { title: tr('Расход', 'Chiqim'), dataIndex: 'expense', align: 'right', render: (v: string) => (Number(v) ? money(v) : '—') },
                   ]}
                 />
               </Col>
@@ -116,7 +116,7 @@ export function CashFlowPage() {
           </Card>
         )
       })}
-      {data && currencies.length === 0 && <Alert type="info" showIcon message="Касс в выбранной области нет" />}
+      {data && currencies.length === 0 && <Alert type="info" showIcon message={tr('Касс в выбранной области нет', 'Tanlangan doirada kassalar yoʻq')} />}
     </>
   )
 }
@@ -128,7 +128,7 @@ function Amount({ v, strong, negative }: { v: string | number; strong?: boolean;
 }
 
 function ReasonList({ items, negative }: { items: ReasonAmount[] | null; negative?: boolean }) {
-  if (!items?.length) return <Typography.Text type="secondary">нет</Typography.Text>
+  if (!items?.length) return <Typography.Text type="secondary">{tr('нет', 'yoʻq')}</Typography.Text>
   return (
     <Space direction="vertical" size={2} style={{ width: '100%' }}>
       {items.map((r) => (
@@ -155,7 +155,7 @@ export function ProfitLossPage() {
 
   return (
     <>
-      <PageTitle title="Прибыль и убыток">{filters}</PageTitle>
+      <PageTitle title={tr('Прибыль и убыток', 'Foyda va zarar')}>{filters}</PageTitle>
       {error && <Alert type="error" showIcon message={errorText(error)} style={{ marginBottom: 16 }} />}
       <Card loading={isLoading} style={{ marginBottom: 16 }}>
         {d && (
@@ -165,16 +165,16 @@ export function ProfitLossPage() {
             </div>
             <Row gutter={[16, 16]}>
               <Col xs={12} md={6}>
-                <Statistic title="Выручка, сум" value={money(d.revenue.total)} />
+                <Statistic title={tr('Выручка, сум', 'Tushum, soʻm')} value={money(d.revenue.total)} />
               </Col>
               <Col xs={12} md={6}>
-                <Statistic title="Валовая прибыль" value={money(d.gross_profit)} valueStyle={{ color: color(d.gross_profit) }} />
+                <Statistic title={tr('Валовая прибыль', 'Yalpi foyda')} value={money(d.gross_profit)} valueStyle={{ color: color(d.gross_profit) }} />
               </Col>
               <Col xs={12} md={6}>
-                <Statistic title="Чистая прибыль" value={money(d.net_profit)} valueStyle={{ color: color(d.net_profit) }} />
+                <Statistic title={tr('Чистая прибыль', 'Sof foyda')} value={money(d.net_profit)} valueStyle={{ color: color(d.net_profit) }} />
               </Col>
               <Col xs={12} md={6}>
-                <Statistic title="Чеков / заказов" value={`${d.sales_count} / ${d.orders_count}`} />
+                <Statistic title={tr('Чеков / заказов', 'Cheklar / buyurtmalar')} value={`${d.sales_count} / ${d.orders_count}`} />
               </Col>
             </Row>
           </>
@@ -183,36 +183,36 @@ export function ProfitLossPage() {
       {d && (
         <Row gutter={[16, 16]}>
           <Col xs={24} lg={12}>
-            <Card title="Выручка и себестоимость">
+            <Card title={tr('Выручка и себестоимость', 'Tushum va tannarx')}>
               <Descriptions column={1} size="small" bordered styles={{ label: { width: '55%' } }}>
-                {row('Продажи POS', d.revenue.pos_sales)}
-                {row('Возвраты покупателей', d.revenue.customer_returns, { negative: true })}
-                {row('Онлайн-заказы', d.revenue.online_orders)}
-                {row('Доставка', d.revenue.delivery_fees)}
-                {row(<b>Выручка</b>, d.revenue.total, { strong: true })}
-                {row('Себестоимость POS', d.cost_of_goods.pos, { negative: true })}
-                {row('Себестоимость возвратов (уменьшает)', d.cost_of_goods.returns)}
-                {row('Себестоимость онлайн', d.cost_of_goods.online, { negative: true })}
-                {row(<b>Себестоимость (FIFO)</b>, d.cost_of_goods.total, { strong: true, negative: true })}
-                {row(<b>Валовая прибыль</b>, d.gross_profit, { strong: true })}
+                {row(tr('Продажи POS', 'POS sotuvlari'), d.revenue.pos_sales)}
+                {row(tr('Возвраты покупателей', 'Xaridorlardan qaytarishlar'), d.revenue.customer_returns, { negative: true })}
+                {row(tr('Онлайн-заказы', 'Onlayn buyurtmalar'), d.revenue.online_orders)}
+                {row(tr('Доставка', 'Yetkazib berish'), d.revenue.delivery_fees)}
+                {row(<b>{tr('Выручка', 'Tushum')}</b>, d.revenue.total, { strong: true })}
+                {row(tr('Себестоимость POS', 'POS tannarxi'), d.cost_of_goods.pos, { negative: true })}
+                {row(tr('Себестоимость возвратов (уменьшает)', 'Qaytarishlar tannarxi (kamaytiradi)'), d.cost_of_goods.returns)}
+                {row(tr('Себестоимость онлайн', 'Onlayn tannarx'), d.cost_of_goods.online, { negative: true })}
+                {row(<b>{tr('Себестоимость (FIFO)', 'Tannarx (FIFO)')}</b>, d.cost_of_goods.total, { strong: true, negative: true })}
+                {row(<b>{tr('Валовая прибыль', 'Yalpi foyda')}</b>, d.gross_profit, { strong: true })}
               </Descriptions>
             </Card>
           </Col>
           <Col xs={24} lg={12}>
-            <Card title="Прочие статьи">
+            <Card title={tr('Прочие статьи', 'Boshqa moddalar')}>
               <Descriptions column={1} size="small" bordered styles={{ label: { width: '55%' } }}>
-                {row('Списания', d.stock_adjustments.write_offs, { negative: true })}
-                {row('Недостача (инвентаризация)', d.stock_adjustments.inventory_shortage, { negative: true })}
-                {row('Излишки (инвентаризация)', d.stock_adjustments.inventory_surplus)}
-                {row(<b>Итого по складу</b>, d.stock_adjustments.total, { strong: true })}
-                <Descriptions.Item label={`Прочие доходы (${money(otherIncome)})`}>
+                {row(tr('Списания', 'Hisobdan chiqarishlar'), d.stock_adjustments.write_offs, { negative: true })}
+                {row(tr('Недостача (инвентаризация)', 'Kamomad (inventarizatsiya)'), d.stock_adjustments.inventory_shortage, { negative: true })}
+                {row(tr('Излишки (инвентаризация)', 'Ortiqcha (inventarizatsiya)'), d.stock_adjustments.inventory_surplus)}
+                {row(<b>{tr('Итого по складу', 'Ombor boʻyicha jami')}</b>, d.stock_adjustments.total, { strong: true })}
+                <Descriptions.Item label={tr(`Прочие доходы (${money(otherIncome)})`, `Boshqa daromadlar (${money(otherIncome)})`)}>
                   <ReasonList items={d.other_income} />
                 </Descriptions.Item>
-                <Descriptions.Item label={`Расходы (${money(expenses)})`}>
+                <Descriptions.Item label={tr(`Расходы (${money(expenses)})`, `Xarajatlar (${money(expenses)})`)}>
                   <ReasonList items={d.expenses} negative />
                 </Descriptions.Item>
-                {row('Подписка платформы', d.platform_subscription, { negative: true })}
-                <Descriptions.Item label={<b>Чистая прибыль</b>}>
+                {row(tr('Подписка платформы', 'Platforma obunasi'), d.platform_subscription, { negative: true })}
+                <Descriptions.Item label={<b>{tr('Чистая прибыль', 'Sof foyda')}</b>}>
                   <b style={{ color: color(d.net_profit) }}>{money(d.net_profit)}</b>
                 </Descriptions.Item>
               </Descriptions>

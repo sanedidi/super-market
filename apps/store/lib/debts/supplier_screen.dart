@@ -21,6 +21,9 @@ class SupplierScreen extends StatefulWidget {
 }
 
 const _months = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+const _monthsUz = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'];
+
+String _month(int m) => tr(_months[m - 1], _monthsUz[m - 1]);
 
 String _cap(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 
@@ -33,9 +36,9 @@ List<(String, Map<String, String>)> statementPeriods(DateTime now) {
   final m2 = DateTime(now.year, now.month - 2, 1);
   final tomorrow = _d(DateTime(now.year, now.month, now.day + 1));
   return [
-    (_cap(_months[m0.month - 1]), {'from': _d(m0), 'to': tomorrow}),
-    (_cap(_months[m1.month - 1]), {'from': _d(m1), 'to': _d(m0)}),
-    ('3 месяца', {'from': _d(m2), 'to': tomorrow}),
+    (_cap(_month(m0.month)), {'from': _d(m0), 'to': tomorrow}),
+    (_cap(_month(m1.month)), {'from': _d(m1), 'to': _d(m0)}),
+    (tr('3 месяца', '3 oy'), {'from': _d(m2), 'to': tomorrow}),
   ];
 }
 
@@ -97,10 +100,10 @@ class _SupplierScreenState extends State<SupplierScreen> {
     return Scaffold(
       appBar: AppBar(
         title: cp == null
-            ? const Text('Поставщик')
+            ? Text(tr('Поставщик', 'Yetkazib beruvchi'))
             : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('${cp['name']}'),
-                Text([if ('${cp['inn']}'.isNotEmpty) 'ИНН ${cp['inn']}', if (phone.isNotEmpty) formatPhone(phone)].join(' · '), style: AppText.small),
+                Text([if ('${cp['inn']}'.isNotEmpty) '${tr('ИНН', 'STIR')} ${cp['inn']}', if (phone.isNotEmpty) formatPhone(phone)].join(' · '), style: AppText.small),
               ]),
         actions: [
           if (phone.isNotEmpty) IconButton(icon: const Icon(Icons.call_rounded), onPressed: () => launchUrl(Uri.parse('tel:$phone'))),
@@ -110,7 +113,7 @@ class _SupplierScreenState extends State<SupplierScreen> {
           ? Center(
               child: _error == null
                   ? const CircularProgressIndicator()
-                  : EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: '$_error', action: 'Повторить', onAction: _load),
+                  : EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load),
             )
           : RefreshIndicator(onRefresh: _load, child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: _body(st, cp))),
     );
@@ -128,31 +131,35 @@ class _SupplierScreenState extends State<SupplierScreen> {
       AppCard(
         padding: const EdgeInsets.all(18),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(bal > 0 ? 'Мы должны' : (bal < 0 ? 'Поставщик должен нам' : 'Долга нет'), style: AppText.small),
+          Text(
+              bal > 0
+                  ? tr('Мы должны', 'Bizning qarzimiz')
+                  : (bal < 0 ? tr('Поставщик должен нам', 'Yetkazib beruvchi bizga qarzdor') : tr('Долга нет', 'Qarz yoʻq')),
+              style: AppText.small),
           Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
             Text(money(bal.abs(), suffix: false),
                 style: AppText.h1.copyWith(fontSize: 30, color: bal > 0 ? AppColors.primary : (bal < 0 ? AppColors.successInk : AppColors.ink))),
             const SizedBox(width: 6),
-            Text('сум', style: AppText.bodyStrong.copyWith(color: AppColors.text2)),
+            Text(tr('сум', 'soʻm'), style: AppText.bodyStrong.copyWith(color: AppColors.text2)),
           ]),
           if (lastPay != null || days != null)
             Text(
               [
-                if (lastPay != null) 'Последняя оплата ${dateTime(lastPay).split(' ').first}',
-                if (days != null && bal > 0) '$days ${_plural(days, 'день', 'дня', 'дней')} без оплаты',
+                if (lastPay != null) tr('Последняя оплата ${dateTime(lastPay).split(' ').first}', 'Oxirgi toʻlov ${dateTime(lastPay).split(' ').first}'),
+                if (days != null && bal > 0) tr('$days ${_plural(days, 'день', 'дня', 'дней')} без оплаты', '$days kundan beri toʻlovsiz'),
               ].join(' · '),
               style: AppText.small,
             ),
           const SizedBox(height: 14),
           Row(children: [
             if (canPay) ...[
-              Expanded(child: BigButton(label: 'Оплатить', icon: Icons.payments_rounded, height: 50, onPressed: _pay)),
+              Expanded(child: BigButton(label: tr('Оплатить', 'Toʻlash'), icon: Icons.payments_rounded, height: 50, onPressed: _pay)),
               const SizedBox(width: 10),
             ],
             if (s.can('inventory.manage'))
               Expanded(
                 child: BigButton(
-                  label: 'Возврат',
+                  label: tr('Возврат', 'Qaytarish'),
                   icon: Icons.assignment_return_rounded,
                   height: 50,
                   color: AppColors.soft,
@@ -177,12 +184,15 @@ class _SupplierScreenState extends State<SupplierScreen> {
       AppCard(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Акт сверки', style: AppText.title),
+          Text(tr('Акт сверки', 'Solishtirish dalolatnomasi'), style: AppText.title),
           const SizedBox(height: 4),
-          Text('На начало ${money(st['opening'])} · на конец ${money(st['closing'])}', style: AppText.small),
+          Text(tr('На начало ${money(st['opening'])} · на конец ${money(st['closing'])}', 'Boshida ${money(st['opening'])} · oxirida ${money(st['closing'])}'),
+              style: AppText.small),
           const SizedBox(height: 6),
           if (items.isEmpty)
-            const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Text('За период операций нет', style: AppText.small))
+            Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(tr('За период операций нет', 'Bu davrda operatsiyalar yoʻq'), style: AppText.small))
           else
             for (final l in items) ...[const Divider(height: 1), _StatementRow(l: l)],
         ]),
@@ -227,7 +237,7 @@ class _StatementRow extends StatelessWidget {
         Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
           Text('${a > 0 ? '+' : '−'} ${money(a.abs(), suffix: false)}',
               style: AppText.bodyStrong.copyWith(color: a > 0 ? AppColors.ink : AppColors.successInk)),
-          Text('долг ${money(l['balance'], suffix: false)}', style: AppText.small.copyWith(fontSize: 12)),
+          Text('${tr('долг', 'qarz')} ${money(l['balance'], suffix: false)}', style: AppText.small.copyWith(fontSize: 12)),
         ]),
       ]),
     );
@@ -298,11 +308,11 @@ class _PaySheetState extends State<_PaySheet> {
     final box = _boxes?.where((b) => b['id'] == _boxId).firstOrNull;
     String? err;
     if (v == null || v <= 0) {
-      err = 'Введите сумму больше нуля';
+      err = tr('Введите сумму больше нуля', 'Noldan katta summani kiriting');
     } else if (box == null) {
-      err = 'Выберите кассу';
+      err = tr('Выберите кассу', 'Kassani tanlang');
     } else if (v > n(box['balance'])) {
-      err = 'В кассе «${box['name']}» только ${money(box['balance'])}';
+      err = tr('В кассе «${box['name']}» только ${money(box['balance'])}', '«${box['name']}» kassasida faqat ${money(box['balance'])}');
     }
     if (err != null) {
       setState(() => _error = err);
@@ -324,7 +334,7 @@ class _PaySheetState extends State<_PaySheet> {
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       Navigator.of(context).pop(true);
-      messenger.showSnackBar(const SnackBar(content: Text('Оплата проведена, долг уменьшен')));
+      messenger.showSnackBar(SnackBar(content: Text(tr('Оплата проведена, долг уменьшен', 'Toʻlov oʻtkazildi, qarz kamaydi'))));
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -342,24 +352,24 @@ class _PaySheetState extends State<_PaySheet> {
       child: SafeArea(
         child: SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Оплатить поставщику', style: AppText.h3),
-            Text('${widget.supplier['name']} · долг ${money(bal)}', style: AppText.small),
+            Text(tr('Оплатить поставщику', 'Yetkazib beruvchiga toʻlash'), style: AppText.h3),
+            Text('${widget.supplier['name']} · ${tr('долг', 'qarz')} ${money(bal)}', style: AppText.small),
             const SizedBox(height: 14),
             TextField(
               controller: _amount,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,\s]'))],
               style: AppText.h2,
-              decoration: const InputDecoration(labelText: 'Сумма', suffixText: 'сум'),
+              decoration: InputDecoration(labelText: tr('Сумма', 'Summa'), suffixText: tr('сум', 'soʻm')),
             ),
             const SizedBox(height: 10),
             Wrap(spacing: 8, runSpacing: 8, children: [
-              ActionChip(label: const Text('Весь долг'), onPressed: () => _quick(bal)),
-              ActionChip(label: const Text('Половина'), onPressed: () => _quick((bal / 2).roundToDouble())),
-              if (last != null && last < bal) ActionChip(label: const Text('Последний приход'), onPressed: () => _quick(last)),
+              ActionChip(label: Text(tr('Весь долг', 'Butun qarz')), onPressed: () => _quick(bal)),
+              ActionChip(label: Text(tr('Половина', 'Yarmi')), onPressed: () => _quick((bal / 2).roundToDouble())),
+              if (last != null && last < bal) ActionChip(label: Text(tr('Последний приход', 'Oxirgi kirim')), onPressed: () => _quick(last)),
             ]),
             const SizedBox(height: 16),
-            const Text('ИЗ КАКОЙ КАССЫ', style: AppText.caption),
+            Text(tr('ИЗ КАКОЙ КАССЫ', 'QAYSI KASSADAN'), style: AppText.caption),
             const SizedBox(height: 8),
             if (boxes == null)
               const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()))
@@ -384,7 +394,7 @@ class _PaySheetState extends State<_PaySheet> {
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Text('${b['name']}', style: AppText.bodyStrong.copyWith(fontWeight: FontWeight.w500)),
-                          Text(b['is_main'] == true ? 'видит владелец' : '${b['store_name'] ?? ''}', style: AppText.small),
+                          Text(b['is_main'] == true ? tr('видит владелец', 'egasi koʻradi') : '${b['store_name'] ?? ''}', style: AppText.small),
                         ]),
                       ),
                       Text(money(b['balance'], suffix: false), style: AppText.bodyStrong),
@@ -395,13 +405,13 @@ class _PaySheetState extends State<_PaySheet> {
                   ),
                 ),
             const SizedBox(height: 4),
-            TextField(controller: _note, decoration: const InputDecoration(labelText: 'Комментарий: № платёжки, кто передал…')),
+            TextField(controller: _note, decoration: InputDecoration(labelText: tr('Комментарий: № платёжки, кто передал…', 'Izoh: toʻlov hujjati №, kim topshirdi…'))),
             if (_error != null) ...[
               const SizedBox(height: 10),
               Text(_error!, style: AppText.small.copyWith(color: AppColors.error)),
             ],
             const SizedBox(height: 16),
-            BigButton(label: 'Оплатить', icon: Icons.check_rounded, busy: _busy, onPressed: _submit),
+            BigButton(label: tr('Оплатить', 'Toʻlash'), icon: Icons.check_rounded, busy: _busy, onPressed: _submit),
           ]),
         ),
       ),

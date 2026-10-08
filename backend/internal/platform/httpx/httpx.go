@@ -11,6 +11,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 // Pinger — всё, что нужно /readyz от базы. *pgxpool.Pool подходит.
@@ -29,6 +31,7 @@ type Module interface {
 func NewRouter(log *slog.Logger, db Pinger, modules ...Module) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
+	r.Use(i18n.Middleware)
 	r.Use(middleware.RealIP)
 	r.Use(requestLogger(log))
 	r.Use(middleware.Recoverer)
@@ -53,11 +56,11 @@ func NewRouter(log *slog.Logger, db Pinger, modules ...Module) http.Handler {
 		}
 	})
 
-	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
-		WriteError(w, http.StatusNotFound, "not_found", "маршрут не найден")
+	r.NotFound(func(w http.ResponseWriter, req *http.Request) {
+		WriteError(w, http.StatusNotFound, "not_found", i18n.T(req.Context(), "маршрут не найден", "yoʻnalish topilmadi"))
 	})
-	r.MethodNotAllowed(func(w http.ResponseWriter, _ *http.Request) {
-		WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "метод не поддерживается")
+	r.MethodNotAllowed(func(w http.ResponseWriter, req *http.Request) {
+		WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", i18n.T(req.Context(), "метод не поддерживается", "usul qoʻllab-quvvatlanmaydi"))
 	})
 	return r
 }

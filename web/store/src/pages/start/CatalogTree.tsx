@@ -5,7 +5,7 @@ import { useQueries, useQuery } from '@tanstack/react-query'
 import { Card, ConfigProvider, Empty, Flex, Input, Spin, Tree, Typography } from 'antd'
 import type { DataNode } from 'antd/es/tree'
 import { PictureOutlined, SearchOutlined } from '@ant-design/icons'
-import { LoadError, api, money, plural, useDebounced, type List } from '@sm/shared'
+import { LoadError, api, money, plural, tr, useDebounced, type List } from '@sm/shared'
 import { useStartApi, type Catalog, type CatalogItem } from './api'
 
 type Node = DataNode & {
@@ -168,7 +168,10 @@ export function CatalogTree({ storeId }: { storeId: string }) {
     if (n.kind === 'more')
       return (
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          Ещё {n.count} {plural(n.count, 'товар', 'товара', 'товаров')} — найдите их поиском
+          {tr(
+            `Ещё ${n.count} ${plural(n.count, 'товар', 'товара', 'товаров')} — найдите их поиском`,
+            `Yana ${n.count} ta mahsulot — ularni qidiruv orqali toping`,
+          )}
         </Typography.Text>
       )
     if (n.kind === 'product' && n.item)
@@ -191,7 +194,7 @@ export function CatalogTree({ storeId }: { storeId: string }) {
           {n.name}
         </Typography.Text>
         <Typography.Text type="secondary" style={{ fontSize: 12, flex: 'none' }}>
-          {busy === n.key ? <Spin size="small" /> : `${n.selected} из ${n.count}`}
+          {busy === n.key ? <Spin size="small" /> : tr(`${n.selected} из ${n.count}`, `${n.selected} / ${n.count}`)}
         </Typography.Text>
       </Flex>
     )
@@ -200,10 +203,10 @@ export function CatalogTree({ storeId }: { storeId: string }) {
   const total = catalog.data?.total ?? 0
   return (
     <Card
-      title="Общий каталог"
+      title={tr('Общий каталог', 'Umumiy katalog')}
       extra={
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {total} {plural(total, 'товар', 'товара', 'товаров')}
+          {tr(`${total} ${plural(total, 'товар', 'товара', 'товаров')}`, `${total} ta mahsulot`)}
         </Typography.Text>
       }
       styles={{ body: { padding: '12px 8px 12px 12px' } }}
@@ -211,7 +214,7 @@ export function CatalogTree({ storeId }: { storeId: string }) {
       <Input
         allowClear
         prefix={<SearchOutlined style={{ color: '#98A2B3' }} />}
-        placeholder="Поиск по каталогу"
+        placeholder={tr('Поиск по каталогу', 'Katalog boʻyicha qidirish')}
         value={text}
         onChange={(e) => {
           setText(e.target.value)
@@ -224,7 +227,7 @@ export function CatalogTree({ storeId }: { storeId: string }) {
       {catalog.isLoading ? (
         <Spin style={{ display: 'block', margin: '32px auto' }} />
       ) : tree.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={q ? 'Ничего не найдено' : 'Каталог пуст'} />
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={q ? tr('Ничего не найдено', 'Hech narsa topilmadi') : tr('Каталог пуст', 'Katalog boʻsh')} />
       ) : (
         <ConfigProvider theme={{ token: { colorPrimary: '#E11D2A' } }}>
           <Tree<Node>

@@ -22,6 +22,7 @@ const appVersion = '0.8.0';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Lang.instance.init();
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   await Push.init();
   final api = Api(baseUrl: apiUrl, app: 'store');
@@ -101,28 +102,31 @@ class _StoreAppState extends State<StoreApp> with WidgetsBindingObserver {
       home = const _Gate();
     }
     final showLock = loggedIn && hasPin && locked;
-    return MaterialApp(
-      navigatorKey: navigatorKey,
-      title: 'Super Market Магазин',
-      debugShowCheckedModeBanner: false,
-      theme: buildTheme(),
-      locale: const Locale('ru'),
-      supportedLocales: const [Locale('ru'), Locale('uz'), Locale('en')],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      home: home,
-      // Экран кода — поверх всего, что было открыто (заказ, шторка, push):
-      // после кода человек возвращается туда же.
-      // Без замка дерево приложения — как раньше, без обёрток.
-      builder: (context, child) => showLock
-          ? Stack(fit: StackFit.expand, children: [
-              ExcludeSemantics(child: child!),
-              const _LockLayer(),
-            ])
-          : child!,
+    return ListenableBuilder(
+      listenable: Lang.instance,
+      builder: (context, _) => MaterialApp(
+        navigatorKey: navigatorKey,
+        title: tr('Super Market Магазин', 'Super Market Doʻkon'),
+        debugShowCheckedModeBanner: false,
+        theme: buildTheme(),
+        locale: Lang.instance.locale,
+        supportedLocales: Lang.locales,
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        home: home,
+        // Экран кода — поверх всего, что было открыто (заказ, шторка, push):
+        // после кода человек возвращается туда же.
+        // Без замка дерево приложения — как раньше, без обёрток.
+        builder: (context, child) => showLock
+            ? Stack(fit: StackFit.expand, children: [
+                ExcludeSemantics(child: child!),
+                const _LockLayer(),
+              ])
+            : child!,
+      ),
     );
   }
 }
@@ -149,9 +153,9 @@ class _Gate extends StatelessWidget {
               ? const CircularProgressIndicator()
               : EmptyState(
                   icon: Icons.wifi_off_rounded,
-                  title: 'Не удалось загрузить данные',
+                  title: tr('Не удалось загрузить данные', 'Maʼlumotlarni yuklab boʻlmadi'),
                   text: st.error.toString(),
-                  action: 'Повторить',
+                  action: tr('Повторить', 'Qayta urinish'),
                   onAction: st.load,
                 ),
         ),
@@ -167,9 +171,9 @@ class _Gate extends StatelessWidget {
         body: Center(
           child: EmptyState(
             icon: Icons.storefront_outlined,
-            title: 'Нет доступных магазинов',
-            text: 'Попросите владельца сети дать вам доступ к магазину в панели магазина.',
-            action: 'Выйти',
+            title: tr('Нет доступных магазинов', 'Mavjud doʻkonlar yoʻq'),
+            text: tr('Попросите владельца сети дать вам доступ к магазину в панели магазина.', 'Tarmoq egasidan doʻkon panelida sizga doʻkonga kirish huquqini berishini soʻrang.'),
+            action: tr('Выйти', 'Chiqish'),
             onAction: () => signOut(context),
           ),
         ),

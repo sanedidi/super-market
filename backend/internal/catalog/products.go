@@ -19,11 +19,16 @@ import (
 
 // Product — карточка товара.
 type Product struct {
-	ID               string    `json:"id"`
-	NetworkID        *string   `json:"network_id"`
-	ProposedBy       *string   `json:"proposed_by"`
-	Name             string    `json:"name"`
-	Description      string    `json:"description"`
+	ID          string  `json:"id"`
+	NetworkID   *string `json:"network_id"`
+	ProposedBy  *string `json:"proposed_by"`
+	Name        string  `json:"name"`        // на языке запроса
+	Description string  `json:"description"` // на языке запроса
+	// Для форм правки — оба языка как есть.
+	NameRu           string    `json:"name_ru"`
+	NameUz           string    `json:"name_uz"`
+	DescriptionRu    string    `json:"description_ru"`
+	DescriptionUz    string    `json:"description_uz"`
 	BrandID          *string   `json:"brand_id"`
 	BrandName        *string   `json:"brand_name"`
 	CategoryID       string    `json:"category_id"`
@@ -49,8 +54,9 @@ type Product struct {
 }
 
 const productCols = `
-	p.id, p.network_id, p.proposed_by, p.name, p.description,
-	p.brand_id, b.name, p.category_id, c.name, p.unit_id, u.short_name, u.is_fractional,
+	p.id, p.network_id, p.proposed_by, loc(p.name, p.name_uz), loc(p.description, p.description_uz),
+	p.name, p.name_uz, p.description, p.description_uz,
+	p.brand_id, b.name, p.category_id, loc(c.name, c.name_uz), p.unit_id, loc(u.short_name, u.short_name_uz), u.is_fractional,
 	p.color_id, p.base_price::text, p.images,
 	COALESCE((SELECT array_agg(pb.barcode ORDER BY pb.barcode) FROM product_barcodes pb WHERE pb.product_id = p.id), '{}'),
 	p.moderation_status, p.rejection_reason, p.is_active, p.created_at, p.attributes`
@@ -64,6 +70,7 @@ const productFrom = `
 func scanProduct(row pgx.CollectableRow) (Product, error) {
 	var p Product
 	err := row.Scan(&p.ID, &p.NetworkID, &p.ProposedBy, &p.Name, &p.Description,
+		&p.NameRu, &p.NameUz, &p.DescriptionRu, &p.DescriptionUz,
 		&p.BrandID, &p.BrandName, &p.CategoryID, &p.CategoryName, &p.UnitID, &p.UnitShort, &p.IsFractional,
 		&p.ColorID, &p.BasePrice, &p.Images, &p.Barcodes,
 		&p.ModerationStatus, &p.RejectionReason, &p.IsActive, &p.CreatedAt, &p.Attributes)
@@ -73,6 +80,7 @@ func scanProduct(row pgx.CollectableRow) (Product, error) {
 func scanProductWithPrice(row pgx.CollectableRow) (Product, error) {
 	var p Product
 	err := row.Scan(&p.ID, &p.NetworkID, &p.ProposedBy, &p.Name, &p.Description,
+		&p.NameRu, &p.NameUz, &p.DescriptionRu, &p.DescriptionUz,
 		&p.BrandID, &p.BrandName, &p.CategoryID, &p.CategoryName, &p.UnitID, &p.UnitShort, &p.IsFractional,
 		&p.ColorID, &p.BasePrice, &p.Images, &p.Barcodes,
 		&p.ModerationStatus, &p.RejectionReason, &p.IsActive, &p.CreatedAt, &p.Attributes,
@@ -82,37 +90,65 @@ func scanProductWithPrice(row pgx.CollectableRow) (Product, error) {
 
 // ProductInput — поля товара; nil — не менять.
 type ProductInput struct {
-	Name        *string         `json:"name"`
-	Description *string         `json:"description"`
-	BrandID     *string         `json:"brand_id"`
-	CategoryID  *string         `json:"category_id"`
-	UnitID      *string         `json:"unit_id"`
-	ColorID     *string         `json:"color_id"`
-	BasePrice   *money.Amount   `json:"base_price"`
-	Images      *[]string       `json:"images"`
-	Barcodes    *[]string       `json:"barcodes"`
-	IsActive    *bool           `json:"is_active"`
-	Attributes  *map[string]any `json:"attributes"`
+	Name        *string `json:"name"` // по-русски
+	Description *string `json:"description"`
+	// Переводы на узбекский; если русское поле пустое — перевод пишется и в него.
+	NameUz        *string         `json:"name_uz"`
+	DescriptionUz *string         `json:"description_uz"`
+	BrandID       *string         `json:"brand_id"`
+	CategoryID    *string         `json:"category_id"`
+	UnitID        *string         `json:"unit_id"`
+	ColorID       *string         `json:"color_id"`
+	BasePrice     *money.Amount   `json:"base_price"`
+	Images        *[]string       `json:"images"`
+	Barcodes      *[]string       `json:"barcodes"`
+	IsActive      *bool           `json:"is_active"`
+	Attributes    *map[string]any `json:"attributes"`
+}
+
+// fillFromUz: пришёл только узбекский текст (русское поле не задано при
+// создании или пустое) — он же пишется и в русское поле.
+func (in *ProductInput) fillFromUz(create bool) {
+	fill := func(ru **string, uz *string) {
+		if uz == nil || strings.TrimSpace(*uz) == "" {
+			return
+		}
+		if (*ru == nil && create) || (*ru != nil && strings.TrimSpace(**ru) == "") {
+			v := *uz
+			*ru = &v
+		}
+	}
+	fill(&in.Name, in.NameUz)
+	fill(&in.Description, in.DescriptionUz)
+}
+
+// trimmed — строка без пробелов по краям; nil — не менять.
+func trimmed(p *string) *string {
+	if p == nil {
+		return nil
+	}
+	v := strings.TrimSpace(*p)
+	return &v
 }
 
 func (in ProductInput) validate(create bool) error {
 	if create {
 		if in.Name == nil {
-			return apperr.Validation("name: обязательное поле")
+			return apperr.Validation("name: обязательное поле").Uz("name: majburiy maydon")
 		}
 		if in.CategoryID == nil {
-			return apperr.Validation("category_id: обязательное поле")
+			return apperr.Validation("category_id: обязательное поле").Uz("category_id: majburiy maydon")
 		}
 		if in.UnitID == nil {
-			return apperr.Validation("unit_id: обязательное поле")
+			return apperr.Validation("unit_id: обязательное поле").Uz("unit_id: majburiy maydon")
 		}
 	}
 	if in.Name != nil && strings.TrimSpace(*in.Name) == "" {
-		return apperr.Validation("name: не может быть пустым")
+		return apperr.Validation("name: не может быть пустым").Uz("name: boʻsh boʻlishi mumkin emas")
 	}
 	for name, id := range map[string]*string{"brand_id": in.BrandID, "category_id": in.CategoryID, "unit_id": in.UnitID, "color_id": in.ColorID} {
 		if id != nil && *id != "" && !httpx.IsUUID(*id) {
-			return apperr.Validation(name + ": запись не найдена")
+			return apperr.Validation(name + ": запись не найдена").Uz(name + ": yozuv topilmadi")
 		}
 	}
 	if in.Attributes != nil {
@@ -122,16 +158,16 @@ func (in ProductInput) validate(create bool) error {
 	}
 	if in.Images != nil {
 		if len(*in.Images) > 10 {
-			return apperr.Validation("images: не больше 10 фото")
+			return apperr.Validation("images: не больше 10 фото").Uz("images: koʻpi bilan 10 ta rasm")
 		}
 		for _, u := range *in.Images {
 			if !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
-				return apperr.Validation("images: ожидаются ссылки http(s)")
+				return apperr.Validation("images: ожидаются ссылки http(s)").Uz("images: http(s) havolalar boʻlishi kerak")
 			}
 		}
 	}
 	if in.Barcodes != nil && len(*in.Barcodes) > 10 {
-		return apperr.Validation("barcodes: не больше 10 штрихкодов")
+		return apperr.Validation("barcodes: не больше 10 штрихкодов").Uz("barcodes: koʻpi bilan 10 ta shtrix-kod")
 	}
 	return nil
 }
@@ -148,6 +184,7 @@ func nullable(p *string) (set bool, val *string) {
 }
 
 func (s *Service) createProduct(ctx context.Context, networkID *string, in ProductInput) (Product, error) {
+	in.fillFromUz(true)
 	if err := in.validate(true); err != nil {
 		return Product{}, err
 	}
@@ -173,6 +210,13 @@ func (s *Service) createProduct(ctx context.Context, networkID *string, in Produ
 	if in.Attributes != nil {
 		attrs = *in.Attributes
 	}
+	nameUz, descUz := "", ""
+	if in.NameUz != nil {
+		nameUz = strings.TrimSpace(*in.NameUz)
+	}
+	if in.DescriptionUz != nil {
+		descUz = strings.TrimSpace(*in.DescriptionUz)
+	}
 
 	var out Product
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -182,10 +226,11 @@ func (s *Service) createProduct(ctx context.Context, networkID *string, in Produ
 		var id string
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO products (network_id, proposed_by, name, description, brand_id, category_id,
-			                      unit_id, color_id, base_price, images, moderation_status, attributes)
-			VALUES ($1, $1, $2, $3, $4, $5, $6, $7, $8::numeric, $9, $10, $11) RETURNING id`,
+			                      unit_id, color_id, base_price, images, moderation_status, attributes,
+			                      name_uz, description_uz)
+			VALUES ($1, $1, $2, $3, $4, $5, $6, $7, $8::numeric, $9, $10, $11, $12, $13) RETURNING id`,
 			networkID, strings.TrimSpace(*in.Name), desc, brand, *in.CategoryID, *in.UnitID, color,
-			string(price), images, status, attrs).Scan(&id); err != nil {
+			string(price), images, status, attrs, nameUz, descUz).Scan(&id); err != nil {
 			return err
 		}
 		if in.Barcodes != nil {
@@ -201,6 +246,7 @@ func (s *Service) createProduct(ctx context.Context, networkID *string, in Produ
 }
 
 func (s *Service) updateProduct(ctx context.Context, id string, in ProductInput, resubmit bool) (Product, error) {
+	in.fillFromUz(false)
 	if err := in.validate(false); err != nil {
 		return Product{}, err
 	}
@@ -238,11 +284,13 @@ func (s *Service) updateProduct(ctx context.Context, id string, in ProductInput,
 				images      = COALESCE($11, images),
 				is_active   = COALESCE($12, is_active),
 				attributes  = COALESCE($14, attributes),
+				name_uz        = COALESCE($15, name_uz),
+				description_uz = COALESCE($16, description_uz),
 				moderation_status = CASE WHEN $13 THEN 'pending' ELSE moderation_status END,
 				rejection_reason  = CASE WHEN $13 THEN '' ELSE rejection_reason END
 			WHERE id = $1`,
 			id, name, desc, setBrand, brand, in.CategoryID, in.UnitID, setColor, color,
-			price, in.Images, in.IsActive, resubmit, in.Attributes)
+			price, in.Images, in.IsActive, resubmit, in.Attributes, trimmed(in.NameUz), trimmed(in.DescriptionUz))
 		if err != nil {
 			return err
 		}
@@ -265,7 +313,7 @@ func checkRefs(ctx context.Context, q db.Querier, brand, category, unit, color *
 		var active bool
 		err := q.QueryRow(ctx, `SELECT is_active FROM `+table+` WHERE id = $1`, *id).Scan(&active)
 		if errors.Is(err, pgx.ErrNoRows) || (err == nil && !active) {
-			return apperr.Validation(field + ": запись не найдена или отключена")
+			return apperr.Validation(field + ": запись не найдена или отключена").Uz(field + ": yozuv topilmadi yoki oʻchirilgan")
 		}
 		return err
 	}
@@ -298,13 +346,13 @@ func setBarcodes(ctx context.Context, q db.Querier, productID string, codes []st
 			ON CONFLICT (barcode) DO UPDATE SET barcode = EXCLUDED.barcode
 			RETURNING product_id`, c, productID).Scan(&owner)
 		if db.IsCheckViolation(err) {
-			return apperr.Validation("barcodes: неверный штрихкод " + c)
+			return apperr.Validation("barcodes: неверный штрихкод " + c).Uz("barcodes: " + c + " shtrix-kodi notoʻgʻri")
 		}
 		if err != nil {
 			return err
 		}
 		if owner != productID {
-			return apperr.Conflict("barcode_exists", "штрихкод "+c+" уже есть у другого товара").
+			return apperr.Conflict("barcode_exists", "штрихкод "+c+" уже есть у другого товара").Uz(c + " shtrix-kodi boshqa mahsulotda allaqachon bor").
 				WithDetails(map[string]any{"barcode": c, "product_id": owner})
 		}
 	}
@@ -318,7 +366,7 @@ func getProduct(ctx context.Context, q db.Querier, id string) (Product, error) {
 	}
 	p, err := pgx.CollectExactlyOneRow(rows, scanProduct)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Product{}, apperr.NotFound("товар не найден")
+		return Product{}, apperr.NotFound("товар не найден").Uz("mahsulot topilmadi")
 	}
 	return p, err
 }
@@ -342,22 +390,22 @@ type ProductFilter struct {
 
 func (f ProductFilter) validate() error {
 	if f.CategoryID != "" && !httpx.IsUUID(f.CategoryID) {
-		return apperr.Validation("category_id: неверный id")
+		return apperr.Validation("category_id: неверный id").Uz("category_id: id notoʻgʻri")
 	}
 	if f.Status != "" && f.Status != "pending" && f.Status != "approved" && f.Status != "rejected" {
-		return apperr.Validation("status: ожидается pending, approved или rejected")
+		return apperr.Validation("status: ожидается pending, approved или rejected").Uz("status: pending, approved yoki rejected boʻlishi kerak")
 	}
 	if f.BrandID != "" && f.BrandID != "none" && !httpx.IsUUID(f.BrandID) {
-		return apperr.Validation("brand_id: неверный id")
+		return apperr.Validation("brand_id: неверный id").Uz("brand_id: id notoʻgʻri")
 	}
 	if f.LeafCategoryID != "" && !httpx.IsUUID(f.LeafCategoryID) {
-		return apperr.Validation("leaf_category_id: неверный id")
+		return apperr.Validation("leaf_category_id: неверный id").Uz("leaf_category_id: id notoʻgʻri")
 	}
 	if f.Sort != "" && f.Sort != "name" {
-		return apperr.Validation("sort: ожидается name")
+		return apperr.Validation("sort: ожидается name").Uz("sort: name boʻlishi kerak")
 	}
 	if f.Photo != "" && f.Photo != "with" && f.Photo != "without" {
-		return apperr.Validation("photo: ожидается with или without")
+		return apperr.Validation("photo: ожидается with или without").Uz("photo: with yoki without boʻlishi kerak")
 	}
 	return nil
 }
@@ -372,7 +420,7 @@ func groupWhere(n int) string {
 // Общие условия фильтра: $1 — строка поиска, $2 — категория (включая
 // подкатегории), $3 — штрихкод.
 const filterWhere = `
-	AND ($1 = '' OR lower(p.name) LIKE '%' || lower($1) || '%'
+	AND ($1 = '' OR lower(p.name) LIKE '%' || lower($1) || '%' OR lower(p.name_uz) LIKE '%' || lower($1) || '%'
 	     OR EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND pb.barcode = $1))
 	AND ($2 = '' OR p.category_id IN (
 	        WITH RECURSIVE sub AS (
@@ -422,7 +470,7 @@ func (s *Service) Approve(ctx context.Context, id string) (Product, error) {
 		return Product{}, err
 	}
 	if tag.RowsAffected() == 0 {
-		return Product{}, apperr.Conflict("not_pending", "товар не ждёт модерации")
+		return Product{}, apperr.Conflict("not_pending", "товар не ждёт модерации").Uz("mahsulot moderatsiyani kutmayapti")
 	}
 	return getProduct(ctx, s.pool, id)
 }
@@ -430,7 +478,7 @@ func (s *Service) Approve(ctx context.Context, id string) (Product, error) {
 func (s *Service) Reject(ctx context.Context, id, reason string) (Product, error) {
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
-		return Product{}, apperr.Validation("reason: укажите причину отказа")
+		return Product{}, apperr.Validation("reason: укажите причину отказа").Uz("reason: rad etish sababini kiriting")
 	}
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE products SET moderation_status = 'rejected', rejection_reason = $2
@@ -439,7 +487,7 @@ func (s *Service) Reject(ctx context.Context, id, reason string) (Product, error
 		return Product{}, err
 	}
 	if tag.RowsAffected() == 0 {
-		return Product{}, apperr.Conflict("not_pending", "товар не ждёт модерации")
+		return Product{}, apperr.Conflict("not_pending", "товар не ждёт модерации").Uz("mahsulot moderatsiyani kutmayapti")
 	}
 	return getProduct(ctx, s.pool, id)
 }
@@ -455,7 +503,7 @@ func (s *Service) StoreListProducts(ctx context.Context, pr *identity.Principal,
 	if storeID == "" {
 		rows, err := s.pool.Query(ctx, `SELECT `+productCols+productFrom+`
 			WHERE (p.network_id IS NULL OR p.network_id = $4)`+filterWhere+groupWhere(7)+`
-			ORDER BY p.name, p.id LIMIT $5 OFFSET $6`,
+			ORDER BY loc(p.name, p.name_uz), p.id LIMIT $5 OFFSET $6`,
 			strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, pr.NetworkID, f.Page.Limit, f.Page.Offset, f.BrandID, f.LeafCategoryID)
 		if err != nil {
 			return nil, err
@@ -464,7 +512,7 @@ func (s *Service) StoreListProducts(ctx context.Context, pr *identity.Principal,
 	}
 
 	if !httpx.IsUUID(storeID) || !pr.CanAccessStore(storeID) {
-		return nil, apperr.NotFound("магазин не найден")
+		return nil, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	typeID, err := s.resolvePriceType(ctx, pr.NetworkID, storeID, priceTypeID)
 	if err != nil {
@@ -478,7 +526,7 @@ func (s *Service) StoreListProducts(ctx context.Context, pr *identity.Principal,
 		LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = $7 AND sp.store_id = $8
 		LEFT JOIN prices np ON np.product_id = p.id AND np.price_type_id = $7 AND np.store_id IS NULL
 		WHERE (p.network_id IS NULL OR p.network_id = $4)`+filterWhere+groupWhere(9)+`
-		ORDER BY p.name, p.id LIMIT $5 OFFSET $6`,
+		ORDER BY loc(p.name, p.name_uz), p.id LIMIT $5 OFFSET $6`,
 		strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, pr.NetworkID, f.Page.Limit, f.Page.Offset, typeID, storeID, f.BrandID, f.LeafCategoryID)
 	if err != nil {
 		return nil, err
@@ -492,7 +540,7 @@ func (s *Service) StoreGetProduct(ctx context.Context, pr *identity.Principal, i
 		return Product{}, err
 	}
 	if p.NetworkID != nil && *p.NetworkID != pr.NetworkID {
-		return Product{}, apperr.NotFound("товар не найден")
+		return Product{}, apperr.NotFound("товар не найден").Uz("mahsulot topilmadi")
 	}
 	return p, nil
 }
@@ -516,7 +564,7 @@ func (s *Service) StoreUpdateProduct(ctx context.Context, pr *identity.Principal
 		return Product{}, err
 	}
 	if p.NetworkID == nil {
-		return Product{}, apperr.Forbidden("товар общего каталога меняет только супер-админ")
+		return Product{}, apperr.Forbidden("товар общего каталога меняет только супер-админ").Uz("umumiy katalog mahsulotini faqat super-admin oʻzgartiradi")
 	}
 	return s.updateProduct(ctx, id, in, p.ModerationStatus == "rejected")
 }
@@ -534,28 +582,28 @@ var (
 // объект с числами на 100 г (kcal, protein, fat, carbs).
 func validateAttributes(a map[string]any) error {
 	if len(a) > 20 {
-		return apperr.Validation("attributes: слишком много характеристик")
+		return apperr.Validation("attributes: слишком много характеристик").Uz("attributes: xususiyatlar juda koʻp")
 	}
 	for k, v := range a {
 		if !attributeKeys[k] {
-			return apperr.Validation("attributes: неизвестная характеристика " + k)
+			return apperr.Validation("attributes: неизвестная характеристика " + k).Uz("attributes: nomaʼlum xususiyat " + k)
 		}
 		if k == "nutrition" {
 			m, ok := v.(map[string]any)
 			if !ok {
-				return apperr.Validation("attributes.nutrition: ожидается объект {kcal, protein, fat, carbs}")
+				return apperr.Validation("attributes.nutrition: ожидается объект {kcal, protein, fat, carbs}").Uz("attributes.nutrition: {kcal, protein, fat, carbs} obyekti boʻlishi kerak")
 			}
 			for nk, nv := range m {
 				f, ok := nv.(float64)
 				if !nutritionKeys[nk] || !ok || f < 0 || f > 10000 {
-					return apperr.Validation("attributes.nutrition: числа kcal, protein, fat, carbs на 100 г")
+					return apperr.Validation("attributes.nutrition: числа kcal, protein, fat, carbs на 100 г").Uz("attributes.nutrition: 100 g uchun kcal, protein, fat, carbs sonlari")
 				}
 			}
 			continue
 		}
 		str, ok := v.(string)
 		if !ok || len([]rune(str)) > 500 {
-			return apperr.Validation("attributes." + k + ": строка до 500 символов")
+			return apperr.Validation("attributes." + k + ": строка до 500 символов").Uz("attributes." + k + ": 500 belgigacha satr")
 		}
 	}
 	return nil

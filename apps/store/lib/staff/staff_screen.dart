@@ -66,19 +66,19 @@ class _StaffScreenState extends State<StaffScreen> {
     final off = all.where((e) => e['status'] != 'active').toList();
     final list = _showOff ? off : active;
     return Scaffold(
-      appBar: AppBar(title: const Text('Сотрудники')),
+      appBar: AppBar(title: Text(tr('Сотрудники', 'Xodimlar'))),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _roles.isEmpty ? null : () => _edit(),
         backgroundColor: AppColors.primary,
         foregroundColor: AppColors.white,
         icon: const Icon(Icons.person_add_alt_1_rounded),
-        label: const Text('Добавить'),
+        label: Text(tr('Добавить', 'Qoʻshish')),
       ),
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 96), children: [
           Wrap(spacing: 8, children: [
-            for (final (i, title) in [(false, 'Работают · ${active.length}'), (true, 'Отключены · ${off.length}')])
+            for (final (i, title) in [(false, tr('Работают · ${active.length}', 'Ishlaydi · ${active.length}')), (true, tr('Отключены · ${off.length}', 'Oʻchirilgan · ${off.length}'))])
               ChoiceChip(
                 label: Text(title),
                 selected: _showOff == i,
@@ -90,11 +90,11 @@ class _StaffScreenState extends State<StaffScreen> {
           ]),
           const SizedBox(height: 12),
           if (_error != null && _staff == null)
-            EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: '$_error', action: 'Повторить', onAction: _load)
+            EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load)
           else if (_staff == null)
             const Padding(padding: EdgeInsets.only(top: 40), child: Center(child: CircularProgressIndicator()))
           else if (list.isEmpty)
-            EmptyState(icon: Icons.people_outline_rounded, title: _showOff ? 'Отключённых нет' : 'Сотрудников пока нет')
+            EmptyState(icon: Icons.people_outline_rounded, title: _showOff ? tr('Отключённых нет', 'Oʻchirilganlar yoʻq') : tr('Сотрудников пока нет', 'Hozircha xodimlar yoʻq'))
           else
             AppCard(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
@@ -110,7 +110,7 @@ class _StaffScreenState extends State<StaffScreen> {
                     title: Text('${e['full_name']}', style: AppText.bodyStrong),
                     subtitle: Text(
                       '${e['role_name']} · ${formatPhone(e['phone'])}\n'
-                      '${(e['login'] as String?)?.isNotEmpty == true ? 'логин ${e['login']}' : 'нет входа — выдайте логин в панели'}',
+                      '${(e['login'] as String?)?.isNotEmpty == true ? tr('логин ${e['login']}', 'login ${e['login']}') : tr('нет входа — выдайте логин в панели', 'kirish yoʻq — panelda login bering')}',
                       style: AppText.small,
                     ),
                     isThreeLine: true,
@@ -122,7 +122,7 @@ class _StaffScreenState extends State<StaffScreen> {
               ]),
             ),
           const SizedBox(height: 12),
-          const Text('Роли, права и логины для входа настраиваются в панели магазина.', style: AppText.small, textAlign: TextAlign.center),
+          Text(tr('Роли, права и логины для входа настраиваются в панели магазина.', 'Rollar, huquqlar va kirish loginlari doʻkon panelida sozlanadi.'), style: AppText.small, textAlign: TextAlign.center),
         ]),
       ),
     );
@@ -165,11 +165,11 @@ class _EmployeeSheetState extends State<_EmployeeSheet> {
   Future<void> _save() async {
     final e = widget.employee;
     final String? err = _name.text.trim().isEmpty
-        ? 'Укажите имя'
+        ? tr('Укажите имя', 'Ismni kiriting')
         : _roleId == null
-            ? 'Выберите роль'
+            ? tr('Выберите роль', 'Rolni tanlang')
             : e == null && normalizeUzPhone(_phone.text) == null
-                ? 'Введите номер полностью: 9 цифр после +998'
+                ? tr('Введите номер полностью: 9 цифр после +998', 'Raqamni toʻliq kiriting: +998 dan keyin 9 ta raqam')
                 : null;
     if (err != null) {
       setState(() => _error = err);
@@ -199,7 +199,9 @@ class _EmployeeSheetState extends State<_EmployeeSheet> {
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       Navigator.of(context).pop(true);
-      messenger.showSnackBar(SnackBar(content: Text(e == null ? 'Сотрудник добавлен. Логин и пароль для входа выдайте в панели магазина → Сотрудники' : 'Сохранено')));
+      messenger.showSnackBar(SnackBar(content: Text(e == null
+          ? tr('Сотрудник добавлен. Логин и пароль для входа выдайте в панели магазина → Сотрудники', 'Xodim qoʻshildi. Kirish uchun login va parolni doʻkon panelida bering → Xodimlar')
+          : tr('Сохранено', 'Saqlandi'))));
     } catch (ex) {
       if (mounted) setState(() => _error = ex.toString());
     } finally {
@@ -215,16 +217,16 @@ class _EmployeeSheetState extends State<_EmployeeSheet> {
       child: SafeArea(
         child: SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(e == null ? 'Новый сотрудник' : '${e['full_name']}', style: AppText.h3),
+            Text(e == null ? tr('Новый сотрудник', 'Yangi xodim') : '${e['full_name']}', style: AppText.h3),
             if (e != null) Text(formatPhone(e['phone']), style: AppText.small),
             const SizedBox(height: 16),
             if (e == null) ...[
-              PhoneField(controller: _phone, label: 'Телефон', autofocus: true),
+              PhoneField(controller: _phone, label: tr('Телефон', 'Telefon'), autofocus: true),
               const SizedBox(height: 12),
             ],
-            TextField(controller: _name, textCapitalization: TextCapitalization.words, decoration: const InputDecoration(labelText: 'Имя и фамилия')),
+            TextField(controller: _name, textCapitalization: TextCapitalization.words, decoration: InputDecoration(labelText: tr('Имя и фамилия', 'Ism va familiya'))),
             const SizedBox(height: 16),
-            const Text('РОЛЬ', style: AppText.caption),
+            Text(tr('РОЛЬ', 'ROL'), style: AppText.caption),
             const SizedBox(height: 8),
             Wrap(spacing: 8, runSpacing: 8, children: [
               for (final r in _roles)
@@ -243,8 +245,8 @@ class _EmployeeSheetState extends State<_EmployeeSheet> {
                 contentPadding: EdgeInsets.zero,
                 value: _active,
                 onChanged: (v) => setState(() => _active = v),
-                title: const Text('Работает', style: AppText.bodyStrong),
-                subtitle: const Text('Отключённый сотрудник сразу выходит из всех приложений', style: AppText.small),
+                title: Text(tr('Работает', 'Ishlaydi'), style: AppText.bodyStrong),
+                subtitle: Text(tr('Отключённый сотрудник сразу выходит из всех приложений', 'Oʻchirilgan xodim barcha ilovalardan darhol chiqariladi'), style: AppText.small),
               ),
             ],
             if (_error != null) ...[
@@ -252,7 +254,7 @@ class _EmployeeSheetState extends State<_EmployeeSheet> {
               Text(_error!, style: AppText.small.copyWith(color: AppColors.error)),
             ],
             const SizedBox(height: 20),
-            BigButton(label: e == null ? 'Добавить' : 'Сохранить', busy: _busy, onPressed: _save),
+            BigButton(label: e == null ? tr('Добавить', 'Qoʻshish') : tr('Сохранить', 'Saqlash'), busy: _busy, onPressed: _save),
           ]),
         ),
       ),

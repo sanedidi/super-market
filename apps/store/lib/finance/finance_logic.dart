@@ -1,13 +1,15 @@
 /// Чистая логика вкладки «Финансы» (без Flutter) — покрыта тестами.
 library;
 
+import 'package:sm_core/sm_core.dart';
+
 /// Период отчёта: from включительно, to не включается (как в /store/reports).
 enum Period { today, week, month }
 
 String periodTitle(Period p) => switch (p) {
-      Period.today => 'Сегодня',
-      Period.week => '7 дней',
-      Period.month => 'Месяц',
+      Period.today => tr('Сегодня', 'Bugun'),
+      Period.week => tr('7 дней', '7 kun'),
+      Period.month => tr('Месяц', 'Oy'),
     };
 
 String _d(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -32,8 +34,8 @@ List<Map<String, dynamic>> storeCashboxes(List<Map<String, dynamic>> all, String
 /// Проверка суммы сдачи кассы; null — всё верно.
 String? handoverError(String text, Object? balance) {
   final v = num.tryParse(plainAmount(text));
-  if (v == null || v <= 0) return 'Введите сумму больше нуля';
-  if (v > n(balance)) return 'В кассе меньше — сдать можно не больше остатка';
+  if (v == null || v <= 0) return tr('Введите сумму больше нуля', 'Noldan katta summani kiriting');
+  if (v > n(balance)) return tr('В кассе меньше — сдать можно не больше остатка', 'Kassada kamroq — qoldiqdan koʻp topshirib boʻlmaydi');
   return null;
 }
 
@@ -41,23 +43,24 @@ String? handoverError(String text, Object? balance) {
 String plainAmount(String text) => text.replaceAll(RegExp(r'\s'), '').replaceAll(',', '.');
 
 String billingStatus(Map<String, dynamic> b) {
-  if (b['overdue'] == true) return 'Есть просроченный счёт';
-  if (n(b['unpaid_uzs']) > 0) return 'Есть неоплаченный счёт';
-  return 'Оплачено';
+  if (b['overdue'] == true) return tr('Есть просроченный счёт', 'Muddati oʻtgan hisob-varaq bor');
+  if (n(b['unpaid_uzs']) > 0) return tr('Есть неоплаченный счёт', 'Toʻlanmagan hisob-varaq bor');
+  return tr('Оплачено', 'Toʻlangan');
 }
 
 String balanceKindTitle(String? kind) => switch (kind) {
-      'order' => 'Заказ',
-      'payout' => 'Вывод',
-      'subscription' => 'Подписка',
-      'adjustment' => 'Корректировка',
+      'order' => tr('Заказ', 'Buyurtma'),
+      'payout' => tr('Вывод', 'Pul yechib olish'),
+      'subscription' => tr('Подписка', 'Obuna'),
+      'adjustment' => tr('Корректировка', 'Tuzatish'),
       _ => kind ?? '',
     };
 
 const _monthsGen = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+const _monthsUz = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'];
 
-/// «1 ноября 2026».
-String ruDate(DateTime d) => '${d.day} ${_monthsGen[d.month - 1]} ${d.year}';
+/// «1 ноября 2026» / «2026-yil 1-noyabr» — на языке интерфейса.
+String ruDate(DateTime d) => tr('${d.day} ${_monthsGen[d.month - 1]} ${d.year}', '${d.year}-yil ${d.day}-${_monthsUz[d.month - 1]}');
 
 /// До какого дня оплачена подписка (null — есть неоплаченный счёт или не знаем).
 /// Сервер может прислать paid_until; иначе: счёт выставляется на текущий месяц

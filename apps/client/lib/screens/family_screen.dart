@@ -70,7 +70,8 @@ class _FamilyScreenState extends State<FamilyScreen> {
   // ------------------------------------------------------------ действия
 
   Future<void> _create() async {
-    final name = await _askText(context, title: 'Название семьи', hint: 'Например, Каримовы', action: 'Создать');
+    final name = await _askText(context,
+        title: tr('Название семьи', 'Oila nomi'), hint: tr('Например, Каримовы', 'Masalan, Karimovlar'), action: tr('Создать', 'Yaratish'));
     if (name == null || name.isEmpty || !mounted) return;
     final api = context.read<Api>();
     await _run(() async {
@@ -81,7 +82,11 @@ class _FamilyScreenState extends State<FamilyScreen> {
 
   Future<void> _join() async {
     final code = await _askText(context,
-        title: 'Код приглашения', hint: '8 букв и цифр', action: 'Вступить', caps: true, maxLength: 8);
+        title: tr('Код приглашения', 'Taklif kodi'),
+        hint: tr('8 букв и цифр', '8 ta harf va raqam'),
+        action: tr('Вступить', 'Qoʻshilish'),
+        caps: true,
+        maxLength: 8);
     if (code == null || code.isEmpty || !mounted) return;
     final api = context.read<Api>();
     await _run(() async {
@@ -123,13 +128,27 @@ class _FamilyScreenState extends State<FamilyScreen> {
               ),
             ]),
             const SizedBox(height: 16),
-            AppListRow(icon: Icons.edit_outlined, title: 'Подпись', subtitle: '${m['label']}'.isEmpty ? 'Мама, муж, дочь…' : '${m['label']}', onTap: () => Navigator.pop(ctx, 'label')),
+            AppListRow(
+                icon: Icons.edit_outlined,
+                title: tr('Подпись', 'Yorliq'),
+                subtitle: '${m['label']}'.isEmpty ? tr('Мама, муж, дочь…', 'Onam, erim, qizim…') : '${m['label']}',
+                onTap: () => Navigator.pop(ctx, 'label')),
             if (!me)
-              AppListRow(icon: Icons.shopping_bag_outlined, title: 'Попросить купить', onTap: () => Navigator.pop(ctx, 'ask')),
+              AppListRow(icon: Icons.shopping_bag_outlined, title: tr('Попросить купить', 'Xarid qilishni soʻrash'), onTap: () => Navigator.pop(ctx, 'ask')),
             if (me)
-              AppListRow(icon: Icons.logout_rounded, iconColor: AppColors.error, title: 'Выйти из семьи', divider: false, onTap: () => Navigator.pop(ctx, 'leave'))
+              AppListRow(
+                  icon: Icons.logout_rounded,
+                  iconColor: AppColors.error,
+                  title: tr('Выйти из семьи', 'Oiladan chiqish'),
+                  divider: false,
+                  onTap: () => Navigator.pop(ctx, 'leave'))
             else if (iAmOwner)
-              AppListRow(icon: Icons.person_remove_outlined, iconColor: AppColors.error, title: 'Исключить из семьи', divider: false, onTap: () => Navigator.pop(ctx, 'remove')),
+              AppListRow(
+                  icon: Icons.person_remove_outlined,
+                  iconColor: AppColors.error,
+                  title: tr('Исключить из семьи', 'Oiladan chiqarish'),
+                  divider: false,
+                  onTap: () => Navigator.pop(ctx, 'remove')),
           ]),
         ),
       ),
@@ -139,7 +158,12 @@ class _FamilyScreenState extends State<FamilyScreen> {
     final id = m['user_id'];
     switch (action) {
       case 'label':
-        final label = await _askText(context, title: 'Подпись', hint: 'Мама, муж, дочь…', action: 'Сохранить', initial: '${m['label']}', maxLength: 40);
+        final label = await _askText(context,
+            title: tr('Подпись', 'Yorliq'),
+            hint: tr('Мама, муж, дочь…', 'Onam, erim, qizim…'),
+            action: tr('Сохранить', 'Saqlash'),
+            initial: '${m['label']}',
+            maxLength: 40);
         if (label == null) return;
         await _run(() async {
           await api.patch('/client/family/members/$id', {'label': label});
@@ -148,14 +172,17 @@ class _FamilyScreenState extends State<FamilyScreen> {
       case 'ask':
         await _open(FamilyAskScreen(assigneeId: id as String));
       case 'leave':
-        if (await _confirm('Выйти из семьи?', 'Общие просьбы перестанут приходить. Вернуться можно по новому приглашению.', 'Выйти')) {
+        if (await _confirm(tr('Выйти из семьи?', 'Oiladan chiqasizmi?'),
+            tr('Общие просьбы перестанут приходить. Вернуться можно по новому приглашению.', 'Umumiy iltimoslar kelmay qoladi. Yangi taklif orqali qaytish mumkin.'),
+            tr('Выйти', 'Chiqish'))) {
           await _run(() async {
             await api.post('/client/family/leave');
             await _load();
           });
         }
       case 'remove':
-        if (await _confirm('Исключить ${memberName(m)}?', 'Человек перестанет видеть просьбы семьи.', 'Исключить')) {
+        if (await _confirm(tr('Исключить ${memberName(m)}?', '${memberName(m)} oiladan chiqarilsinmi?'),
+            tr('Человек перестанет видеть просьбы семьи.', 'U oila iltimoslarini koʻrmay qoladi.'), tr('Исключить', 'Chiqarish'))) {
           await _run(() async {
             await api.delete('/client/family/members/$id');
             await _load();
@@ -178,7 +205,12 @@ class _FamilyScreenState extends State<FamilyScreen> {
     if (!loaded && _error == null) {
       body = const Center(child: CircularProgressIndicator());
     } else if (!loaded) {
-      body = EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: _error.toString(), action: 'Повторить', onAction: _load);
+      body = EmptyState(
+          icon: Icons.wifi_off_rounded,
+          title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'),
+          text: _error.toString(),
+          action: tr('Повторить', 'Qayta urinish'),
+          onAction: _load);
     } else if (f == null) {
       body = _NoFamily(busy: _busy, onCreate: _create, onJoin: _join);
     } else {
@@ -195,7 +227,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
             child: Row(children: [
               RoundIconButton(icon: Icons.arrow_back_ios_new_rounded, bg: AppColors.white, onTap: () => Navigator.of(context).pop()),
               const SizedBox(width: 12),
-              const Expanded(child: Text('Моя семья', style: AppText.h2)),
+              Expanded(child: Text(tr('Моя семья', 'Mening oilam'), style: AppText.h2)),
             ]),
           ),
           Expanded(child: body),
@@ -204,7 +236,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
       bottomNavigationBar: f == null
           ? null
           : BottomActionBar(
-              child: AppButton(label: 'Попросить купить', onPressed: () => _open(const FamilyAskScreen())),
+              child: AppButton(label: tr('Попросить купить', 'Xarid qilishni soʻrash'), onPressed: () => _open(const FamilyAskScreen())),
             ),
     );
   }
@@ -219,8 +251,8 @@ class _FamilyScreenState extends State<FamilyScreen> {
         const _Banner(),
         const SizedBox(height: 24),
         SectionHeader(
-          title: _history ? 'История' : 'Просьбы',
-          action: _history ? 'Активные' : 'История',
+          title: _history ? tr('История', 'Tarix') : tr('Просьбы', 'Iltimoslar'),
+          action: _history ? tr('Активные', 'Faollar') : tr('История', 'Tarix'),
           padding: EdgeInsets.zero,
           onAction: () {
             setState(() {
@@ -234,7 +266,10 @@ class _FamilyScreenState extends State<FamilyScreen> {
         if (requests.isEmpty)
           AppCard(
             child: Text(
-              _history ? 'Здесь появятся выполненные просьбы.' : 'Просьб пока нет. Нажмите «Попросить купить» — мы напомним в нужное время.',
+              _history
+                  ? tr('Здесь появятся выполненные просьбы.', 'Bu yerda bajarilgan iltimoslar paydo boʻladi.')
+                  : tr('Просьб пока нет. Нажмите «Попросить купить» — мы напомним в нужное время.',
+                      'Hozircha iltimoslar yoʻq. «Xarid qilishni soʻrash» tugmasini bosing — kerakli vaqtda eslatamiz.'),
               style: AppText.small.copyWith(fontSize: 14),
             ),
           ),
@@ -243,7 +278,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
           const SizedBox(height: 12),
         ],
         const SizedBox(height: 12),
-        const SectionHeader(title: 'Участники', padding: EdgeInsets.zero),
+        SectionHeader(title: tr('Участники', 'Ishtirokchilar'), padding: EdgeInsets.zero),
         const SizedBox(height: 12),
         AppCard(
           padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -258,8 +293,8 @@ class _FamilyScreenState extends State<FamilyScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('Пригласить в семью', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
-                      const Text('Отправим ссылку в Telegram', style: AppText.caption),
+                      Text(tr('Пригласить в семью', 'Oilaga taklif qilish'), style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
+                      Text(tr('Отправим ссылку в Telegram', 'Havolani Telegramda yuboramiz'), style: AppText.caption),
                     ]),
                   ),
                   if (_busy) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
@@ -286,9 +321,11 @@ class _Banner extends StatelessWidget {
         const SizedBox(width: 14),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Общий список покупок', style: AppText.title.copyWith(color: AppColors.white)),
+            Text(tr('Общий список покупок', 'Umumiy xaridlar roʻyxati'), style: AppText.title.copyWith(color: AppColors.white)),
             const SizedBox(height: 4),
-            Text('Попросите купить — мы напомним в нужное время, а если забыли, привезём домой.',
+            Text(
+                tr('Попросите купить — мы напомним в нужное время, а если забыли, привезём домой.',
+                    'Xarid qilishni soʻrang — kerakli vaqtda eslatamiz, unutilsa, uyga yetkazib beramiz.'),
                 style: AppText.small.copyWith(color: const Color(0xDDFFFFFF))),
           ]),
         ),
@@ -309,8 +346,8 @@ class _MemberRow extends StatelessWidget {
     final owner = m['role'] == 'owner';
     final label = '${m['label'] ?? ''}';
     final subtitle = me
-        ? (owner ? 'Вы · владелец' : 'Вы')
-        : [if (label.isNotEmpty) label, if (owner) 'владелец'].join(' · ');
+        ? (owner ? tr('Вы · владелец', 'Siz · egasi') : tr('Вы', 'Siz'))
+        : [if (label.isNotEmpty) label, if (owner) tr('владелец', 'egasi')].join(' · ');
     return InkWell(
       onTap: onTap,
       child: Container(
@@ -345,12 +382,12 @@ class _NoFamily extends StatelessWidget {
       const SizedBox(height: 24),
       AppCard(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Как это работает', style: AppText.title),
+          Text(tr('Как это работает', 'Bu qanday ishlaydi'), style: AppText.title),
           const SizedBox(height: 12),
-          for (final (icon, text) in const [
-            (Icons.group_add_outlined, 'Создайте семью и пригласите близких ссылкой в Telegram'),
-            (Icons.shopping_bag_outlined, 'Попросите купить по дороге — список придёт уведомлением'),
-            (Icons.notifications_active_outlined, 'Напомним в нужное время, а если не успели — привезём домой'),
+          for (final (icon, text) in [
+            (Icons.group_add_outlined, tr('Создайте семью и пригласите близких ссылкой в Telegram', 'Oila yarating va yaqinlaringizni Telegram havolasi orqali taklif qiling')),
+            (Icons.shopping_bag_outlined, tr('Попросите купить по дороге — список придёт уведомлением', 'Yoʻl-yoʻlakay xarid qilishni soʻrang — roʻyxat bildirishnoma bilan keladi')),
+            (Icons.notifications_active_outlined, tr('Напомним в нужное время, а если не успели — привезём домой', 'Kerakli vaqtda eslatamiz, ulgurmasangiz — uyga yetkazib beramiz')),
           ])
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
@@ -363,9 +400,9 @@ class _NoFamily extends StatelessWidget {
         ]),
       ),
       const SizedBox(height: 24),
-      AppButton(label: 'Создать семью', loading: busy, onPressed: onCreate),
+      AppButton(label: tr('Создать семью', 'Oila yaratish'), loading: busy, onPressed: onCreate),
       const SizedBox(height: 10),
-      AppButton(label: 'У меня есть код приглашения', type: AppButtonType.secondary, onPressed: busy ? null : onJoin),
+      AppButton(label: tr('У меня есть код приглашения', 'Menda taklif kodi bor'), type: AppButtonType.secondary, onPressed: busy ? null : onJoin),
     ]);
   }
 }
@@ -378,20 +415,23 @@ class _InviteSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final code = '${invite['code']}';
     final url = '${invite['url']}';
-    final text = 'Присоединяйся к нашей семье в Super Market — будем вместе вести список покупок. Код: $code';
+    final text = tr('Присоединяйся к нашей семье в Super Market — будем вместе вести список покупок. Код: $code',
+        'Super Marketdagi oilamizga qoʻshil — xaridlar roʻyxatini birga yuritamiz. Kod: $code');
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('Пригласить в семью', style: AppText.h3),
+          Text(tr('Пригласить в семью', 'Oilaga taklif qilish'), style: AppText.h3),
           const SizedBox(height: 8),
-          const Text('Отправьте ссылку близкому. Она откроет нашего бота в Telegram и добавит в семью. Или продиктуйте код — его вводят в разделе «Моя семья».',
+          Text(
+              tr('Отправьте ссылку близкому. Она откроет нашего бота в Telegram и добавит в семью. Или продиктуйте код — его вводят в разделе «Моя семья».',
+                  'Havolani yaqiningizga yuboring. U Telegramdagi botimizni ochib, oilaga qoʻshadi. Yoki kodni ayting — u «Mening oilam» boʻlimida kiritiladi.'),
               style: AppText.small),
           const SizedBox(height: 16),
           GestureDetector(
             onTap: () {
               Clipboard.setData(ClipboardData(text: code));
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Код скопирован')));
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Код скопирован', 'Kod nusxalandi'))));
             },
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 16),
@@ -404,10 +444,10 @@ class _InviteSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          const Text('Код действует 7 дней и подходит одному человеку.', textAlign: TextAlign.center, style: AppText.caption),
+          Text(tr('Код действует 7 дней и подходит одному человеку.', 'Kod 7 kun amal qiladi va faqat bir kishi uchun.'), textAlign: TextAlign.center, style: AppText.caption),
           const SizedBox(height: 16),
           AppButton(
-            label: 'Отправить в Telegram',
+            label: tr('Отправить в Telegram', 'Telegramda yuborish'),
             icon: Icons.send_rounded,
             onPressed: () async {
               try {
@@ -419,11 +459,11 @@ class _InviteSheet extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           AppButton(
-            label: 'Скопировать ссылку',
+            label: tr('Скопировать ссылку', 'Havolani nusxalash'),
             type: AppButtonType.secondary,
             onPressed: () {
               Clipboard.setData(ClipboardData(text: '$text\n$url'));
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ссылка скопирована')));
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Ссылка скопирована', 'Havola nusxalandi'))));
             },
           ),
         ]),

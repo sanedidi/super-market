@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart';
 
 import '../state.dart';
 import '../ui/location_disclosure.dart';
@@ -52,9 +53,10 @@ class _ShellState extends State<Shell> {
           child: Center(
             child: EmptyState(
               icon: Icons.no_accounts_rounded,
-              title: 'Нет доступа к заказам',
-              text: '${st.noAccess}. Попросите менеджера магазина дать вашей роли право «Курьер: доставка заказов».',
-              action: 'Выйти',
+              title: tr('Нет доступа к заказам', 'Buyurtmalarga ruxsat yoʻq'),
+              text: tr('${st.noAccess}. Попросите менеджера магазина дать вашей роли право «Курьер: доставка заказов».',
+                  '${st.noAccess}. Doʻkon menejeridan rolingizga «Kuryer: buyurtmalarni yetkazish» huquqini berishni soʻrang.'),
+              action: tr('Выйти', 'Chiqish'),
               onAction: st.logout,
             ),
           ),
@@ -68,9 +70,9 @@ class _ShellState extends State<Shell> {
             child: st.error != null
                 ? EmptyState(
                     icon: Icons.wifi_off_rounded,
-                    title: 'Не удалось загрузить',
+                    title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'),
                     text: st.error.toString(),
-                    action: 'Повторить',
+                    action: tr('Повторить', 'Qayta urinish'),
                     onAction: st.load,
                   )
                 : const CircularProgressIndicator(),
@@ -99,10 +101,10 @@ class _TabBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const items = [
-      (Icons.local_shipping_rounded, 'Заказы'),
-      (Icons.history_rounded, 'История'),
-      (Icons.person_rounded, 'Профиль'),
+    final items = [
+      (Icons.local_shipping_rounded, tr('Заказы', 'Buyurtmalar')),
+      (Icons.history_rounded, tr('История', 'Tarix')),
+      (Icons.person_rounded, tr('Профиль', 'Profil')),
     ];
     return Container(
       decoration: const BoxDecoration(color: AppColors.white, border: Border(top: BorderSide(color: AppColors.line))),

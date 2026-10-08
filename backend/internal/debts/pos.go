@@ -15,6 +15,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 // Касса: покупатель по номеру, код подтверждения, должники для работы без связи.
@@ -130,7 +131,7 @@ type CodeSent struct {
 	ExpiresIn int    `json:"expires_in"`
 }
 
-var errNoChannel = apperr.Conflict("no_channel", "некуда отправить код: у номера нет Telegram-бота и приложения — запишите без кода")
+var errNoChannel = apperr.Conflict("no_channel", "некуда отправить код: у номера нет Telegram-бота и приложения — запишите без кода").Uz("kodni yuborishning iloji yoʻq: raqamda Telegram-bot ham, ilova ham yoʻq — kodsiz yozib qoʻying")
 
 // SendCode отправляет покупателю код подтверждения номера: в Telegram-бот,
 // если номер привязан, иначе push в приложение.
@@ -148,7 +149,7 @@ func (s *Service) SendCode(ctx context.Context, p *identity.Principal, in CodeIn
 	err = s.pool.QueryRow(ctx, `SELECT sent_at FROM debt_codes WHERE network_id = $1 AND phone = $2`, p.NetworkID, ph).Scan(&sentAt)
 	if err == nil {
 		if wait := codeCooldown - now.Sub(sentAt); wait > 0 {
-			return out, apperr.New(http.StatusTooManyRequests, "too_many_requests", "код уже отправлен, попробуйте позже").
+			return out, apperr.New(http.StatusTooManyRequests, "too_many_requests", "код уже отправлен, попробуйте позже").Uz("kod allaqachon yuborilgan, keyinroq urinib koʻring").
 				WithDetails(map[string]any{"retry_after": int(wait.Seconds()) + 1})
 		}
 	} else if !errors.Is(err, pgx.ErrNoRows) {
@@ -164,14 +165,23 @@ func (s *Service) SendCode(ctx context.Context, p *identity.Principal, in CodeIn
 		if code, err = randomCode(); err != nil {
 			return out, err
 		}
-		text := fmt.Sprintf("Код %s — подтверждение, что %s записывает покупки в долг на ваш номер. Если вы ничего не покупали, никому не сообщайте код.", code, storeName)
+		text := i18n.Text{
+			RU: fmt.Sprintf("Код %s — подтверждение, что %s записывает покупки в долг на ваш номер. Если вы ничего не покупали, никому не сообщайте код.", code, storeName),
+			UZ: fmt.Sprintf("Kod %s — %s xaridlarni raqamingizga qarzga yozayotganini tasdiqlash uchun. Agar hech narsa sotib olmagan boʻlsangiz, kodni hech kimga aytmang.", code, storeName),
+		}
+		// Язык покупателя: из приложения покупателя, иначе язык аккаунта, иначе узбекский.
 		var chatID int64
-		err := s.pool.QueryRow(ctx, `SELECT chat_id FROM telegram_links WHERE phone = $1`, ph).Scan(&chatID)
+		var lang string
+		err := s.pool.QueryRow(ctx, `
+			SELECT tl.chat_id, COALESCE((SELECT COALESCE(c.language, u.language) FROM users u
+			                             LEFT JOIN customers c ON c.user_id = u.id AND c.deleted_at IS NULL
+			                             WHERE u.phone = tl.phone LIMIT 1), 'uz')
+			FROM telegram_links tl WHERE tl.phone = $1`, ph).Scan(&chatID, &lang)
 		switch {
 		case err == nil && s.tg != nil:
-			if err := s.tg.SendMessage(ctx, chatID, text, nil); err != nil {
+			if err := s.tg.SendMessage(ctx, chatID, text.In(lang), nil); err != nil {
 				s.log.Error("код долга: не отправлен в Telegram", "err", err)
-				return out, apperr.New(http.StatusBadGateway, "telegram_send_failed", "не удалось отправить код, попробуйте ещё раз")
+				return out, apperr.New(http.StatusBadGateway, "telegram_send_failed", "не удалось отправить код, попробуйте ещё раз").Uz("kodni yuborib boʻlmadi, qayta urinib koʻring")
 			}
 			out.Channel = "telegram"
 		case err != nil && !errors.Is(err, pgx.ErrNoRows):
@@ -186,9 +196,11 @@ func (s *Service) SendCode(ctx context.Context, p *identity.Principal, in CodeIn
 			}
 			if _, err := s.pool.Exec(ctx, `
 				INSERT INTO notifications_outbox (user_id, kind, title, body, data)
-				SELECT c.user_id, 'debt_code', $2, $3, '{}'::jsonb
+				SELECT c.user_id, 'debt_code',
+				       CASE WHEN c.language = 'uz' THEN $4 ELSE $2 END,
+				       CASE WHEN c.language = 'uz' THEN $5 ELSE $3 END, '{}'::jsonb
 				FROM users u JOIN customers c ON c.user_id = u.id AND c.deleted_at IS NULL WHERE u.phone = $1`,
-				ph, "Код подтверждения: "+code, text); err != nil {
+				ph, "Код подтверждения: "+code, text.RU, "Tasdiqlash kodi: "+code, text.UZ); err != nil {
 				return out, err
 			}
 			out.Channel = "push"
@@ -222,13 +234,13 @@ func (s *Service) VerifyCode(ctx context.Context, p *identity.Principal, in Code
 		err := tx.QueryRow(ctx, `SELECT code_hash, attempts, expires_at FROM debt_codes WHERE network_id = $1 AND phone = $2 FOR UPDATE`,
 			p.NetworkID, ph).Scan(&hash, &attempts, &expires)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return apperr.Validation("код неверный или устарел")
+			return apperr.Validation("код неверный или устарел").Uz("kod notoʻgʻri yoki eskirgan")
 		}
 		if err != nil {
 			return err
 		}
 		if s.now().After(expires) || attempts >= codeAttempts {
-			return apperr.Validation("код неверный или устарел — отправьте новый")
+			return apperr.Validation("код неверный или устарел — отправьте новый").Uz("kod notoʻgʻri yoki eskirgan — yangisini yuboring")
 		}
 		if !bytes.Equal(hash, s.codeHash(p.NetworkID, ph, in.Code)) {
 			_, _ = tx.Exec(ctx, `UPDATE debt_codes SET attempts = attempts + 1 WHERE network_id = $1 AND phone = $2`, p.NetworkID, ph)
@@ -245,7 +257,7 @@ func (s *Service) VerifyCode(ctx context.Context, p *identity.Principal, in Code
 		return err
 	})
 	if errors.Is(err, errWrongCode) {
-		return Lookup{}, apperr.Validation("код неверный")
+		return Lookup{}, apperr.Validation("код неверный").Uz("kod notoʻgʻri")
 	}
 	if err != nil {
 		return Lookup{}, err

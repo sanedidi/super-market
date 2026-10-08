@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sm_store/setup/setup_logic.dart';
+import 'package:sm_core/sm_core.dart' as sm_i18n;
 
 SetupState state({bool hoursDone = false, List<Map<String, dynamic>> hours = const [], Map<String, dynamic> delivery = const {}, Map<String, dynamic>? steps}) =>
     SetupState({
@@ -13,6 +14,9 @@ SetupState state({bool hoursDone = false, List<Map<String, dynamic>> hours = con
     });
 
 void main() {
+  // Проверки написаны на русском; язык по умолчанию в приложениях — узбекский.
+  setUpAll(() => sm_i18n.Lang.instance.debugUse(sm_i18n.Lang.ru));
+
   test('SetupState: шаги и чек-лист', () {
     final s = state(hoursDone: true);
     expect(s.storeDone, isTrue);

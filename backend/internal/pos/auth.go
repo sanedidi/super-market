@@ -40,7 +40,7 @@ func (m *Module) deviceAuth(next http.Handler) http.Handler {
 func (s *Service) authenticate(r *http.Request) (*identity.Principal, error) {
 	raw, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok || !strings.HasPrefix(raw, tokenPrefix) {
-		return nil, apperr.Unauthorized("нужен токен кассы")
+		return nil, apperr.Unauthorized("нужен токен кассы").Uz("kassa tokeni kerak")
 	}
 	ctx := r.Context()
 	p := &identity.Principal{App: identity.AppPOS}
@@ -52,7 +52,7 @@ func (s *Service) authenticate(r *http.Request) (*identity.Principal, error) {
 		WHERE d.token_hash = $1 AND d.revoked_at IS NULL`, hashSecret(raw)).Scan(
 		&p.DeviceID, &p.NetworkID, &p.NetworkKind, &storeID, &lastSeen)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, apperr.New(http.StatusUnauthorized, "device_revoked", "касса отключена или активирована заново — введите новый код")
+		return nil, apperr.New(http.StatusUnauthorized, "device_revoked", "касса отключена или активирована заново — введите новый код").Uz("kassa oʻchirilgan yoki qayta faollashtirilgan — yangi kodni kiriting")
 	}
 	if err != nil {
 		return nil, err
@@ -98,11 +98,11 @@ func (s *Service) loadCashier(ctx context.Context, p *identity.Principal, id str
 	return nil
 }
 
-var errCashier = apperr.New(http.StatusUnauthorized, "cashier_invalid", "кассир не найден или нет доступа к этому магазину")
+var errCashier = apperr.New(http.StatusUnauthorized, "cashier_invalid", "кассир не найден или нет доступа к этому магазину").Uz("kassir topilmadi yoki bu doʻkonga ruxsati yoʻq")
 
 func requireCashier(p *identity.Principal) error {
 	if p.EmployeeID == "" {
-		return apperr.New(http.StatusUnauthorized, "cashier_required", "войдите кассиром по ПИНу")
+		return apperr.New(http.StatusUnauthorized, "cashier_required", "войдите кассиром по ПИНу").Uz("PIN-kod bilan kassir sifatida kiring")
 	}
 	return p.Require(identity.PermSalesPOS)
 }
@@ -128,10 +128,10 @@ func (s *Service) SetPIN(ctx context.Context, p *identity.Principal, employeeID 
 		return nil, err
 	}
 	if !pinRe.MatchString(in.PIN) {
-		return nil, apperr.Validation("pin: 4–6 цифр")
+		return nil, apperr.Validation("pin: 4–6 цифр").Uz("pin: 4–6 ta raqam")
 	}
 	if !httpx.IsUUID(employeeID) {
-		return nil, apperr.NotFound("сотрудник не найден")
+		return nil, apperr.NotFound("сотрудник не найден").Uz("xodim topilmadi")
 	}
 	// Одинаковые ПИНы у двух кассиров одного магазина запутают вход — запрещаем в сети.
 	var dup bool
@@ -141,7 +141,7 @@ func (s *Service) SetPIN(ctx context.Context, p *identity.Principal, employeeID 
 		return nil, err
 	}
 	if dup {
-		return nil, apperr.Conflict("pin_taken", "такой ПИН уже у другого сотрудника — выберите другой")
+		return nil, apperr.Conflict("pin_taken", "такой ПИН уже у другого сотрудника — выберите другой").Uz("bunday PIN-kod boshqa xodimda bor — boshqasini tanlang")
 	}
 	tag, err := s.pool.Exec(ctx, `UPDATE employees SET pin_hash = $3, pin_failed = 0, pin_locked_until = NULL
 		WHERE id = $1 AND network_id = $2`, employeeID, p.NetworkID, PinHash(employeeID, in.PIN))
@@ -149,7 +149,7 @@ func (s *Service) SetPIN(ctx context.Context, p *identity.Principal, employeeID 
 		return nil, err
 	}
 	if tag.RowsAffected() == 0 {
-		return nil, apperr.NotFound("сотрудник не найден")
+		return nil, apperr.NotFound("сотрудник не найден").Uz("xodim topilmadi")
 	}
 	return map[string]bool{"pin_set": true}, nil
 }
@@ -174,7 +174,7 @@ const (
 // вход блокируется на 5 минут.
 func (s *Service) Login(ctx context.Context, p *identity.Principal, in LoginInput) (Cashier, error) {
 	if !httpx.IsUUID(in.EmployeeID) || !pinRe.MatchString(in.PIN) {
-		return Cashier{}, apperr.Validation("выберите кассира и введите ПИН")
+		return Cashier{}, apperr.Validation("выберите кассира и введите ПИН").Uz("kassirni tanlang va PIN-kodni kiriting")
 	}
 	var out Cashier
 	var fail error
@@ -195,11 +195,11 @@ func (s *Service) Login(ctx context.Context, p *identity.Principal, in LoginInpu
 		now := s.now()
 		switch {
 		case locked != nil && locked.After(now):
-			fail = apperr.New(http.StatusTooManyRequests, "pin_locked", "много неверных попыток — подождите несколько минут").
+			fail = apperr.New(http.StatusTooManyRequests, "pin_locked", "много неверных попыток — подождите несколько минут").Uz("notoʻgʻri urinishlar koʻp — bir necha daqiqa kuting").
 				WithDetails(map[string]any{"locked_until": locked})
 			return nil
 		case hash == "":
-			fail = apperr.Conflict("pin_not_set", "ПИН не задан — попросите владельца задать его в панели магазина")
+			fail = apperr.Conflict("pin_not_set", "ПИН не задан — попросите владельца задать его в панели магазина").Uz("PIN-kod oʻrnatilmagan — egasidan uni doʻkon panelida oʻrnatishni soʻrang")
 			return nil
 		case subtle.ConstantTimeCompare([]byte(hash), []byte(PinHash(in.EmployeeID, in.PIN))) != 1:
 			failed++
@@ -216,7 +216,7 @@ func (s *Service) Login(ctx context.Context, p *identity.Principal, in LoginInpu
 			if until != nil {
 				left = 0
 			}
-			fail = apperr.New(http.StatusUnauthorized, "wrong_pin", "неверный ПИН").WithDetails(map[string]any{"attempts_left": left})
+			fail = apperr.New(http.StatusUnauthorized, "wrong_pin", "неверный ПИН").Uz("PIN-kod notoʻgʻri").WithDetails(map[string]any{"attempts_left": left})
 			return nil
 		}
 		_, err = tx.Exec(ctx, `UPDATE employees SET pin_failed = 0, pin_locked_until = NULL WHERE id = $1`, in.EmployeeID)
@@ -232,7 +232,7 @@ func (s *Service) Login(ctx context.Context, p *identity.Principal, in LoginInpu
 		return Cashier{}, err
 	}
 	if err := p.Require(identity.PermSalesPOS); err != nil {
-		return Cashier{}, apperr.Forbidden("у сотрудника нет права продавать на кассе")
+		return Cashier{}, apperr.Forbidden("у сотрудника нет права продавать на кассе").Uz("xodimda kassada sotish huquqi yoʻq")
 	}
 	out.ID, out.Permissions = in.EmployeeID, p.Permissions
 	return out, nil
@@ -259,7 +259,7 @@ func (s *Service) ListPins(ctx context.Context, p *identity.Principal, storeID s
 		return nil, err
 	}
 	if storeID != "" && (!httpx.IsUUID(storeID) || !p.CanAccessStore(storeID)) {
-		return nil, apperr.Validation("store_id: магазин не найден")
+		return nil, apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT e.id, e.full_name, r.name, r.is_owner, e.pin_hash <> '', COALESCE(e.pin_locked_until > now(), false),
@@ -282,7 +282,7 @@ func (s *Service) ClearPIN(ctx context.Context, p *identity.Principal, employeeI
 		return nil, err
 	}
 	if !httpx.IsUUID(employeeID) {
-		return nil, apperr.NotFound("сотрудник не найден")
+		return nil, apperr.NotFound("сотрудник не найден").Uz("xodim topilmadi")
 	}
 	tag, err := s.pool.Exec(ctx, `UPDATE employees SET pin_hash = '', pin_failed = 0, pin_locked_until = NULL
 		WHERE id = $1 AND network_id = $2`, employeeID, p.NetworkID)
@@ -290,7 +290,7 @@ func (s *Service) ClearPIN(ctx context.Context, p *identity.Principal, employeeI
 		return nil, err
 	}
 	if tag.RowsAffected() == 0 {
-		return nil, apperr.NotFound("сотрудник не найден")
+		return nil, apperr.NotFound("сотрудник не найден").Uz("xodim topilmadi")
 	}
 	return map[string]bool{"pin_set": false}, nil
 }

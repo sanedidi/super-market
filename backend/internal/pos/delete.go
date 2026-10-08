@@ -8,6 +8,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 // DeleteDevice — касса, которую ни разу не подключали; работавшую кассу
@@ -19,10 +20,10 @@ func (s *Service) DeleteDevice(ctx context.Context, p *identity.Principal, id st
 	var activated bool
 	err := s.pool.QueryRow(ctx, `SELECT activated_at IS NOT NULL FROM pos_devices WHERE id = $1 AND network_id = $2`, id, p.NetworkID).Scan(&activated)
 	if err == nil && activated {
-		return apperr.Conflict("in_use", "Касса уже работала — удалить нельзя, чтобы сохранить смены и чеки. Отключите её.").
+		return apperr.Conflict("in_use", "Касса уже работала — удалить нельзя, чтобы сохранить смены и чеки. Отключите её.").Uz("Kassa allaqachon ishlagan — smenalar va cheklar saqlanib qolishi uchun uni oʻchirib boʻlmaydi. Uni faolsizlantiring.").
 			WithDetails(map[string]any{"deactivate": true})
 	}
-	return db.Remove(ctx, s.pool, "Касса", true, `DELETE FROM pos_devices WHERE id = $1 AND network_id = $2 AND activated_at IS NULL`, id, p.NetworkID)
+	return db.Remove(ctx, s.pool, i18n.Text{RU: "Касса", UZ: "Kassa"}, true, `DELETE FROM pos_devices WHERE id = $1 AND network_id = $2 AND activated_at IS NULL`, id, p.NetworkID)
 }
 
 func (m *Module) deleteDevice(w http.ResponseWriter, r *http.Request) {

@@ -111,7 +111,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
   @override
   Widget build(BuildContext context) {
     final cat = widget.category;
-    final title = widget.title ?? cat?.name ?? 'Поиск';
+    final title = widget.title ?? cat?.name ?? tr('Поиск', 'Qidirish');
     final subs = cat?.children ?? const <CatalogCategory>[];
     return Scaffold(
       body: SafeArea(
@@ -124,7 +124,12 @@ class _CategoryScreenState extends State<CategoryScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: _searching
-                    ? AppSearchField(hint: cat == null ? 'Искать в ${_store.name}' : 'Искать в «${cat.name}»', autofocus: true, onChanged: _onSearch)
+                    ? AppSearchField(
+                        hint: cat == null
+                            ? tr('Искать в ${_store.name}', '${_store.name} doʻkonida qidirish')
+                            : tr('Искать в «${cat.name}»', '«${cat.name}» boʻlimida qidirish'),
+                        autofocus: true,
+                        onChanged: _onSearch)
                     : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.title.copyWith(fontSize: 19, fontWeight: FontWeight.w700)),
                         Text(cat == null ? _store.name : '${_store.name} · ${cat.count} ${_goods(cat.count)}', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.small),
@@ -143,7 +148,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                 children: [
-                  _chip(cat!.id, 'Все'),
+                  _chip(cat!.id, tr('Все', 'Hammasi')),
                   for (final s in subs) _chip(s.id, s.name),
                 ],
               ),
@@ -155,7 +160,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
               children: [
                 _SortButton(label: _sortTitles[_sort]!, onTap: _pickSort),
-                for (final (key, label) in const [('discount', 'Скидки'), ('new', 'Новинки'), ('hits', 'Хиты')])
+                for (final (key, label) in [('discount', tr('Скидки', 'Chegirmalar')), ('new', tr('Новинки', 'Yangiliklar')), ('hits', tr('Хиты', 'Xitlar'))])
                   Padding(
                     padding: const EdgeInsets.only(left: 8),
                     child: AppChip(
@@ -186,7 +191,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
       backgroundColor: AppColors.white,
       builder: (ctx) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Padding(padding: EdgeInsets.fromLTRB(20, 0, 20, 8), child: Text('Сортировка', style: AppText.h3)),
+          Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 8), child: Text(tr('Сортировка', 'Saralash'), style: AppText.h3)),
           for (final e in _sortTitles.entries)
             ListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 20),
@@ -222,12 +227,23 @@ class _CategoryScreenState extends State<CategoryScreen> {
     if (_products.isEmpty) {
       if (_loading) return const Center(child: CircularProgressIndicator());
       if (_error != null) {
-        return EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: _error.toString(), action: 'Повторить', onAction: () => _load(reset: true));
+        return EmptyState(
+            icon: Icons.wifi_off_rounded,
+            title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'),
+            text: _error.toString(),
+            action: tr('Повторить', 'Qayta urinish'),
+            onAction: () => _load(reset: true));
       }
       if (_searching && _query.isEmpty && widget.category == null && _filters.isEmpty) {
-        return const EmptyState(icon: Icons.search_rounded, title: 'Что ищем?', text: 'Введите название товара — например, «молоко» или «хлеб».');
+        return EmptyState(
+            icon: Icons.search_rounded,
+            title: tr('Что ищем?', 'Nima qidiramiz?'),
+            text: tr('Введите название товара — например, «молоко» или «хлеб».', 'Mahsulot nomini kiriting — masalan, «sut» yoki «non».'));
       }
-      return const EmptyState(icon: Icons.search_off_rounded, title: 'Ничего не нашли', text: 'Попробуйте другое название или категорию.');
+      return EmptyState(
+          icon: Icons.search_off_rounded,
+          title: tr('Ничего не нашли', 'Hech narsa topilmadi'),
+          text: tr('Попробуйте другое название или категорию.', 'Boshqa nom yoki kategoriyani sinab koʻring.'));
     }
     return LayoutBuilder(builder: (context, c) {
       final cardW = (c.maxWidth - 16 * 2 - 16) / 2;
@@ -247,21 +263,25 @@ class _CategoryScreenState extends State<CategoryScreen> {
   }
 }
 
+/// Слово после числа: «товар», «товара», «товаров»; по-узбекски — «ta mahsulot».
 String _goods(int n) {
   final m10 = n % 10, m100 = n % 100;
-  if (m10 == 1 && m100 != 11) return 'товар';
-  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return 'товара';
-  return 'товаров';
+  final w = m10 == 1 && m100 != 11
+      ? 'товар'
+      : (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14))
+          ? 'товара'
+          : 'товаров';
+  return tr(w, 'ta mahsulot');
 }
 
-const _sortTitles = {
-  'popular': 'Популярные',
-  'discount': 'Сначала со скидкой',
-  'price_asc': 'Сначала дешевле',
-  'price_desc': 'Сначала дороже',
-  'new': 'Новинки',
-  'name': 'По названию',
-};
+Map<String, String> get _sortTitles => {
+      'popular': tr('Популярные', 'Ommabop'),
+      'discount': tr('Сначала со скидкой', 'Avval chegirmalilar'),
+      'price_asc': tr('Сначала дешевле', 'Avval arzonlari'),
+      'price_desc': tr('Сначала дороже', 'Avval qimmatlari'),
+      'new': tr('Новинки', 'Avval yangilari'),
+      'name': tr('По названию', 'Nomi boʻyicha'),
+    };
 
 /// Кнопка «Популярные ▾» перед фильтрами.
 class _SortButton extends StatelessWidget {

@@ -15,6 +15,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
@@ -64,7 +65,7 @@ func get(ctx context.Context, q db.Querier, key string) (Plan, error) {
 	}
 	p, err := pgx.CollectExactlyOneRow(rows, scan)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return p, apperr.NotFound("тариф не найден")
+		return p, apperr.NotFound("тариф не найден").Uz("tarif topilmadi")
 	}
 	return p, err
 }
@@ -92,18 +93,18 @@ func SavePlan(ctx context.Context, q db.Querier, key string, in PlanInput) (Plan
 		return Plan{}, err
 	}
 	if in.Name != nil && strings.TrimSpace(*in.Name) == "" {
-		return Plan{}, apperr.Validation("name: не может быть пустым")
+		return Plan{}, apperr.Validation("name: не может быть пустым").Uz("name: boʻsh boʻlishi mumkin emas")
 	}
 	if in.AdsMax != nil && (*in.AdsMax < 0 || *in.AdsMax > 2) {
-		return Plan{}, apperr.Validation("ads_max: от 0 до 2")
+		return Plan{}, apperr.Validation("ads_max: от 0 до 2").Uz("ads_max: 0 dan 2 gacha")
 	}
 	if in.Stats != nil && *in.Stats != "none" && *in.Stats != "basic" && *in.Stats != "full" {
-		return Plan{}, apperr.Validation("stats: none, basic или full")
+		return Plan{}, apperr.Validation("stats: none, basic или full").Uz("stats: none, basic yoki full")
 	}
 	var price *string
 	if in.PriceUZS != nil {
 		if money.D(string(*in.PriceUZS)).Sign() < 0 {
-			return Plan{}, apperr.Validation("price_uzs: не меньше нуля")
+			return Plan{}, apperr.Validation("price_uzs: не меньше нуля").Uz("price_uzs: noldan kichik boʻlmasin")
 		}
 		v := string(*in.PriceUZS)
 		price = &v
@@ -114,7 +115,7 @@ func SavePlan(ctx context.Context, q db.Querier, key string, in PlanInput) (Plan
 			return false, nil, nil
 		}
 		if *v < -1 || *v > 1000 {
-			return false, nil, apperr.Validation("лимит от 0 до 1000 или -1 (без лимита)")
+			return false, nil, apperr.Validation("лимит от 0 до 1000 или -1 (без лимита)").Uz("limit 0 dan 1000 gacha yoki -1 (cheklovsiz)")
 		}
 		if *v == -1 {
 			return true, nil, nil
@@ -183,7 +184,7 @@ func ForNetwork(ctx context.Context, q db.Querier, networkID string) (Network, e
 		SELECT n.showcase_plan, n.showcase_trial_until, bs.showcase_trial_plan, (now() AT TIME ZONE 'Asia/Tashkent')::date
 		FROM networks n CROSS JOIN billing_settings bs WHERE n.id = $1`, networkID).Scan(&chosen, &until, &trialPlan, &today)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return out, apperr.NotFound("сеть не найдена")
+		return out, apperr.NotFound("сеть не найдена").Uz("tarmoq topilmadi")
 	}
 	if err != nil {
 		return out, err
@@ -221,7 +222,7 @@ func StartTrial(ctx context.Context, q db.Querier, networkID string) error {
 // Choose — сеть выбирает тариф; плата войдёт в ближайший счёт за подписку.
 func Choose(ctx context.Context, q db.Querier, networkID, key string) (Network, error) {
 	if !httpx.IsUUID(networkID) {
-		return Network{}, apperr.NotFound("сеть не найдена")
+		return Network{}, apperr.NotFound("сеть не найдена").Uz("tarmoq topilmadi")
 	}
 	if _, err := get(ctx, q, key); err != nil {
 		return Network{}, err
@@ -234,8 +235,8 @@ func Choose(ctx context.Context, q db.Querier, networkID, key string) (Network, 
 
 // Limit — ошибка «лимит тарифа»: что упёрлось, сколько можно и сколько
 // уже есть. Панель показывает по ней окно «Лимит тарифа».
-func Limit(feature string, plan Plan, limit, used int, text string) error {
-	return apperr.Conflict("tariff_limit", text).WithDetails(map[string]any{
+func Limit(feature string, plan Plan, limit, used int, text i18n.Text) error {
+	return apperr.Conflict("tariff_limit", text.RU).Uz(text.UZ).WithDetails(map[string]any{
 		"feature": feature, "plan": plan.Key, "plan_name": plan.Name, "limit": limit, "used": used,
 	})
 }

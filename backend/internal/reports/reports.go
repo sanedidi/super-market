@@ -13,6 +13,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
@@ -55,12 +56,12 @@ func (s *Service) scope(p *identity.Principal, f Filter) (scope, error) {
 		sc.to = now
 	}
 	if !sc.to.After(sc.from) {
-		return sc, apperr.Validation("to: конец периода позже начала")
+		return sc, apperr.Validation("to: конец периода позже начала").Uz("to: davr oxiri boshidan keyin boʻlsin")
 	}
 	switch {
 	case f.StoreID != "":
 		if !httpx.IsUUID(f.StoreID) || !p.CanAccessStore(f.StoreID) {
-			return sc, apperr.NotFound("магазин не найден")
+			return sc, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 		}
 		sc.stores = []string{f.StoreID}
 	case !p.SeesAllStores():
@@ -100,13 +101,13 @@ type CashFlow struct {
 	Lines     []FlowLine    `json:"lines"`
 }
 
-var flowTitles = map[string]string{
-	"sale":              "Продажи",
-	"customer_return":   "Возвраты покупателям",
-	"debt_payment":      "Погашение долгов покупателей",
-	"transfer:transfer": "Из кассы в кассу",
-	"transfer:handover": "Сдача кассы",
-	"counterparty":      "Расчёты с контрагентами",
+var flowTitles = map[string]i18n.Text{
+	"sale":              {RU: "Продажи", UZ: "Sotuvlar"},
+	"customer_return":   {RU: "Возвраты покупателям", UZ: "Xaridorlarga qaytarishlar"},
+	"debt_payment":      {RU: "Погашение долгов покупателей", UZ: "Xaridorlar qarzlarini toʻlash"},
+	"transfer:transfer": {RU: "Из кассы в кассу", UZ: "Kassadan kassaga"},
+	"transfer:handover": {RU: "Сдача кассы", UZ: "Kassani topshirish"},
+	"counterparty":      {RU: "Расчёты с контрагентами", UZ: "Kontragentlar bilan hisob-kitob"},
 }
 
 // cashboxesCTE — кассы в области отчёта ($1 — сеть, $2 — магазины или NULL, $3 — касса или ”).
@@ -122,7 +123,7 @@ func (s *Service) CashFlow(ctx context.Context, p *identity.Principal, f Filter,
 		return CashFlow{}, err
 	}
 	if cashboxID != "" && !httpx.IsUUID(cashboxID) {
-		return CashFlow{}, apperr.Validation("cashbox_id: неверный id")
+		return CashFlow{}, apperr.Validation("cashbox_id: неверный id").Uz("cashbox_id: id notoʻgʻri")
 	}
 	out := CashFlow{From: sc.from, To: sc.to}
 	rows, err := s.pool.Query(ctx, cashboxesCTE+`
@@ -141,7 +142,7 @@ func (s *Service) CashFlow(ctx context.Context, p *identity.Principal, f Filter,
 		return out, err
 	}
 	if cashboxID != "" && len(out.Cashboxes) == 0 {
-		return out, apperr.NotFound("касса не найдена")
+		return out, apperr.NotFound("касса не найдена").Uz("kassa topilmadi")
 	}
 
 	rows, err = s.pool.Query(ctx, cashboxesCTE+`
@@ -163,11 +164,12 @@ func (s *Service) CashFlow(ctx context.Context, p *identity.Principal, f Filter,
 	if err != nil {
 		return out, err
 	}
+	lang := i18n.FromContext(ctx)
 	out.Lines, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (FlowLine, error) {
 		var l FlowLine
 		var reason string
 		err := r.Scan(&l.Currency, &l.Category, &reason, &l.Income, &l.Expense)
-		l.Title = flowTitles[l.Category]
+		l.Title = flowTitles[l.Category].In(lang)
 		if reason != "" {
 			l.Title = reason
 		}
@@ -322,7 +324,7 @@ func (s *Service) ProfitLoss(ctx context.Context, p *identity.Principal, f Filte
 		return out, err
 	}
 	if money.D(writtenOff).Sign() > 0 {
-		out.Expenses = append(out.Expenses, ReasonAmount{Name: "Списанные долги покупателей", Amount: writtenOff})
+		out.Expenses = append(out.Expenses, ReasonAmount{Name: i18n.T(ctx, "Списанные долги покупателей", "Hisobdan chiqarilgan xaridor qarzlari"), Amount: writtenOff})
 		expenses = expenses.Add(money.D(writtenOff))
 	}
 

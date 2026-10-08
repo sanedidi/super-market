@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { App, Card, Spin, Switch, Table, Tag, Typography } from 'antd'
 import { BulbFilled, LockFilled } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import { LoadError, PageTitle, RemoteSelect, api, errorText, money } from '@sm/shared'
+import { LoadError, PageTitle, RemoteSelect, api, errorText, money, tr } from '@sm/shared'
 import { useStore } from '../ctx'
 
 interface Named {
@@ -77,32 +77,52 @@ export function StoreAdsPage() {
   const hidden = new Set(d.hidden_brands.map((b) => b.id))
   const month = dayjs().format('MMMM')
   const options = [
-    { value: 2, title: 'До 2 блоков', text: 'Стандарт: больше рекламы — больше доля' },
-    { value: 1, title: '1 блок', text: 'Меньше рекламы, доля меньше' },
-    { value: 0, title: 'Без рекламы', text: 'Главная только ваша, доли нет' },
+    { value: 2, title: tr('До 2 блоков', '2 tagacha blok'), text: tr('Стандарт: больше рекламы — больше доля', 'Standart: reklama koʻp — ulush koʻp') },
+    { value: 1, title: tr('1 блок', '1 blok'), text: tr('Меньше рекламы, доля меньше', 'Reklama kamroq, ulush ham kamroq') },
+    { value: 0, title: tr('Без рекламы', 'Reklamasiz'), text: tr('Главная только ваша, доли нет', 'Bosh sahifa faqat sizniki, ulush yoʻq') },
   ]
   return (
     <>
-      <PageTitle title="Реклама брендов">
-        <Typography.Text type="secondary">Бренды платят Super Market за показ своих товаров. Покупатель видит товар в вашем магазине и покупает у вас.</Typography.Text>
+      <PageTitle title={tr('Реклама брендов', 'Brendlar reklamasi')}>
+        <Typography.Text type="secondary">
+          {tr(
+            'Бренды платят Super Market за показ своих товаров. Покупатель видит товар в вашем магазине и покупает у вас.',
+            'Brendlar oʻz mahsulotlarini koʻrsatish uchun Super Marketga toʻlaydi. Xaridor mahsulotni doʻkoningizda koʻradi va sizdan sotib oladi.',
+          )}
+        </Typography.Text>
       </PageTitle>
       <div className="ads-grid">
         <div className="ads-col">
           <div className="ads-kpis">
             <Kpi
               accent
-              label={`Ваша доля за ${month}`}
-              value={`${money(d.month_share)} сум`}
-              note={`${pct(d.share_pct)}% от рекламы в ваших магазинах${d.share_to_subscription ? ' — зачтём в счёт за подписку' : ' — на баланс'}`}
+              label={tr(`Ваша доля за ${month}`, `${month} uchun ulushingiz`)}
+              value={`${money(d.month_share)} ${tr('сум', 'soʻm')}`}
+              note={
+                tr(`${pct(d.share_pct)}% от рекламы в ваших магазинах`, `Doʻkonlaringizdagi reklamadan ${pct(d.share_pct)}%`) +
+                (d.share_to_subscription
+                  ? tr(' — зачтём в счёт за подписку', ' — obuna hisobiga hisoblanadi')
+                  : tr(' — на баланс', ' — balansga'))
+              }
             />
-            <Kpi label="Продажи товаров из рекламы" value={`${money(d.month_sales)} сум`} note={`${num(d.month_orders)} заказов, деньги — вам, как обычно`} />
-            <Kpi label="Показы рекламы" value={num(d.month_views)} note={`за ${month}; один покупатель — один показ в день`} />
+            <Kpi
+              label={tr('Продажи товаров из рекламы', 'Reklamadagi mahsulotlar sotuvi')}
+              value={`${money(d.month_sales)} ${tr('сум', 'soʻm')}`}
+              note={tr(`${num(d.month_orders)} заказов, деньги — вам, как обычно`, `${num(d.month_orders)} ta buyurtma, pul odatdagidek sizga`)}
+            />
+            <Kpi
+              label={tr('Показы рекламы', 'Reklama koʻrsatishlari')}
+              value={num(d.month_views)}
+              note={tr(`за ${month}; один покупатель — один показ в день`, `${month} uchun; bitta xaridor — kuniga bitta koʻrsatish`)}
+            />
           </div>
 
           <Card className="ads-card">
-            <h3>Сейчас в ваших магазинах</h3>
+            <h3>{tr('Сейчас в ваших магазинах', 'Hozir doʻkonlaringizda')}</h3>
             <Typography.Text type="secondary">
-              {d.allow_hide_brands ? 'Выключите бренд — его реклама пропадёт у вас, доля с него не начисляется.' : 'Скрывать бренды сейчас нельзя — правило Super Market.'}
+              {d.allow_hide_brands
+                ? tr('Выключите бренд — его реклама пропадёт у вас, доля с него не начисляется.', 'Brendni oʻchirsangiz, uning reklamasi sizda koʻrinmaydi va undan ulush hisoblanmaydi.')
+                : tr('Скрывать бренды сейчас нельзя — правило Super Market.', 'Hozir brendlarni yashirib boʻlmaydi — Super Market qoidasi.')}
             </Typography.Text>
             <Table
               style={{ marginTop: 12 }}
@@ -110,7 +130,7 @@ export function StoreAdsPage() {
               pagination={false}
               dataSource={d.campaigns}
               showHeader={false}
-              locale={{ emptyText: 'Сейчас рекламы брендов в ваших магазинах нет' }}
+              locale={{ emptyText: tr('Сейчас рекламы брендов в ваших магазинах нет', 'Hozir doʻkonlaringizda brendlar reklamasi yoʻq') }}
               columns={[
                 {
                   render: (_, c, i) => (
@@ -119,18 +139,22 @@ export function StoreAdsPage() {
                       <div>
                         <b className={hidden.has(c.brand_id) ? 'off' : ''}>{c.brand_name}</b>
                         <small>
-                          {c.format === 'shelf' ? 'Полка' : 'Фото-баннер'} · {c.products.join(', ')}
+                          {c.format === 'shelf' ? tr('Полка', 'Javon') : tr('Фото-баннер', 'Foto-banner')} · {c.products.join(', ')}
                         </small>
                       </div>
                     </div>
                   ),
                 },
-                { render: (_, c) => <Typography.Text type="secondary" style={{ whiteSpace: 'nowrap' }}>{dayjs(c.ends_at) < dayjs() ? 'завершена' : `до ${dayjs(c.ends_at).subtract(1, 'second').format('D MMM')}`}</Typography.Text> },
+                { render: (_, c) => <Typography.Text type="secondary" style={{ whiteSpace: 'nowrap' }}>{dayjs(c.ends_at) < dayjs()
+                        ? tr('завершена', 'yakunlangan')
+                        : tr(`до ${dayjs(c.ends_at).subtract(1, 'second').format('D MMM')}`, `${dayjs(c.ends_at).subtract(1, 'second').format('D MMM')} gacha`)}</Typography.Text> },
                 {
                   render: (_, c) => (
                     <div className="ads-sales">
-                      <b>{Number(c.sales) ? `${money(c.sales)} сум` : '—'}</b>
-                      <small>{hidden.has(c.brand_id) ? 'скрыт · доля не начисляется' : `продажи из рекламы · ${num(c.views)} показов`}</small>
+                      <b>{Number(c.sales) ? `${money(c.sales)} ${tr('сум', 'soʻm')}` : '—'}</b>
+                      <small>{hidden.has(c.brand_id)
+                          ? tr('скрыт · доля не начисляется', 'yashirilgan · ulush hisoblanmaydi')
+                          : tr(`продажи из рекламы · ${num(c.views)} показов`, `reklamadan sotuvlar · ${num(c.views)} ta koʻrsatish`)}</small>
                     </div>
                   ),
                 },
@@ -138,7 +162,7 @@ export function StoreAdsPage() {
                   align: 'right',
                   render: (_, c) => (
                     <span className="ads-toggle">
-                      {hidden.has(c.brand_id) ? 'Скрыт' : 'Показывать'}
+                      {hidden.has(c.brand_id) ? tr('Скрыт', 'Yashirilgan') : tr('Показывать', 'Koʻrsatish')}
                       <Switch
                         checked={!hidden.has(c.brand_id)}
                         disabled={!d.allow_hide_brands || !can('showcase.manage')}
@@ -146,7 +170,9 @@ export function StoreAdsPage() {
                           const next = new Set(hidden)
                           if (on) next.delete(c.brand_id)
                           else next.add(c.brand_id)
-                          save({ hidden_brands: [...next] }, on ? `${c.brand_name}: реклама снова показывается` : `${c.brand_name} скрыт в ваших магазинах`)
+                          save({ hidden_brands: [...next] }, on
+                              ? tr(`${c.brand_name}: реклама снова показывается`, `${c.brand_name}: reklama yana koʻrsatilmoqda`)
+                              : tr(`${c.brand_name} скрыт в ваших магазинах`, `${c.brand_name} doʻkonlaringizda yashirildi`))
                         }}
                       />
                     </span>
@@ -157,15 +183,24 @@ export function StoreAdsPage() {
           </Card>
 
           <Card className="ads-card">
-            <h3>Не показывать рекламу в категориях</h3>
-            <Typography.Text type="secondary">Например, если у сети своя марка воды — реклама чужой воды у вас не появится.</Typography.Text>
+            <h3>{tr('Не показывать рекламу в категориях', 'Reklamani koʻrsatmaslik kerak boʻlgan kategoriyalar')}</h3>
+            <Typography.Text type="secondary">
+              {tr(
+                'Например, если у сети своя марка воды — реклама чужой воды у вас не появится.',
+                'Masalan, tarmogʻingizda oʻz suv brendi boʻlsa — boshqa suv reklamasi sizda chiqmaydi.',
+              )}
+            </Typography.Text>
             <RemoteSelect
               mode="multiple"
               path="/store/catalog/categories"
               disabled={!d.allow_exclude_categories}
               value={d.excluded_categories.map((c) => c.id)}
-              onChange={(v) => save({ excluded_categories: v as string[] }, 'Категории сохранены')}
-              placeholder={d.allow_exclude_categories ? '+ Категория' : 'Исключать категории сейчас нельзя — правило Super Market'}
+              onChange={(v) => save({ excluded_categories: v as string[] }, tr('Категории сохранены', 'Kategoriyalar saqlandi'))}
+              placeholder={
+                d.allow_exclude_categories
+                  ? tr('+ Категория', '+ Kategoriya')
+                  : tr('Исключать категории сейчас нельзя — правило Super Market', 'Hozir kategoriyalarni chiqarib boʻlmaydi — Super Market qoidasi')
+              }
               style={{ width: '100%', marginTop: 12 }}
             />
           </Card>
@@ -173,8 +208,13 @@ export function StoreAdsPage() {
 
         <div className="ads-col ads-side">
           <Card className="ads-card">
-            <h3>Сколько рекламы на главной</h3>
-            <Typography.Text type="secondary">Реклама всегда с пометкой «Реклама» и стоит после блоков Super Market.</Typography.Text>
+            <h3>{tr('Сколько рекламы на главной', 'Bosh sahifada qancha reklama')}</h3>
+            <Typography.Text type="secondary">
+              {tr(
+                'Реклама всегда с пометкой «Реклама» и стоит после блоков Super Market.',
+                'Reklama doim «Reklama» belgisi bilan va Super Market bloklaridan keyin turadi.',
+              )}
+            </Typography.Text>
             <div className="ads-options">
               {options
                 .filter((o) => o.value <= d.plan.ads_max)
@@ -188,10 +228,15 @@ export function StoreAdsPage() {
                       className={`ads-option${on ? ' on' : ''}${locked ? ' locked' : ''}`}
                       onClick={() => {
                         if (locked) {
-                          message.info('Меньше рекламы или без неё — на тарифе «Про». Сменить тариф: «Витрина приложения» → «Сравнить тарифы».')
+                          message.info(
+                            tr(
+                              'Меньше рекламы или без неё — на тарифе «Про». Сменить тариф: «Витрина приложения» → «Сравнить тарифы».',
+                              'Kamroq reklama yoki reklamasiz — «Pro» tarifida. Tarifni almashtirish: «Ilova vitrinasi» → «Tariflarni solishtirish».',
+                            ),
+                          )
                           return
                         }
-                        if (!on) save({ ads_max: o.value === d.plan.ads_max ? -1 : o.value }, 'Сохранено')
+                        if (!on) save({ ads_max: o.value === d.plan.ads_max ? -1 : o.value }, tr('Сохранено', 'Saqlandi'))
                       }}
                     >
                       <i />
@@ -201,7 +246,7 @@ export function StoreAdsPage() {
                       </span>
                       {locked && (
                         <em>
-                          <LockFilled /> «Про»
+                          <LockFilled /> {tr('«Про»', '«Pro»')}
                         </em>
                       )}
                     </button>
@@ -211,28 +256,39 @@ export function StoreAdsPage() {
           </Card>
           <Card className="ads-card ads-how">
             <h3>
-              <BulbFilled /> Как считается доля
+              <BulbFilled /> {tr('Как считается доля', 'Ulush qanday hisoblanadi')}
             </h3>
             <ul>
-              <li>Бренд платит Super Market за период или за 1000 показов.</li>
-              <li>Ваша доля — {pct(d.share_pct)}% от оплаты за показы в ваших магазинах. Процент задаёт Super Market.</li>
+              <li>{tr('Бренд платит Super Market за период или за 1000 показов.', 'Brend Super Marketga davr uchun yoki har 1000 ta koʻrsatish uchun toʻlaydi.')}</li>
+              <li>
+                {tr(
+                  `Ваша доля — ${pct(d.share_pct)}% от оплаты за показы в ваших магазинах. Процент задаёт Super Market.`,
+                  `Sizning ulushingiz — doʻkonlaringizdagi koʻrsatishlar uchun toʻlovning ${pct(d.share_pct)}%. Foizni Super Market belgilaydi.`,
+                )}
+              </li>
               <li>
                 {d.share_to_subscription
-                  ? 'Доля идёт в зачёт счёта за подписку; если она больше счёта — остаток на баланс.'
-                  : 'Доля зачисляется на баланс платформы после конца месяца.'}
+                  ? tr('Доля идёт в зачёт счёта за подписку; если она больше счёта — остаток на баланс.', 'Ulush obuna hisobiga hisoblanadi; agar u hisobdan koʻp boʻlsa — qoldigʻi balansga.')
+                  : tr('Доля зачисляется на баланс платформы после конца месяца.', 'Ulush oy tugagach platformadagi balansga oʻtkaziladi.')}
               </li>
-              <li>Товары из рекламы покупают у вас — выручка ваша целиком.</li>
+              <li>{tr('Товары из рекламы покупают у вас — выручка ваша целиком.', 'Reklamadagi mahsulotlar sizdan sotib olinadi — tushum toʻliq sizniki.')}</li>
             </ul>
           </Card>
           {d.shares.length > 0 && (
             <Card className="ads-card">
-              <h3>Начисленная доля</h3>
+              <h3>{tr('Начисленная доля', 'Hisoblangan ulush')}</h3>
               {d.shares.map((s) => (
                 <div key={s.period} className="ads-share">
                   <span>{s.label}</span>
-                  <b>{money(s.amount)} сум</b>
+                  <b>
+                    {money(s.amount)} {tr('сум', 'soʻm')}
+                  </b>
                   <small>
-                    {s.settled ? `в счёт подписки ${money(s.applied)} · на баланс ${money(s.credited)}` : <Tag>ждёт счёта</Tag>}
+                    {s.settled ? (
+                      tr(`в счёт подписки ${money(s.applied)} · на баланс ${money(s.credited)}`, `obuna hisobiga ${money(s.applied)} · balansga ${money(s.credited)}`)
+                    ) : (
+                      <Tag>{tr('ждёт счёта', 'hisobni kutmoqda')}</Tag>
+                    )}
                   </small>
                 </div>
               ))}

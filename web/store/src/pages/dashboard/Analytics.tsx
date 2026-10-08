@@ -20,7 +20,7 @@ import {
   WalletOutlined,
 } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
-import { StatusTag, dateTime, money, qty, useItem } from '@sm/shared'
+import { StatusTag, dateTime, money, qty, tr, useItem } from '@sm/shared'
 import { useStore } from '../../ctx'
 import { usePaidOrders } from '../../notify'
 import type { AbcLetter, AbcXyz, Balance, FiscalSummary, Order, SalesBreakdown, SalesSeries } from '../../types'
@@ -30,19 +30,45 @@ import { C, DayLines, Donut, HeatLegend, Heatmap, Legend, Pareto, Sparkline, Sta
 export type Period = 'today' | 'yesterday' | '7d' | '30d'
 
 export const PERIODS: { value: Period; label: string }[] = [
-  { value: 'today', label: 'Сегодня' },
-  { value: 'yesterday', label: 'Вчера' },
-  { value: '7d', label: '7 дней' },
-  { value: '30d', label: '30 дней' },
+  { value: 'today', label: tr('Сегодня', 'Bugun') },
+  { value: 'yesterday', label: tr('Вчера', 'Kecha') },
+  { value: '7d', label: tr('7 дней', '7 kun') },
+  { value: '30d', label: tr('30 дней', '30 kun') },
 ]
 
 const fmt = (d: Dayjs) => d.format('YYYY-MM-DD')
 const n = (v: string | number | null | undefined) => Number(v ?? 0) || 0
 
 // «прошлая среда», «прошлый четверг» — с чем сравниваем «сегодня».
-const LAST_WEEKDAY = ['прошлое воскресенье', 'прошлый понедельник', 'прошлый вторник', 'прошлая среда', 'прошлый четверг', 'прошлая пятница', 'прошлая суббота']
-const LAST_WEEKDAY_TO = ['прошлому воскресенью', 'прошлому понедельнику', 'прошлому вторнику', 'прошлой среде', 'прошлому четвергу', 'прошлой пятнице', 'прошлой субботе']
-const WEEKDAY = ['', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье']
+const LAST_WEEKDAY = [
+  tr('прошлое воскресенье', 'oʻtgan yakshanba'),
+  tr('прошлый понедельник', 'oʻtgan dushanba'),
+  tr('прошлый вторник', 'oʻtgan seshanba'),
+  tr('прошлая среда', 'oʻtgan chorshanba'),
+  tr('прошлый четверг', 'oʻtgan payshanba'),
+  tr('прошлая пятница', 'oʻtgan juma'),
+  tr('прошлая суббота', 'oʻtgan shanba'),
+]
+// «к прошлой среде» / «oʻtgan chorshanbaga nisbatan» — готовая фраза целиком.
+const LAST_WEEKDAY_TO = [
+  tr('к прошлому воскресенью', 'oʻtgan yakshanbaga nisbatan'),
+  tr('к прошлому понедельнику', 'oʻtgan dushanbaga nisbatan'),
+  tr('к прошлому вторнику', 'oʻtgan seshanbaga nisbatan'),
+  tr('к прошлой среде', 'oʻtgan chorshanbaga nisbatan'),
+  tr('к прошлому четвергу', 'oʻtgan payshanbaga nisbatan'),
+  tr('к прошлой пятнице', 'oʻtgan jumaga nisbatan'),
+  tr('к прошлой субботе', 'oʻtgan shanbaga nisbatan'),
+]
+const WEEKDAY = [
+  '',
+  tr('понедельник', 'dushanba'),
+  tr('вторник', 'seshanba'),
+  tr('среда', 'chorshanba'),
+  tr('четверг', 'payshanba'),
+  tr('пятница', 'juma'),
+  tr('суббота', 'shanba'),
+  tr('воскресенье', 'yakshanba'),
+]
 
 function periodQuery(p: Period) {
   const t = dayjs().startOf('day')
@@ -60,15 +86,15 @@ function periodQuery(p: Period) {
 
 /** «к прошлой среде», «к прошлым 7 дням». */
 function prevTo(p: Period) {
-  if (p === 'today') return 'к ' + LAST_WEEKDAY_TO[dayjs().day()]
-  if (p === 'yesterday') return 'к ' + LAST_WEEKDAY_TO[dayjs().subtract(1, 'day').day()]
-  return p === '7d' ? 'к прошлым 7 дням' : 'к прошлым 30 дням'
+  if (p === 'today') return LAST_WEEKDAY_TO[dayjs().day()]
+  if (p === 'yesterday') return LAST_WEEKDAY_TO[dayjs().subtract(1, 'day').day()]
+  return p === '7d' ? tr('к прошлым 7 дням', 'oʻtgan 7 kunga nisbatan') : tr('к прошлым 30 дням', 'oʻtgan 30 kunga nisbatan')
 }
 
 function prevName(p: Period) {
   if (p === 'today') return LAST_WEEKDAY[dayjs().day()]
   if (p === 'yesterday') return LAST_WEEKDAY[dayjs().subtract(1, 'day').day()]
-  return p === '7d' ? 'прошлые 7 дней' : 'прошлые 30 дней'
+  return p === '7d' ? tr('прошлые 7 дней', 'oʻtgan 7 kun') : tr('прошлые 30 дней', 'oʻtgan 30 kun')
 }
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
@@ -81,7 +107,7 @@ function plural(k: number, one: string, few: string, many: string) {
   const m100 = k % 100
   return m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many
 }
-const products = (k: number) => `${k} ${plural(k, 'товар', 'товара', 'товаров')}`
+const products = (k: number) => tr(`${k} ${plural(k, 'товар', 'товара', 'товаров')}`, `${k} ta mahsulot`)
 
 // ---------------------------------------------------------------- общее
 
@@ -191,8 +217,8 @@ export function Analytics({ period }: { period: Period }) {
 export function PeriodNote({ period }: { period: Period }) {
   return (
     <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-      Обновлено в {dayjs().format('HH:mm')} · сравнение: {prevName(period)}
-      {period === 'today' && ' до того же часа'}
+      {tr('Обновлено в', 'Yangilangan:')} {dayjs().format('HH:mm')} · {tr('сравнение:', 'solishtirish:')} {prevName(period)}
+      {period === 'today' && tr(' до того же часа', ' (oʻsha soatgacha)')}
     </Typography.Text>
   )
 }
@@ -212,7 +238,7 @@ function Kpis({ period, series, loading, spark }: { period: Period; series?: Sal
     <Kpi
       key="rev"
       icon={<DollarOutlined />}
-      title="Выручка, сум"
+      title={tr('Выручка, сум', 'Tushum, soʻm')}
       value={money(tt?.revenue)}
       delta={series?.change_pct}
       note={prevTo(period)}
@@ -223,10 +249,10 @@ function Kpis({ period, series, loading, spark }: { period: Period; series?: Sal
     <Kpi
       key="profit"
       icon={<RiseOutlined />}
-      title="Валовая прибыль, сум"
+      title={tr('Валовая прибыль, сум', 'Yalpi foyda, soʻm')}
       value={money(tt?.profit)}
       delta={tt && pt ? changePct(n(tt.profit), n(pt.profit)) : null}
-      note={tt?.margin_pct != null ? `маржа ${tt.margin_pct.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%` : 'маржа —'}
+      note={tt?.margin_pct != null ? `${tr('маржа', 'marja')} ${tt.margin_pct.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%` : tr('маржа —', 'marja —')}
       spark={<Sparkline values={sp.map((p) => n(p.profit))} color={C.profit} />}
       loading={loading}
       onClick={() => nav('/reports/profit-loss')}
@@ -234,10 +260,10 @@ function Kpis({ period, series, loading, spark }: { period: Period; series?: Sal
     <Kpi
       key="checks"
       icon={<FileDoneOutlined />}
-      title="Чеков"
+      title={tr('Чеков', 'Cheklar')}
       value={String(tt?.checks ?? 0)}
       delta={tt && pt ? changePct(tt.checks, pt.checks) : null}
-      note={`средний чек ${money(tt?.avg_check)} сум`}
+      note={tr(`средний чек ${money(tt?.avg_check)} сум`, `oʻrtacha chek ${money(tt?.avg_check)} soʻm`)}
       spark={<Sparkline values={sp.map((p) => p.checks)} color={C.pos} />}
       loading={loading}
       onClick={() => nav('/sales/pos')}
@@ -248,11 +274,11 @@ function Kpis({ period, series, loading, spark }: { period: Period; series?: Sal
       <Kpi
         key="orders"
         icon={<ShoppingOutlined />}
-        title="Онлайн-заказы"
+        title={tr('Онлайн-заказы', 'Onlayn buyurtmalar')}
         value={String(tt?.orders ?? 0)}
         warn={fresh > 0}
-        badge={fresh > 0 ? `${fresh} ${plural(fresh, 'новый', 'новых', 'новых')}` : undefined}
-        note={fresh > 0 ? 'ждут сборки' : `доставлено на ${money(tt?.online)} сум`}
+        badge={fresh > 0 ? tr(`${fresh} ${plural(fresh, 'новый', 'новых', 'новых')}`, `${fresh} ta yangi`) : undefined}
+        note={fresh > 0 ? tr('ждут сборки', 'yigʻishni kutmoqda') : tr(`доставлено на ${money(tt?.online)} сум`, `${money(tt?.online)} soʻmlik yetkazildi`)}
         spark={<Sparkline values={sp.map((p) => p.orders)} color="#eb6834" />}
         loading={loading}
         onClick={() => nav('/orders')}
@@ -263,9 +289,9 @@ function Kpis({ period, series, loading, spark }: { period: Period; series?: Sal
       <Kpi
         key="balance"
         icon={<WalletOutlined />}
-        title="Баланс к выводу, сум"
+        title={tr('Баланс к выводу, сум', 'Yechib olish uchun balans, soʻm')}
         value={money(balance.data?.available)}
-        note={`ожидает ${money(balance.data?.pending)}${balance.data?.next_payout_at ? ' · вывод ' + dayjs(balance.data.next_payout_at).format('D MMM') : ''}`}
+        note={`${tr('ожидает', 'kutilmoqda')} ${money(balance.data?.pending)}${balance.data?.next_payout_at ? tr(' · вывод ', ' · yechib olish ') + dayjs(balance.data.next_payout_at).format('D MMM') : ''}`}
         loading={balance.isLoading}
         onClick={() => nav('/balance')}
       />,
@@ -304,7 +330,7 @@ function Kpi(p: {
           </div>
           <div style={{ fontSize: 12, color: C.muted, margin: '2px 0 8px' }}>{p.note}</div>
           {p.spark}
-          {p.spark && <div style={{ fontSize: 10, color: C.faint, marginTop: 2 }}>14 дней</div>}
+          {p.spark && <div style={{ fontSize: 10, color: C.faint, marginTop: 2 }}>{tr('14 дней', '14 kun')}</div>}
         </>
       )}
     </Card>
@@ -333,17 +359,17 @@ function TimeCard({ period, data, loading, prevName: pn }: { period: Period; dat
     const last = (prev.length || points.length) - 1
     return i % every === 0 || i === last ? dayjs(p.at).format('D MMM') : null
   }
-  const title = hourly ? 'Выручка по часам' : 'Выручка по дням'
+  const title = hourly ? tr('Выручка по часам', 'Soatlar boʻyicha tushum') : tr('Выручка по дням', 'Kunlar boʻyicha tushum')
   return (
     <Card style={{ height: '100%' }} styles={{ body: cardBody }}>
       <Head
         title={title}
-        sub="Наведите на столбец — суммы и сравнение"
+        sub={tr('Наведите на столбец — суммы и сравнение', 'Ustunga olib boring — summalar va solishtirish')}
         extra={
           <Legend
             items={[
-              { color: C.pos, label: `Касса · ${money(data?.totals.pos)}` },
-              { color: C.online, label: `Онлайн · ${money(data?.totals.online)}` },
+              { color: C.pos, label: `${tr('Касса', 'Kassa')} · ${money(data?.totals.pos)}` },
+              { color: C.online, label: `${tr('Онлайн', 'Onlayn')} · ${money(data?.totals.online)}` },
               { color: C.prev, label: cap(pn), dashed: true },
             ]}
           />
@@ -371,14 +397,19 @@ function TopProducts({ period }: { period: Period }) {
   const { data, isLoading } = useItem<SalesBreakdown>('/store/reports/sales-breakdown', { store_id: storeId, by: 'product', limit: 5, from: q.from, to: q.to })
   const items = data?.items ?? []
   const top = n(items[0]?.value)
-  const title = { today: 'Топ-5 товаров сегодня', yesterday: 'Топ-5 товаров вчера', '7d': 'Топ-5 товаров за 7 дней', '30d': 'Топ-5 товаров за 30 дней' }[period]
+  const title = {
+    today: tr('Топ-5 товаров сегодня', 'Bugungi top-5 mahsulot'),
+    yesterday: tr('Топ-5 товаров вчера', 'Kechagi top-5 mahsulot'),
+    '7d': tr('Топ-5 товаров за 7 дней', '7 kunlik top-5 mahsulot'),
+    '30d': tr('Топ-5 товаров за 30 дней', '30 kunlik top-5 mahsulot'),
+  }[period]
   return (
     <Card style={{ height: '100%' }} styles={{ body: cardBody }}>
-      <Head title={title} extra={<LinkText to="/sales/pos">Все продажи</LinkText>} />
+      <Head title={title} extra={<LinkText to="/sales/pos">{tr('Все продажи', 'Barcha sotuvlar')}</LinkText>} />
       {isLoading ? (
         <Skeleton active />
       ) : items.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Продаж пока нет" />
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={tr('Продаж пока нет', 'Hozircha sotuvlar yoʻq')} />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {items.map((it, i) => (
@@ -399,7 +430,7 @@ function TopProducts({ period }: { period: Period }) {
               </div>
             </div>
           ))}
-          <div style={{ fontSize: 11, color: C.faint }}>% — доля в выручке за период</div>
+          <div style={{ fontSize: 11, color: C.faint }}>{tr('% — доля в выручке за период', '% — davr tushumidagi ulush')}</div>
         </div>
       )}
     </Card>
@@ -425,27 +456,27 @@ function Month() {
   return (
     <Card style={{ height: '100%' }} styles={{ body: cardBody }}>
       <Head
-        title="Выручка и прибыль · 30 дней"
+        title={tr('Выручка и прибыль · 30 дней', 'Tushum va foyda · 30 kun')}
         sub={
           data && (
             <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 20, fontWeight: 800, color: C.text }}>{short(n(data.totals.revenue))} сум</span>
+              <span style={{ fontSize: 20, fontWeight: 800, color: C.text }}>{short(n(data.totals.revenue))} {tr('сум', 'soʻm')}</span>
               <Delta v={data.change_pct} />
               <span>
-                прибыль {short(n(data.totals.profit))}
-                {data.totals.margin_pct != null && ` · маржа ${Math.round(data.totals.margin_pct)}%`}
+                {tr('прибыль', 'foyda')} {short(n(data.totals.profit))}
+                {data.totals.margin_pct != null && ` · ${tr('маржа', 'marja')} ${Math.round(data.totals.margin_pct)}%`}
               </span>
             </span>
           )
         }
-        extra={<LinkText to="/reports/profit-loss">Прибыль и убыток</LinkText>}
+        extra={<LinkText to="/reports/profit-loss">{tr('Прибыль и убыток', 'Foyda va zarar')}</LinkText>}
       />
       <div style={{ marginBottom: 10 }}>
         <Legend
           items={[
-            { color: C.pos, label: 'Выручка' },
-            { color: C.profit, label: 'Прибыль' },
-            { color: C.prev, label: 'Прошлые 30 дней', dashed: true },
+            { color: C.pos, label: tr('Выручка', 'Tushum') },
+            { color: C.profit, label: tr('Прибыль', 'Foyda') },
+            { color: C.prev, label: tr('Прошлые 30 дней', 'Oʻtgan 30 kun'), dashed: true },
           ]}
         />
       </div>
@@ -454,19 +485,19 @@ function Month() {
       ) : (
         <DayLines
           series={[
-            { name: 'Выручка', color: C.pos, values: rev },
-            { name: 'Прибыль', color: C.profit, values: prof },
+            { name: tr('Выручка', 'Tushum'), color: C.pos, values: rev },
+            { name: tr('Прибыль', 'Foyda'), color: C.profit, values: prof },
           ]}
           prev={prev.slice(0, rev.length)}
           dates={dates.slice(0, rev.length)}
-          prevName="30 дней назад"
+          prevName={tr('30 дней назад', '30 kun oldin')}
         />
       )}
     </Card>
   )
 }
 
-const isCash = (name: string) => /налич/i.test(name)
+const isCash = (name: string) => /налич|naqd/i.test(name)
 
 function Payments({ period }: { period: Period }) {
   const { storeId } = useStore()
@@ -482,14 +513,17 @@ function Payments({ period }: { period: Period }) {
   }
   const cur = nonCash(items.map((i) => ({ name: i.name, v: n(i.value) })))
   const prev = nonCash(items.map((i) => ({ name: i.name, v: n(i.prev_value) })))
-  const when = q.compare === 'week' ? 'Неделю назад' : 'В прошлом периоде'
+  const when = q.compare === 'week' ? tr('Неделю назад', 'Bir hafta oldin') : tr('В прошлом периоде', 'Oʻtgan davrda')
   return (
     <Card style={{ height: '100%' }} styles={{ body: cardBody }}>
-      <Head title="Способы оплаты" sub={`${PERIODS.find((p) => p.value === period)?.label}, касса и онлайн`} />
+      <Head
+        title={tr('Способы оплаты', 'Toʻlov usullari')}
+        sub={`${PERIODS.find((p) => p.value === period)?.label}, ${tr('касса и онлайн', 'kassa va onlayn')}`}
+      />
       {isLoading ? (
         <Skeleton active />
       ) : items.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Оплат пока нет" />
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={tr('Оплат пока нет', 'Hozircha toʻlovlar yoʻq')} />
       ) : (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
@@ -498,7 +532,7 @@ function Payments({ period }: { period: Period }) {
               center={
                 <div>
                   <div style={{ fontWeight: 800, fontSize: 16, color: C.text }}>{short(total)}</div>
-                  <div style={{ fontSize: 11, color: C.muted }}>сум</div>
+                  <div style={{ fontSize: 11, color: C.muted }}>{tr('сум', 'soʻm')}</div>
                 </div>
               }
             />
@@ -511,7 +545,9 @@ function Payments({ period }: { period: Period }) {
                       <span style={{ fontWeight: 600, color: '#344054' }}>{it.name}</span>
                       <b>{Math.round(it.share)}%</b>
                     </div>
-                    <div style={{ fontSize: 11, color: C.muted }}>{money(it.value)} сум</div>
+                    <div style={{ fontSize: 11, color: C.muted }}>
+                      {money(it.value)} {tr('сум', 'soʻm')}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -519,7 +555,8 @@ function Payments({ period }: { period: Period }) {
           </div>
           {cur !== null && (
             <div style={{ marginTop: 16, background: '#f9fafb', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#475467' }}>
-              Безналичных — {cur}%.{prev !== null && ` ${when} было ${prev}%.`}
+              {tr(`Безналичных — ${cur}%.`, `Naqd pulsiz — ${cur}%.`)}
+              {prev !== null && tr(` ${when} было ${prev}%.`, ` ${when} ${prev}% edi.`)}
             </div>
           )}
         </>
@@ -552,15 +589,15 @@ function Categories() {
               <Button type="text" size="small" icon={<ArrowLeftOutlined />} onClick={() => setParent(null)} style={{ marginLeft: -6 }} /> {parent.name}
             </span>
           ) : (
-            'Продажи по категориям'
+            tr('Продажи по категориям', 'Kategoriyalar boʻyicha sotuvlar')
           )
         }
-        sub="30 дней · выручка, сум · изменение к прошлым 30"
+        sub={tr('30 дней · выручка, сум · изменение к прошлым 30', '30 kun · tushum, soʻm · oʻtgan 30 kunga nisbatan oʻzgarish')}
       />
       {isLoading ? (
         <Skeleton active paragraph={{ rows: 6 }} />
       ) : rows.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Продаж пока нет" />
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={tr('Продаж пока нет', 'Hozircha sotuvlar yoʻq')} />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
           {rows.map((r) => (
@@ -573,8 +610,8 @@ function Categories() {
               onClick={() => (parent ? nav('/reports/abc-xyz') : setParent({ id: r.key, name: r.name }))}
             />
           ))}
-          {data?.other && <CatRow name={`Остальное · ${data.other.count}`} value={n(data.other.value)} max={max} muted />}
-          {!parent && <div style={{ fontSize: 11, color: C.faint }}>Нажмите на категорию — откроются её подкатегории</div>}
+          {data?.other && <CatRow name={`${tr('Остальное', 'Boshqalar')} · ${data.other.count}`} value={n(data.other.value)} max={max} muted />}
+          {!parent && <div style={{ fontSize: 11, color: C.faint }}>{tr('Нажмите на категорию — откроются её подкатегории', 'Kategoriyani bosing — uning ichki kategoriyalari ochiladi')}</div>}
         </div>
       )}
     </Card>
@@ -607,19 +644,26 @@ function WhenBuy() {
   const peak = cells.reduce<(typeof cells)[number] | null>((m, c) => (!m || c.checks > m.checks ? c : m), null)
   return (
     <Card style={{ height: '100%' }} styles={{ body: cardBody }}>
-      <Head title="Когда покупают" sub="Чеков на кассе в среднем за час · последние 4 недели" extra={<HeatLegend />} />
+      <Head
+        title={tr('Когда покупают', 'Qachon xarid qilishadi')}
+        sub={tr('Чеков на кассе в среднем за час · последние 4 недели', 'Kassada bir soatdagi oʻrtacha cheklar · soʻnggi 4 hafta')}
+        extra={<HeatLegend />}
+      />
       {isLoading ? (
         <Skeleton active paragraph={{ rows: 6 }} />
       ) : cells.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Продаж на кассе пока нет" />
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={tr('Продаж на кассе пока нет', 'Hozircha kassada sotuvlar yoʻq')} />
       ) : (
         <>
           <Heatmap cells={cells} hours={hours} peak={peak} />
           {peak && (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 14, background: '#f9fafb', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#344054' }}>
               <TeamOutlined style={{ color: '#475467' }} />
-              Пик — {WEEKDAY[peak.weekday]} {peak.hour}:00–{peak.hour + 1}:00, {peak.checks.toLocaleString('ru-RU')} чеков в час.
-              {peak.checks >= 25 && ' В это время нужен второй кассир.'}
+              {tr(
+                `Пик — ${WEEKDAY[peak.weekday]} ${peak.hour}:00–${peak.hour + 1}:00, ${peak.checks.toLocaleString('ru-RU')} чеков в час.`,
+                `Eng gavjum vaqt — ${WEEKDAY[peak.weekday]} ${peak.hour}:00–${peak.hour + 1}:00, soatiga ${peak.checks.toLocaleString('ru-RU')} ta chek.`,
+              )}
+              {peak.checks >= 25 && tr(' В это время нужен второй кассир.', ' Bu vaqtda ikkinchi kassir kerak.')}
             </div>
           )}
         </>
@@ -640,11 +684,14 @@ function AbcBlock() {
         <LineChartOutlined />
       </span>
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 16, fontWeight: 800 }}>ABC/XYZ-анализ{data?.xyz_available ? ' · последние 12 недель' : ''}</div>
-        <div style={{ fontSize: 12, color: C.muted }}>Какие товары приносят деньги (ABC) и насколько ровно продаются (XYZ)</div>
+        <div style={{ fontSize: 16, fontWeight: 800 }}>{tr('ABC/XYZ-анализ', 'ABC/XYZ-tahlil')}
+          {data?.xyz_available ? tr(' · последние 12 недель', ' · soʻnggi 12 hafta') : ''}</div>
+        <div style={{ fontSize: 12, color: C.muted }}>
+          {tr('Какие товары приносят деньги (ABC) и насколько ровно продаются (XYZ)', 'Qaysi mahsulotlar pul keltiradi (ABC) va qanchalik bir tekis sotiladi (XYZ)')}
+        </div>
       </div>
       <Button onClick={() => nav('/reports/abc-xyz')}>
-        {data && !data.xyz_available ? 'Что это?' : 'Открыть анализ'} <ArrowRightOutlined />
+        {data && !data.xyz_available ? tr('Что это?', 'Bu nima?') : tr('Открыть анализ', 'Tahlilni ochish')} <ArrowRightOutlined />
       </Button>
     </div>
   )
@@ -666,19 +713,24 @@ function AbcBlock() {
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 15, fontWeight: 800 }}>
               {data.weeks === 0 && data.totals.products === 0
-                ? 'Анализ появится, когда пройдут продажи'
-                : `Анализ появится через ${data.xyz_days_left} ${plural(data.xyz_days_left, 'день', 'дня', 'дней')}`}
+                ? tr('Анализ появится, когда пройдут продажи', 'Tahlil sotuvlar boshlangach paydo boʻladi')
+                : tr(
+                    `Анализ появится через ${data.xyz_days_left} ${plural(data.xyz_days_left, 'день', 'дня', 'дней')}`,
+                    `Tahlil ${data.xyz_days_left} kundan keyin paydo boʻladi`,
+                  )}
             </div>
             <div style={{ fontSize: 13, color: '#475467', margin: '4px 0 10px' }}>
-              Super Market нужно минимум {data.min_weeks} недели продаж, чтобы понять, какие товары главные и какие продаются ровно. Продавайте через
-              кассу Super Market — данные копятся сами.
+              {tr(
+                `Super Market нужно минимум ${data.min_weeks} недели продаж, чтобы понять, какие товары главные и какие продаются ровно. Продавайте через кассу Super Market — данные копятся сами.`,
+                `Qaysi mahsulotlar asosiy va qaysilari bir tekis sotilishini aniqlash uchun Super Marketga kamida ${data.min_weeks} haftalik sotuvlar kerak. Super Market kassasi orqali soting — maʼlumotlar oʻzi yigʻiladi.`,
+              )}
             </div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               {Array.from({ length: data.min_weeks }, (_, i) => (
                 <span key={i} style={{ flex: 1, height: 8, borderRadius: 4, background: i < weeks ? '#17b26a' : '#eaecf0' }} />
               ))}
               <b style={{ fontSize: 12, marginLeft: 6, whiteSpace: 'nowrap' }}>
-                {weeks} из {data.min_weeks} недель
+                {tr(`${weeks} из ${data.min_weeks} недель`, `${data.min_weeks} haftadan ${weeks}`)}
               </b>
             </div>
           </div>
@@ -696,25 +748,38 @@ function AbcBlock() {
     low.length > 0 && {
       tone: 'rose' as const,
       icon: <InboxOutlined />,
-      title: `${low.length} ${plural(low.length, 'главный товар заканчивается', 'главных товара заканчиваются', 'главных товаров заканчиваются')}`,
+      title: tr(
+        `${low.length} ${plural(low.length, 'главный товар заканчивается', 'главных товара заканчиваются', 'главных товаров заканчиваются')}`,
+        `${low.length} ta asosiy mahsulot tugamoqda`,
+      ),
       text: low
         .slice(0, 3)
-        .map((i) => `${i.name} — ${i.days_cover === 0 ? 'нет в наличии' : `на ${i.days_cover} ${plural(i.days_cover ?? 0, 'день', 'дня', 'дней')}`}`)
+        .map(
+          (i) =>
+            `${i.name} — ${
+              i.days_cover === 0
+                ? tr('нет в наличии', 'mavjud emas')
+                : tr(`на ${i.days_cover} ${plural(i.days_cover ?? 0, 'день', 'дня', 'дней')}`, `${i.days_cover} kunga`)
+            }`,
+        )
         .join(' · '),
       to: '/reports/abc-xyz?low=1',
     },
     data.no_sales.count > 0 && {
       tone: 'amber' as const,
       icon: <ClockCircleOutlined />,
-      title: `${products(data.no_sales.count)} без продаж за 12 недель`,
-      text: `Лежат на складе на ${money(data.no_sales.stock_value)} сум — сделайте скидку или верните поставщику`,
+      title: tr(`${products(data.no_sales.count)} без продаж за 12 недель`, `${products(data.no_sales.count)} 12 hafta davomida sotilmagan`),
+      text: tr(
+        `Лежат на складе на ${money(data.no_sales.stock_value)} сум — сделайте скидку или верните поставщику`,
+        `Omborda ${money(data.no_sales.stock_value)} soʻmlik turibdi — chegirma qiling yoki yetkazib beruvchiga qaytaring`,
+      ),
       to: '/reports/abc-xyz?view=nosale',
     },
     cz > 0 && {
       tone: 'gray' as const,
       icon: <DeleteOutlined />,
-      title: `${products(cz)} в CZ`,
-      text: 'Продаются редко и мало — кандидаты на вывод из ассортимента',
+      title: tr(`${products(cz)} в CZ`, `CZ guruhida ${products(cz)}`),
+      text: tr('Продаются редко и мало — кандидаты на вывод из ассортимента', 'Kam va kamdan-kam sotiladi — assortimentdan chiqarishga nomzodlar'),
       to: '/reports/abc-xyz?cell=CZ',
     },
   ].filter(Boolean) as { tone: 'rose' | 'amber' | 'gray'; icon: ReactNode; title: string; text: string; to: string }[]
@@ -725,7 +790,7 @@ function AbcBlock() {
       {head}
       <Row gutter={[24, 20]}>
         <Col xs={24} lg={8}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#344054', marginBottom: 10 }}>Кривая Парето: товары → выручка</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#344054', marginBottom: 10 }}>{tr('Кривая Парето: товары → выручка', 'Pareto egri chizigʻi: mahsulotlar → tushum')}</div>
           <Pareto groups={(['A', 'B', 'C'] as const).map((k) => ({ count: g[k].count, share: g[k].share }))} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
             {(['A', 'B', 'C'] as const).map((k) => (
@@ -734,17 +799,19 @@ function AbcBlock() {
                 <span style={{ flex: 1, fontWeight: 600, color: '#344054' }}>
                   {products(g[k].count)} · {Math.round((g[k].count / total) * 100)}%
                 </span>
-                <span style={{ color: C.muted, fontSize: 12 }}>{money(g[k].revenue)} сум</span>
+                <span style={{ color: C.muted, fontSize: 12 }}>
+                  {money(g[k].revenue)} {tr('сум', 'soʻm')}
+                </span>
                 <b style={{ width: 52, textAlign: 'right' }}>{g[k].share.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%</b>
               </div>
             ))}
           </div>
         </Col>
         <Col xs={24} lg={7}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#344054', marginBottom: 10 }}>Матрица ABC × XYZ, товаров</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#344054', marginBottom: 10 }}>{tr('Матрица ABC × XYZ, товаров', 'ABC × XYZ matritsasi, mahsulotlar')}</div>
           <div style={{ display: 'grid', gridTemplateColumns: '18px repeat(3, 1fr)', gap: 6, alignItems: 'center' }}>
             <span />
-            {['X · ровно', 'Y · колеблется', 'Z · случайно'].map((x) => (
+            {[tr('X · ровно', 'X · bir tekis'), tr('Y · колеблется', 'Y · oʻzgaruvchan'), tr('Z · случайно', 'Z · tasodifiy')].map((x) => (
               <span key={x} style={{ fontSize: 10, color: C.muted, fontWeight: 600, textAlign: 'center' }}>
                 {x}
               </span>
@@ -753,12 +820,12 @@ function AbcBlock() {
               <MatrixLine key={r} r={r} count={cell} onPick={(k) => nav(`/reports/abc-xyz?cell=${k}`)} />
             ))}
           </div>
-          <div style={{ fontSize: 11, color: C.faint, marginTop: 8 }}>Нажмите на клетку — откроется список</div>
+          <div style={{ fontSize: 11, color: C.faint, marginTop: 8 }}>{tr('Нажмите на клетку — откроется список', 'Katakni bosing — roʻyxat ochiladi')}</div>
         </Col>
         <Col xs={24} lg={9}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#344054', marginBottom: 10 }}>Требует внимания</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#344054', marginBottom: 10 }}>{tr('Требует внимания', 'Eʼtibor talab qiladi')}</div>
           {actions.length === 0 ? (
-            <Alert type="success" showIcon message="Главные товары в наличии, залежавшихся нет" />
+            <Alert type="success" showIcon message={tr('Главные товары в наличии, залежавшихся нет', 'Asosiy mahsulotlar mavjud, turib qolganlari yoʻq')} />
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {actions.map((a) => (
@@ -769,7 +836,7 @@ function AbcBlock() {
                     <div style={{ fontSize: 12, color: '#475467' }}>{a.text}</div>
                   </div>
                   <Button size="small" onClick={() => nav(a.to)}>
-                    Показать
+                    {tr('Показать', 'Koʻrsatish')}
                   </Button>
                 </div>
               ))}
@@ -777,7 +844,10 @@ function AbcBlock() {
           )}
           {low.length > 0 && (
             <div style={{ fontSize: 11, color: C.faint, marginTop: 8 }}>
-              «Заканчивается» — товара A хватит меньше чем на {LOW_DAYS} дней при спросе за последние 14 дней
+              {tr(
+                `«Заканчивается» — товара A хватит меньше чем на ${LOW_DAYS} дней при спросе за последние 14 дней`,
+                `«Tugamoqda» — soʻnggi 14 kundagi talabda A mahsuloti ${LOW_DAYS} kundan kamroqqa yetadi`,
+              )}
             </div>
           )}
         </Col>
@@ -822,8 +892,8 @@ function NewOrders() {
   const list = orders.data ?? []
   return (
     <Card
-      title={`Новые онлайн-заказы${list.length ? ' · ' + list.length : ''}`}
-      extra={<LinkText to="/orders">Все заказы</LinkText>}
+      title={tr('Новые онлайн-заказы', 'Yangi onlayn buyurtmalar') + (list.length ? ' · ' + list.length : '')}
+      extra={<LinkText to="/orders">{tr('Все заказы', 'Barcha buyurtmalar')}</LinkText>}
       style={{ height: '100%' }}
       styles={{ body: { padding: 0 } }}
     >
@@ -834,14 +904,14 @@ function NewOrders() {
         dataSource={list.slice(0, 8)}
         pagination={false}
         scroll={{ x: true }}
-        locale={{ emptyText: 'Новых заказов нет' }}
+        locale={{ emptyText: tr('Новых заказов нет', 'Yangi buyurtmalar yoʻq') }}
         onRow={() => ({ onClick: () => nav('/orders'), style: { cursor: 'pointer' } })}
         columns={[
           { title: '№', dataIndex: 'number' },
-          { title: 'Создан', dataIndex: 'created_at', render: dateTime },
-          { title: 'Адрес', dataIndex: 'address', ellipsis: true },
-          { title: 'Сумма', dataIndex: 'total', align: 'right', render: (v: string) => money(v) },
-          { title: 'Статус', dataIndex: 'status', render: (v: string) => <StatusTag status={v} /> },
+          { title: tr('Создан', 'Yaratilgan'), dataIndex: 'created_at', render: dateTime },
+          { title: tr('Адрес', 'Manzil'), dataIndex: 'address', ellipsis: true },
+          { title: tr('Сумма', 'Summa'), dataIndex: 'total', align: 'right', render: (v: string) => money(v) },
+          { title: tr('Статус', 'Holat'), dataIndex: 'status', render: (v: string) => <StatusTag status={v} /> },
         ]}
       />
     </Card>
@@ -853,19 +923,25 @@ function Fiscal() {
   const fiscal = useItem<FiscalSummary>('/store/sales/fiscal-control', { store_id: storeId })
   const pending = (fiscal.data?.pending_sales ?? 0) + (fiscal.data?.pending_returns ?? 0)
   return (
-    <Card title="Контроль чеков" loading={fiscal.isLoading}>
+    <Card title={tr('Контроль чеков', 'Cheklar nazorati')} loading={fiscal.isLoading}>
       {pending === 0 ? (
-        <Alert type="success" showIcon message="Все чеки пробиты" />
+        <Alert type="success" showIcon message={tr('Все чеки пробиты', 'Barcha cheklar urilgan')} />
       ) : (
         <>
           <Alert
             type="warning"
             showIcon
-            message={`Не пробито: продаж — ${fiscal.data?.pending_sales ?? 0}, возвратов — ${fiscal.data?.pending_returns ?? 0}`}
-            description={fiscal.data?.oldest_pending_at && `Самый старый: ${dateTime(fiscal.data.oldest_pending_at)}`}
+            message={tr(
+              `Не пробито: продаж — ${fiscal.data?.pending_sales ?? 0}, возвратов — ${fiscal.data?.pending_returns ?? 0}`,
+              `Urilmagan: sotuvlar — ${fiscal.data?.pending_sales ?? 0}, qaytarishlar — ${fiscal.data?.pending_returns ?? 0}`,
+            )}
+            description={
+              fiscal.data?.oldest_pending_at &&
+              tr(`Самый старый: ${dateTime(fiscal.data.oldest_pending_at)}`, `Eng eskisi: ${dateTime(fiscal.data.oldest_pending_at)}`)
+            }
             style={{ marginBottom: 12 }}
           />
-          <Link to="/sales/pos">К продажам</Link>
+          <Link to="/sales/pos">{tr('К продажам', 'Sotuvlarga oʻtish')}</Link>
         </>
       )}
     </Card>
@@ -876,23 +952,27 @@ function DebtsCard() {
   const { storeId } = useStore()
   const d = useItem<{ total: string; count: number; overdue: string; overdue_count: number; open_disputes: number }>('/store/debtors/summary', { store_id: storeId })
   return (
-    <Card title="Долги покупателей" extra={<LinkText to="/debts">Открыть</LinkText>} loading={d.isLoading}>
+    <Card title={tr('Долги покупателей', 'Xaridorlar qarzlari')} extra={<LinkText to="/debts">{tr('Открыть', 'Ochish')}</LinkText>} loading={d.isLoading}>
       {!d.data || d.data.count === 0 ? (
-        <Typography.Text type="secondary">Долгов нет</Typography.Text>
+        <Typography.Text type="secondary">{tr('Долгов нет', 'Qarzlar yoʻq')}</Typography.Text>
       ) : (
         <>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 22, fontWeight: 800 }}>{money(d.data.total)}</span>
             <Typography.Text type="secondary">
-              сум у {d.data.count} {plural(d.data.count, 'покупателя', 'покупателей', 'покупателей')}
+              {tr(
+                `сум у ${d.data.count} ${plural(d.data.count, 'покупателя', 'покупателей', 'покупателей')}`,
+                `soʻm, ${d.data.count} ta xaridorda`,
+              )}
             </Typography.Text>
           </div>
           {d.data.overdue_count > 0 && (
             <div style={{ color: '#b42318', fontWeight: 700, marginTop: 6 }}>
-              <AccountBookOutlined /> просрочено {money(d.data.overdue)} у {d.data.overdue_count}
+              <AccountBookOutlined />{' '}
+              {tr(`просрочено ${money(d.data.overdue)} у ${d.data.overdue_count}`, `muddati oʻtgan: ${money(d.data.overdue)}, ${d.data.overdue_count} ta xaridorda`)}
             </div>
           )}
-          {d.data.open_disputes > 0 && <div style={{ color: '#b54708', marginTop: 4 }}>Споров: {d.data.open_disputes}</div>}
+          {d.data.open_disputes > 0 && <div style={{ color: '#b54708', marginTop: 4 }}>{tr(`Споров: ${d.data.open_disputes}`, `Nizolar: ${d.data.open_disputes}`)}</div>}
         </>
       )}
     </Card>

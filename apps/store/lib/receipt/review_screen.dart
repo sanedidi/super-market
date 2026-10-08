@@ -97,17 +97,19 @@ class _ReviewScreenState extends State<ReviewScreen> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppColors.bg,
-        title: Text(s == null ? 'Накладная' : ((s['invoice_number'] as String?)?.isNotEmpty == true ? 'Накладная № ${s['invoice_number']}' : 'Накладная')),
+        title: Text(s == null
+            ? tr('Накладная', 'Yuk xati')
+            : ((s['invoice_number'] as String?)?.isNotEmpty == true ? '${tr('Накладная', 'Yuk xati')} № ${s['invoice_number']}' : tr('Накладная', 'Yuk xati'))),
         actions: [
           if (_editable)
             PopupMenuButton<String>(
               onSelected: (_) => _post(post: false),
-              itemBuilder: (_) => const [PopupMenuItem(value: 'draft', child: Text('Сохранить как черновик прихода'))],
+              itemBuilder: (_) => [PopupMenuItem(value: 'draft', child: Text(tr('Сохранить как черновик прихода', 'Kirim qoralamasi sifatida saqlash')))],
             ),
         ],
       ),
       body: _error != null
-          ? EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: _error.toString(), action: 'Повторить', onAction: _load)
+          ? EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: _error.toString(), action: tr('Повторить', 'Qayta urinish'), onAction: _load)
           : s == null
               ? const Center(child: CircularProgressIndicator())
               : RefreshIndicator(onRefresh: _load, child: _body(s)),
@@ -121,8 +123,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
       return ListView(children: [
         EmptyState(
           icon: Icons.hourglass_top_rounded,
-          title: 'Накладная ещё распознаётся',
-          action: 'Ждать',
+          title: tr('Накладная ещё распознаётся', 'Yuk xati hali tanib olinmoqda'),
+          action: tr('Ждать', 'Kutish'),
           onAction: () => Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => ProcessingScreen(id: widget.id))),
         ),
       ]);
@@ -131,9 +133,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
       return ListView(children: [
         EmptyState(
           icon: Icons.error_outline_rounded,
-          title: 'Не удалось распознать',
+          title: tr('Не удалось распознать', 'Tanib olib boʻlmadi'),
           text: '${s['error'] ?? ''}',
-          action: _busy ? null : 'Распознать заново',
+          action: _busy ? null : tr('Распознать заново', 'Qayta tanib olish'),
           onAction: _retry,
         ),
       ]);
@@ -141,7 +143,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final lines = ((s['lines'] as List?) ?? const []).cast<Map<String, dynamic>>();
     final date = s['invoice_date'] as String?;
     return ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
-      if (date != null) Padding(padding: const EdgeInsets.only(bottom: 12), child: Text('от ${date.split('-').reversed.join('.')} · распознано ИИ', style: AppText.small)),
+      if (date != null) Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(
+                  tr('от ${date.split('-').reversed.join('.')} · распознано ИИ', '${date.split('-').reversed.join('.')} sanali · sunʼiy intellekt tanib oldi'),
+                  style: AppText.small)),
       AppCard(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           InkWell(
@@ -152,13 +156,14 @@ class _ReviewScreenState extends State<ReviewScreen> {
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(
-                    (s['counterparty_name'] as String?) ?? ((s['supplier_name'] as String?)?.isNotEmpty == true ? '${s['supplier_name']}' : 'Поставщик не распознан'),
+                    (s['counterparty_name'] as String?) ??
+                        ((s['supplier_name'] as String?)?.isNotEmpty == true ? '${s['supplier_name']}' : tr('Поставщик не распознан', 'Yetkazib beruvchi aniqlanmadi')),
                     style: AppText.bodyStrong,
                   ),
                   Text(
                     s['counterparty_id'] != null
-                        ? 'найден в поставщиках${(s['supplier_inn'] as String?)?.isNotEmpty == true ? ' · ИНН ${s['supplier_inn']}' : ''}'
-                        : 'нет в поставщиках — нажмите, чтобы выбрать',
+                        ? '${tr('найден в поставщиках', 'yetkazib beruvchilarda topildi')}${(s['supplier_inn'] as String?)?.isNotEmpty == true ? ' · ${tr('ИНН', 'STIR')} ${s['supplier_inn']}' : ''}'
+                        : tr('нет в поставщиках — нажмите, чтобы выбрать', 'yetkazib beruvchilarda yoʻq — tanlash uchun bosing'),
                     style: AppText.small.copyWith(color: s['counterparty_id'] == null ? AppColors.primary : AppColors.text2),
                   ),
                 ]),
@@ -172,10 +177,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
           ],
           const SizedBox(height: 12),
           Wrap(spacing: 8, runSpacing: 8, children: [
-            StatusChip('${_count('ok')} готово', icon: Icons.check_circle_rounded, tone: ChipTone.green),
-            if (_count('check') > 0) StatusChip('${_count('check')} проверить', icon: Icons.error_rounded, tone: ChipTone.amber),
-            if (_count('missing') > 0) StatusChip('${_count('missing')} не найдено', icon: Icons.help_rounded, tone: ChipTone.red),
-            if (_count('skipped') > 0) StatusChip('${_count('skipped')} пропущено', tone: ChipTone.gray),
+            StatusChip('${_count('ok')} ${tr('готово', 'tayyor')}', icon: Icons.check_circle_rounded, tone: ChipTone.green),
+            if (_count('check') > 0) StatusChip('${_count('check')} ${tr('проверить', 'tekshirish kerak')}', icon: Icons.error_rounded, tone: ChipTone.amber),
+            if (_count('missing') > 0) StatusChip('${_count('missing')} ${tr('не найдено', 'topilmadi')}', icon: Icons.help_rounded, tone: ChipTone.red),
+            if (_count('skipped') > 0) StatusChip('${_count('skipped')} ${tr('пропущено', 'oʻtkazib yuborildi')}', tone: ChipTone.gray),
           ]),
         ]),
       ),
@@ -196,20 +201,24 @@ class _ReviewScreenState extends State<ReviewScreen> {
       decoration: const BoxDecoration(color: AppColors.white, boxShadow: [BoxShadow(color: Color(0x0F000000), blurRadius: 16, offset: Offset(0, -4))]),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Row(children: [
-          Text('Позиций: $lines', style: AppText.small),
+          Text('${tr('Позиций', 'Pozitsiyalar')}: $lines', style: AppText.small),
           const Spacer(),
           Text(money(s['lines_total']), style: AppText.h3),
         ]),
         const SizedBox(height: 10),
         BigButton(
-          label: 'Провести',
+          label: tr('Провести', 'Oʻtkazish'),
           icon: Icons.done_all_rounded,
           busy: _busy,
           onPressed: missing > 0 || noSupplier ? null : () => _post(post: true),
         ),
         if (missing > 0 || noSupplier) ...[
           const SizedBox(height: 6),
-          Text(noSupplier ? 'Выберите поставщика' : 'Сопоставьте или пропустите строки без товара', style: AppText.small),
+          Text(
+              noSupplier
+                  ? tr('Выберите поставщика', 'Yetkazib beruvchini tanlang')
+                  : tr('Сопоставьте или пропустите строки без товара', 'Mahsulotsiz qatorlarni moslang yoki oʻtkazib yuboring'),
+              style: AppText.small),
         ],
       ]),
     );
@@ -234,8 +243,13 @@ class _TotalBanner extends StatelessWidget {
         const SizedBox(width: 10),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(ok ? 'Итог совпадает: ${money(invoice)}' : 'Итог не совпадает', style: AppText.bodyStrong.copyWith(color: fg)),
-            Text(ok ? 'сумма строк = «Итого» в накладной' : 'в накладной ${money(invoice)}, по строкам ${money(lines)} — проверьте строки',
+            Text(ok ? tr('Итог совпадает: ${money(invoice)}', 'Jami mos keladi: ${money(invoice)}') : tr('Итог не совпадает', 'Jami mos kelmaydi'),
+                style: AppText.bodyStrong.copyWith(color: fg)),
+            Text(
+                ok
+                    ? tr('сумма строк = «Итого» в накладной', 'qatorlar summasi = yuk xatidagi «Jami»')
+                    : tr('в накладной ${money(invoice)}, по строкам ${money(lines)} — проверьте строки',
+                        'yuk xatida ${money(invoice)}, qatorlar boʻyicha ${money(lines)} — qatorlarni tekshiring'),
                 style: AppText.small.copyWith(color: fg)),
           ]),
         ),
@@ -262,7 +276,9 @@ class _LineRow extends StatelessWidget {
     final change = (line['price_change'] as num?)?.toInt();
     final productName = line['product_name'] as String?;
     var sub = lineQty(line);
-    if (change != null && change != 0) sub += ' · ${change > 0 ? 'дороже' : 'дешевле'} прошлого на ${change.abs()}%';
+    if (change != null && change != 0) {
+      sub += tr(' · ${change > 0 ? 'дороже' : 'дешевле'} прошлого на ${change.abs()}%', ' · oldingisidan ${change.abs()}% ${change > 0 ? 'qimmat' : 'arzon'}');
+    }
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -273,7 +289,7 @@ class _LineRow extends StatelessWidget {
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(
-                state == 'skipped' ? 'Пропущена' : (productName ?? 'Не найден в каталоге'),
+                state == 'skipped' ? tr('Пропущена', 'Oʻtkazib yuborilgan') : (productName ?? tr('Не найден в каталоге', 'Katalogda topilmadi')),
                 style: AppText.bodyStrong.copyWith(color: state == 'missing' ? AppColors.primary : (state == 'skipped' ? AppColors.muted : AppColors.ink)),
               ),
               Text('«${line['name']}»', style: AppText.small.copyWith(color: AppColors.muted, fontSize: 12)),
@@ -284,7 +300,7 @@ class _LineRow extends StatelessWidget {
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
             Text(money(line['sum'], suffix: false), style: AppText.bodyStrong.copyWith(color: state == 'skipped' ? AppColors.muted : AppColors.ink)),
             if (state == 'missing' || state == 'check')
-              Text(state == 'missing' ? 'Выбрать' : 'Проверить', style: AppText.caption.copyWith(color: color)),
+              Text(state == 'missing' ? tr('Выбрать', 'Tanlash') : tr('Проверить', 'Tekshirish'), style: AppText.caption.copyWith(color: color)),
           ]),
         ]),
       ),

@@ -16,7 +16,8 @@ class HistoryScreen extends StatefulWidget {
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
-  static const _periods = [('today', 'Сегодня'), ('yesterday', 'Вчера'), ('week', 'Неделя')];
+  static List<(String, String)> get _periods =>
+      [('today', tr('Сегодня', 'Bugun')), ('yesterday', tr('Вчера', 'Kecha')), ('week', tr('Неделя', 'Hafta'))];
   String _period = 'today';
   Map<String, dynamic>? _data;
   Object? _error;
@@ -63,7 +64,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(padding: EdgeInsets.fromLTRB(20, top + 12, 20, 24), children: [
-          const Text('История', style: AppText.h1),
+          Text(tr('История', 'Tarix'), style: AppText.h1),
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(4),
@@ -97,21 +98,27 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
           const SizedBox(height: 14),
           if (d == null && _error != null)
-            EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: '$_error', action: 'Повторить', onAction: _load)
+            EmptyState(
+              icon: Icons.wifi_off_rounded,
+              title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'),
+              text: '$_error',
+              action: tr('Повторить', 'Qayta urinish'),
+              onAction: _load,
+            )
           else if (d == null)
             const Padding(padding: EdgeInsets.all(48), child: Center(child: CircularProgressIndicator()))
           else ...[
             Row(children: [
-              _Stat(icon: Icons.task_alt_rounded, fg: AppColors.successInk, bg: AppColors.successSoft, value: '${d['delivered'] ?? 0}', label: 'доставлено'),
+              _Stat(icon: Icons.task_alt_rounded, fg: AppColors.successInk, bg: AppColors.successSoft, value: '${d['delivered'] ?? 0}', label: tr('доставлено', 'yetkazildi')),
               const SizedBox(width: 12),
-              _Stat(icon: Icons.payments_rounded, fg: AppColors.warningInk, bg: AppColors.warningSoft, value: money(cash, suffix: false), label: 'сум наличными'),
+              _Stat(icon: Icons.payments_rounded, fg: AppColors.warningInk, bg: AppColors.warningSoft, value: money(cash, suffix: false), label: tr('сум наличными', 'soʻm naqd')),
               const SizedBox(width: 12),
               _Stat(
                 icon: Icons.timer_rounded,
                 fg: AppColors.blue,
                 bg: AppColors.blueSoft,
-                value: (d['avg_minutes'] as num? ?? 0) > 0 ? '${d['avg_minutes']} мин' : '—',
-                label: 'в пути в среднем',
+                value: (d['avg_minutes'] as num? ?? 0) > 0 ? tr('${d['avg_minutes']} мин', '${d['avg_minutes']} daq.') : '—',
+                label: tr('в пути в среднем', 'oʻrtacha yoʻlda'),
               ),
             ]),
             if (cash > 0) ...[
@@ -124,8 +131,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('Сдать в кассу магазина', style: AppText.bodyStrong.copyWith(color: AppColors.white)),
-                      Text('${money(cash)} наличными за ${_periodText()}', style: AppText.small.copyWith(color: const Color(0xFFD1D1D6))),
+                      Text(tr('Сдать в кассу магазина', 'Doʻkon kassasiga topshiring'), style: AppText.bodyStrong.copyWith(color: AppColors.white)),
+                      Text(_cashText(cash), style: AppText.small.copyWith(color: const Color(0xFFD1D1D6))),
                     ]),
                   ),
                 ]),
@@ -133,7 +140,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ],
             const SizedBox(height: 14),
             if (items.isEmpty)
-              const EmptyState(icon: Icons.history_rounded, title: 'Доставок нет', text: 'Здесь будут доставленные заказы')
+              EmptyState(
+                icon: Icons.history_rounded,
+                title: tr('Доставок нет', 'Yetkazishlar yoʻq'),
+                text: tr('Здесь будут доставленные заказы', 'Yetkazilgan buyurtmalar shu yerda chiqadi'),
+              )
             else
               Container(
                 decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20)),
@@ -149,6 +160,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   String _periodText() => switch (_period) { 'yesterday' => 'вчера', 'week' => 'неделю', _ => 'сегодня' };
+
+  /// «125 000 сум наличными за сегодня».
+  String _cashText(num cash) => tr(
+        '${money(cash)} наличными за ${_periodText()}',
+        switch (_period) {
+          'yesterday' => 'Kechagi naqd pul: ${money(cash)}',
+          'week' => 'Haftalik naqd pul: ${money(cash)}',
+          _ => 'Bugungi naqd pul: ${money(cash)}',
+        },
+      );
 }
 
 class _Stat extends StatelessWidget {
@@ -208,7 +229,7 @@ class _Row extends StatelessWidget {
           ]),
         ),
         const SizedBox(width: 8),
-        Text(cash ? '+${money(item['total'], suffix: false)}' : 'оплачен',
+        Text(cash ? '+${money(item['total'], suffix: false)}' : tr('оплачен', 'toʻlandi'),
             style: AppText.bodyStrong.copyWith(fontSize: 14, color: cash ? AppColors.warningInk : AppColors.text2)),
       ]),
     );

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:sm_core/sm_core.dart' show tr;
 
 import '../core/cart.dart';
 import '../core/debts.dart';
@@ -78,7 +79,7 @@ class _Shell extends StatelessWidget {
                 ),
                 if (right != null)
                   Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                    Text('К оплате', style: t(13, c: C.ts)),
+                    Text(tr('К оплате', 'Toʻlovga'), style: t(13, c: C.ts)),
                     Text(right!, style: t(34, w: FontWeight.w800)),
                   ]),
               ]),
@@ -124,7 +125,7 @@ class _Footer extends StatelessWidget {
                   const KeyBadge('Enter', dark: true, size: 52),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(busy ? 'Сохраняем…' : primary!,
+                    child: Text(busy ? tr('Сохраняем…', 'Saqlanmoqda…') : primary!,
                         maxLines: 1, overflow: TextOverflow.ellipsis, style: t(19, w: FontWeight.w700, c: Colors.white)),
                   ),
                 ]),
@@ -259,12 +260,12 @@ class _MethodDialog extends StatelessWidget {
 
   final SaleController sale;
 
-  static const _items = [
-    ('1', 'cash', 'Наличные', 'клавиатура на экране, «Ровно» — без сдачи'),
-    ('2', 'card', 'Карта', 'терминал Uzcard · Humo'),
-    ('3', 'qr', 'Payme · Click', 'QR на экране покупателя'),
-    ('4', 'mixed', 'Смешанная', 'часть наличными, остаток картой'),
-    ('5', 'debt', 'В долг', 'покупатель по номеру телефона · долг и свободный лимит видны до подтверждения'),
+  static List<(String, String, String, String)> get _items => [
+    ('1', 'cash', tr('Наличные', 'Naqd pul'), tr('клавиатура на экране, «Ровно» — без сдачи', 'ekrandagi klaviatura, «Aniq» — qaytimsiz')),
+    ('2', 'card', tr('Карта', 'Karta'), tr('терминал Uzcard · Humo', 'Uzcard · Humo terminali')),
+    ('3', 'qr', 'Payme · Click', tr('QR на экране покупателя', 'xaridor ekranidagi QR')),
+    ('4', 'mixed', tr('Смешанная', 'Aralash'), tr('часть наличными, остаток картой', 'bir qismi naqd, qolgani kartadan')),
+    ('5', 'debt', tr('В долг', 'Qarzga'), tr('покупатель по номеру телефона · долг и свободный лимит видны до подтверждения', 'xaridor telefon raqami boʻyicha · qarz va boʻsh limit tasdiqlashdan oldin koʻrinadi')),
   ];
 
   /// «В долг» показываем, только если магазин даёт в долг и у кассира есть право.
@@ -301,7 +302,7 @@ class _MethodDialog extends StatelessWidget {
                 const SizedBox(height: 10),
                 Text(title, style: t(24, w: FontWeight.w700)),
                 const SizedBox(height: 4),
-                Text(ok ? sub : 'нет такого способа оплаты в магазине', style: t(13, c: C.ts)),
+                Text(ok ? sub : tr('нет такого способа оплаты в магазине', 'doʻkonda bunday toʻlov usuli yoʻq'), style: t(13, c: C.ts)),
               ]),
             ),
           ),
@@ -327,15 +328,15 @@ class _MethodDialog extends StatelessWidget {
         return KeyEventResult.ignored;
       },
       child: _Shell(
-        title: 'Способ оплаты',
-        subtitle: 'Цифра на клавиатуре или нажмите · Enter — наличные · Esc — к чеку',
+        title: tr('Способ оплаты', 'Toʻlov usuli'),
+        subtitle: tr('Цифра на клавиатуре или нажмите · Enter — наличные · Esc — к чеку', 'Klaviaturadagi raqam yoki bosing · Enter — naqd · Esc — chekka'),
         right: fmtMoney(sale.due),
         children: [
           Row(children: [tile(_items[0]), tile(_items[1])]),
           Row(children: [tile(_items[2]), tile(_items[3])]),
           if (_shown.length > 4) Row(children: [tile(_items[4])]),
           const SizedBox(height: 14),
-          const _Footer(back: 'Назад к чеку'),
+          _Footer(back: tr('Назад к чеку', 'Chekka qaytish')),
         ],
       ),
     );
@@ -388,8 +389,8 @@ class _CashDialogState extends State<_CashDialog> {
       _pay(_amount);
     } else {
       setState(() => _error = widget.mixed
-          ? 'Наличными — больше нуля и меньше итога ${fmtMoney(sale.due)}'
-          : 'Получено меньше итога ${fmtMoney(sale.due)} — наберите сумму или нажмите «Ровно»');
+          ? tr('Наличными — больше нуля и меньше итога ${fmtMoney(sale.due)}', 'Naqd — noldan koʻp va jami ${fmtMoney(sale.due)} dan kam')
+          : tr('Получено меньше итога ${fmtMoney(sale.due)} — наберите сумму или нажмите «Ровно»', 'Olingan summa jami ${fmtMoney(sale.due)} dan kam — summani tering yoki «Aniq»ni bosing'));
     }
   }
 
@@ -403,8 +404,8 @@ class _CashDialogState extends State<_CashDialog> {
       autofocus: true,
       onKeyEvent: (_, e) => _keys(e, onEnter: _submit, onChar: _key, onSpace: mixed ? null : () => _pay(due)),
       child: _Shell(
-        title: mixed ? 'Смешанная оплата' : 'Наличные',
-        subtitle: mixed ? 'Наберите, сколько наличными — остаток картой' : 'Сколько дал покупатель? Наберите или нажмите купюру',
+        title: mixed ? tr('Смешанная оплата', 'Aralash toʻlov') : tr('Наличные', 'Naqd pul'),
+        subtitle: mixed ? tr('Наберите, сколько наличными — остаток картой', 'Naqd qanchaligini tering — qolgani kartadan') : tr('Сколько дал покупатель? Наберите или нажмите купюру', 'Xaridor qancha berdi? Tering yoki kupyurani bosing'),
         right: fmtMoney(due),
         children: [
           Container(
@@ -416,12 +417,12 @@ class _CashDialogState extends State<_CashDialog> {
             ),
             child: Column(children: [
               Row(children: [
-                Expanded(child: Text(mixed ? 'Наличными' : 'Получено', style: t(16, w: FontWeight.w500, c: C.ts))),
+                Expanded(child: Text(mixed ? tr('Наличными', 'Naqd') : tr('Получено', 'Olindi'), style: t(16, w: FontWeight.w500, c: C.ts))),
                 Text(_input.value.isEmpty ? '—' : fmtMoney(amount), style: t(40, w: FontWeight.w800, c: _input.value.isEmpty ? C.td : C.tp)),
               ]),
               Row(children: [
                 Expanded(
-                  child: Text(mixed ? 'Картой (остаток)' : 'Сдача',
+                  child: Text(mixed ? tr('Картой (остаток)', 'Kartadan (qoldiq)') : tr('Сдача', 'Qaytim'),
                       style: t(18, w: FontWeight.w600, c: mixed ? C.ts : (change > 0 ? C.success : C.td))),
                 ),
                 Text(
@@ -441,8 +442,8 @@ class _CashDialogState extends State<_CashDialog> {
                   border: C.brand,
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   child: Column(children: [
-                    Text('Ровно', style: t(18, w: FontWeight.w700, c: C.brand)),
-                    Text('без сдачи · пробел', style: t(11, c: C.brand)),
+                    Text(tr('Ровно', 'Aniq'), style: t(18, w: FontWeight.w700, c: C.brand)),
+                    Text(tr('без сдачи · пробел', 'qaytimsiz · probel'), style: t(11, c: C.brand)),
                   ]),
                 ),
               ),
@@ -456,7 +457,7 @@ class _CashDialogState extends State<_CashDialog> {
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     child: Column(children: [
                       FittedBox(child: Text(fmtMoney(v), style: t(17, w: FontWeight.w700))),
-                      Text('купюра', style: t(11, c: C.ts)),
+                      Text(tr('купюра', 'kupyura'), style: t(11, c: C.ts)),
                     ]),
                   ),
                 ),
@@ -467,10 +468,10 @@ class _CashDialogState extends State<_CashDialog> {
           _Pad(onKey: _key),
           const SizedBox(height: 12),
           _Footer(
-            back: 'Назад',
+            back: tr('Назад', 'Orqaga'),
             primary: mixed
-                ? (_ready ? 'Пробить · ${fmtMoney(amount)} + ${fmtMoney(due - amount)} картой' : 'Наберите сумму наличными')
-                : (_ready ? 'Пробить чек · сдача ${fmtMoney(change)}' : 'Пробить чек'),
+                ? (_ready ? tr('Пробить · ${fmtMoney(amount)} + ${fmtMoney(due - amount)} картой', 'Chiqarish · ${fmtMoney(amount)} + ${fmtMoney(due - amount)} karta') : tr('Наберите сумму наличными', 'Naqd summani tering'))
+                : (_ready ? tr('Пробить чек · сдача ${fmtMoney(change)}', 'Chek chiqarish · qaytim ${fmtMoney(change)}') : tr('Пробить чек', 'Chek chiqarish')),
             onPrimary: _ready ? _submit : null,
             busy: _busy,
           ),
@@ -478,8 +479,8 @@ class _CashDialogState extends State<_CashDialog> {
           Text(
             _error ??
                 (mixed
-                    ? 'Сначала примите наличные, затем проведите остаток на терминале.'
-                    : '«Пробить» работает, только если получено не меньше итога. «Ровно» и купюры пробивают чек сразу.'),
+                    ? tr('Сначала примите наличные, затем проведите остаток на терминале.', 'Avval naqd pulni qabul qiling, keyin qoldiqni terminaldan oʻtkazing.')
+                    : tr('«Пробить» работает, только если получено не меньше итога. «Ровно» и купюры пробивают чек сразу.', '«Chiqarish» faqat olingan summa jamidan kam boʻlmasa ishlaydi. «Aniq» va kupyuralar chekni darhol chiqaradi.')),
             style: t(12, c: _error != null ? C.error : C.ts),
           ),
         ],
@@ -534,23 +535,23 @@ class _QtyDialogState extends State<_QtyDialog> {
       onKeyEvent: (_, e) => _keys(e, onEnter: _submit, onChar: _key),
       child: _Shell(
         width: 520,
-        title: 'Количество',
-        subtitle: '${p.name} · сейчас ${fmtQty(line.qty)} ${p.unit}',
+        title: tr('Количество', 'Miqdor'),
+        subtitle: tr('${p.name} · сейчас ${fmtQty(line.qty)} ${p.unit}', '${p.name} · hozir ${fmtQty(line.qty)} ${p.unit}'),
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: C.brand, width: 2)),
             child: Row(children: [
-              Expanded(child: Text(p.fractional ? 'Вес, ${p.unit}' : 'Штук', style: t(16, w: FontWeight.w500, c: C.ts))),
+              Expanded(child: Text(p.fractional ? tr('Вес, ${p.unit}', 'Vazn, ${p.unit}') : tr('Штук', 'Dona'), style: t(16, w: FontWeight.w500, c: C.ts))),
               Text(_input.value.isEmpty ? '—' : _input.value, style: t(40, w: FontWeight.w800)),
             ]),
           ),
           const SizedBox(height: 12),
           _Pad(onKey: _key, extra: p.fractional ? ',' : '000'),
           const SizedBox(height: 12),
-          _Footer(back: 'Назад', primary: 'Применить', onPrimary: _input.value.isEmpty ? null : _submit),
+          _Footer(back: tr('Назад', 'Orqaga'), primary: tr('Применить', 'Qoʻllash'), onPrimary: _input.value.isEmpty ? null : _submit),
           const SizedBox(height: 10),
-          Text(_error ?? '0 — удалить строку.', style: t(12, c: _error != null ? C.error : C.ts)),
+          Text(_error ?? tr('0 — удалить строку.', '0 — qatorni oʻchirish.'), style: t(12, c: _error != null ? C.error : C.ts)),
         ],
       ),
     );
@@ -617,43 +618,43 @@ class _DiscountDialogState extends State<_DiscountDialog> {
       },
       child: _Shell(
         width: 560,
-        title: 'Скидка',
-        subtitle: _all ? 'На весь чек' : 'На строку «${line?.product.name ?? ''}»',
+        title: tr('Скидка', 'Chegirma'),
+        subtitle: _all ? tr('На весь чек', 'Butun chekka') : tr('На строку «${line?.product.name ?? ''}»', '«${line?.product.name ?? ''}» qatoriga'),
         right: fmtMoney(widget.sale.due),
         children: [
           Row(children: [
-            toggle('На строку', !_all, () => setState(() => _all = false)),
+            toggle(tr('На строку', 'Qatorga'), !_all, () => setState(() => _all = false)),
             const SizedBox(width: 10),
-            toggle('На весь чек', _all, () => setState(() => _all = true)),
+            toggle(tr('На весь чек', 'Butun chekka'), _all, () => setState(() => _all = true)),
           ]),
           const SizedBox(height: 10),
           Row(children: [
-            toggle('Процент, %', _percent, () => setState(() => _percent = true)),
+            toggle(tr('Процент, %', 'Foiz, %'), _percent, () => setState(() => _percent = true)),
             const SizedBox(width: 10),
-            toggle('Сумма', !_percent, () => setState(() => _percent = false)),
+            toggle(tr('Сумма', 'Summa'), !_percent, () => setState(() => _percent = false)),
           ]),
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: C.brand, width: 2)),
             child: Row(children: [
-              Expanded(child: Text('Скидка', style: t(16, w: FontWeight.w500, c: C.ts))),
+              Expanded(child: Text(tr('Скидка', 'Chegirma'), style: t(16, w: FontWeight.w500, c: C.ts))),
               Text(_input.value.isEmpty ? '—' : '${_input.value}${_percent ? ' %' : ''}', style: t(40, w: FontWeight.w800)),
             ]),
           ),
           const SizedBox(height: 12),
           _Pad(onKey: _key, extra: ','),
           const SizedBox(height: 12),
-          _Footer(back: 'Назад', primary: 'Применить скидку', onPrimary: _input.value.isEmpty ? null : _submit),
+          _Footer(back: tr('Назад', 'Orqaga'), primary: tr('Применить скидку', 'Chegirmani qoʻllash'), onPrimary: _input.value.isEmpty ? null : _submit),
           const SizedBox(height: 10),
           Row(children: [
-            Expanded(child: Text(_error ?? '% — процент/сумма · Del — убрать скидку', style: t(12, c: _error != null ? C.error : C.ts))),
+            Expanded(child: Text(_error ?? tr('% — процент/сумма · Del — убрать скидку', '% — foiz/summa · Del — chegirmani olib tashlash'), style: t(12, c: _error != null ? C.error : C.ts))),
             TextButton(
               onPressed: () {
                 widget.sale.clearDiscount(all: _all);
                 Navigator.of(context).pop();
               },
-              child: const Text('Убрать скидку'),
+              child: Text(tr('Убрать скидку', 'Chegirmani olib tashlash')),
             ),
           ]),
         ],
@@ -725,7 +726,7 @@ class _ItemDialogState extends State<_ItemDialog> {
 
   void _discount() {
     if (!widget.sale.canDiscount) {
-      setState(() => _error = 'Нет права на скидку');
+      setState(() => _error = tr('Нет права на скидку', 'Chegirma berish huquqi yoʻq'));
       return;
     }
     Navigator.of(context).pop('discount');
@@ -735,11 +736,11 @@ class _ItemDialogState extends State<_ItemDialog> {
   Widget build(BuildContext context) {
     final p = line.product;
     final info = [
-      if (p.barcodes.isNotEmpty) 'Штрихкод ${p.barcodes.first}',
-      if (p.plu != null) 'код ${p.plu}',
-      p.ikpu.isEmpty ? 'нет ИКПУ' : 'ИКПУ ${p.ikpu}',
-      'НДС ${fmtMoney(p.vatBp)}%',
-      p.marked ? 'маркируется — каждая штука сканом' : 'не маркируется',
+      if (p.barcodes.isNotEmpty) tr('Штрихкод ${p.barcodes.first}', 'Shtrix-kod ${p.barcodes.first}'),
+      if (p.plu != null) tr('код ${p.plu}', 'kod ${p.plu}'),
+      p.ikpu.isEmpty ? tr('нет ИКПУ', 'MXIK yoʻq') : tr('ИКПУ ${p.ikpu}', 'MXIK ${p.ikpu}'),
+      tr('НДС ${fmtMoney(p.vatBp)}%', 'QQS ${fmtMoney(p.vatBp)}%'),
+      p.marked ? tr('маркируется — каждая штука сканом', 'markirovkalanadi — har bir dona skanerlanadi') : tr('не маркируется', 'markirovkalanmaydi'),
     ].join(' · ');
     Widget fact(String label, String value) => Expanded(
           child: Container(
@@ -767,7 +768,7 @@ class _ItemDialogState extends State<_ItemDialog> {
         );
     final discount = line.hasDiscount
         ? (line.discountBp != null ? '${fmtMoney(line.discountBp!)}% · −${fmtMoney(line.discount)}' : '−${fmtMoney(line.discount)}')
-        : 'нет';
+        : tr('нет', 'yoʻq');
 
     return Focus(
       autofocus: true,
@@ -797,11 +798,11 @@ class _ItemDialogState extends State<_ItemDialog> {
         subtitle: info,
         children: [
           Row(children: [
-            fact('Цена', '${fmtMoney(line.price)} / ${p.unit}'),
+            fact(tr('Цена', 'Narx'), '${fmtMoney(line.price)} / ${p.unit}'),
             const SizedBox(width: 10),
-            fact(_weight ? 'Вес' : 'Скидка', _weight ? '${fmtQty(line.qty)} ${p.unit}' : discount),
+            fact(_weight ? tr('Вес', 'Vazn') : tr('Скидка', 'Chegirma'), _weight ? '${fmtQty(line.qty)} ${p.unit}' : discount),
             const SizedBox(width: 10),
-            fact('Сумма', fmtMoney(line.total)),
+            fact(tr('Сумма', 'Summa'), fmtMoney(line.total)),
           ]),
           const SizedBox(height: 16),
           if (_weight) ...[
@@ -809,7 +810,7 @@ class _ItemDialogState extends State<_ItemDialog> {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: C.brand, width: 2)),
               child: Row(children: [
-                Expanded(child: Text('Новый вес, ${p.unit}', style: t(16, w: FontWeight.w500, c: C.ts))),
+                Expanded(child: Text(tr('Новый вес, ${p.unit}', 'Yangi vazn, ${p.unit}'), style: t(16, w: FontWeight.w500, c: C.ts))),
                 Text(_input.value.isEmpty ? fmtQty(line.qty) : _input.value,
                     style: t(40, w: FontWeight.w800, c: _input.value.isEmpty ? C.td : C.tp)),
               ]),
@@ -822,7 +823,7 @@ class _ItemDialogState extends State<_ItemDialog> {
               Expanded(
                 child: Column(children: [
                   Text(_input.value.isEmpty ? fmtQty(line.qty) : _input.value, style: t(56, w: FontWeight.w800)),
-                  Text(p.marked ? 'шт · новые штуки — сканом' : 'шт · цифры — точное количество', style: t(12, c: C.ts)),
+                  Text(p.marked ? tr('шт · новые штуки — сканом', 'dona · yangi donalar — skanerlab') : tr('шт · цифры — точное количество', 'dona · raqamlar — aniq miqdor'), style: t(12, c: C.ts)),
                 ]),
               ),
               bigBtn('+', true, p.marked ? null : () => _step(1)),
@@ -836,7 +837,7 @@ class _ItemDialogState extends State<_ItemDialog> {
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 const KeyBadge('F6', size: 36),
                 const SizedBox(width: 8),
-                Text('Скидка', style: t(16, w: FontWeight.w600)),
+                Text(tr('Скидка', 'Chegirma'), style: t(16, w: FontWeight.w600)),
               ]),
             ),
             const SizedBox(width: 10),
@@ -847,7 +848,7 @@ class _ItemDialogState extends State<_ItemDialog> {
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 const KeyBadge('Del', size: 36),
                 const SizedBox(width: 8),
-                Text('Удалить из чека', style: t(16, w: FontWeight.w600, c: C.brand)),
+                Text(tr('Удалить из чека', 'Chekdan oʻchirish'), style: t(16, w: FontWeight.w600, c: C.brand)),
               ]),
             ),
             const SizedBox(width: 10),
@@ -858,13 +859,13 @@ class _ItemDialogState extends State<_ItemDialog> {
                 child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                   const KeyBadge('Enter', dark: true, size: 44),
                   const SizedBox(width: 10),
-                  Text('Готово', style: t(17, w: FontWeight.w700, c: Colors.white)),
+                  Text(tr('Готово', 'Tayyor'), style: t(17, w: FontWeight.w700, c: Colors.white)),
                 ]),
               ),
             ),
           ]),
           const SizedBox(height: 10),
-          Text(_error ?? (_weight ? 'Наберите вес и Enter · Esc — закрыть' : '− до нуля удаляет строку · Esc — закрыть'),
+          Text(_error ?? (_weight ? tr('Наберите вес и Enter · Esc — закрыть', 'Vaznni tering va Enter · Esc — yopish') : tr('− до нуля удаляет строку · Esc — закрыть', '− nolgacha qatorni oʻchiradi · Esc — yopish')),
               style: t(12, c: _error != null ? C.error : C.ts)),
         ],
       ),
@@ -928,13 +929,13 @@ class _DebtDialogState extends State<_DebtDialog> {
   String? get _problem {
     final w = _who;
     if (w == null) return null;
-    if (w.blocked) return 'Покупатель в стоп-листе — в долг не давать';
-    if (!w.found && _name.text.trim().isEmpty) return 'Новый покупатель — впишите имя';
+    if (w.blocked) return tr('Покупатель в стоп-листе — в долг не давать', 'Xaridor stop-listda — qarzga bermang');
+    if (!w.found && _name.text.trim().isEmpty) return tr('Новый покупатель — впишите имя', 'Yangi xaridor — ismini yozing');
     final d = _debt;
-    if (d <= 0) return w.available <= 0 ? 'Лимит исчерпан: долг ${fmtMoney(w.debt)} из ${fmtMoney(w.limit)}' : 'Наберите сумму в долг';
-    if (d > sale.due) return 'В долг — не больше итога ${fmtMoney(sale.due)}';
-    if (d > w.available) return 'Больше свободного лимита ${fmtMoney(w.available)}';
-    if (_rest > 0 && sale.method(_restKind) == null) return 'Нет способа оплаты для остатка';
+    if (d <= 0) return w.available <= 0 ? tr('Лимит исчерпан: долг ${fmtMoney(w.debt)} из ${fmtMoney(w.limit)}', 'Limit tugagan: qarz ${fmtMoney(w.debt)} / ${fmtMoney(w.limit)}') : tr('Наберите сумму в долг', 'Qarzga summani tering');
+    if (d > sale.due) return tr('В долг — не больше итога ${fmtMoney(sale.due)}', 'Qarzga — jami ${fmtMoney(sale.due)} dan oshmasin');
+    if (d > w.available) return tr('Больше свободного лимита ${fmtMoney(w.available)}', 'Boʻsh limitdan (${fmtMoney(w.available)}) koʻp');
+    if (_rest > 0 && sale.method(_restKind) == null) return tr('Нет способа оплаты для остатка', 'Qoldiq uchun toʻlov usuli yoʻq');
     return null;
   }
 
@@ -942,14 +943,14 @@ class _DebtDialogState extends State<_DebtDialog> {
     if (!mounted) return;
     setState(() {
       _busy = false;
-      _error = e is ApiError ? (e.isNetwork ? 'Нет связи с сервером' : e.message) : '$e';
+      _error = e is ApiError ? (e.isNetwork ? tr('Нет связи с сервером', 'Server bilan aloqa yoʻq') : e.message) : '$e';
     });
   }
 
   Future<void> _lookup() async {
     final phone = uzPhone(_phone.value);
     if (phone == null) {
-      setState(() => _error = 'Наберите 9 цифр номера: 90 123 45 67');
+      setState(() => _error = tr('Наберите 9 цифр номера: 90 123 45 67', 'Raqamning 9 ta raqamini tering: 90 123 45 67'));
       return;
     }
     setState(() {
@@ -999,7 +1000,7 @@ class _DebtDialogState extends State<_DebtDialog> {
     if (w == null || _busy) return;
     final name = _name.text.trim();
     if (!w.found && name.isEmpty) {
-      setState(() => _error = 'Впишите имя покупателя');
+      setState(() => _error = tr('Впишите имя покупателя', 'Xaridorning ismini yozing'));
       _nameFocus.requestFocus();
       return;
     }
@@ -1102,8 +1103,8 @@ class _DebtDialogState extends State<_DebtDialog> {
         return _keys(e, onEnter: _enter, onChar: _key);
       },
       child: _Shell(
-        title: 'В долг',
-        subtitle: w == null ? 'Номер телефона покупателя — по нему он увидит долг в приложении' : fmtUzPhone(w.phone),
+        title: tr('В долг', 'Qarzga'),
+        subtitle: w == null ? tr('Номер телефона покупателя — по нему он увидит долг в приложении', 'Xaridorning telefon raqami — u qarzini ilovada shu raqam orqali koʻradi') : fmtUzPhone(w.phone),
         right: fmtMoney(sale.due),
         children: w == null ? _phoneStage() : _cardStage(w),
       ),
@@ -1126,22 +1127,22 @@ class _DebtDialogState extends State<_DebtDialog> {
         const SizedBox(height: 12),
         _Pad(onKey: _key, extra: ''),
         const SizedBox(height: 12),
-        _Footer(back: 'Назад', primary: _busy ? 'Ищем…' : 'Найти покупателя', onPrimary: _phone.value.length == 9 ? _lookup : null, busy: _busy),
+        _Footer(back: tr('Назад', 'Orqaga'), primary: _busy ? tr('Ищем…', 'Qidirilmoqda…') : tr('Найти покупателя', 'Xaridorni topish'), onPrimary: _phone.value.length == 9 ? _lookup : null, busy: _busy),
         const SizedBox(height: 10),
-        Text(_error ?? 'Ищем только по номеру. Нет связи — касса возьмёт долг из своего каталога.',
+        Text(_error ?? tr('Ищем только по номеру. Нет связи — касса возьмёт долг из своего каталога.', 'Faqat raqam boʻyicha qidiramiz. Aloqa yoʻq boʻlsa — kassa qarzni oʻz katalogidan oladi.'),
             style: t(12, c: _error != null ? C.error : C.ts)),
       ];
 
   List<Widget> _cardStage(DebtorView w) {
     final status = w.blocked
-        ? ('Стоп-лист', C.error, C.errorSoft)
+        ? (tr('Стоп-лист', 'Stop-list'), C.error, C.errorSoft)
         : w.overdueDays > 0
-            ? ('Просрочка ${w.overdueDays} дн.', C.warning, C.warningSoft)
+            ? (tr('Просрочка ${w.overdueDays} дн.', '${w.overdueDays} kun kechikkan'), C.warning, C.warningSoft)
             : !w.found
-                ? ('Новый покупатель', C.ts, C.subtle)
+                ? (tr('Новый покупатель', 'Yangi xaridor'), C.ts, C.subtle)
                 : w.verified
-                    ? ('Номер подтверждён', C.success, C.successSoft)
-                    : ('Номер не подтверждён', C.warning, C.warningSoft);
+                    ? (tr('Номер подтверждён', 'Raqam tasdiqlangan'), C.success, C.successSoft)
+                    : (tr('Номер не подтверждён', 'Raqam tasdiqlanmagan'), C.warning, C.warningSoft);
     Widget fact(String label, String value, {Color c = C.tp}) => Expanded(
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1182,7 +1183,7 @@ class _DebtDialogState extends State<_DebtDialog> {
                   controller: _name,
                   focusNode: _nameFocus,
                   onChanged: (_) => setState(() => _error = null),
-                  decoration: const InputDecoration(labelText: 'Имя покупателя', hintText: 'Как к нему обращаться'),
+                  decoration: InputDecoration(labelText: tr('Имя покупателя', 'Xaridorning ismi'), hintText: tr('Как к нему обращаться', 'Unga qanday murojaat qilish')),
                 ),
         ),
         const SizedBox(width: 12),
@@ -1194,19 +1195,19 @@ class _DebtDialogState extends State<_DebtDialog> {
       ]),
       const SizedBox(height: 12),
       Row(children: [
-        fact('Долг в магазине', fmtMoney(w.debt), c: w.debt > 0 ? C.brand : C.tp),
+        fact(tr('Долг в магазине', 'Doʻkondagi qarz'), fmtMoney(w.debt), c: w.debt > 0 ? C.brand : C.tp),
         const SizedBox(width: 10),
-        fact('Лимит', fmtMoney(w.limit)),
+        fact(tr('Лимит', 'Limit'), fmtMoney(w.limit)),
         const SizedBox(width: 10),
-        fact('Свободно', fmtMoney(w.available), c: w.available >= sale.due ? C.success : C.warning),
+        fact(tr('Свободно', 'Boʻsh'), fmtMoney(w.available), c: w.available >= sale.due ? C.success : C.warning),
       ]),
       if (w.dueDate != null && w.debt > 0) ...[
         const SizedBox(height: 6),
-        Text('Срок оплаты ${w.dueDate} · покупок в долг ${w.purchases}', style: t(12, c: C.ts)),
+        Text(tr('Срок оплаты ${w.dueDate} · покупок в долг ${w.purchases}', 'Toʻlov muddati ${w.dueDate} · qarzga xaridlar: ${w.purchases}'), style: t(12, c: C.ts)),
       ],
       if (!w.online) ...[
         const SizedBox(height: 6),
-        Text('Нет связи: долг из каталога кассы и чеков этой смены', style: t(12, c: C.warning)),
+        Text(tr('Нет связи: долг из каталога кассы и чеков этой смены', 'Aloqa yoʻq: qarz kassa katalogi va shu smena cheklaridan olindi'), style: t(12, c: C.warning)),
       ],
       if (newNumber && w.online) ...[
         const SizedBox(height: 12),
@@ -1215,8 +1216,11 @@ class _DebtDialogState extends State<_DebtDialog> {
           decoration: BoxDecoration(color: C.warningSoft, borderRadius: BorderRadius.circular(12)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Text(
-              'Без подтверждения — до ${fmtMoney(w.unverifiedLimit)}. С кодом лимит ${fmtMoney(w.defaultLimit)}'
-              '${w.requireCode ? ' — лучше подтвердить номер' : ''}.',
+              tr(
+                  'Без подтверждения — до ${fmtMoney(w.unverifiedLimit)}. С кодом лимит ${fmtMoney(w.defaultLimit)}'
+                      '${w.requireCode ? ' — лучше подтвердить номер' : ''}.',
+                  'Tasdiqlashsiz — ${fmtMoney(w.unverifiedLimit)} gacha. Kod bilan limit ${fmtMoney(w.defaultLimit)}'
+                      '${w.requireCode ? ' — raqamni tasdiqlagan maʼqul' : ''}.'),
               style: t(13, c: C.warning),
             ),
             const SizedBox(height: 8),
@@ -1227,7 +1231,7 @@ class _DebtDialogState extends State<_DebtDialog> {
                   color: C.surface,
                   border: C.borderStrong,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  child: Text('Отправить код', style: t(15, w: FontWeight.w600)),
+                  child: Text(tr('Отправить код', 'Kodni yuborish'), style: t(15, w: FontWeight.w600)),
                 )
               else ...[
                 SizedBox(
@@ -1237,7 +1241,7 @@ class _DebtDialogState extends State<_DebtDialog> {
                     focusNode: _codeFocus,
                     keyboardType: TextInputType.number,
                     maxLength: 6,
-                    decoration: InputDecoration(labelText: 'Код', counterText: '', helperText: _channelName(_channel!)),
+                    decoration: InputDecoration(labelText: tr('Код', 'Kod'), counterText: '', helperText: _channelName(_channel!)),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -1246,7 +1250,7 @@ class _DebtDialogState extends State<_DebtDialog> {
                   color: C.surface,
                   border: C.borderStrong,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  child: Text('Подтвердить', style: t(15, w: FontWeight.w600)),
+                  child: Text(tr('Подтвердить', 'Tasdiqlash'), style: t(15, w: FontWeight.w600)),
                 ),
               ],
             ]),
@@ -1259,45 +1263,45 @@ class _DebtDialogState extends State<_DebtDialog> {
         decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: C.brand, width: 2)),
         child: Column(children: [
           Row(children: [
-            Expanded(child: Text('В долг', style: t(16, w: FontWeight.w500, c: C.ts))),
+            Expanded(child: Text(tr('В долг', 'Qarzga'), style: t(16, w: FontWeight.w500, c: C.ts))),
             Text(debt > 0 ? fmtMoney(debt) : '—', style: t(36, w: FontWeight.w800, c: _amount.value.isEmpty ? C.tp : C.brand)),
           ]),
           if (rest > 0 && debt > 0)
             Row(children: [
-              Expanded(child: Text(_restKind == 'cash' ? 'Остаток наличными' : 'Остаток картой', style: t(16, w: FontWeight.w600, c: C.ts))),
+              Expanded(child: Text(_restKind == 'cash' ? tr('Остаток наличными', 'Qoldiq naqd') : tr('Остаток картой', 'Qoldiq kartadan'), style: t(16, w: FontWeight.w600, c: C.ts))),
               Text(fmtMoney(rest), style: t(28, w: FontWeight.w800)),
             ]),
           if (debt > 0)
             Row(children: [
-              Expanded(child: Text('Долг станет', style: t(13, c: C.ts))),
+              Expanded(child: Text(tr('Долг станет', 'Qarz boʻladi'), style: t(13, c: C.ts))),
               Text(fmtMoney(w.debt + debt), style: t(16, w: FontWeight.w700, c: C.brand)),
             ]),
         ]),
       ),
       if (rest > 0 && debt > 0) ...[
         const SizedBox(height: 10),
-        Row(children: [restBtn('cash', 'Остаток наличными'), const SizedBox(width: 10), restBtn('card', 'Остаток картой')]),
+        Row(children: [restBtn('cash', tr('Остаток наличными', 'Qoldiq naqd')), const SizedBox(width: 10), restBtn('card', tr('Остаток картой', 'Qoldiq kartadan'))]),
       ],
       const SizedBox(height: 10),
       _Pad(onKey: _key),
       const SizedBox(height: 12),
       _Footer(
-        back: 'Другой номер',
+        back: tr('Другой номер', 'Boshqa raqam'),
         onBack: _back,
-        primary: rest > 0 && debt > 0 ? 'Пробить · ${fmtMoney(debt)} в долг + ${fmtMoney(rest)}' : 'Пробить в долг · ${fmtMoney(debt)}',
+        primary: rest > 0 && debt > 0 ? tr('Пробить · ${fmtMoney(debt)} в долг + ${fmtMoney(rest)}', 'Chiqarish · ${fmtMoney(debt)} qarzga + ${fmtMoney(rest)}') : tr('Пробить в долг · ${fmtMoney(debt)}', 'Qarzga chiqarish · ${fmtMoney(debt)}'),
         onPrimary: problem == null ? _pay : null,
         busy: _busy,
       ),
       const SizedBox(height: 10),
-      Text(_error ?? problem ?? 'Цифры — другая сумма в долг, остаток — наличными или картой. Покупатель увидит долг в приложении.',
+      Text(_error ?? problem ?? tr('Цифры — другая сумма в долг, остаток — наличными или картой. Покупатель увидит долг в приложении.', 'Raqamlar — qarzga boshqa summa, qoldiq — naqd yoki kartadan. Xaridor qarzni ilovada koʻradi.'),
           style: t(12, c: _error != null || problem != null ? C.error : C.ts)),
     ];
   }
 
   static String _channelName(String ch) => switch (ch) {
-        'telegram' => 'отправлен в Telegram',
-        'push' => 'отправлен в приложение',
-        'dev' => 'тестовый режим сервера',
-        _ => 'код отправлен',
+        'telegram' => tr('отправлен в Telegram', 'Telegramga yuborildi'),
+        'push' => tr('отправлен в приложение', 'ilovaga yuborildi'),
+        'dev' => tr('тестовый режим сервера', 'server test rejimi'),
+        _ => tr('код отправлен', 'kod yuborildi'),
       };
 }

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Alert, Button, Card, Col, Flex, Row, Segmented, Statistic, Table, Typography } from 'antd'
 import { EnvironmentOutlined, RocketOutlined, ShoppingOutlined } from '@ant-design/icons'
-import { PageTitle, StatusTag, dateTime, money, periodParams, useItem } from '@sm/shared'
+import { PageTitle, StatusTag, dateTime, money, periodParams, tr, useItem } from '@sm/shared'
 import { useStore } from '../ctx'
 import { usePaidOrders } from '../notify'
 import { NeedStore, today } from '../ui'
@@ -39,7 +39,7 @@ export function DashboardPage() {
   return (
     <>
       <PageTitle
-        title="Главная"
+        title={tr('Главная', 'Bosh sahifa')}
         extra={analytics && storeId ? <Segmented<Period> value={period} onChange={pick} options={PERIODS} /> : undefined}
       >
         {analytics && storeId ? <PeriodNote period={period} /> : undefined}
@@ -78,7 +78,10 @@ function DebtsBlock() {
     { store_id: storeId },
   ).data
   if (!d || d.count === 0) return null
-  const extra = [d.overdue_count > 0 && `просрочено ${money(d.overdue)} у ${d.overdue_count}`, d.open_disputes > 0 && `споров: ${d.open_disputes}`]
+  const extra = [
+    d.overdue_count > 0 && tr(`просрочено ${money(d.overdue)} у ${d.overdue_count}`, `${d.overdue_count} kishida ${money(d.overdue)} muddati oʻtgan`),
+    d.open_disputes > 0 && tr(`споров: ${d.open_disputes}`, `nizolar: ${d.open_disputes}`),
+  ]
     .filter(Boolean)
     .join(' · ')
   return (
@@ -86,9 +89,9 @@ function DebtsBlock() {
       style={{ marginBottom: 16 }}
       type={d.overdue_count > 0 || d.open_disputes > 0 ? 'warning' : 'info'}
       showIcon
-      message={`Долги покупателей: ${money(d.total)} сум у ${d.count}`}
+      message={tr(`Долги покупателей: ${money(d.total)} сум у ${d.count}`, `Xaridorlar qarzlari: ${d.count} kishida ${money(d.total)} soʻm`)}
       description={extra || undefined}
-      action={<Button size="small" onClick={() => nav('/debts')}>Открыть</Button>}
+      action={<Button size="small" onClick={() => nav('/debts')}>{tr('Открыть', 'Ochish')}</Button>}
     />
   )
 }
@@ -107,7 +110,7 @@ function Widgets() {
   const pending = (fiscal.data?.pending_sales ?? 0) + (fiscal.data?.pending_returns ?? 0)
 
   if (!seesSales && !seesOrders && !seesBalance) {
-    return <Alert type="info" showIcon message="Добро пожаловать" description="Доступные вам разделы — в меню слева." />
+    return <Alert type="info" showIcon message={tr('Добро пожаловать', 'Xush kelibsiz')} description={tr('Доступные вам разделы — в меню слева.', 'Sizga ochiq boʻlimlar — chapdagi menyuda.')} />
   }
 
   return (
@@ -117,13 +120,13 @@ function Widgets() {
           <>
             <Col xs={12} lg={6}>
               <Card loading={sales.isLoading} hoverable onClick={() => nav('/sales/pos')}>
-                <Statistic title="Продажи сегодня, сум" value={money(sales.data?.revenue)} />
-                {Number(sales.data?.returns) > 0 && <Typography.Text type="secondary">Возвраты: {money(sales.data?.returns)}</Typography.Text>}
+                <Statistic title={tr('Продажи сегодня, сум', 'Bugungi sotuvlar, soʻm')} value={money(sales.data?.revenue)} />
+                {Number(sales.data?.returns) > 0 && <Typography.Text type="secondary">{tr('Возвраты:', 'Qaytarishlar:')} {money(sales.data?.returns)}</Typography.Text>}
               </Card>
             </Col>
             <Col xs={12} lg={6}>
               <Card loading={sales.isLoading} hoverable onClick={() => nav('/sales/pos')}>
-                <Statistic title="Чеков сегодня" value={sales.data?.sales_count ?? 0} />
+                <Statistic title={tr('Чеков сегодня', 'Bugungi cheklar')} value={sales.data?.sales_count ?? 0} />
               </Card>
             </Col>
           </>
@@ -132,7 +135,7 @@ function Widgets() {
           <Col xs={12} lg={6}>
             <Card loading={orders.isLoading} hoverable onClick={() => nav('/orders')}>
               <Statistic
-                title="Новые онлайн-заказы"
+                title={tr('Новые онлайн-заказы', 'Yangi onlayn buyurtmalar')}
                 value={orders.data?.length ?? 0}
                 valueStyle={{ color: (orders.data?.length ?? 0) > 0 ? '#d97706' : undefined }}
               />
@@ -142,8 +145,8 @@ function Widgets() {
         {seesBalance && (
           <Col xs={12} lg={6}>
             <Card loading={balance.isLoading} hoverable onClick={() => nav('/balance')}>
-              <Statistic title="Баланс к выводу, сум" value={money(balance.data?.available)} />
-              <Typography.Text type="secondary">Ожидает: {money(balance.data?.pending)}</Typography.Text>
+              <Statistic title={tr('Баланс к выводу, сум', 'Yechib olish mumkin, soʻm')} value={money(balance.data?.available)} />
+              <Typography.Text type="secondary">{tr('Ожидает:', 'Kutilmoqda:')} {money(balance.data?.pending)}</Typography.Text>
             </Card>
           </Col>
         )}
@@ -151,19 +154,22 @@ function Widgets() {
       <Row gutter={[16, 16]}>
         {seesSales && (
           <Col xs={24} lg={8}>
-            <Card title="Контроль чеков" loading={fiscal.isLoading}>
+            <Card title={tr('Контроль чеков', 'Cheklar nazorati')} loading={fiscal.isLoading}>
               {pending === 0 ? (
-                <Alert type="success" showIcon message="Все чеки пробиты" />
+                <Alert type="success" showIcon message={tr('Все чеки пробиты', 'Barcha cheklar urilgan')} />
               ) : (
                 <>
                   <Alert
                     type="warning"
                     showIcon
-                    message={`Не пробито: продаж — ${fiscal.data?.pending_sales ?? 0}, возвратов — ${fiscal.data?.pending_returns ?? 0}`}
-                    description={fiscal.data?.oldest_pending_at && `Самый старый: ${dateTime(fiscal.data.oldest_pending_at)}`}
+                    message={tr(
+                      `Не пробито: продаж — ${fiscal.data?.pending_sales ?? 0}, возвратов — ${fiscal.data?.pending_returns ?? 0}`,
+                      `Chek urilmagan: sotuvlar — ${fiscal.data?.pending_sales ?? 0}, qaytarishlar — ${fiscal.data?.pending_returns ?? 0}`,
+                    )}
+                    description={fiscal.data?.oldest_pending_at && tr(`Самый старый: ${dateTime(fiscal.data.oldest_pending_at)}`, `Eng eskisi: ${dateTime(fiscal.data.oldest_pending_at)}`)}
                     style={{ marginBottom: 12 }}
                   />
-                  <Link to="/sales/pos">К продажам</Link>
+                  <Link to="/sales/pos">{tr('К продажам', 'Sotuvlarga')}</Link>
                 </>
               )}
             </Card>
@@ -172,10 +178,10 @@ function Widgets() {
         {seesOrders && (
           <Col xs={24} lg={16}>
             <Card
-              title="Новые заказы"
+              title={tr('Новые заказы', 'Yangi buyurtmalar')}
               extra={
                 <Button size="small" onClick={() => nav('/orders')}>
-                  Все заказы
+                  {tr('Все заказы', 'Barcha buyurtmalar')}
                 </Button>
               }
               styles={{ body: { padding: 0 } }}
@@ -187,14 +193,14 @@ function Widgets() {
                 dataSource={(orders.data ?? []).slice(0, 8)}
                 pagination={false}
                 scroll={{ x: true }}
-                locale={{ emptyText: 'Новых заказов нет' }}
+                locale={{ emptyText: tr('Новых заказов нет', 'Yangi buyurtmalar yoʻq') }}
                 onRow={() => ({ onClick: () => nav('/orders'), style: { cursor: 'pointer' } })}
                 columns={[
                   { title: '№', dataIndex: 'number' },
-                  { title: 'Создан', dataIndex: 'created_at', render: dateTime },
-                  { title: 'Адрес', dataIndex: 'address', ellipsis: true },
-                  { title: 'Сумма', dataIndex: 'total', align: 'right', render: (v: string) => money(v) },
-                  { title: 'Статус', dataIndex: 'status', render: (v: string) => <StatusTag status={v} /> },
+                  { title: tr('Создан', 'Yaratilgan'), dataIndex: 'created_at', render: dateTime },
+                  { title: tr('Адрес', 'Manzil'), dataIndex: 'address', ellipsis: true },
+                  { title: tr('Сумма', 'Summa'), dataIndex: 'total', align: 'right', render: (v: string) => money(v) },
+                  { title: tr('Статус', 'Holat'), dataIndex: 'status', render: (v: string) => <StatusTag status={v} /> },
                 ]}
               />
             </Card>
@@ -219,17 +225,23 @@ function StartBlock() {
           <RocketOutlined style={{ fontSize: 28, color: '#E11D2A' }} />
           <div>
             <Typography.Title level={5} style={{ margin: 0 }}>
-              Начало работы
+              {tr('Начало работы', 'Ishni boshlash')}
             </Typography.Title>
             <Typography.Text type="secondary">
               {n > 0
-                ? `В списке ${n} — проверьте цены и проведите, чтобы товары появились на складе и у покупателей.`
-                : 'Добавьте товары, которые уже есть в магазине: фото полок, штрихкод или каталог. Super Market найдёт их в общем каталоге.'}
+                ? tr(
+                    `В списке ${n} — проверьте цены и проведите, чтобы товары появились на складе и у покупателей.`,
+                    `Roʻyxatda ${n} ta — mahsulotlar omborda va xaridorlarda paydo boʻlishi uchun narxlarni tekshirib, oʻtkazing.`,
+                  )
+                : tr(
+                    'Добавьте товары, которые уже есть в магазине: фото полок, штрихкод или каталог. Super Market найдёт их в общем каталоге.',
+                    'Doʻkonda bor mahsulotlarni qoʻshing: javon rasmi, shtrix-kod yoki katalog orqali. Super Market ularni umumiy katalogdan topadi.',
+                  )}
             </Typography.Text>
           </div>
         </Flex>
         <Button type="primary" onClick={() => nav('/start')}>
-          {n > 0 ? 'Продолжить' : 'Начать'}
+          {n > 0 ? tr('Продолжить', 'Davom etish') : tr('Начать', 'Boshlash')}
         </Button>
       </Flex>
     </Card>
@@ -247,7 +259,8 @@ type WishStats = {
   out_of_zone_week: number
 }
 
-const km = (m: number | null) => (m === null ? '' : m < 1000 ? `${Math.round(m / 10) * 10} м` : `${(m / 1000).toFixed(1).replace('.', ',')} км`)
+const km = (m: number | null) =>
+  m === null ? '' : m < 1000 ? `${Math.round(m / 10) * 10} ${tr('м', 'm')}` : `${(m / 1000).toFixed(1).replace('.', ',')} ${tr('км', 'km')}`
 const people = (n: number) => {
   const m10 = n % 10
   const m100 = n % 100
@@ -267,8 +280,15 @@ function WishesBlock() {
   const n = off ? d.total : d.out_of_zone
   const week = off ? d.week : d.out_of_zone_week
   const chips = off
-    ? [week > 0 && `+${week} за 7 дней`, `за 30 дней — ${d.month}`, d.nearest_m !== null && `ближайший — ${km(d.nearest_m)}`]
-    : [week > 0 && `+${week} за 7 дней`, d.farthest_m !== null && `дальше всего — ${km(d.farthest_m)}`]
+    ? [
+        week > 0 && tr(`+${week} за 7 дней`, `7 kunda +${week}`),
+        tr(`за 30 дней — ${d.month}`, `30 kunda — ${d.month}`),
+        d.nearest_m !== null && tr(`ближайший — ${km(d.nearest_m)}`, `eng yaqini — ${km(d.nearest_m)}`),
+      ]
+    : [
+        week > 0 && tr(`+${week} за 7 дней`, `7 kunda +${week}`),
+        d.farthest_m !== null && tr(`дальше всего — ${km(d.farthest_m)}`, `eng uzogʻi — ${km(d.farthest_m)}`),
+      ]
   return (
     <Card style={{ marginBottom: 16, borderColor: off ? '#E11D2A' : '#B54708' }}>
       <Flex align="center" justify="space-between" gap={16} wrap>
@@ -280,12 +300,20 @@ function WishesBlock() {
           )}
           <div>
             <Typography.Title level={5} style={{ margin: 0 }}>
-              {off ? `${n} ${people(n)} рядом хотят, чтобы вы доставляли` : `${n} ${people(n)} ждут доставку, но живут вне вашей зоны`}
+              {off
+                ? tr(`${n} ${people(n)} рядом хотят, чтобы вы доставляли`, `Yaqinidagi ${n} ta xaridor siz yetkazib berishingizni xohlaydi`)
+                : tr(`${n} ${people(n)} ждут доставку, но живут вне вашей зоны`, `${n} ta xaridor yetkazib berishni kutmoqda, lekin hududingizdan tashqarida yashaydi`)}
             </Typography.Title>
             <Typography.Text type="secondary">
               {off
-                ? 'Они нажали «Хочу доставку» на странице вашего магазина в приложении Super Market. Включите онлайн-заказы — и они смогут заказать у вас.'
-                : 'Магазин принимает онлайн-заказы, но до их адресов не доставляет. Расширьте зону или радиус доставки.'}
+                ? tr(
+                    'Они нажали «Хочу доставку» на странице вашего магазина в приложении Super Market. Включите онлайн-заказы — и они смогут заказать у вас.',
+                    'Ular Super Market ilovasida doʻkoningiz sahifasidagi «Yetkazib berishni xohlayman» tugmasini bosgan. Onlayn buyurtmalarni yoqing — ular sizdan buyurtma bera oladi.',
+                  )
+                : tr(
+                    'Магазин принимает онлайн-заказы, но до их адресов не доставляет. Расширьте зону или радиус доставки.',
+                    'Doʻkon onlayn buyurtmalarni qabul qiladi, lekin ularning manzillariga yetkazmaydi. Yetkazib berish hududi yoki radiusini kengaytiring.',
+                  )}
             </Typography.Text>
             <Flex gap={8} wrap style={{ marginTop: 8 }}>
               {chips.filter(Boolean).map((c) => (
@@ -298,7 +326,7 @@ function WishesBlock() {
         </Flex>
         {can('stores.manage') && (
           <Button type="primary" onClick={() => nav('/settings/delivery')}>
-            {off ? 'Включить онлайн-заказы' : 'Настроить зону доставки'}
+            {off ? tr('Включить онлайн-заказы', 'Onlayn buyurtmalarni yoqish') : tr('Настроить зону доставки', 'Yetkazib berish hududini sozlash')}
           </Button>
         )}
       </Flex>

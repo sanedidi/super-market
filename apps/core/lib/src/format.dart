@@ -1,16 +1,18 @@
 import 'package:intl/intl.dart';
 
+import 'i18n.dart';
+
 final _money = NumberFormat('#,##0', 'ru');
 final _money2 = NumberFormat('#,##0.##', 'ru');
 final _qty = NumberFormat('#,##0.###', 'ru');
 final _dateTime = DateFormat('dd.MM.yyyy HH:mm');
 
-/// "15000.00" → "15 000 сум". Деньги приходят строкой и считаются на сервере.
+/// "15000.00" → "15 000 сум" / "15 000 soʻm". Деньги приходят строкой и считаются на сервере.
 String money(Object? v, {bool suffix = true}) {
   final n = num.tryParse('${v ?? ''}');
   if (n == null) return '—';
   final s = n == n.roundToDouble() ? _money.format(n) : _money2.format(n);
-  return suffix ? '$s сум' : s;
+  return suffix ? '$s ${tr('сум', 'soʻm')}' : s;
 }
 
 String qty(Object? v, [String unit = '']) {

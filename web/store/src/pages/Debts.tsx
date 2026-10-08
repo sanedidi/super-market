@@ -34,6 +34,7 @@ import {
   errorText,
   formatPhone,
   money,
+  tr,
   useAction,
   useDebounced,
   useItem,
@@ -138,19 +139,19 @@ interface PaymentMethod {
 }
 
 const DOC: Record<Entry['doc_type'], string> = {
-  sale: 'В долг',
-  payment: 'Оплата',
-  return: 'Возврат',
-  writeoff: 'Списание',
+  sale: tr('В долг', 'Qarzga'),
+  payment: tr('Оплата', 'Toʻlov'),
+  return: tr('Возврат', 'Qaytarish'),
+  writeoff: tr('Списание', 'Hisobdan chiqarish'),
 }
 
 type Status = 'all' | 'overdue' | 'unverified' | 'blocked' | 'disputes'
 
 function statusTag(d: Debtor) {
-  if (d.blocked) return <Tag>стоп-лист</Tag>
-  if (d.overdue_days > 0) return <Tag color="red">просрочка {d.overdue_days} дн.</Tag>
-  if (!d.verified) return <Tag color="orange">не подтв.</Tag>
-  return <Tag color="green">в срок</Tag>
+  if (d.blocked) return <Tag>{tr('стоп-лист', 'stop-list')}</Tag>
+  if (d.overdue_days > 0) return <Tag color="red">{tr(`просрочка ${d.overdue_days} дн.`, `${d.overdue_days} kun kechikish`)}</Tag>
+  if (!d.verified) return <Tag color="orange">{tr('не подтв.', 'tasdiqlanmagan')}</Tag>
+  return <Tag color="green">{tr('в срок', 'muddatida')}</Tag>
 }
 
 export function DebtorsPage() {
@@ -167,41 +168,41 @@ export function DebtorsPage() {
   return (
     <NeedStore>
       <PageTitle
-        title="Долги покупателей"
+        title={tr('Долги покупателей', 'Xaridorlar qarzlari')}
         extra={
           <Button icon={<ReloadOutlined spin={paged.isFetching} />} onClick={() => (paged.refetch(), summary.refetch())}>
-            Обновить
+            {tr('Обновить', 'Yangilash')}
           </Button>
         }
       >
         <Typography.Text type="secondary">
-          Кто и сколько должен магазину. Продажа в долг — на кассе; здесь — оплата, лимиты, стоп-лист и списание.
+          {tr('Кто и сколько должен магазину. Продажа в долг — на кассе; здесь — оплата, лимиты, стоп-лист и списание.', 'Kim doʻkonga qancha qarzdor. Qarzga sotish — kassada; bu yerda — toʻlov, limitlar, stop-list va hisobdan chiqarish.')}
         </Typography.Text>
       </PageTitle>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={12} lg={6}>
           <Card size="small">
-            <Statistic title="Нам должны" value={money(s?.total ?? 0)} />
-            <Typography.Text type="secondary">{s?.count ?? 0} покупателей</Typography.Text>
+            <Statistic title={tr('Нам должны', 'Bizdan qarzdorlar')} value={money(s?.total ?? 0)} />
+            <Typography.Text type="secondary">{tr(`${s?.count ?? 0} покупателей`, `${s?.count ?? 0} ta xaridor`)}</Typography.Text>
           </Card>
         </Col>
         <Col xs={12} lg={6}>
           <Card size="small">
-            <Statistic title="Просрочено" value={money(s?.overdue ?? 0)} valueStyle={{ color: '#d92d20' }} />
-            <Typography.Text type="secondary">{s?.overdue_count ?? 0} покупателей</Typography.Text>
+            <Statistic title={tr('Просрочено', 'Muddati oʻtgan')} value={money(s?.overdue ?? 0)} valueStyle={{ color: '#d92d20' }} />
+            <Typography.Text type="secondary">{tr(`${s?.overdue_count ?? 0} покупателей`, `${s?.overdue_count ?? 0} ta xaridor`)}</Typography.Text>
           </Card>
         </Col>
         <Col xs={12} lg={6}>
           <Card size="small">
-            <Statistic title="Сегодня дали в долг" value={money(s?.given_today ?? 0)} />
-            <Typography.Text type="secondary">{s?.given_today_count ?? 0} чеков</Typography.Text>
+            <Statistic title={tr('Сегодня дали в долг', 'Bugun qarzga berildi')} value={money(s?.given_today ?? 0)} />
+            <Typography.Text type="secondary">{tr(`${s?.given_today_count ?? 0} чеков`, `${s?.given_today_count ?? 0} ta chek`)}</Typography.Text>
           </Card>
         </Col>
         <Col xs={12} lg={6}>
           <Card size="small">
-            <Statistic title="Сегодня вернули" value={money(s?.paid_today ?? 0)} valueStyle={{ color: '#027a48' }} />
+            <Statistic title={tr('Сегодня вернули', 'Bugun qaytarildi')} value={money(s?.paid_today ?? 0)} valueStyle={{ color: '#027a48' }} />
             <Typography.Text type="secondary">
-              наличными {money(s?.paid_today_cash ?? 0)} · иначе {money(s?.paid_today_other ?? 0)}
+              {tr('наличными', 'naqd')} {money(s?.paid_today_cash ?? 0)} · {tr('иначе', 'boshqa usulda')} {money(s?.paid_today_other ?? 0)}
             </Typography.Text>
           </Card>
         </Col>
@@ -211,18 +212,18 @@ export function DebtorsPage() {
           value={status}
           onChange={setStatus}
           options={[
-            { value: 'all', label: 'Все' },
-            { value: 'overdue', label: `Просрочка${s?.overdue_count ? ' ' + s.overdue_count : ''}` },
-            { value: 'unverified', label: `Не подтв.${s?.unverified ? ' ' + s.unverified : ''}` },
-            { value: 'blocked', label: 'Стоп-лист' },
-            ...(manage ? [{ value: 'disputes' as Status, label: `Споры${s?.open_disputes ? ' ' + s.open_disputes : ''}` }] : []),
+            { value: 'all', label: tr('Все', 'Hammasi') },
+            { value: 'overdue', label: `${tr('Просрочка', 'Kechikkan')}${s?.overdue_count ? ' ' + s.overdue_count : ''}` },
+            { value: 'unverified', label: `${tr('Не подтв.', 'Tasdiqlanmagan')}${s?.unverified ? ' ' + s.unverified : ''}` },
+            { value: 'blocked', label: tr('Стоп-лист', 'Stop-list') },
+            ...(manage ? [{ value: 'disputes' as Status, label: `${tr('Споры', 'Nizolar')}${s?.open_disputes ? ' ' + s.open_disputes : ''}` }] : []),
           ]}
         />
         {!disputes && (
           <Input
             allowClear
             prefix={<SearchOutlined />}
-            placeholder="Имя или телефон"
+            placeholder={tr('Имя или телефон', 'Ism yoki telefon')}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             style={{ width: 260 }}
@@ -244,24 +245,24 @@ export function DebtorsPage() {
                 scroll={{ x: true }}
                 rowClassName={(r) => (r.debtor_id === open ? 'ant-table-row-selected' : '')}
                 onRow={(r) => ({ onClick: () => setOpen(r.debtor_id), style: { cursor: 'pointer' } })}
-                locale={{ emptyText: 'Должников нет' }}
+                locale={{ emptyText: tr('Должников нет', 'Qarzdorlar yoʻq') }}
                 columns={[
                   {
-                    title: 'Покупатель',
+                    title: tr('Покупатель', 'Xaridor'),
                     key: 'n',
                     render: (_, r) => (
                       <Space direction="vertical" size={0}>
-                        <b>{r.full_name || 'Без имени'}</b>
+                        <b>{r.full_name || tr('Без имени', 'Ismsiz')}</b>
                         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                           {formatPhone(r.phone)}
                         </Typography.Text>
                       </Space>
                     ),
                   },
-                  { title: 'Вернуть до', dataIndex: 'due_date', render: (v: string | null) => (v ? date(v) : '—') },
-                  { title: 'Долг', dataIndex: 'amount', align: 'right', render: (v: string) => <b>{money(v)}</b> },
-                  { title: 'Лимит', dataIndex: 'limit', align: 'right', render: (v: string) => money(v) },
-                  { title: 'Статус', key: 's', render: (_, r) => statusTag(r) },
+                  { title: tr('Вернуть до', 'Qaytarish muddati'), dataIndex: 'due_date', render: (v: string | null) => (v ? date(v) : '—') },
+                  { title: tr('Долг', 'Qarz'), dataIndex: 'amount', align: 'right', render: (v: string) => <b>{money(v)}</b> },
+                  { title: tr('Лимит', 'Limit'), dataIndex: 'limit', align: 'right', render: (v: string) => money(v) },
+                  { title: tr('Статус', 'Holat'), key: 's', render: (_, r) => statusTag(r) },
                 ]}
               />
             </Card>
@@ -282,28 +283,28 @@ function DebtorCard({ id, storeId, onClose }: { id: string; storeId: string; onC
   const manage = can('debts.manage')
   const card = useItem<Card>(`/store/debtors/${id}`, { store_id: storeId })
   const [modal, setModal] = useState<'' | 'pay' | 'remind' | 'limit' | 'writeoff'>('')
-  const save = useAction((body: Record<string, unknown>) => api.patch(`/store/debtors/${id}`, body), { success: 'Сохранено' })
+  const save = useAction((body: Record<string, unknown>) => api.patch(`/store/debtors/${id}`, body), { success: tr('Сохранено', 'Saqlandi') })
   const c = card.data
   if (card.error) return <LoadError error={card.error} retry={() => card.refetch()} />
   if (!c) return <Card loading />
   const here = c.stores.find((s) => s.store_id === storeId)
   const debt = here?.amount ?? '0'
   const rows: [string, ReactNode][] = [
-    ['Долг', <b key="d">{money(debt)}</b>],
-    ['Лимит', money(here?.limit ?? c.credit_limit ?? 0) + (c.credit_limit ? ' · свой' : '')],
-    ['Свободно', money(here?.available ?? 0)],
-    ['Вернуть до', here?.due_date ? date(here.due_date) : '—'],
-    ['Последняя оплата', here?.last_paid_at ? dateTime(here.last_paid_at) : 'не было'],
-    [`В долг за 2 месяца · ${c.sales_count} чеков`, money(c.sales_amount)],
-    ['Номер', c.verified ? 'подтверждён' : <Typography.Text type="warning">не подтверждён</Typography.Text>],
-    ['Стоп-лист', c.blocked ? <b>включён</b> : 'выключен'],
+    [tr('Долг', 'Qarz'), <b key="d">{money(debt)}</b>],
+    [tr('Лимит', 'Limit'), money(here?.limit ?? c.credit_limit ?? 0) + (c.credit_limit ? tr(' · свой', ' · alohida') : '')],
+    [tr('Свободно', 'Boʻsh'), money(here?.available ?? 0)],
+    [tr('Вернуть до', 'Qaytarish muddati'), here?.due_date ? date(here.due_date) : '—'],
+    [tr('Последняя оплата', 'Oxirgi toʻlov'), here?.last_paid_at ? dateTime(here.last_paid_at) : tr('не было', 'boʻlmagan')],
+    [tr(`В долг за 2 месяца · ${c.sales_count} чеков`, `2 oyda qarzga · ${c.sales_count} ta chek`), money(c.sales_amount)],
+    [tr('Номер', 'Raqam'), c.verified ? tr('подтверждён', 'tasdiqlangan') : <Typography.Text type="warning">{tr('не подтверждён', 'tasdiqlanmagan')}</Typography.Text>],
+    [tr('Стоп-лист', 'Stop-list'), c.blocked ? <b>{tr('включён', 'yoqilgan')}</b> : tr('выключен', 'oʻchirilgan')],
   ]
-  if (here && here.overdue_days > 0) rows.push(['Просрочка', <Typography.Text type="danger" strong>{here.overdue_days} дн.</Typography.Text>])
+  if (here && here.overdue_days > 0) rows.push([tr('Просрочка', 'Kechikish'), <Typography.Text type="danger" strong>{tr(`${here.overdue_days} дн.`, `${here.overdue_days} kun`)}</Typography.Text>])
   return (
     <Card
       title={
         <Space direction="vertical" size={0}>
-          <span>{c.full_name || 'Без имени'}</span>
+          <span>{c.full_name || tr('Без имени', 'Ismsiz')}</span>
           <Typography.Text type="secondary" style={{ fontSize: 13, fontWeight: 400 }}>
             {formatPhone(c.phone)}
           </Typography.Text>
@@ -318,7 +319,7 @@ function DebtorCard({ id, storeId, onClose }: { id: string; storeId: string; onC
         </Flex>
       ))}
       {here?.last_reminder_at && (
-        <Alert style={{ margin: '12px 0' }} type="warning" message={`Последнее напоминание: ${dateTime(here.last_reminder_at)}`} />
+        <Alert style={{ margin: '12px 0' }} type="warning" message={tr(`Последнее напоминание: ${dateTime(here.last_reminder_at)}`, `Oxirgi eslatma: ${dateTime(here.last_reminder_at)}`)} />
       )}
       {manage && (
         <Space direction="vertical" style={{ width: '100%', marginTop: 12 }}>
@@ -330,46 +331,49 @@ function DebtorCard({ id, storeId, onClose }: { id: string; storeId: string; onC
             disabled={Number(debt) <= 0 || !c.has_app}
             onClick={() => setModal('remind')}
           >
-            Напомнить об оплате
+            {tr('Напомнить об оплате', 'Toʻlovni eslatish')}
           </Button>
           {!c.has_app && Number(debt) > 0 && (
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              У покупателя нет приложения Super Market — позвоните ему. В день оплаты автонапоминание тоже не дойдёт.
+              {tr(
+                'У покупателя нет приложения Super Market — позвоните ему. В день оплаты автонапоминание тоже не дойдёт.',
+                'Xaridorda Super Market ilovasi yoʻq — unga qoʻngʻiroq qiling. Toʻlov kunidagi avtomatik eslatma ham yetib bormaydi.',
+              )}
             </Typography.Text>
           )}
           <Flex gap={8} wrap>
             <Button disabled={Number(debt) <= 0} onClick={() => setModal('pay')}>
-              Принять оплату
+              {tr('Принять оплату', 'Toʻlovni qabul qilish')}
             </Button>
-            <Button onClick={() => setModal('limit')}>Изменить лимит</Button>
+            <Button onClick={() => setModal('limit')}>{tr('Изменить лимит', 'Limitni oʻzgartirish')}</Button>
             <Button onClick={() => save.mutate({ blocked: !c.blocked })} loading={save.isPending}>
-              {c.blocked ? 'Убрать из стоп-листа' : 'В стоп-лист'}
+              {c.blocked ? tr('Убрать из стоп-листа', 'Stop-listdan chiqarish') : tr('В стоп-лист', 'Stop-listga')}
             </Button>
             <Button danger disabled={Number(debt) <= 0} onClick={() => setModal('writeoff')}>
-              Списать
+              {tr('Списать', 'Hisobdan chiqarish')}
             </Button>
           </Flex>
         </Space>
       )}
       <Typography.Title level={5} style={{ marginTop: 20 }}>
-        История
+        {tr('История', 'Tarix')}
       </Typography.Title>
       <Table<Entry>
         size="small"
         rowKey="id"
         pagination={{ pageSize: 10, hideOnSinglePage: true }}
         dataSource={c.entries.filter((e) => e.store_id === storeId)}
-        locale={{ emptyText: <Empty description="Записей нет" /> }}
+        locale={{ emptyText: <Empty description={tr('Записей нет', 'Yozuvlar yoʻq')} /> }}
         columns={[
           {
-            title: 'Запись',
+            title: tr('Запись', 'Yozuv'),
             key: 'e',
             render: (_, e) => (
               <Space direction="vertical" size={0}>
                 <span>
                   {DOC[e.doc_type]}
                   {e.number ? ` № ${e.number}` : ''}
-                  {e.dispute_status === 'open' && <Tag color="red" style={{ marginLeft: 6 }}>спор</Tag>}
+                  {e.dispute_status === 'open' && <Tag color="red" style={{ marginLeft: 6 }}>{tr('спор', 'nizo')}</Tag>}
                 </span>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {dateTime(e.created_at)} · {[e.detail, e.employee].filter(Boolean).join(' · ')}
@@ -378,7 +382,7 @@ function DebtorCard({ id, storeId, onClose }: { id: string; storeId: string; onC
             ),
           },
           {
-            title: 'Сумма',
+            title: tr('Сумма', 'Summa'),
             key: 'a',
             align: 'right',
             render: (_, e) => (
@@ -388,7 +392,7 @@ function DebtorCard({ id, storeId, onClose }: { id: string; storeId: string; onC
                   {money(e.amount)}
                 </Typography.Text>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  долг {money(e.balance)}
+                  {tr('долг', 'qarz')} {money(e.balance)}
                 </Typography.Text>
               </Space>
             ),
@@ -408,36 +412,36 @@ function PayModal({ card, storeId, debt, onClose }: { card: Card; storeId: strin
   const options = (methods.data ?? []).filter((m) => m.is_active && m.store_id === storeId).map((m) => ({ value: m.id, label: m.name }))
   const [form] = Form.useForm()
   const pay = useAction((v: { amount: string; payment_method_id: string; note?: string }) =>
-    api.post('/store/debt-payments', { debtor_id: card.id, store_id: storeId, ...v }), { success: 'Оплата принята' })
+    api.post('/store/debt-payments', { debtor_id: card.id, store_id: storeId, ...v }), { success: tr('Оплата принята', 'Toʻlov qabul qilindi') })
   return (
     <Modal
       open
-      title="Принять оплату долга"
-      okText="Принять"
+      title={tr('Принять оплату долга', 'Qarz toʻlovini qabul qilish')}
+      okText={tr('Принять', 'Qabul qilish')}
       confirmLoading={pay.isPending}
       onCancel={onClose}
       onOk={() => form.validateFields().then((v) => pay.mutateAsync(v).then(onClose))}
     >
       <Typography.Paragraph type="secondary">
-        {card.full_name || formatPhone(card.phone)} · долг {money(debt)} сум
+        {card.full_name || formatPhone(card.phone)} · {tr(`долг ${money(debt)} сум`, `qarz ${money(debt)} soʻm`)}
       </Typography.Paragraph>
       <Form form={form} layout="vertical" initialValues={{ amount: debt, payment_method_id: options[0]?.value }}>
-        <Form.Item name="amount" label="Сумма" rules={[{ required: true, message: 'Сумма' }]}>
+        <Form.Item name="amount" label={tr('Сумма', 'Summa')} rules={[{ required: true, message: tr('Сумма', 'Summa') }]}>
           <InputNumber<string> stringMode min="1" max={debt} style={{ width: '100%' }} />
         </Form.Item>
         <Space style={{ marginBottom: 16 }}>
           <Button size="small" onClick={() => form.setFieldValue('amount', debt)}>
-            Весь долг
+            {tr('Весь долг', 'Butun qarz')}
           </Button>
           <Button size="small" onClick={() => form.setFieldValue('amount', String(Math.round(Number(debt) / 2)))}>
-            Половина
+            {tr('Половина', 'Yarmi')}
           </Button>
         </Space>
-        <Form.Item name="payment_method_id" label="Как платит" rules={[{ required: true, message: 'Выберите способ оплаты' }]}>
-          <Select options={options} loading={methods.isLoading} placeholder="Наличными, картой…" />
+        <Form.Item name="payment_method_id" label={tr('Как платит', 'Qanday toʻlaydi')} rules={[{ required: true, message: tr('Выберите способ оплаты', 'Toʻlov usulini tanlang') }]}>
+          <Select options={options} loading={methods.isLoading} placeholder={tr('Наличными, картой…', 'Naqd pul, karta…')} />
         </Form.Item>
-        <Form.Item name="note" label="Комментарий">
-          <Input placeholder="Например: принёс сын" maxLength={200} />
+        <Form.Item name="note" label={tr('Комментарий', 'Izoh')}>
+          <Input placeholder={tr('Например: принёс сын', 'Masalan: oʻgʻli olib keldi')} maxLength={200} />
         </Form.Item>
       </Form>
     </Modal>
@@ -447,37 +451,46 @@ function PayModal({ card, storeId, debt, onClose }: { card: Card; storeId: strin
 /** Подтверждение ручного напоминания: как увидит покупатель и правила. */
 function RemindModal({ card, debtor, onClose }: { card: Card; debtor: Debtor; onClose: () => void }) {
   const remind = useAction(() => api.post(`/store/debtors/${card.id}/remind`, { store_id: debtor.store_id }), {
-    success: 'Напоминание отправлено',
+    success: tr('Напоминание отправлено', 'Eslatma yuborildi'),
   })
   const due = debtor.due_date
   const body =
     debtor.overdue_days > 0 && due
-      ? `Ваш долг ${money(debtor.amount)} сум. Срок был ${dayjs(due).format('D MMMM')} — пожалуйста, погасите долг в магазине.`
-      : `Ваш долг ${money(debtor.amount)} сум. Пожалуйста, погасите долг в магазине.`
+      ? tr(
+          `Ваш долг ${money(debtor.amount)} сум. Срок был ${dayjs(due).format('D MMMM')} — пожалуйста, погасите долг в магазине.`,
+          `Qarzingiz ${money(debtor.amount)} soʻm. Muddat ${dayjs(due).format('D MMMM')} edi — iltimos, qarzni doʻkonda toʻlang.`,
+        )
+      : tr(
+          `Ваш долг ${money(debtor.amount)} сум. Пожалуйста, погасите долг в магазине.`,
+          `Qarzingiz ${money(debtor.amount)} soʻm. Iltimos, qarzni doʻkonda toʻlang.`,
+        )
   return (
-    <Modal open title="Напомнить об оплате" okText="Отправить push" okButtonProps={{ danger: true }} confirmLoading={remind.isPending}
+    <Modal open title={tr('Напомнить об оплате', 'Toʻlovni eslatish')} okText={tr('Отправить push', 'Push yuborish')} okButtonProps={{ danger: true }} confirmLoading={remind.isPending}
       onCancel={onClose}
       onOk={() => remind.mutateAsync(undefined).then(onClose).catch((e) => {
         if (e instanceof ApiError && e.code === 'too_soon') onClose()
       })}
     >
       <Typography.Paragraph>
-        Push придёт {card.full_name || 'покупателю'} в приложение Super Market. Нажатие откроет его долг в {debtor.store_name}.
+        {tr(
+          `Push придёт ${card.full_name || 'покупателю'} в приложение Super Market. Нажатие откроет его долг в ${debtor.store_name}.`,
+          `Push ${card.full_name || 'xaridor'}ga Super Market ilovasida keladi. Bosilganda ${debtor.store_name} doʻkonidagi qarzi ochiladi.`,
+        )}
       </Typography.Paragraph>
       <div style={{ background: '#1d2939', borderRadius: 14, padding: 16, marginBottom: 16 }}>
-        <Typography.Text style={{ color: '#d0d5dd', fontSize: 12 }}>Так увидит покупатель</Typography.Text>
+        <Typography.Text style={{ color: '#d0d5dd', fontSize: 12 }}>{tr('Так увидит покупатель', 'Xaridor shunday koʻradi')}</Typography.Text>
         <div style={{ background: '#fff', borderRadius: 14, padding: 12, marginTop: 8 }}>
           <Flex justify="space-between">
-            <b>Напоминание · {debtor.store_name}</b>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>сейчас</Typography.Text>
+            <b>{tr('Напоминание', 'Eslatma')} · {debtor.store_name}</b>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>{tr('сейчас', 'hozir')}</Typography.Text>
           </Flex>
           <div style={{ fontSize: 13 }}>{body}</div>
         </div>
       </div>
       <ul style={{ paddingLeft: 18, color: '#475467', fontSize: 13 }}>
-        <li>Не чаще одного раза в сутки</li>
-        <li>Ночью (22:00–08:00) push уйдёт утром</li>
-        <li>В день оплаты в 10:00 напоминание уходит автоматически</li>
+        <li>{tr('Не чаще одного раза в сутки', 'Sutkada bir martadan koʻp emas')}</li>
+        <li>{tr('Ночью (22:00–08:00) push уйдёт утром', 'Kechasi (22:00–08:00) push ertalab yuboriladi')}</li>
+        <li>{tr('В день оплаты в 10:00 напоминание уходит автоматически', 'Toʻlov kuni soat 10:00 da eslatma avtomatik yuboriladi')}</li>
       </ul>
     </Modal>
   )
@@ -486,18 +499,18 @@ function RemindModal({ card, debtor, onClose }: { card: Card; debtor: Debtor; on
 function LimitModal({ card, onClose }: { card: Card; onClose: () => void }) {
   const [own, setOwn] = useState(card.credit_limit !== null)
   const [value, setValue] = useState<string | null>(card.credit_limit)
-  const save = useAction((body: Record<string, unknown>) => api.patch(`/store/debtors/${card.id}`, body), { success: 'Лимит сохранён' })
+  const save = useAction((body: Record<string, unknown>) => api.patch(`/store/debtors/${card.id}`, body), { success: tr('Лимит сохранён', 'Limit saqlandi') })
   return (
-    <Modal open title="Лимит покупателя" okText="Сохранить" confirmLoading={save.isPending} onCancel={onClose}
+    <Modal open title={tr('Лимит покупателя', 'Xaridor limiti')} okText={tr('Сохранить', 'Saqlash')} confirmLoading={save.isPending} onCancel={onClose}
       onOk={() => save.mutateAsync({ credit_limit: own ? value ?? '0' : null }).then(onClose)}
     >
       <Space direction="vertical" style={{ width: '100%' }}>
         <Space>
           <Switch checked={own} onChange={setOwn} />
-          <span>Свой лимит (иначе — из настроек сети)</span>
+          <span>{tr('Свой лимит (иначе — из настроек сети)', 'Alohida limit (aks holda — tarmoq sozlamalaridan)')}</span>
         </Space>
         {own && (
-          <InputNumber<string> stringMode min="0" value={value ?? undefined} onChange={setValue} style={{ width: '100%' }} addonAfter="сум" />
+          <InputNumber<string> stringMode min="0" value={value ?? undefined} onChange={setValue} style={{ width: '100%' }} addonAfter={tr('сум', 'soʻm')} />
         )}
       </Space>
     </Modal>
@@ -507,20 +520,20 @@ function LimitModal({ card, onClose }: { card: Card; onClose: () => void }) {
 function WriteoffModal({ card, storeId, debt, onClose }: { card: Card; storeId: string; debt: string; onClose: () => void }) {
   const [form] = Form.useForm()
   const wo = useAction((v: { amount: string; reason: string }) =>
-    api.post('/store/debt-writeoffs', { debtor_id: card.id, store_id: storeId, ...v }), { success: 'Долг списан' })
+    api.post('/store/debt-writeoffs', { debtor_id: card.id, store_id: storeId, ...v }), { success: tr('Долг списан', 'Qarz hisobdan chiqarildi') })
   return (
-    <Modal open title="Списать долг" okText="Списать" okButtonProps={{ danger: true }} confirmLoading={wo.isPending} onCancel={onClose}
+    <Modal open title={tr('Списать долг', 'Qarzni hisobdan chiqarish')} okText={tr('Списать', 'Hisobdan chiqarish')} okButtonProps={{ danger: true }} confirmLoading={wo.isPending} onCancel={onClose}
       onOk={() => form.validateFields().then((v) => wo.mutateAsync(v).then(onClose))}
     >
       <Typography.Paragraph type="secondary">
-        Безнадёжный долг. В отчёте «Прибыль и убыток» он попадёт в расходы.
+        {tr('Безнадёжный долг. В отчёте «Прибыль и убыток» он попадёт в расходы.', 'Umidsiz qarz. «Foyda va zarar» hisobotida u xarajatlarga tushadi.')}
       </Typography.Paragraph>
       <Form form={form} layout="vertical" initialValues={{ amount: debt }}>
-        <Form.Item name="amount" label="Сумма" rules={[{ required: true, message: 'Сумма' }]}>
+        <Form.Item name="amount" label={tr('Сумма', 'Summa')} rules={[{ required: true, message: tr('Сумма', 'Summa') }]}>
           <InputNumber<string> stringMode min="1" max={debt} style={{ width: '100%' }} />
         </Form.Item>
-        <Form.Item name="reason" label="Причина" rules={[{ required: true, message: 'Укажите причину' }]}>
-          <Input maxLength={300} placeholder="Например: покупатель переехал" />
+        <Form.Item name="reason" label={tr('Причина', 'Sabab')} rules={[{ required: true, message: tr('Укажите причину', 'Sababni koʻrsating') }]}>
+          <Input maxLength={300} placeholder={tr('Например: покупатель переехал', 'Masalan: xaridor koʻchib ketdi')} />
         </Form.Item>
       </Form>
     </Modal>
@@ -530,7 +543,7 @@ function WriteoffModal({ card, storeId, debt, onClose }: { card: Card; storeId: 
 function DisputesList({ storeId, onOpen }: { storeId: string; onOpen: (id: string) => void }) {
   const list = useList<Dispute>('/store/debt-disputes', { store_id: storeId })
   const resolve = useAction(({ id, status }: { id: string; status: string }) => api.post(`/store/debt-disputes/${id}/resolve`, { status }), {
-    success: 'Готово',
+    success: tr('Готово', 'Tayyor'),
   })
   return (
     <Card styles={{ body: { padding: 0 } }}>
@@ -541,21 +554,21 @@ function DisputesList({ storeId, onOpen }: { storeId: string; onOpen: (id: strin
         dataSource={list.data ?? []}
         pagination={false}
         scroll={{ x: true }}
-        locale={{ emptyText: 'Споров нет' }}
+        locale={{ emptyText: tr('Споров нет', 'Nizolar yoʻq') }}
         columns={[
           {
-            title: 'Покупатель',
+            title: tr('Покупатель', 'Xaridor'),
             key: 'n',
             render: (_, r) => (
               <a onClick={() => onOpen(r.debtor_id)}>
-                {r.full_name || 'Без имени'} · {formatPhone(r.phone)}
+                {r.full_name || tr('Без имени', 'Ismsiz')} · {formatPhone(r.phone)}
               </a>
             ),
           },
-          { title: 'Запись', key: 'e', render: (_, r) => `В долг${r.number ? ' · чек № ' + r.number : ''} · ${dateTime(r.entry_at)}` },
-          { title: 'Кассир', dataIndex: 'cashier' },
-          { title: 'Сумма', dataIndex: 'amount', align: 'right', render: (v: string) => <b>{money(v)}</b> },
-          { title: 'Комментарий покупателя', dataIndex: 'comment', render: (v: string) => v || '—' },
+          { title: tr('Запись', 'Yozuv'), key: 'e', render: (_, r) => `${tr('В долг', 'Qarzga')}${r.number ? tr(' · чек № ', ' · chek № ') + r.number : ''} · ${dateTime(r.entry_at)}` },
+          { title: tr('Кассир', 'Kassir'), dataIndex: 'cashier' },
+          { title: tr('Сумма', 'Summa'), dataIndex: 'amount', align: 'right', render: (v: string) => <b>{money(v)}</b> },
+          { title: tr('Комментарий покупателя', 'Xaridor izohi'), dataIndex: 'comment', render: (v: string) => v || '—' },
           {
             title: '',
             key: 'a',
@@ -566,17 +579,17 @@ function DisputesList({ storeId, onOpen }: { storeId: string; onOpen: (id: strin
                   size="small"
                   onClick={() =>
                     Modal.confirm({
-                      title: 'Запись ошибочна?',
-                      content: 'Долг по этой записи будет списан.',
-                      okText: 'Да, списать',
+                      title: tr('Запись ошибочна?', 'Yozuv xatomi?'),
+                      content: tr('Долг по этой записи будет списан.', 'Bu yozuv boʻyicha qarz hisobdan chiqariladi.'),
+                      okText: tr('Да, списать', 'Ha, hisobdan chiqarish'),
                       onOk: () => resolve.mutateAsync({ id: r.id, status: 'accepted' }),
                     })
                   }
                 >
-                  Принять
+                  {tr('Принять', 'Qabul qilish')}
                 </Button>
                 <Button size="small" onClick={() => resolve.mutate({ id: r.id, status: 'rejected' })}>
-                  Отклонить
+                  {tr('Отклонить', 'Rad etish')}
                 </Button>
               </Space>
             ),
@@ -593,22 +606,22 @@ export function DebtSettingsPage() {
   const st = useItem<DebtSettings>('/store/debt-settings')
   const [form] = Form.useForm()
   const toggle = useAction(({ id, on }: { id: string; on: boolean }) => api.put(`/store/debt-settings/stores/${id}`, { debt_enabled: on }), {
-    success: 'Сохранено',
+    success: tr('Сохранено', 'Saqlandi'),
   })
-  const save = useAction((v: Partial<DebtSettings>) => api.put('/store/debt-settings', v), { success: 'Сохранено' })
+  const save = useAction((v: Partial<DebtSettings>) => api.put('/store/debt-settings', v), { success: tr('Сохранено', 'Saqlandi') })
   const manage = can('debts.manage')
   if (st.error) return <LoadError error={st.error} retry={() => st.refetch()} />
   if (!st.data) return <Card loading />
   return (
     <>
-      <PageTitle title="Настройки · Долги покупателей">
+      <PageTitle title={tr('Настройки · Долги покупателей', 'Sozlamalar · Xaridorlar qarzlari')}>
         <Typography.Text type="secondary">
-          Переключатель — для каждого магазина. Лимиты и срок — для всей сети. Покупатели эти настройки не видят.
+          {tr('Переключатель — для каждого магазина. Лимиты и срок — для всей сети. Покупатели эти настройки не видят.', 'Almashtirgich — har bir doʻkon uchun. Limitlar va muddat — butun tarmoq uchun. Xaridorlar bu sozlamalarni koʻrmaydi.')}
         </Typography.Text>
       </PageTitle>
-      <Card title="Даёт в долг" style={{ maxWidth: 760, marginBottom: 16 }}>
+      <Card title={tr('Даёт в долг', 'Qarzga beradi')} style={{ maxWidth: 760, marginBottom: 16 }}>
         <Typography.Paragraph type="secondary">
-          Включено — на кассе есть «В долг». Выключите — кнопка пропадёт, старые долги останутся: их можно принимать и видеть в списке.
+          {tr('Включено — на кассе есть «В долг». Выключите — кнопка пропадёт, старые долги останутся: их можно принимать и видеть в списке.', 'Yoqilgan — kassada «Qarzga» tugmasi bor. Oʻchirsangiz — tugma yoʻqoladi, eski qarzlar qoladi: ularni qabul qilish va roʻyxatda koʻrish mumkin.')}
         </Typography.Paragraph>
         {st.data.stores.map((s) => (
           <Flex key={s.store_id} justify="space-between" align="center" style={{ padding: '8px 0', borderTop: '1px solid #eaecf0' }}>
@@ -622,7 +635,7 @@ export function DebtSettingsPage() {
           </Flex>
         ))}
       </Card>
-      <Card title="Для всей сети" style={{ maxWidth: 760 }}>
+      <Card title={tr('Для всей сети', 'Butun tarmoq uchun')} style={{ maxWidth: 760 }}>
         <Form
           form={form}
           layout="vertical"
@@ -632,35 +645,35 @@ export function DebtSettingsPage() {
         >
           <Row gutter={16}>
             <Col xs={24} md={8}>
-              <Form.Item name="default_limit" label="Лимит по умолчанию, сум" tooltip="На одного покупателя в магазине">
+              <Form.Item name="default_limit" label={tr('Лимит по умолчанию, сум', 'Standart limit, soʻm')} tooltip={tr('На одного покупателя в магазине', 'Doʻkondagi bitta xaridor uchun')}>
                 <InputNumber<string> stringMode min="0" style={{ width: '100%' }} />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="unverified_limit" label="Лимит без кода, сум" tooltip="Для покупателей, не подтвердивших номер">
+              <Form.Item name="unverified_limit" label={tr('Лимит без кода, сум', 'Kodsiz limit, soʻm')} tooltip={tr('Для покупателей, не подтвердивших номер', 'Raqamini tasdiqlamagan xaridorlar uchun')}>
                 <InputNumber<string> stringMode min="0" style={{ width: '100%' }} />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="term_days" label="Срок возврата, дней" tooltip="С первой неоплаченной покупки">
+              <Form.Item name="term_days" label={tr('Срок возврата, дней', 'Qaytarish muddati, kun')} tooltip={tr('С первой неоплаченной покупки', 'Birinchi toʻlanmagan xariddan boshlab')}>
                 <InputNumber min={1} max={365} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item name="require_code" valuePropName="checked" label="Код при первом долге (Telegram или push на номер покупателя)">
+          <Form.Item name="require_code" valuePropName="checked" label={tr('Код при первом долге (Telegram или push на номер покупателя)', 'Birinchi qarzda kod (Telegram yoki xaridor raqamiga push)')}>
             <Switch />
           </Form.Item>
           <Form.Item
             name="extra_reminders"
             valuePropName="checked"
-            label="Дополнительные напоминания: за 3 дня до срока и после просрочки"
-            extra="В день оплаты (10:00) напоминание уходит всегда."
+            label={tr('Дополнительные напоминания: за 3 дня до срока и после просрочки', 'Qoʻshimcha eslatmalar: muddatdan 3 kun oldin va kechikkandan keyin')}
+            extra={tr('В день оплаты (10:00) напоминание уходит всегда.', 'Toʻlov kuni (10:00) eslatma har doim yuboriladi.')}
           >
             <Switch />
           </Form.Item>
           {manage && (
             <Button type="primary" htmlType="submit" loading={save.isPending}>
-              Сохранить
+              {tr('Сохранить', 'Saqlash')}
             </Button>
           )}
           {save.error && <Alert type="error" message={errorText(save.error)} style={{ marginTop: 12 }} />}

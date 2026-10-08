@@ -8,6 +8,7 @@ import (
 
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/showcase"
 )
 
@@ -72,7 +73,7 @@ func (s *Service) NetworkAds(ctx context.Context, networkID string) (NetworkAds,
 	if err := s.pool.QueryRow(ctx, `
 		SELECT n.ads_max,
 		       COALESCE((SELECT json_agg(json_build_object('id', b.id, 'name', b.name) ORDER BY b.name) FROM brands b WHERE b.id = ANY(n.ads_hidden_brands)), '[]'),
-		       COALESCE((SELECT json_agg(json_build_object('id', c.id, 'name', c.name) ORDER BY c.name) FROM categories c WHERE c.id = ANY(n.ads_excluded_categories)), '[]')
+		       COALESCE((SELECT json_agg(json_build_object('id', c.id, 'name', loc(c.name, c.name_uz)) ORDER BY loc(c.name, c.name_uz)) FROM categories c WHERE c.id = ANY(n.ads_excluded_categories)), '[]')
 		FROM networks n WHERE n.id = $1`, networkID).Scan(&out.AdsChoice, &out.HiddenBrands, &out.ExcludedCategories); err != nil {
 		return out, err
 	}
@@ -111,7 +112,7 @@ func (s *Service) NetworkAds(ctx context.Context, networkID string) (NetworkAds,
 	// Кампании для этой сети: идут, скоро или закончились за последний месяц.
 	rows, err = s.pool.Query(ctx, `
 		SELECT c.id, c.brand_id, br.name, c.format, c.title,
-		       COALESCE(array(SELECT p.name FROM products p WHERE p.id = ANY(c.product_ids) ORDER BY p.name LIMIT 4), '{}'),
+		       COALESCE(array(SELECT loc(p.name, p.name_uz) FROM products p WHERE p.id = ANY(c.product_ids) ORDER BY 1 LIMIT 4), '{}'),
 		       c.starts_at, c.ends_at, c.brand_id = ANY(n.ads_hidden_brands),
 		       (SELECT count(*) FROM ad_views v JOIN stores s ON s.id = v.store_id WHERE v.campaign_id = c.id AND s.network_id = n.id),
 		       COALESCE(od.orders, 0), COALESCE(od.sales, 0)::text
@@ -146,25 +147,25 @@ func (s *Service) SaveNetworkAds(ctx context.Context, networkID string, in Netwo
 	}
 	for _, list := range [][]string{in.HiddenBrands, in.ExcludedCategories} {
 		if len(list) > 100 {
-			return NetworkAds{}, apperr.Validation("не больше 100 значений")
+			return NetworkAds{}, apperr.Validation("не больше 100 значений").Uz("koʻpi bilan 100 ta qiymat")
 		}
 		for _, id := range list {
 			if !httpx.IsUUID(id) {
-				return NetworkAds{}, apperr.Validation("неверный id бренда или категории")
+				return NetworkAds{}, apperr.Validation("неверный id бренда или категории").Uz("brend yoki kategoriya id notoʻgʻri")
 			}
 		}
 	}
 	if in.HiddenBrands != nil && len(in.HiddenBrands) > 0 && !st.AllowHideBrands {
-		return NetworkAds{}, apperr.Forbidden("скрывать бренды сейчас нельзя — правило Super Market")
+		return NetworkAds{}, apperr.Forbidden("скрывать бренды сейчас нельзя — правило Super Market").Uz("hozircha brendlarni yashirib boʻlmaydi — Super Market qoidasi")
 	}
 	if in.ExcludedCategories != nil && len(in.ExcludedCategories) > 0 && !st.AllowExcludeCategories {
-		return NetworkAds{}, apperr.Forbidden("исключать категории сейчас нельзя — правило Super Market")
+		return NetworkAds{}, apperr.Forbidden("исключать категории сейчас нельзя — правило Super Market").Uz("hozircha kategoriyalarni chiqarib tashlab boʻlmaydi — Super Market qoidasi")
 	}
 	setMax := in.AdsMax != nil
 	var max *int
 	if setMax && *in.AdsMax >= 0 {
 		if *in.AdsMax > 2 {
-			return NetworkAds{}, apperr.Validation("ads_max: от 0 до 2")
+			return NetworkAds{}, apperr.Validation("ads_max: от 0 до 2").Uz("ads_max: 0 dan 2 gacha")
 		}
 		plan, err := showcase.ForNetwork(ctx, s.pool, networkID)
 		if err != nil {
@@ -172,7 +173,7 @@ func (s *Service) SaveNetworkAds(ctx context.Context, networkID string, in Netwo
 		}
 		if *in.AdsMax < plan.Effective.AdsMax && !plan.Effective.AdsReducible {
 			return NetworkAds{}, showcase.Limit("ads", plan.Effective, plan.Effective.AdsMax, *in.AdsMax,
-				"меньше рекламы или без неё — на тарифе «Про»")
+				i18n.Text{RU: "меньше рекламы или без неё — на тарифе «Про»", UZ: "kamroq reklama yoki reklamasiz — «Pro» tarifida"})
 		}
 		max = in.AdsMax
 	}

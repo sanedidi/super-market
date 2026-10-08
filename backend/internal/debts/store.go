@@ -13,6 +13,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
@@ -48,7 +49,7 @@ func (s *Service) List(ctx context.Context, p *identity.Principal, f ListFilter)
 		cond += ` AND EXISTS (SELECT 1 FROM debt_disputes dd JOIN debt_entries de ON de.id = dd.entry_id
 		          WHERE dd.status = 'open' AND de.debtor_id = d.id AND de.store_id = st.id)`
 	default:
-		return nil, apperr.Validation("status: all, overdue, blocked, unverified или disputes")
+		return nil, apperr.Validation("status: all, overdue, blocked, unverified или disputes").Uz("status: all, overdue, blocked, unverified yoki disputes")
 	}
 	q := strings.TrimSpace(f.Q)
 	cond += " AND ($5 = '' OR d.full_name ILIKE '%' || $5 || '%' OR regexp_replace(d.phone, '\\D', '', 'g') LIKE '%' || regexp_replace($5, '\\D', '', 'g') || '%' AND regexp_replace($5, '\\D', '', 'g') <> '')"
@@ -161,9 +162,9 @@ const entriesSQL = `
 	       e.amount::text,
 	       (sum(e.amount) OVER (PARTITION BY e.store_id ORDER BY e.created_at, e.id))::numeric(18,2)::text,
 	       CASE e.doc_type
-	            WHEN 'sale' THEN (SELECT count(*) FROM sale_items si WHERE si.sale_id = sl.id)::text || ' поз. · чек ' || sl.total::numeric(18,0)::text
+	            WHEN 'sale' THEN (SELECT count(*) FROM sale_items si WHERE si.sale_id = sl.id)::text || loc(' поз. · чек ', ' poz. · chek ') || sl.total::numeric(18,0)::text
 	            WHEN 'payment' THEN COALESCE(pm.name, '')
-	            WHEN 'return' THEN 'возврат по чеку № ' || COALESCE((SELECT s2.number FROM sales s2 WHERE s2.id = cr.sale_id)::text, '')
+	            WHEN 'return' THEN loc('возврат по чеку № ', 'chek boʻyicha qaytarish № ') || COALESCE((SELECT s2.number FROM sales s2 WHERE s2.id = cr.sale_id)::text, '')
 	            WHEN 'writeoff' THEN wo.reason END,
 	       COALESCE(es.full_name, ep.full_name, er.full_name, ew.full_name, ''),
 	       COALESCE((SELECT dd.status FROM debt_disputes dd WHERE dd.entry_id = e.id ORDER BY dd.created_at DESC LIMIT 1), ''),
@@ -214,14 +215,14 @@ func (s *Service) Card(ctx context.Context, p *identity.Principal, id, storeID s
 		return c, err
 	}
 	if !httpx.IsUUID(id) {
-		return c, apperr.NotFound("покупатель не найден")
+		return c, apperr.NotFound("покупатель не найден").Uz("xaridor topilmadi")
 	}
 	err = s.pool.QueryRow(ctx, `
 		SELECT id, phone, full_name, credit_limit::text, blocked, verified_at IS NOT NULL, note, created_at
 		FROM debtors WHERE id = $1 AND network_id = $2`, id, p.NetworkID).
 		Scan(&c.ID, &c.Phone, &c.FullName, &c.OwnLimit, &c.Blocked, &c.Verified, &c.Note, &c.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return c, apperr.NotFound("покупатель не найден")
+		return c, apperr.NotFound("покупатель не найден").Uz("xaridor topilmadi")
 	}
 	if err != nil {
 		return c, err
@@ -258,12 +259,12 @@ func (s *Service) Update(ctx context.Context, p *identity.Principal, id string, 
 		return DebtorCard{}, err
 	}
 	if !httpx.IsUUID(id) {
-		return DebtorCard{}, apperr.NotFound("покупатель не найден")
+		return DebtorCard{}, apperr.NotFound("покупатель не найден").Uz("xaridor topilmadi")
 	}
 	if in.FullName != nil {
 		n := strings.TrimSpace(*in.FullName)
 		if len([]rune(n)) > 120 {
-			return DebtorCard{}, apperr.Validation("full_name: не длиннее 120 символов")
+			return DebtorCard{}, apperr.Validation("full_name: не длиннее 120 символов").Uz("full_name: 120 belgidan oshmasin")
 		}
 		in.FullName = &n
 	}
@@ -271,7 +272,7 @@ func (s *Service) Update(ctx context.Context, p *identity.Principal, id string, 
 	if in.CreditLimit.Set && in.CreditLimit.Value != nil {
 		v := *in.CreditLimit.Value
 		if !v.Valid() || money.D(string(v)).Sign() < 0 {
-			return DebtorCard{}, apperr.Validation("credit_limit: неверная сумма")
+			return DebtorCard{}, apperr.Validation("credit_limit: неверная сумма").Uz("credit_limit: summa notoʻgʻri")
 		}
 		sv := string(v)
 		limit = &sv
@@ -286,7 +287,7 @@ func (s *Service) Update(ctx context.Context, p *identity.Principal, id string, 
 		return DebtorCard{}, err
 	}
 	if tag.RowsAffected() == 0 {
-		return DebtorCard{}, apperr.NotFound("покупатель не найден")
+		return DebtorCard{}, apperr.NotFound("покупатель не найден").Uz("xaridor topilmadi")
 	}
 	return s.Card(ctx, p, id, "")
 }
@@ -331,10 +332,10 @@ func (s *Service) Pay(ctx context.Context, p *identity.Principal, in PaymentInpu
 		in.StoreID = p.StoreIDs[0]
 		in.ClientUID = strings.TrimSpace(in.ClientUID)
 		if len(in.ClientUID) < 8 || len(in.ClientUID) > 64 {
-			return Payment{}, false, apperr.Validation("client_uid: 8–64 символа")
+			return Payment{}, false, apperr.Validation("client_uid: 8–64 символа").Uz("client_uid: 8–64 belgi")
 		}
 		if in.ShiftID == nil || !httpx.IsUUID(*in.ShiftID) {
-			return Payment{}, false, apperr.Validation("shift_id: погашение с кассы — только в смене")
+			return Payment{}, false, apperr.Validation("shift_id: погашение с кассы — только в смене").Uz("shift_id: kassadan qarzni toʻlash — faqat smena ochiq boʻlganda")
 		}
 		var existing string
 		err := s.pool.QueryRow(ctx, `SELECT id FROM debt_payments WHERE network_id = $1 AND client_uid = $2`, p.NetworkID, in.ClientUID).Scan(&existing)
@@ -352,18 +353,18 @@ func (s *Service) Pay(ctx context.Context, p *identity.Principal, in PaymentInpu
 		in.ClientUID, in.ShiftID, in.PaidAt = "", nil, nil
 	}
 	if !httpx.IsUUID(in.StoreID) || !p.CanAccessStore(in.StoreID) {
-		return Payment{}, false, apperr.Validation("store_id: магазин не найден")
+		return Payment{}, false, apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
 	}
 	if !in.Amount.Valid() || money.D(string(in.Amount)).Sign() <= 0 {
-		return Payment{}, false, apperr.Validation("amount: сумма должна быть больше нуля")
+		return Payment{}, false, apperr.Validation("amount: сумма должна быть больше нуля").Uz("amount: summa noldan katta boʻlishi kerak")
 	}
 	if !httpx.IsUUID(in.PaymentMethodID) {
-		return Payment{}, false, apperr.Validation("payment_method_id: укажите способ оплаты")
+		return Payment{}, false, apperr.Validation("payment_method_id: укажите способ оплаты").Uz("payment_method_id: toʻlov usulini tanlang")
 	}
 	paidAt := s.now()
 	if in.PaidAt != nil {
 		if in.PaidAt.After(paidAt.Add(5*time.Minute)) || in.PaidAt.Before(paidAt.Add(-7*24*time.Hour)) {
-			return Payment{}, false, apperr.Validation("paid_at: время вне допустимого окна")
+			return Payment{}, false, apperr.Validation("paid_at: время вне допустимого окна").Uz("paid_at: vaqt ruxsat etilgan oraliqdan tashqarida")
 		}
 		paidAt = *in.PaidAt
 	}
@@ -387,10 +388,10 @@ func (s *Service) Pay(ctx context.Context, p *identity.Principal, in PaymentInpu
 			return err
 		}
 		if bal.Sign() <= 0 {
-			return apperr.Conflict("no_debt", "у покупателя нет долга в этом магазине")
+			return apperr.Conflict("no_debt", "у покупателя нет долга в этом магазине").Uz("xaridorning bu doʻkonda qarzi yoʻq")
 		}
 		if amount.Cmp(bal) > 0 {
-			return apperr.Conflict("payment_exceeds_debt", "сумма больше долга: "+money.Group(bal.Money())+" сум").
+			return apperr.Conflict("payment_exceeds_debt", "сумма больше долга: "+money.Group(bal.Money())+" сум").Uz("summa qarzdan katta: " + money.Group(bal.Money()) + " soʻm").
 				WithDetails(map[string]any{"debt": bal.Money()})
 		}
 		cashboxID, currency, methodStore, err := finance.PaymentMethodCashbox(ctx, tx, p.NetworkID, in.PaymentMethodID)
@@ -398,7 +399,7 @@ func (s *Service) Pay(ctx context.Context, p *identity.Principal, in PaymentInpu
 			return err
 		}
 		if methodStore == nil || *methodStore != in.StoreID || currency != "UZS" {
-			return apperr.Validation("payment_method_id: способ оплаты не относится к кассе этого магазина")
+			return apperr.Validation("payment_method_id: способ оплаты не относится к кассе этого магазина").Uz("payment_method_id: toʻlov usuli bu doʻkon kassasiga tegishli emas")
 		}
 		n, err := db.NextNumber(ctx, tx, "debt_payments", p.NetworkID, "")
 		if err != nil {
@@ -434,11 +435,12 @@ func (s *Service) Pay(ctx context.Context, p *identity.Principal, in PaymentInpu
 			return err
 		}
 		left := bal.Sub(amount)
-		body := "−%s сум. Долг в этом магазине погашен"
+		body := i18n.Text{RU: "−%s сум. Долг в этом магазине погашен", UZ: "−%s soʻm. Bu doʻkondagi qarz toʻliq toʻlandi"}
 		if left.Sign() > 0 {
-			body = "−%s сум. Осталось " + money.Group(left.Money()) + " сум"
+			rest := money.Group(left.Money())
+			body = i18n.Text{RU: "−%s сум. Осталось " + rest + " сум", UZ: "−%s soʻm. Qoldi: " + rest + " soʻm"}
 		}
-		return notifyBuyer(ctx, tx, ph, in.StoreID, "debt_paid", "Оплата долга принята · %s", body, amount)
+		return notifyBuyer(ctx, tx, ph, in.StoreID, "debt_paid", i18n.Text{RU: "Оплата долга принята · %s", UZ: "Qarz toʻlovi qabul qilindi · %s"}, body, amount)
 	})
 	if errors.Is(err, errDuplicate) {
 		return s.Pay(ctx, p, in)
@@ -457,7 +459,7 @@ func (s *Service) resolveDebtor(ctx context.Context, q db.Querier, networkID, id
 	var err error
 	if id != "" {
 		if !httpx.IsUUID(id) {
-			return "", apperr.NotFound("покупатель не найден")
+			return "", apperr.NotFound("покупатель не найден").Uz("xaridor topilmadi")
 		}
 		err = q.QueryRow(ctx, `SELECT id FROM debtors WHERE id = $1 AND network_id = $2`, id, networkID).Scan(&out)
 	} else {
@@ -468,7 +470,7 @@ func (s *Service) resolveDebtor(ctx context.Context, q db.Querier, networkID, id
 		err = q.QueryRow(ctx, `SELECT id FROM debtors WHERE phone = $1 AND network_id = $2`, ph, networkID).Scan(&out)
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", apperr.NotFound("покупатель не найден")
+		return "", apperr.NotFound("покупатель не найден").Uz("xaridor topilmadi")
 	}
 	return out, err
 }
@@ -508,14 +510,14 @@ func (s *Service) Writeoff(ctx context.Context, p *identity.Principal, in Writeo
 		return Writeoff{}, err
 	}
 	if !httpx.IsUUID(in.StoreID) || !p.CanAccessStore(in.StoreID) {
-		return Writeoff{}, apperr.Validation("store_id: магазин не найден")
+		return Writeoff{}, apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
 	}
 	if !in.Amount.Valid() || money.D(string(in.Amount)).Sign() <= 0 {
-		return Writeoff{}, apperr.Validation("amount: сумма должна быть больше нуля")
+		return Writeoff{}, apperr.Validation("amount: сумма должна быть больше нуля").Uz("amount: summa noldan katta boʻlishi kerak")
 	}
 	in.Reason = strings.TrimSpace(in.Reason)
 	if in.Reason == "" || len([]rune(in.Reason)) > 300 {
-		return Writeoff{}, apperr.Validation("reason: укажите причину (до 300 символов)")
+		return Writeoff{}, apperr.Validation("reason: укажите причину (до 300 символов)").Uz("reason: sababini kiriting (300 belgigacha)")
 	}
 	var out Writeoff
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -530,11 +532,11 @@ func writeoff(ctx context.Context, tx pgx.Tx, p *identity.Principal, debtorID, s
 	var out Writeoff
 	var tmp string
 	if !httpx.IsUUID(debtorID) {
-		return out, apperr.NotFound("покупатель не найден")
+		return out, apperr.NotFound("покупатель не найден").Uz("xaridor topilmadi")
 	}
 	if err := tx.QueryRow(ctx, `SELECT id FROM debtors WHERE id = $1 AND network_id = $2`, debtorID, p.NetworkID).Scan(&tmp); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return out, apperr.NotFound("покупатель не найден")
+			return out, apperr.NotFound("покупатель не найден").Uz("xaridor topilmadi")
 		}
 		return out, err
 	}
@@ -546,7 +548,7 @@ func writeoff(ctx context.Context, tx pgx.Tx, p *identity.Principal, debtorID, s
 		return out, err
 	}
 	if amount.Cmp(bal) > 0 {
-		return out, apperr.Conflict("writeoff_exceeds_debt", "сумма больше долга: "+money.Group(bal.Money())+" сум").
+		return out, apperr.Conflict("writeoff_exceeds_debt", "сумма больше долга: "+money.Group(bal.Money())+" сум").Uz("summa qarzdan katta: " + money.Group(bal.Money()) + " soʻm").
 			WithDetails(map[string]any{"debt": bal.Money()})
 	}
 	n, err := db.NextNumber(ctx, tx, "debt_writeoffs", p.NetworkID, "")
@@ -630,10 +632,10 @@ func (s *Service) Resolve(ctx context.Context, p *identity.Principal, id string,
 		return Dispute{}, err
 	}
 	if in.Status != "accepted" && in.Status != "rejected" {
-		return Dispute{}, apperr.Validation("status: accepted или rejected")
+		return Dispute{}, apperr.Validation("status: accepted или rejected").Uz("status: accepted yoki rejected")
 	}
 	if !httpx.IsUUID(id) {
-		return Dispute{}, apperr.NotFound("спор не найден")
+		return Dispute{}, apperr.NotFound("спор не найден").Uz("nizo topilmadi")
 	}
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		var debtorID, storeID, amount, status string
@@ -641,13 +643,13 @@ func (s *Service) Resolve(ctx context.Context, p *identity.Principal, id string,
 			SELECT e.debtor_id, e.store_id, e.amount::text, dd.status FROM debt_disputes dd JOIN debt_entries e ON e.id = dd.entry_id
 			WHERE dd.id = $1 AND dd.network_id = $2 FOR UPDATE OF dd`, id, p.NetworkID).Scan(&debtorID, &storeID, &amount, &status)
 		if errors.Is(err, pgx.ErrNoRows) || (err == nil && !p.CanAccessStore(storeID)) {
-			return apperr.NotFound("спор не найден")
+			return apperr.NotFound("спор не найден").Uz("nizo topilmadi")
 		}
 		if err != nil {
 			return err
 		}
 		if status != "open" {
-			return apperr.Conflict("dispute_resolved", "спор уже рассмотрен")
+			return apperr.Conflict("dispute_resolved", "спор уже рассмотрен").Uz("nizo allaqachon koʻrib chiqilgan")
 		}
 		if in.Status == "accepted" && money.D(amount).Sign() > 0 {
 			bal, err := storeBalance(ctx, tx, debtorID, storeID)

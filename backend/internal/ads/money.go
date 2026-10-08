@@ -98,7 +98,7 @@ func (s *Service) Invoices(ctx context.Context, campaignID, status string, page 
 
 func (s *Service) invoice(ctx context.Context, id string) (Invoice, error) {
 	if !httpx.IsUUID(id) {
-		return Invoice{}, apperr.NotFound("счёт не найден")
+		return Invoice{}, apperr.NotFound("счёт не найден").Uz("hisob topilmadi")
 	}
 	rows, err := s.pool.Query(ctx, invoiceSelect+` WHERE i.id = $1`, id)
 	if err != nil {
@@ -106,7 +106,7 @@ func (s *Service) invoice(ctx context.Context, id string) (Invoice, error) {
 	}
 	inv, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[Invoice])
 	if errors.Is(err, pgx.ErrNoRows) {
-		return inv, apperr.NotFound("счёт не найден")
+		return inv, apperr.NotFound("счёт не найден").Uz("hisob topilmadi")
 	}
 	return inv, err
 }
@@ -122,14 +122,14 @@ type Estimate struct {
 func parseDay(v string) (time.Time, error) {
 	t, err := time.Parse("2006-01-02", v)
 	if err != nil {
-		return t, apperr.Validation("даты: формат YYYY-MM-DD")
+		return t, apperr.Validation("даты: формат YYYY-MM-DD").Uz("sanalar: YYYY-MM-DD formatida")
 	}
 	return t, nil
 }
 
 func (s *Service) Estimate(ctx context.Context, campaignID, from, to string) (Estimate, error) {
 	if !httpx.IsUUID(campaignID) {
-		return Estimate{}, apperr.NotFound("кампания не найдена")
+		return Estimate{}, apperr.NotFound("кампания не найдена").Uz("kampaniya topilmadi")
 	}
 	f, err := parseDay(from)
 	if err != nil {
@@ -140,7 +140,7 @@ func (s *Service) Estimate(ctx context.Context, campaignID, from, to string) (Es
 		return Estimate{}, err
 	}
 	if t.Before(f) {
-		return Estimate{}, apperr.Validation("даты: конец раньше начала")
+		return Estimate{}, apperr.Validation("даты: конец раньше начала").Uz("sanalar: tugash sanasi boshlanishidan oldin")
 	}
 	out := Estimate{PeriodFrom: from, PeriodTo: to}
 	err = s.pool.QueryRow(ctx, `
@@ -151,7 +151,7 @@ func (s *Service) Estimate(ctx context.Context, campaignID, from, to string) (Es
 		CROSS JOIN LATERAL (SELECT count(*) AS n FROM ad_views v WHERE v.campaign_id = c.id AND v.day BETWEEN $2::date AND $3::date) bv
 		WHERE c.id = $1`, campaignID, f, t).Scan(&out.Views, &out.Amount)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return out, apperr.NotFound("кампания не найдена")
+		return out, apperr.NotFound("кампания не найдена").Uz("kampaniya topilmadi")
 	}
 	return out, err
 }
@@ -174,7 +174,7 @@ func (s *Service) CreateInvoice(ctx context.Context, in InvoiceInput) (Invoice, 
 		amount = string(*in.Amount)
 	}
 	if money.D(amount).Sign() <= 0 {
-		return Invoice{}, apperr.Validation("amount: сумма счёта больше нуля")
+		return Invoice{}, apperr.Validation("amount: сумма счёта больше нуля").Uz("amount: hisob summasi noldan katta boʻlsin")
 	}
 	var id string
 	if err := s.pool.QueryRow(ctx, `INSERT INTO ad_invoices (campaign_id, period_from, period_to, views, amount)
@@ -191,7 +191,7 @@ func (s *Service) SetInvoiceStatus(ctx context.Context, id, status string) (Invo
 		return inv, err
 	}
 	if inv.Status != "unpaid" {
-		return inv, apperr.Conflict("not_unpaid", "счёт уже оплачен или отменён")
+		return inv, apperr.Conflict("not_unpaid", "счёт уже оплачен или отменён").Uz("hisob allaqachon toʻlangan yoki bekor qilingan")
 	}
 	switch status {
 	case "paid":
@@ -229,11 +229,11 @@ func (s *Service) Document(ctx context.Context, id, kind string) (Document, erro
 		doc.Number, doc.Date = inv.Number, inv.CreatedAt.In(tashkent).Format("2006-01-02")
 	case "act":
 		if inv.ActNumber == nil || inv.ActDate == nil {
-			return Document{}, apperr.Conflict("no_act", "акт появится после оплаты счёта")
+			return Document{}, apperr.Conflict("no_act", "акт появится после оплаты счёта").Uz("dalolatnoma hisob toʻlangandan keyin paydo boʻladi")
 		}
 		doc.Number, doc.Date = *inv.ActNumber, *inv.ActDate
 	default:
-		return Document{}, apperr.Validation("kind: invoice или act")
+		return Document{}, apperr.Validation("kind: invoice или act").Uz("kind: invoice yoki act")
 	}
 	if doc.Platform, err = GetSettings(ctx, s.pool); err != nil {
 		return doc, err

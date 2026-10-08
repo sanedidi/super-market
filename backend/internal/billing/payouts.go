@@ -13,6 +13,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
@@ -116,7 +117,7 @@ type PayoutInput struct {
 
 func (s *Service) getPayout(ctx context.Context, q db.Querier, id string) (Payout, error) {
 	if !httpx.IsUUID(id) {
-		return Payout{}, apperr.NotFound("заявка не найдена")
+		return Payout{}, apperr.NotFound("заявка не найдена").Uz("ariza topilmadi")
 	}
 	rows, err := q.Query(ctx, payoutSelect+` WHERE p.id = $1`, id)
 	if err != nil {
@@ -124,7 +125,7 @@ func (s *Service) getPayout(ctx context.Context, q db.Querier, id string) (Payou
 	}
 	out, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[Payout])
 	if errors.Is(err, pgx.ErrNoRows) {
-		return out, apperr.NotFound("заявка не найдена")
+		return out, apperr.NotFound("заявка не найдена").Uz("ariza topilmadi")
 	}
 	return out, err
 }
@@ -136,10 +137,10 @@ func (s *Service) RequestPayout(ctx context.Context, p *identity.Principal, in P
 		return Payout{}, err
 	}
 	if !in.Amount.Valid() || money.D(string(in.Amount)).Sign() <= 0 {
-		return Payout{}, apperr.Validation("amount: сумма больше нуля")
+		return Payout{}, apperr.Validation("amount: сумма больше нуля").Uz("amount: summa noldan katta boʻlsin")
 	}
 	if strings.TrimSpace(in.Requisites) == "" {
-		return Payout{}, apperr.Validation("requisites: укажите карту или расчётный счёт")
+		return Payout{}, apperr.Validation("requisites: укажите карту или расчётный счёт").Uz("requisites: karta yoki hisob raqamini kiriting")
 	}
 	var id string
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -152,7 +153,7 @@ func (s *Service) RequestPayout(ctx context.Context, p *identity.Principal, in P
 			return err
 		}
 		if next != nil {
-			return apperr.Conflict("payout_too_soon", "вывод доступен раз в неделю").
+			return apperr.Conflict("payout_too_soon", "вывод доступен раз в неделю").Uz("pul yechib olish haftada bir marta mumkin").
 				WithDetails(map[string]any{"next_payout_at": next})
 		}
 		avail, err := available(ctx, tx, p.NetworkID)
@@ -160,7 +161,7 @@ func (s *Service) RequestPayout(ctx context.Context, p *identity.Principal, in P
 			return err
 		}
 		if money.D(avail).Cmp(money.D(string(in.Amount))) < 0 {
-			return apperr.Conflict("insufficient_balance", "на балансе недостаточно денег").
+			return apperr.Conflict("insufficient_balance", "на балансе недостаточно денег").Uz("balansda pul yetarli emas").
 				WithDetails(map[string]any{"available": avail})
 		}
 		if err := tx.QueryRow(ctx, `INSERT INTO payouts (network_id, number, amount, requisites, note, requested_by)
@@ -185,7 +186,7 @@ func (s *Service) RequestPayout(ctx context.Context, p *identity.Principal, in P
 
 func (s *Service) listPayouts(ctx context.Context, networkID, status string, page httpx.Page) ([]Payout, error) {
 	if status != "" && status != "requested" && status != "paid" && status != "rejected" {
-		return nil, apperr.Validation("status: requested, paid или rejected")
+		return nil, apperr.Validation("status: requested, paid или rejected").Uz("status: requested, paid yoki rejected")
 	}
 	rows, err := s.pool.Query(ctx, payoutSelect+`
 		WHERE ($1 = '' OR p.network_id::text = $1) AND ($2 = '' OR p.status = $2)
@@ -205,7 +206,7 @@ func (s *Service) StorePayouts(ctx context.Context, p *identity.Principal, statu
 
 func (s *Service) AdminPayouts(ctx context.Context, networkID, status string, page httpx.Page) ([]Payout, error) {
 	if networkID != "" && !httpx.IsUUID(networkID) {
-		return nil, apperr.Validation("network_id: неверный id")
+		return nil, apperr.Validation("network_id: неверный id").Uz("network_id: id notoʻgʻri")
 	}
 	return s.listPayouts(ctx, networkID, status, page)
 }
@@ -214,11 +215,11 @@ func (s *Service) AdminPayouts(ctx context.Context, networkID, status string, pa
 // При отказе сумма возвращается на баланс сети.
 func (s *Service) ProcessPayout(ctx context.Context, id, status, note string) (Payout, error) {
 	if status != "paid" && status != "rejected" {
-		return Payout{}, apperr.Validation("status: paid или rejected")
+		return Payout{}, apperr.Validation("status: paid или rejected").Uz("status: paid yoki rejected")
 	}
 	note = strings.TrimSpace(note)
 	if status == "rejected" && note == "" {
-		return Payout{}, apperr.Validation("note: укажите причину отказа")
+		return Payout{}, apperr.Validation("note: укажите причину отказа").Uz("note: rad etish sababini kiriting")
 	}
 	var out Payout
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -235,7 +236,7 @@ func (s *Service) ProcessPayout(ctx context.Context, id, status, note string) (P
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return apperr.Conflict("already_processed", "заявка уже обработана")
+			return apperr.Conflict("already_processed", "заявка уже обработана").Uz("ariza allaqachon koʻrib chiqilgan")
 		}
 		if status == "rejected" {
 			if _, err := tx.Exec(ctx, `DELETE FROM balance_entries WHERE payout_id = $1`, id); err != nil {
@@ -248,9 +249,15 @@ func (s *Service) ProcessPayout(ctx context.Context, id, status, note string) (P
 	if err != nil {
 		return Payout{}, err
 	}
-	text := fmt.Sprintf("Вывод №%d на %s сум выплачен.", out.Number, out.Amount)
+	text := i18n.Text{
+		RU: fmt.Sprintf("Вывод №%d на %s сум выплачен.", out.Number, out.Amount),
+		UZ: fmt.Sprintf("№%d pul yechib olish arizasi boʻyicha %s soʻm toʻlandi.", out.Number, out.Amount),
+	}
 	if status == "rejected" {
-		text = fmt.Sprintf("Вывод №%d на %s сум отклонён: %s. Сумма вернулась на баланс.", out.Number, out.Amount, note)
+		text = i18n.Text{
+			RU: fmt.Sprintf("Вывод №%d на %s сум отклонён: %s. Сумма вернулась на баланс.", out.Number, out.Amount, note),
+			UZ: fmt.Sprintf("№%d pul yechib olish arizasi (%s soʻm) rad etildi: %s. Summa balansga qaytarildi.", out.Number, out.Amount, note),
+		}
 	}
 	s.notify.NetworkOwners(ctx, out.NetworkID, identity.PermPayoutsManage, text)
 	return out, nil

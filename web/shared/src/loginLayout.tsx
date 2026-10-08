@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Brand } from './shell'
+import { LangSwitch, tr } from './i18n'
 
 /** Общий каркас экранов входа: карточка слева, картинка справа. */
 export function LoginLayout({ title, children }: { title: string; children: ReactNode }) {
@@ -8,6 +9,9 @@ export function LoginLayout({ title, children }: { title: string; children: Reac
       <div className="sm-login-left">
         <div className="sm-login-top">
           <Brand title="Super Market" subtitle={title} />
+          <div style={{ marginLeft: 'auto' }}>
+            <LangSwitch size="middle" />
+          </div>
         </div>
         <div className="sm-login-body">
           <div className="sm-login-card">{children}</div>
@@ -16,26 +20,32 @@ export function LoginLayout({ title, children }: { title: string; children: Reac
       </div>
       <div className="sm-login-art">
         <h2>
-          Магазины, заказы
-          <br />и деньги — в одном месте
+          {tr('Магазины, заказы', 'Doʻkonlar, buyurtmalar')}
+          <br />
+          {tr('и деньги — в одном месте', 'va pullar — bir joyda')}
         </h2>
-        <p>Онлайн-заказы из приложения, касса, склад, курьеры и выплаты. Всё видно сразу — без таблиц и звонков.</p>
+        <p>
+          {tr(
+            'Онлайн-заказы из приложения, касса, склад, курьеры и выплаты. Всё видно сразу — без таблиц и звонков.',
+            'Ilovadan onlayn buyurtmalar, kassa, ombor, kuryerlar va toʻlovlar. Hammasi birdaniga koʻrinadi — jadval va qoʻngʻiroqlarsiz.',
+          )}
+        </p>
         <div className="sm-login-mock">
           <div className="sm-login-mock-grid">
             <div className="sm-login-mock-card">
-              <span>Продажи сегодня</span>
+              <span>{tr('Продажи сегодня', 'Bugungi sotuvlar')}</span>
               <b>12 540 000</b>
               <i>+12,5%</i>
             </div>
             <div className="sm-login-mock-card">
-              <span>Онлайн-заказы</span>
+              <span>{tr('Онлайн-заказы', 'Onlayn buyurtmalar')}</span>
               <b>148</b>
               <i>+8,3%</i>
             </div>
             <div className="sm-login-mock-card">
-              <span>Курьеры на смене</span>
+              <span>{tr('Курьеры на смене', 'Smenadagi kuryerlar')}</span>
               <b>24</b>
-              <i>в пути: 9</i>
+              <i>{tr('в пути: 9', 'yoʻlda: 9')}</i>
             </div>
           </div>
           <div className="sm-login-mock-bars">
@@ -45,10 +55,10 @@ export function LoginLayout({ title, children }: { title: string; children: Reac
           </div>
         </div>
         <div className="sm-login-points">
-          <span>Склад</span>
-          <span>Касса</span>
-          <span>Доставка</span>
-          <span>Финансы</span>
+          <span>{tr('Склад', 'Ombor')}</span>
+          <span>{tr('Касса', 'Kassa')}</span>
+          <span>{tr('Доставка', 'Yetkazib berish')}</span>
+          <span>{tr('Финансы', 'Moliya')}</span>
         </div>
       </div>
     </div>

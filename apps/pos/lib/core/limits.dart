@@ -1,6 +1,8 @@
 // Ограничения онлайн-кассы (ПКМ № 943): смена не длиннее 24 часов, без связи
 // с ОФД касса работает не дольше 24 часов. Здесь — только расчёт, без UI.
 
+import 'package:sm_core/sm_core.dart' show tr;
+
 /// Смена и работа без связи — не дольше суток.
 const limit24h = Duration(hours: 24);
 
@@ -53,6 +55,6 @@ String fmtDuration(Duration d) {
   if (d.isNegative) d = Duration.zero;
   final h = d.inHours;
   final m = d.inMinutes % 60;
-  if (h == 0) return '$m мин';
-  return m == 0 ? '$h ч' : '$h ч $m мин';
+  if (h == 0) return tr('$m мин', '$m daq');
+  return m == 0 ? tr('$h ч', '$h soat') : tr('$h ч $m мин', '$h soat $m daq');
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
@@ -32,13 +33,13 @@ var orderTexts = map[string]map[string]orderText{
 		"expired":    {"Заказ №%d не оплачен", "Время на оплату истекло, заказ отменён"},
 	},
 	"uz": {
-		"paid":       {"Buyurtma №%d to‘landi", "«%s» buyurtmani qabul qilishini kutyapmiz"},
-		"accepted":   {"Buyurtma №%d qabul qilindi", "«%s» buyurtmangizni yig‘ishni boshladi"},
-		"picked":     {"Buyurtma №%d yig‘ildi", "Tez orada kuryerga topshiramiz"},
-		"delivering": {"Buyurtma №%d yo‘lda", "Kuryer sizga qarab kelmoqda"},
-		"delivered":  {"Buyurtma №%d yetkazildi", "«%s»dan xarid qilganingiz uchun rahmat!"},
-		"cancelled":  {"Buyurtma №%d bekor qilindi", "Agar to‘lov qilingan bo‘lsa, pul kartangizga qaytariladi"},
-		"expired":    {"Buyurtma №%d to‘lanmadi", "To‘lov vaqti tugadi, buyurtma bekor qilindi"},
+		"paid":       {"Buyurtma №%d toʻlandi", "«%s» buyurtmani qabul qilishini kutyapmiz"},
+		"accepted":   {"Buyurtma №%d qabul qilindi", "«%s» buyurtmangizni yigʻishni boshladi"},
+		"picked":     {"Buyurtma №%d yigʻildi", "Tez orada kuryerga topshiramiz"},
+		"delivering": {"Buyurtma №%d yoʻlda", "Kuryer sizga qarab kelmoqda"},
+		"delivered":  {"Buyurtma №%d yetkazildi", "«%s» doʻkonidan xarid qilganingiz uchun rahmat!"},
+		"cancelled":  {"Buyurtma №%d bekor qilindi", "Agar toʻlov qilingan boʻlsa, pul kartangizga qaytariladi"},
+		"expired":    {"Buyurtma №%d toʻlanmadi", "Toʻlov vaqti tugadi, buyurtma bekor qilindi"},
 	},
 }
 
@@ -114,12 +115,15 @@ func enqueueNewOrder(ctx context.Context, q db.Querier, orderID string) error {
 	if err != nil {
 		return err
 	}
-	body := Sum(total) + " сум"
+	body := i18n.Text{RU: Sum(total) + " сум", UZ: Sum(total) + " soʻm"}
 	if cash {
-		body += " · наличными курьеру"
+		body.RU += " · наличными курьеру"
+		body.UZ += " · kuryerga naqd pul"
 	}
-	body += ". Примите заказ"
-	return EnqueueStaff(ctx, q, storeID, "orders.manage", "store_order", fmt.Sprintf("Новый заказ №%d", number), body,
+	body.RU += ". Примите заказ"
+	body.UZ += ". Buyurtmani qabul qiling"
+	title := i18n.Text{RU: fmt.Sprintf("Новый заказ №%d", number), UZ: fmt.Sprintf("Yangi buyurtma №%d", number)}
+	return EnqueueStaff(ctx, q, storeID, "orders.manage", "store_order", title, body,
 		map[string]string{"type": "order", "order_id": orderID})
 }
 
@@ -127,8 +131,8 @@ func enqueueNewOrder(ctx context.Context, q db.Querier, orderID string) error {
 func Sum(v string) string { return money.Group(v) }
 
 // Enqueue ставит в очередь произвольное уведомление покупателю (семья и
-// др.). Удалённым аккаунтам не отправляется.
-func Enqueue(ctx context.Context, q db.Querier, userID, kind, title, body string, data map[string]string) error {
+// др.) на его языке (customers.language). Удалённым аккаунтам не отправляется.
+func Enqueue(ctx context.Context, q db.Querier, userID, kind string, title, body i18n.Text, data map[string]string) error {
 	if data == nil {
 		data = map[string]string{}
 	}
@@ -138,7 +142,10 @@ func Enqueue(ctx context.Context, q db.Querier, userID, kind, title, body string
 	}
 	_, err = q.Exec(ctx, `
 		INSERT INTO notifications_outbox (user_id, kind, title, body, data)
-		SELECT c.user_id, $2, $3, $4, $5::jsonb FROM customers c WHERE c.user_id = $1::uuid AND c.deleted_at IS NULL`,
-		userID, kind, title, body, string(js))
+		SELECT c.user_id, $2,
+		       CASE WHEN c.language = 'uz' THEN $6 ELSE $3 END,
+		       CASE WHEN c.language = 'uz' THEN $7 ELSE $4 END, $5::jsonb
+		FROM customers c WHERE c.user_id = $1::uuid AND c.deleted_at IS NULL`,
+		userID, kind, title.RU, body.RU, string(js), uzOr(title), uzOr(body))
 	return err
 }

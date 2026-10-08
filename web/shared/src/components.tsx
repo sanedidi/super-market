@@ -1,10 +1,11 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { Alert, Button, Card, Form, Modal, Select, Space, Table, Tag, type SelectProps, type PaginationProps, type TableColumnsType, type TableProps } from 'antd'
+import { Alert, Button, Card, Form, Modal, Select, Space, Table, Tag, type FormInstance, type SelectProps, type PaginationProps, type TableColumnsType, type TableProps } from 'antd'
 import { LeftOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons'
 import { useShell } from './shell'
 import { api } from './api'
 import { errorText, useAction, useDebounced, useList, usePaged } from './hooks'
 import { DeleteButton } from './remove'
+import { tr } from './i18n'
 
 type Params = Record<string, string | number | boolean | undefined | null>
 
@@ -35,8 +36,8 @@ export function PageTitle({ title, extra, children, tabs }: { title: ReactNode; 
 
 /** Кнопки «Назад / Далее» в пагинации таблиц. */
 export const pageItemRender: PaginationProps['itemRender'] = (_page, type, el) => {
-  if (type === 'prev') return <span className="sm-page-nav"><LeftOutlined style={{ fontSize: 11 }} /> Назад</span>
-  if (type === 'next') return <span className="sm-page-nav">Далее <RightOutlined style={{ fontSize: 11 }} /></span>
+  if (type === 'prev') return <span className="sm-page-nav"><LeftOutlined style={{ fontSize: 11 }} /> {tr('Назад', 'Orqaga')}</span>
+  if (type === 'next') return <span className="sm-page-nav">{tr('Далее', 'Keyingi')} <RightOutlined style={{ fontSize: 11 }} /></span>
   return el
 }
 
@@ -48,9 +49,9 @@ export function LoadError({ error, retry }: { error: unknown; retry?: () => void
       type="error"
       showIcon
       style={{ marginBottom: 12 }}
-      message="Не удалось загрузить данные"
+      message={tr('Не удалось загрузить данные', 'Maʼlumotlarni yuklab boʻlmadi')}
       description={errorText(error)}
-      action={retry && <Button size="small" onClick={() => retry()}>Повторить</Button>}
+      action={retry && <Button size="small" onClick={() => retry()}>{tr('Повторить', 'Qayta urinish')}</Button>}
     />
   )
 }
@@ -154,29 +155,29 @@ const statusColors: Record<string, string> = {
 }
 
 const statusTitles: Record<string, string> = {
-  draft: 'Черновик',
-  posted: 'Проведён',
-  active: 'Активен',
-  blocked: 'Заблокирован',
-  pending: 'Ожидает',
-  approved: 'Одобрен',
-  rejected: 'Отклонён',
-  registered: 'Чек пробит',
-  paid: 'Оплачен',
-  unpaid: 'Не оплачен',
-  cancelled: 'Отменён',
-  expired: 'Истёк',
-  requested: 'Запрошен',
-  refund_pending: 'Ждёт возврата',
-  refunded: 'Возвращён',
-  awaiting_payment: 'Ждёт оплаты',
-  accepted: 'Принят',
-  picking: 'Собирается',
-  picked: 'Собран',
-  delivering: 'В пути',
-  delivered: 'Доставлен',
-  available: 'Доступно',
-  created: 'Создан',
+  draft: tr('Черновик', 'Qoralama'),
+  posted: tr('Проведён', 'Oʻtkazilgan'),
+  active: tr('Активен', 'Faol'),
+  blocked: tr('Заблокирован', 'Bloklangan'),
+  pending: tr('Ожидает', 'Kutilmoqda'),
+  approved: tr('Одобрен', 'Maʼqullangan'),
+  rejected: tr('Отклонён', 'Rad etilgan'),
+  registered: tr('Чек пробит', 'Chek urilgan'),
+  paid: tr('Оплачен', 'Toʻlangan'),
+  unpaid: tr('Не оплачен', 'Toʻlanmagan'),
+  cancelled: tr('Отменён', 'Bekor qilingan'),
+  expired: tr('Истёк', 'Muddati oʻtgan'),
+  requested: tr('Запрошен', 'Soʻralgan'),
+  refund_pending: tr('Ждёт возврата', 'Qaytarish kutilmoqda'),
+  refunded: tr('Возвращён', 'Qaytarilgan'),
+  awaiting_payment: tr('Ждёт оплаты', 'Toʻlov kutilmoqda'),
+  accepted: tr('Принят', 'Qabul qilindi'),
+  picking: tr('Собирается', 'Yigʻilmoqda'),
+  picked: tr('Собран', 'Yigʻildi'),
+  delivering: tr('В пути', 'Yoʻlda'),
+  delivered: tr('Доставлен', 'Yetkazildi'),
+  available: tr('Доступно', 'Mavjud'),
+  created: tr('Создан', 'Yaratilgan'),
 }
 
 export function StatusTag({ status, title }: { status: string; title?: string }) {
@@ -184,7 +185,7 @@ export function StatusTag({ status, title }: { status: string; title?: string })
 }
 
 export function ActiveTag({ active }: { active: boolean }) {
-  return active ? <Tag color="green">Активен</Tag> : <Tag>Отключён</Tag>
+  return active ? <Tag color="green">{tr('Активен', 'Faol')}</Tag> : <Tag>{tr('Отключён', 'Oʻchirilgan')}</Tag>
 }
 
 export interface CrudConfig<T> {
@@ -193,8 +194,8 @@ export interface CrudConfig<T> {
   path: string
   params?: Params
   columns: TableColumnsType<T>
-  /** Поля формы (одни для создания и правки). */
-  form?: (editing: T | null) => ReactNode
+  /** Поля формы (одни для создания и правки); form — для <FormTranslate>. */
+  form?: (editing: T | null, form: FormInstance) => ReactNode
   toForm?: (row: T) => Record<string, unknown>
   toBody?: (values: Record<string, unknown>, editing: T | null) => unknown
   canCreate?: boolean
@@ -217,6 +218,20 @@ export interface CrudConfig<T> {
   deactivate?: ((row: T) => Record<string, unknown>) | null
 }
 
+/**
+ * Значения формы правки из строки API: в ответах для редактирования есть сырые
+ * name_ru/description_ru/… — в поле без суффикса кладём русский вариант
+ * (name в ответе уже на языке запроса).
+ */
+export function withRawRu<T extends object>(row: T): Record<string, unknown> {
+  const src = row as unknown as Record<string, unknown>
+  const out: Record<string, unknown> = { ...src }
+  for (const [k, v] of Object.entries(src)) {
+    if (k.endsWith('_ru') && typeof v === 'string') out[k.slice(0, -3)] = v
+  }
+  return out
+}
+
 /** Список + модальное окно создания/правки — для справочников. */
 export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
   const list = usePaged<T>(cfg.renderList ? null : cfg.path, cfg.params)
@@ -228,13 +243,13 @@ export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
       const body = cfg.toBody ? cfg.toBody(values, editing) : values
       return editing ? api.patch(`${cfg.path}/${editing.id}`, body) : api.post(cfg.path, body)
     },
-    { success: 'Сохранено' },
+    { success: tr('Сохранено', 'Saqlandi') },
   )
 
   const openForm = (row: T | null) => {
     setEditing(row)
     form.resetFields()
-    if (row) form.setFieldsValue(cfg.toForm ? cfg.toForm(row) : row)
+    if (row) form.setFieldsValue(cfg.toForm ? cfg.toForm(row) : withRawRu(row))
     setOpen(true)
   }
 
@@ -250,7 +265,7 @@ export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
         <Space size={8}>
           {editable && (
             <Button size="small" onClick={() => openForm(row)}>
-              Изменить
+              {tr('Изменить', 'Tahrirlash')}
             </Button>
           )}
           {deletable(row) && (
@@ -275,7 +290,7 @@ export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
           cfg.form &&
           cfg.canCreate !== false && (
             <Button type="primary" icon={<PlusOutlined />} onClick={() => openForm(null)}>
-              {cfg.createLabel ?? 'Добавить'}
+              {cfg.createLabel ?? tr('Добавить', 'Qoʻshish')}
             </Button>
           )
         }
@@ -303,10 +318,10 @@ export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
       {cfg.form && (
         <Modal
           open={open}
-          title={editing ? 'Изменить' : cfg.createLabel ?? 'Добавить'}
+          title={editing ? tr('Изменить', 'Tahrirlash') : cfg.createLabel ?? tr('Добавить', 'Qoʻshish')}
           onCancel={() => setOpen(false)}
           onOk={() => form.submit()}
-          okText="Сохранить"
+          okText={tr('Сохранить', 'Saqlash')}
           confirmLoading={save.isPending}
           width={cfg.modalWidth}
           forceRender
@@ -323,7 +338,7 @@ export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
               })
             }
           >
-            {cfg.form(editing)}
+            {cfg.form(editing, form)}
           </Form>
         </Modal>
       )}

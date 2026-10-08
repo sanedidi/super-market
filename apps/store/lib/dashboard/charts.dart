@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:sm_core/sm_core.dart';
 
 import '../ui/theme.dart';
 
@@ -19,7 +20,7 @@ abstract final class ChartColors {
   static const heat = [Color(0xFFEEF4FC), Color(0xFFC9DCF5), Color(0xFF94BBEC), Color(0xFF5F97E0), Color(0xFF2A78D6), Color(0xFF1B4F91)];
 }
 
-/// 4 860 000 → «4,86 млн», 820 000 → «820 тыс».
+/// 4 860 000 → «4,86 млн» / «4,86 mln», 820 000 → «820 тыс» / «820 ming».
 String shortMoney(num v) {
   final a = v.abs();
   String f(num x, int d) {
@@ -27,8 +28,8 @@ String shortMoney(num v) {
     if (s.contains('.')) s = s.replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
     return s.replaceAll('.', ',');
   }
-  if (a >= 1e6) return '${f(v / 1e6, a >= 1e8 ? 0 : 2)} млн';
-  if (a >= 1e3) return '${(v / 1e3).round()} тыс';
+  if (a >= 1e6) return '${f(v / 1e6, a >= 1e8 ? 0 : 2)} ${tr('млн', 'mln')}';
+  if (a >= 1e3) return '${(v / 1e3).round()} ${tr('тыс', 'ming')}';
   return '${v.round()}';
 }
 
@@ -452,7 +453,7 @@ class _ParetoPainter extends CustomPainter {
     c.drawCircle(a, 4.5, Paint()..color = Colors.white);
     c.drawCircle(a, 3, Paint()..color = ChartColors.pos);
     _text(c, '0%', Offset(0, h + 2));
-    _text(c, '100% товаров', Offset(s.width, h + 2), align: TextAlign.right);
+    _text(c, tr('100% товаров', '100% mahsulot'), Offset(s.width, h + 2), align: TextAlign.right);
   }
 
   @override
@@ -476,7 +477,7 @@ class Heatmap extends StatelessWidget {
   final List<int> slots; // начало двухчасовых отрезков: 8, 10, …
   final HeatCell? peak;
 
-  static const days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+  static List<String> get days => tr('Пн Вт Ср Чт Пт Сб Вс', 'Du Se Ch Pa Ju Sh Ya').split(' ');
 
   double _sum(int d, int from) => cells.where((c) => c.weekday == d && c.hour >= from && c.hour < from + 2).fold(0.0, (a, c) => a + c.checks);
 

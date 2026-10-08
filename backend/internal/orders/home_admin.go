@@ -77,21 +77,21 @@ func (s *Service) checkScope(ctx context.Context, sc LayoutScope) (network, stor
 		return "", "", nil
 	}
 	if !httpx.IsUUID(sc.NetworkID) {
-		return "", "", apperr.NotFound("сеть не найдена")
+		return "", "", apperr.NotFound("сеть не найдена").Uz("tarmoq topilmadi")
 	}
 	err = s.pool.QueryRow(ctx, `SELECT name FROM networks WHERE id = $1`, sc.NetworkID).Scan(&network)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", "", apperr.NotFound("сеть не найдена")
+		return "", "", apperr.NotFound("сеть не найдена").Uz("tarmoq topilmadi")
 	}
 	if err != nil || sc.StoreID == "" {
 		return network, "", err
 	}
 	if !httpx.IsUUID(sc.StoreID) {
-		return "", "", apperr.NotFound("магазин не найден")
+		return "", "", apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	err = s.pool.QueryRow(ctx, `SELECT name FROM stores WHERE id = $1 AND network_id = $2`, sc.StoreID, sc.NetworkID).Scan(&store)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", "", apperr.NotFound("магазин не найден")
+		return "", "", apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	return network, store, err
 }
@@ -271,7 +271,7 @@ func (s *Service) Publish(ctx context.Context, sc LayoutScope, userID string, by
 		return LayoutEditor{}, err
 	}
 	if !ok || row.draft == nil {
-		return LayoutEditor{}, apperr.Conflict("no_draft", "нет изменений для публикации")
+		return LayoutEditor{}, apperr.Conflict("no_draft", "нет изменений для публикации").Uz("eʼlon qilish uchun oʻzgarish yoʻq")
 	}
 	if err := ValidateBlocks(row.draft); err != nil {
 		return LayoutEditor{}, err
@@ -343,7 +343,7 @@ func (s *Service) RestoreVersion(ctx context.Context, sc LayoutScope, version in
 		return LayoutEditor{}, err
 	}
 	if !ok {
-		return LayoutEditor{}, apperr.NotFound("версия не найдена")
+		return LayoutEditor{}, apperr.NotFound("версия не найдена").Uz("versiya topilmadi")
 	}
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE home_layouts l SET draft = v.blocks, draft_updated_at = now(), updated_at = now()
@@ -352,7 +352,7 @@ func (s *Service) RestoreVersion(ctx context.Context, sc LayoutScope, version in
 		return LayoutEditor{}, err
 	}
 	if tag.RowsAffected() == 0 {
-		return LayoutEditor{}, apperr.NotFound("версия не найдена")
+		return LayoutEditor{}, apperr.NotFound("версия не найдена").Uz("versiya topilmadi")
 	}
 	return s.LayoutForEditor(ctx, sc)
 }
@@ -361,7 +361,7 @@ func (s *Service) RestoreVersion(ctx context.Context, sc LayoutScope, version in
 // витрину уровнем выше.
 func (s *Service) ResetLayout(ctx context.Context, sc LayoutScope) (LayoutEditor, error) {
 	if sc.level() == "platform" {
-		return LayoutEditor{}, apperr.Validation("шаблон платформы удалить нельзя")
+		return LayoutEditor{}, apperr.Validation("шаблон платформы удалить нельзя").Uz("platforma shablonini oʻchirib boʻlmaydi")
 	}
 	if _, _, err := s.checkScope(ctx, sc); err != nil {
 		return LayoutEditor{}, err
@@ -389,7 +389,7 @@ func (s *Service) PreviewHome(ctx context.Context, networkID, storeID string, bl
 		return StoreHome{}, err
 	}
 	if networkID != "" && st.NetworkID != networkID {
-		return StoreHome{}, apperr.NotFound("магазин не найден")
+		return StoreHome{}, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	plan, err := showcase.ForNetwork(ctx, s.pool, st.NetworkID)
 	if err != nil {
@@ -417,7 +417,7 @@ type PreviewStore struct {
 // принимает заказы (предпросмотр недоступен). Для сети — только её.
 func (s *Service) PreviewStores(ctx context.Context, networkID string, onlyOnline bool) ([]PreviewStore, error) {
 	if networkID != "" && !httpx.IsUUID(networkID) {
-		return nil, apperr.NotFound("сеть не найдена")
+		return nil, apperr.NotFound("сеть не найдена").Uz("tarmoq topilmadi")
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT s.id, s.name, n.id, n.name, s.accepts_online AND s.status = 'active' AND n.status = 'active'

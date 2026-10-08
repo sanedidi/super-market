@@ -51,13 +51,13 @@ class _OrderScreenState extends State<OrderScreen> {
     }
   }
 
-  Future<void> _act(String step, [Object? body, String done = 'Статус заказа обновлён']) async {
+  Future<void> _act(String step, [Object? body, String? done]) async {
     setState(() => _busy = step);
     try {
       final o = await context.read<Api>().post('/store/orders/${widget.id}/$step', body ?? const {}) as Map<String, dynamic>;
       if (!mounted) return;
       setState(() => _o = o);
-      showMessage(context, done);
+      showMessage(context, done ?? tr('Статус заказа обновлён', 'Buyurtma holati yangilandi'));
     } catch (e) {
       if (mounted) showMessage(context, e);
     } finally {
@@ -68,28 +68,28 @@ class _OrderScreenState extends State<OrderScreen> {
   Future<void> _cancel() async {
     final reason = await promptSheet(
       context,
-      title: 'Отменить заказ № ${_o?['number'] ?? ''}?',
-      text: 'Покупатель получит уведомление и возврат денег. Укажите причину.',
-      options: const ['Нет товара', 'Покупатель отказался', 'Магазин закрыт', 'Другое'],
-      hint: 'Комментарий (необязательно)',
-      confirm: 'Отменить заказ',
-      cancel: 'Не отменять',
+      title: tr('Отменить заказ № ${_o?['number'] ?? ''}?', '№ ${_o?['number'] ?? ''} buyurtmani bekor qilasizmi?'),
+      text: tr('Покупатель получит уведомление и возврат денег. Укажите причину.', 'Xaridorga bildirishnoma keladi va pul qaytariladi. Sababini koʻrsating.'),
+      options: [tr('Нет товара', 'Mahsulot yoʻq'), tr('Покупатель отказался', 'Xaridor voz kechdi'), tr('Магазин закрыт', 'Doʻkon yopiq'), tr('Другое', 'Boshqa')],
+      hint: tr('Комментарий (необязательно)', 'Izoh (ixtiyoriy)'),
+      confirm: tr('Отменить заказ', 'Buyurtmani bekor qilish'),
+      cancel: tr('Не отменять', 'Bekor qilmaslik'),
     );
     if (reason == null || reason.isEmpty) return;
-    await _act('cancel', {'reason': reason}, 'Заказ отменён');
+    await _act('cancel', {'reason': reason}, tr('Заказ отменён', 'Buyurtma bekor qilindi'));
   }
 
   Future<void> _handover() async {
     final code = await promptSheet(
       context,
-      title: 'Выдать курьеру',
-      text: 'Попросите курьера показать код в его приложении.',
-      hint: 'Код из приложения курьера',
+      title: tr('Выдать курьеру', 'Kuryerga topshirish'),
+      text: tr('Попросите курьера показать код в его приложении.', 'Kuryerdan ilovasidagi kodni koʻrsatishini soʻrang.'),
+      hint: tr('Код из приложения курьера', 'Kuryer ilovasidagi kod'),
       keyboardType: TextInputType.number,
-      confirm: 'Выдать',
+      confirm: tr('Выдать', 'Topshirish'),
     );
     if (code == null || code.isEmpty) return;
-    await _act('crowd-handover', {'code': code}, 'Заказ выдан курьеру');
+    await _act('crowd-handover', {'code': code}, tr('Заказ выдан курьеру', 'Buyurtma kuryerga topshirildi'));
   }
 
   List<Widget> _actions(Map<String, dynamic> o) {
@@ -98,29 +98,29 @@ class _OrderScreenState extends State<OrderScreen> {
     Widget primary(String label, IconData icon, String step) =>
         BigButton(label: label, icon: icon, busy: _busy == step, onPressed: _busy == null ? () => _act(step) : null);
     final out = <Widget>[
-      if (s == 'paid') primary('Принять заказ', Icons.check_rounded, 'accept'),
-      if (s == 'accepted') primary('Начать сборку', Icons.shopping_basket_rounded, 'start-picking'),
-      if (s == 'picking') primary('Собран', Icons.inventory_rounded, 'picked'),
+      if (s == 'paid') primary(tr('Принять заказ', 'Buyurtmani qabul qilish'), Icons.check_rounded, 'accept'),
+      if (s == 'accepted') primary(tr('Начать сборку', 'Yigʻishni boshlash'), Icons.shopping_basket_rounded, 'start-picking'),
+      if (s == 'picking') primary(tr('Собран', 'Yigʻildi'), Icons.inventory_rounded, 'picked'),
       if (s == 'accepted') ...[
         const SizedBox(height: 10),
-        BigButton(label: 'Сразу собран', color: AppColors.soft, foreground: AppColors.ink, busy: _busy == 'picked', onPressed: _busy == null ? () => _act('picked') : null),
+        BigButton(label: tr('Сразу собран', 'Darhol yigʻildi'), color: AppColors.soft, foreground: AppColors.ink, busy: _busy == 'picked', onPressed: _busy == null ? () => _act('picked') : null),
       ],
       if (crowd && s == 'picked') ...[
-        BigButton(label: 'Выдать курьеру по коду', icon: Icons.qr_code_rounded, busy: _busy == 'crowd-handover', onPressed: _busy == null ? _handover : null),
+        BigButton(label: tr('Выдать курьеру по коду', 'Kuryerga kod orqali topshirish'), icon: Icons.qr_code_rounded, busy: _busy == 'crowd-handover', onPressed: _busy == null ? _handover : null),
         const SizedBox(height: 10),
         BigButton(
-          label: 'Снять курьера',
+          label: tr('Снять курьера', 'Kuryerni olib tashlash'),
           color: AppColors.soft,
           foreground: AppColors.ink,
           busy: _busy == 'crowd-release',
-          onPressed: _busy == null ? () => _act('crowd-release', null, 'Курьер снят с заказа') : null,
+          onPressed: _busy == null ? () => _act('crowd-release', null, tr('Курьер снят с заказа', 'Kuryer buyurtmadan olib tashlandi')) : null,
         ),
       ],
-      if (!crowd && s == 'picked') primary('В путь', Icons.delivery_dining_rounded, 'start-delivery'),
-      if (!crowd && s == 'delivering') primary('Доставлен', Icons.done_all_rounded, 'delivered'),
+      if (!crowd && s == 'picked') primary(tr('В путь', 'Yoʻlga chiqish'), Icons.delivery_dining_rounded, 'start-delivery'),
+      if (!crowd && s == 'delivering') primary(tr('Доставлен', 'Yetkazildi'), Icons.done_all_rounded, 'delivered'),
       if (['paid', 'accepted', 'picking'].contains(s)) ...[
         const SizedBox(height: 10),
-        BigButton(label: 'Отменить', color: AppColors.primarySoft, foreground: AppColors.primary, busy: _busy == 'cancel', onPressed: _busy == null ? _cancel : null),
+        BigButton(label: tr('Отменить', 'Bekor qilish'), color: AppColors.primarySoft, foreground: AppColors.primary, busy: _busy == 'cancel', onPressed: _busy == null ? _cancel : null),
       ],
     ];
     return out;
@@ -130,12 +130,12 @@ class _OrderScreenState extends State<OrderScreen> {
   Widget build(BuildContext context) {
     final o = _o;
     return Scaffold(
-      appBar: AppBar(title: Text(o == null ? 'Заказ' : 'Заказ № ${o['number']}')),
+      appBar: AppBar(title: Text(o == null ? tr('Заказ', 'Buyurtma') : tr('Заказ № ${o['number']}', 'Buyurtma № ${o['number']}'))),
       body: o == null
           ? Center(
               child: _error == null
                   ? const CircularProgressIndicator()
-                  : EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось открыть заказ', text: '$_error', action: 'Повторить', onAction: _load),
+                  : EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось открыть заказ', 'Buyurtmani ochib boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load),
             )
           : RefreshIndicator(
               onRefresh: _load,
@@ -152,39 +152,39 @@ class _OrderScreenState extends State<OrderScreen> {
     final crowdPhone = o['crowd_courier_phone'] as String?;
     final address = [
       '${o['address'] ?? ''}',
-      if ('${o['entrance'] ?? ''}'.isNotEmpty) 'подъезд ${o['entrance']}',
-      if ('${o['floor'] ?? ''}'.isNotEmpty) 'этаж ${o['floor']}',
-      if ('${o['apartment'] ?? ''}'.isNotEmpty) 'кв. ${o['apartment']}',
+      if ('${o['entrance'] ?? ''}'.isNotEmpty) tr('подъезд ${o['entrance']}', 'podʼyezd ${o['entrance']}'),
+      if ('${o['floor'] ?? ''}'.isNotEmpty) tr('этаж ${o['floor']}', 'qavat ${o['floor']}'),
+      if ('${o['apartment'] ?? ''}'.isNotEmpty) tr('кв. ${o['apartment']}', 'xonadon ${o['apartment']}'),
     ].where((e) => e.isNotEmpty).join(', ');
     final actions = _actions(o);
     return [
       Wrap(spacing: 8, runSpacing: 8, children: [
         StatusChip('${o['status_title'] ?? s}', tone: orderTone(s)),
-        StatusChip(cash ? 'Наличными ${money(o['total'])}' : 'Оплачен ${money(o['total'])}', icon: cash ? Icons.payments_outlined : Icons.credit_card_rounded, tone: cash ? ChipTone.amber : ChipTone.green),
-        if (o['delivery_to'] != null) StatusChip('к ${dateTime(o['delivery_to']).split(' ').last}', icon: Icons.schedule_rounded),
+        StatusChip(cash ? tr('Наличными ${money(o['total'])}', 'Naqd pul ${money(o['total'])}') : tr('Оплачен ${money(o['total'])}', 'Toʻlangan ${money(o['total'])}'), icon: cash ? Icons.payments_outlined : Icons.credit_card_rounded, tone: cash ? ChipTone.amber : ChipTone.green),
+        if (o['delivery_to'] != null) StatusChip(tr('к ${dateTime(o['delivery_to']).split(' ').last}', '${dateTime(o['delivery_to']).split(' ').last} gacha'), icon: Icons.schedule_rounded),
       ]),
       if (s == 'cancelled' && '${o['cancel_reason'] ?? ''}'.isNotEmpty) ...[
         const SizedBox(height: 12),
-        SectionCard(color: AppColors.warningSoft, children: [Text('Причина отмены: ${o['cancel_reason']}', style: AppText.body)]),
+        SectionCard(color: AppColors.warningSoft, children: [Text(tr('Причина отмены: ${o['cancel_reason']}', 'Bekor qilish sababi: ${o['cancel_reason']}'), style: AppText.body)]),
       ],
       if (o['crowd_open'] == true) ...[
         const SizedBox(height: 12),
-        const SectionCard(color: AppColors.blueSoft, children: [Text('Заказ предложен курьерам по пути — ждём, кто возьмёт.', style: AppText.body)]),
+        SectionCard(color: AppColors.blueSoft, children: [Text(tr('Заказ предложен курьерам по пути — ждём, кто возьмёт.', 'Buyurtma yoʻlakay kuryerlarga taklif qilindi — kim olishini kutyapmiz.'), style: AppText.body)]),
       ],
       if (o['crowd_courier_id'] != null && s == 'picked') ...[
         const SizedBox(height: 12),
-        SectionCard(color: AppColors.blueSoft, title: 'Курьер по пути', icon: Icons.directions_walk_rounded, children: [
+        SectionCard(color: AppColors.blueSoft, title: tr('Курьер по пути', 'Yoʻlakay kuryer'), icon: Icons.directions_walk_rounded, children: [
           Text(
-            [crowdPhone, if (o['crowd_pickup_until'] != null) 'заберёт до ${dateTime(o['crowd_pickup_until']).split(' ').last}'].whereType<String>().join(' · '),
+            [crowdPhone, if (o['crowd_pickup_until'] != null) tr('заберёт до ${dateTime(o['crowd_pickup_until']).split(' ').last}', '${dateTime(o['crowd_pickup_until']).split(' ').last} gacha olib ketadi')].whereType<String>().join(' · '),
             style: AppText.body,
           ),
           const SizedBox(height: 4),
-          const Text('Выдайте заказ по коду из приложения курьера.', style: AppText.small),
+          Text(tr('Выдайте заказ по коду из приложения курьера.', 'Buyurtmani kuryer ilovasidagi kod orqali topshiring.'), style: AppText.small),
         ]),
       ],
       if (actions.isNotEmpty) ...[const SizedBox(height: 16), ...actions],
       const SizedBox(height: 16),
-      SectionCard(title: 'Состав · ${items.length}', icon: Icons.shopping_bag_outlined, color: AppColors.white, children: [
+      SectionCard(title: tr('Состав · ${items.length}', 'Tarkibi · ${items.length}'), icon: Icons.shopping_bag_outlined, color: AppColors.white, children: [
         for (final it in items)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
@@ -200,24 +200,24 @@ class _OrderScreenState extends State<OrderScreen> {
             ]),
           ),
         const Divider(height: 20),
-        _sumRow('Товары', money(o['subtotal'])),
-        if ((num.tryParse('${o['discount'] ?? ''}') ?? 0) > 0) _sumRow('Скидка', '−${money(o['discount'])}'),
-        _sumRow('Доставка', money(o['delivery_fee'])),
-        _sumRow('Итого', money(o['total']), strong: true),
+        _sumRow(tr('Товары', 'Mahsulotlar'), money(o['subtotal'])),
+        if ((num.tryParse('${o['discount'] ?? ''}') ?? 0) > 0) _sumRow(tr('Скидка', 'Chegirma'), '−${money(o['discount'])}'),
+        _sumRow(tr('Доставка', 'Yetkazib berish'), money(o['delivery_fee'])),
+        _sumRow(tr('Итого', 'Jami'), money(o['total']), strong: true),
       ]),
       const SizedBox(height: 12),
-      SectionCard(title: 'Доставка', icon: Icons.place_outlined, color: AppColors.white, children: [
+      SectionCard(title: tr('Доставка', 'Yetkazib berish'), icon: Icons.place_outlined, color: AppColors.white, children: [
         Text(address, style: AppText.body),
         if ('${o['address_comment'] ?? ''}'.isNotEmpty) Text('${o['address_comment']}', style: AppText.small),
-        if ('${o['comment'] ?? ''}'.isNotEmpty) ...[const SizedBox(height: 6), Text('Комментарий: ${o['comment']}', style: AppText.small)],
-        if (o['courier_name'] != null) ...[const SizedBox(height: 6), Text('Курьер: ${o['courier_name']}', style: AppText.small)],
+        if ('${o['comment'] ?? ''}'.isNotEmpty) ...[const SizedBox(height: 6), Text(tr('Комментарий: ${o['comment']}', 'Izoh: ${o['comment']}'), style: AppText.small)],
+        if (o['courier_name'] != null) ...[const SizedBox(height: 6), Text(tr('Курьер: ${o['courier_name']}', 'Kuryer: ${o['courier_name']}'), style: AppText.small)],
         if (phone.isNotEmpty) ...[
           const SizedBox(height: 12),
           SmallButton(label: formatPhone(phone), icon: Icons.call_rounded, onPressed: () => launchUrl(Uri.parse('tel:$phone'))),
         ],
       ]),
       const SizedBox(height: 12),
-      Center(child: Text('Создан ${dateTime(o['created_at'])}', style: AppText.small)),
+      Center(child: Text(tr('Создан ${dateTime(o['created_at'])}', 'Yaratilgan: ${dateTime(o['created_at'])}'), style: AppText.small)),
     ];
   }
 

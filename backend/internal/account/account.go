@@ -39,7 +39,7 @@ func NewService(pool *pgxpool.Pool, id *identity.Service, n *notify.Notifier, lo
 // DeleteCrowd — курьер «по пути» удаляет свой аккаунт (DELETE /crowd/me).
 func (s *Service) DeleteCrowd(ctx context.Context, p *identity.Principal) error {
 	if p == nil || p.App != identity.AppCrowd {
-		return apperr.Forbidden("только для курьеров «по пути»")
+		return apperr.Forbidden("только для курьеров «по пути»").Uz("faqat «yoʻl-yoʻlakay» kuryerlar uchun")
 	}
 	return db.InTx(ctx, s.pool, func(tx pgx.Tx) error { return deleteCrowd(ctx, tx, p.UserID) })
 }
@@ -54,7 +54,7 @@ func deleteCrowd(ctx context.Context, tx pgx.Tx, userID string) error {
 	var status string
 	err := tx.QueryRow(ctx, `SELECT status FROM crowd_couriers WHERE user_id = $1 AND deleted_at IS NULL FOR UPDATE`, userID).Scan(&status)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return apperr.NotFound("профиль курьера не найден")
+		return apperr.NotFound("профиль курьера не найден").Uz("kuryer profili topilmadi")
 	}
 	if err != nil {
 		return err
@@ -64,7 +64,7 @@ func deleteCrowd(ctx context.Context, tx pgx.Tx, userID string) error {
 		SELECT number FROM orders WHERE crowd_courier_id = $1 AND status IN ('picked', 'delivering')
 		ORDER BY crowd_accepted_at LIMIT 1`, userID).Scan(&number)
 	if err == nil {
-		return apperr.Conflict("active_order", fmt.Sprintf("Сначала доставьте или отмените заказ №%d — потом аккаунт можно удалить", number)).
+		return apperr.Conflict("active_order", fmt.Sprintf("Сначала доставьте или отмените заказ №%d — потом аккаунт можно удалить", number)).Uz(fmt.Sprintf("Avval №%d buyurtmani yetkazing yoki bekor qiling — keyin akkauntni oʻchirish mumkin", number)).
 			WithDetails(map[string]any{"account": "crowd", "order_number": number})
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -81,7 +81,7 @@ func deleteCrowd(ctx context.Context, tx pgx.Tx, userID string) error {
 	}
 	if unpaid {
 		return apperr.Conflict("unpaid_balance",
-			fmt.Sprintf("К выплате %s сум — дождитесь выплаты в понедельник, потом аккаунт можно удалить", money.Group(balance))).
+			fmt.Sprintf("К выплате %s сум — дождитесь выплаты в понедельник, потом аккаунт можно удалить", money.Group(balance))).Uz(fmt.Sprintf("Toʻlanadigan summa: %s soʻm — dushanba kungi toʻlovni kuting, keyin akkauntni oʻchirish mumkin", money.Group(balance))).
 			WithDetails(map[string]any{"account": "crowd", "balance": balance})
 	}
 	for _, q := range []string{
@@ -109,7 +109,7 @@ type Result struct {
 	Requested []string `json:"requested"`
 }
 
-var errNoAccount = apperr.New(http.StatusNotFound, "account_not_found", "аккаунт с этим номером не найден")
+var errNoAccount = apperr.New(http.StatusNotFound, "account_not_found", "аккаунт с этим номером не найден").Uz("bu raqamli akkaunt topilmadi")
 
 // RequestCode отправляет код на номер, как при входе (Telegram или SMS, та же
 // пауза между запросами). Только для номера, у которого есть аккаунт, —
@@ -117,7 +117,7 @@ var errNoAccount = apperr.New(http.StatusNotFound, "account_not_found", "акк�
 func (s *Service) RequestCode(ctx context.Context, rawPhone string) (int, string, error) {
 	ph, err := phone.Normalize(rawPhone)
 	if err != nil {
-		return 0, "", apperr.Validation("неверный номер телефона")
+		return 0, "", apperr.Validation("неверный номер телефона").Uz("telefon raqami notoʻgʻri")
 	}
 	var exists bool
 	if err := s.pool.QueryRow(ctx, `

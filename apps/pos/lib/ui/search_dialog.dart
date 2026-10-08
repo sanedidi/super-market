@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sm_core/sm_core.dart' show tr;
 import 'package:flutter/services.dart';
 
 import '../core/catalog.dart';
@@ -60,7 +61,7 @@ class _SearchDialogState extends State<SearchDialog> {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Text('Поиск товара', style: t(22, w: FontWeight.w700)),
+            Text(tr('Поиск товара', 'Mahsulot qidirish'), style: t(22, w: FontWeight.w700)),
             const SizedBox(height: 12),
             Focus(
               onKeyEvent: _onKey,
@@ -68,7 +69,7 @@ class _SearchDialogState extends State<SearchDialog> {
                 controller: _ctrl,
                 autofocus: true,
                 style: t(20),
-                decoration: const InputDecoration(hintText: 'Название или штрихкод', prefixIcon: Icon(Icons.search)),
+                decoration: InputDecoration(hintText: tr('Название или штрихкод', 'Nomi yoki shtrix-kod'), prefixIcon: const Icon(Icons.search)),
                 onChanged: _search,
                 onSubmitted: (_) => _pick(),
               ),
@@ -77,7 +78,7 @@ class _SearchDialogState extends State<SearchDialog> {
             Expanded(
               child: _items.isEmpty
                   ? Center(
-                      child: Text(_ctrl.text.isEmpty ? 'Начните вводить название' : 'Ничего не найдено', style: t(15, c: C.td)))
+                      child: Text(_ctrl.text.isEmpty ? tr('Начните вводить название', 'Nomini kiritishni boshlang') : tr('Ничего не найдено', 'Hech narsa topilmadi'), style: t(15, c: C.td)))
                   : ListView.builder(
                       itemCount: _items.length,
                       itemBuilder: (_, i) {
@@ -91,9 +92,9 @@ class _SearchDialogState extends State<SearchDialog> {
                             subtitle: Text(
                               [
                                 if (p.barcodes.isNotEmpty) p.barcodes.first,
-                                if (p.plu != null) 'код ${p.plu}',
-                                if (p.marked) 'маркировка',
-                                if (!p.active) 'снят с продажи',
+                                if (p.plu != null) tr('код ${p.plu}', 'kod ${p.plu}'),
+                                if (p.marked) tr('маркировка', 'markirovka'),
+                                if (!p.active) tr('снят с продажи', 'sotuvdan olingan'),
                               ].join(' · '),
                               style: t(12, c: C.ts),
                             ),
@@ -105,7 +106,7 @@ class _SearchDialogState extends State<SearchDialog> {
                     ),
             ),
             const SizedBox(height: 8),
-            Text('↑↓ — выбрать · Enter — в чек · Esc — закрыть', style: t(12, c: C.ts)),
+            Text(tr('↑↓ — выбрать · Enter — в чек · Esc — закрыть', '↑↓ — tanlash · Enter — chekka · Esc — yopish'), style: t(12, c: C.ts)),
           ]),
         ),
       ),

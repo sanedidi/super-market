@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Alert, App, Button, Card, Col, Form, Input, Popconfirm, Row, Select, Space, Table, Typography } from 'antd'
 import { CheckOutlined, CloseOutlined, DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
-import { DeleteButton, LoadError, PageTitle, RemoteSelect, StatusTag, api, dateTime, errorText, money, useItem, useList, usePaged } from '@sm/shared'
+import { DeleteButton, LoadError, PageTitle, RemoteSelect, StatusTag, api, dateTime, errorText, money, tr, useItem, useList, usePaged } from '@sm/shared'
 import { useStore } from '../ctx'
 import { Num, ProductSelect, trimNum } from '../ui'
 import type { PriceDocument, PriceType } from '../types'
@@ -17,11 +17,11 @@ export function PriceDocsPage() {
   return (
     <>
       <PageTitle
-        title="Установка цен"
+        title={tr('Установка цен', 'Narxlarni belgilash')}
         extra={
           can('prices.manage') && (
             <Button type="primary" icon={<PlusOutlined />} onClick={() => nav(`${BASE}/new`)}>
-              Создать
+              {tr('Создать', 'Yaratish')}
             </Button>
           )
         }
@@ -37,18 +37,18 @@ export function PriceDocsPage() {
           onRow={(r) => ({ onClick: () => nav(`${BASE}/${r.id}`), style: { cursor: 'pointer' } })}
           columns={[
             { title: '№', dataIndex: 'number', width: 70 },
-            { title: 'Дата', dataIndex: 'created_at', render: dateTime },
-            { title: 'Тип цены', dataIndex: 'price_type_name' },
-            { title: 'Магазин', dataIndex: 'store_name', render: (v: string | null) => v ?? 'Вся сеть' },
-            { title: 'Товаров', dataIndex: 'items_count', align: 'right' },
-            { title: 'Примечание', dataIndex: 'note' },
-            { title: 'Статус', dataIndex: 'status', render: (s: string) => <StatusTag status={s} /> },
-            { title: 'Проведён', dataIndex: 'posted_at', render: dateTime },
-            { title: 'Автор', dataIndex: 'created_by' },
+            { title: tr('Дата', 'Sana'), dataIndex: 'created_at', render: dateTime },
+            { title: tr('Тип цены', 'Narx turi'), dataIndex: 'price_type_name' },
+            { title: tr('Магазин', 'Doʻkon'), dataIndex: 'store_name', render: (v: string | null) => v ?? tr('Вся сеть', 'Butun tarmoq') },
+            { title: tr('Товаров', 'Mahsulotlar'), dataIndex: 'items_count', align: 'right' },
+            { title: tr('Примечание', 'Izoh'), dataIndex: 'note' },
+            { title: tr('Статус', 'Holat'), dataIndex: 'status', render: (s: string) => <StatusTag status={s} /> },
+            { title: tr('Проведён', 'Oʻtkazilgan'), dataIndex: 'posted_at', render: dateTime },
+            { title: tr('Автор', 'Muallif'), dataIndex: 'created_by' },
             {
               key: 'del',
               align: 'right',
-              render: (_, r) => r.status === 'draft' && <DeleteButton path={`/store/price-documents/${r.id}`} name={`Черновик № ${r.number}`} />,
+              render: (_, r) => r.status === 'draft' && <DeleteButton path={`/store/price-documents/${r.id}`} name={tr(`Черновик № ${r.number}`, `Qoralama № ${r.number}`)} />,
             },
           ]}
         />
@@ -116,9 +116,9 @@ export function PriceDocEditor() {
     try {
       const h = await form.validateFields()
       const items = lines.filter((l) => l.product_id)
-      if (!items.length) throw new Error('Добавьте хотя бы один товар')
+      if (!items.length) throw new Error(tr('Добавьте хотя бы один товар', 'Kamida bitta mahsulot qoʻshing'))
       const bad = items.find((l) => !l.new_price)
-      if (bad) throw new Error(`Укажите новую цену: ${bad.product_name}`)
+      if (bad) throw new Error(tr(`Укажите новую цену: ${bad.product_name}`, `Yangi narxni kiriting: ${bad.product_name}`))
       const body = { note: h.note ?? '', items: items.map((l) => ({ product_id: l.product_id, new_price: trimNum(l.new_price) })) }
       if (isNew) {
         const created = await api.post<PriceDocument>('/store/price-documents', {
@@ -132,8 +132,8 @@ export function PriceDocEditor() {
       }
       if (post) {
         await api.post(`/store/price-documents/${docId}/post`)
-        message.success('Цены установлены')
-      } else message.success('Черновик сохранён')
+        message.success(tr('Цены установлены', 'Narxlar belgilandi'))
+      } else message.success(tr('Черновик сохранён', 'Qoralama saqlandi'))
       if (isNew) nav(`${BASE}/${docId}`, { replace: true })
       else void doc.refetch()
     } catch (e) {
@@ -151,10 +151,10 @@ export function PriceDocEditor() {
       <PageTitle
         title={
           isNew ? (
-            'Установка цен: новый документ'
+            tr('Установка цен: новый документ', 'Narxlarni belgilash: yangi hujjat')
           ) : (
             <>
-              Установка цен № {d?.number ?? ''} {d && <StatusTag status={d.status} />}
+              {tr('Установка цен', 'Narxlarni belgilash')} № {d?.number ?? ''} {d && <StatusTag status={d.status} />}
             </>
           )
         }
@@ -163,11 +163,11 @@ export function PriceDocEditor() {
             {!readOnly && (
               <>
                 <Button type="primary" icon={<SaveOutlined />} loading={busy} onClick={() => run(false)}>
-                  Сохранить черновик
+                  {tr('Сохранить черновик', 'Qoralamani saqlash')}
                 </Button>
-                <Popconfirm title="Провести документ и установить цены?" onConfirm={() => run(true)}>
+                <Popconfirm title={tr('Провести документ и установить цены?', 'Hujjat oʻtkazilib, narxlar belgilansinmi?')} onConfirm={() => run(true)}>
                   <Button className="sm-btn-blue" icon={<CheckOutlined />} loading={busy}>
-                    Провести
+                    {tr('Провести', 'Oʻtkazish')}
                   </Button>
                 </Popconfirm>
               </>
@@ -175,42 +175,42 @@ export function PriceDocEditor() {
           </Space>
         }
       >
-        <Button type="text" icon={<CloseOutlined />} onClick={() => nav(BASE)} title="Закрыть" aria-label="Закрыть" />
+        <Button type="text" icon={<CloseOutlined />} onClick={() => nav(BASE)} title={tr('Закрыть', 'Yopish')} aria-label={tr('Закрыть', 'Yopish')} />
       </PageTitle>
       <Card style={{ marginBottom: 16 }} loading={!isNew && doc.isLoading}>
         <Form form={form} layout="vertical" disabled={readOnly}>
           <Row gutter={16}>
             <Col xs={24} md={8}>
-              <Form.Item name="price_type_id" label="Тип цены" rules={[{ required: true, message: 'Выберите тип цены' }]}>
+              <Form.Item name="price_type_id" label={tr('Тип цены', 'Narx turi')} rules={[{ required: true, message: tr('Выберите тип цены', 'Narx turini tanlang') }]}>
                 <RemoteSelect<PriceType> path="/store/price-types" disabled={!isNew || readOnly} filter={(t) => t.is_active} />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="store_id" label="Где действует">
+              <Form.Item name="store_id" label={tr('Где действует', 'Qayerda amal qiladi')}>
                 <Select
                   disabled={!isNew || readOnly}
                   options={[
-                    ...(me?.all_stores ? [{ value: '', label: 'Вся сеть' }] : []),
+                    ...(me?.all_stores ? [{ value: '', label: tr('Вся сеть', 'Butun tarmoq') }] : []),
                     ...stores.map((s) => ({ value: s.id, label: s.name })),
                   ]}
                 />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="note" label="Примечание">
+              <Form.Item name="note" label={tr('Примечание', 'Izoh')}>
                 <Input />
               </Form.Item>
             </Col>
           </Row>
           {d && (
             <Typography.Text type="secondary">
-              Создан {dateTime(d.created_at)} · {d.created_by}
-              {d.posted_at && ` · проведён ${dateTime(d.posted_at)}`}
+              {tr('Создан', 'Yaratilgan')} {dateTime(d.created_at)} · {d.created_by}
+              {d.posted_at && ` · ${tr('проведён', 'oʻtkazilgan')} ${dateTime(d.posted_at)}`}
             </Typography.Text>
           )}
         </Form>
       </Card>
-      <Card title="Товары и цены" styles={{ body: { padding: 0 } }}>
+      <Card title={tr('Товары и цены', 'Mahsulotlar va narxlar')} styles={{ body: { padding: 0 } }}>
         <Table<Line>
           rowKey="key"
           dataSource={lines}
@@ -219,7 +219,7 @@ export function PriceDocEditor() {
           columns={[
             { title: '№', key: 'n', width: 50, render: (_, __, i) => i + 1 },
             {
-              title: 'Товар',
+              title: tr('Товар', 'Mahsulot'),
               key: 'p',
               render: (_, l) =>
                 readOnly ? (
@@ -232,7 +232,7 @@ export function PriceDocEditor() {
                     style={{ minWidth: 260, width: '100%' }}
                     onChange={(pid, p) => {
                       if (lines.some((x) => x.product_id === pid && x.key !== l.key)) {
-                        message.warning('Этот товар уже есть в документе')
+                        message.warning(tr('Этот товар уже есть в документе', 'Bu mahsulot hujjatda allaqachon bor'))
                         return
                       }
                       update(l.key, { product_id: pid, product_name: p?.name ?? '', current: p?.price ?? p?.base_price })
@@ -242,10 +242,10 @@ export function PriceDocEditor() {
             },
             // Проведённый документ — цена до него; черновик — действующая сейчас.
             d && d.status !== 'draft'
-              ? { title: 'Прежняя цена', key: 'prev', align: 'right', render: (_, l) => money(l.previous_price) }
-              : { title: 'Текущая цена', key: 'cur', align: 'right', render: (_, l) => money(l.current) },
+              ? { title: tr('Прежняя цена', 'Oldingi narx'), key: 'prev', align: 'right', render: (_, l) => money(l.previous_price) }
+              : { title: tr('Текущая цена', 'Joriy narx'), key: 'cur', align: 'right', render: (_, l) => money(l.current) },
             {
-              title: 'Новая цена',
+              title: tr('Новая цена', 'Yangi narx'),
               key: 'np',
               width: 180,
               render: (_, l) =>

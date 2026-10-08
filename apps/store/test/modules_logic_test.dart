@@ -2,8 +2,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sm_store/control/cashiers_screen.dart';
 import 'package:sm_store/debts/supplier_screen.dart';
 import 'package:sm_store/summary/summary_screen.dart';
+import 'package:sm_core/sm_core.dart' as sm_i18n;
 
 void main() {
+  // Проверки написаны на русском; язык по умолчанию в приложениях — узбекский.
+  setUpAll(() => sm_i18n.Lang.instance.debugUse(sm_i18n.Lang.ru));
+
   test('plural', () {
     expect(plural(1, 'день', 'дня', 'дней'), 'день');
     expect(plural(3, 'день', 'дня', 'дней'), 'дня');

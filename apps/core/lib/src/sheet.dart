@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'i18n.dart';
+
 // Подтверждения и короткий ввод — шторкой снизу, а не окном по центру
 // (Figma «Магазин · приложение» → Ш1, Ш2). Цвета берутся из темы приложения.
 
@@ -92,7 +94,7 @@ Future<bool> confirmSheet(
   required String title,
   String? text,
   required String confirm,
-  String cancel = 'Отмена',
+  String? cancel,
   IconData? icon,
 }) async {
   final ok = await showSheet<bool>(
@@ -102,20 +104,20 @@ Future<bool> confirmSheet(
       const SizedBox(height: 20),
       SheetButton(label: confirm, onPressed: () => Navigator.pop(ctx, true)),
       const SizedBox(height: 10),
-      SheetButton(label: cancel, primary: false, onPressed: () => Navigator.pop(ctx, false)),
+      SheetButton(label: cancel ?? tr('Отмена', 'Bekor qilish'), primary: false, onPressed: () => Navigator.pop(ctx, false)),
     ]),
   );
   return ok == true;
 }
 
-/// Сообщение снизу с одной кнопкой «Понятно».
-Future<void> infoSheet(BuildContext context, {required String title, String? text, String button = 'Понятно', IconData? icon}) {
+/// Сообщение снизу с одной кнопкой «Понятно» / «Tushunarli».
+Future<void> infoSheet(BuildContext context, {required String title, String? text, String? button, IconData? icon}) {
   return showSheet<void>(
     context,
     (ctx) => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       SheetHeader(title: title, text: text, icon: icon),
       const SizedBox(height: 20),
-      SheetButton(label: button, onPressed: () => Navigator.pop(ctx)),
+      SheetButton(label: button ?? tr('Понятно', 'Tushunarli'), onPressed: () => Navigator.pop(ctx)),
     ]),
   );
 }
@@ -127,7 +129,7 @@ Future<String?> promptSheet(
   required String title,
   String? text,
   required String confirm,
-  String cancel = 'Отмена',
+  String? cancel,
   List<String> options = const [],
   String? hint,
   bool requireValue = true,
@@ -140,7 +142,7 @@ Future<String?> promptSheet(
       title: title,
       text: text,
       confirm: confirm,
-      cancel: cancel,
+      cancel: cancel ?? tr('Отмена', 'Bekor qilish'),
       options: options,
       hint: hint,
       requireValue: requireValue,

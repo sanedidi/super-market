@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sm_core/sm_core.dart' show tr;
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -69,15 +70,17 @@ class _OpenShiftScreenState extends State<OpenShiftScreen> {
               child: SizedBox(
                 width: 560,
                 child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  Text('Открытие смены', style: t(28, w: FontWeight.w700)),
+                  Text(tr('Открытие смены', 'Smenani ochish'), style: t(28, w: FontWeight.w700)),
                   const SizedBox(height: 8),
-                  Text('${pos.cashier?.name ?? ''}, сколько размена в ящике? Наберите сумму и Enter. Нет размена — просто Enter.',
+                  Text(
+                      tr('${pos.cashier?.name ?? ''}, сколько размена в ящике? Наберите сумму и Enter. Нет размена — просто Enter.',
+                          '${pos.cashier?.name ?? ''}, gʻaladonda qancha mayda pul bor? Summani tering va Enter. Mayda pul yoʻq boʻlsa — shunchaki Enter.'),
                       style: t(14, c: C.ts)),
                   const SizedBox(height: 24),
                   Panel(
                     color: C.dark,
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('Размен на начало смены', style: t(14, c: Colors.white70)),
+                      Text(tr('Размен на начало смены', 'Smena boshidagi mayda pul'), style: t(14, c: Colors.white70)),
                       const SizedBox(height: 8),
                       Text(fmtMoney(amount), style: t(56, w: FontWeight.w700, c: Colors.white)),
                     ]),
@@ -87,13 +90,13 @@ class _OpenShiftScreenState extends State<OpenShiftScreen> {
                   const SizedBox(height: 16),
                   KeyCard(
                     keyLabel: 'Enter',
-                    title: _busy ? 'Открываем…' : 'Открыть смену',
-                    subtitle: 'дальше — продажа',
+                    title: _busy ? tr('Открываем…', 'Ochilmoqda…') : tr('Открыть смену', 'Smenani ochish'),
+                    subtitle: tr('дальше — продажа', 'keyin — sotuv'),
                     style: KeyCardStyle.primary,
                     onTap: _open,
                   ),
                   const SizedBox(height: 8),
-                  KeyCard(keyLabel: 'Esc', title: 'Другой кассир', onTap: () => pos.logout()),
+                  KeyCard(keyLabel: 'Esc', title: tr('Другой кассир', 'Boshqa kassir'), onTap: () => pos.logout()),
                 ]),
               ),
             ),

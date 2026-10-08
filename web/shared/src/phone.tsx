@@ -1,5 +1,6 @@
 import { Input, type InputProps } from 'antd'
 import type { Rule } from 'antd/es/form'
+import { tr } from './i18n'
 
 // Номер телефона Узбекистана — одна маска во всей системе: +998 99 999 99 99.
 // «+998» стоит всегда, вводятся только 9 цифр, пробелы ставятся сами.
@@ -70,8 +71,8 @@ export function PhoneInput({ value, onChange, ...rest }: PhoneInputProps) {
 export function phoneRule(required = false): Rule {
   return {
     validator: (_, v: string | undefined) => {
-      if (!v) return required ? Promise.reject(new Error('Введите номер телефона')) : Promise.resolve()
-      return normalizeUzPhone(v) ? Promise.resolve() : Promise.reject(new Error('Введите номер полностью: 9 цифр после +998'))
+      if (!v) return required ? Promise.reject(new Error(tr('Введите номер телефона', 'Telefon raqamini kiriting'))) : Promise.resolve()
+      return normalizeUzPhone(v) ? Promise.resolve() : Promise.reject(new Error(tr('Введите номер полностью: 9 цифр после +998', 'Raqamni toʻliq kiriting: +998 dan keyin 9 ta raqam')))
     },
   }
 }

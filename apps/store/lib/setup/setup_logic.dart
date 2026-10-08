@@ -1,5 +1,7 @@
 // Первая настройка магазина — данные и правила без виджетов (их проверяют тесты).
 
+import 'package:sm_core/sm_core.dart';
+
 /// Состояние настройки из GET /store/setup.
 class SetupState {
   SetupState(this.json);
@@ -78,8 +80,12 @@ enum HoursPreset { daily, monSat, round, custom }
 
 /// Порядок дней на экране — с понедельника.
 const week = [1, 2, 3, 4, 5, 6, 0];
-const dayNames = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
-const _dayShort = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+List<String> get dayNames => Lang.instance.isUz
+    ? const ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba']
+    : const ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
+List<String> get _dayShort => Lang.instance.isUz
+    ? const ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh']
+    : const ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 
 /// Редактор часов из состояния: дни (индекс — weekday) и готовый вариант.
 (HoursPreset, List<DayHours>) initHours(SetupState s) {
@@ -124,17 +130,17 @@ List<WorkingHours> hoursToSave(HoursPreset p, List<DayHours> days) {
 /// Что не так с часами (null — всё хорошо).
 String? hoursError(HoursPreset p, List<DayHours> days) {
   if (p == HoursPreset.round) return null;
-  if (!days.any((d) => d.on)) return 'Отметьте хотя бы один рабочий день или выберите «Круглосуточно»';
+  if (!days.any((d) => d.on)) return tr('Отметьте хотя бы один рабочий день или выберите «Круглосуточно»', 'Kamida bitta ish kunini belgilang yoki «Kecha-kunduz»ni tanlang');
   for (final w in week) {
     final d = days[w];
-    if (d.on && d.opens == d.closes) return '${dayNames[w]}: время открытия и закрытия совпадает';
+    if (d.on && d.opens == d.closes) return tr('${dayNames[w]}: время открытия и закрытия совпадает', '${dayNames[w]}: ochilish va yopilish vaqti bir xil');
   }
   return null;
 }
 
 /// «Пн–Пт 08:00–22:00 · Сб 09:00–20:00 · Вс выходной»; пусто — «Круглосуточно».
 String hoursText(List<WorkingHours> hours) {
-  if (hours.isEmpty) return 'Круглосуточно';
+  if (hours.isEmpty) return tr('Круглосуточно', 'Kecha-kunduz');
   final by = {for (final h in hours) h.weekday: '${h.opens}–${h.closes}'};
   final parts = <String>[];
   var i = 0;
@@ -145,10 +151,11 @@ String hoursText(List<WorkingHours> hours) {
       j++;
     }
     final days = i == j ? _dayShort[week[i]] : '${_dayShort[week[i]]}–${_dayShort[week[j]]}';
-    parts.add('$days ${v ?? 'выходной'}');
+    parts.add('$days ${v ?? tr('выходной', 'dam olish')}');
     i = j + 1;
   }
-  if (parts.length == 1 && parts.first.startsWith('Пн–Вс ')) return 'Каждый день ${parts.first.substring(6)}';
+  // Одна часть — все семь дней одинаковые (выходных нет: часы не пустые).
+  if (parts.length == 1) return tr('Каждый день ${by[week.first]}', 'Har kuni ${by[week.first]}');
   return parts.join(' · ');
 }
 
@@ -158,9 +165,12 @@ const radii = [1000, 2000, 3000, 5000];
 /// «Привезём за»: минуты от и до.
 const etas = [(15, 25), (25, 35), (35, 50), (60, 120)];
 
-String etaLabel((int, int) e) => e.$1 >= 60 ? '${e.$1 ~/ 60}–${e.$2 ~/ 60} часа' : '${e.$1}–${e.$2} мин';
+String etaLabel((int, int) e) =>
+    e.$1 >= 60 ? tr('${e.$1 ~/ 60}–${e.$2 ~/ 60} часа', '${e.$1 ~/ 60}–${e.$2 ~/ 60} soat') : tr('${e.$1}–${e.$2} мин', '${e.$1}–${e.$2} daq');
 
-String radiusLabel(int m) => m % 1000 == 0 ? '${m ~/ 1000} км' : '${(m / 1000).toStringAsFixed(1).replaceAll('.', ',')} км';
+String radiusLabel(int m) => m % 1000 == 0
+    ? tr('${m ~/ 1000} км', '${m ~/ 1000} km')
+    : tr('${(m / 1000).toStringAsFixed(1).replaceAll('.', ',')} км', '${(m / 1000).toStringAsFixed(1).replaceAll('.', ',')} km');
 
 /// Радиус для поля ввода: 3000 → «3», 2500 → «2.5».
 String radiusInput(int m) => m % 1000 == 0 ? '${m ~/ 1000}' : (m / 1000).toStringAsFixed(1);
@@ -193,12 +203,15 @@ String spacedMoney(String v) {
 
 /// «до 3 км · 10 000 сум, бесплатно от 150 000 · 25–35 мин».
 String deliveryText(SetupState s) {
-  if (!s.acceptsOnline) return s.declined ? 'Пока без доставки' : 'Не настроена';
-  final parts = <String>['до ${radiusLabel(s.radiusM)}'];
+  if (!s.acceptsOnline) return s.declined ? tr('Пока без доставки', 'Hozircha yetkazib berishsiz') : tr('Не настроена', 'Sozlanmagan');
+  final parts = <String>[tr('до ${radiusLabel(s.radiusM)}', '${radiusLabel(s.radiusM)} gacha')];
   final fee = plainMoney(s.fee);
   if (fee.isNotEmpty) {
     final free = plainMoney(s.freeFrom);
-    parts.add(fee == '0' ? 'бесплатно' : '${spacedMoney(fee)} сум${free.isEmpty ? '' : ', бесплатно от ${spacedMoney(free)}'}');
+    parts.add(fee == '0'
+        ? tr('бесплатно', 'bepul')
+        : tr('${spacedMoney(fee)} сум${free.isEmpty ? '' : ', бесплатно от ${spacedMoney(free)}'}',
+            '${spacedMoney(fee)} soʻm${free.isEmpty ? '' : ', ${spacedMoney(free)} dan bepul'}'));
   }
   if (s.etaMin != null && s.etaMax != null) parts.add(etaLabel((s.etaMin!, s.etaMax!)));
   return parts.join(' · ');
@@ -209,5 +222,5 @@ String buyersWord(int n) {
   final m10 = n % 10;
   final m100 = n % 100;
   final w = m10 == 1 && m100 != 11 ? 'покупатель' : (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? 'покупателя' : 'покупателей');
-  return '$n $w';
+  return tr('$n $w', '$n ta xaridor');
 }

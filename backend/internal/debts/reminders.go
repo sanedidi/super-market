@@ -11,6 +11,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
@@ -25,11 +26,23 @@ const (
 	beforeDueDays = 3
 )
 
-var reminderTexts = map[string]struct{ title, body string }{
-	"before":  {"Срок оплаты долга через 3 дня · %s", "Ваш долг %s сум. Погасите его в магазине до срока"},
-	"due":     {"Сегодня день оплаты долга · %s", "Ваш долг %s сум — погасите его сегодня в магазине"},
-	"overdue": {"Долг просрочен · %s", "Ваш долг %s сум. Срок оплаты прошёл — погасите долг в магазине"},
-	"manual":  {"Напоминание · %s", "Ваш долг %s сум. Пожалуйста, погасите долг в магазине"},
+var reminderTexts = map[string]struct{ title, body i18n.Text }{
+	"before": {
+		i18n.Text{RU: "Срок оплаты долга через 3 дня · %s", UZ: "Qarzni toʻlash muddatiga 3 kun qoldi · %s"},
+		i18n.Text{RU: "Ваш долг %s сум. Погасите его в магазине до срока", UZ: "Qarzingiz %s soʻm. Uni muddatigacha doʻkonda toʻlang"},
+	},
+	"due": {
+		i18n.Text{RU: "Сегодня день оплаты долга · %s", UZ: "Bugun qarzni toʻlash kuni · %s"},
+		i18n.Text{RU: "Ваш долг %s сум — погасите его сегодня в магазине", UZ: "Qarzingiz %s soʻm — uni bugun doʻkonda toʻlang"},
+	},
+	"overdue": {
+		i18n.Text{RU: "Долг просрочен · %s", UZ: "Qarz muddati oʻtdi · %s"},
+		i18n.Text{RU: "Ваш долг %s сум. Срок оплаты прошёл — погасите долг в магазине", UZ: "Qarzingiz %s soʻm. Toʻlov muddati oʻtdi — qarzni doʻkonda toʻlang"},
+	},
+	"manual": {
+		i18n.Text{RU: "Напоминание · %s", UZ: "Eslatma · %s"},
+		i18n.Text{RU: "Ваш долг %s сум. Пожалуйста, погасите долг в магазине", UZ: "Qarzingiz %s soʻm. Iltimos, qarzni doʻkonda toʻlang"},
+	},
 }
 
 // Tick — работа воркера: автоматические напоминания.
@@ -118,16 +131,16 @@ func (s *Service) Remind(ctx context.Context, p *identity.Principal, debtorID st
 		return out, err
 	}
 	if !httpx.IsUUID(debtorID) {
-		return out, apperr.NotFound("покупатель не найден")
+		return out, apperr.NotFound("покупатель не найден").Uz("xaridor topilmadi")
 	}
 	if !httpx.IsUUID(in.StoreID) || !p.CanAccessStore(in.StoreID) {
-		return out, apperr.Validation("store_id: магазин не найден")
+		return out, apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
 	}
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		var ph string
 		err := tx.QueryRow(ctx, `SELECT phone FROM debtors WHERE id = $1 AND network_id = $2 FOR UPDATE`, debtorID, p.NetworkID).Scan(&ph)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return apperr.NotFound("покупатель не найден")
+			return apperr.NotFound("покупатель не найден").Uz("xaridor topilmadi")
 		}
 		if err != nil {
 			return err
@@ -137,14 +150,14 @@ func (s *Service) Remind(ctx context.Context, p *identity.Principal, debtorID st
 			return err
 		}
 		if bal.Sign() <= 0 {
-			return apperr.Conflict("no_debt", "у покупателя нет долга в этом магазине")
+			return apperr.Conflict("no_debt", "у покупателя нет долга в этом магазине").Uz("xaridorning bu doʻkonda qarzi yoʻq")
 		}
 		app, err := hasApp(ctx, tx, ph)
 		if err != nil {
 			return err
 		}
 		if !app {
-			return apperr.Conflict("no_app", "у покупателя нет приложения Super Market — позвоните ему")
+			return apperr.Conflict("no_app", "у покупателя нет приложения Super Market — позвоните ему").Uz("xaridorda Super Market ilovasi yoʻq — unga qoʻngʻiroq qiling")
 		}
 		var last *time.Time
 		if err := tx.QueryRow(ctx, `SELECT max(created_at) FROM debt_reminders WHERE debtor_id = $1 AND store_id = $2 AND kind = 'manual'`,
@@ -154,7 +167,7 @@ func (s *Service) Remind(ctx context.Context, p *identity.Principal, debtorID st
 		now := s.now()
 		if last != nil && now.Sub(*last) < manualEvery {
 			next := last.Add(manualEvery)
-			return apperr.Conflict("too_soon", "напоминание уже отправлялось — следующее можно после "+next.In(tashkent).Format("02.01 15:04")).
+			return apperr.Conflict("too_soon", "напоминание уже отправлялось — следующее можно после "+next.In(tashkent).Format("02.01 15:04")).Uz("eslatma allaqachon yuborilgan — keyingisini " + next.In(tashkent).Format("02.01 15:04") + " dan keyin yuborish mumkin").
 				WithDetails(map[string]any{"next_at": next})
 		}
 		if _, err := tx.Exec(ctx, `

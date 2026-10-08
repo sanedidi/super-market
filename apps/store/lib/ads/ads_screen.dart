@@ -55,7 +55,12 @@ class _AdsScreenState extends State<AdsScreen> {
       final d = await api.put('/store/ads', {'hidden_brands': next.toList()}) as Map<String, dynamic>;
       if (!mounted) return;
       setState(() => _d = d);
-      showMessage(context, show ? '${c['brand_name']}: реклама снова показывается' : '${c['brand_name']} скрыт в ваших магазинах');
+      showMessage(
+        context,
+        show
+            ? tr('${c['brand_name']}: реклама снова показывается', '${c['brand_name']}: reklama yana koʻrsatilmoqda')
+            : tr('${c['brand_name']} скрыт в ваших магазинах', '${c['brand_name']} doʻkonlaringizda yashirildi'),
+      );
     } catch (e) {
       if (mounted) showMessage(context, e);
     } finally {
@@ -67,12 +72,12 @@ class _AdsScreenState extends State<AdsScreen> {
   Widget build(BuildContext context) {
     final d = _d;
     return Scaffold(
-      appBar: AppBar(title: const Text('Реклама брендов')),
+      appBar: AppBar(title: Text(tr('Реклама брендов', 'Brendlar reklamasi'))),
       body: d == null
           ? Center(
               child: _error == null
                   ? const CircularProgressIndicator()
-                  : EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: '$_error', action: 'Повторить', onAction: _load),
+                  : EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load),
             )
           : RefreshIndicator(onRefresh: _load, child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: _body(d))),
     );
@@ -84,36 +89,42 @@ class _AdsScreenState extends State<AdsScreen> {
     final canHide = d['allow_hide_brands'] == true;
     final pct = n(d['share_pct']);
     return [
-      const Text('Бренды платят Super Market за показ своих товаров. Покупатель видит товар в вашем магазине и покупает у вас.', style: AppText.small),
+      Text(
+        tr('Бренды платят Super Market за показ своих товаров. Покупатель видит товар в вашем магазине и покупает у вас.',
+            'Brendlar oʻz mahsulotlarini koʻrsatish uchun Super Marketga toʻlaydi. Xaridor mahsulotni doʻkoningizda koʻradi va sizdan xarid qiladi.'),
+        style: AppText.small,
+      ),
       const SizedBox(height: 12),
       AppCard(
         color: AppColors.primary,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Ваша доля за месяц', style: AppText.small.copyWith(color: AppColors.white)),
+          Text(tr('Ваша доля за месяц', 'Oylik ulushingiz'), style: AppText.small.copyWith(color: AppColors.white)),
           Text(money(d['month_share']), style: AppText.h1.copyWith(fontSize: 30, color: AppColors.white)),
           Text(
-            '${pct == pct.roundToDouble() ? pct.toInt() : pct}% от рекламы в ваших магазинах'
-            '${d['share_to_subscription'] == true ? ' — зачтём в счёт за подписку' : ' — на баланс'}',
+            tr('${pct == pct.roundToDouble() ? pct.toInt() : pct}% от рекламы в ваших магазинах', 'Doʻkonlaringizdagi reklamadan ${pct == pct.roundToDouble() ? pct.toInt() : pct}%') +
+                (d['share_to_subscription'] == true ? tr(' — зачтём в счёт за подписку', ' — obuna hisobiga oʻtkaziladi') : tr(' — на баланс', ' — balansga')),
             style: AppText.small.copyWith(color: AppColors.white),
           ),
         ]),
       ),
       const SizedBox(height: 10),
       Row(children: [
-        Expanded(child: _Kpi('Продажи из рекламы', money(d['month_sales']), '${d['month_orders'] ?? 0} заказов')),
+        Expanded(child: _Kpi(tr('Продажи из рекламы', 'Reklamadan sotuvlar'), money(d['month_sales']), tr('${d['month_orders'] ?? 0} заказов', '${d['month_orders'] ?? 0} ta buyurtma'))),
         const SizedBox(width: 10),
-        Expanded(child: _Kpi('Показы', '${d['month_views'] ?? 0}', 'за месяц')),
+        Expanded(child: _Kpi(tr('Показы', 'Koʻrsatishlar'), '${d['month_views'] ?? 0}', tr('за месяц', 'oy davomida'))),
       ]),
       const SizedBox(height: 20),
-      const Text('Сейчас в ваших магазинах', style: AppText.h3),
+      Text(tr('Сейчас в ваших магазинах', 'Hozir doʻkonlaringizda'), style: AppText.h3),
       const SizedBox(height: 4),
       Text(
-        canHide ? 'Выключите бренд — его реклама пропадёт у вас, доля с него не начисляется.' : 'Скрывать бренды сейчас нельзя — правило Super Market.',
+        canHide
+            ? tr('Выключите бренд — его реклама пропадёт у вас, доля с него не начисляется.', 'Brendni oʻchiring — uning reklamasi sizda yoʻqoladi, undan ulush hisoblanmaydi.')
+            : tr('Скрывать бренды сейчас нельзя — правило Super Market.', 'Hozir brendlarni yashirib boʻlmaydi — Super Market qoidasi.'),
         style: AppText.small,
       ),
       const SizedBox(height: 10),
       if (campaigns.isEmpty)
-        const AppCard(child: Text('Сейчас рекламы брендов нет', style: AppText.small))
+        AppCard(child: Text(tr('Сейчас рекламы брендов нет', 'Hozir brendlar reklamasi yoʻq'), style: AppText.small))
       else
         AppCard(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
@@ -128,15 +139,15 @@ class _AdsScreenState extends State<AdsScreen> {
                 ),
                 subtitle: Text(
                   hidden.contains('${c['brand_id']}')
-                      ? 'Скрыт · доля не начисляется'
-                      : '${c['title'] ?? ''} · ${c['views'] ?? 0} показов · ${money(c['sales'])}',
+                      ? tr('Скрыт · доля не начисляется', 'Yashirilgan · ulush hisoblanmaydi')
+                      : tr('${c['title'] ?? ''} · ${c['views'] ?? 0} показов · ${money(c['sales'])}', '${c['title'] ?? ''} · ${c['views'] ?? 0} ta koʻrsatish · ${money(c['sales'])}'),
                   style: AppText.small,
                 ),
               ),
           ]),
         ),
       const SizedBox(height: 12),
-      const Text('Сколько рекламы на главной и скрытые категории — в панели магазина.', style: AppText.small, textAlign: TextAlign.center),
+      Text(tr('Сколько рекламы на главной и скрытые категории — в панели магазина.', 'Bosh sahifadagi reklama miqdori va yashirilgan kategoriyalar — doʻkon panelida.'), style: AppText.small, textAlign: TextAlign.center),
     ];
   }
 }

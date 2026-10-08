@@ -93,7 +93,7 @@ func (m *Module) catalog(w http.ResponseWriter, r *http.Request) {
 			// «+» в часовом поясе мог превратиться в пробел в строке запроса.
 			t, err := time.Parse(time.RFC3339Nano, strings.ReplaceAll(v, " ", "+"))
 			if err != nil {
-				return Catalog{}, apperr.Validation("since: версия из прошлого ответа (RFC 3339)")
+				return Catalog{}, apperr.Validation("since: версия из прошлого ответа (RFC 3339)").Uz("since: oldingi javobdagi versiya (RFC 3339)")
 			}
 			since = &t
 		}

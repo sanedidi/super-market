@@ -10,6 +10,7 @@ import (
 
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 // Импорт товаров в общий каталог пачками (супер-админ). Источник — каталог
@@ -18,13 +19,19 @@ import (
 
 // ImportItem — один товар пачки.
 type ImportItem struct {
-	Barcode     string         `json:"barcode"`
-	Name        string         `json:"name"`
-	Brand       string         `json:"brand"`
-	Category    []string       `json:"category"` // ["Раздел", "Подкатегория"]
-	Unit        string         `json:"unit"`     // короткое имя единицы: шт, кг
-	Description string         `json:"description"`
-	Attributes  map[string]any `json:"attributes"`
+	Barcode     string   `json:"barcode"`
+	Name        string   `json:"name"`
+	Brand       string   `json:"brand"`
+	Category    []string `json:"category"` // ["Раздел", "Подкатегория"]
+	Unit        string   `json:"unit"`     // короткое имя единицы: шт, кг
+	Description string   `json:"description"`
+	// Переводы на узбекский (необязательно): название, описание и путь
+	// категории — того же размера, что Category. Без русского названия
+	// товара берётся узбекское.
+	NameUz        string         `json:"name_uz"`
+	DescriptionUz string         `json:"description_uz"`
+	CategoryUz    []string       `json:"category_uz"`
+	Attributes    map[string]any `json:"attributes"`
 	// Ikpu — код ИКПУ: по нему воркер ищет фото у источника.
 	Ikpu string `json:"ikpu"`
 	// AttachTo — точное название уже существующего товара общего каталога:
@@ -63,10 +70,10 @@ type importRefs struct {
 func (s *Service) Import(ctx context.Context, in ImportInput) (ImportResult, error) {
 	out := ImportResult{Errors: []ImportError{}}
 	if in.Source != "tasnif" {
-		return out, apperr.Validation("source: ожидается tasnif")
+		return out, apperr.Validation("source: ожидается tasnif").Uz("source: tasnif boʻlishi kerak")
 	}
 	if len(in.Items) == 0 || len(in.Items) > importMaxItems {
-		return out, apperr.Validation("items: от 1 до 500 товаров")
+		return out, apperr.Validation("items: от 1 до 500 товаров").Uz("items: 1 dan 500 tagacha mahsulot")
 	}
 	refs := importRefs{brands: map[string]string{}, cats: map[string]string{}, units: map[string]string{}}
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -88,7 +95,7 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (ImportResult, err
 				if !errors.As(err, &ae) {
 					return err
 				}
-				out.Errors = append(out.Errors, ImportError{Barcode: it.Barcode, Message: ae.Message})
+				out.Errors = append(out.Errors, ImportError{Barcode: it.Barcode, Message: ae.Text(i18n.FromContext(ctx))})
 				continue
 			}
 			if err := sp.Commit(ctx); err != nil {
@@ -111,7 +118,7 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (ImportResult, err
 func (s *Service) importOne(ctx context.Context, tx pgx.Tx, refs importRefs, source string, it ImportItem) (string, error) {
 	code := strings.TrimSpace(it.Barcode)
 	if !importBarcodeRe.MatchString(code) {
-		return "", apperr.Validation("неверный штрихкод")
+		return "", apperr.Validation("неверный штрихкод").Uz("shtrix-kod notoʻgʻri")
 	}
 	attrs := it.Attributes
 	if attrs == nil {
@@ -122,11 +129,19 @@ func (s *Service) importOne(ctx context.Context, tx pgx.Tx, refs importRefs, sou
 		attrs["ikpu"] = ikpu
 	}
 
+	nameUz, descUz := strings.TrimSpace(it.NameUz), strings.TrimSpace(it.DescriptionUz)
+	if len([]rune(nameUz)) > 300 {
+		nameUz = string([]rune(nameUz)[:300])
+	}
+	// Пустые узбекские поля товара дополняются из пачки.
+	const fillUz = `name_uz = CASE WHEN name_uz = '' THEN $3 ELSE name_uz END,
+		description_uz = CASE WHEN description_uz = '' THEN $4 ELSE description_uz END`
+
 	// Уже есть товар с этим штрихкодом — дополняем ИКПУ, если его не было.
 	var existing string
 	err := tx.QueryRow(ctx, `SELECT product_id FROM product_barcodes WHERE barcode = $1`, code).Scan(&existing)
 	if err == nil {
-		_, err = tx.Exec(ctx, `UPDATE products SET attributes = $2 || attributes WHERE id = $1`, existing, attrs)
+		_, err = tx.Exec(ctx, `UPDATE products SET attributes = $2 || attributes, `+fillUz+` WHERE id = $1`, existing, attrs, nameUz, descUz)
 		return "skipped", err
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -154,7 +169,7 @@ func (s *Service) importOne(ctx context.Context, tx pgx.Tx, refs importRefs, sou
 			if _, err := tx.Exec(ctx, `INSERT INTO product_barcodes (barcode, product_id) VALUES ($1, $2)`, code, hits[0].id); err != nil {
 				return "", err
 			}
-			if _, err := tx.Exec(ctx, `UPDATE products SET attributes = attributes || $2 WHERE id = $1`, hits[0].id, attrs); err != nil {
+			if _, err := tx.Exec(ctx, `UPDATE products SET attributes = attributes || $2, `+fillUz+` WHERE id = $1`, hits[0].id, attrs, nameUz, descUz); err != nil {
 				return "", err
 			}
 			if hits[0].images == 0 && ikpu != "" {
@@ -169,19 +184,22 @@ func (s *Service) importOne(ctx context.Context, tx pgx.Tx, refs importRefs, sou
 
 	name := strings.TrimSpace(it.Name)
 	if name == "" {
-		return "", apperr.Validation("пустое название")
+		name = nameUz
+	}
+	if name == "" {
+		return "", apperr.Validation("пустое название").Uz("nomi boʻsh")
 	}
 	if len([]rune(name)) > 300 {
 		name = string([]rune(name)[:300])
 	}
 	if len(it.Category) == 0 {
-		return "", apperr.Validation("нет категории")
+		return "", apperr.Validation("нет категории").Uz("kategoriya yoʻq")
 	}
 	unitID, err := importUnit(ctx, tx, refs, it.Unit)
 	if err != nil {
 		return "", err
 	}
-	catID, err := importCategory(ctx, tx, refs, it.Category)
+	catID, err := importCategory(ctx, tx, refs, it.Category, it.CategoryUz)
 	if err != nil {
 		return "", err
 	}
@@ -195,9 +213,9 @@ func (s *Service) importOne(ctx context.Context, tx pgx.Tx, refs importRefs, sou
 	}
 	var id string
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO products (name, description, brand_id, category_id, unit_id, attributes)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-		name, strings.TrimSpace(it.Description), brandID, catID, unitID, attrs).Scan(&id); err != nil {
+		INSERT INTO products (name, description, brand_id, category_id, unit_id, attributes, name_uz, description_uz)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+		name, strings.TrimSpace(it.Description), brandID, catID, unitID, attrs, nameUz, descUz).Scan(&id); err != nil {
 		return "", err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO product_barcodes (barcode, product_id) VALUES ($1, $2)`, code, id); err != nil {
@@ -235,14 +253,20 @@ func importBrand(ctx context.Context, tx pgx.Tx, refs importRefs, name string) (
 	return id, nil
 }
 
-// importCategory — путь «Раздел / Подкатегория»: находит или создаёт каждый уровень.
-func importCategory(ctx context.Context, tx pgx.Tx, refs importRefs, path []string) (string, error) {
+// importCategory — путь «Раздел / Подкатегория»: находит или создаёт каждый
+// уровень. pathUz — те же уровни по-узбекски (может быть короче или пустым):
+// ими заполняются пустые name_uz.
+func importCategory(ctx context.Context, tx pgx.Tx, refs importRefs, path, pathUz []string) (string, error) {
 	var parent *string
 	key := ""
-	for _, raw := range path {
+	for i, raw := range path {
 		name := strings.TrimSpace(raw)
+		nameUz := ""
+		if i < len(pathUz) {
+			nameUz = strings.TrimSpace(pathUz[i])
+		}
 		if name == "" {
-			return "", apperr.Validation("пустое название категории")
+			return "", apperr.Validation("пустое название категории").Uz("kategoriya nomi boʻsh")
 		}
 		key += "/" + strings.ToLower(name)
 		if id, ok := refs.cats[key]; ok {
@@ -255,9 +279,11 @@ func importCategory(ctx context.Context, tx pgx.Tx, refs importRefs, path []stri
 			ORDER BY is_active DESC, created_at LIMIT 1`, parent, name).Scan(&id)
 		if errors.Is(err, pgx.ErrNoRows) {
 			err = tx.QueryRow(ctx, `
-				INSERT INTO categories (parent_id, name, sort)
-				VALUES ($1, $2, (SELECT COALESCE(max(sort), 0) + 1 FROM categories WHERE parent_id IS NOT DISTINCT FROM $1))
-				RETURNING id`, parent, name).Scan(&id)
+				INSERT INTO categories (parent_id, name, sort, name_uz)
+				VALUES ($1, $2, (SELECT COALESCE(max(sort), 0) + 1 FROM categories WHERE parent_id IS NOT DISTINCT FROM $1), $3)
+				RETURNING id`, parent, name, nameUz).Scan(&id)
+		} else if err == nil && nameUz != "" {
+			_, err = tx.Exec(ctx, `UPDATE categories SET name_uz = $2 WHERE id = $1 AND name_uz = ''`, id, nameUz)
 		}
 		if err != nil {
 			return "", err
@@ -279,9 +305,10 @@ func importUnit(ctx context.Context, tx pgx.Tx, refs importRefs, short string) (
 	var id string
 	err := tx.QueryRow(ctx, `
 		SELECT id FROM units WHERE lower(short_name) = $1 OR lower(name) = $1
-		ORDER BY is_active DESC, created_at LIMIT 1`, short).Scan(&id)
+		                        OR lower(short_name_uz) = $1 OR lower(name_uz) = $1
+		ORDER BY is_active DESC, (lower(short_name) = $1 OR lower(name) = $1) DESC, created_at LIMIT 1`, short).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", apperr.Validation("нет единицы измерения «" + short + "»")
+		return "", apperr.Validation("нет единицы измерения «" + short + "»").Uz("«" + short + "» oʻlchov birligi yoʻq")
 	}
 	if err != nil {
 		return "", err

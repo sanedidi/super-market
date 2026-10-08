@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:sm_core/sm_core.dart' show formatPhone;
+import 'package:sm_core/sm_core.dart' show formatPhone, tr;
 
 import '../main.dart';
 import '../state.dart';
@@ -38,25 +38,25 @@ class _ProfileDetailsScreenState extends State<ProfileDetailsScreen> {
     return Scaffold(
       body: SafeArea(
         child: Column(children: [
-          const PageHeader(title: 'Личные данные'),
+          PageHeader(title: tr('Личные данные', 'Shaxsiy maʼlumotlar')),
           Expanded(
             child: ListView(padding: const EdgeInsets.fromLTRB(20, 12, 20, 20), children: [
               PersonForm(data: _data, onChanged: () => setState(() {})),
               const SizedBox(height: 16),
-              const FieldLabel('Телефон'),
+              FieldLabel(tr('Телефон', 'Telefon')),
               InputDecorator(
                 decoration: outlinedField('').copyWith(fillColor: AppColors.soft, enabledBorder: InputBorder.none, border: InputBorder.none),
                 child: Text(formatPhone(phone), style: AppText.body.copyWith(fontSize: 16, color: AppColors.text2)),
               ),
               const SizedBox(height: 6),
-              Text('Номер меняется через поддержку — по нему приходят коды входа.', style: AppText.caption),
+              Text(tr('Номер меняется через поддержку — по нему приходят коды входа.', 'Raqam qoʻllab-quvvatlash orqali oʻzgartiriladi — kirish kodlari unga keladi.'), style: AppText.caption),
             ]),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
             child: SizedBox(
               width: double.infinity,
-              child: StepButton(label: 'Сохранить', busy: _busy, onPressed: _data.firstName.trim().isEmpty ? null : _save),
+              child: StepButton(label: tr('Сохранить', 'Saqlash'), busy: _busy, onPressed: _data.firstName.trim().isEmpty ? null : _save),
             ),
           ),
         ]),

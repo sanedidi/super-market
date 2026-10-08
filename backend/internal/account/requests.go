@@ -13,6 +13,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 // DeletionRequest — запрос на удаление аккаунта сотрудника или штатного
@@ -46,7 +47,7 @@ func scanRequest(row pgx.Row) (DeletionRequest, error) {
 	err := row.Scan(&r.ID, &r.App, &r.Source, &r.Status, &r.IsOwner, &r.Phone, &r.FullName, &r.Reason, &r.Note,
 		&r.UserID, &r.EmployeeID, &r.NetworkID, &r.NetworkName, &r.CreatedAt, &r.ResolvedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return r, apperr.NotFound("запрос не найден")
+		return r, apperr.NotFound("запрос не найден").Uz("soʻrov topilmadi")
 	}
 	return r, err
 }
@@ -70,7 +71,7 @@ func createRequest(ctx context.Context, tx pgx.Tx, employeeID, app, source, reas
 		WHERE e.id = $1
 		RETURNING id`, employeeID, app, source, reason).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return DeletionRequest{}, false, apperr.NotFound("сотрудник не найден")
+		return DeletionRequest{}, false, apperr.NotFound("сотрудник не найден").Uz("xodim topilmadi")
 	}
 	if err != nil {
 		return DeletionRequest{}, false, err
@@ -82,28 +83,34 @@ func createRequest(ctx context.Context, tx pgx.Tx, employeeID, app, source, reas
 // announce сообщает о новом запросе в Telegram супер-админам и владельцу
 // сети (если просит не он сам).
 func (s *Service) announce(ctx context.Context, r DeletionRequest) {
-	app := "«SM Магазин»"
+	app, appUz := "«SM Магазин»", "«SM Магазин» ilovasi"
 	if r.App == identity.AppCourier {
-		app = "приложение курьера"
+		app, appUz = "приложение курьера", "kuryer ilovasi"
 	}
 	network := ""
 	if r.NetworkName != nil {
 		network = *r.NetworkName
 	}
 	text := fmt.Sprintf("Запрос на удаление аккаунта\n%s, %s\nСеть «%s», %s", r.FullName, r.Phone, network, app)
+	textUz := fmt.Sprintf("Akkauntni oʻchirish soʻrovi\n%s, %s\nTarmoq «%s», %s", r.FullName, r.Phone, network, appUz)
 	if r.IsOwner {
 		text += "\nЭто владелец сети: удаление аккаунта — закрытие сети."
 	}
 	if r.Source == "web" {
 		text += "\nОтправлен с сайта."
+		textUz += "\nSaytdan yuborilgan."
 	}
 	if r.Reason != "" {
 		text += "\nПричина: " + r.Reason
+		textUz += "\nSabab: " + r.Reason
 	}
 	s.notify.SuperAdmins(ctx, text+"\n\nОбработайте в панели супер-админа.")
 	if !r.IsOwner && r.NetworkID != nil {
-		s.notify.NetworkOwners(ctx, *r.NetworkID, identity.PermStaffManage,
-			text+"\n\nСотрудника можно отключить в разделе «Сотрудники»; аккаунт удалит поддержка.")
+		// Владельцу сети — на его языке (users.language).
+		s.notify.NetworkOwners(ctx, *r.NetworkID, identity.PermStaffManage, i18n.Text{
+			RU: text + "\n\nСотрудника можно отключить в разделе «Сотрудники»; аккаунт удалит поддержка.",
+			UZ: textUz + "\n\nXodimni «Xodimlar» boʻlimida faolsizlantirish mumkin; akkauntni qoʻllab-quvvatlash xizmati oʻchiradi.",
+		})
 	}
 }
 
@@ -117,11 +124,11 @@ type RequestInput struct {
 // (isNew = false).
 func (s *Service) Request(ctx context.Context, p *identity.Principal, in RequestInput) (DeletionRequest, bool, error) {
 	if p == nil || p.EmployeeID == "" || (p.App != identity.AppStore && p.App != identity.AppCourier) {
-		return DeletionRequest{}, false, apperr.Forbidden("только для сотрудников и курьеров магазина")
+		return DeletionRequest{}, false, apperr.Forbidden("только для сотрудников и курьеров магазина").Uz("faqat doʻkon xodimlari va kuryerlari uchun")
 	}
 	reason := strings.TrimSpace(in.Reason)
 	if len([]rune(reason)) > 500 {
-		return DeletionRequest{}, false, apperr.Validation("reason: не длиннее 500 символов")
+		return DeletionRequest{}, false, apperr.Validation("reason: не длиннее 500 символов").Uz("reason: 500 belgidan oshmasin")
 	}
 	var (
 		r     DeletionRequest
@@ -144,7 +151,7 @@ func (s *Service) Request(ctx context.Context, p *identity.Principal, in Request
 // AdminRequests — запросы на удаление для супер-админа, новые сверху.
 func (s *Service) AdminRequests(ctx context.Context, status string, page httpx.Page) ([]DeletionRequest, error) {
 	if status != "" && status != "pending" && status != "done" && status != "rejected" {
-		return nil, apperr.Validation("status: pending, done или rejected")
+		return nil, apperr.Validation("status: pending, done или rejected").Uz("status: pending, done yoki rejected")
 	}
 	rows, err := s.pool.Query(ctx, requestSelect+`
 		WHERE $1 = '' OR r.status = $1
@@ -166,7 +173,7 @@ type ResolveInput struct {
 func (s *Service) AdminResolve(ctx context.Context, admin *identity.Principal, id, status string, in ResolveInput) (DeletionRequest, error) {
 	note := strings.TrimSpace(in.Note)
 	if len([]rune(note)) > 500 {
-		return DeletionRequest{}, apperr.Validation("note: не длиннее 500 символов")
+		return DeletionRequest{}, apperr.Validation("note: не длиннее 500 символов").Uz("note: 500 belgidan oshmasin")
 	}
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE account_deletion_requests SET status = $2, note = $3, resolved_by = $4, resolved_at = now()
@@ -179,7 +186,7 @@ func (s *Service) AdminResolve(ctx context.Context, admin *identity.Principal, i
 		return r, err
 	}
 	if tag.RowsAffected() == 0 {
-		return r, apperr.Conflict("already_resolved", "запрос уже обработан")
+		return r, apperr.Conflict("already_resolved", "запрос уже обработан").Uz("soʻrov allaqachon koʻrib chiqilgan")
 	}
 	return r, nil
 }

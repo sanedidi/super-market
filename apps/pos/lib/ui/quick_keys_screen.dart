@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart' show tr;
 
 import '../core/catalog.dart';
 import '../core/quick.dart';
@@ -54,7 +55,7 @@ class _QuickKeysScreenState extends State<QuickKeysScreen> {
   void _pin(String id) {
     if (_pinned.contains(id)) return;
     if (_pinned.length >= quickFrequentMax) {
-      setState(() => _error = 'Закрепить можно не больше $quickFrequentMax товаров');
+      setState(() => _error = tr('Закрепить можно не больше $quickFrequentMax товаров', 'Koʻpi bilan $quickFrequentMax ta mahsulotni qadash mumkin'));
       return;
     }
     setState(() {
@@ -79,7 +80,7 @@ class _QuickKeysScreenState extends State<QuickKeysScreen> {
     final p = await showDialog<Product>(context: context, builder: (_) => SearchDialog(catalog: pos.catalog));
     if (p == null || !mounted) return;
     if (!_ok(p)) {
-      setState(() => _error = p.marked ? 'Маркированный товар нужно сканировать — на кнопку его не поставить' : 'Товар снят с продажи');
+      setState(() => _error = p.marked ? tr('Маркированный товар нужно сканировать — на кнопку его не поставить', 'Markirovkali mahsulotni skanerlash kerak — uni tugmaga qoʻyib boʻlmaydi') : tr('Товар снят с продажи', 'Mahsulot sotuvdan olingan'));
       return;
     }
     _pin(p.id);
@@ -136,16 +137,16 @@ class _QuickKeysScreenState extends State<QuickKeysScreen> {
                     Row(children: [
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text('Быстрые кнопки · «Частые»', style: t(22, w: FontWeight.w700)),
+                          Text(tr('Быстрые кнопки · «Частые»', 'Tezkor tugmalar · «Ommabop»'), style: t(22, w: FontWeight.w700)),
                           Text(
-                            'Закреплено ${pinned.length} · остальные — самые продаваемые за 30 дней',
+                            tr('Закреплено ${pinned.length} · остальные — самые продаваемые за 30 дней', 'Qadalgan: ${pinned.length} · qolganlari — 30 kunda eng koʻp sotilganlar'),
                             style: t(13, c: C.ts),
                           ),
                         ]),
                       ),
                       TextButton(
                         onPressed: _saving ? null : () => Navigator.of(context).pop(),
-                        child: Text('Отмена · Esc', style: t(14, w: FontWeight.w600, c: C.ts)),
+                        child: Text(tr('Отмена · Esc', 'Bekor qilish · Esc'), style: t(14, w: FontWeight.w600, c: C.ts)),
                       ),
                       const SizedBox(width: 8),
                       FilledButton(
@@ -155,7 +156,7 @@ class _QuickKeysScreenState extends State<QuickKeysScreen> {
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
                         onPressed: _saving ? null : _save,
-                        child: Text(_saving ? 'Сохраняю…' : 'Готово', style: t(15, w: FontWeight.w700, c: Colors.white)),
+                        child: Text(_saving ? tr('Сохраняю…', 'Saqlanmoqda…') : tr('Готово', 'Tayyor'), style: t(15, w: FontWeight.w700, c: Colors.white)),
                       ),
                     ]),
                     if (_error != null)
@@ -187,7 +188,7 @@ class _QuickKeysScreenState extends State<QuickKeysScreen> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Перетащите закреплённую плитку — порядок · ✕ — открепить · нажмите «авто» — закрепить',
+                      tr('Перетащите закреплённую плитку — порядок · ✕ — открепить · нажмите «авто» — закрепить', 'Qadalgan tugmani suring — tartib · ✕ — olib tashlash · «avto»ni bosing — qadash'),
                       style: t(12, c: C.ts),
                     ),
                   ]),
@@ -265,7 +266,7 @@ class _AddTile extends StatelessWidget {
             decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: C.td, width: 1.5)),
             child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
               Text('+', style: t(32, w: FontWeight.w500, c: C.ts)),
-              Text('Закрепить товар', style: t(14, w: FontWeight.w600)),
+              Text(tr('Закрепить товар', 'Mahsulotni qadash'), style: t(14, w: FontWeight.w600)),
             ]),
           ),
         ),
@@ -285,16 +286,19 @@ class _Help extends StatelessWidget {
       padding: const EdgeInsets.all(24),
       child: SingleChildScrollView(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Как это работает', style: t(20, w: FontWeight.w700)),
+          Text(tr('Как это работает', 'Bu qanday ishlaydi'), style: t(20, w: FontWeight.w700)),
           const SizedBox(height: 16),
-          line('«Частые» — до $quickFrequentMax мест, на экране продажи 9, остальные прокруткой. '
-              'Сначала закреплённые, остальные — самые продаваемые в этом магазине за 30 дней.'),
-          line('Вкладки разделов собираются сами: раньше тот раздел, чьи товары продаются чаще.'),
-          line('Весовой товар (кг): наберите вес на клавиатуре (например 1,25) и нажмите плитку.'),
-          line('Цифры, потом плитка — столько штук сразу.'),
-          line('Маркированный товар на кнопку не ставится — его сканируют.'),
-          line('Кнопки общие для всех касс магазина и сохраняются на сервере, нужна связь.'),
-          line('Настраивает владелец или сотрудник с правом «Настройка кассы».'),
+          line(tr(
+              '«Частые» — до $quickFrequentMax мест, на экране продажи 9, остальные прокруткой. '
+                  'Сначала закреплённые, остальные — самые продаваемые в этом магазине за 30 дней.',
+              '«Ommabop» — $quickFrequentMax tagacha joy, sotuv ekranida 9 ta, qolganlari aylantirib koʻriladi. '
+                  'Avval qadalganlar, qolganlari — shu doʻkonda 30 kunda eng koʻp sotilganlar.')),
+          line(tr('Вкладки разделов собираются сами: раньше тот раздел, чьи товары продаются чаще.', 'Boʻlim yorliqlari oʻzi tuziladi: mahsulotlari koʻproq sotiladigan boʻlim oldinroq turadi.')),
+          line(tr('Весовой товар (кг): наберите вес на клавиатуре (например 1,25) и нажмите плитку.', 'Tortiladigan mahsulot (kg): klaviaturada vaznni tering (masalan, 1,25) va tugmani bosing.')),
+          line(tr('Цифры, потом плитка — столько штук сразу.', 'Raqamlar, keyin tugma — shuncha dona birdaniga.')),
+          line(tr('Маркированный товар на кнопку не ставится — его сканируют.', 'Markirovkali mahsulot tugmaga qoʻyilmaydi — u skanerlanadi.')),
+          line(tr('Кнопки общие для всех касс магазина и сохраняются на сервере, нужна связь.', 'Tugmalar doʻkonning barcha kassalari uchun umumiy va serverda saqlanadi, aloqa kerak.')),
+          line(tr('Настраивает владелец или сотрудник с правом «Настройка кассы».', 'Egasi yoki «Kassa sozlamalari» huquqiga ega xodim sozlaydi.')),
         ]),
       ),
     );

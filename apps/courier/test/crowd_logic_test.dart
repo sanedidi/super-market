@@ -1,8 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sm_core/sm_core.dart' show normalizeUzPhone, formatUzLocal;
 import 'package:sm_courier/crowd/crowd_logic.dart';
+import 'package:sm_core/sm_core.dart' as sm_i18n;
 
 void main() {
+  // Проверки написаны на русском; язык по умолчанию в приложениях — узбекский.
+  setUpAll(() => sm_i18n.Lang.instance.debugUse(sm_i18n.Lang.ru));
+
   test('phone', () {
     expect(normalizeUzPhone('90 123 45 67'), '+998901234567');
     expect(normalizeUzPhone('+998 (90) 123-45-67'), '+998901234567');

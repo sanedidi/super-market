@@ -39,7 +39,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final password = _password.text;
     if (login.isEmpty || password.isEmpty) {
       setState(() {
-        _error = 'Введите логин и пароль';
+        _error = tr('Введите логин и пароль', 'Login va parolni kiriting');
         _hint = null;
       });
       return;
@@ -57,8 +57,11 @@ class _LoginScreenState extends State<LoginScreen> {
       final left = e.details['attempts_left'];
       setState(() {
         if (e.code == 'invalid_credentials') {
-          _error = 'Неверный логин или пароль';
-          _hint = left is num ? 'Осталось ${_attempts(left.toInt())}, потом вход закроется на 15 минут' : null;
+          _error = tr('Неверный логин или пароль', 'Login yoki parol notoʻgʻri');
+          _hint = left is num
+              ? tr('Осталось ${_attempts(left.toInt())}, потом вход закроется на 15 минут',
+                  'Yana ${left.toInt()} ta urinish qoldi, keyin kirish 15 daqiqaga yopiladi')
+              : null;
         } else {
           _error = e.message;
         }
@@ -88,20 +91,28 @@ class _LoginScreenState extends State<LoginScreen> {
                 borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
               ),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Super\nMarket',
-                    style: TextStyle(fontFamily: 'Inter', fontSize: 44, height: 1, fontWeight: FontWeight.w700, color: AppColors.white, letterSpacing: -1.5)),
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Expanded(
+                    child: Text('Super\nMarket',
+                        style: TextStyle(fontFamily: 'Inter', fontSize: 44, height: 1, fontWeight: FontWeight.w700, color: AppColors.white, letterSpacing: -1.5)),
+                  ),
+                  const LangSwitch(),
+                ]),
                 const SizedBox(height: 18),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(color: const Color(0x2EFFFFFF), borderRadius: BorderRadius.circular(20)),
-                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.delivery_dining_rounded, color: AppColors.white, size: 18),
-                    SizedBox(width: 6),
-                    Text('Курьер', style: TextStyle(fontFamily: 'Inter', fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.white)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.delivery_dining_rounded, color: AppColors.white, size: 18),
+                    const SizedBox(width: 6),
+                    Text(tr('Курьер', 'Kuryer'), style: const TextStyle(fontFamily: 'Inter', fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.white)),
                   ]),
                 ),
                 const SizedBox(height: 14),
-                Text(_crowd ? 'Заказы из магазинов рядом и по пути' : 'Заказы, маршрут и звонки — в одном приложении',
+                Text(
+                    _crowd
+                        ? tr('Заказы из магазинов рядом и по пути', 'Yaqin atrofdagi va yoʻlingizdagi doʻkonlardan buyurtmalar')
+                        : tr('Заказы, маршрут и звонки — в одном приложении', 'Buyurtmalar, yoʻnalish va qoʻngʻiroqlar — bitta ilovada'),
                     style: const TextStyle(fontFamily: 'Inter', fontSize: 16, height: 1.35, color: Color(0xE6FFFFFF))),
               ]),
             ),
@@ -119,11 +130,11 @@ class _LoginScreenState extends State<LoginScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                const Text('Вход по логину', style: AppText.h2),
+                Text(tr('Вход по логину', 'Login orqali kirish'), style: AppText.h2),
                 const SizedBox(height: 6),
-                Text('Логин и пароль выдаёт магазин', style: AppText.body.copyWith(color: AppColors.text2)),
+                Text(tr('Логин и пароль выдаёт магазин', 'Login va parolni doʻkon beradi'), style: AppText.body.copyWith(color: AppColors.text2)),
                 const SizedBox(height: 20),
-                const Text('Логин', style: AppText.caption),
+                Text(tr('Логин', 'Login'), style: AppText.caption),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _login,
@@ -137,14 +148,14 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: AppText.body.copyWith(fontSize: 17),
                   onSubmitted: (_) => _passwordFocus.requestFocus(),
                   decoration: InputDecoration(
-                    hintText: 'например, aziz.karimov',
+                    hintText: tr('например, aziz.karimov', 'masalan, aziz.karimov'),
                     prefixIcon: const Icon(Icons.person_rounded, color: AppColors.muted),
                     errorText: err ? '' : null,
                     errorStyle: const TextStyle(height: 0, fontSize: 0),
                   ),
                 ),
                 const SizedBox(height: 16),
-                const Text('Пароль', style: AppText.caption),
+                Text(tr('Пароль', 'Parol'), style: AppText.caption),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _password,
@@ -158,10 +169,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: AppText.body.copyWith(fontSize: 17),
                   onSubmitted: (_) => _submit(),
                   decoration: InputDecoration(
-                    hintText: 'Пароль',
+                    hintText: tr('Пароль', 'Parol'),
                     prefixIcon: const Icon(Icons.lock_rounded, color: AppColors.muted),
                     suffixIcon: IconButton(
-                      tooltip: _hide ? 'Показать пароль' : 'Скрыть пароль',
+                      tooltip: _hide ? tr('Показать пароль', 'Parolni koʻrsatish') : tr('Скрыть пароль', 'Parolni yashirish'),
                       icon: Icon(_hide ? Icons.visibility_rounded : Icons.visibility_off_rounded, color: AppColors.muted),
                       onPressed: () => setState(() => _hide = !_hide),
                     ),
@@ -187,13 +198,16 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ],
                 const SizedBox(height: 20),
-                BigButton(label: 'Войти', icon: Icons.arrow_forward_rounded, busy: _busy, onPressed: _submit),
+                BigButton(label: tr('Войти', 'Kirish'), icon: Icons.arrow_forward_rounded, busy: _busy, onPressed: _submit),
                 const SizedBox(height: 18),
                 Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   const Icon(Icons.help_rounded, size: 18, color: AppColors.muted),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text('Забыли пароль? Попросите менеджера магазина сбросить его в панели → «Курьеры»', style: AppText.small),
+                    child: Text(
+                        tr('Забыли пароль? Попросите менеджера магазина сбросить его в панели → «Курьеры»',
+                            'Parolni unutdingizmi? Doʻkon menejeridan uni panelda → «Kuryerlar» boʻlimida tiklashni soʻrang'),
+                        style: AppText.small),
                   ),
                 ]),
               ]),

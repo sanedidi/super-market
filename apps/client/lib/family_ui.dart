@@ -1,7 +1,7 @@
 // Общие части экранов «Моя семья»: аватар участника, метка статуса просьбы,
 // карточка просьбы, время напоминания.
 import 'package:flutter/material.dart';
-import 'package:sm_core/sm_core.dart' show formatPhone;
+import 'package:sm_core/sm_core.dart' show Lang, formatPhone, tr;
 
 import 'ui/theme.dart';
 import 'ui/widgets.dart';
@@ -49,7 +49,7 @@ class MemberAvatar extends StatelessWidget {
 String memberName(Map<String, dynamic> m) {
   final name = '${m['name'] ?? ''}'.trim();
   if (name.isNotEmpty) return name;
-  return m['phone'] == null ? 'Участник' : formatPhone(m['phone']);
+  return m['phone'] == null ? tr('Участник', 'Ishtirokchi') : formatPhone(m['phone']);
 }
 
 /// Метка статуса просьбы: «Ждёт», «Куплено 1/2», «Куплено», «Заказано», «Отменено».
@@ -57,15 +57,17 @@ Widget requestBadge(Map<String, dynamic> r) {
   final total = (r['items_total'] as num?)?.toInt() ?? 0;
   final bought = (r['items_bought'] as num?)?.toInt() ?? 0;
   return switch (r['status']) {
-    'pending' => const AppBadge(label: 'Ждёт', kind: BadgeKind.warning),
-    'partial' => AppBadge(label: 'Куплено $bought/$total', kind: BadgeKind.success),
-    'bought' => const AppBadge(label: 'Куплено', kind: BadgeKind.success),
-    'ordered' => const AppBadge(label: 'Заказано', kind: BadgeKind.isNew),
-    _ => const AppBadge(label: 'Отменено'),
+    'pending' => AppBadge(label: tr('Ждёт', 'Kutmoqda'), kind: BadgeKind.warning),
+    'partial' => AppBadge(label: tr('Куплено $bought/$total', 'Olindi $bought/$total'), kind: BadgeKind.success),
+    'bought' => AppBadge(label: tr('Куплено', 'Olindi'), kind: BadgeKind.success),
+    'ordered' => AppBadge(label: tr('Заказано', 'Buyurtma qilindi'), kind: BadgeKind.isNew),
+    _ => AppBadge(label: tr('Отменено', 'Bekor qilindi')),
   };
 }
 
-const _months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+List<String> get _months => Lang.instance.isUz
+    ? const ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr']
+    : const ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 
 String hhmm(DateTime d) => '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 
@@ -77,12 +79,12 @@ String whenText(DateTime d) {
   final day = DateTime(d.year, d.month, d.day);
   final diff = day.difference(today).inDays;
   final prefix = switch (diff) {
-    0 => 'сегодня',
-    1 => 'завтра',
-    -1 => 'вчера',
-    _ => '${d.day} ${_months[d.month - 1]}',
+    0 => tr('сегодня', 'bugun'),
+    1 => tr('завтра', 'ertaga'),
+    -1 => tr('вчера', 'kecha'),
+    _ => tr('${d.day} ${_months[d.month - 1]}', '${d.day}-${_months[d.month - 1]}'),
   };
-  return '$prefix в ${hhmm(d)}';
+  return tr('$prefix в ${hhmm(d)}', '$prefix soat ${hhmm(d)} da');
 }
 
 String capitalize(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
@@ -94,11 +96,12 @@ String? requestSchedule(Map<String, dynamic> r) {
   final atStore = r['remind_at_store'] == true;
   final parts = <String>[];
   if (remind != null && remind.isAfter(DateTime.now().subtract(const Duration(minutes: 1)))) {
-    parts.add('Напомнить ${whenText(remind)}${atStore ? ' и у магазина' : ''}');
+    parts.add(tr('Напомнить ${whenText(remind)}${atStore ? ' и у магазина' : ''}',
+        'Eslatish: ${whenText(remind)}${atStore ? ' va doʻkon yonida' : ''}'));
   } else if (atStore) {
-    parts.add('Напомнить у магазина');
+    parts.add(tr('Напомнить у магазина', 'Doʻkon yonida eslatish'));
   }
-  if (offer != null) parts.add('доставка домой после ${hhmm(offer.toLocal())}');
+  if (offer != null) parts.add(tr('доставка домой после ${hhmm(offer.toLocal())}', 'uyga yetkazish soat ${hhmm(offer.toLocal())} dan keyin'));
   if (parts.isEmpty) return null;
   return capitalize(parts.join(' · '));
 }
@@ -116,7 +119,7 @@ class RequestCard extends StatelessWidget {
     final bought = (r['items_bought'] as num?)?.toInt() ?? 0;
     final author = '${r['author_name'] ?? ''}';
     final assignee = '${r['assignee_name'] ?? ''}';
-    final who = assignee.isEmpty ? '$author → всем' : '$author → $assignee';
+    final who = assignee.isEmpty ? tr('$author → всем', '$author → hammaga') : '$author → $assignee';
     final schedule = requestSchedule(r);
     return Material(
       color: AppColors.white,
@@ -167,7 +170,7 @@ class RequestCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              Text('$bought из $total', style: AppText.caption),
+              Text(tr('$bought из $total', '$bought / $total'), style: AppText.caption),
             ]),
           ]),
         ),

@@ -38,17 +38,19 @@ class FeedScreen extends StatelessWidget {
     final code = '${me['code'] ?? ''}';
     final blocked = st.status == 'blocked';
     return [
-      StatusChip(blocked ? 'Заблокирован' : 'Не верифицирован', icon: blocked ? Icons.block_rounded : Icons.hourglass_top_rounded, tone: ChipTone.amber),
+      StatusChip(blocked ? tr('Заблокирован', 'Bloklangan') : tr('Не верифицирован', 'Tasdiqlanmagan'), icon: blocked ? Icons.block_rounded : Icons.hourglass_top_rounded, tone: ChipTone.amber),
       const SizedBox(height: 8),
-      const Text('Привет!', style: AppText.h1),
+      Text(tr('Привет!', 'Salom!'), style: AppText.h1),
       const SizedBox(height: 16),
       Container(
         padding: const EdgeInsets.all(22),
         decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(24)),
         child: Column(children: [
-          const Text('Покажите этот код продавцу', style: AppText.title, textAlign: TextAlign.center),
+          Text(tr('Покажите этот код продавцу', 'Bu kodni sotuvchiga koʻrsating'), style: AppText.title, textAlign: TextAlign.center),
           const SizedBox(height: 8),
-          Text('В любом магазине Super Market из списка ниже. Возьмите паспорт или ID-карту — продавец сверит документ, копию мы не храним.',
+          Text(
+              tr('В любом магазине Super Market из списка ниже. Возьмите паспорт или ID-карту — продавец сверит документ, копию мы не храним.',
+                  'Quyidagi roʻyxatdagi istalgan Super Market doʻkonida. Pasport yoki ID-kartani oling — sotuvchi hujjatni tekshiradi, nusxasini saqlamaymiz.'),
               style: AppText.small.copyWith(fontSize: 14), textAlign: TextAlign.center),
           const SizedBox(height: 16),
           QrImageView(data: courierQr(code), size: 200, backgroundColor: AppColors.white),
@@ -57,7 +59,7 @@ class FeedScreen extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(color: AppColors.soft, borderRadius: BorderRadius.circular(12)),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Text('Код курьера', style: AppText.small.copyWith(fontWeight: FontWeight.w500)),
+              Text(tr('Код курьера', 'Kuryer kodi'), style: AppText.small.copyWith(fontWeight: FontWeight.w500)),
               const SizedBox(width: 8),
               Text(code, style: AppText.bodyStrong),
             ]),
@@ -66,19 +68,23 @@ class FeedScreen extends StatelessWidget {
       ),
       const SizedBox(height: 20),
       Row(children: [
-        const Expanded(child: Text('Ближайшие точки проверки', style: AppText.title)),
+        Expanded(child: Text(tr('Ближайшие точки проверки', 'Eng yaqin tekshiruv joylari'), style: AppText.title)),
         if (st.lastPosition == null)
           TextButton.icon(
             onPressed: () => st.locateOnce().catchError((Object e) {
               if (context.mounted) showMessage(context, e);
             }),
             icon: const Icon(Icons.my_location_rounded, size: 18),
-            label: const Text('Рядом со мной'),
+            label: Text(tr('Рядом со мной', 'Yaqinimda')),
           ),
       ]),
       const SizedBox(height: 10),
       if (st.points.isEmpty)
-        const EmptyState(icon: Icons.storefront_rounded, title: 'Пока нет магазинов', text: 'Скоро магазины Super Market начнут проверять курьеров')
+        EmptyState(
+          icon: Icons.storefront_rounded,
+          title: tr('Пока нет магазинов', 'Hozircha doʻkonlar yoʻq'),
+          text: tr('Скоро магазины Super Market начнут проверять курьеров', 'Tez orada Super Market doʻkonlari kuryerlarni tekshirishni boshlaydi'),
+        )
       else
         Container(
           decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20)),
@@ -97,7 +103,7 @@ class FeedScreen extends StatelessWidget {
     final level = (me['level'] as Map?) ?? const {};
     return [
       Row(children: [
-        const Expanded(child: Text('По пути', style: AppText.h1)),
+        Expanded(child: Text(tr('По пути', 'Yoʻlakay'), style: AppText.h1)),
         _OnlineChip(online: st.online, onChanged: (v) => st.setOnline(v).catchError((Object e) {
               if (context.mounted) showMessage(context, e);
             })),
@@ -106,14 +112,15 @@ class FeedScreen extends StatelessWidget {
       if (st.locationProblem != null && st.online) ...[
         _Banner(
           icon: Icons.location_off_rounded,
-          text: '${st.locationProblem}. Без геопозиции лента не подберёт заказы рядом.',
-          action: 'Настройки',
+          text: tr('${st.locationProblem}. Без геопозиции лента не подберёт заказы рядом.',
+              '${st.locationProblem}. Joylashuvsiz lenta yaqindagi buyurtmalarni topa olmaydi.'),
+          action: tr('Настройки', 'Sozlamalar'),
           onAction: st.openLocationSettings,
         ),
         const SizedBox(height: 12),
       ],
       if (st.activeOrders.isNotEmpty) ...[
-        Text('Мои заказы', style: AppText.title),
+        Text(tr('Мои заказы', 'Mening buyurtmalarim'), style: AppText.title),
         const SizedBox(height: 10),
         for (final o in st.activeOrders) _ActiveCard(o),
         const SizedBox(height: 8),
@@ -131,50 +138,67 @@ class FeedScreen extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(dest == null ? 'Просто рядом' : 'Иду: ${dest['title']}', style: AppText.bodyStrong),
-                  Text(dest == null ? 'Заказы рядом с вами' : 'Показываем заказы с небольшим крюком', style: AppText.small),
+                  Text(
+                      dest == null
+                          ? tr('Просто рядом', 'Shunchaki yaqinda')
+                          : tr('Иду: ${placeTitle(dest['title'])}', 'Yoʻnalish: ${placeTitle(dest['title'])}'),
+                      style: AppText.bodyStrong),
+                  Text(
+                      dest == null
+                          ? tr('Заказы рядом с вами', 'Yaqiningizdagi buyurtmalar')
+                          : tr('Показываем заказы с небольшим крюком', 'Yoʻl ustidagi va biroz chetdagi buyurtmalar'),
+                      style: AppText.small),
                 ]),
               ),
-              Text('Изменить', style: AppText.bodyStrong.copyWith(color: AppColors.primary, fontSize: 14)),
+              Text(tr('Изменить', 'Oʻzgartirish'), style: AppText.bodyStrong.copyWith(color: AppColors.primary, fontSize: 14)),
             ]),
           ),
         ),
       ),
       const SizedBox(height: 18),
       Row(children: [
-        Expanded(child: Text(st.offers.isEmpty ? 'Заказы по пути' : '${st.offers.length} ${_ordersWord(st.offers.length)} по пути', style: AppText.title)),
-        Text('${level['title'] ?? ''} · до ${money(level['limit'])}', style: AppText.small.copyWith(fontWeight: FontWeight.w500)),
+        Expanded(
+            child: Text(
+                st.offers.isEmpty
+                    ? tr('Заказы по пути', 'Yoʻlakay buyurtmalar')
+                    : tr('${st.offers.length} ${_ordersWord(st.offers.length)} по пути', '${st.offers.length} ta yoʻlakay buyurtma'),
+                style: AppText.title)),
+        Text(tr('${level['title'] ?? ''} · до ${money(level['limit'])}', '${level['title'] ?? ''} · ${money(level['limit'])} gacha'), style: AppText.small.copyWith(fontWeight: FontWeight.w500)),
       ]),
       const SizedBox(height: 10),
       if (state == 'offline')
         EmptyState(
           icon: Icons.pause_circle_rounded,
-          title: 'Вы не ищете заказы',
-          text: 'Включите «Ищу заказы» — покажем собранные заказы рядом и по пути',
-          action: 'Искать заказы',
+          title: tr('Вы не ищете заказы', 'Siz buyurtma qidirmayapsiz'),
+          text: tr('Включите «Ищу заказы» — покажем собранные заказы рядом и по пути',
+              '«Buyurtma qidiryapman»ni yoqing — yaqindagi va yoʻlingizdagi yigʻilgan buyurtmalarni koʻrsatamiz'),
+          action: tr('Искать заказы', 'Buyurtma qidirish'),
           onAction: () => st.setOnline(true).catchError((Object e) {
             if (context.mounted) showMessage(context, e);
           }),
         )
       else if (state == 'busy')
-        const EmptyState(
+        EmptyState(
           icon: Icons.local_shipping_rounded,
-          title: 'Сначала доставьте текущий заказ',
-          text: 'На вашем уровне можно везти ограниченное число заказов сразу',
+          title: tr('Сначала доставьте текущий заказ', 'Avval joriy buyurtmani yetkazing'),
+          text: tr('На вашем уровне можно везти ограниченное число заказов сразу',
+              'Darajangizda bir vaqtda cheklangan miqdordagi buyurtmani olib borish mumkin'),
         )
       else if (state == 'no_location')
         EmptyState(
           icon: Icons.my_location_rounded,
-          title: 'Определяем, где вы',
-          text: 'Разрешите доступ к геопозиции — без неё лента не подберёт заказы',
-          action: 'Повторить',
+          title: tr('Определяем, где вы', 'Joylashuvingiz aniqlanmoqda'),
+          text: tr('Разрешите доступ к геопозиции — без неё лента не подберёт заказы',
+              'Joylashuvga ruxsat bering — usiz lenta buyurtmalarni topa olmaydi'),
+          action: tr('Повторить', 'Qayta urinish'),
           onAction: st.retryLocation,
         )
       else if (st.offers.isEmpty)
-        const EmptyState(
+        EmptyState(
           icon: Icons.near_me_rounded,
-          title: 'Пока нет заказов по пути',
-          text: 'Как только магазин рядом соберёт заказ, он появится здесь — телефон завибрирует',
+          title: tr('Пока нет заказов по пути', 'Hozircha yoʻlakay buyurtmalar yoʻq'),
+          text: tr('Как только магазин рядом соберёт заказ, он появится здесь — телефон завибрирует',
+              'Yaqindagi doʻkon buyurtmani yigʻishi bilan u shu yerda chiqadi — telefon tebranadi'),
         )
       else
         for (final o in st.offers) _OfferCard(o),
@@ -197,6 +221,14 @@ class FeedScreen extends StatelessWidget {
     );
   }
 }
+
+/// Название сохранённой точки на текущем языке: «Дом»/«Uy», «Работа»/«Ish»
+/// (точка могла сохраниться при другом языке). Остальное — как есть.
+String placeTitle(Object? title) => switch ('${title ?? ''}') {
+      'Дом' || 'Uy' => tr('Дом', 'Uy'),
+      'Работа' || 'Ish' => tr('Работа', 'Ish'),
+      final t => t,
+    };
 
 class _RouteSheet extends StatefulWidget {
   const _RouteSheet({required this.st});
@@ -229,12 +261,18 @@ class _RouteSheetState extends State<_RouteSheet> {
       return ListTile(
         enabled: !_busy,
         leading: Icon(icon, color: AppColors.ink),
-        title: Text(p == null ? title : 'Иду: $title', style: AppText.bodyStrong),
-        subtitle: Text(p == null ? 'Нажмите, когда будете там — запомним это место' : 'Заказы с небольшим крюком по дороге', style: AppText.small),
+        title: Text(p == null ? title : tr('Иду: $title', 'Yoʻnalish: $title'), style: AppText.bodyStrong),
+        subtitle: Text(
+            p == null
+                ? tr('Нажмите, когда будете там — запомним это место', 'U yerda boʻlganingizda bosing — joyni eslab qolamiz')
+                : tr('Заказы с небольшим крюком по дороге', 'Yoʻl ustidagi va biroz chetdagi buyurtmalar'),
+            style: AppText.small),
         trailing: p == null ? const Icon(Icons.add_location_alt_rounded, color: AppColors.primary) : null,
         onTap: () => _run(() async {
           final target = p ?? await st.saveHere(key, title);
-          if (target == null) throw ApiError(0, 'location', 'Не удалось определить место — включите геопозицию');
+          if (target == null) {
+            throw ApiError(0, 'location', tr('Не удалось определить место — включите геопозицию', 'Joyni aniqlab boʻlmadi — joylashuvni yoqing'));
+          }
           await st.setDest(target);
         }),
       );
@@ -244,26 +282,26 @@ class _RouteSheetState extends State<_RouteSheet> {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Padding(padding: EdgeInsets.fromLTRB(16, 0, 16, 8), child: Text('Куда идёте?', style: AppText.h3)),
+          Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 8), child: Text(tr('Куда идёте?', 'Qayerga ketyapsiz?'), style: AppText.h3)),
           ListTile(
             enabled: !_busy,
             leading: const Icon(Icons.near_me_rounded, color: AppColors.ink),
-            title: const Text('Просто рядом', style: AppText.bodyStrong),
-            subtitle: Text('Заказы в радиусе пары километров', style: AppText.small),
+            title: Text(tr('Просто рядом', 'Shunchaki yaqinda'), style: AppText.bodyStrong),
+            subtitle: Text(tr('Заказы в радиусе пары километров', 'Bir-ikki kilometr radiusdagi buyurtmalar'), style: AppText.small),
             onTap: () => _run(() => st.setDest(null)),
           ),
-          place('home', 'Дом', Icons.home_rounded),
-          place('work', 'Работа', Icons.work_rounded),
+          place('home', tr('Дом', 'Uy'), Icons.home_rounded),
+          place('work', tr('Работа', 'Ish'), Icons.work_rounded),
           if (st.places.isNotEmpty)
             TextButton(
               onPressed: _busy
                   ? null
                   : () => _run(() async {
                         for (final k in st.places.keys.toList()) {
-                          await st.saveHere(k, st.places[k]!.title);
+                          await st.saveHere(k, placeTitle(st.places[k]!.title));
                         }
                       }),
-              child: const Text('Обновить сохранённое место на текущее'),
+              child: Text(tr('Обновить сохранённое место на текущее', 'Saqlangan joyni hozirgisiga yangilash')),
             ),
         ]),
       ),
@@ -289,7 +327,7 @@ class _OnlineChip extends StatelessWidget {
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Icon(Icons.circle, size: 10, color: online ? AppColors.success : AppColors.muted),
             const SizedBox(width: 6),
-            Text(online ? 'Ищу заказы' : 'Не ищу', style: AppText.bodyStrong.copyWith(fontSize: 14, color: online ? AppColors.successInk : AppColors.text2)),
+            Text(online ? tr('Ищу заказы', 'Buyurtma qidiryapman') : tr('Не ищу', 'Qidirmayapman'), style: AppText.bodyStrong.copyWith(fontSize: 14, color: online ? AppColors.successInk : AppColors.text2)),
           ]),
         ),
       ),
@@ -394,22 +432,25 @@ class _OfferCardState extends State<_OfferCard> {
         const SizedBox(height: 8),
         Wrap(spacing: 6, runSpacing: 6, children: [
           if (detour != null) StatusChip('+${meters(detour)}', icon: Icons.turn_right_rounded, tone: ChipTone.blue),
-          StatusChip('~${o['minutes']} мин', icon: Icons.schedule_rounded),
-          StatusChip('Оплачен', icon: Icons.check_circle_rounded, tone: ChipTone.green),
+          StatusChip(tr('~${o['minutes']} мин', '~${o['minutes']} daq.'), icon: Icons.schedule_rounded),
+          StatusChip(tr('Оплачен', 'Toʻlandi'), icon: Icons.check_circle_rounded, tone: ChipTone.green),
         ]),
         const SizedBox(height: 14),
-        _Line(icon: Icons.storefront_rounded, color: AppColors.primary, title: '${o['store_name']}${o['to_store_m'] == null ? '' : ' — ${meters(o['to_store_m'] as num)} от вас'}', sub: '${o['store_address'] ?? ''}'),
+        _Line(icon: Icons.storefront_rounded, color: AppColors.primary, title: '${o['store_name']}${o['to_store_m'] == null ? '' : tr(' — ${meters(o['to_store_m'] as num)} от вас', ' — sizdan ${meters(o['to_store_m'] as num)}')}', sub: '${o['store_address'] ?? ''}'),
         const SizedBox(height: 10),
         _Line(
           icon: Icons.home_rounded,
           color: AppColors.success,
-          title: 'Покупатель — ${meters(o['to_customer_m'] as num?)} от магазина',
-          sub: 'Адрес откроется после принятия',
+          title: tr('Покупатель — ${meters(o['to_customer_m'] as num?)} от магазина', 'Xaridor — doʻkondan ${meters(o['to_customer_m'] as num?)}'),
+          sub: tr('Адрес откроется после принятия', 'Manzil qabul qilingandan keyin ochiladi'),
         ),
         const SizedBox(height: 10),
-        Text('${o['items_count']} ${_itemsWord((o['items_count'] as num?)?.toInt() ?? 0)} · заказ № ${o['number']}', style: AppText.small),
+        Text(
+            tr('${o['items_count']} ${_itemsWord((o['items_count'] as num?)?.toInt() ?? 0)} · заказ № ${o['number']}',
+                '${o['items_count']} ta mahsulot · buyurtma № ${o['number']}'),
+            style: AppText.small),
         const SizedBox(height: 14),
-        BigButton(label: 'Взять заказ', icon: Icons.bolt_rounded, busy: _busy, onPressed: _take, height: 52),
+        BigButton(label: tr('Взять заказ', 'Buyurtmani olish'), icon: Icons.bolt_rounded, busy: _busy, onPressed: _take, height: 52),
       ]),
     );
   }
@@ -470,7 +511,11 @@ class _ActiveCard extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('№ ${o['number']} · ${delivering ? 'везу покупателю' : 'забрать в магазине'}', style: AppText.bodyStrong),
+                  Text(
+                      delivering
+                          ? tr('№ ${o['number']} · везу покупателю', '№ ${o['number']} · xaridorga yetkazyapman')
+                          : tr('№ ${o['number']} · забрать в магазине', '№ ${o['number']} · doʻkondan olish'),
+                      style: AppText.bodyStrong),
                   Text(delivering ? '${o['address'] ?? ''}' : '${store['name'] ?? ''}', style: AppText.small, maxLines: 1, overflow: TextOverflow.ellipsis),
                 ]),
               ),

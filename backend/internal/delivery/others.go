@@ -33,7 +33,7 @@ type OtherStore struct {
 // ближайшие первыми. Магазины без основного склада и должники по подписке не показываются.
 func (s *Service) Others(ctx context.Context, lat, lng float64, exclude []string) ([]OtherStore, error) {
 	if lat < -90 || lat > 90 || lng < -180 || lng > 180 {
-		return nil, apperr.Validation("lat/lng: координаты вне диапазона")
+		return nil, apperr.Validation("lat/lng: координаты вне диапазона").Uz("lat/lng: koordinatalar ruxsat etilgan oraliqdan tashqarida")
 	}
 	if exclude == nil {
 		exclude = []string{}

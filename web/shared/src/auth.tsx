@@ -4,6 +4,7 @@ import { LoginLayout } from './loginLayout'
 import { PasswordLoginPage } from './passwordLogin'
 import { api, ApiError, getTokens, onLogout, setTokens, type AppName, type Tokens } from './api'
 import { formatPhone, PhoneInput, phoneRule } from './phone'
+import { tr } from './i18n'
 
 interface AuthState {
   loggedIn: boolean
@@ -67,13 +68,18 @@ function OtpLoginPage({ app, title }: { app: AppName; title: string }) {
             {e.message}.{' '}
             {url && (
               <a href={url} target="_blank" rel="noreferrer">
-                Открыть бота
+                {tr('Открыть бота', 'Botni ochish')}
               </a>
             )}
           </>,
         )
       } else if (e instanceof ApiError && e.code === 'too_many_requests') {
-        setError(`Код уже отправлен. Повторить можно через ${e.details.retry_after ?? 60} с.`)
+        setError(
+          tr(
+            `Код уже отправлен. Повторить можно через ${e.details.retry_after ?? 60} с.`,
+            `Kod allaqachon yuborilgan. ${e.details.retry_after ?? 60} soniyadan keyin qayta urinib koʻring.`,
+          ),
+        )
         setPhone(values.phone)
         setStep('code')
       } else {
@@ -98,28 +104,33 @@ function OtpLoginPage({ app, title }: { app: AppName; title: string }) {
 
   return (
     <LoginLayout title={title}>
-      <h1>Вход</h1>
+      <h1>{tr('Вход', 'Kirish')}</h1>
       {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
       {step === 'phone' ? (
         <Form layout="vertical" onFinish={requestCode} initialValues={{ phone }} requiredMark={false}>
-          <Form.Item name="phone" label="Номер телефона" rules={[phoneRule(true)]}>
+          <Form.Item name="phone" label={tr('Номер телефона', 'Telefon raqami')} rules={[phoneRule(true)]}>
             <PhoneInput autoFocus />
           </Form.Item>
           <Button type="primary" htmlType="submit" block loading={busy} style={{ marginTop: 8 }}>
-            Получить код в Telegram
+            {tr('Получить код в Telegram', 'Telegram orqali kod olish')}
           </Button>
         </Form>
       ) : (
         <Form layout="vertical" onFinish={verify} requiredMark={false}>
-          <Typography.Paragraph type="secondary">Код отправлен в Telegram-бот на номер {formatPhone(phone)}.</Typography.Paragraph>
-          <Form.Item name="code" label="Код из Telegram" rules={[{ required: true, message: 'Введите код' }]}>
+          <Typography.Paragraph type="secondary">
+            {tr(
+              `Код отправлен в Telegram-бот на номер ${formatPhone(phone)}.`,
+              `Kod ${formatPhone(phone)} raqami uchun Telegram-botga yuborildi.`,
+            )}
+          </Typography.Paragraph>
+          <Form.Item name="code" label={tr('Код из Telegram', 'Telegramdagi kod')} rules={[{ required: true, message: tr('Введите код', 'Kodni kiriting') }]}>
             <Input autoFocus inputMode="numeric" maxLength={6} />
           </Form.Item>
           <Button type="primary" htmlType="submit" block loading={busy} style={{ marginTop: 8 }}>
-            Войти
+            {tr('Войти', 'Kirish')}
           </Button>
           <Button type="link" block onClick={() => setStep('phone')} style={{ marginTop: 8 }}>
-            Другой номер
+            {tr('Другой номер', 'Boshqa raqam')}
           </Button>
         </Form>
       )}

@@ -58,7 +58,7 @@ func (c Conn) ReadInvoice(ctx context.Context, images []Image) (Invoice, Usage, 
 func ParseInvoice(text string) (Invoice, error) {
 	raw, err := ExtractJSON(text)
 	if err != nil {
-		return Invoice{}, &ErrService{Msg: "модель не вернула данные накладной"}
+		return Invoice{}, &ErrService{Msg: "модель не вернула данные накладной", MsgUz: "model yuk xati maʼlumotlarini qaytarmadi"}
 	}
 	var loose struct {
 		SupplierName any `json:"supplier_name"`
@@ -77,7 +77,7 @@ func ParseInvoice(text string) (Invoice, error) {
 		} `json:"lines"`
 	}
 	if err := json.Unmarshal(raw, &loose); err != nil {
-		return Invoice{}, &ErrService{Msg: "модель вернула данные накладной в неверном виде"}
+		return Invoice{}, &ErrService{Msg: "модель вернула данные накладной в неверном виде", MsgUz: "model yuk xati maʼlumotlarini notoʻgʻri koʻrinishda qaytardi"}
 	}
 	inv := Invoice{
 		SupplierName: str(loose.SupplierName, 200),
@@ -119,7 +119,7 @@ func ParseInvoice(text string) (Invoice, error) {
 		}
 	}
 	if len(inv.Lines) == 0 {
-		return inv, &ErrService{Msg: "на фото не найдено строк с товарами — переснимите накладную ровнее"}
+		return inv, &ErrService{Msg: "на фото не найдено строк с товарами — переснимите накладную ровнее", MsgUz: "rasmda mahsulotli qatorlar topilmadi — yuk xatini tekisroq qilib qayta suratga oling"}
 	}
 	return inv, nil
 }

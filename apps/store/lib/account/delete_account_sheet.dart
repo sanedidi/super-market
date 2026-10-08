@@ -55,12 +55,12 @@ class _DeleteAccountSheetState extends State<DeleteAccountSheet> {
   @override
   Widget build(BuildContext context) {
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      SheetHeader(title: 'Удалить аккаунт?', text: deletionText(isOwner: widget.isOwner)),
+      SheetHeader(title: tr('Удалить аккаунт?', 'Akkauntni oʻchirasizmi?'), text: deletionText(isOwner: widget.isOwner)),
       const SizedBox(height: 16),
       Wrap(spacing: 8, runSpacing: 8, children: [
         for (final r in deletionReasons)
           ChoiceChip(
-            label: Text(r),
+            label: Text(deletionReasonLabel(r)),
             selected: _reason == r,
             showCheckmark: false,
             selectedColor: AppColors.ink,
@@ -79,12 +79,12 @@ class _DeleteAccountSheetState extends State<DeleteAccountSheet> {
         minLines: 1,
         maxLength: 400,
         textCapitalization: TextCapitalization.sentences,
-        decoration: InputDecoration(hintText: 'Комментарий (необязательно)', counterText: '', errorText: _error, errorMaxLines: 3),
+        decoration: InputDecoration(hintText: tr('Комментарий (необязательно)', 'Izoh (ixtiyoriy)'), counterText: '', errorText: _error, errorMaxLines: 3),
       ),
       const SizedBox(height: 20),
-      SheetButton(label: 'Отправить запрос', busy: _busy, onPressed: _submit),
+      SheetButton(label: tr('Отправить запрос', 'Soʻrov yuborish'), busy: _busy, onPressed: _submit),
       const SizedBox(height: 10),
-      SheetButton(label: 'Отмена', primary: false, onPressed: _busy ? null : () => Navigator.of(context).pop()),
+      SheetButton(label: tr('Отмена', 'Bekor qilish'), primary: false, onPressed: _busy ? null : () => Navigator.of(context).pop()),
     ]);
   }
 }

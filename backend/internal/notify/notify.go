@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/telegram"
 )
 
@@ -26,27 +27,33 @@ func New(pool *pgxpool.Pool, tg Sender, log *slog.Logger) *Notifier {
 	return &Notifier{pool: pool, tg: tg, log: log.With("component", "notify")}
 }
 
-func (n *Notifier) send(ctx context.Context, query string, args []any, text string) int {
+// send — query отдаёт chat_id и язык получателя (users.language); текст
+// уходит каждому на его языке.
+func (n *Notifier) send(ctx context.Context, query string, args []any, text i18n.Text) int {
 	rows, err := n.pool.Query(ctx, query, args...)
 	if err != nil {
 		n.log.Error("выборка получателей", "err", err)
 		return 0
 	}
-	var chats []int64
+	type chat struct {
+		id   int64
+		lang string
+	}
+	var chats []chat
 	for rows.Next() {
-		var id int64
-		if rows.Scan(&id) == nil {
-			chats = append(chats, id)
+		var c chat
+		if rows.Scan(&c.id, &c.lang) == nil {
+			chats = append(chats, c)
 		}
 	}
 	rows.Close()
 	if n.tg == nil {
-		n.log.Info("уведомление (бот не настроен)", "text", text, "recipients", len(chats))
+		n.log.Info("уведомление (бот не настроен)", "text", text.RU, "recipients", len(chats))
 		return 0
 	}
 	sent := 0
 	for _, c := range chats {
-		if err := n.tg.SendMessage(ctx, c, text, nil); err != nil {
+		if err := n.tg.SendMessage(ctx, c.id, text.In(c.lang), nil); err != nil {
 			n.log.Warn("не удалось отправить уведомление", "chat_id", c, "err", err)
 			continue
 		}
@@ -55,19 +62,20 @@ func (n *Notifier) send(ctx context.Context, query string, args []any, text stri
 	return sent
 }
 
-// SuperAdmins — всем супер-админам, чей номер привязан к боту.
+// SuperAdmins — всем супер-админам, чей номер привязан к боту. Супер-админам —
+// всегда по-русски.
 func (n *Notifier) SuperAdmins(ctx context.Context, text string) int {
 	return n.send(ctx, `
-		SELECT tl.chat_id FROM platform_admins pa
+		SELECT tl.chat_id, 'ru' FROM platform_admins pa
 		JOIN users u ON u.id = pa.user_id
-		JOIN telegram_links tl ON tl.phone = u.phone`, nil, text)
+		JOIN telegram_links tl ON tl.phone = u.phone`, nil, i18n.Text{RU: text})
 }
 
 // StoreStaff — сотрудникам с доступом к магазину и правом permission
-// (владельцу — всегда).
-func (n *Notifier) StoreStaff(ctx context.Context, storeID, permission, text string) int {
+// (владельцу — всегда). Каждому — на его языке (users.language).
+func (n *Notifier) StoreStaff(ctx context.Context, storeID, permission string, text i18n.Text) int {
 	return n.send(ctx, `
-		SELECT DISTINCT tl.chat_id
+		SELECT DISTINCT tl.chat_id, u.language
 		FROM stores s
 		JOIN employees e ON e.network_id = s.network_id AND e.status = 'active'
 		JOIN roles r ON r.id = e.role_id
@@ -81,9 +89,10 @@ func (n *Notifier) StoreStaff(ctx context.Context, storeID, permission, text str
 }
 
 // NetworkOwners — владельцам сети и сотрудникам с правом permission (все магазины).
-func (n *Notifier) NetworkOwners(ctx context.Context, networkID, permission, text string) int {
+// Каждому — на его языке (users.language).
+func (n *Notifier) NetworkOwners(ctx context.Context, networkID, permission string, text i18n.Text) int {
 	return n.send(ctx, `
-		SELECT DISTINCT tl.chat_id
+		SELECT DISTINCT tl.chat_id, u.language
 		FROM employees e
 		JOIN roles r ON r.id = e.role_id
 		JOIN users u ON u.id = e.user_id
@@ -93,10 +102,10 @@ func (n *Notifier) NetworkOwners(ctx context.Context, networkID, permission, tex
 		[]any{networkID, permission}, text)
 }
 
-// Employee — одному сотруднику (например, курьеру о назначенном заказе).
-func (n *Notifier) Employee(ctx context.Context, employeeID, text string) int {
+// Employee — одному сотруднику (например, курьеру о назначенном заказе), на его языке.
+func (n *Notifier) Employee(ctx context.Context, employeeID string, text i18n.Text) int {
 	return n.send(ctx, `
-		SELECT tl.chat_id FROM employees e
+		SELECT tl.chat_id, u.language FROM employees e
 		JOIN users u ON u.id = e.user_id
 		JOIN telegram_links tl ON tl.phone = u.phone
 		WHERE e.id = $1 AND e.status = 'active'`, []any{employeeID}, text)

@@ -3,6 +3,7 @@
 // и скидки?». Уведомления о заказах это не затрагивает.
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sm_core/sm_core.dart';
 
 import 'state.dart';
 import 'ui/theme.dart';
@@ -65,20 +66,21 @@ class PromoConsentDialog extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          Text('Присылать акции и скидки?', textAlign: TextAlign.center, style: AppText.h3.copyWith(fontWeight: FontWeight.w700)),
+          Text(tr('Присылать акции и скидки?', 'Aksiya va chegirmalar yuborilsinmi?'), textAlign: TextAlign.center, style: AppText.h3.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
           Text(
-            'Скидки магазинов рядом с вами — не чаще раза в день. Отключить можно в Настройках → Уведомления.',
+            tr('Скидки магазинов рядом с вами — не чаще раза в день. Отключить можно в Настройках → Уведомления.',
+                'Yaqiningizdagi doʻkonlar chegirmalari — kuniga bir martadan koʻp emas. Sozlamalar → Bildirishnomalar boʻlimida oʻchirish mumkin.'),
             textAlign: TextAlign.center,
             style: AppText.body.copyWith(color: AppColors.text2),
           ),
           const SizedBox(height: 20),
-          AppButton(label: 'Да, присылать', onPressed: () => Navigator.pop(context, true)),
+          AppButton(label: tr('Да, присылать', 'Ha, yuborilsin'), onPressed: () => Navigator.pop(context, true)),
           const SizedBox(height: 4),
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             style: TextButton.styleFrom(foregroundColor: AppColors.dark, textStyle: AppText.bodyStrong),
-            child: const Text('Не сейчас'),
+            child: Text(tr('Не сейчас', 'Hozir emas')),
           ),
         ]),
       ),

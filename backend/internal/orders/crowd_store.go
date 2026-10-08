@@ -15,6 +15,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 // Магазин — точка проверки курьеров «по пути» и выдачи им заказов.
@@ -55,7 +56,7 @@ func (s *Service) crowdCard(ctx context.Context, where string, arg any) (CrowdCo
 		LEFT JOIN stores vs ON vs.id = cc.verified_store_id
 		WHERE cc.deleted_at IS NULL AND `+where, arg).Scan(&c.UserID, &c.Code, &c.Status, &c.Phone, &c.FullName, &c.VerifiedAt, &c.VerifiedStore)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return c, apperr.NotFound("курьер с таким кодом не найден")
+		return c, apperr.NotFound("курьер с таким кодом не найден").Uz("bunday kodli kuryer topilmadi")
 	}
 	if err != nil {
 		return c, err
@@ -69,7 +70,7 @@ func (s *Service) crowdCard(ctx context.Context, where string, arg any) (CrowdCo
 		return c, err
 	}
 	c.Delivered = st.Delivered
-	c.Level = crowdLevel(cs, c.Status, st).Title
+	c.Level = crowdLevel(cs, c.Status, st, i18n.FromContext(ctx)).Title
 	return c, nil
 }
 
@@ -80,7 +81,7 @@ func (s *Service) CrowdLookup(ctx context.Context, p *identity.Principal, raw st
 	}
 	code, ok := normCourierCode(raw)
 	if !ok {
-		return CrowdCourierCard{}, apperr.Validation("code: код курьера вида KR-12345")
+		return CrowdCourierCard{}, apperr.Validation("code: код курьера вида KR-12345").Uz("code: KR-12345 koʻrinishidagi kuryer kodi")
 	}
 	return s.crowdCard(ctx, "cc.code = $1", code)
 }
@@ -115,28 +116,28 @@ func (s *Service) CrowdVerify(ctx context.Context, p *identity.Principal, in Cro
 	}
 	code, ok := normCourierCode(in.Code)
 	if !ok {
-		return CrowdCourierCard{}, apperr.Validation("code: код курьера вида KR-12345")
+		return CrowdCourierCard{}, apperr.Validation("code: код курьера вида KR-12345").Uz("code: KR-12345 koʻrinishidagi kuryer kodi")
 	}
 	if !httpx.IsUUID(in.StoreID) || !p.CanAccessStore(in.StoreID) {
-		return CrowdCourierCard{}, apperr.Validation("store_id: магазин не найден")
+		return CrowdCourierCard{}, apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
 	}
 	var enabled bool
 	err := s.pool.QueryRow(ctx, `SELECT crowd_enabled FROM stores WHERE id = $1 AND network_id = $2`, in.StoreID, p.NetworkID).Scan(&enabled)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return CrowdCourierCard{}, apperr.Validation("store_id: магазин не найден")
+		return CrowdCourierCard{}, apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
 	}
 	if err != nil {
 		return CrowdCourierCard{}, err
 	}
 	if !enabled {
-		return CrowdCourierCard{}, apperr.Conflict("crowd_disabled", "магазин не подключён к доставке «по пути»")
+		return CrowdCourierCard{}, apperr.Conflict("crowd_disabled", "магазин не подключён к доставке «по пути»").Uz("doʻkon «yoʻl-yoʻlakay» yetkazib berishga ulanmagan")
 	}
 	if in.DocType != "passport" && in.DocType != "id_card" {
-		return CrowdCourierCard{}, apperr.Validation("doc_type: passport или id_card")
+		return CrowdCourierCard{}, apperr.Validation("doc_type: passport или id_card").Uz("doc_type: passport yoki id_card")
 	}
 	reason := strings.TrimSpace(in.Reason)
 	if len([]rune(reason)) > 500 {
-		return CrowdCourierCard{}, apperr.Validation("reason: не длиннее 500 символов")
+		return CrowdCourierCard{}, apperr.Validation("reason: не длиннее 500 символов").Uz("reason: 500 belgidan oshmasin")
 	}
 	card, err := s.crowdCard(ctx, "cc.code = $1", code)
 	if err != nil {
@@ -144,9 +145,9 @@ func (s *Service) CrowdVerify(ctx context.Context, p *identity.Principal, in Cro
 	}
 	switch card.Status {
 	case "blocked":
-		return card, apperr.Conflict("crowd_blocked", "курьер заблокирован — обратитесь в поддержку Super Market")
+		return card, apperr.Conflict("crowd_blocked", "курьер заблокирован — обратитесь в поддержку Super Market").Uz("kuryer bloklangan — Super Market qoʻllab-quvvatlash xizmatiga murojaat qiling")
 	case "active":
-		return card, apperr.Conflict("already_verified", "личность курьера уже подтверждена")
+		return card, apperr.Conflict("already_verified", "личность курьера уже подтверждена").Uz("kuryer shaxsi allaqachon tasdiqlangan")
 	}
 
 	var (
@@ -157,35 +158,35 @@ func (s *Service) CrowdVerify(ctx context.Context, p *identity.Principal, in Cro
 	switch in.Decision {
 	case "reject":
 		if reason == "" {
-			return card, apperr.Validation("reason: укажите причину отказа")
+			return card, apperr.Validation("reason: укажите причину отказа").Uz("reason: rad etish sababini kiriting")
 		}
 	case "approve":
 		fullName = strings.Join(strings.Fields(in.FullName), " ")
 		if len([]rune(fullName)) < 5 || len([]rune(fullName)) > 120 {
-			return card, apperr.Validation("full_name: ФИО как в документе")
+			return card, apperr.Validation("full_name: ФИО как в документе").Uz("full_name: F.I.Sh. hujjatdagidek")
 		}
 		b, err := time.Parse("2006-01-02", in.BirthDate)
 		if err != nil {
-			return card, apperr.Validation("birth_date: дата рождения ГГГГ-ММ-ДД")
+			return card, apperr.Validation("birth_date: дата рождения ГГГГ-ММ-ДД").Uz("birth_date: tugʻilgan sana YYYY-MM-DD")
 		}
 		now := s.now().In(tashkent)
 		adult := time.Date(b.Year()+18, b.Month(), b.Day(), 0, 0, 0, 0, tashkent)
 		if now.Before(adult) {
-			return card, apperr.Validation("курьером можно стать только с 18 лет")
+			return card, apperr.Validation("курьером можно стать только с 18 лет").Uz("kuryer boʻlish faqat 18 yoshdan mumkin")
 		}
 		if b.Year() < 1920 {
-			return card, apperr.Validation("birth_date: проверьте дату рождения")
+			return card, apperr.Validation("birth_date: проверьте дату рождения").Uz("birth_date: tugʻilgan sanani tekshiring")
 		}
 		birth = &b
 		if !last4Re.MatchString(in.DocLast4) {
-			return card, apperr.Validation("doc_last4: последние 4 цифры номера документа")
+			return card, apperr.Validation("doc_last4: последние 4 цифры номера документа").Uz("doc_last4: hujjat raqamining oxirgi 4 ta raqami")
 		}
 		if !in.PhotoMatch || !in.DocValid {
-			return card, apperr.Validation("отметьте, что фото совпадает и документ действителен")
+			return card, apperr.Validation("отметьте, что фото совпадает и документ действителен").Uz("rasm mos kelishini va hujjat haqiqiyligini belgilang")
 		}
 		hash = s.docHash(in.DocType, fullName, in.BirthDate, in.DocLast4)
 	default:
-		return card, apperr.Validation("decision: approve или reject")
+		return card, apperr.Validation("decision: approve или reject").Uz("decision: approve yoki reject")
 	}
 
 	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -207,7 +208,7 @@ func (s *Service) CrowdVerify(ctx context.Context, p *identity.Principal, in Cro
 			       verified_at = now(), verified_store_id = $5
 			WHERE user_id = $1 AND status = 'unverified'`, card.UserID, fullName, birth, hash, in.StoreID)
 		if db.IsUniqueViolation(err, "crowd_couriers_doc_idx") {
-			return apperr.Conflict("doc_used", "этот документ уже подтверждён у другого курьера")
+			return apperr.Conflict("doc_used", "этот документ уже подтверждён у другого курьера").Uz("bu hujjat allaqachon boshqa kuryerda tasdiqlangan")
 		}
 		return err
 	})
@@ -242,7 +243,7 @@ func (s *Service) CrowdHandover(ctx context.Context, p *identity.Principal, id s
 		return Order{}, err
 	}
 	if o.CrowdCourierID == nil {
-		return Order{}, apperr.Conflict("no_crowd_courier", "заказ не взял курьер «по пути»")
+		return Order{}, apperr.Conflict("no_crowd_courier", "заказ не взял курьер «по пути»").Uz("buyurtmani «yoʻl-yoʻlakay» kuryer olmagan")
 	}
 	code := normPickup(in.Code)
 	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -254,7 +255,7 @@ func (s *Service) CrowdHandover(ctx context.Context, p *identity.Principal, id s
 			return err
 		}
 		if want == nil || code != *want {
-			return apperr.Validation("код выдачи не совпадает с заказом — проверьте курьера")
+			return apperr.Validation("код выдачи не совпадает с заказом — проверьте курьера").Uz("topshirish kodi buyurtmaga mos emas — kuryerni tekshiring")
 		}
 		if _, err := tx.Exec(ctx, `UPDATE orders SET status = 'delivering', picked_up_at = now(), crowd_pickup_until = NULL WHERE id = $1`, id); err != nil {
 			return err
@@ -280,7 +281,7 @@ func (s *Service) CrowdStoreRelease(ctx context.Context, p *identity.Principal, 
 		return Order{}, err
 	}
 	if o.CrowdCourierID == nil {
-		return Order{}, apperr.Conflict("no_crowd_courier", "заказ не взял курьер «по пути»")
+		return Order{}, apperr.Conflict("no_crowd_courier", "заказ не взял курьер «по пути»").Uz("buyurtmani «yoʻl-yoʻlakay» kuryer olmagan")
 	}
 	courier := *o.CrowdCourierID
 	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -328,7 +329,7 @@ func (s *Service) StoreCrowdBonuses(ctx context.Context, p *identity.Principal, 
 		return r, err
 	}
 	if storeID != "" && (!httpx.IsUUID(storeID) || !p.CanAccessStore(storeID)) {
-		return r, apperr.NotFound("магазин не найден")
+		return r, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	cs, err := s.crowdSettings(ctx, s.pool)
 	if err != nil {

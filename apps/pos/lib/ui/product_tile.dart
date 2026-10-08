@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sm_core/sm_core.dart' show tr;
 
 import '../core/catalog.dart';
 import '../core/money.dart';
@@ -65,7 +66,7 @@ class ProductTile extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                           decoration: BoxDecoration(color: C.dark, borderRadius: BorderRadius.circular(6)),
-                          child: Text('кг', style: t(11, w: FontWeight.w600, c: Colors.white)),
+                          child: Text(tr('кг', 'kg'), style: t(11, w: FontWeight.w600, c: Colors.white)),
                         ),
                     ]),
                   ),

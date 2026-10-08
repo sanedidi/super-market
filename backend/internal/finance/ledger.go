@@ -15,6 +15,7 @@ import (
 
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 // Виды документов в журналах.
@@ -29,7 +30,7 @@ const (
 
 // CreateMainCashbox создаёт главную кассу новой сети.
 func CreateMainCashbox(ctx context.Context, q db.Querier, networkID string) error {
-	_, err := q.Exec(ctx, `INSERT INTO cashboxes (network_id, store_id, name, is_main) VALUES ($1, NULL, 'Главная касса', true)`, networkID)
+	_, err := q.Exec(ctx, `INSERT INTO cashboxes (network_id, store_id, name, is_main) VALUES ($1, NULL, loc('Главная касса', 'Asosiy kassa'), true)`, networkID)
 	return err
 }
 
@@ -38,12 +39,12 @@ func CreateMainCashbox(ctx context.Context, q db.Querier, networkID string) erro
 func CreateStoreCashbox(ctx context.Context, q db.Querier, networkID, storeID, storeName string) error {
 	var id string
 	if err := q.QueryRow(ctx, `INSERT INTO cashboxes (network_id, store_id, name) VALUES ($1, $2, $3) RETURNING id`,
-		networkID, storeID, "Касса "+storeName).Scan(&id); err != nil {
+		networkID, storeID, i18n.T(ctx, "Касса ", "Kassa ")+storeName).Scan(&id); err != nil {
 		return err
 	}
 	_, err := q.Exec(ctx, `
 		INSERT INTO payment_methods (network_id, name, cashbox_id, kind)
-		VALUES ($1, 'Наличные', $2, 'cash'), ($1, 'Терминал', $2, 'card')`, networkID, id)
+		VALUES ($1, loc('Наличные', 'Naqd pul'), $2, 'cash'), ($1, loc('Терминал', 'Terminal'), $2, 'card')`, networkID, id)
 	return err
 }
 
@@ -53,7 +54,7 @@ func CurrentRate(ctx context.Context, q db.Querier, networkID string) (string, e
 	err := q.QueryRow(ctx, `SELECT rate::text FROM currency_rates WHERE network_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1`,
 		networkID).Scan(&rate)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", apperr.Conflict("no_currency_rate", "не задан курс валюты — установите его в разделе «Финансы»")
+		return "", apperr.Conflict("no_currency_rate", "не задан курс валюты — установите его в разделе «Финансы»").Uz("valyuta kursi belgilanmagan — uni «Moliya» boʻlimida belgilang")
 	}
 	return rate, err
 }
@@ -74,7 +75,7 @@ func lockCashbox(ctx context.Context, tx pgx.Tx, networkID, id string) (cashboxR
 	err := tx.QueryRow(ctx, `SELECT id, store_id, currency, is_main, is_active FROM cashboxes
 		WHERE id = $1 AND network_id = $2 FOR UPDATE`, id, networkID).Scan(&c.ID, &c.StoreID, &c.Currency, &c.IsMain, &c.IsActive)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return c, apperr.Validation("cashbox_id: касса не найдена")
+		return c, apperr.Validation("cashbox_id: касса не найдена").Uz("cashbox_id: kassa topilmadi")
 	}
 	return c, err
 }
@@ -95,7 +96,7 @@ func SubtractCash(ctx context.Context, tx pgx.Tx, networkID, cashboxID, amount, 
 		return err
 	}
 	if !enough {
-		return apperr.New(http.StatusConflict, "insufficient_cash", "в кассе недостаточно денег")
+		return apperr.New(http.StatusConflict, "insufficient_cash", "в кассе недостаточно денег").Uz("kassada pul yetarli emas")
 	}
 	_, err := tx.Exec(ctx, `INSERT INTO cash_entries (network_id, cashbox_id, amount, doc_type, doc_id)
 		VALUES ($1, $2, -($3::numeric), $4, $5)`, networkID, cashboxID, amount, docType, docID)
@@ -115,7 +116,7 @@ func CheckCounterparty(ctx context.Context, q db.Querier, networkID, id string) 
 	var active bool
 	err := q.QueryRow(ctx, `SELECT is_active FROM counterparties WHERE id = $1 AND network_id = $2`, id, networkID).Scan(&active)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !active) {
-		return apperr.Validation("counterparty_id: контрагент не найден или отключён")
+		return apperr.Validation("counterparty_id: контрагент не найден или отключён").Uz("counterparty_id: kontragent topilmadi yoki oʻchirilgan")
 	}
 	return err
 }

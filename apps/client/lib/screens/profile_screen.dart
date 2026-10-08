@@ -21,8 +21,21 @@ import 'root_shell.dart';
 /// Версия приложения (совпадает с pubspec.yaml).
 const appVersion = '0.9.0';
 
-const _languages = {'ru': 'Русский', 'uz': 'O‘zbekcha'};
-const _cities = ['Ташкент', 'Самарканд', 'Бухара', 'Андижан', 'Наманган', 'Фергана', 'Нукус', 'Карши', 'Навои', 'Ургенч', 'Джизак', 'Термез'];
+/// Города: ключ — как хранится в профиле на сервере (по-русски), значение — подпись.
+Map<String, String> get _cities => {
+      'Ташкент': tr('Ташкент', 'Toshkent'),
+      'Самарканд': tr('Самарканд', 'Samarqand'),
+      'Бухара': tr('Бухара', 'Buxoro'),
+      'Андижан': tr('Андижан', 'Andijon'),
+      'Наманган': tr('Наманган', 'Namangan'),
+      'Фергана': tr('Фергана', 'Fargʻona'),
+      'Нукус': tr('Нукус', 'Nukus'),
+      'Карши': tr('Карши', 'Qarshi'),
+      'Навои': tr('Навои', 'Navoiy'),
+      'Ургенч': tr('Ургенч', 'Urganch'),
+      'Джизак': tr('Джизак', 'Jizzax'),
+      'Термез': tr('Термез', 'Termiz'),
+    };
 
 /// Имя для показа: «Имя Фамилия», иначе full_name.
 String profileName(Map<String, dynamic>? p) {
@@ -82,7 +95,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       body: SafeArea(
         bottom: false,
         child: ListView(padding: EdgeInsets.fromLTRB(16, 16, 16, tabBottomInset(context)), children: [
-          const Text('Профиль', style: AppText.h1),
+          Text(tr('Профиль', 'Profil'), style: AppText.h1),
           const SizedBox(height: 16),
           InkWell(
             borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -94,10 +107,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Войдите в Super Market',
+                    Text(tr('Войдите в Super Market', 'Super Marketga kiring'),
                         maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.h3.copyWith(fontWeight: FontWeight.w700)),
                     const SizedBox(height: 2),
-                    Text('Заказы, адреса и избранное', style: AppText.body.copyWith(color: AppColors.text2)),
+                    Text(tr('Заказы, адреса и избранное', 'Buyurtmalar, manzillar va sevimlilar'), style: AppText.body.copyWith(color: AppColors.text2)),
                   ]),
                 ),
                 const Icon(Icons.chevron_right_rounded, color: AppColors.text2),
@@ -106,20 +119,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 16),
           SoftGroup(children: [
-            AppListRow(icon: Icons.inventory_2_rounded, title: 'История заказов', onTap: () => _gated(LoginReason.orders, const OrdersScreen())),
-            AppListRow(icon: Icons.family_restroom_rounded, title: 'Моя семья', onTap: () => _gated(LoginReason.family, const FamilyScreen())),
-            AppListRow(icon: Icons.favorite_rounded, title: 'Избранное', onTap: () => _gated(LoginReason.favorite, const FavoritesScreen())),
+            AppListRow(
+                icon: Icons.inventory_2_rounded,
+                title: tr('История заказов', 'Buyurtmalar tarixi'),
+                onTap: () => _gated(LoginReason.orders, const OrdersScreen())),
+            AppListRow(
+                icon: Icons.family_restroom_rounded,
+                title: tr('Моя семья', 'Mening oilam'),
+                onTap: () => _gated(LoginReason.family, const FamilyScreen())),
+            AppListRow(
+                icon: Icons.favorite_rounded,
+                title: tr('Избранное', 'Sevimlilar'),
+                onTap: () => _gated(LoginReason.favorite, const FavoritesScreen())),
             AppListRow(
               icon: Icons.location_on_rounded,
-              title: 'Мои адреса',
+              title: tr('Мои адреса', 'Mening manzillarim'),
               divider: false,
               onTap: () => _gated(LoginReason.addresses, const AddressesScreen()),
             ),
           ]),
           const SizedBox(height: 16),
           SoftGroup(children: [
-            AppListRow(icon: Icons.help_rounded, title: 'Помощь', onTap: () => _push(const HelpScreen())),
-            AppListRow(icon: Icons.settings_rounded, title: 'Настройки', divider: false, onTap: () => _push(const SettingsScreen())),
+            AppListRow(icon: Icons.help_rounded, title: tr('Помощь', 'Yordam'), onTap: () => _push(const HelpScreen())),
+            AppListRow(
+                icon: Icons.settings_rounded, title: tr('Настройки', 'Sozlamalar'), divider: false, onTap: () => _push(const SettingsScreen())),
           ]),
         ]),
       ),
@@ -136,7 +159,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         body: SafeArea(
           child: _error == null
               ? const Center(child: CircularProgressIndicator())
-              : EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить профиль', text: _error.toString(), action: 'Повторить', onAction: _load),
+              : EmptyState(
+                  icon: Icons.wifi_off_rounded,
+                  title: tr('Не удалось загрузить профиль', 'Profilni yuklab boʻlmadi'),
+                  text: _error.toString(),
+                  action: tr('Повторить', 'Qayta urinish'),
+                  onAction: _load),
         ),
       );
     }
@@ -149,7 +177,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: RefreshIndicator(
           onRefresh: _load,
           child: ListView(padding: EdgeInsets.fromLTRB(16, 16, 16, tabBottomInset(context)), children: [
-            const Text('Профиль', style: AppText.h1),
+            Text(tr('Профиль', 'Profil'), style: AppText.h1),
             const SizedBox(height: 16),
             InkWell(
               borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -161,7 +189,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(width: 16),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(name.isEmpty ? 'Добавьте имя' : name,
+                      Text(name.isEmpty ? tr('Добавьте имя', 'Ismingizni qoʻshing') : name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppText.h3.copyWith(fontWeight: FontWeight.w700, color: name.isEmpty ? AppColors.primary : AppColors.ink)),
@@ -180,15 +208,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
             const SizedBox(height: 16),
             SoftGroup(children: [
-              AppListRow(icon: Icons.inventory_2_rounded, title: 'История заказов', onTap: () => _push(const OrdersScreen())),
+              AppListRow(icon: Icons.inventory_2_rounded, title: tr('История заказов', 'Buyurtmalar tarixi'), onTap: () => _push(const OrdersScreen())),
               AppListRow(
                 icon: Icons.family_restroom_rounded,
-                title: 'Моя семья',
+                title: tr('Моя семья', 'Mening oilam'),
                 trailing: state.familyForMe > 0 ? AppBadge(label: '${state.familyForMe}', kind: BadgeKind.discount) : null,
                 onTap: () => _push(const FamilyScreen()),
               ),
-              AppListRow(icon: Icons.favorite_rounded, title: 'Избранное', onTap: () => _push(const FavoritesScreen())),
-              AppListRow(icon: Icons.location_on_rounded, title: 'Мои адреса', divider: false, onTap: () => _push(const AddressesScreen())),
+              AppListRow(icon: Icons.favorite_rounded, title: tr('Избранное', 'Sevimlilar'), onTap: () => _push(const FavoritesScreen())),
+              AppListRow(
+                  icon: Icons.location_on_rounded,
+                  title: tr('Мои адреса', 'Mening manzillarim'),
+                  divider: false,
+                  onTap: () => _push(const AddressesScreen())),
             ]),
             if (courierApp.isNotEmpty) ...[
               const SizedBox(height: 16),
@@ -196,8 +228,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
             const SizedBox(height: 16),
             SoftGroup(children: [
-              AppListRow(icon: Icons.help_rounded, title: 'Помощь', onTap: () => _push(const HelpScreen())),
-              AppListRow(icon: Icons.settings_rounded, title: 'Настройки', divider: false, onTap: () => _push(const SettingsScreen())),
+              AppListRow(icon: Icons.help_rounded, title: tr('Помощь', 'Yordam'), onTap: () => _push(const HelpScreen())),
+              AppListRow(
+                  icon: Icons.settings_rounded, title: tr('Настройки', 'Sozlamalar'), divider: false, onTap: () => _push(const SettingsScreen())),
             ]),
           ]),
         ),
@@ -231,7 +264,7 @@ class ActiveOrderCard extends StatelessWidget {
     final courier = '${order['courier_name'] ?? ''}';
     final sub = [
       '${order['store_name'] ?? ''}',
-      if (courier.isNotEmpty) 'курьер $courier',
+      if (courier.isNotEmpty) tr('курьер $courier', 'kuryer $courier'),
     ].where((s) => s.isNotEmpty).join(' · ');
     return Material(
       color: AppColors.dark,
@@ -246,7 +279,9 @@ class ActiveOrderCard extends StatelessWidget {
             const SizedBox(width: 14),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Заказ № ${order['number']} · ${(statusTitles[status] ?? status).toLowerCase()}',
+                Text(
+                    tr('Заказ № ${order['number']} · ${(statusTitles[status] ?? status).toLowerCase()}',
+                        'Buyurtma № ${order['number']} · ${(statusTitles[status] ?? status).toLowerCase()}'),
                     maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong.copyWith(color: AppColors.white)),
                 if (sub.isNotEmpty)
                   Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.small.copyWith(color: const Color(0xCCFFFFFF))),
@@ -292,6 +327,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  /// Язык приложения: меняется сразу на устройстве; у вошедшего — сохраняется
+  /// и в профиле (на нём приходят уведомления).
+  Future<void> _setLanguage(String code) async {
+    await Lang.instance.set(code);
+    if (!mounted || context.read<AppState>().isGuest) return;
+    await _update({'language': code});
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
@@ -302,29 +345,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final supportUrl = state.link('support_url');
     final city = '${p['city'] ?? ''}';
     Widget value(String v) => Padding(padding: const EdgeInsets.only(right: 4), child: Text(v, style: AppText.small.copyWith(fontSize: 14)));
+    // Гостю язык тоже можно сменить — строка в общей группе.
+    Widget language({bool divider = true}) => AppListRow(
+          icon: Icons.language_rounded,
+          title: tr('Язык приложения', 'Ilova tili'),
+          trailing: value(Lang.names[Lang.instance.code]!),
+          divider: divider,
+          onTap: () => _pick(tr('Язык приложения', 'Ilova tili'), Lang.names, Lang.instance.code, _setLanguage),
+        );
     return Scaffold(
       body: SafeArea(
         child: Column(children: [
-          const PageHeader(title: 'Настройки'),
+          PageHeader(title: tr('Настройки', 'Sozlamalar')),
           Expanded(
             child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 16), children: [
               if (!guest) ...[
                 SoftGroup(children: [
                   AppListRow(
                     icon: Icons.account_circle_rounded,
-                    title: 'Личные данные',
+                    title: tr('Личные данные', 'Shaxsiy maʼlumotlar'),
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileDetailsScreen())),
                   ),
-                  AppListRow(
-                    icon: Icons.language_rounded,
-                    title: 'Язык приложения',
-                    trailing: value(_languages[p['language']] ?? 'Русский'),
-                    onTap: () => _pick('Язык приложения', _languages, '${p['language']}', (v) => _update({'language': v})),
-                  ),
+                  language(),
                   AppListRow(
                     icon: Icons.notifications_rounded,
-                    title: 'Уведомления',
-                    trailing: value(notif['orders'] == true ? 'Вкл' : 'Выкл'),
+                    title: tr('Уведомления', 'Bildirishnomalar'),
+                    trailing: value(notif['orders'] == true ? tr('Вкл', 'Yoqilgan') : tr('Выкл', 'Oʻchirilgan')),
                     divider: false,
                     onTap: () => _notifications(notif),
                   ),
@@ -332,21 +378,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 12),
               ],
               SoftGroup(children: [
+                if (guest) language(),
                 if (!guest)
                   AppListRow(
                     icon: Icons.location_city_rounded,
-                    title: 'Город',
-                    trailing: value(city.isEmpty ? 'Не выбран' : city),
-                    onTap: () => _pick('Город', {for (final c in _cities) c: c}, city, (v) => _update({'city': v})),
+                    title: tr('Город', 'Shahar'),
+                    trailing: value(city.isEmpty ? tr('Не выбран', 'Tanlanmagan') : (_cities[city] ?? city)),
+                    onTap: () => _pick(tr('Город', 'Shahar'), _cities, city, (v) => _update({'city': v})),
                   ),
-                if (supportUrl.isNotEmpty) AppListRow(icon: Icons.headset_mic_rounded, title: 'Служба поддержки', onTap: () => _open(supportUrl)),
-                AppListRow(icon: Icons.privacy_tip_rounded, title: 'Политика конфиденциальности', onTap: () => _open(state.privacyUrl)),
-                AppListRow(icon: Icons.info_rounded, title: 'О приложении', divider: false, onTap: _about),
+                if (supportUrl.isNotEmpty)
+                  AppListRow(icon: Icons.headset_mic_rounded, title: tr('Служба поддержки', 'Qoʻllab-quvvatlash xizmati'), onTap: () => _open(supportUrl)),
+                AppListRow(icon: Icons.privacy_tip_rounded, title: tr('Политика конфиденциальности', 'Maxfiylik siyosati'), onTap: () => _open(state.privacyUrl)),
+                AppListRow(icon: Icons.info_rounded, title: tr('О приложении', 'Ilova haqida'), divider: false, onTap: _about),
               ]),
               if (!guest) ...[
                 const SizedBox(height: 12),
                 SoftGroup(children: [
-                  AppListRow(icon: Icons.delete_rounded, title: 'Удалить аккаунт', divider: false, onTap: _deleteAccount),
+                  AppListRow(icon: Icons.delete_rounded, title: tr('Удалить аккаунт', 'Akkauntni oʻchirish'), divider: false, onTap: _deleteAccount),
                 ]),
               ],
             ]),
@@ -364,7 +412,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   textStyle: AppText.bodyStrong.copyWith(fontSize: 17),
                 ),
                 onPressed: guest ? _login : _logout,
-                child: Text(guest ? 'Войти' : 'Выйти'),
+                child: Text(guest ? tr('Войти', 'Kirish') : tr('Выйти', 'Chiqish')),
               ),
             ),
           ),
@@ -418,9 +466,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (v) => _update({'notifications': {key: v}}),
               );
           return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Padding(padding: EdgeInsets.fromLTRB(20, 0, 20, 8), child: Text('Уведомления', style: AppText.h3)),
-            row('orders', 'Статус заказа', 'Оплачен, собран, в пути, доставлен'),
-            row('promos', 'Акции и скидки', 'Скидки, новые магазины и предложения'),
+            Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 8), child: Text(tr('Уведомления', 'Bildirishnomalar'), style: AppText.h3)),
+            row('orders', tr('Статус заказа', 'Buyurtma holati'), tr('Оплачен, собран, в пути, доставлен', 'Toʻlandi, yigʻildi, yoʻlda, yetkazildi')),
+            row('promos', tr('Акции и скидки', 'Aksiya va chegirmalar'), tr('Скидки, новые магазины и предложения', 'Chegirmalar, yangi doʻkonlar va takliflar')),
             const SizedBox(height: 12),
           ]);
         }),
@@ -434,14 +482,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       applicationName: 'Super Market',
       applicationVersion: appVersion,
       applicationIcon: const BrandMark(size: 40),
-      children: const [Text('Продукты из магазинов рядом с доставкой за 30–60 минут.')],
+      children: [Text(tr('Продукты из магазинов рядом с доставкой за 30–60 минут.', 'Yaqindagi doʻkonlardan mahsulotlar — 30–60 daqiqada yetkazib beramiz.'))],
     );
   }
 
   Future<void> _login() => openLogin(context);
 
   Future<void> _logout() async {
-    final ok = await confirmSheet(context, icon: Icons.logout_rounded, title: 'Выйти из аккаунта?', text: 'Войти снова можно по номеру телефона.', confirm: 'Выйти');
+    final ok = await confirmSheet(context,
+        icon: Icons.logout_rounded,
+        title: tr('Выйти из аккаунта?', 'Akkauntdan chiqilsinmi?'),
+        text: tr('Войти снова можно по номеру телефона.', 'Telefon raqami orqali qayta kirish mumkin.'),
+        confirm: tr('Выйти', 'Chiqish'));
     if (!ok || !mounted) return;
     final nav = Navigator.of(context);
     await context.read<Api>().logout();
@@ -452,9 +504,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final ok = await confirmSheet(
       context,
       icon: Icons.delete_outline_rounded,
-      title: 'Удалить аккаунт?',
-      text: 'Удалим имя, адреса, избранное и настройки. История заказов останется у магазинов без вашего телефона и адреса — это нужно для учёта. Восстановить аккаунт будет нельзя.',
-      confirm: 'Удалить аккаунт',
+      title: tr('Удалить аккаунт?', 'Akkaunt oʻchirilsinmi?'),
+      text: tr(
+          'Удалим имя, адреса, избранное и настройки. История заказов останется у магазинов без вашего телефона и адреса — это нужно для учёта. Восстановить аккаунт будет нельзя.',
+          'Ism, manzillar, sevimlilar va sozlamalar oʻchiriladi. Buyurtmalar tarixi doʻkonlarda telefon raqamingiz va manzilingizsiz qoladi — bu hisob uchun kerak. Akkauntni tiklab boʻlmaydi.'),
+      confirm: tr('Удалить аккаунт', 'Akkauntni oʻchirish'),
     );
     if (!ok || !mounted) return;
     final api = context.read<Api>();
@@ -471,8 +525,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         await infoSheet(
           context,
           icon: Icons.local_shipping_outlined,
-          title: 'Сначала дождитесь заказа',
-          text: n == null ? e.message : 'Заказ № $n ещё не завершён. Когда его доставят или отменят, аккаунт можно будет удалить.',
+          title: tr('Сначала дождитесь заказа', 'Avval buyurtmani kuting'),
+          text: n == null
+              ? e.message
+              : tr('Заказ № $n ещё не завершён. Когда его доставят или отменят, аккаунт можно будет удалить.',
+                  'Buyurtma № $n hali yakunlanmagan. U yetkazilgach yoki bekor qilingach, akkauntni oʻchirish mumkin boʻladi.'),
         );
       } else {
         showError(context, e);
@@ -518,9 +575,9 @@ class CourierBanner extends StatelessWidget {
             const SizedBox(width: 14),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Зарабатывайте на доставке', style: AppText.bodyStrong.copyWith(fontSize: 16, fontWeight: FontWeight.w700)),
+                Text(tr('Зарабатывайте на доставке', 'Yetkazib berib daromad qiling'), style: AppText.bodyStrong.copyWith(fontSize: 16, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 2),
-                const Text('Берите заказы из магазинов по пути', style: AppText.small),
+                Text(tr('Берите заказы из магазинов по пути', 'Yoʻlingizdagi doʻkonlardan buyurtma oling'), style: AppText.small),
               ]),
             ),
             const Icon(Icons.chevron_right_rounded, color: AppColors.text2),

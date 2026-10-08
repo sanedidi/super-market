@@ -53,7 +53,7 @@ func (m *Module) urls(r *http.Request) func(Scan, error) (Scan, error) {
 func lineNo(r *http.Request) (int, error) {
 	n, err := strconv.Atoi(chi.URLParam(r, "line"))
 	if err != nil || n < 1 {
-		return 0, apperr.NotFound("строка не найдена")
+		return 0, apperr.NotFound("строка не найдена").Uz("qator topilmadi")
 	}
 	return n, nil
 }

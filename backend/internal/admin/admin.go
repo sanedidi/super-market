@@ -165,7 +165,7 @@ func (s *Service) GetCustomer(ctx context.Context, id string) (CustomerDetail, e
 	}
 	c, err := pgx.CollectExactlyOneRow(rows, scanCustomer)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return CustomerDetail{}, apperr.NotFound("покупатель не найден")
+		return CustomerDetail{}, apperr.NotFound("покупатель не найден").Uz("xaridor topilmadi")
 	}
 	if err != nil {
 		return CustomerDetail{}, err
@@ -201,10 +201,10 @@ func (s *Service) GetCustomer(ctx context.Context, id string) (CustomerDetail, e
 func (s *Service) BlockCustomer(ctx context.Context, id, reason string) (CustomerDetail, error) {
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
-		return CustomerDetail{}, apperr.Validation("reason: укажите причину блокировки")
+		return CustomerDetail{}, apperr.Validation("reason: укажите причину блокировки").Uz("reason: bloklash sababini kiriting")
 	}
 	if len([]rune(reason)) > 500 {
-		return CustomerDetail{}, apperr.Validation("reason: не длиннее 500 символов")
+		return CustomerDetail{}, apperr.Validation("reason: не длиннее 500 символов").Uz("reason: 500 belgidan oshmasin")
 	}
 	return s.setBlocked(ctx, id, true, reason)
 }
@@ -225,9 +225,9 @@ func (s *Service) setBlocked(ctx context.Context, id string, block bool, reason 
 	}
 	if tag.RowsAffected() == 0 {
 		if block {
-			return CustomerDetail{}, apperr.Conflict("already_blocked", "покупатель уже заблокирован")
+			return CustomerDetail{}, apperr.Conflict("already_blocked", "покупатель уже заблокирован").Uz("xaridor allaqachon bloklangan")
 		}
-		return CustomerDetail{}, apperr.Conflict("not_blocked", "покупатель не заблокирован")
+		return CustomerDetail{}, apperr.Conflict("not_blocked", "покупатель не заблокирован").Uz("xaridor bloklanmagan")
 	}
 	return s.GetCustomer(ctx, id)
 }
@@ -270,12 +270,12 @@ func (s *Service) ListNotifications(ctx context.Context, f NotificationFilter) (
 	switch f.Status {
 	case "", "pending", "sent", "skipped", "failed":
 	default:
-		return nil, apperr.Validation("status: pending, sent, skipped или failed")
+		return nil, apperr.Validation("status: pending, sent, skipped или failed").Uz("status: pending, sent, skipped yoki failed")
 	}
 	switch f.Kind {
 	case "", "order", "family", "campaign", "test":
 	default:
-		return nil, apperr.Validation("kind: order, family, campaign или test")
+		return nil, apperr.Validation("kind: order, family, campaign или test").Uz("kind: order, family, campaign yoki test")
 	}
 	q := strings.TrimSpace(f.Query)
 	digits := onlyDigits(q)
@@ -298,12 +298,12 @@ func (s *Service) ListNotifications(ctx context.Context, f NotificationFilter) (
 func (s *Service) RetryNotification(ctx context.Context, rawID string) (Notification, error) {
 	id, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil || id <= 0 {
-		return Notification{}, apperr.NotFound("уведомление не найдено")
+		return Notification{}, apperr.NotFound("уведомление не найдено").Uz("bildirishnoma topilmadi")
 	}
 	var status string
 	err = s.pool.QueryRow(ctx, `SELECT status FROM notifications_outbox WHERE id = $1`, id).Scan(&status)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Notification{}, apperr.NotFound("уведомление не найдено")
+		return Notification{}, apperr.NotFound("уведомление не найдено").Uz("bildirishnoma topilmadi")
 	}
 	if err != nil {
 		return Notification{}, err
@@ -315,7 +315,7 @@ func (s *Service) RetryNotification(ctx context.Context, rawID string) (Notifica
 		return Notification{}, err
 	}
 	if tag.RowsAffected() == 0 {
-		return Notification{}, apperr.Conflict("not_failed", "повторить можно только неотправленное уведомление")
+		return Notification{}, apperr.Conflict("not_failed", "повторить можно только неотправленное уведомление").Uz("faqat yuborilmagan bildirishnomani qayta yuborish mumkin")
 	}
 	rows, err := s.pool.Query(ctx, notificationSelect+` WHERE n.id = $1`, id)
 	if err != nil {

@@ -11,6 +11,7 @@ import 'package:sm_store/finance/balance_screen.dart';
 import 'package:sm_store/screens/more_screen.dart';
 import 'package:sm_store/state.dart';
 import 'package:sm_store/ui/theme.dart';
+import 'package:sm_core/sm_core.dart' as sm_i18n;
 
 final _bill = {
   'stores_count': 2,
@@ -75,6 +76,9 @@ Future<void> _settle(WidgetTester t) async {
 }
 
 void main() {
+  // Проверки написаны на русском; язык по умолчанию в приложениях — узбекский.
+  setUpAll(() => sm_i18n.Lang.instance.debugUse(sm_i18n.Lang.ru));
+
   testWidgets('Ещё: политика и запрос на удаление аккаунта', (t) async {
     Object? sent;
     final api = _api(onDeletion: (b) => sent = b);

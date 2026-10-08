@@ -12,6 +12,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
@@ -108,7 +109,7 @@ type AdminCrowdFilter struct {
 
 func (s *Service) AdminCrowdCouriers(ctx context.Context, f AdminCrowdFilter) ([]AdminCrowdCourier, error) {
 	if f.Status != "" && f.Status != "active" && f.Status != "unverified" && f.Status != "blocked" {
-		return nil, apperr.Validation("status: active, unverified или blocked")
+		return nil, apperr.Validation("status: active, unverified или blocked").Uz("status: active, unverified yoki blocked")
 	}
 	q := strings.TrimSpace(f.Query)
 	digits := strings.Map(func(r rune) rune {
@@ -153,7 +154,7 @@ func (s *Service) AdminCrowdCouriers(ctx context.Context, f AdminCrowdFilter) ([
 			return nil, err
 		}
 		list[i].Delivered, list[i].OntimePct = st.Delivered, st.OntimePct
-		list[i].Level = crowdLevel(cs, list[i].Status, st).Title
+		list[i].Level = crowdLevel(cs, list[i].Status, st, i18n.FromContext(ctx)).Title
 	}
 	return list, nil
 }
@@ -167,7 +168,7 @@ type CrowdBlockInput struct {
 func (s *Service) AdminCrowdBlock(ctx context.Context, admin *identity.Principal, id string, in CrowdBlockInput) error {
 	reason := strings.TrimSpace(in.Reason)
 	if reason == "" || len([]rune(reason)) > 500 {
-		return apperr.Validation("reason: причина блокировки (до 500 символов)")
+		return apperr.Validation("reason: причина блокировки (до 500 символов)").Uz("reason: bloklash sababi (500 belgigacha)")
 	}
 	return db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `UPDATE crowd_couriers SET status = 'blocked', blocked_reason = $2, online = false WHERE user_id = $1`, id, reason)
@@ -175,7 +176,7 @@ func (s *Service) AdminCrowdBlock(ctx context.Context, admin *identity.Principal
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return apperr.NotFound("курьер не найден")
+			return apperr.NotFound("курьер не найден").Uz("kuryer topilmadi")
 		}
 		if _, err := tx.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND app = 'crowd' AND revoked_at IS NULL`, id); err != nil {
 			return err
@@ -206,7 +207,7 @@ func (s *Service) AdminCrowdUnblock(ctx context.Context, id string) error {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return apperr.NotFound("заблокированный курьер не найден")
+		return apperr.NotFound("заблокированный курьер не найден").Uz("bloklangan kuryer topilmadi")
 	}
 	return nil
 }
@@ -231,7 +232,7 @@ type AdminCrowdIncident struct {
 
 func (s *Service) AdminCrowdIncidents(ctx context.Context, status string, page httpx.Page) ([]AdminCrowdIncident, error) {
 	if status != "" && status != "open" && status != "resolved" {
-		return nil, apperr.Validation("status: open или resolved")
+		return nil, apperr.Validation("status: open или resolved").Uz("status: open yoki resolved")
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT i.id, i.courier_id, COALESCE(NULLIF(cc.full_name, ''), cc.code), cc.code, i.order_id, o.number, s.name,
@@ -257,10 +258,10 @@ type CrowdResolveInput struct {
 func (s *Service) AdminCrowdResolve(ctx context.Context, admin *identity.Principal, id string, in CrowdResolveInput) error {
 	res := strings.TrimSpace(in.Resolution)
 	if res == "" || len([]rune(res)) > 500 {
-		return apperr.Validation("resolution: решение (до 500 символов)")
+		return apperr.Validation("resolution: решение (до 500 символов)").Uz("resolution: qaror (500 belgigacha)")
 	}
 	if in.Penalty != nil && (!in.Penalty.Valid() || money.D(string(*in.Penalty)).Sign() < 0) {
-		return apperr.Validation("penalty: сумма штрафа")
+		return apperr.Validation("penalty: сумма штрафа").Uz("penalty: jarima summasi")
 	}
 	return db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		var courier string
@@ -270,7 +271,7 @@ func (s *Service) AdminCrowdResolve(ctx context.Context, admin *identity.Princip
 			       resolved_by = $4, resolved_at = now()
 			WHERE id = $1 AND status = 'open' RETURNING courier_id, order_id`, id, res, in.Violation, admin.UserID).Scan(&courier, &orderID)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return apperr.NotFound("открытый инцидент не найден")
+			return apperr.NotFound("открытый инцидент не найден").Uz("ochiq hodisa topilmadi")
 		}
 		if err != nil {
 			return err
@@ -323,11 +324,11 @@ type CrowdPayInput struct {
 // AdminCrowdPay — отметить выплату: баланс выбранных курьеров обнуляется строкой «выплата».
 func (s *Service) AdminCrowdPay(ctx context.Context, admin *identity.Principal, in CrowdPayInput) (int, error) {
 	if len(in.CourierIDs) == 0 || len(in.CourierIDs) > 500 {
-		return 0, apperr.Validation("courier_ids: от 1 до 500 курьеров")
+		return 0, apperr.Validation("courier_ids: от 1 до 500 курьеров").Uz("courier_ids: 1 dan 500 tagacha kuryer")
 	}
 	for _, id := range in.CourierIDs {
 		if !httpx.IsUUID(id) {
-			return 0, apperr.Validation("courier_ids: неверный id")
+			return 0, apperr.Validation("courier_ids: неверный id").Uz("courier_ids: id notoʻgʻri")
 		}
 	}
 	note := strings.TrimSpace(in.Note)
@@ -335,7 +336,7 @@ func (s *Service) AdminCrowdPay(ctx context.Context, admin *identity.Principal, 
 		note = "Выплата на карту"
 	}
 	if len([]rune(note)) > 300 {
-		return 0, apperr.Validation("note: не длиннее 300 символов")
+		return 0, apperr.Validation("note: не длиннее 300 символов").Uz("note: 300 belgidan oshmasin")
 	}
 	var n int
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -358,15 +359,15 @@ func (s *Service) AdminCrowdSaveSettings(ctx context.Context, in CrowdSettings) 
 	for name, v := range map[string]string{"courier_fee": in.CourierFee, "platform_fee": in.PlatformFee, "long_wait_bonus": in.LongWaitBonus,
 		"store_bonus": in.StoreBonus, "newbie_limit": in.NewbieLimit, "reliable_limit": in.ReliableLimit, "trusted_limit": in.TrustedLimit} {
 		if !money.Amount(v).Valid() || money.D(v).Sign() < 0 {
-			return in, apperr.Validation(name + ": неверная сумма")
+			return in, apperr.Validation(name + ": неверная сумма").Uz(name + ": summa notoʻgʻri")
 		}
 	}
 	if in.NewbieParallel < 1 || in.ReliableParallel < 1 || in.TrustedParallel < 1 ||
 		in.NewbieParallel > 10 || in.ReliableParallel > 10 || in.TrustedParallel > 10 {
-		return in, apperr.Validation("заказов сразу: от 1 до 10")
+		return in, apperr.Validation("заказов сразу: от 1 до 10").Uz("bir vaqtdagi buyurtmalar: 1 dan 10 gacha")
 	}
 	if in.ReliableAfter < 1 || in.TrustedAfter <= in.ReliableAfter {
-		return in, apperr.Validation("уровни: «Проверенный» — после большего числа доставок, чем «Надёжный»")
+		return in, apperr.Validation("уровни: «Проверенный» — после большего числа доставок, чем «Надёжный»").Uz("darajalar: «Tekshirilgan» darajasi «Ishonchli»dan koʻproq yetkazishdan keyin beriladi")
 	}
 	_, err := s.pool.Exec(ctx, `
 		UPDATE crowd_settings SET courier_fee = $1::numeric, platform_fee = $2::numeric, long_wait_bonus = $3::numeric,
@@ -379,7 +380,7 @@ func (s *Service) AdminCrowdSaveSettings(ctx context.Context, in CrowdSettings) 
 		in.StoreBonus, in.StoreBonusCount, in.StoreBonusHoldDays, in.NewbieLimit, in.NewbieParallel, in.ReliableAfter, in.ReliableOntime,
 		in.ReliableLimit, in.ReliableParallel, in.TrustedAfter, in.TrustedOntime, in.TrustedLimit, in.TrustedParallel)
 	if db.IsCheckViolation(err) {
-		return in, apperr.Validation("значение вне допустимого диапазона")
+		return in, apperr.Validation("значение вне допустимого диапазона").Uz("qiymat ruxsat etilgan oraliqdan tashqarida")
 	}
 	if err != nil {
 		return in, err
@@ -427,7 +428,7 @@ func (s *Service) AdminCrowdSetStore(ctx context.Context, id string, in CrowdSto
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return apperr.NotFound("магазин не найден")
+		return apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	return nil
 }

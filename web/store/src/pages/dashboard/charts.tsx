@@ -1,7 +1,7 @@
 // Графики главной — простые SVG без библиотек. Цвета проверены на различимость
 // при дальтонизме; у каждого графика есть подписи значений, не только цвет.
 import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { money } from '@sm/shared'
+import { money, tr } from '@sm/shared'
 
 export const C = {
   pos: '#2a78d6',
@@ -23,8 +23,8 @@ const num = (v: string | number | null | undefined) => Number(v ?? 0) || 0
 /** 4 860 000 → «4,86 млн», 820 000 → «820 тыс». */
 export function short(v: number): string {
   const a = Math.abs(v)
-  if (a >= 1e6) return (v / 1e6).toLocaleString('ru-RU', { maximumFractionDigits: a >= 1e8 ? 0 : 2 }) + ' млн'
-  if (a >= 1e3) return Math.round(v / 1e3).toLocaleString('ru-RU') + ' тыс'
+  if (a >= 1e6) return (v / 1e6).toLocaleString('ru-RU', { maximumFractionDigits: a >= 1e8 ? 0 : 2 }) + tr(' млн', ' mln')
+  if (a >= 1e3) return Math.round(v / 1e3).toLocaleString('ru-RU') + tr(' тыс', ' ming')
   return Math.round(v).toLocaleString('ru-RU')
 }
 
@@ -102,7 +102,7 @@ export function Sparkline({ values, color, bars = false, height = 34 }: { values
     const step = w / n
     return (
       <div ref={ref}>
-        <svg width={w} height={height} role="img" aria-label="динамика">
+        <svg width={w} height={height} role="img" aria-label={tr('динамика', 'dinamika')}>
           {values.map((v, i) => {
             const h = Math.max(2, (v / (max || 1)) * height)
             return <rect key={i} x={i * step} y={height - h} width={Math.max(2, step - 3)} height={h} rx={2} fill={i === n - 1 ? C.pos : '#d0d5dd'} />
@@ -115,7 +115,7 @@ export function Sparkline({ values, color, bars = false, height = 34 }: { values
   const id = 'sp' + color.slice(1)
   return (
     <div ref={ref}>
-      <svg width={w} height={height} role="img" aria-label="динамика">
+      <svg width={w} height={height} role="img" aria-label={tr('динамика', 'dinamika')}>
         <defs>
           <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor={color} stopOpacity={0.22} />
@@ -171,7 +171,7 @@ export function StackedBars({
   const hp = hover !== null ? prev?.[hover] : undefined
   return (
     <div ref={ref} style={{ position: 'relative' }} onMouseLeave={() => setHover(null)}>
-      <svg width={w} height={H + padB} role="img" aria-label="выручка по времени">
+      <svg width={w} height={H + padB} role="img" aria-label={tr('выручка по времени', 'vaqt boʻyicha tushum')}>
         {ticks.map((t, k) => (
           <g key={k}>
             <line x1={padL} x2={w} y1={y(t)} y2={y(t)} stroke={k === 0 ? C.axis : C.grid} />
@@ -196,7 +196,7 @@ export function StackedBars({
           <g>
             <line x1={cx(nowIndex) + bw / 2 + 2} x2={cx(nowIndex) + bw / 2 + 2} y1={0} y2={H} stroke={C.now} />
             <text x={cx(nowIndex) + bw / 2 + 6} y={10} fontSize={10} fontWeight={700} fill={C.now}>
-              сейчас
+              {tr('сейчас', 'hozir')}
             </text>
           </g>
         )}
@@ -219,15 +219,15 @@ export function StackedBars({
           {h ? (
             <>
               <div>
-                Касса {money(h.pos)} · Онлайн {money(h.online)}
+                {tr('Касса', 'Kassa')} {money(h.pos)} · {tr('Онлайн', 'Onlayn')} {money(h.online)}
               </div>
               <div>
-                Чеков {h.checks}
-                {h.orders > 0 && ` · заказов ${h.orders}`}
+                {tr('Чеков', 'Cheklar')} {h.checks}
+                {h.orders > 0 && ` · ${tr('заказов', 'buyurtmalar')} ${h.orders}`}
               </div>
             </>
           ) : (
-            <div>Ещё не наступило</div>
+            <div>{tr('Ещё не наступило', 'Hali kelmagan')}</div>
           )}
           {hp && (
             <div style={{ color: '#d0d5dd' }}>
@@ -278,7 +278,7 @@ export function DayLines({
   const every = Math.max(1, Math.ceil(n / 6))
   return (
     <div ref={ref} style={{ position: 'relative' }} onMouseLeave={() => setHover(null)}>
-      <svg width={w} height={H + padB} role="img" aria-label="выручка и прибыль по дням">
+      <svg width={w} height={H + padB} role="img" aria-label={tr('выручка и прибыль по дням', 'kunlar boʻyicha tushum va foyda')}>
         <defs>
           {series.map((s) => (
             <linearGradient key={s.name} id={'dl' + s.color.slice(1)} x1="0" y1="0" x2="0" y2="1">
@@ -307,7 +307,7 @@ export function DayLines({
           <g>
             <circle cx={x(best)} cy={y(main[best])} r={4.5} fill={series[0].color} stroke="#fff" strokeWidth={2} />
             <text x={Math.min(Math.max(x(best), padL + 60), w - 60)} y={Math.max(10, y(main[best]) - 10)} fontSize={11} fontWeight={700} fill="#344054" textAnchor="middle">
-              рекорд · {dates[best]} · {short(main[best])}
+              {tr('рекорд', 'rekord')} · {dates[best]} · {short(main[best])}
             </text>
           </g>
         )}
@@ -377,7 +377,7 @@ export function Donut({ parts, size = 140, center }: { parts: { value: number; c
   }, [parts, total, r, ri])
   return (
     <div style={{ position: 'relative', width: size, height: size, flex: 'none' }}>
-      <svg width={size} height={size} role="img" aria-label="доли">
+      <svg width={size} height={size} role="img" aria-label={tr('доли', 'ulushlar')}>
         {total <= 0 && <circle cx={r} cy={r} r={(r + ri) / 2} fill="none" stroke={C.grid} strokeWidth={r - ri} />}
         {arcs.map((d, i) =>
           d ? <path key={i} d={d} fill={parts[i].color} fillRule="evenodd" opacity={hover === null || hover === i ? 1 : 0.45} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} /> : null,
@@ -410,7 +410,15 @@ export function Heatmap({
   const [hover, setHover] = useState<{ d: number; h: number } | null>(null)
   const map = new Map(cells.map((c) => [c.weekday * 100 + c.hour, c]))
   const max = Math.max(1, ...cells.map((c) => c.checks))
-  const days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+  const days = [
+    tr('Пн', 'Du'),
+    tr('Вт', 'Se'),
+    tr('Ср', 'Ch'),
+    tr('Чт', 'Pa'),
+    tr('Пт', 'Ju'),
+    tr('Сб', 'Sh'),
+    tr('Вс', 'Ya'),
+  ]
   const cur = hover ? map.get(hover.d * 100 + hover.h) : undefined
   return (
     <div style={{ position: 'relative' }} onMouseLeave={() => setHover(null)}>
@@ -446,7 +454,12 @@ export function Heatmap({
       </div>
       {hover && (
         <div style={{ ...tipBox, top: -6, right: 0 }}>
-          {days[hover.d - 1]}, {hover.h}:00–{hover.h + 1}:00 · {cur ? `${cur.checks.toLocaleString('ru-RU')} чеков, ${money(cur.revenue)} сум` : 'продаж нет'}
+          {days[hover.d - 1]}, {hover.h}:00–{hover.h + 1}:00 · {cur
+            ? tr(
+                `${cur.checks.toLocaleString('ru-RU')} чеков, ${money(cur.revenue)} сум`,
+                `${cur.checks.toLocaleString('ru-RU')} ta chek, ${money(cur.revenue)} soʻm`,
+              )
+            : tr('продаж нет', 'sotuv yoʻq')}
         </div>
       )}
     </div>
@@ -465,11 +478,11 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 export function HeatLegend() {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, color: C.faint }}>
-      меньше
+      {tr('меньше', 'kamroq')}
       {C.heat.map((c) => (
         <span key={c} style={{ width: 12, height: 12, borderRadius: 3, background: c }} />
       ))}
-      больше
+      {tr('больше', 'koʻproq')}
     </span>
   )
 }
@@ -514,7 +527,7 @@ export function Pareto({ groups, height = 120 }: { groups: { count: number; shar
   const a = pts[1]
   return (
     <div ref={ref}>
-      <svg width={w} height={height + pb} role="img" aria-label="кривая Парето">
+      <svg width={w} height={height + pb} role="img" aria-label={tr('кривая Парето', 'Pareto egri chizigʻi')}>
         {zones.map((z) =>
           z.to > z.from ? (
             <g key={z.l}>
@@ -536,7 +549,10 @@ export function Pareto({ groups, height = 120 }: { groups: { count: number; shar
           <g>
             <circle cx={X(a[0])} cy={Y(a[1])} r={4.5} fill={C.pos} stroke="#fff" strokeWidth={2} />
             <text x={Math.min(X(a[0]) + 8, w - 150)} y={Math.min(Y(a[1]) + 18, height - 6)} fontSize={11} fontWeight={700} fill={C.text}>
-              {Math.round(a[0] * 100)}% товаров = {Math.round(a[1] * 100)}% выручки
+              {tr(
+                `${Math.round(a[0] * 100)}% товаров = ${Math.round(a[1] * 100)}% выручки`,
+                `${Math.round(a[0] * 100)}% mahsulot = ${Math.round(a[1] * 100)}% tushum`,
+              )}
             </text>
           </g>
         )}
@@ -544,7 +560,7 @@ export function Pareto({ groups, height = 120 }: { groups: { count: number; shar
           0%
         </text>
         <text x={w - 4} y={height + 12} fontSize={9} fill={C.faint} textAnchor="end">
-          100% товаров
+          {tr('100% товаров', '100% mahsulot')}
         </text>
       </svg>
     </div>

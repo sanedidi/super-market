@@ -64,7 +64,7 @@ func floatParams(r *http.Request) (*float64, *float64, error) {
 	lat, err1 := strconv.ParseFloat(qs.Get("lat"), 64)
 	lng, err2 := strconv.ParseFloat(qs.Get("lng"), 64)
 	if err1 != nil || err2 != nil {
-		return nil, nil, apperr.Validation("lat/lng: неверные координаты")
+		return nil, nil, apperr.Validation("lat/lng: неверные координаты").Uz("lat/lng: koordinatalar notoʻgʻri")
 	}
 	return &lat, &lng, nil
 }

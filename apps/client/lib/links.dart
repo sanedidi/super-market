@@ -84,7 +84,11 @@ Future<void> _openTarget(BuildContext ctx, NavigatorState nav, String Function(S
         if (!ctx.mounted) return;
         if (store == null) {
           tab(0);
-          _say(ctx, state.address == null ? 'Укажите адрес доставки — покажем магазины рядом' : 'Этот магазин не доставляет на выбранный адрес');
+          _say(
+              ctx,
+              state.address == null
+                  ? tr('Укажите адрес доставки — покажем магазины рядом', 'Yetkazib berish manzilini kiriting — yaqindagi doʻkonlarni koʻrsatamiz')
+                  : tr('Этот магазин не доставляет на выбранный адрес', 'Bu doʻkon tanlangan manzilga yetkazib bermaydi'));
           return;
         }
         root();
@@ -105,7 +109,7 @@ Future<void> _openTarget(BuildContext ctx, NavigatorState nav, String Function(S
             }
             if (!ctx.mounted) return;
             if (j == null) {
-              _say(ctx, 'Этого товара сейчас нет в «${store.name}»');
+              _say(ctx, tr('Этого товара сейчас нет в «${store.name}»', 'Bu mahsulot hozir «${store.name}» doʻkonida yoʻq'));
               return;
             }
             await openProduct(ctx, storeRef(store), Product(j));

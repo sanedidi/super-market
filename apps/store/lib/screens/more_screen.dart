@@ -28,22 +28,22 @@ class MoreScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final st = context.watch<StoreState>();
     final modules = <(IconData, String, String, Widget)>[
-      if (st.can('reports.view')) (Icons.insights_rounded, 'Итоги дня', 'Выручка, прибыль, что требует внимания', const SummaryScreen()),
+      if (st.can('reports.view')) (Icons.insights_rounded, tr('Итоги дня', 'Kun yakunlari'), tr('Выручка, прибыль, что требует внимания', 'Tushum, foyda, eʼtibor talab qiladigan ishlar'), const SummaryScreen()),
       if (st.can('reports.view') || st.can('finance.manage'))
-        (Icons.point_of_sale_rounded, 'Контроль кассиров', 'Недостачи, возвраты, скидки', const CashiersScreen()),
+        (Icons.point_of_sale_rounded, tr('Контроль кассиров', 'Kassirlar nazorati'), tr('Недостачи, возвраты, скидки', 'Kamomadlar, qaytarishlar, chegirmalar'), const CashiersScreen()),
       if (st.can('counterparties.manage') || st.can('inventory.manage') || st.can('finance.manage'))
-        (Icons.local_shipping_outlined, 'Долги поставщикам', 'Кому должны, акт сверки, оплата', const DebtsScreen()),
+        (Icons.local_shipping_outlined, tr('Долги поставщикам', 'Yetkazib beruvchilarga qarzlar'), tr('Кому должны, акт сверки, оплата', 'Kimga qarzmiz, solishtirma dalolatnoma, toʻlov'), const DebtsScreen()),
       if (st.can('debts.manage'))
-        (Icons.receipt_long_rounded, 'Долги покупателей', 'Кто должен, напоминания, оплата', const CustomerDebtsScreen()),
-      if (st.can('staff.manage')) (Icons.people_alt_outlined, 'Сотрудники', 'Кто работает, роли, добавить', const StaffScreen()),
+        (Icons.receipt_long_rounded, tr('Долги покупателей', 'Xaridorlar qarzlari'), tr('Кто должен, напоминания, оплата', 'Kim qarzdor, eslatmalar, toʻlov'), const CustomerDebtsScreen()),
+      if (st.can('staff.manage')) (Icons.people_alt_outlined, tr('Сотрудники', 'Xodimlar'), tr('Кто работает, роли, добавить', 'Kim ishlaydi, rollar, qoʻshish'), const StaffScreen()),
       if (st.can('inventory.manage'))
-        (Icons.assignment_return_outlined, 'Возврат поставщику', 'Брак, просрочка, пересорт', const SupplierReturnsScreen()),
-      if (st.can('orders.manage')) (Icons.directions_walk_rounded, 'Курьеры по пути', 'Проверка курьера, бонусы', const CrowdScreen()),
-      if (st.can('showcase.manage')) (Icons.campaign_outlined, 'Реклама брендов', 'Доля с рекламы, скрыть бренд', const AdsScreen()),
+        (Icons.assignment_return_outlined, tr('Возврат поставщику', 'Yetkazib beruvchiga qaytarish'), tr('Брак, просрочка, пересорт', 'Yaroqsiz, muddati oʻtgan, aralash tovar'), const SupplierReturnsScreen()),
+      if (st.can('orders.manage')) (Icons.directions_walk_rounded, tr('Курьеры по пути', 'Yoʻlakay kuryerlar'), tr('Проверка курьера, бонусы', 'Kuryerni tekshirish, bonuslar'), const CrowdScreen()),
+      if (st.can('showcase.manage')) (Icons.campaign_outlined, tr('Реклама брендов', 'Brendlar reklamasi'), tr('Доля с рекламы, скрыть бренд', 'Reklamadan ulush, brendni yashirish'), const AdsScreen()),
     ];
     return SafeArea(
       child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
-        const Text('Ещё', style: AppText.h1),
+        Text(tr('Ещё', 'Yana'), style: AppText.h1),
         const SizedBox(height: 16),
         AppCard(
           child: Row(children: [
@@ -52,7 +52,7 @@ class MoreScreen extends StatelessWidget {
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(st.networkName, style: AppText.bodyStrong.copyWith(fontSize: 16)),
-                Text(st.me?['is_owner'] == true ? 'Владелец сети' : 'Сотрудник', style: AppText.small),
+                Text(st.me?['is_owner'] == true ? tr('Владелец сети', 'Tarmoq egasi') : tr('Сотрудник', 'Xodim'), style: AppText.small),
               ]),
             ),
           ]),
@@ -79,42 +79,49 @@ class MoreScreen extends StatelessWidget {
           child: Column(children: [
             ListTile(
               leading: const Icon(Icons.storefront_outlined),
-              title: const Text('Магазин', style: AppText.bodyStrong),
+              title: Text(tr('Магазин', 'Doʻkon'), style: AppText.bodyStrong),
               subtitle: Text('${st.store?['name'] ?? ''}', style: AppText.small),
               trailing: st.stores.length > 1 ? const Icon(Icons.chevron_right_rounded, color: AppColors.muted) : null,
               onTap: st.stores.length > 1 ? () => pickStore(context) : null,
             ),
             ListTile(
+              leading: const Icon(Icons.language_rounded),
+              title: Text(tr('Язык', 'Til'), style: AppText.bodyStrong),
+              subtitle: Text(Lang.names[Lang.instance.code]!, style: AppText.small),
+              trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
+              onTap: () => _pickLanguage(context),
+            ),
+            ListTile(
               leading: const Icon(Icons.lock_outline_rounded),
-              title: const Text('Код и Face ID', style: AppText.bodyStrong),
-              subtitle: const Text('Вход в приложение на этом телефоне', style: AppText.small),
+              title: Text(tr('Код и Face ID', 'Kod va Face ID'), style: AppText.bodyStrong),
+              subtitle: Text(tr('Вход в приложение на этом телефоне', 'Shu telefonda ilovaga kirish'), style: AppText.small),
               trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
               onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LockSettingsScreen())),
             ),
             ListTile(
               leading: const Icon(Icons.privacy_tip_outlined),
-              title: const Text('Политика конфиденциальности', style: AppText.bodyStrong),
-              subtitle: const Text('откроется в браузере', style: AppText.small),
+              title: Text(tr('Политика конфиденциальности', 'Maxfiylik siyosati'), style: AppText.bodyStrong),
+              subtitle: Text(tr('откроется в браузере', 'brauzerda ochiladi'), style: AppText.small),
               trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
               onTap: () => _openPrivacy(context),
             ),
             ListTile(
               leading: const Icon(Icons.person_remove_outlined, color: AppColors.primary),
-              title: Text('Удалить аккаунт', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
-              subtitle: const Text('запрос на удаление', style: AppText.small),
+              title: Text(tr('Удалить аккаунт', 'Akkauntni oʻchirish'), style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
+              subtitle: Text(tr('запрос на удаление', 'oʻchirish soʻrovi'), style: AppText.small),
               trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
               onTap: () => requestAccountDeletion(context, isOwner: st.me?['is_owner'] == true),
             ),
             ListTile(
               leading: const Icon(Icons.logout_rounded, color: AppColors.primary),
-              title: Text('Выйти', style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
+              title: Text(tr('Выйти', 'Chiqish'), style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
               onTap: () async {
                 final ok = await confirmSheet(
                   context,
                   icon: Icons.logout_rounded,
-                  title: 'Выйти из приложения?',
-                  text: 'Уведомления о заказах перестанут приходить. Войти снова — по логину и паролю.',
-                  confirm: 'Выйти',
+                  title: tr('Выйти из приложения?', 'Ilovadan chiqasizmi?'),
+                  text: tr('Уведомления о заказах перестанут приходить. Войти снова — по логину и паролю.', 'Buyurtmalar haqidagi bildirishnomalar kelmay qoladi. Qayta kirish — login va parol orqali.'),
+                  confirm: tr('Выйти', 'Chiqish'),
                 );
                 if (ok && context.mounted) await signOut(context);
               },
@@ -122,18 +129,30 @@ class MoreScreen extends StatelessWidget {
           ]),
         ),
         const SizedBox(height: 24),
-        const Center(child: Text('Super Market Магазин · версия $appVersion', style: AppText.small)),
+        Center(child: Text(tr('Super Market Магазин · версия $appVersion', 'Super Market Doʻkon · versiya $appVersion'), style: AppText.small)),
       ]),
     );
+  }
+
+  /// Смена языка интерфейса; язык уведомлений — в профиле на сервере.
+  Future<void> _pickLanguage(BuildContext context) async {
+    final api = context.read<Api>();
+    final code = await pickLanguage(context);
+    if (code == null || !api.loggedIn) return;
+    try {
+      await api.put('/me/language', {'language': code});
+    } catch (_) {
+      // не страшно: язык обновится при следующем входе
+    }
   }
 
   Future<void> _openPrivacy(BuildContext context) async {
     bool ok;
     try {
-      ok = await launchUrl(Uri.parse(privacyUrl), mode: LaunchMode.externalApplication);
+      ok = await launchUrl(Uri.parse(docUrl(privacyUrl)), mode: LaunchMode.externalApplication);
     } catch (_) {
       ok = false;
     }
-    if (!ok && context.mounted) showMessage(context, 'Не удалось открыть браузер. Политика — на $privacyUrl');
+    if (!ok && context.mounted) showMessage(context, tr('Не удалось открыть браузер. Политика — на $privacyUrl', 'Brauzerni ochib boʻlmadi. Siyosat manzili: $privacyUrl'));
   }
 }

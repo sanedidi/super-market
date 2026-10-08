@@ -1,5 +1,7 @@
 // HTTP-клиент API: токены, автообновление access-токена, ошибки.
 
+import { getLang, tr } from './i18n'
+
 export type AppName = 'admin' | 'store'
 
 export interface Tokens {
@@ -83,7 +85,7 @@ async function refresh(): Promise<boolean> {
   try {
     const res = await fetch(`${BASE}/auth/refresh`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Accept-Language': getLang() },
       body: JSON.stringify({ refresh_token: t.refresh_token }),
     })
     if (!res.ok) return false
@@ -95,7 +97,7 @@ async function refresh(): Promise<boolean> {
 }
 
 async function request<T>(method: string, path: string, body?: unknown, retry = true): Promise<T> {
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = { 'Accept-Language': getLang() }
   const t = getTokens()
   if (t) headers.Authorization = `Bearer ${t.access_token}`
   const form = body instanceof FormData
@@ -104,7 +106,7 @@ async function request<T>(method: string, path: string, body?: unknown, retry = 
   try {
     res = await fetch(BASE + path, { method, headers, body: body === undefined ? undefined : form ? body : JSON.stringify(body) })
   } catch {
-    throw new ApiError(0, 'network', 'Нет связи с сервером')
+    throw new ApiError(0, 'network', tr('Нет связи с сервером', 'Server bilan aloqa yoʻq'))
   }
   if (res.status === 401 && retry && t) {
     refreshing ??= refresh().finally(() => {
@@ -122,7 +124,7 @@ async function request<T>(method: string, path: string, body?: unknown, retry = 
   }
   if (!res.ok) {
     const e = (data as { error?: { code?: string; message?: string; details?: Record<string, unknown> } })?.error
-    throw new ApiError(res.status, e?.code ?? 'http_' + res.status, e?.message ?? `Ошибка ${res.status}`, e?.details ?? {})
+    throw new ApiError(res.status, e?.code ?? 'http_' + res.status, e?.message ?? tr(`Ошибка ${res.status}`, `Xatolik ${res.status}`), e?.details ?? {})
   }
   return data as T
 }

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sm_courier/logic.dart';
+import 'package:sm_core/sm_core.dart' as sm_i18n;
 
 Map<String, dynamic> c(String id, String status, {Map<String, dynamic> order = const {}}) => {
       'order': {'id': id, 'status': status, ...order},
@@ -7,6 +8,9 @@ Map<String, dynamic> c(String id, String status, {Map<String, dynamic> order = c
     };
 
 void main() {
+  // Проверки написаны на русском; язык по умолчанию в приложениях — узбекский.
+  setUpAll(() => sm_i18n.Lang.instance.debugUse(sm_i18n.Lang.ru));
+
   test('группы заказов: везу, забрать (собранные первыми), доставлены', () {
     final g = groupOrders([c('1', 'picking'), c('2', 'delivering'), c('3', 'picked'), c('4', 'delivered'), c('5', 'cancelled')]);
     expect(g.delivering.map(idOf), ['2']);

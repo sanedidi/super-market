@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 // Module — HTTP-маршруты identity.
@@ -32,6 +33,8 @@ func (m *Module) Routes(r chi.Router) {
 	r.Post("/auth/courier/login", m.courierLogin)
 	r.With(m.auth.Require(AppCourier)).Post("/auth/courier/logout", m.logout)
 	r.With(m.auth.Require(AppCrowd)).Post("/auth/crowd/logout", m.logout)
+	// Язык уведомлений сотрудника и курьера (язык приложения).
+	r.With(m.auth.Require(AppStore, AppCourier, AppCrowd)).Put("/me/language", m.setLanguage)
 
 	r.Group(func(r chi.Router) {
 		r.Use(m.auth.Require(AppStore))
@@ -120,6 +123,21 @@ func (m *Module) refresh(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, t)
 }
 
+func (m *Module) setLanguage(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Language string `json:"language"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		m.fail(w, r, err)
+		return
+	}
+	if err := m.svc.SetLanguage(r.Context(), FromContext(r.Context()).UserID, in.Language); err != nil {
+		m.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (m *Module) logout(w http.ResponseWriter, r *http.Request) {
 	if err := m.svc.Logout(r.Context(), FromContext(r.Context()).SessionID); err != nil {
 		m.fail(w, r, err)
@@ -130,8 +148,8 @@ func (m *Module) logout(w http.ResponseWriter, r *http.Request) {
 
 // ------------------------------------------------------ роли и сотрудники
 
-func (m *Module) listPermissions(w http.ResponseWriter, _ *http.Request) {
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": Permissions})
+func (m *Module) listPermissions(w http.ResponseWriter, r *http.Request) {
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": PermissionsIn(i18n.FromContext(r.Context()))})
 }
 
 func (m *Module) listRoles(w http.ResponseWriter, r *http.Request) {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sm_core/sm_core.dart';
 
 import '../ui/widgets.dart';
 
@@ -6,7 +7,7 @@ import '../ui/widgets.dart';
 String scanTitle(Map<String, dynamic> s) {
   final cp = s['counterparty_name'] as String?;
   final sup = (s['supplier_name'] as String?) ?? '';
-  final name = cp ?? (sup.isNotEmpty ? sup : 'Накладная');
+  final name = cp ?? (sup.isNotEmpty ? sup : tr('Накладная', 'Yuk xati'));
   final n = (s['invoice_number'] as String?) ?? '';
   return n.isEmpty ? name : '$name · № $n';
 }
@@ -19,10 +20,11 @@ IconData scanIcon(Map<String, dynamic> s) => switch (s['status']) {
     };
 
 Widget scanChip(Map<String, dynamic> s) => switch (s['status']) {
-      'processing' => const StatusChip('Распознаётся', tone: ChipTone.blue),
-      'failed' => const StatusChip('Ошибка', tone: ChipTone.red),
-      'done' => StatusChip(s['document_status'] == 'posted' ? 'Проведён' : 'Черновик', tone: s['document_status'] == 'posted' ? ChipTone.green : ChipTone.gray),
-      _ => const StatusChip('Проверить', tone: ChipTone.amber),
+      'processing' => StatusChip(tr('Распознаётся', 'Tanib olinmoqda'), tone: ChipTone.blue),
+      'failed' => StatusChip(tr('Ошибка', 'Xatolik'), tone: ChipTone.red),
+      'done' => StatusChip(s['document_status'] == 'posted' ? tr('Проведён', 'Oʻtkazilgan') : tr('Черновик', 'Qoralama'),
+          tone: s['document_status'] == 'posted' ? ChipTone.green : ChipTone.gray),
+      _ => StatusChip(tr('Проверить', 'Tekshirish kerak'), tone: ChipTone.amber),
     };
 
 /// Строка: «24 шт × 11 200».

@@ -302,7 +302,7 @@ func (m *Module) storeChoosePlan(w http.ResponseWriter, r *http.Request) {
 func floatParam(r *http.Request, name string) (float64, error) {
 	v, err := strconv.ParseFloat(r.URL.Query().Get(name), 64)
 	if err != nil {
-		return 0, apperr.Validation(name + ": ожидается число")
+		return 0, apperr.Validation(name + ": ожидается число").Uz(name + ": son boʻlishi kerak")
 	}
 	return v, nil
 }
@@ -344,7 +344,7 @@ func (m *Module) products(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[CatalogProduct], error) {
 		if len(ids) > 200 {
-			return httpx.List[CatalogProduct]{}, apperr.Validation("ids: не больше 200")
+			return httpx.List[CatalogProduct]{}, apperr.Validation("ids: не больше 200").Uz("ids: koʻpi bilan 200 ta")
 		}
 		items, err := m.svc.StoreCatalog(r.Context(), chi.URLParam(r, "id"), f, httpx.PageFrom(r))
 		return httpx.List[CatalogProduct]{Items: items}, err

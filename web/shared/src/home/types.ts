@@ -1,5 +1,7 @@
 // Блоки главной приложения (см. backend/internal/orders/home_blocks.go).
 
+import { tr } from '../i18n'
+
 export type BlockType = 'shelf' | 'banners' | 'promo' | 'category_icons' | 'catalog_sections'
 
 export interface BlockLink {
@@ -94,11 +96,11 @@ export function defaultBlock(type: BlockType): HomeBlock {
   const id = newId()
   switch (type) {
     case 'shelf':
-      return { id, type, title: 'Хиты недели', source: 'hits', limit: 6, view: 'row', show_all: true }
+      return { id, type, title: tr('Хиты недели', 'Hafta xitlari'), source: 'hits', limit: 6, view: 'row', show_all: true }
     case 'banners':
       return { id, type, size: 'big', autoplay: true }
     case 'promo':
-      return { id, type, kind: 'custom', title: 'Скидка 10% на первый заказ', icon: 'percent', color: 'yellow', link: { type: 'deals' } }
+      return { id, type, kind: 'custom', title: tr('Скидка 10% на первый заказ', 'Birinchi buyurtmaga 10% chegirma'), icon: 'percent', color: 'yellow', link: { type: 'deals' } }
     case 'category_icons':
       return { id, type, mode: 'auto', shape: 'circle', show_deals: true }
     case 'catalog_sections':

@@ -1,6 +1,8 @@
 // «Начало работы»: разбор ответов /store/start и подсчёты без Flutter
 // (покрыто тестами test/start_logic_test.dart).
 
+import 'package:sm_core/sm_core.dart';
+
 /// Склонение: 1 товар, 2 товара, 5 товаров.
 String plural(int n, String one, String few, String many) {
   final m10 = n % 10;
@@ -10,7 +12,7 @@ String plural(int n, String one, String few, String many) {
   return many;
 }
 
-String goods(int n) => '$n ${plural(n, 'товар', 'товара', 'товаров')}';
+String goods(int n) => tr('$n ${plural(n, 'товар', 'товара', 'товаров')}', '$n ta mahsulot');
 
 /// Количество без лишних нулей: «24.000» → «24», «1.250» → «1.25».
 String plainQty(Object? v) {
@@ -28,18 +30,21 @@ class ProductRef {
     required this.id,
     required this.name,
     this.image,
-    this.unit = 'шт',
+    String? unit,
     this.fractional = false,
     this.barcode,
     this.price,
     this.score,
     this.own = false,
-  });
+  }) : _unit = unit;
 
   final String id;
   final String name;
   final String? image;
-  final String unit;
+  final String? _unit;
+
+  /// Единица с сервера (уже на языке запроса); нет — «шт».
+  String get unit => _unit ?? tr('шт', 'dona');
   final bool fractional;
   final String? barcode;
 
@@ -60,7 +65,7 @@ class ProductRef {
         id: p['id'] as String,
         name: '${p['name'] ?? ''}',
         image: _first(p['images']),
-        unit: (p['unit_short'] as String?) ?? 'шт',
+        unit: p['unit_short'] as String?,
         fractional: p['is_fractional'] == true,
         barcode: _first(p['barcodes']),
         price: (p['price'] ?? p['base_price'])?.toString(),
@@ -72,7 +77,7 @@ class ProductRef {
         id: p['product_id'] as String,
         name: '${p['name'] ?? ''}',
         image: p['image'] as String?,
-        unit: (p['unit_short'] as String?) ?? 'шт',
+        unit: p['unit_short'] as String?,
         fractional: p['is_fractional'] == true,
         barcode: p['barcode'] as String?,
         price: p['current_price']?.toString(),
@@ -195,8 +200,8 @@ String lineSummary(Map<String, dynamic> l, String Function(Object?) fmt) {
   final price = l['price'] ?? l['current_price'];
   return [
     '${plainQty(l['qty'])}${unit.isEmpty ? '' : ' $unit'}',
-    cost == null ? 'без закупки' : 'закупка ${fmt(cost)}',
-    'продажа ${fmt(price)}',
+    cost == null ? tr('без закупки', 'xarid narxisiz') : tr('закупка ${fmt(cost)}', 'xarid narxi ${fmt(cost)}'),
+    tr('продажа ${fmt(price)}', 'sotuv ${fmt(price)}'),
   ].join(' · ');
 }
 

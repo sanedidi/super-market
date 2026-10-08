@@ -3,7 +3,6 @@ package orders
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -13,6 +12,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/catalog"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/showcase"
 )
 
@@ -112,25 +112,27 @@ func oneOf(v string, allowed ...string) bool {
 // ошибку с номером блока, чтобы редактор подсветил нужный.
 func ValidateBlocks(blocks []HomeBlock) error {
 	if len(blocks) > 30 {
-		return apperr.Validation("не больше 30 блоков на главной")
+		return apperr.Validation("не больше 30 блоков на главной").Uz("bosh sahifada koʻpi bilan 30 ta blok")
 	}
 	seen := map[string]bool{}
 	for i, b := range blocks {
-		bad := func(msg string) error { return apperr.Validation(fmt.Sprintf("блок %d: %s", i+1, msg)) }
+		bad := func(msg, msgUz string) error {
+			return apperr.Validation(fmt.Sprintf("блок %d: %s", i+1, msg)).Uz(fmt.Sprintf("%d-blok: %s", i+1, msgUz))
+		}
 		if !httpx.IsUUID(b.ID) || seen[b.ID] {
-			return bad("нужен уникальный id")
+			return bad("нужен уникальный id", "noyob id kerak")
 		}
 		seen[b.ID] = true
 		if b.StartsAt != nil && b.EndsAt != nil && !b.EndsAt.After(*b.StartsAt) {
-			return bad("дата окончания раньше начала")
+			return bad("дата окончания раньше начала", "tugash sanasi boshlanishidan oldin")
 		}
-		uuids := func(ids []string, max int, what string) error {
+		uuids := func(ids []string, max int, what, whatUz string) error {
 			if len(ids) > max {
-				return bad(fmt.Sprintf("%s: не больше %d", what, max))
+				return bad(fmt.Sprintf("%s: не больше %d", what, max), fmt.Sprintf("%s: koʻpi bilan %d ta", whatUz, max))
 			}
 			for _, id := range ids {
 				if !httpx.IsUUID(id) {
-					return bad(what + ": неверный id")
+					return bad(what+": неверный id", whatUz+": id notoʻgʻri")
 				}
 			}
 			return nil
@@ -138,110 +140,111 @@ func ValidateBlocks(blocks []HomeBlock) error {
 		switch b.Type {
 		case BlockShelf:
 			if len([]rune(b.Title)) == 0 || len([]rune(b.Title)) > 40 {
-				return bad("заголовок полки от 1 до 40 символов")
+				return bad("заголовок полки от 1 до 40 символов", "javon sarlavhasi 1 dan 40 tagacha belgi")
 			}
 			if !oneOf(b.Source, "hits", "discount", "new", "category", "manual") {
-				return bad("источник: hits, discount, new, category или manual")
+				return bad("источник: hits, discount, new, category или manual", "manba: hits, discount, new, category yoki manual")
 			}
 			if b.Source == "category" && !httpx.IsUUID(b.CategoryID) {
-				return bad("выберите категорию")
+				return bad("выберите категорию", "kategoriyani tanlang")
 			}
 			if b.Source == "manual" && len(b.ProductIDs) == 0 {
-				return bad("добавьте товары в подборку")
+				return bad("добавьте товары в подборку", "toʻplamga mahsulotlar qoʻshing")
 			}
-			if err := uuids(b.ProductIDs, 30, "товары"); err != nil {
+			if err := uuids(b.ProductIDs, 30, "товары", "mahsulotlar"); err != nil {
 				return err
 			}
 			if b.Limit < 1 || b.Limit > 20 {
-				return bad("товаров в полке от 1 до 20")
+				return bad("товаров в полке от 1 до 20", "javonda 1 dan 20 tagacha mahsulot")
 			}
 			if !oneOf(b.View, "row", "grid2", "grid3") {
-				return bad("вид полки: row, grid2 или grid3")
+				return bad("вид полки: row, grid2 или grid3", "javon koʻrinishi: row, grid2 yoki grid3")
 			}
 		case BlockBanners:
 			if !oneOf(b.Size, "big", "strip") {
-				return bad("размер баннеров: big или strip")
+				return bad("размер баннеров: big или strip", "bannerlar oʻlchami: big yoki strip")
 			}
-			if err := uuids(b.BannerIDs, 10, "баннеры"); err != nil {
+			if err := uuids(b.BannerIDs, 10, "баннеры", "bannerlar"); err != nil {
 				return err
 			}
 			// Узкая лента — текст с иконкой и цветом вместо фото.
 			if b.Size == "strip" {
 				if len([]rune(b.Title)) == 0 || len([]rune(b.Title)) > 60 {
-					return bad("текст ленты от 1 до 60 символов")
+					return bad("текст ленты от 1 до 60 символов", "lenta matni 1 dan 60 tagacha belgi")
 				}
 				if !oneOf(b.Color, "yellow", "red", "green", "dark") {
-					return bad("цвет: yellow, red, green или dark")
+					return bad("цвет: yellow, red, green или dark", "rang: yellow, red, green yoki dark")
 				}
-				if err := checkLink(b.Link); err != nil {
-					return bad(err.Error())
+				if msg := checkLink(b.Link); msg != nil {
+					return bad(msg.RU, msg.UZ)
 				}
 			}
 		case BlockPromo:
 			if !oneOf(b.Kind, "custom", "free_delivery") {
-				return bad("тип полоски: custom или free_delivery")
+				return bad("тип полоски: custom или free_delivery", "chiziq turi: custom yoki free_delivery")
 			}
 			if b.Kind == "custom" {
 				if len([]rune(b.Title)) == 0 || len([]rune(b.Title)) > 60 {
-					return bad("текст полоски от 1 до 60 символов")
+					return bad("текст полоски от 1 до 60 символов", "chiziq matni 1 dan 60 tagacha belgi")
 				}
 				if len([]rune(b.Subtitle)) > 80 {
-					return bad("подпись не длиннее 80 символов")
+					return bad("подпись не длиннее 80 символов", "izoh 80 belgidan oshmasin")
 				}
 				if !oneOf(b.Color, "yellow", "red", "green", "dark") {
-					return bad("цвет: yellow, red, green или dark")
+					return bad("цвет: yellow, red, green или dark", "rang: yellow, red, green yoki dark")
 				}
 				if b.Link != nil {
 					if !oneOf(b.Link.Type, "none", "deals", "category", "product", "delivery_terms", "url") {
-						return bad("неверная ссылка")
+						return bad("неверная ссылка", "havola notoʻgʻri")
 					}
 					if (b.Link.Type == "category" || b.Link.Type == "product") && !httpx.IsUUID(b.Link.ID) {
-						return bad("ссылка: выберите категорию или товар")
+						return bad("ссылка: выберите категорию или товар", "havola: kategoriya yoki mahsulotni tanlang")
 					}
 					if b.Link.Type == "url" && !httpURL(b.Link.URL) {
-						return bad("ссылка должна начинаться с https://")
+						return bad("ссылка должна начинаться с https://", "havola https:// bilan boshlanishi kerak")
 					}
 				}
 			}
 		case BlockCategoryIcons:
 			if !oneOf(b.Mode, "auto", "manual") || !oneOf(b.Shape, "circle", "square", "tiles") {
-				return bad("иконки: режим auto/manual, форма circle/square/tiles")
+				return bad("иконки: режим auto/manual, форма circle/square/tiles", "ikonkalar: rejim auto/manual, shakl circle/square/tiles")
 			}
 			if b.Mode == "manual" && len(b.CategoryIDs) == 0 {
-				return bad("выберите категории")
+				return bad("выберите категории", "kategoriyalarni tanlang")
 			}
-			if err := uuids(b.CategoryIDs, 20, "категории"); err != nil {
+			if err := uuids(b.CategoryIDs, 20, "категории", "kategoriyalar"); err != nil {
 				return err
 			}
 		case BlockCatalogSections:
 			if !oneOf(b.Mode, "all", "selected") || !oneOf(b.View, "tiles3", "tiles2", "list") {
-				return bad("каталог: режим all/selected, вид tiles3/tiles2/list")
+				return bad("каталог: режим all/selected, вид tiles3/tiles2/list", "katalog: rejim all/selected, koʻrinish tiles3/tiles2/list")
 			}
 			if b.Mode == "selected" && len(b.CategoryIDs) == 0 {
-				return bad("выберите разделы")
+				return bad("выберите разделы", "boʻlimlarni tanlang")
 			}
-			if err := uuids(b.CategoryIDs, 30, "разделы"); err != nil {
+			if err := uuids(b.CategoryIDs, 30, "разделы", "boʻlimlar"); err != nil {
 				return err
 			}
 		default:
-			return bad("неизвестный тип блока")
+			return bad("неизвестный тип блока", "nomaʼlum blok turi")
 		}
 	}
 	return nil
 }
 
-func checkLink(l *BlockLink) error {
+// checkLink — nil, если ссылка в порядке, иначе текст ошибки.
+func checkLink(l *BlockLink) *i18n.Text {
 	if l == nil {
 		return nil
 	}
 	if !oneOf(l.Type, "none", "deals", "category", "product", "delivery_terms", "url") {
-		return errors.New("неверная ссылка")
+		return &i18n.Text{RU: "неверная ссылка", UZ: "havola notoʻgʻri"}
 	}
 	if (l.Type == "category" || l.Type == "product") && !httpx.IsUUID(l.ID) {
-		return errors.New("ссылка: выберите категорию или товар")
+		return &i18n.Text{RU: "ссылка: выберите категорию или товар", UZ: "havola: kategoriya yoki mahsulotni tanlang"}
 	}
 	if l.Type == "url" && !httpURL(l.URL) {
-		return errors.New("ссылка должна начинаться с https://")
+		return &i18n.Text{RU: "ссылка должна начинаться с https://", UZ: "havola https:// bilan boshlanishi kerak"}
 	}
 	return nil
 }
@@ -271,8 +274,11 @@ const homeCacheTTL = time.Minute
 // выключенные, вне дат и пустые блоки убраны, полки и баннеры уже с данными.
 func (s *Service) StoreHome(ctx context.Context, storeID string) (StoreHome, error) {
 	now := s.now()
+	// Главная собирается на языке запроса (названия товаров, метка рекламы) —
+	// кэш у каждого языка свой.
+	key := storeID + "|" + i18n.FromContext(ctx)
 	s.homes.mu.Lock()
-	if it, ok := s.homes.items[storeID]; ok && now.Sub(it.at) < homeCacheTTL && it.ads == ads.Generation() {
+	if it, ok := s.homes.items[key]; ok && now.Sub(it.at) < homeCacheTTL && it.ads == ads.Generation() {
 		s.homes.mu.Unlock()
 		return it.home, nil
 	}
@@ -300,7 +306,7 @@ func (s *Service) StoreHome(ctx context.Context, storeID string) (StoreHome, err
 	if s.homes.items == nil {
 		s.homes.items = map[string]homeCacheItem{}
 	}
-	s.homes.items[storeID] = homeCacheItem{home: out, at: now, ads: gen}
+	s.homes.items[key] = homeCacheItem{home: out, at: now, ads: gen}
 	s.homes.mu.Unlock()
 	return out, nil
 }
@@ -521,7 +527,7 @@ func (s *Service) withAds(ctx context.Context, storeID, networkID string, blocks
 			pos[id] = i
 		}
 		sort.SliceStable(items, func(i, j int) bool { return pos[items[i].ID] < pos[items[j].ID] })
-		b := HomeBlock{ID: sp.CampaignID, Ad: &AdInfo{Label: "Реклама", Brand: sp.Brand}}
+		b := HomeBlock{ID: sp.CampaignID, Ad: &AdInfo{Label: i18n.T(ctx, "Реклама", "Reklama"), Brand: sp.Brand}}
 		if sp.Format == "banner" {
 			link := items[0].ID
 			b.Type, b.Size = BlockBanners, "big"

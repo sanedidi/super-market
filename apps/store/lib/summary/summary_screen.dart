@@ -15,8 +15,14 @@ import '../ui/widgets.dart';
 
 const _weekdays = ['понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье'];
 const _monthsGen = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+const _weekdaysUz = ['dushanba', 'seshanba', 'chorshanba', 'payshanba', 'juma', 'shanba', 'yakshanba'];
+const _monthsUz = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'];
 
-String ruDay(DateTime d) => '${_weekdays[d.weekday - 1]}, ${d.day} ${_monthsGen[d.month - 1]}';
+/// «2 октября» / «2-oktabr».
+String _dayMonth(DateTime d) => tr('${d.day} ${_monthsGen[d.month - 1]}', '${d.day}-${_monthsUz[d.month - 1]}');
+
+/// «пятница, 2 октября» / «juma, 2-oktabr» — на языке интерфейса.
+String ruDay(DateTime d) => '${tr(_weekdays[d.weekday - 1], _weekdaysUz[d.weekday - 1])}, ${_dayMonth(d)}';
 
 /// М22 · Итоги дня: выручка и прибыль, что требует внимания, магазины, деньги.
 /// Открывается из вечернего push «Итоги дня».
@@ -70,7 +76,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
       initialDate: _day,
       firstDate: now.subtract(const Duration(days: 365)),
       lastDate: now,
-      locale: const Locale('ru'),
+      locale: Lang.instance.locale,
     );
     if (d == null) return;
     setState(() {
@@ -104,7 +110,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
         child: SizedBox(
           height: 360,
           child: ListView(children: [
-            const Padding(padding: EdgeInsets.fromLTRB(16, 0, 16, 8), child: Text('Во сколько присылать', style: AppText.h3)),
+            Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 8), child: Text(tr('Во сколько присылать', 'Qaysi soatda yuborilsin'), style: AppText.h3)),
             for (final v in [for (var i = 17; i < 24; i++) i, for (var i = 0; i < 17; i++) i])
               ListTile(
                 title: Text('${v.toString().padLeft(2, '0')}:00', style: AppText.bodyStrong),
@@ -145,8 +151,8 @@ class _SummaryScreenState extends State<SummaryScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(today ? 'Итоги дня' : 'Итоги за ${_day.day} ${_monthsGen[_day.month - 1]}'),
-          Text('${st.stores.length > 1 ? 'Все магазины' : '${st.store?['name'] ?? ''}'} · ${ruDay(_day)}', style: AppText.small),
+          Text(today ? tr('Итоги дня', 'Kun yakunlari') : tr('Итоги за ${_dayMonth(_day)}', '${_dayMonth(_day)} yakunlari')),
+          Text('${st.stores.length > 1 ? tr('Все магазины', 'Barcha doʻkonlar') : '${st.store?['name'] ?? ''}'} · ${ruDay(_day)}', style: AppText.small),
         ]),
         actions: [IconButton(icon: const Icon(Icons.calendar_month_rounded), onPressed: _pickDay)],
       ),
@@ -154,7 +160,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
           ? Center(
               child: _error == null
                   ? const CircularProgressIndicator()
-                  : EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: '$_error', action: 'Повторить', onAction: _load),
+                  : EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load),
             )
           : RefreshIndicator(onRefresh: _load, child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: _body(s))),
     );
@@ -171,23 +177,26 @@ class _SummaryScreenState extends State<SummaryScreen> {
       AppCard(
         padding: const EdgeInsets.all(18),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Выручка', style: AppText.small),
+          Text(tr('Выручка', 'Tushum'), style: AppText.small),
           Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, runSpacing: 4, children: [
             Text(money(s['revenue'], suffix: false), style: AppText.h1),
             if (change != null)
-              StatusChip('${change >= 0 ? '+' : '−'}${change.abs()}% к вчера',
+              StatusChip('${change >= 0 ? '+' : '−'}${change.abs()}% ${tr('к вчера', 'kechaga nisbatan')}',
                   icon: change >= 0 ? Icons.trending_up_rounded : Icons.trending_down_rounded, tone: change >= 0 ? ChipTone.green : ChipTone.red),
           ]),
           const SizedBox(height: 12),
           Row(children: [
             Expanded(
-              child: _Kpi('Прибыль', money(s['profit'], suffix: false), s['margin_pct'] != null ? 'маржа ${s['margin_pct']}%' : '',
+              child: _Kpi(tr('Прибыль', 'Foyda'), money(s['profit'], suffix: false), s['margin_pct'] != null ? tr('маржа ${s['margin_pct']}%', 'marja ${s['margin_pct']}%') : '',
                   color: n(s['profit']) < 0 ? AppColors.error : null),
             ),
             const SizedBox(width: 8),
-            Expanded(child: _Kpi('Чеков', '${s['sales_count'] ?? 0}', n(s['avg_check']) > 0 ? 'ср. ${money(s['avg_check'], suffix: false)}' : '')),
+            Expanded(
+                child: _Kpi(tr('Чеков', 'Cheklar'), '${s['sales_count'] ?? 0}',
+                    n(s['avg_check']) > 0 ? tr('ср. ${money(s['avg_check'], suffix: false)}', 'oʻrt. ${money(s['avg_check'], suffix: false)}') : '')),
             const SizedBox(width: 8),
-            Expanded(child: _Kpi('Онлайн', '${s['orders_count'] ?? 0} зак.', money(s['orders_total'], suffix: false))),
+            Expanded(
+                child: _Kpi(tr('Онлайн', 'Buyurtmalar'), tr('${s['orders_count'] ?? 0} зак.', '${s['orders_count'] ?? 0} ta'), money(s['orders_total'], suffix: false))),
           ]),
         ]),
       ),
@@ -196,16 +205,16 @@ class _SummaryScreenState extends State<SummaryScreen> {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
         child: Column(children: [
           Row(children: [
-            const Expanded(child: Text('Требует внимания', style: AppText.title)),
+            Expanded(child: Text(tr('Требует внимания', 'Eʼtibor talab qiladi'), style: AppText.title)),
             StatusChip('${alerts.length}', tone: alerts.isEmpty ? ChipTone.green : ChipTone.red),
           ]),
           if (alerts.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 14),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
               child: Row(children: [
-                Icon(Icons.check_circle_rounded, color: AppColors.success),
-                SizedBox(width: 8),
-                Text('Всё спокойно', style: AppText.body),
+                const Icon(Icons.check_circle_rounded, color: AppColors.success),
+                const SizedBox(width: 8),
+                Text(tr('Всё спокойно', 'Hammasi joyida'), style: AppText.body),
               ]),
             )
           else
@@ -235,7 +244,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
         const SizedBox(height: 16),
         AppCard(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('По магазинам', style: AppText.title),
+            Text(tr('По магазинам', 'Doʻkonlar boʻyicha'), style: AppText.title),
             for (final x in stores) ...[
               const SizedBox(height: 12),
               Row(children: [
@@ -267,11 +276,11 @@ class _SummaryScreenState extends State<SummaryScreen> {
         const SizedBox(height: 16),
         AppCard(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Деньги на вечер', style: AppText.title),
+            Text(tr('Деньги на вечер', 'Kechqurungi pul holati'), style: AppText.title),
             const SizedBox(height: 8),
-            if (m['stores_cash'] != null) _Row('Наличные в кассах магазинов', money(m['stores_cash'], suffix: false)),
-            if (m['main_cash'] != null) _Row('Главная касса', money(m['main_cash'], suffix: false)),
-            if (m['available'] != null) _Row('К выводу с платформы', money(m['available'], suffix: false)),
+            if (m['stores_cash'] != null) _Row(tr('Наличные в кассах магазинов', 'Doʻkon kassalaridagi naqd pul'), money(m['stores_cash'], suffix: false)),
+            if (m['main_cash'] != null) _Row(tr('Главная касса', 'Asosiy kassa'), money(m['main_cash'], suffix: false)),
+            if (m['available'] != null) _Row(tr('К выводу с платформы', 'Platformadan yechish mumkin'), money(m['available'], suffix: false)),
           ]),
         ),
       ],
@@ -284,11 +293,12 @@ class _SummaryScreenState extends State<SummaryScreen> {
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Присылать итоги дня', style: AppText.bodyStrong.copyWith(fontWeight: FontWeight.w500)),
+                Text(tr('Присылать итоги дня', 'Kun yakunlarini yuborish'), style: AppText.bodyStrong.copyWith(fontWeight: FontWeight.w500)),
                 Text(
                   settings['enabled'] == true
-                      ? 'каждый вечер в ${(settings['hour'] as num).toInt().toString().padLeft(2, '0')}:00 · изменить'
-                      : 'выключено',
+                      ? tr('каждый вечер в ${(settings['hour'] as num).toInt().toString().padLeft(2, '0')}:00 · изменить',
+                          'har kuni kechqurun ${(settings['hour'] as num).toInt().toString().padLeft(2, '0')}:00 da · oʻzgartirish')
+                      : tr('выключено', 'oʻchirilgan'),
                   style: AppText.small,
                 ),
               ]),

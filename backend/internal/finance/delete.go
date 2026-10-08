@@ -8,6 +8,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
 // Удаление справочников финансов: только если запись нигде не используется,
@@ -17,7 +18,7 @@ func (s *Service) DeleteCounterpartyType(ctx context.Context, p *identity.Princi
 	if err := p.Require(identity.PermCounterpartiesManage); err != nil {
 		return err
 	}
-	return db.Remove(ctx, s.pool, "Тип контрагента", true,
+	return db.Remove(ctx, s.pool, i18n.Text{RU: "Тип контрагента", UZ: "Kontragent turi"}, true,
 		`DELETE FROM counterparty_types WHERE id = $1 AND network_id = $2`, id, p.NetworkID)
 }
 
@@ -25,7 +26,7 @@ func (s *Service) DeleteCounterparty(ctx context.Context, p *identity.Principal,
 	if err := p.Require(identity.PermCounterpartiesManage); err != nil {
 		return err
 	}
-	return db.Remove(ctx, s.pool, "Контрагент", true,
+	return db.Remove(ctx, s.pool, i18n.Text{RU: "Контрагент", UZ: "Kontragent"}, true,
 		`DELETE FROM counterparties WHERE id = $1 AND network_id = $2`, id, p.NetworkID)
 }
 
@@ -33,7 +34,7 @@ func (s *Service) DeleteReason(ctx context.Context, p *identity.Principal, id st
 	if err := p.Require(identity.PermFinanceManage); err != nil {
 		return err
 	}
-	return db.Remove(ctx, s.pool, "Причина", true,
+	return db.Remove(ctx, s.pool, i18n.Text{RU: "Причина", UZ: "Sabab"}, true,
 		`DELETE FROM financial_reasons WHERE id = $1 AND network_id = $2`, id, p.NetworkID)
 }
 
@@ -44,9 +45,9 @@ func (s *Service) DeleteCashbox(ctx context.Context, p *identity.Principal, id s
 	// Главную кассу сети не удаляем: в неё сдают выручку магазины.
 	var main bool
 	if err := s.pool.QueryRow(ctx, `SELECT is_main FROM cashboxes WHERE id = $1 AND network_id = $2`, id, p.NetworkID).Scan(&main); err == nil && main {
-		return apperr.Conflict("main_cashbox", "Главную кассу сети удалить нельзя — в неё сдают выручку магазины")
+		return apperr.Conflict("main_cashbox", "Главную кассу сети удалить нельзя — в неё сдают выручку магазины").Uz("Tarmoqning asosiy kassasini oʻchirib boʻlmaydi — doʻkonlar tushumni unga topshiradi")
 	}
-	return db.Remove(ctx, s.pool, "Касса", true,
+	return db.Remove(ctx, s.pool, i18n.Text{RU: "Касса", UZ: "Kassa"}, true,
 		`DELETE FROM cashboxes WHERE id = $1 AND network_id = $2 AND NOT is_main`, id, p.NetworkID)
 }
 
@@ -54,7 +55,7 @@ func (s *Service) DeletePaymentMethod(ctx context.Context, p *identity.Principal
 	if err := p.Require(identity.PermFinanceManage); err != nil {
 		return err
 	}
-	return db.Remove(ctx, s.pool, "Способ оплаты", true,
+	return db.Remove(ctx, s.pool, i18n.Text{RU: "Способ оплаты", UZ: "Toʻlov usuli"}, true,
 		`DELETE FROM payment_methods WHERE id = $1 AND network_id = $2`, id, p.NetworkID)
 }
 

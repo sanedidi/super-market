@@ -9,6 +9,7 @@ import 'package:sm_pos/data/api.dart';
 import 'package:sm_pos/data/store.dart';
 import 'package:sm_pos/state/pos.dart';
 import 'package:sm_pos/state/sale.dart';
+import 'package:sm_core/sm_core.dart' as sm_i18n;
 
 /// Сервер-заглушка: активация, каталог, смены, продажи. offline — нет связи.
 class FakeServer {
@@ -79,6 +80,9 @@ Future<void> until(bool Function() ok) async {
 }
 
 void main() {
+  // Проверки написаны на русском; язык по умолчанию в приложениях — узбекский.
+  setUpAll(() => sm_i18n.Lang.instance.debugUse(sm_i18n.Lang.ru));
+
   late Directory dir;
   late FakeServer server;
   late PosController pos;

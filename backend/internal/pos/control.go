@@ -10,6 +10,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
@@ -74,7 +75,7 @@ func (s *Service) Cashiers(ctx context.Context, p *identity.Principal, storeID s
 		return out, err
 	}
 	if storeID != "" && (!httpx.IsUUID(storeID) || !p.CanAccessStore(storeID)) {
-		return out, apperr.NotFound("магазин не найден")
+		return out, apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
 	}
 	now := s.now().In(tashkent)
 	out.From = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, tashkent)
@@ -86,7 +87,7 @@ func (s *Service) Cashiers(ctx context.Context, p *identity.Principal, storeID s
 		out.To = *to
 	}
 	if !out.To.After(out.From) {
-		return out, apperr.Validation("to: конец периода позже начала")
+		return out, apperr.Validation("to: конец периода позже начала").Uz("to: davr oxiri boshidan keyin boʻlsin")
 	}
 	scope := `network_id = $1 AND ($2 OR store_id = ANY($3::uuid[])) AND ($4 = '' OR store_id::text = $4)`
 	args := []any{p.NetworkID, p.SeesAllStores(), p.StoreIDs, storeID, out.From, out.To, now.Add(-fiscalGrace)}
@@ -160,7 +161,7 @@ func (s *Service) Cashiers(ctx context.Context, p *identity.Principal, storeID s
 			return out, err
 		}
 		out.Items = append(out.Items, c)
-		out.Signals = append(out.Signals, signals(c)...)
+		out.Signals = append(out.Signals, signals(c, i18n.FromContext(ctx))...)
 	}
 	return out, nil
 }
@@ -184,13 +185,13 @@ func short(name string) string {
 	return name
 }
 
-func signals(c CashierStat) []Signal {
+func signals(c CashierStat, lang string) []Signal {
 	var out []Signal
 	for _, sh := range c.Shifts {
 		if sh.Diff != nil && money.D(*sh.Diff).Sign() < 0 {
 			id := sh.ID
 			out = append(out, Signal{Kind: "shortage", EmployeeID: c.EmployeeID, ShiftID: &id,
-				Text: fmt.Sprintf("Недостача %s сум в смене %s", money.Group(money.D(*sh.Diff).Neg().Money()), short(c.FullName))})
+				Text: fmt.Sprintf(i18n.Pick(lang, "Недостача %s сум в смене %s", "%[2]s smenasida %[1]s soʻm kamomad"), money.Group(money.D(*sh.Diff).Neg().Money()), short(c.FullName))})
 		}
 	}
 	var last *string
@@ -201,13 +202,13 @@ func signals(c CashierStat) []Signal {
 		switch f {
 		case "returns":
 			out = append(out, Signal{Kind: f, EmployeeID: c.EmployeeID, ShiftID: last,
-				Text: fmt.Sprintf("%d возвратов на %s сум — %s", c.ReturnsCount, money.Group(c.ReturnsTotal), short(c.FullName))})
+				Text: fmt.Sprintf(i18n.Pick(lang, "%d возвратов на %s сум — %s", "%d ta qaytarish, %s soʻm — %s"), c.ReturnsCount, money.Group(c.ReturnsTotal), short(c.FullName))})
 		case "discounts":
 			out = append(out, Signal{Kind: f, EmployeeID: c.EmployeeID, ShiftID: last,
-				Text: fmt.Sprintf("Скидки %s сум, самая большая %d%% — %s", money.Group(c.Discounts), c.MaxDiscountPc, short(c.FullName))})
+				Text: fmt.Sprintf(i18n.Pick(lang, "Скидки %s сум, самая большая %d%% — %s", "Chegirmalar %s soʻm, eng kattasi %d%% — %s"), money.Group(c.Discounts), c.MaxDiscountPc, short(c.FullName))})
 		case "fiscal":
 			out = append(out, Signal{Kind: f, EmployeeID: c.EmployeeID, ShiftID: last,
-				Text: fmt.Sprintf("%d непробитых чеков — %s", c.FiscalPending, short(c.FullName))})
+				Text: fmt.Sprintf(i18n.Pick(lang, "%d непробитых чеков — %s", "%d ta chiqarilmagan chek — %s"), c.FiscalPending, short(c.FullName))})
 		}
 	}
 	return out
@@ -232,22 +233,24 @@ func (s *Service) ShiftEvents(ctx context.Context, p *identity.Principal, id str
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT at, kind, title, note, amount FROM (
-			SELECT cr.created_at AS at, 'return' AS kind, 'Возврат ' || to_char(cr.total, 'FM999999999990') || ' · чек № ' || sl.number AS title,
-			       CASE WHEN cr.reason <> '' THEN 'Причина: «' || cr.reason || '»' ELSE 'без причины' END AS note, cr.total::text AS amount
+			SELECT cr.created_at AS at, 'return' AS kind, loc('Возврат ', 'Qaytarish ') || to_char(cr.total, 'FM999999999990') || loc(' · чек № ', ' · chek № ') || sl.number AS title,
+			       CASE WHEN cr.reason <> '' THEN loc('Причина: «', 'Sabab: «') || cr.reason || '»' ELSE loc('без причины', 'sababsiz') END AS note, cr.total::text AS amount
 			FROM customer_returns cr JOIN sales sl ON sl.id = cr.sale_id WHERE cr.shift_id = $1
 			UNION ALL
-			SELECT sold_at, 'discount', 'Скидка ' || round(discount / subtotal * 100) || '% на чек № ' || number,
-			       'скидка ' || to_char(discount, 'FM999999999990') || ' сум', discount::text
+			SELECT sold_at, 'discount', loc('Скидка ', 'Chegirma ') || round(discount / subtotal * 100) || loc('% на чек № ', '% · chek № ') || number,
+			       loc('скидка ', 'chegirma ') || to_char(discount, 'FM999999999990') || loc(' сум', ' soʻm'), discount::text
 			FROM sales WHERE shift_id = $1 AND subtotal > 0 AND discount / subtotal >= $2
 			UNION ALL
 			SELECT created_at, CASE kind WHEN 'in' THEN 'cash_in' ELSE 'cash_out' END,
-			       CASE kind WHEN 'in' THEN 'Внесение ' ELSE 'Изъятие ' END || to_char(amount, 'FM999999999990'), reason, amount::text
+			       CASE kind WHEN 'in' THEN loc('Внесение ', 'Kiritish ') ELSE loc('Изъятие ', 'Olish ') END || to_char(amount, 'FM999999999990'), reason, amount::text
 			FROM pos_cash_moves WHERE shift_id = $1
 		) ev ORDER BY at LIMIT 100`, id, SignalDiscountShare*2)
 	if err != nil {
 		return nil, err
 	}
-	out := []ShiftEvent{{At: sh.OpenedAt, Kind: "open", Title: "Смена открыта", Note: "размен " + money.Group(sh.OpeningCash) + " сум"}}
+	lang := i18n.FromContext(ctx)
+	out := []ShiftEvent{{At: sh.OpenedAt, Kind: "open", Title: i18n.Pick(lang, "Смена открыта", "Smena ochildi"),
+		Note: i18n.Pick(lang, "размен "+money.Group(sh.OpeningCash)+" сум", "maydalik "+money.Group(sh.OpeningCash)+" soʻm")}}
 	evs, err := pgx.CollectRows(rows, pgx.RowToStructByPos[ShiftEvent])
 	if err != nil {
 		return nil, err
@@ -258,19 +261,19 @@ func (s *Service) ShiftEvents(ctx context.Context, p *identity.Principal, id str
 	}
 	out = append(out, evs...)
 	if sh.ClosedAt != nil {
-		ev := ShiftEvent{At: *sh.ClosedAt, Kind: "close", Title: "Смена закрыта", Note: "касса сходится"}
+		ev := ShiftEvent{At: *sh.ClosedAt, Kind: "close", Title: i18n.Pick(lang, "Смена закрыта", "Smena yopildi"), Note: i18n.Pick(lang, "касса сходится", "kassa mos keladi")}
 		if sh.Diff != nil {
 			d := money.D(*sh.Diff)
 			switch d.Sign() {
 			case -1:
-				ev.Title = "Смена закрыта: недостача " + money.Group(d.Neg().Money())
+				ev.Title = i18n.Pick(lang, "Смена закрыта: недостача ", "Smena yopildi: kamomad ") + money.Group(d.Neg().Money())
 			case 1:
-				ev.Title = "Смена закрыта: излишек " + money.Group(d.Money())
+				ev.Title = i18n.Pick(lang, "Смена закрыта: излишек ", "Smena yopildi: ortiqcha ") + money.Group(d.Money())
 			}
 			if d.Sign() != 0 {
 				ev.Note = sh.DiffReason
 				if ev.Note == "" {
-					ev.Note = "причину кассир не указал"
+					ev.Note = i18n.Pick(lang, "причину кассир не указал", "kassir sababini koʻrsatmagan")
 				}
 			}
 			ev.Amount = sh.Diff

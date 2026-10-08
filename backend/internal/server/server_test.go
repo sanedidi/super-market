@@ -24,6 +24,7 @@ import (
 	"github.com/sanedidi/super-market/backend/db/migrations"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/config"
+	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/migrate"
 	"github.com/sanedidi/super-market/backend/internal/platform/telegram"
 	"github.com/sanedidi/super-market/backend/internal/server"
@@ -68,13 +69,27 @@ func freshDB(t *testing.T) *pgxpool.Pool {
 		t.Fatal(err)
 	}
 	u.Path = "/" + name
-	pool, err := pgxpool.New(ctx, u.String())
+	pcfg, err := pgxpool.ParseConfig(u.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetupLang(pcfg)
+	pool, err := pgxpool.NewWithConfig(ctx, pcfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
 	if _, err := migrate.Up(ctx, pool, migrations.FS, quietLog()); err != nil {
 		t.Fatalf("migrate: %v", err)
+	}
+	// Тесты ходят без Accept-Language и ждут русских текстов — в том числе в
+	// уведомлениях. Уведомления идут на языке получателя (users.language,
+	// customers.language), а новым пользователям по умолчанию — 'uz'. Здесь
+	// получатели по умолчанию русские, как пользователи до миграции 0039;
+	// узбекские уведомления проверяет i18n_text_test.go, ставя язык явно.
+	if _, err := pool.Exec(ctx, `ALTER TABLE users ALTER COLUMN language SET DEFAULT 'ru';
+		ALTER TABLE customers ALTER COLUMN language SET DEFAULT 'ru'`); err != nil {
+		t.Fatalf("test language defaults: %v", err)
 	}
 	return pool
 }
@@ -123,6 +138,12 @@ func (r resp) items() []map[string]any {
 
 func (a api) do(method, path, bearer string, body any) resp {
 	a.t.Helper()
+	return a.doLang("", method, path, bearer, body)
+}
+
+// doLang — запрос с Accept-Language (lang "" — без заголовка).
+func (a api) doLang(lang, method, path, bearer string, body any) resp {
+	a.t.Helper()
 	var rdr io.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)
@@ -131,6 +152,9 @@ func (a api) do(method, path, bearer string, body any) resp {
 	req, _ := http.NewRequest(method, a.srv.URL+"/api/v1"+path, rdr)
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	if lang != "" {
+		req.Header.Set("Accept-Language", lang)
 	}
 	res, err := a.srv.Client().Do(req)
 	if err != nil {

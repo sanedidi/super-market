@@ -21,6 +21,7 @@ const appVersion = '1.1.0';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  await Lang.instance.init();
   // Одно приложение — два режима со своими токенами: штатный курьер
   // (логин и пароль) и курьер «по пути» (телефон и код).
   final api = Api(baseUrl: apiUrl, app: 'courier');
@@ -46,18 +47,21 @@ class CourierApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final loggedIn = context.select<Api, bool>((a) => a.loggedIn);
     final crowd = context.select<CrowdState, bool>((c) => c.loggedIn);
-    return MaterialApp(
-      title: 'Super Market Курьер',
-      debugShowCheckedModeBanner: false,
-      theme: buildTheme(),
-      locale: const Locale('ru'),
-      supportedLocales: const [Locale('ru'), Locale('uz'), Locale('en')],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      home: loggedIn ? const Shell() : (crowd ? const CrowdShell() : const LoginScreen()),
+    return ListenableBuilder(
+      listenable: Lang.instance,
+      builder: (context, _) => MaterialApp(
+        title: tr('Super Market Курьер', 'Super Market Kuryer'),
+        debugShowCheckedModeBanner: false,
+        theme: buildTheme(),
+        locale: Lang.instance.locale,
+        supportedLocales: Lang.locales,
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        home: loggedIn ? const Shell() : (crowd ? const CrowdShell() : const LoginScreen()),
+      ),
     );
   }
 }
@@ -72,14 +76,14 @@ void showMessage(BuildContext context, Object e) {
 Future<void> _open(BuildContext context, Uri uri) async {
   try {
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && context.mounted) showMessage(context, 'Не удалось открыть: $uri');
+    if (!ok && context.mounted) showMessage(context, tr('Не удалось открыть: $uri', 'Ochib boʻlmadi: $uri'));
   } catch (_) {
-    if (context.mounted) showMessage(context, 'Не удалось открыть: $uri');
+    if (context.mounted) showMessage(context, tr('Не удалось открыть: $uri', 'Ochib boʻlmadi: $uri'));
   }
 }
 
 /// Открыть страницу сайта: политика конфиденциальности, условия для курьеров.
-Future<void> openLink(BuildContext context, String url) => _open(context, Uri.parse(url));
+Future<void> openLink(BuildContext context, String url) => _open(context, Uri.parse(docUrl(url)));
 
 /// Позвонить.
 Future<void> call(BuildContext context, String phone) => _open(context, Uri.parse('tel:${phone.replaceAll(RegExp(r'[^+\d]'), '')}'));

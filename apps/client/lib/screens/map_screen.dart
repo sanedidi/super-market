@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:sm_core/sm_core.dart';
 
 import '../guest.dart';
 import '../map_view.dart';
@@ -56,9 +57,9 @@ class _MapScreenState extends State<MapScreen> {
         body: SafeArea(
           child: EmptyState(
             icon: Icons.map_outlined,
-            title: 'Укажите адрес',
-            text: 'Покажем на карте магазины, которые доставляют к вам.',
-            action: 'Выбрать адрес',
+            title: tr('Укажите адрес', 'Manzilni kiriting'),
+            text: tr('Покажем на карте магазины, которые доставляют к вам.', 'Sizga yetkazib beradigan doʻkonlarni xaritada koʻrsatamiz.'),
+            action: tr('Выбрать адрес', 'Manzilni tanlash'),
             onAction: () => openAddressPicker(context),
           ),
         ),
@@ -106,11 +107,13 @@ class _MapScreenState extends State<MapScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(state.storesLoading ? 'Ищем магазины…' : 'Магазинов рядом: ${stores.length}', style: AppText.bodyStrong),
+                    Text(state.storesLoading ? tr('Ищем магазины…', 'Doʻkonlarni qidiryapmiz…') : tr('Магазинов рядом: ${stores.length}', 'Yaqindagi doʻkonlar: ${stores.length}'),
+                        style: AppText.bodyStrong),
                     Text(
                       state.others.isEmpty
                           ? address.title
-                          : 'Привезут · ${state.stores.length}   Не доставляют · ${state.others.length}',
+                          : tr('Привезут · ${state.stores.length}   Не доставляют · ${state.others.length}',
+                              'Yetkazadi · ${state.stores.length}   Yetkazmaydi · ${state.others.length}'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppText.caption,
@@ -149,15 +152,15 @@ class _MapScreenState extends State<MapScreen> {
                           logoUrl: s.logoUrl,
                           recommended: s.recommended,
                           closed: !s.isOpen,
-                          meta: s.delivers ? storeMeta(s) : [(Icons.block_rounded, 'Не доставляет'), (Icons.place_outlined, s.distanceText)],
+                          meta: s.delivers ? storeMeta(s) : [(Icons.block_rounded, tr('Не доставляет', 'Yetkazmaydi')), (Icons.place_outlined, s.distanceText)],
                           onTap: () => _open(state, s),
                         ),
                         const Spacer(),
                         if (s.delivers)
-                          AppButton(label: 'Смотреть товары', onPressed: () => _open(state, s))
+                          AppButton(label: tr('Смотреть товары', 'Mahsulotlarni koʻrish'), onPressed: () => _open(state, s))
                         else
                           Row(children: [
-                            Expanded(child: AppButton(label: 'Смотреть товары', type: AppButtonType.dark, onPressed: () => _open(state, s))),
+                            Expanded(child: AppButton(label: tr('Смотреть товары', 'Mahsulotlarni koʻrish'), type: AppButtonType.dark, onPressed: () => _open(state, s))),
                             const SizedBox(width: 8),
                             Expanded(child: WishButton(store: s, height: 56)),
                           ]),

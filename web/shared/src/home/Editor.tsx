@@ -12,6 +12,7 @@ import { dateTime } from '../format'
 import { errorText, useDebounced, useList } from '../hooks'
 import { BLOCK_TYPES, blockSummary, blockTitle, scheduleTag, typeMeta } from './meta'
 import { PhonePreview } from './Preview'
+import { tr } from '../i18n'
 import { BlockSettings, type EditorPaths } from './Settings'
 import { clean, defaultBlock, newId, type BlockType, type HomeBlock, type LayoutEditor, type LayoutVersion } from './types'
 
@@ -58,12 +59,14 @@ export interface BlockFeatures {
 /** Что можно добавить: типы блоков и «Блок по расписанию» (полка с датами). */
 export type AddKind = BlockType | 'scheduled'
 
-const SCHEDULED = { type: 'scheduled' as const, icon: <CalendarFilled />, title: 'Блок по расписанию', text: 'Полка сама включится и выключится по датам — акция к празднику' }
+const SCHEDULED = { type: 'scheduled' as const, icon: <CalendarFilled />, title: tr('Блок по расписанию', 'Jadval boʻyicha blok'),
+  text: tr('Полка сама включится и выключится по датам — акция к празднику', 'Javon sanalar boʻyicha oʻzi yoqiladi va oʻchadi — bayram aksiyasi uchun'),
+}
 
 function scheduledBlock(): HomeBlock {
   return {
     ...defaultBlock('shelf'),
-    title: 'Акция недели',
+    title: tr('Акция недели', 'Hafta aksiyasi'),
     source: 'discount',
     starts_at: dayjs().startOf('day').toISOString(),
     ends_at: dayjs().startOf('day').add(7, 'day').toISOString(),
@@ -99,12 +102,16 @@ function AddBlockModal({
       onCancel={onClose}
       title={
         <div>
-          Добавить блок
-          <div className="smh-modal-sub">{info ? 'Недоступное на вашем тарифе отмечено замком.' : 'Блок появится в конце списка — потом его можно перетащить.'}</div>
+          {tr('Добавить блок', 'Blok qoʻshish')}
+          <div className="smh-modal-sub">
+            {info
+              ? tr('Недоступное на вашем тарифе отмечено замком.', 'Tarifingizda mavjud boʻlmaganlar qulf bilan belgilangan.')
+              : tr('Блок появится в конце списка — потом его можно перетащить.', 'Blok roʻyxat oxirida paydo boʻladi — keyin uni surib koʻchirish mumkin.')}
+          </div>
         </div>
       }
-      okText="Добавить"
-      cancelText="Отмена"
+      okText={tr('Добавить', 'Qoʻshish')}
+      cancelText={tr('Отмена', 'Bekor qilish')}
       onOk={() => (info?.(picked)?.lock ? onClose() : onAdd(picked))}
       width={600}
     >
@@ -138,30 +145,33 @@ function AddBlockModal({
 function VersionsDrawer({ open, onClose, base, params, onRestore }: { open: boolean; onClose: () => void; base: string; params: Params; onRestore: (v: number) => void }) {
   const list = useList<LayoutVersion>(open ? `${base}/versions` : null, params)
   return (
-    <Drawer open={open} onClose={onClose} title="Версии главной" width={420}>
+    <Drawer open={open} onClose={onClose} title={tr('Версии главной', 'Bosh sahifa versiyalari')} width={420}>
       <LoadError error={list.error} retry={list.refetch} />
       {list.isLoading && <Spin />}
-      {list.data?.length === 0 && <div className="smh-field-hint">Ещё ничего не публиковали.</div>}
+      {list.data?.length === 0 && <div className="smh-field-hint">{tr('Ещё ничего не публиковали.', 'Hali hech narsa eʼlon qilinmagan.')}</div>}
       {list.data?.map((v, i) => (
         <div key={v.version} className="smh-version">
           <div>
             <b>
-              Версия {v.version} {i === 0 && <Tag color="green">сейчас у покупателей</Tag>}
+              {tr('Версия', 'Versiya')} {v.version} {i === 0 && <Tag color="green">{tr('сейчас у покупателей', 'hozir xaridorlarda')}</Tag>}
             </b>
             <span>
-              {dateTime(v.published_at)} · {v.blocks} {plural(v.blocks, 'блок', 'блока', 'блоков')}
+              {dateTime(v.published_at)} · {tr(`${v.blocks} ${plural(v.blocks, 'блок', 'блока', 'блоков')}`, `${v.blocks} ta blok`)}
               {v.published_by ? ` · ${v.published_by}` : ''}
             </span>
           </div>
           {i > 0 && (
             <Button size="small" onClick={() => onRestore(v.version)}>
-              В черновик
+              {tr('В черновик', 'Qoralamaga')}
             </Button>
           )}
         </div>
       ))}
       <div className="smh-field-hint" style={{ marginTop: 16 }}>
-        Старая версия попадает в черновик — проверьте её в предпросмотре и опубликуйте.
+        {tr(
+          'Старая версия попадает в черновик — проверьте её в предпросмотре и опубликуйте.',
+          'Eski versiya qoralamaga tushadi — uni oldindan koʻrishda tekshiring va eʼlon qiling.',
+        )}
       </div>
     </Drawer>
   )
@@ -176,7 +186,7 @@ function FixedRow({ icon, title, text }: { icon: ReactNode; title: string; text:
         <b>{title}</b>
         <span>{text}</span>
       </div>
-      <span className="smh-always">всегда</span>
+      <span className="smh-always">{tr('всегда', 'doim')}</span>
     </div>
   )
 }
@@ -356,7 +366,7 @@ export function HomeEditor({
         <div className="smh-page-actions">
           {scope}
           <Button size="large" icon={<HistoryOutlined />} onClick={() => setVersions(true)}>
-            Версии
+            {tr('Версии', 'Versiyalar')}
           </Button>
           <Button
             size="large"
@@ -366,15 +376,23 @@ export function HomeEditor({
             loading={busy}
             onClick={() =>
               modal.confirm({
-                title: 'Опубликовать главную?',
-                content: l.network_id ? `Покупатели магазинов «${l.network_name}» увидят её в течение минуты.` : 'Покупатели всех сетей без своей витрины увидят её в течение минуты.',
-                okText: 'Опубликовать',
-                cancelText: 'Отмена',
-                onOk: () => act(() => api.post<LayoutEditor>(`${base}/publish${qs}`), 'Главная опубликована'),
+                title: tr('Опубликовать главную?', 'Bosh sahifa eʼlon qilinsinmi?'),
+                content: l.network_id
+                  ? tr(
+                      `Покупатели магазинов «${l.network_name}» увидят её в течение минуты.`,
+                      `«${l.network_name}» doʻkonlari xaridorlari uni bir daqiqa ichida koʻradi.`,
+                    )
+                  : tr(
+                      'Покупатели всех сетей без своей витрины увидят её в течение минуты.',
+                      'Oʻz vitrinasi yoʻq barcha tarmoqlar xaridorlari uni bir daqiqa ichida koʻradi.',
+                    ),
+                okText: tr('Опубликовать', 'Eʼlon qilish'),
+                cancelText: tr('Отмена', 'Bekor qilish'),
+                onOk: () => act(() => api.post<LayoutEditor>(`${base}/publish${qs}`), tr('Главная опубликована', 'Bosh sahifa eʼlon qilindi')),
               })
             }
           >
-            Опубликовать
+            {tr('Опубликовать', 'Eʼlon qilish')}
           </Button>
         </div>
       </div>
@@ -384,13 +402,16 @@ export function HomeEditor({
           <EditFilled />
           <span>
             {saveError
-              ? `Черновик не сохранён: ${saveError}`
+              ? tr(`Черновик не сохранён: ${saveError}`, `Qoralama saqlanmadi: ${saveError}`)
               : l.inherited
-                ? 'Черновик витрины сети — магазины сети пока видят общий шаблон.'
-                : `Черновик: ${n} ${plural(n, 'изменение', 'изменения', 'изменений')} не ${n === 1 ? 'опубликовано' : 'опубликованы'} — покупатели пока видят прошлую версию.`}
+                ? tr('Черновик витрины сети — магазины сети пока видят общий шаблон.', 'Tarmoq vitrinasi qoralamasi — tarmoq doʻkonlari hozircha umumiy shablonni koʻradi.')
+                : tr(
+                    `Черновик: ${n} ${plural(n, 'изменение', 'изменения', 'изменений')} не ${n === 1 ? 'опубликовано' : 'опубликованы'} — покупатели пока видят прошлую версию.`,
+                    `Qoralama: ${n} ta oʻzgarish eʼlon qilinmagan — xaridorlar hozircha oldingi versiyani koʻradi.`,
+                  )}
           </span>
           {l.draft && (
-            <a onClick={() => act(() => api.del(`${base}/draft${qs}`).then(() => api.get<LayoutEditor>(base, params)), 'Изменения сброшены')}>Сбросить</a>
+            <a onClick={() => act(() => api.del(`${base}/draft${qs}`).then(() => api.get<LayoutEditor>(base, params)), tr('Изменения сброшены', 'Oʻzgarishlar bekor qilindi'))}>{tr('Сбросить', 'Bekor qilish')}</a>
           )}
         </div>
       )}
@@ -399,8 +420,14 @@ export function HomeEditor({
           <LayoutFilled />
           <span>
             {l.store_id
-              ? 'У магазина нет своей витрины — покупатели видят витрину сети. Измените блоки, чтобы сделать витрину только для этого магазина.'
-              : 'У сети нет своей витрины — магазины видят общий шаблон. Измените блоки, чтобы сделать витрину для этой сети.'}
+              ? tr(
+                  'У магазина нет своей витрины — покупатели видят витрину сети. Измените блоки, чтобы сделать витрину только для этого магазина.',
+                  'Doʻkonning oʻz vitrinasi yoʻq — xaridorlar tarmoq vitrinasini koʻradi. Faqat shu doʻkon uchun vitrina yaratish uchun bloklarni oʻzgartiring.',
+                )
+              : tr(
+                  'У сети нет своей витрины — магазины видят общий шаблон. Измените блоки, чтобы сделать витрину для этой сети.',
+                  'Tarmoqning oʻz vitrinasi yoʻq — doʻkonlar umumiy shablonni koʻradi. Shu tarmoq uchun vitrina yaratish uchun bloklarni oʻzgartiring.',
+                )}
           </span>
         </div>
       )}
@@ -410,11 +437,14 @@ export function HomeEditor({
       <div className="smh-grid3">
         <section className="smh-card">
           <div className="smh-card-head">
-            <h2>Блоки главной</h2>
-            <span>Перетащите, чтобы поменять порядок{saving ? ' · сохраняем…' : ''}</span>
+            <h2>{tr('Блоки главной', 'Bosh sahifa bloklari')}</h2>
+            <span>
+              {tr('Перетащите, чтобы поменять порядок', 'Tartibni oʻzgartirish uchun suring')}
+              {saving ? tr(' · сохраняем…', ' · saqlanmoqda…') : ''}
+            </span>
           </div>
-          <FixedRow icon={<LayoutFilled />} title="Шапка: адрес, время доставки, поиск" text="Всегда сверху" />
-          <FixedRow icon={<CarFilled />} title="Статус заказа" text="Показывается, пока есть активный заказ" />
+          <FixedRow icon={<LayoutFilled />} title={tr('Шапка: адрес, время доставки, поиск', 'Sarlavha: manzil, yetkazish vaqti, qidiruv')} text={tr('Всегда сверху', 'Doim yuqorida')} />
+          <FixedRow icon={<CarFilled />} title={tr('Статус заказа', 'Buyurtma holati')} text={tr('Показывается, пока есть активный заказ', 'Faol buyurtma boʻlsa koʻrsatiladi')} />
           {blocks.map((b) => {
             const meta = typeMeta(b.type)
             const tag = scheduleTag(b)
@@ -433,9 +463,9 @@ export function HomeEditor({
                   <span className="smh-block-icon">{meta.icon}</span>
                   <div className="smh-row-text">
                     <b>{blockTitle(b)} Super Market</b>
-                    <span>Закреплено платформой — убрать нельзя</span>
+                    <span>{tr('Закреплено платформой — убрать нельзя', 'Platforma tomonidan qadalgan — olib tashlab boʻlmaydi')}</span>
                   </div>
-                  <span className="smh-platform">платформа</span>
+                  <span className="smh-platform">{tr('платформа', 'platforma')}</span>
                 </div>
               )
             }
@@ -472,8 +502,8 @@ export function HomeEditor({
                   trigger={['click']}
                   menu={{
                     items: [
-                      { key: 'copy', icon: <CopyOutlined />, label: 'Дублировать' },
-                      { key: 'del', icon: <DeleteOutlined />, label: 'Удалить', danger: true },
+                      { key: 'copy', icon: <CopyOutlined />, label: tr('Дублировать', 'Nusxalash') },
+                      { key: 'del', icon: <DeleteOutlined />, label: tr('Удалить', 'Oʻchirish'), danger: true },
                     ],
                     onClick: ({ key, domEvent }) => {
                       domEvent.stopPropagation()
@@ -493,7 +523,7 @@ export function HomeEditor({
             )
           })}
           <button type="button" className="smh-add" onClick={() => setAdding(true)} disabled={blocks.length >= 30}>
-            <PlusOutlined /> Добавить блок
+            <PlusOutlined /> {tr('Добавить блок', 'Blok qoʻshish')}
           </button>
         </section>
 
@@ -505,25 +535,29 @@ export function HomeEditor({
                   <span className="smh-block-icon">{typeMeta(sel.type).icon}</span>
                   <div>
                     <b>{typeMeta(sel.type).title}</b>
-                    <span>Блок Super Market</span>
+                    <span>{tr('Блок Super Market', 'Super Market bloki')}</span>
                   </div>
                 </div>
                 <div className="smh-note">
-                  <PushpinFilled /> Этот блок закрепила платформа: он есть у всех магазинов, менять и убирать его нельзя. Свои блоки можно ставить выше и ниже.
+                  <PushpinFilled />{' '}
+                  {tr(
+                    'Этот блок закрепила платформа: он есть у всех магазинов, менять и убирать его нельзя. Свои блоки можно ставить выше и ниже.',
+                    'Bu blokni platforma qadagan: u barcha doʻkonlarda bor, uni oʻzgartirib yoki olib tashlab boʻlmaydi. Oʻz bloklaringizni undan yuqori yoki pastga qoʻyishingiz mumkin.',
+                  )}
                 </div>
               </div>
             ) : (
               <BlockSettings key={sel.id} b={sel} onChange={update} onDelete={() => remove(sel.id)} paths={paths} canPin={canPin} features={features} onUpgrade={onUpgrade} />
             )
           ) : (
-            <div className="smh-field-hint">Выберите блок слева, чтобы настроить его.</div>
+            <div className="smh-field-hint">{tr('Выберите блок слева, чтобы настроить его.', 'Sozlash uchun chap tomondan blokni tanlang.')}</div>
           )}
         </section>
 
         <section className="smh-card smh-preview-card">
           <div className="smh-card-head">
-            <h2>Предпросмотр</h2>
-            <span>Так увидит покупатель</span>
+            <h2>{tr('Предпросмотр', 'Oldindan koʻrish')}</h2>
+            <span>{tr('Так увидит покупатель', 'Xaridor shunday koʻradi')}</span>
           </div>
           <Segmented
             className="smh-platform"
@@ -539,12 +573,14 @@ export function HomeEditor({
             className="smh-preview-store"
             value={storeId}
             onChange={setStoreId}
-            placeholder={stores.isLoading ? 'Загружаем магазины…' : 'Нет магазинов, принимающих заказы'}
+            placeholder={stores.isLoading ? tr('Загружаем магазины…', 'Doʻkonlar yuklanmoqda…') : tr('Нет магазинов, принимающих заказы', 'Buyurtma qabul qiladigan doʻkonlar yoʻq')}
             options={(stores.data ?? []).map((s) => ({ value: s.id, label: `${s.name} · ${s.network_name}` }))}
             showSearch
             optionFilterProp="label"
           />
-          <div className="smh-field-hint">Товары и баннеры — настоящие, из выбранного магазина. Точный вид — в приложении.</div>
+          <div className="smh-field-hint">
+            {tr('Товары и баннеры — настоящие, из выбранного магазина. Точный вид — в приложении.', 'Mahsulot va bannerlar — tanlangan doʻkondan, haqiqiy. Aniq koʻrinish — ilovada.')}
+          </div>
           {preview.error && <div className="smh-field-hint" style={{ color: '#b3261e' }}>{errorText(preview.error)}</div>}
         </section>
       </div>
@@ -568,7 +604,7 @@ export function HomeEditor({
         params={params}
         onRestore={(v) => {
           setVersions(false)
-          act(() => api.post<LayoutEditor>(`${base}/restore${qs}`, { version: v }), `Версия ${v} в черновике`)
+          act(() => api.post<LayoutEditor>(`${base}/restore${qs}`, { version: v }), tr(`Версия ${v} в черновике`, `${v}-versiya qoralamada`))
         }}
       />
     </div>

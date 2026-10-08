@@ -39,7 +39,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             child: Row(children: [
               RoundIconButton(icon: Icons.arrow_back_rounded, bg: AppColors.white, onTap: () => Navigator.of(context).pop()),
               const SizedBox(width: 12),
-              const Text('Мои заказы', style: AppText.title),
+              Text(tr('Мои заказы', 'Mening buyurtmalarim'), style: AppText.title),
             ]),
           ),
           Expanded(
@@ -48,11 +48,19 @@ class _OrdersScreenState extends State<OrdersScreen> {
               builder: (context, snap) {
                 if (snap.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
                 if (snap.hasError) {
-                  return EmptyState(icon: Icons.wifi_off_rounded, title: 'Не удалось загрузить', text: snap.error.toString(), action: 'Повторить', onAction: _reload);
+                  return EmptyState(
+                      icon: Icons.wifi_off_rounded,
+                      title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'),
+                      text: snap.error.toString(),
+                      action: tr('Повторить', 'Qayta urinish'),
+                      onAction: _reload);
                 }
                 final orders = snap.data!;
                 if (orders.isEmpty) {
-                  return const EmptyState(icon: Icons.receipt_long_outlined, title: 'Заказов пока нет', text: 'Здесь появятся ваши заказы и их статусы.');
+                  return EmptyState(
+                      icon: Icons.receipt_long_outlined,
+                      title: tr('Заказов пока нет', 'Hozircha buyurtmalar yoʻq'),
+                      text: tr('Здесь появятся ваши заказы и их статусы.', 'Bu yerda buyurtmalaringiz va ularning holati paydo boʻladi.'));
                 }
                 return RefreshIndicator(
                   onRefresh: _reload,
