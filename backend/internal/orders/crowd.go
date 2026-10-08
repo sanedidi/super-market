@@ -372,7 +372,7 @@ func (s *Service) CrowdPoints(ctx context.Context, p *identity.Principal, lat, l
 		       CASE WHEN me.pt IS NOT NULL AND s.location IS NOT NULL THEN ST_Distance(s.location, me.pt)::int END
 		FROM stores s CROSS JOIN me
 		JOIN networks n ON n.id = s.network_id AND n.status = 'active'
-		WHERE s.crowd_enabled AND s.status = 'active'
+		WHERE (s.crowd_enabled AND network_has_feature(s.network_id, 'crowd')) AND s.status = 'active'
 		ORDER BY CASE WHEN me.pt IS NOT NULL AND s.location IS NOT NULL THEN ST_Distance(s.location, me.pt) END NULLS LAST, s.name
 		LIMIT 10`, lat, lng, p.UserID)
 	if err != nil {
@@ -419,7 +419,7 @@ func crowdReward(cs CrowdSettings, waitingMin int) string {
 
 // openOfferSQL — условия, при которых собранный заказ предлагается курьерам «по пути».
 const openOfferSQL = `o.status = 'picked' AND o.courier_id IS NULL AND o.crowd_courier_id IS NULL
-	AND s.crowd_enabled AND o.payment_provider <> 'cash'
+	AND (s.crowd_enabled AND network_has_feature(s.network_id, 'crowd')) AND o.payment_provider <> 'cash'
 	AND o.picked_at > now() - make_interval(mins => cs.wait_minutes)`
 
 // CrowdOffers — лента: собранные заказы рядом и по пути.

@@ -1,25 +1,20 @@
-// Package showcase — тарифы витрины магазина в приложении («Старт / Бизнес /
-// Про»): что сеть может настроить на главной и сколько своих блоков и
-// баннеров. Цены, лимиты и пробный период задаёт супер-админ.
+// Package showcase — что сеть может настроить на витрине (главной магазина в
+// приложении) по своему тарифу. Сами тарифы — в пакете plans; здесь их
+// функции и лимиты витрины в том виде, в котором их ждут витрина, баннеры
+// и реклама (и панель магазина).
 package showcase
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"strings"
-	"time"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/sanedidi/super-market/backend/internal/plans"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
-	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
-	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
 
-// Plan — тариф витрины. Лимиты nil — без лимита.
+// Plan — тариф глазами витрины. Лимиты nil — без лимита.
 type Plan struct {
 	Key         string `json:"key"`
 	Name        string `json:"name"`
@@ -40,131 +35,44 @@ type Plan struct {
 	AdsReducible bool `json:"ads_reducible"`
 }
 
-const planSelect = `SELECT key, name, price_uzs::text, custom, banners, shelves, promos, manual, schedule, per_store, stats, recommended, sort, ads_max, ads_reducible FROM showcase_plans`
-
-func scan(r pgx.CollectableRow) (Plan, error) {
-	var p Plan
-	err := r.Scan(&p.Key, &p.Name, &p.PriceUZS, &p.Custom, &p.Banners, &p.Shelves, &p.Promos, &p.Manual, &p.Schedule, &p.PerStore,
-		&p.Stats, &p.Recommended, &p.Sort, &p.AdsMax, &p.AdsReducible)
-	return p, err
+// From — витринная часть тарифа.
+func From(ctx context.Context, p plans.Plan) Plan {
+	stats := "none"
+	switch {
+	case p.Has(plans.FeatureShowcaseStatsAll):
+		stats = "full"
+	case p.Has(plans.FeatureShowcaseStats):
+		stats = "basic"
+	}
+	return Plan{
+		Key: p.Key, Name: p.Title(ctx), PriceUZS: p.PriceUZS,
+		Custom:   p.Has(plans.FeatureShowcaseCustom),
+		Banners:  p.Limit(plans.LimitBanners),
+		Shelves:  p.Limit(plans.LimitShelves),
+		Promos:   p.Limit(plans.LimitPromos),
+		Manual:   p.Has(plans.FeatureShowcaseManual),
+		Schedule: p.Has(plans.FeatureShowcaseSchedule),
+		PerStore: p.Has(plans.FeatureShowcasePerStore),
+		Stats:    stats, Recommended: p.Recommended, Sort: p.Sort,
+		AdsMax:       min(max(p.Allowed(plans.LimitAds), 0), 2),
+		AdsReducible: p.Has(plans.FeatureAdsOff),
+	}
 }
 
-// Plans — все тарифы по порядку.
+// Plans — открытые тарифы по порядку.
 func Plans(ctx context.Context, q db.Querier) ([]Plan, error) {
-	rows, err := q.Query(ctx, planSelect+` ORDER BY sort`)
+	list, err := plans.List(ctx, q, true)
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, scan)
+	out := make([]Plan, len(list))
+	for i, p := range list {
+		out[i] = From(ctx, p)
+	}
+	return out, nil
 }
 
-func get(ctx context.Context, q db.Querier, key string) (Plan, error) {
-	rows, err := q.Query(ctx, planSelect+` WHERE key = $1`, key)
-	if err != nil {
-		return Plan{}, err
-	}
-	p, err := pgx.CollectExactlyOneRow(rows, scan)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return p, apperr.NotFound("тариф не найден").Uz("tarif topilmadi")
-	}
-	return p, err
-}
-
-// PlanInput — правка тарифа супер-админом. Лимит -1 — без лимита.
-type PlanInput struct {
-	Name         *string       `json:"name"`
-	PriceUZS     *money.Amount `json:"price_uzs"`
-	Custom       *bool         `json:"custom"`
-	Banners      *int          `json:"banners"`
-	Shelves      *int          `json:"shelves"`
-	Promos       *int          `json:"promos"`
-	Manual       *bool         `json:"manual"`
-	Schedule     *bool         `json:"schedule"`
-	PerStore     *bool         `json:"per_store"`
-	Stats        *string       `json:"stats"`
-	Recommended  *bool         `json:"recommended"`
-	AdsMax       *int          `json:"ads_max"`
-	AdsReducible *bool         `json:"ads_reducible"`
-}
-
-// SavePlan меняет тариф.
-func SavePlan(ctx context.Context, q db.Querier, key string, in PlanInput) (Plan, error) {
-	if _, err := get(ctx, q, key); err != nil {
-		return Plan{}, err
-	}
-	if in.Name != nil && strings.TrimSpace(*in.Name) == "" {
-		return Plan{}, apperr.Validation("name: не может быть пустым").Uz("name: boʻsh boʻlishi mumkin emas")
-	}
-	if in.AdsMax != nil && (*in.AdsMax < 0 || *in.AdsMax > 2) {
-		return Plan{}, apperr.Validation("ads_max: от 0 до 2").Uz("ads_max: 0 dan 2 gacha")
-	}
-	if in.Stats != nil && *in.Stats != "none" && *in.Stats != "basic" && *in.Stats != "full" {
-		return Plan{}, apperr.Validation("stats: none, basic или full").Uz("stats: none, basic yoki full")
-	}
-	var price *string
-	if in.PriceUZS != nil {
-		if money.D(string(*in.PriceUZS)).Sign() < 0 {
-			return Plan{}, apperr.Validation("price_uzs: не меньше нуля").Uz("price_uzs: noldan kichik boʻlmasin")
-		}
-		v := string(*in.PriceUZS)
-		price = &v
-	}
-	// Лимит: ключа нет — не менять, -1 — без лимита, иначе число.
-	limit := func(v *int) (set bool, val *int, err error) {
-		if v == nil {
-			return false, nil, nil
-		}
-		if *v < -1 || *v > 1000 {
-			return false, nil, apperr.Validation("лимит от 0 до 1000 или -1 (без лимита)").Uz("limit 0 dan 1000 gacha yoki -1 (cheklovsiz)")
-		}
-		if *v == -1 {
-			return true, nil, nil
-		}
-		return true, v, nil
-	}
-	bSet, b, err := limit(in.Banners)
-	if err != nil {
-		return Plan{}, err
-	}
-	sSet, sh, err := limit(in.Shelves)
-	if err != nil {
-		return Plan{}, err
-	}
-	pSet, pr, err := limit(in.Promos)
-	if err != nil {
-		return Plan{}, err
-	}
-	if in.Recommended != nil && *in.Recommended {
-		if _, err := q.Exec(ctx, `UPDATE showcase_plans SET recommended = false WHERE key <> $1`, key); err != nil {
-			return Plan{}, err
-		}
-	}
-	if _, err := q.Exec(ctx, `
-		UPDATE showcase_plans SET
-			name = COALESCE($2, name), price_uzs = COALESCE($3::numeric, price_uzs), custom = COALESCE($4, custom),
-			banners = CASE WHEN $5 THEN $6 ELSE banners END,
-			shelves = CASE WHEN $7 THEN $8 ELSE shelves END,
-			promos = CASE WHEN $9 THEN $10 ELSE promos END,
-			manual = COALESCE($11, manual), schedule = COALESCE($12, schedule), per_store = COALESCE($13, per_store),
-			stats = COALESCE($14, stats), recommended = COALESCE($15, recommended),
-			ads_max = COALESCE($16, ads_max), ads_reducible = COALESCE($17, ads_reducible), updated_at = now()
-		WHERE key = $1`,
-		key, trimPtr(in.Name), price, in.Custom, bSet, b, sSet, sh, pSet, pr, in.Manual, in.Schedule, in.PerStore, in.Stats, in.Recommended,
-		in.AdsMax, in.AdsReducible); err != nil {
-		return Plan{}, err
-	}
-	return get(ctx, q, key)
-}
-
-func trimPtr(p *string) *string {
-	if p == nil {
-		return nil
-	}
-	v := strings.TrimSpace(*p)
-	return &v
-}
-
-// Network — тариф витрины сети: выбранный, действующий сейчас (с учётом
+// Network — тариф сети: выбранный, действующий сейчас (с учётом
 // пробного периода) и до какого числа пробный.
 type Network struct {
 	Chosen     Plan    `json:"chosen"`
@@ -174,60 +82,19 @@ type Network struct {
 	InTrial    bool    `json:"in_trial"`
 }
 
-// ForNetwork — тариф витрины сети. Сеть без тарифа — «Старт».
+// ForNetwork — тариф витрины сети.
 func ForNetwork(ctx context.Context, q db.Querier, networkID string) (Network, error) {
-	var out Network
-	var chosen, trialPlan string
-	var until *time.Time
-	var today time.Time
-	err := q.QueryRow(ctx, `
-		SELECT n.showcase_plan, n.showcase_trial_until, bs.showcase_trial_plan, (now() AT TIME ZONE 'Asia/Tashkent')::date
-		FROM networks n CROSS JOIN billing_settings bs WHERE n.id = $1`, networkID).Scan(&chosen, &until, &trialPlan, &today)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return out, apperr.NotFound("сеть не найдена").Uz("tarmoq topilmadi")
-	}
+	n, err := plans.ForNetwork(ctx, q, networkID)
 	if err != nil {
-		return out, err
-	}
-	if out.Chosen, err = get(ctx, q, chosen); err != nil {
-		return out, err
-	}
-	out.Effective, out.TrialPlan = out.Chosen, trialPlan
-	if until != nil {
-		s := until.Format("2006-01-02")
-		out.TrialUntil = &s
-		if !until.Before(today) {
-			trial, err := get(ctx, q, trialPlan)
-			if err != nil {
-				return out, err
-			}
-			if trial.Sort > out.Chosen.Sort {
-				out.Effective, out.InTrial = trial, true
-			}
-		}
-	}
-	return out, nil
-}
-
-// StartTrial начинает пробный период сети, если его ещё не было и он
-// включён в настройках.
-func StartTrial(ctx context.Context, q db.Querier, networkID string) error {
-	_, err := q.Exec(ctx, `
-		UPDATE networks n SET showcase_trial_until = (now() AT TIME ZONE 'Asia/Tashkent')::date + bs.showcase_trial_days - 1
-		FROM billing_settings bs
-		WHERE n.id = $1 AND n.showcase_trial_until IS NULL AND bs.showcase_trial_days > 0`, networkID)
-	return err
-}
-
-// Choose — сеть выбирает тариф; плата войдёт в ближайший счёт за подписку.
-func Choose(ctx context.Context, q db.Querier, networkID, key string) (Network, error) {
-	if !httpx.IsUUID(networkID) {
-		return Network{}, apperr.NotFound("сеть не найдена").Uz("tarmoq topilmadi")
-	}
-	if _, err := get(ctx, q, key); err != nil {
 		return Network{}, err
 	}
-	if _, err := q.Exec(ctx, `UPDATE networks SET showcase_plan = $2 WHERE id = $1`, networkID, key); err != nil {
+	return Network{Chosen: From(ctx, n.Chosen), Effective: From(ctx, n.Effective), TrialPlan: n.TrialPlan,
+		TrialUntil: n.TrialUntil, InTrial: n.InTrial}, nil
+}
+
+// Choose — сеть выбирает тариф (тот же, что в «Мой тариф»).
+func Choose(ctx context.Context, q db.Querier, networkID, key string) (Network, error) {
+	if _, err := plans.Choose(ctx, q, networkID, key); err != nil {
 		return Network{}, err
 	}
 	return ForNetwork(ctx, q, networkID)
@@ -249,19 +116,44 @@ func Allowed(v *int) int {
 	return *v
 }
 
-// Need — какой тариф нужен для функции: подсказка для окна лимита.
-func Need(feature string) string {
-	switch feature {
-	case "schedule", "per_store":
-		return "pro"
-	}
-	return "business"
-}
-
 // Describe — «3 из 3» для полоски лимитов.
 func Describe(limit *int, used int) string {
 	if limit == nil {
 		return fmt.Sprintf("%d · без лимита", used)
 	}
 	return fmt.Sprintf("%d из %d", used, *limit)
+}
+
+// Ключи функций витрины в старых ответах (feature в tariff_limit) →
+// функции тарифа.
+var featureKeys = map[string]string{
+	"custom":    plans.FeatureShowcaseCustom,
+	"manual":    plans.FeatureShowcaseManual,
+	"schedule":  plans.FeatureShowcaseSchedule,
+	"per_store": plans.FeatureShowcasePerStore,
+	"stats":     plans.FeatureShowcaseStats,
+	"ads":       plans.FeatureAdsOff,
+}
+
+// Locked — функции витрины нет на тарифе: ошибка tariff_limit с
+// подсказкой, на каком тарифе она есть («своя витрина — на тарифе «Бизнес»»).
+func Locked(ctx context.Context, q db.Querier, plan Plan, feature string, what i18n.Text) error {
+	key, name := plans.Cheapest(ctx, q, featureKeys[feature], "", 0)
+	ru, uz := what.RU+" недоступно на тарифе «"+plan.Name+"»", what.UZ+" «"+plan.Name+"» tarifida mavjud emas"
+	if name != "" {
+		ru, uz = what.RU+" — на тарифе «"+name+"»", what.UZ+" — «"+name+"» tarifida"
+	}
+	err := Limit(feature, plan, 0, 0, i18n.Text{RU: ru, UZ: uz}).(*apperr.Error)
+	err.Details["need_plan"] = key
+	err.Details["need_plan_name"] = name
+	return err
+}
+
+// LimitNeed — Limit с подсказкой, на каком тарифе лимит больше.
+func LimitNeed(ctx context.Context, q db.Querier, feature string, plan Plan, limit, used int, text i18n.Text) error {
+	key, name := plans.Cheapest(ctx, q, "", feature, used)
+	err := Limit(feature, plan, limit, used, text).(*apperr.Error)
+	err.Details["need_plan"] = key
+	err.Details["need_plan_name"] = name
+	return err
 }

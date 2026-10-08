@@ -323,7 +323,8 @@ func (s *Service) homeStats(ctx context.Context, f statsFilter, full bool) (Home
 }
 
 // StoreHomeStats — статистика витрины для панели магазина по тарифу:
-// «Старт» — нет, «Бизнес» — показы и нажатия за 7 дней, «Про» — всё.
+// без функции — нет, «Статистика витрины» — показы и нажатия за 7 дней,
+// «Полная статистика» — всё.
 func (s *Service) StoreHomeStats(ctx context.Context, p *identity.Principal, storeID string, days int) (HomeStats, error) {
 	if storeID != "" && !p.CanAccessStore(storeID) {
 		return HomeStats{}, apperr.Forbidden("нет доступа к магазину").Uz("doʻkonga ruxsat yoʻq")
@@ -334,7 +335,7 @@ func (s *Service) StoreHomeStats(ctx context.Context, p *identity.Principal, sto
 	}
 	switch plan.Effective.Stats {
 	case "none":
-		return HomeStats{}, showcase.Limit("stats", plan.Effective, 0, 0, i18n.Text{RU: "статистика витрины — с тарифа «Бизнес»", UZ: "vitrina statistikasi — «Biznes» tarifidan boshlab"})
+		return HomeStats{}, showcase.Locked(ctx, s.pool, plan.Effective, "stats", i18n.Text{RU: "статистика витрины", UZ: "vitrina statistikasi"})
 	case "basic":
 		days = 7
 	}

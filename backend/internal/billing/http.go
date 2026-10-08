@@ -23,9 +23,6 @@ func NewModule(svc *Service, auth *identity.Authenticator, log *slog.Logger) *Mo
 }
 
 func (m *Module) Routes(r chi.Router) {
-	// Тарифы для сайта super-market.uz — без входа.
-	r.Get("/public/tariffs", m.publicTariffs)
-
 	r.Group(func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppStore))
 		r.Get("/store/balance", m.balance)
@@ -41,10 +38,6 @@ func (m *Module) Routes(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppAdmin))
 		r.Get("/settings", m.getSettings)
 		r.Put("/settings", m.saveSettings)
-		r.Get("/tariffs", m.listTariffs)
-		r.Post("/tariffs", m.createTariff)
-		r.Patch("/tariffs/{id}", m.updateTariff)
-		r.Delete("/tariffs/{id}", m.deleteTariff)
 		r.Get("/networks", m.listNetworks)
 		r.Get("/networks/{id}", m.getNetwork)
 		r.Patch("/networks/{id}", m.updateNetwork)
@@ -58,14 +51,6 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/", m.adminPayouts)
 		r.Post("/{id}/paid", m.processPayout("paid"))
 		r.Post("/{id}/reject", m.processPayout("rejected"))
-	})
-}
-
-func (m *Module) publicTariffs(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "public, max-age=300")
-	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[PublicTariff], error) {
-		items, err := m.svc.PublicTariffs(r.Context())
-		return httpx.List[PublicTariff]{Items: items}, err
 	})
 }
 
@@ -143,25 +128,6 @@ func (m *Module) getSettings(w http.ResponseWriter, r *http.Request) {
 func (m *Module) saveSettings(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in SettingsInput) (Settings, error) {
 		return m.svc.SaveSettings(r.Context(), in)
-	})
-}
-
-func (m *Module) listTariffs(w http.ResponseWriter, r *http.Request) {
-	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Tariff], error) {
-		items, err := m.svc.ListTariffs(r.Context(), httpx.PageFrom(r))
-		return httpx.List[Tariff]{Items: items}, err
-	})
-}
-
-func (m *Module) createTariff(w http.ResponseWriter, r *http.Request) {
-	httpx.RespondBody(w, r, m.log, http.StatusCreated, "", func(_ string, in TariffInput) (Tariff, error) {
-		return m.svc.SaveTariff(r.Context(), "", in)
-	})
-}
-
-func (m *Module) updateTariff(w http.ResponseWriter, r *http.Request) {
-	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in TariffInput) (Tariff, error) {
-		return m.svc.SaveTariff(r.Context(), id, in)
 	})
 }
 

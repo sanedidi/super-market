@@ -48,7 +48,7 @@ func (s *Service) Lookup(ctx context.Context, p *identity.Principal, rawPhone st
 		return out, err
 	}
 	out.Phone, out.UnverifiedLimit, out.DefaultLimit, out.RequireCode = ph, st.UnverifiedLimit, st.DefaultLimit, st.RequireCode
-	if err := s.pool.QueryRow(ctx, `SELECT debt_enabled FROM stores WHERE id = $1`, storeID).Scan(&out.DebtEnabled); err != nil {
+	if err := s.pool.QueryRow(ctx, `SELECT debt_enabled AND network_has_feature(network_id, 'debts') FROM stores WHERE id = $1`, storeID).Scan(&out.DebtEnabled); err != nil {
 		return out, err
 	}
 	var id string

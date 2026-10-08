@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
+	"github.com/sanedidi/super-market/backend/internal/plans"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
@@ -398,8 +399,15 @@ func Charge(ctx context.Context, tx pgx.Tx, p *identity.Principal, in ChargeInpu
 	if err != nil {
 		return res, apperr.Validation("debt.phone: неверный номер телефона").Uz("debt.phone: telefon raqami notoʻgʻri")
 	}
+	// Касса, которая продала в долг без связи, не теряет продажу: долг
+	// записывается с отметкой «сверх лимита». Остальным — ошибка тарифа.
+	if !in.POS {
+		if err := plans.Require(ctx, tx, p.NetworkID, plans.FeatureDebts); err != nil {
+			return res, err
+		}
+	}
 	var enabled bool
-	if err := tx.QueryRow(ctx, `SELECT debt_enabled FROM stores WHERE id = $1 AND network_id = $2`, in.StoreID, p.NetworkID).Scan(&enabled); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT debt_enabled AND network_has_feature(network_id, 'debts') FROM stores WHERE id = $1 AND network_id = $2`, in.StoreID, p.NetworkID).Scan(&enabled); err != nil {
 		return res, err
 	}
 	if !enabled {

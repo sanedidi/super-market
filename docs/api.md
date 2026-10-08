@@ -477,25 +477,43 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 | Метод | Путь | Описание |
 | --- | --- | --- |
 | GET | `/store/balance` | `available` (к выводу), `pending` (оплачено, ещё не доставлено), `next_payout_at` |
-| GET | `/store/balance/entries?from=&to=` | движения баланса: `order`, `payout`, `subscription`, `adjustment` |
+| GET | `/store/balance/entries?from=&to=` | движения баланса: `order`, `commission` (комиссия тарифа с онлайн-заказа, минусом), `payout`, `subscription`, `adjustment`, `ad_share` |
 | GET | `/store/payouts?status=` | заявки на вывод |
 | POST | `/store/payouts` | `{"amount","requisites","note"}` — раз в 7 дней, не больше доступного |
-| GET | `/store/billing` | тариф сети: число магазинов, цена за магазин, сумма в месяц, долг, `overdue` |
+| GET | `/store/billing` | подписка сети: тариф, число магазинов, цена за магазин и сумма в месяц (сум), долг, `overdue` |
 | GET | `/store/billing/invoices?status=unpaid\|paid\|cancelled\|overdue` | счета |
 | POST | `/store/billing/invoices/{id}/pay` | оплатить счёт с баланса |
+
+### Тарифы магазинов
+
+Тариф = цена за магазин в месяц (сум), комиссия с онлайн-заказа, набор функций и лимиты. Какие функции и лимиты
+бывают — реестр в коде (`internal/plans/registry.go`); что входит в какой тариф — настраивает супер-админ.
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET | `/public/tariffs` | без входа, для сайта: открытые действующие тарифы карточками (`name`, `description`, `price_uzs`, `currency: "UZS"`, `min_stores`, `order_commission`, `features[]` с `included`, `limits[]` с `value`, `null` — без лимита). Кэш 5 минут |
+| GET | `/store/plan` | «мой тариф»: `chosen`, `effective` (пробный, если идёт), `in_trial`, `trial_until`, `current` (карточка действующего, у лимитов `used`), `plans` (открытые для смены), `stores_count`, `can_change` |
+| POST | `/store/plan` | `{"plan"}` — сменить тариф (право `payouts.manage`); только открытый, `min_stores` ≤ магазинов (иначе 409 `plan_min_stores`) |
+| GET | `/admin/plans/registry` | группы, функции и лимиты (ru/uz, подсказки, `max`, `default`) — для экрана настройки |
+| GET/POST | `/admin/plans` | список (с `networks_count`) / создать `{"key","name",…}` |
+| GET/PATCH/DELETE | `/admin/plans/{key}` | `name`, `name_uz`, `description(_uz)`, `price_uzs`, `min_stores`, `order_commission` (%), `features` (весь список), `limits` (вся карта, `null` — без лимита), `is_public`, `is_active`, `recommended`, `sort`. Удалить можно тариф без сетей и не пробный (иначе 409 `plan_in_use` — убрать в архив) |
+
+Ошибки тарифа:
+- 403 `plan_feature` — функции нет в тарифе: `details.feature`, `feature_name`, `plan`, `plan_name`, `need_plan`, `need_plan_name`
+  (первый открытый тариф, где она есть). Сейчас так закрыты: долги (`/store/debtors*`, `/store/debt-*`, `/pos/debtors*`,
+  `/pos/debt-payments`, продажа в долг из панели), расширенные отчёты (`profit-loss`, `cash-flow`, `abc-xyz`), накладные по
+  фото, создание и правка акций, crowd-доставка (`/store/crowd/lookup|verify` и сами заказы не уходят курьерам «по пути»).
+- 409 `tariff_limit` — лимит: `details.feature` (ключ лимита), `limit`, `used`, `plan`, `plan_name`, `need_plan`. Лимиты
+  магазинов, касс, сотрудников (без владельца и курьеров) и курьеров проверяются при добавлении и при смене роли/статуса —
+  если сеть уже сверх лимита после понижения тарифа, ничего не удаляется, но добавить нельзя. Лимиты витрины — как раньше.
 
 ### Супер-админ
 
 | Метод | Путь | Описание |
 | --- | --- | --- |
-| GET/PUT | `/admin/billing/settings` | `usd_rate` (курс для счетов), `grace_days` (дней на оплату), `auto_charge_balance` |
-| GET/POST | `/admin/billing/tariffs?limit=&offset=` | `{"name","min_stores","price_per_store"}` — цена за магазин в месяц, USD |
-| PATCH | `/admin/billing/tariffs/{id}` | в т.ч. `is_active` |
-
-Тарифы для сайта, без входа: `GET /public/tariffs` → `{"items": [{"name", "min_stores", "max_stores", "price_per_store", "currency": "USD"}]}` —
-только действующие, по возрастанию `min_stores`; `max_stores` — до следующего тарифа (у последнего `null`). Кэш 5 минут.
-| GET | `/admin/billing/networks?overdue=true` | сети: магазины, цена, баланс, долг |
-| GET/PATCH | `/admin/billing/networks/{id}` | `{"custom_price_per_store"}`, `{"clear_custom_price":true}`, `{"billing_from":"YYYY-MM-01"}` |
+| GET/PUT | `/admin/billing/settings` | `grace_days` (дней на оплату), `auto_charge_balance`, `trial_plan` и `trial_days` — пробный период новых сетей |
+| GET | `/admin/billing/networks?overdue=true` | сети: тариф (`plan_key`, `effective_plan_key`, `trial_until`), магазины, цена в сумах, баланс, долг |
+| GET/PATCH | `/admin/billing/networks/{id}` | `{"plan_key"}` (любой действующий тариф, в т.ч. скрытый), `{"trial_until":"YYYY-MM-DD"}` / `{"clear_trial":true}`, `{"custom_price_uzs"}` / `{"clear_custom_price":true}`, `{"billing_from":"YYYY-MM-01"}` |
 | GET | `/admin/billing/invoices?network_id=&status=` | счета |
 | POST | `/admin/billing/invoices/generate` | выставить счета за текущий месяц сейчас (обычно делает worker) |
 | POST | `/admin/billing/invoices/{id}/paid` · `/cancel` | `{"note"}` — оплачено вручную / списать |
@@ -1046,5 +1064,5 @@ user_id, employee_id, network_id, network_name, created_at, resolved_at}`. `is_o
 `/store/products/{id}` (свой товар), `/store/price-documents/{id}` (черновик), `/store/promotions/{id}`,
 `/store/banners/{id}`, `/store/pos/devices/{id}` (не подключённая касса), `/store/inventory/documents/{id}` (черновик).
 
-Супер-админ: `/admin/catalog/{kind}/{id}`, `/admin/products/{id}`, `/admin/banners/{id}`, `/admin/billing/tariffs/{id}`,
+Супер-админ: `/admin/catalog/{kind}/{id}`, `/admin/products/{id}`, `/admin/banners/{id}`, `/admin/plans/{key}`,
 `/admin/ads/advertisers/{id}`, `/admin/ads/campaigns/{id}` (без показов), `/admin/push/campaigns/{id}` (scheduled/cancelled).

@@ -9,6 +9,7 @@ import (
 
 	"github.com/sanedidi/super-market/backend/internal/finance"
 	"github.com/sanedidi/super-market/backend/internal/identity"
+	"github.com/sanedidi/super-market/backend/internal/plans"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 )
@@ -26,9 +27,10 @@ func NewModule(svc *Service, auth *identity.Authenticator, log *slog.Logger) *Mo
 func (m *Module) Routes(r chi.Router) {
 	r.Route("/store/reports", func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppStore))
-		r.Get("/cash-flow", m.cashFlow)
-		r.Get("/profit-loss", m.profitLoss)
-		r.Get("/abc-xyz", m.abcXyz)
+		pro := m.auth.Feature(plans.FeatureReportsPro)
+		r.With(pro).Get("/cash-flow", m.cashFlow)
+		r.With(pro).Get("/profit-loss", m.profitLoss)
+		r.With(pro).Get("/abc-xyz", m.abcXyz)
 		r.Get("/sales-series", m.salesSeries)
 		r.Get("/sales-breakdown", m.salesBreakdown)
 	})

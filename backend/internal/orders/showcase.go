@@ -6,6 +6,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/catalog"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
+	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/showcase"
 )
@@ -98,27 +99,35 @@ func usage(blocks []HomeBlock, template map[string]bool) Usage {
 }
 
 // checkPlan — можно ли опубликовать блоки на тарифе.
-func checkPlan(p showcase.Plan, blocks []HomeBlock, template map[string]bool, perStore bool) error {
+func checkPlan(ctx context.Context, q db.Querier, p showcase.Plan, blocks []HomeBlock, template map[string]bool, perStore bool) error {
 	if !p.Custom {
-		return showcase.Limit("custom", p, 0, 0, i18n.Text{RU: "своя витрина доступна с тарифа «Бизнес»", UZ: "oʻz vitrinangiz «Biznes» tarifidan boshlab mavjud"})
+		return lockedCustom(ctx, q, p)
 	}
 	if perStore && !p.PerStore {
-		return showcase.Limit("per_store", p, 0, 0, i18n.Text{RU: "отдельная витрина для магазина сети — на тарифе «Про»", UZ: "tarmoq doʻkoni uchun alohida vitrina — «Pro» tarifida"})
+		return lockedPerStore(ctx, q, p)
 	}
 	u := usage(blocks, template)
 	if l := showcase.Allowed(p.Shelves); u.Shelves > l {
-		return showcase.Limit("shelves", p, l, u.Shelves, i18n.Text{RU: "лимит своих полок на тарифе «" + p.Name + "»", UZ: "«" + p.Name + "» tarifida oʻz javonlaringiz limiti tugadi"})
+		return showcase.LimitNeed(ctx, q, "shelves", p, l, u.Shelves, i18n.Text{RU: "лимит своих полок на тарифе «" + p.Name + "»", UZ: "«" + p.Name + "» tarifida oʻz javonlaringiz limiti tugadi"})
 	}
 	if l := showcase.Allowed(p.Promos); u.Promos > l {
-		return showcase.Limit("promos", p, l, u.Promos, i18n.Text{RU: "лимит промо-полосок на тарифе «" + p.Name + "»", UZ: "«" + p.Name + "» tarifida promo-chiziqlar limiti tugadi"})
+		return showcase.LimitNeed(ctx, q, "promos", p, l, u.Promos, i18n.Text{RU: "лимит промо-полосок на тарифе «" + p.Name + "»", UZ: "«" + p.Name + "» tarifida promo-chiziqlar limiti tugadi"})
 	}
 	if u.Manual && !p.Manual {
-		return showcase.Limit("manual", p, 0, 0, i18n.Text{RU: "подборка «вручную» недоступна на тарифе «" + p.Name + "»", UZ: "«" + p.Name + "» tarifida «qoʻlda» toʻplam mavjud emas"})
+		return showcase.Locked(ctx, q, p, "manual", i18n.Text{RU: "подборка «вручную»", UZ: "«qoʻlda» toʻplam"})
 	}
 	if u.Schedule && !p.Schedule {
-		return showcase.Limit("schedule", p, 0, 0, i18n.Text{RU: "расписание блоков — на тарифе «Про»", UZ: "bloklar jadvali — «Pro» tarifida"})
+		return showcase.Locked(ctx, q, p, "schedule", i18n.Text{RU: "расписание блоков", UZ: "bloklar jadvali"})
 	}
 	return nil
+}
+
+func lockedCustom(ctx context.Context, q db.Querier, p showcase.Plan) error {
+	return showcase.Locked(ctx, q, p, "custom", i18n.Text{RU: "своя витрина", UZ: "oʻz vitrinangiz"})
+}
+
+func lockedPerStore(ctx context.Context, q db.Querier, p showcase.Plan) error {
+	return showcase.Locked(ctx, q, p, "per_store", i18n.Text{RU: "отдельная витрина для магазина сети", UZ: "tarmoq doʻkoni uchun alohida vitrina"})
 }
 
 // applyPlan скрывает при показе то, что не входит в тариф (после понижения
@@ -180,10 +189,6 @@ func (s *Service) StoreShowcase(ctx context.Context, p *identity.Principal, stor
 	if err != nil {
 		return ShowcaseEditor{}, err
 	}
-	// Первый заход в витрину запускает пробный период.
-	if err := showcase.StartTrial(ctx, s.pool, p.NetworkID); err != nil {
-		return ShowcaseEditor{}, err
-	}
 	out := ShowcaseEditor{TemplateIDs: []string{}, PinnedIDs: []string{}, CanBuy: p.Can(identity.PermPayoutsManage)}
 	if out.Layout, err = s.LayoutForEditor(ctx, sc); err != nil {
 		return out, err
@@ -238,10 +243,10 @@ func (s *Service) SaveStoreDraft(ctx context.Context, p *identity.Principal, sto
 		return ShowcaseEditor{}, err
 	}
 	if !plan.Effective.Custom {
-		return ShowcaseEditor{}, showcase.Limit("custom", plan.Effective, 0, 0, i18n.Text{RU: "своя витрина доступна с тарифа «Бизнес»", UZ: "oʻz vitrinangiz «Biznes» tarifidan boshlab mavjud"})
+		return ShowcaseEditor{}, lockedCustom(ctx, s.pool, plan.Effective)
 	}
 	if storeID != "" && !plan.Effective.PerStore {
-		return ShowcaseEditor{}, showcase.Limit("per_store", plan.Effective, 0, 0, i18n.Text{RU: "отдельная витрина для магазина сети — на тарифе «Про»", UZ: "tarmoq doʻkoni uchun alohida vitrina — «Pro» tarifida"})
+		return ShowcaseEditor{}, lockedPerStore(ctx, s.pool, plan.Effective)
 	}
 	if err := s.checkOwnBanners(ctx, p.NetworkID, blocks); err != nil {
 		return ShowcaseEditor{}, err
@@ -293,7 +298,7 @@ func (s *Service) PublishStore(ctx context.Context, p *identity.Principal, store
 	}
 	template := blockIDs(platform)
 	if _, err := s.Publish(ctx, sc, p.UserID, true, func(blocks []HomeBlock) error {
-		return checkPlan(plan.Effective, mergePinned(platform, blocks), template, storeID != "")
+		return checkPlan(ctx, s.pool, plan.Effective, mergePinned(platform, blocks), template, storeID != "")
 	}); err != nil {
 		return ShowcaseEditor{}, err
 	}

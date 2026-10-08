@@ -272,7 +272,7 @@ func (s *Service) CreateNetworkBanner(ctx context.Context, networkID string, in 
 		return Banner{}, err
 	}
 	if limit := showcase.Allowed(plan.Effective.Banners); used >= limit {
-		return Banner{}, showcase.Limit("banners", plan.Effective, limit, used,
+		return Banner{}, showcase.LimitNeed(ctx, s.pool, "banners", plan.Effective, limit, used,
 			i18n.Text{RU: "лимит своих баннеров на тарифе «" + plan.Effective.Name + "»", UZ: "«" + plan.Effective.Name + "» tarifida oʻz bannerlaringiz limiti tugadi"})
 	}
 	if in.LinkType != nil && *in.LinkType == "store" {
@@ -313,7 +313,7 @@ func (s *Service) UpdateNetworkBanner(ctx context.Context, networkID, id string,
 			return Banner{}, err
 		}
 		if limit := showcase.Allowed(plan.Effective.Banners); used >= limit {
-			return Banner{}, showcase.Limit("banners", plan.Effective, limit, used, i18n.Text{RU: "лимит своих баннеров на тарифе «" + plan.Effective.Name + "»", UZ: "«" + plan.Effective.Name + "» tarifida oʻz bannerlaringiz limiti tugadi"})
+			return Banner{}, showcase.LimitNeed(ctx, s.pool, "banners", plan.Effective, limit, used, i18n.Text{RU: "лимит своих баннеров на тарифе «" + plan.Effective.Name + "»", UZ: "«" + plan.Effective.Name + "» tarifida oʻz bannerlaringiz limiti tugadi"})
 		}
 	}
 	in.NetworkID = nil

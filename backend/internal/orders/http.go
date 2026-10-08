@@ -15,7 +15,6 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/payments"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
-	"github.com/sanedidi/super-market/backend/internal/showcase"
 )
 
 type Module struct {
@@ -142,9 +141,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/admin/home/versions", m.adminVersions)
 		r.Post("/admin/home/restore", m.adminRestore)
 		r.Delete("/admin/home", m.adminHomeAct(m.svc.ResetLayout))
-		r.Get("/admin/showcase/plans", m.adminPlans)
 		r.Get("/admin/home/stats", m.adminHomeStats)
-		r.Patch("/admin/showcase/plans/{key}", m.adminSavePlan)
 		r.Get("/admin/home/stores", m.adminPreviewStores)
 		r.Post("/admin/home/preview", m.adminPreview)
 		r.Get("/admin/delivery-wishes", m.adminWishes)
@@ -209,21 +206,6 @@ func (m *Module) adminPreviewStores(w http.ResponseWriter, r *http.Request) {
 func (m *Module) adminPreview(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in blocksInput) (StoreHome, error) {
 		return m.svc.PreviewHome(r.Context(), "", in.StoreID, in.Blocks)
-	})
-}
-
-func (m *Module) adminPlans(w http.ResponseWriter, r *http.Request) {
-	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[showcase.Plan], error) {
-		items, err := showcase.Plans(r.Context(), m.svc.pool)
-		return httpx.List[showcase.Plan]{Items: items}, err
-	})
-}
-
-func (m *Module) adminSavePlan(w http.ResponseWriter, r *http.Request) {
-	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in showcase.PlanInput) (showcase.Plan, error) {
-		p, err := showcase.SavePlan(r.Context(), m.svc.pool, chi.URLParam(r, "key"), in)
-		m.svc.forgetHomes()
-		return p, err
 	})
 }
 

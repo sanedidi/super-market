@@ -9,6 +9,7 @@ import (
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/media"
+	"github.com/sanedidi/super-market/backend/internal/plans"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 )
@@ -26,7 +27,7 @@ func NewModule(svc *Service, mediaSvc *media.Service, auth *identity.Authenticat
 
 func (m *Module) Routes(r chi.Router) {
 	r.Route("/store/invoice-scans", func(r chi.Router) {
-		r.Use(m.auth.Require(identity.AppStore))
+		r.Use(m.auth.Require(identity.AppStore), m.auth.Feature(plans.FeatureInvoiceScans))
 		r.Get("/", m.list)
 		r.Post("/", m.create)
 		r.Get("/{id}", m.get)

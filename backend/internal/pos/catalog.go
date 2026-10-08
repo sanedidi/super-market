@@ -115,7 +115,7 @@ func (s *Service) Catalog(ctx context.Context, p *identity.Principal, since *tim
 	out.Version = out.Version.UTC()
 	err := s.pool.QueryRow(ctx, `
 		SELECT d.id, d.name, st.id, st.name, COALESCE(st.address, ''), n.name, n.receipt_header, n.receipt_footer, n.pos_weight_prefixes,
-		       st.debt_enabled, (SELECT sh.id FROM pos_shifts sh WHERE sh.device_id = d.id AND sh.closed_at IS NULL)
+		       st.debt_enabled AND network_has_feature(n.id, 'debts'), (SELECT sh.id FROM pos_shifts sh WHERE sh.device_id = d.id AND sh.closed_at IS NULL)
 		FROM pos_devices d JOIN stores st ON st.id = d.store_id JOIN networks n ON n.id = d.network_id
 		WHERE d.id = $1`, p.DeviceID).Scan(&out.Settings.DeviceID, &out.Settings.DeviceName, &out.Settings.StoreID,
 		&out.Settings.StoreName, &out.Settings.StoreAddress, &out.Settings.NetworkName, &out.Settings.ReceiptHeader,

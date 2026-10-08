@@ -142,9 +142,10 @@ func TestDelete(t *testing.T) {
 	dev := a.expect(a.do("POST", "/store/pos/devices", tok, map[string]any{"store_id": store, "name": "Касса 2"}), 201, "device").str("id")
 	a.expect(a.do("DELETE", "/store/pos/devices/"+dev, tok, nil), 204, "delete device")
 
-	// Супер-админ: тариф и рекламодатель.
-	tariff := a.expect(a.do("POST", "/admin/billing/tariffs", adminTok, map[string]any{"name": "Большая сеть", "min_stores": 50, "price_per_store": 9}), 201, "tariff").str("id")
-	a.expect(a.do("DELETE", "/admin/billing/tariffs/"+tariff, adminTok, nil), 204, "delete tariff")
+	// Супер-админ: тариф и рекламодатель. Тариф, на котором есть сети, не удаляется.
+	a.expect(a.do("POST", "/admin/plans", adminTok, map[string]any{"key": "big", "name": "Большая сеть", "min_stores": 50, "price_uzs": 99000}), 201, "plan")
+	a.expect(a.do("DELETE", "/admin/plans/big", adminTok, nil), 204, "delete plan")
+	a.expect(a.do("DELETE", "/admin/plans/network", adminTok, nil), 409, "plan in use")
 	adv := a.expect(a.do("POST", "/admin/ads/advertisers", adminTok, map[string]any{"name": "ООО Реклама", "inn": "200000009"}), 201, "advertiser").str("id")
 	a.expect(a.do("DELETE", "/admin/ads/advertisers/"+adv, adminTok, nil), 204, "delete advertiser")
 }
