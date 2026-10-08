@@ -58,6 +58,9 @@ func TestPlans(t *testing.T) {
 		t.Fatalf("abc need = %v", det)
 	}
 	a.expect(a.do("GET", "/store/reports/sales-series", tok, nil), 200, "basic reports stay")
+	if det := errDetails(a.expect(a.do("GET", "/store/ads", tok, nil), 403, "brand ads on free")); det["feature"] != "brand_ads" || det["need_plan"] != "business" {
+		t.Fatalf("brand ads need = %v", det)
+	}
 
 	// Лимит касс: одна на «Бесплатном» и «Старте», три — на «Бизнесе».
 	a.expect(a.do("POST", "/store/pos/devices", tok, map[string]any{"store_id": store, "name": "Касса 1"}), 201, "device 1")
@@ -97,7 +100,7 @@ func TestPlans(t *testing.T) {
 	// Скрытый тариф: магазин выбрать не может, супер-админ назначает.
 	vip := a.expect(a.do("POST", "/admin/plans", adminTok, map[string]any{
 		"key": "pilot", "name": "Пилот", "name_uz": "Pilot", "is_public": false, "price_uzs": 0,
-		"features": []string{"debts", "reports_pro"}, "limits": map[string]any{"registers": 2},
+		"features": []string{"debts", "reports_pro", "abc_xyz"}, "limits": map[string]any{"registers": 2},
 	}), 201, "hidden plan")
 	if vip.str("key") != "pilot" || vip.Body["limits"].(map[string]any)["registers"].(float64) != 2 {
 		t.Fatalf("pilot = %v", vip.Body)

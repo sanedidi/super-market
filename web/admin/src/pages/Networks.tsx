@@ -4,6 +4,8 @@ import { Alert, Button, Descriptions, Drawer, Form, Input, Popconfirm, Select, S
 import { KeyOutlined } from '@ant-design/icons'
 import { CrudPage, PhoneInput, StatusTag, api, date, dateTime, errorText, formatPhone, money, phoneRule, useAction, useItem, useList } from '@sm/shared'
 import { useUrlState } from '../hooks'
+import { planPrice, type Plan } from './Plans'
+import { NetworkPlanModal, PlanCell, type NetworkBilling } from './NetworkPlan'
 import { CredentialsModal, OwnerLoginFields, OwnerModal, OwnerPasswordState, type Credentials, type OwnerInfo } from './NetworkOwner'
 
 interface Network extends OwnerInfo {
@@ -11,6 +13,10 @@ interface Network extends OwnerInfo {
   status: 'active' | 'blocked'
   stores_count: number
   created_at: string
+  plan_key: string
+  plan_name: string
+  effective_plan_key: string
+  plan_trial_until: string | null
 }
 
 export function Networks() {
@@ -36,6 +42,15 @@ export function Networks() {
           },
           { title: 'Тип', dataIndex: 'kind', render: (k) => (k === 'chain' ? 'Сеть' : 'Одиночный магазин') },
           { title: 'Магазинов', dataIndex: 'stores_count' },
+          {
+            title: 'Тариф',
+            render: (_, n) => (
+              <Space size={4} wrap>
+                {n.plan_name}
+                {n.effective_plan_key !== n.plan_key && n.plan_trial_until && <Tag color="gold">пробный до {date(n.plan_trial_until)}</Tag>}
+              </Space>
+            ),
+          },
           {
             title: 'Владелец',
             render: (_, n) => (
@@ -95,6 +110,7 @@ export function Networks() {
                     ]}
                   />
                 </Form.Item>
+                <PlanField />
                 <Form.Item name="owner_name" label="Имя владельца" rules={[{ required: true }]}>
                   <Input />
                 </Form.Item>
@@ -127,15 +143,18 @@ interface Store {
   created_at: string
 }
 
-interface NetworkBilling {
-  price_per_store: string
-  custom_price_per_store: string | null
-  monthly_usd: string
-  billing_from: string
-  balance_available: string
-  balance_pending: string
-  unpaid_uzs: string
-  overdue: boolean
+/** Тариф новой сети: пусто — по умолчанию (одиночному «Бесплатный» с пробным, сети — «Сеть»). */
+function PlanField() {
+  const plans = useList<Plan>('/admin/plans')
+  return (
+    <Form.Item name="plan_key" label="Тариф" extra="Пусто — одиночный магазин начнёт с «Бесплатного» и пробного периода, сеть магазинов — с «Сети». Поменять можно потом.">
+      <Select
+        allowClear
+        placeholder="По умолчанию"
+        options={(plans.data ?? []).filter((p) => p.is_active).map((p) => ({ value: p.key, label: `${p.name} — ${planPrice(p)} за магазин${p.is_public ? '' : ' (скрытый)'}` }))}
+      />
+    </Form.Item>
+  )
 }
 
 /** Карточка сети: владелец, магазины, подписка, баланс и ссылки на связанные списки. */
@@ -146,6 +165,7 @@ function NetworkCard({ id, onClose }: { id: string | null; onClose: () => void }
   const n = net.data
   const b = billing.data
   const [owner, setOwner] = useState<Network | null>(null)
+  const [planOpen, setPlanOpen] = useState(false)
   const error = net.error ?? stores.error ?? billing.error
   return (
     <Drawer open={id !== null} onClose={onClose} width={720} title={n ? n.name : 'Сеть'}>
@@ -197,8 +217,17 @@ function NetworkCard({ id, onClose }: { id: string | null; onClose: () => void }
             <Descriptions.Item label="Подключена">{dateTime(n.created_at)}</Descriptions.Item>
             {b && (
               <>
-                <Descriptions.Item label="Подписка">
-                  {money(b.price_per_store)} $ за магазин {b.custom_price_per_store !== null && <Tag color="purple">индивидуальная</Tag>}· {money(b.monthly_usd)} $ в месяц, платит с {date(b.billing_from)}
+                <Descriptions.Item label="Тариф">
+                  <Space direction="vertical" size={4}>
+                    <PlanCell b={b} />
+                    <span>
+                      {money(b.price_per_store)} сум за магазин
+                      {b.custom_price_uzs !== null && <Tag color="purple">своя цена</Tag>}· {money(b.monthly_uzs)} сум в месяц, платит с {date(b.billing_from)}
+                    </span>
+                    <Button size="small" onClick={() => setPlanOpen(true)}>
+                      Изменить тариф
+                    </Button>
+                  </Space>
                 </Descriptions.Item>
                 <Descriptions.Item label="Баланс">
                   {money(b.balance_available)} сум <Typography.Text type="secondary">(+{money(b.balance_pending)} в пути)</Typography.Text>
@@ -240,6 +269,14 @@ function NetworkCard({ id, onClose }: { id: string | null; onClose: () => void }
         </Space>
       )}
       <OwnerModal network={owner} onClose={() => setOwner(null)} />
+      <NetworkPlanModal
+        networkId={planOpen ? id : null}
+        onClose={() => {
+          setPlanOpen(false)
+          billing.refetch()
+          net.refetch()
+        }}
+      />
     </Drawer>
   )
 }

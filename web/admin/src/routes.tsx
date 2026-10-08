@@ -20,9 +20,9 @@ import { Products, Dictionary } from './pages/Catalog'
 import { Banners } from './pages/Banners'
 import { AppHome } from './pages/AppHome'
 import { Ads } from './pages/Ads'
-import { ShowcasePlans } from './pages/ShowcasePlans'
 import { Orders, Payments } from './pages/Orders'
-import { Tariffs, BillingSettings, BillingNetworks, Invoices, Payouts } from './pages/Billing'
+import { BillingSettings, BillingNetworks, Invoices, Payouts } from './pages/Billing'
+import { Plans } from './pages/Plans'
 import { Customers } from './pages/Customers'
 import { Crowd } from './pages/Crowd'
 import { Wishes } from './pages/Wishes'
@@ -62,12 +62,11 @@ const menu: MenuItem[] = [
   {
     key: 'billing',
     icon: <DollarOutlined />,
-    label: 'Подписка',
+    label: 'Тарифы и подписка',
     children: [
+      { key: '/billing/tariffs', label: 'Тарифы' },
       { key: '/billing/networks', label: 'Сети и оплата' },
       { key: '/billing/invoices', label: 'Счета' },
-      { key: '/billing/tariffs', label: 'Тарифы' },
-      { key: '/billing/showcase', label: 'Тарифы витрины' },
       { key: '/billing/settings', label: 'Настройки' },
     ],
   },
@@ -97,8 +96,8 @@ export function AdminRoutes() {
         <Route path="payments" element={<Payments />} />
         <Route path="billing/networks" element={<BillingNetworks />} />
         <Route path="billing/invoices" element={<Invoices />} />
-        <Route path="billing/tariffs" element={<Tariffs />} />
-        <Route path="billing/showcase" element={<ShowcasePlans />} />
+        <Route path="billing/tariffs" element={<Plans />} />
+        <Route path="billing/showcase" element={<Navigate to="/billing/tariffs" replace />} />
         <Route path="billing/settings" element={<BillingSettings />} />
         <Route path="crowd" element={<Crowd />} />
         <Route path="delivery-wishes" element={<Wishes />} />

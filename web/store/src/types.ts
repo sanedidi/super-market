@@ -438,9 +438,13 @@ export type Billing = {
   network_id: string
   network_name: string
   stores_count: number
-  custom_price_per_store: string | null
+  plan_key: string
+  plan_name: string
+  effective_plan_key: string
+  trial_until: string | null
+  custom_price_uzs: string | null
   price_per_store: string
-  monthly_usd: string
+  monthly_uzs: string
   billing_from: string
   balance_available: string
   balance_pending: string
@@ -452,9 +456,12 @@ export type Invoice = {
   period: string
   stores_count: number
   price_per_store: string
-  amount_usd: string
-  rate: string
+  currency: 'UZS' | 'USD'
+  amount_usd: string | null
+  rate: string | null
   amount_uzs: string
+  plan_key: string | null
+  plan_name: string
   status: string
   due_date: string
   overdue: boolean
@@ -652,4 +659,38 @@ export type SalesBreakdown = {
   other: { count: number; value: string; share: number; prev_value?: string } | null
   prev_total?: string
   change_pct?: number | null
+}
+
+// ---------------------------------------------------------------- тарифы
+
+export type PlanFeature = { key: string; group: string; name: string; hint: string; included: boolean }
+export type PlanLimit = { key: string; group: string; name: string; hint: string; value: number | null; used?: number }
+
+/** Карточка тарифа на языке панели (GET /store/plan). */
+export type PlanView = {
+  key: string
+  name: string
+  description: string
+  price_uzs: string
+  currency: string
+  min_stores: number
+  order_commission: string
+  recommended: boolean
+  sort: number
+  features: PlanFeature[]
+  limits: PlanLimit[]
+}
+
+/** «Мой тариф»: выбранный, действующий (пробный), карточки для смены. */
+export type MyPlan = {
+  chosen: { key: string; name: string; name_uz: string; price_uzs: string; order_commission: string }
+  effective: { key: string; name: string; name_uz: string }
+  trial_plan: string
+  trial_until: string | null
+  in_trial: boolean
+  custom_price_uzs: string | null
+  current: PlanView
+  plans: PlanView[]
+  stores_count: number
+  can_change: boolean
 }

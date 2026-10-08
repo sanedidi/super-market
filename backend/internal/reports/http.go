@@ -30,7 +30,7 @@ func (m *Module) Routes(r chi.Router) {
 		pro := m.auth.Feature(plans.FeatureReportsPro)
 		r.With(pro).Get("/cash-flow", m.cashFlow)
 		r.With(pro).Get("/profit-loss", m.profitLoss)
-		r.With(pro).Get("/abc-xyz", m.abcXyz)
+		r.With(m.auth.Feature(plans.FeatureABCXYZ)).Get("/abc-xyz", m.abcXyz)
 		r.Get("/sales-series", m.salesSeries)
 		r.Get("/sales-breakdown", m.salesBreakdown)
 	})

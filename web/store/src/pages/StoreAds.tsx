@@ -230,8 +230,8 @@ export function StoreAdsPage() {
                         if (locked) {
                           message.info(
                             tr(
-                              'Меньше рекламы или без неё — на тарифе «Про». Сменить тариф: «Витрина приложения» → «Сравнить тарифы».',
-                              'Kamroq reklama yoki reklamasiz — «Pro» tarifida. Tarifni almashtirish: «Ilova vitrinasi» → «Tariflarni solishtirish».',
+                              'Меньше рекламы или без неё — на тарифе выше. Сменить тариф — в разделе «Тариф».',
+                              'Kamroq reklama yoki reklamasiz — yuqoriroq tarifda. Tarifni «Tarif» boʻlimida almashtirish mumkin.',
                             ),
                           )
                           return
@@ -246,7 +246,7 @@ export function StoreAdsPage() {
                       </span>
                       {locked && (
                         <em>
-                          <LockFilled /> {tr('«Про»', '«Pro»')}
+                          <LockFilled /> {tr('тариф выше', 'yuqoriroq tarif')}
                         </em>
                       )}
                     </button>

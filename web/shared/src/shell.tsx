@@ -101,14 +101,15 @@ function Gate({ app, title, children }: { app: AppName; title: string; children:
 
 export type MenuItem = Required<MenuProps>['items'][number]
 
-type NavItem = { key: string; label: ReactNode; icon?: ReactNode; children?: NavItem[] }
+// extra — значок справа от пункта (например, замок функции не по тарифу).
+type NavItem = { key: string; label: ReactNode; icon?: ReactNode; extra?: ReactNode; children?: NavItem[] }
 
 function toNav(items: MenuItem[]): NavItem[] {
   return (items ?? [])
     .filter(Boolean)
     .map((m) => {
-      const i = m as unknown as { key: string; label: ReactNode; icon?: ReactNode; children?: MenuItem[] }
-      return { key: String(i.key), label: i.label, icon: i.icon, children: i.children ? toNav(i.children) : undefined }
+      const i = m as unknown as { key: string; label: ReactNode; icon?: ReactNode; extra?: ReactNode; children?: MenuItem[] }
+      return { key: String(i.key), label: i.label, icon: i.icon, extra: i.extra, children: i.children ? toNav(i.children) : undefined }
     })
 }
 
@@ -279,6 +280,7 @@ function Sidebar({
               >
                 <span className="sm-link-icon">{item.icon}</span>
                 {expanded && <span className="sm-link-label">{item.label}</span>}
+                {expanded && item.extra && <span className="sm-link-extra">{item.extra}</span>}
               </button>
             )
           }
@@ -310,6 +312,7 @@ function Sidebar({
                   {item.children.map((c) => (
                     <button key={c.key} className={`sm-glass sm-child ${activeKey === c.key ? 'active' : ''}`} onClick={() => go(c.key)}>
                       {c.label}
+                      {c.extra && <span className="sm-link-extra">{c.extra}</span>}
                     </button>
                   ))}
                 </div>

@@ -158,7 +158,7 @@ function LinkText({ to, children }: { to: string; children: ReactNode }) {
 // ---------------------------------------------------------------- страница
 
 export function Analytics({ period }: { period: Period }) {
-  const { storeId, can } = useStore()
+  const { storeId, can, has } = useStore()
   const q = periodQuery(period)
   const series = useItem<SalesSeries>('/store/reports/sales-series', { store_id: storeId, ...q })
   const t = dayjs().startOf('day')
@@ -188,9 +188,11 @@ export function Analytics({ period }: { period: Period }) {
         <Col xs={24} xl={14}>
           <WhenBuy />
         </Col>
-        <Col span={24}>
-          <AbcBlock />
-        </Col>
+        {has('abc_xyz') && (
+          <Col span={24}>
+            <AbcBlock />
+          </Col>
+        )}
         {can('orders.manage') && (
           <Col xs={24} xl={16}>
             <NewOrders />
@@ -201,7 +203,7 @@ export function Analytics({ period }: { period: Period }) {
             <Col span={24}>
               <Fiscal />
             </Col>
-            {can('debts.manage') && (
+            {can('debts.manage') && has('debts') && (
               <Col span={24}>
                 <DebtsCard />
               </Col>

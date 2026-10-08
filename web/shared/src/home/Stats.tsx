@@ -90,7 +90,11 @@ export function HomeStatsPanel({
     return (
       <div className="smh-locked" style={{ margin: 0 }}>
         <LockFilled />
-        <b>{tr('Статистика витрины — с тарифа «Бизнес»', 'Vitrina statistikasi — «Biznes» tarifidan')}</b>
+        <b>
+          {q.error.details.need_plan_name
+            ? tr(`Статистика витрины — на тарифе «${q.error.details.need_plan_name}»`, `Vitrina statistikasi — «${q.error.details.need_plan_name}» tarifida`)
+            : tr('Статистика витрины не входит в тариф', 'Vitrina statistikasi tarifga kirmaydi')}
+        </b>
         <span>{tr('Показы, нажатия и покупки по каждому блоку главной: видно, что приносит заказы.', 'Bosh sahifaning har bir bloki boʻyicha koʻrsatishlar, bosishlar va xaridlar: nima buyurtma keltirayotgani koʻrinadi.')}</span>
         {onUpgrade && (
           <Button type="primary" danger onClick={() => onUpgrade('stats')}>
@@ -127,7 +131,7 @@ export function HomeStatsPanel({
           />
         ) : (
           <a onClick={() => onUpgrade?.('stats_full')}>
-            <LockFilled /> {tr('Заказы, выручка и 30 дней — в «Про»', 'Buyurtmalar, tushum va 30 kun — «Pro» tarifida')}
+            <LockFilled /> {tr('Заказы, выручка и 30 дней — на тарифе выше', 'Buyurtmalar, tushum va 30 kun — yuqoriroq tarifda')}
           </a>
         )}
       </div>

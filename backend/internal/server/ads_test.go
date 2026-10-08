@@ -164,6 +164,9 @@ func TestBrandAds(t *testing.T) {
 	if s := sqlStr(t, pool, `SELECT count(*)::text FROM balance_entries WHERE kind = 'ad_share'`); s != "1" {
 		t.Fatalf("share credited twice: %s", s)
 	}
+	// На «Старте» страницы рекламы нет (доля всё равно зачисляется на баланс).
+	a.expect(a.do("GET", "/store/ads", owner, nil), 403, "ads page on start")
+	a.expect(a.do("PATCH", "/admin/billing/networks/"+shop.network, adminTok, map[string]any{"plan_key": "business"}), 200, "business")
 	if r := a.expect(a.do("GET", "/store/ads", owner, nil), 200, "shares").Body["shares"].([]any); len(r) != 1 || r[0].(map[string]any)["credited"] != "851000.00" {
 		t.Fatalf("store shares = %v", r)
 	}
