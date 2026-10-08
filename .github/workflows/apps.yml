@@ -36,6 +36,8 @@ jobs:
           flutter pub get
           flutter analyze --no-fatal-infos
       - name: Client tests and screens
+        # Проверять все приложения, даже если предыдущее упало: все ошибки — за один прогон.
+        if: ${{ !cancelled() }}
         working-directory: apps/client
         run: flutter test --update-goldens
       - uses: actions/upload-artifact@v4
@@ -45,18 +47,21 @@ jobs:
           path: apps/client/test/screens/*.png
           if-no-files-found: ignore
       - name: Courier
+        if: ${{ !cancelled() }}
         working-directory: apps/courier
         run: |
           flutter pub get
           flutter analyze --no-fatal-infos
           flutter test
       - name: Store
+        if: ${{ !cancelled() }}
         working-directory: apps/store
         run: |
           flutter pub get
           flutter analyze --no-fatal-infos
           flutter test
       - name: POS
+        if: ${{ !cancelled() }}
         working-directory: apps/pos
         run: |
           flutter pub get
