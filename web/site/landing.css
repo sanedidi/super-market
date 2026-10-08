@@ -334,6 +334,8 @@ main > section { overflow-x: clip; }
 .price-card .checks li { gap: 10px; font-size: 16px; line-height: 24px; color: var(--ink); }
 .price-card .checks li svg { width: 20px; height: 20px; margin-top: 2px; }
 .price-card__cta { width: 100%; }
+.price-card__terms { margin: -12px 0 0; font-size: 15px; line-height: 20px; color: var(--muted); }
+.price-card__desc { margin: 0; font-size: 15px; line-height: 22px; color: var(--ink); }
 .price-note { text-align: center; color: var(--muted); }
 .price-cards[data-count="0"] { display: block; }
 @media (min-width: 768px) {
@@ -346,6 +348,13 @@ main > section { overflow-x: clip; }
   .price-cards[data-count="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .price-cards[data-count="3"] .price-card { padding: 32px; }
   .price-cards[data-count="3"] .price-card__amount { font-size: 48px; line-height: 60px; }
+}
+/* 4 тарифа: на планшете — 2×2, на широком экране — в ряд. */
+@media (min-width: 1280px) {
+  .price-cards[data-count="4"] { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
+  .price-cards[data-count="4"] .price-card { padding: 28px 24px; }
+  .price-cards[data-count="4"] .price-card__amount { font-size: 36px; line-height: 44px; }
+  .price-cards[data-count="4"] .price-card .checks li { font-size: 15px; line-height: 22px; }
 }
 
 /* ---------- FAQ ---------- */

@@ -94,6 +94,11 @@
 
   // ---------------------------------------------------------------- тарифы
 
+  // GET /api/v1/public/tariffs — открытые тарифы карточками: name, description (на языке
+  // запроса), price_uzs за магазин в месяц, order_commission (%), min_stores, recommended,
+  // features[{name, included}], limits[{key, value}]. Тарифы и их состав настраивает
+  // супер-админ — здесь ничего не зашито.
+
   function pluralRu(n, one, few, many) {
     var m10 = n % 10, m100 = n % 100;
     if (m10 === 1 && m100 !== 11) return one;
@@ -103,55 +108,64 @@
 
   var T = {
     ru: {
+      cur: 'сум',
       per: 'за магазин в месяц',
-      best: 'Выгоднее',
+      free: 'Бесплатно',
+      commission: function (c) { return 'комиссия ' + c + '% с онлайн-заказа'; },
+      noCommission: 'без комиссии с заказов',
+      best: 'Рекомендуем',
       ctaOne: 'Подключить магазин',
       ctaMany: 'Подключить сеть',
-      title: function (t) {
-        if (t.max === null) return t.min === 1 ? 'Любое число магазинов' : t.min + ' и более магазинов';
-        if (t.max === t.min) return t.min + ' ' + pluralRu(t.min, 'магазин', 'магазина', 'магазинов');
-        return t.min + '–' + t.max + ' ' + pluralRu(t.max, 'магазин', 'магазина', 'магазинов');
+      fromStores: function (n) { return 'для сетей от ' + n + ' ' + pluralRu(n, 'магазина', 'магазинов', 'магазинов'); },
+      limits: {
+        stores: function (v) { return v === null ? 'Магазинов — без лимита' : v + ' ' + pluralRu(v, 'магазин', 'магазина', 'магазинов'); },
+        registers: function (v) { return v === null ? 'кассы без лимита' : v + ' ' + pluralRu(v, 'касса', 'кассы', 'касс'); },
+        staff: function (v) { return v === null ? 'сотрудники без лимита' : v + ' ' + pluralRu(v, 'сотрудник', 'сотрудника', 'сотрудников'); }
       },
-      stat: function (price, from) { return (from ? 'от ' : '') + price; },
-      network: function (tiers, base) {
-        var parts = tiers.map(function (t) {
-          return 'от ' + t.min + ' ' + (t.min % 10 === 1 && t.min % 100 !== 11 ? 'магазина' : 'магазинов') + ' — ' + money(t);
-        });
-        var s = parts.join(', ') + ' за магазин в месяц вместо ' + money(base) + '.';
-        return s.charAt(0).toUpperCase() + s.slice(1);
-      },
+      base: 'Касса, склад и онлайн-заказы',
+      stat: function (price) { return 'от ' + price; },
+      statFree: 'Бесплатно',
+      statFreeLabel: 'есть бесплатный тариф',
+      lead: function (c) { return 'Начните бесплатно — с комиссией ' + c + '% с онлайн-заказа. На платных тарифах комиссии нет. Подключение бесплатное.'; },
+      network: function (t) { return 'От ' + t.min + ' ' + pluralRu(t.min, 'магазина', 'магазинов', 'магазинов') + ' — тариф «' + t.name + '»: ' + money(t.price) + ' за магазин в месяц.'; },
       empty: 'Стоимость подключения подскажем в поддержке.',
       ask: 'Написать в Telegram'
     },
     uz: {
+      cur: 'so‘m',
       per: 'oyiga bir do‘kon uchun',
-      best: 'Foydaliroq',
+      free: 'Bepul',
+      commission: function (c) { return 'onlayn buyurtmadan ' + c + '% komissiya'; },
+      noCommission: 'buyurtmalardan komissiyasiz',
+      best: 'Tavsiya etamiz',
       ctaOne: 'Do‘konni ulash',
       ctaMany: 'Tarmoqni ulash',
-      title: function (t) {
-        if (t.max === null) return t.min === 1 ? 'Istalgan sondagi do‘kon' : t.min + ' va undan ko‘p do‘kon';
-        if (t.max === t.min) return t.min + ' ta do‘kon';
-        return t.min + '–' + t.max + ' ta do‘kon';
+      fromStores: function (n) { return n + ' ta va undan ko‘p do‘konli tarmoqlar uchun'; },
+      limits: {
+        stores: function (v) { return v === null ? 'Do‘konlar — cheklovsiz' : v + ' ta do‘kon'; },
+        registers: function (v) { return v === null ? 'kassalar cheklovsiz' : v + ' ta kassa'; },
+        staff: function (v) { return v === null ? 'xodimlar cheklovsiz' : v + ' ta xodim'; }
       },
-      stat: function (price, from) { return price + (from ? ' dan' : ''); },
-      network: function (tiers, base) {
-        return tiers.map(function (t) {
-          return t.min + ' ta do‘kondan boshlab — bir do‘kon uchun oyiga ' + money(t);
-        }).join(', ') + ' (' + money(base) + ' o‘rniga).';
-      },
+      base: 'Kassa, ombor va onlayn buyurtmalar',
+      stat: function (price) { return price + ' dan'; },
+      statFree: 'Bepul',
+      statFreeLabel: 'bepul tarif bor',
+      lead: function (c) { return 'Bepul boshlang — onlayn buyurtmadan ' + c + '% komissiya bilan. Pullik tariflarda komissiya yo‘q. Ulanish bepul.'; },
+      network: function (t) { return t.min + ' ta do‘kondan boshlab — «' + t.name + '» tarifi: bir do‘kon uchun oyiga ' + money(t.price) + '.'; },
       empty: 'Ulanish narxini qo‘llab-quvvatlash xizmati aytib beradi.',
       ask: 'Telegram’da yozish'
     }
   }[lang];
 
-  // "20.00" → «20 $», "12.50" → «12,50 $».
-  function money(t) {
-    var m = /^\s*(\d+)(?:[.,](\d+))?\s*$/.exec(t.priceStr);
-    var whole = m ? m[1] : String(Math.round(t.price));
-    var frac = m && m[2] && /[1-9]/.test(m[2]) ? ',' + m[2] : '';
-    whole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-    var cur = !t.currency || t.currency === 'USD' ? '$' : t.currency;
-    return whole + frac + ' ' + cur;
+  // 149000 → «149 000 сум».
+  function money(v) {
+    var whole = String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    return whole + ' ' + T.cur;
+  }
+
+  function num(v) {
+    var n = parseFloat(String(v == null ? '' : v).replace(',', '.'));
+    return isFinite(n) ? n : NaN;
   }
 
   function normalize(data) {
@@ -160,15 +174,23 @@
     var out = [];
     for (var i = 0; i < items.length; i++) {
       var it = items[i] || {};
-      var min = parseInt(it.min_stores, 10);
-      var max = it.max_stores === null || it.max_stores === undefined ? null : parseInt(it.max_stores, 10);
-      var priceStr = String(it.price_per_store == null ? '' : it.price_per_store);
-      var price = parseFloat(priceStr.replace(',', '.'));
-      if (!isFinite(min) || min < 1 || !isFinite(price) || price < 0) continue;
-      if (max !== null && (!isFinite(max) || max < min)) max = null;
-      out.push({ min: min, max: max, price: price, priceStr: priceStr, currency: String(it.currency || 'USD') });
+      var price = num(it.price_uzs);
+      if (!it.name || !isFinite(price) || price < 0) continue;
+      var limits = {};
+      (it.limits || []).forEach(function (l) { if (l && l.key) limits[l.key] = l.value === null || l.value === undefined ? null : parseInt(l.value, 10); });
+      out.push({
+        name: String(it.name),
+        description: String(it.description || ''),
+        price: price,
+        commission: num(it.order_commission) || 0,
+        min: parseInt(it.min_stores, 10) || 1,
+        recommended: !!it.recommended,
+        sort: parseInt(it.sort, 10) || 0,
+        features: (it.features || []).filter(function (f) { return f && f.included && f.name; }).map(function (f) { return String(f.name); }),
+        limits: limits
+      });
     }
-    out.sort(function (a, b) { return a.min - b.min; });
+    out.sort(function (a, b) { return a.sort - b.sort; });
     return out;
   }
 
@@ -179,17 +201,33 @@
     return e;
   }
 
+  function check(text) {
+    var li = el('li');
+    li.innerHTML = '<svg aria-hidden="true"><use href="#i-check"/></svg>';
+    li.appendChild(document.createTextNode(text));
+    return li;
+  }
+
+  function limitsLine(t) {
+    var parts = [];
+    ['stores', 'registers', 'staff'].forEach(function (k) {
+      if (k in t.limits) parts.push(T.limits[k](t.limits[k]));
+    });
+    if (!parts.length) return '';
+    var s = parts.join(', ');
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
   function renderTariffs(items) {
     var box = document.getElementById('tariffs');
     if (!box) return;
-    var featuresEl = box.querySelector('[data-tariff="features"]') || box.querySelector('.checks');
-    var featuresHTML = featuresEl ? featuresEl.innerHTML : '';
     var statWrap = document.querySelector('[data-tariff="stat"]');
     var statEl = document.querySelector('[data-tariff="min-price"]');
     var networkEl = document.querySelector('[data-tariff="network"]');
+    var leadEl = document.querySelector('[data-tariff="lead"]');
 
     box.textContent = '';
-    box.setAttribute('data-count', String(Math.min(items.length, 3)));
+    box.setAttribute('data-count', String(Math.min(items.length, 4)));
 
     if (!items.length) {
       var p = el('p', 'price-note', T.empty + ' ');
@@ -203,33 +241,31 @@
       return;
     }
 
-    var minPrice = Infinity, maxPrice = -Infinity, best = -1;
-    items.forEach(function (t, i) {
-      if (t.price < minPrice) { minPrice = t.price; best = i; }
-      if (t.price > maxPrice) maxPrice = t.price;
-    });
-    var highlight = items.length > 1 && minPrice < maxPrice;
-
-    items.forEach(function (t, i) {
-      var isBest = highlight && i === best;
-      var card = el('article', 'price-card' + (isBest ? ' price-card--best' : ''));
+    items.forEach(function (t) {
+      var card = el('article', 'price-card' + (t.recommended ? ' price-card--best' : ''));
       var top = el('div', 'price-card__top');
-      top.appendChild(el('h3', 'price-card__title', T.title(t)));
-      if (isBest) top.appendChild(el('span', 'badge', T.best));
+      top.appendChild(el('h3', 'price-card__title', t.name));
+      if (t.recommended) top.appendChild(el('span', 'badge', T.best));
       card.appendChild(top);
 
       var price = el('p', 'price-card__price');
-      price.appendChild(el('span', 'price-card__amount', money(t)));
-      price.appendChild(el('span', 'price-card__per', T.per));
+      price.appendChild(el('span', 'price-card__amount', t.price > 0 ? money(t.price) : T.free));
+      if (t.price > 0) price.appendChild(el('span', 'price-card__per', T.per));
       card.appendChild(price);
+      var terms = [t.commission > 0 ? T.commission(t.commission) : T.noCommission];
+      if (t.min > 1) terms.push(T.fromStores(t.min));
+      card.appendChild(el('p', 'price-card__terms', terms.join(' · ')));
+      if (t.description) card.appendChild(el('p', 'price-card__desc', t.description));
       card.appendChild(document.createElement('hr'));
 
       var ul = el('ul', 'checks');
-      ul.innerHTML = featuresHTML;
+      var lim = limitsLine(t);
+      if (lim) ul.appendChild(check(lim));
+      if (!t.features.length) ul.appendChild(check(T.base));
+      t.features.forEach(function (f) { ul.appendChild(check(f)); });
       card.appendChild(ul);
 
-      var primary = isBest || items.length === 1;
-      var cta = el('a', 'button button--lg price-card__cta ' + (primary ? 'button--primary' : 'button--secondary'),
+      var cta = el('a', 'button button--lg price-card__cta ' + (t.recommended ? 'button--primary' : 'button--secondary'),
         t.min > 1 ? T.ctaMany : T.ctaOne);
       cta.setAttribute('data-link', 'register');
       card.appendChild(cta);
@@ -237,17 +273,24 @@
     });
     applyLinks(box);
 
+    var free = items.filter(function (t) { return t.price === 0; })[0];
+    var paid = items.filter(function (t) { return t.price > 0; });
     if (statWrap && statEl) {
       statWrap.hidden = false;
-      var cheapest = items[best];
-      statEl.textContent = T.stat(money(cheapest), minPrice < maxPrice);
+      if (free) {
+        statEl.textContent = T.statFree;
+        var label = statWrap.querySelector('span');
+        if (label) label.textContent = T.statFreeLabel;
+      } else if (paid.length) {
+        statEl.textContent = T.stat(money(Math.min.apply(null, paid.map(function (t) { return t.price; }))));
+      }
     }
+    if (leadEl && free && free.commission > 0) leadEl.textContent = T.lead(free.commission);
 
     if (networkEl) {
-      var base = items[0];
-      var tiers = items.filter(function (t) { return t.min > 1 && t.price < base.price; });
-      networkEl.hidden = !tiers.length;
-      if (tiers.length) networkEl.textContent = T.network(tiers, base);
+      var net = items.filter(function (t) { return t.min > 1; })[0];
+      networkEl.hidden = !net;
+      if (net) networkEl.textContent = T.network(net);
     }
   }
 
@@ -255,7 +298,7 @@
     if (!document.getElementById('tariffs') || !window.fetch) return;
     var ctrl = window.AbortController ? new AbortController() : null;
     var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 8000) : null;
-    fetch(TARIFFS_URL, { headers: { Accept: 'application/json' }, credentials: 'omit', signal: ctrl ? ctrl.signal : undefined })
+    fetch(TARIFFS_URL, { headers: { Accept: 'application/json', 'Accept-Language': lang }, credentials: 'omit', signal: ctrl ? ctrl.signal : undefined })
       .then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
       .then(function (data) {
         var items = normalize(data);
