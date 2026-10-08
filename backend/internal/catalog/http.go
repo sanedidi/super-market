@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
+	"github.com/sanedidi/super-market/backend/internal/plans"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 )
 
@@ -84,9 +85,9 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/store/price-documents/{id}/post", m.postPriceDoc)
 
 		r.With(prices).Get("/store/promotions", m.listPromotions)
-		r.Post("/store/promotions", m.createPromotion)
+		r.With(m.auth.Feature(plans.FeaturePromotions)).Post("/store/promotions", m.createPromotion)
 		r.With(prices).Get("/store/promotions/{id}", m.getPromotion)
-		r.Patch("/store/promotions/{id}", m.updatePromotion)
+		r.With(m.auth.Feature(plans.FeaturePromotions)).Patch("/store/promotions/{id}", m.updatePromotion)
 		r.Delete("/store/promotions/{id}", m.storeDel(m.svc.DeletePromotion))
 	})
 }

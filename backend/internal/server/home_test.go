@@ -263,6 +263,11 @@ func TestStoreShowcase(t *testing.T) {
 	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
 	cola, sugar := catalogBasics(t, a, adminTok)
 	tok, store := setupNetwork(t, a, adminTok, "+998900000002")
+	network := sqlStr(t, pool, `SELECT network_id::text FROM stores WHERE id = $1`, store)
+	// Сеть на «Старте» с пробным «Бизнесом».
+	if _, err := pool.Exec(ctx, `UPDATE networks SET plan_key = 'start', plan_trial_until = current_date + 13 WHERE id = $1`, network); err != nil {
+		t.Fatal(err)
+	}
 	a.expect(a.do("PATCH", "/store/stores/"+store, tok, map[string]any{"lat": 41.2995, "lng": 69.2401}), 200, "store")
 	wh := a.expect(a.do("GET", "/store/warehouses?store_id="+store, tok, nil), 200, "wh").items()[0]["id"].(string)
 	doc := a.expect(a.do("POST", "/store/inventory/documents", tok, map[string]any{"type": "posting", "warehouse_id": wh,
@@ -370,35 +375,44 @@ func TestStoreShowcase(t *testing.T) {
 		t.Fatalf("preview = %v", pv.Body)
 	}
 
-	// Сеть выбирает «Старт» — своя витрина скрыта, но не удалена; «Про» —
+	// Сеть выбирает «Старт» — своя витрина скрыта, но не удалена; «Сеть» —
 	// возвращается.
 	a.expect(a.do("POST", "/store/showcase/plan", tok, map[string]any{"plan": "start"}), 200, "start")
-	if _, err := pool.Exec(ctx, `UPDATE networks SET showcase_trial_until = current_date - 1`); err != nil {
+	if _, err := pool.Exec(ctx, `UPDATE networks SET plan_trial_until = current_date - 1`); err != nil {
 		t.Fatal(err)
 	}
 	a.expect(a.do("POST", "/store/showcase/plan", tok, map[string]any{"plan": "start"}), 200, "start again")
 	if h := home(); len(h) < 5 {
 		t.Fatalf("start should show template: %v", h)
 	}
-	a.expect(a.do("POST", "/store/showcase/plan", tok, map[string]any{"plan": "pro"}), 200, "pro")
+	// «Сеть» — от 3 магазинов: сама сеть выбрать не может, назначает супер-админ.
+	if e := a.expect(a.do("POST", "/store/showcase/plan", tok, map[string]any{"plan": "network"}), 409, "network plan needs 3 stores"); e.Body["error"].(map[string]any)["code"] != "plan_min_stores" {
+		t.Fatalf("min stores = %v", e.Body)
+	}
+	a.expect(a.do("PATCH", "/admin/billing/networks/"+network, adminTok, map[string]any{"plan_key": "network"}), 200, "network plan")
 	if h := home(); len(h) != 2 || h[0]["type"] != "banners" {
 		t.Fatalf("pro home = %v", h)
 	}
 	a.expect(a.do("PUT", "/store/home/draft?store_id="+store, tok, map[string]any{"blocks": []any{sched}}), 200, "per store draft on pro")
 
-	// Тарифы правит супер-админ.
-	plans := a.expect(a.do("GET", "/admin/showcase/plans", adminTok, nil), 200, "plans").items()
-	if len(plans) != 3 || plans[1]["shelves"].(float64) != 2 {
+	// Тарифы правит супер-админ: лимит полок «Бизнеса» снят — витрина видит сразу.
+	plans := a.expect(a.do("GET", "/admin/plans", adminTok, nil), 200, "plans").items()
+	if len(plans) != 4 || plans[2]["key"] != "business" || plans[2]["limits"].(map[string]any)["shelves"].(float64) != 2 {
 		t.Fatalf("plans = %v", plans)
 	}
-	p := a.expect(a.do("PATCH", "/admin/showcase/plans/business", adminTok, map[string]any{"shelves": -1, "price_uzs": "199000"}), 200, "plan")
-	if p.Body["shelves"] != nil || p.str("price_uzs") != "199000.00" {
+	p := a.expect(a.do("PATCH", "/admin/plans/business", adminTok, map[string]any{
+		"limits": map[string]any{"stores": 1, "registers": 3, "banners": 3, "promos": 1, "ads": 2, "shelves": nil}, "price_uzs": "199000"}), 200, "plan")
+	if _, ok := p.Body["limits"].(map[string]any)["shelves"]; ok || p.str("price_uzs") != "199000.00" {
 		t.Fatalf("plan = %v", p.Body)
+	}
+	a.expect(a.do("PATCH", "/admin/billing/networks/"+network, adminTok, map[string]any{"plan_key": "business"}), 200, "business plan")
+	if pl := a.expect(a.do("GET", "/store/home", tok, nil), 200, "showcase").Body["plan"].(map[string]any)["effective"].(map[string]any); pl["shelves"] != nil || pl["price_uzs"] != "199000.00" {
+		t.Fatalf("store plan = %v", pl)
 	}
 }
 
 // TestHomeStats — показы и нажатия из приложения, заказы с главной; по
-// тарифу «Бизнес» — только показы и нажатия, «Про» — всё, «Старт» — нет.
+// тарифу «Бизнес» — только показы и нажатия, «Сеть» — всё, «Старт» — нет.
 func TestHomeStats(t *testing.T) {
 	pool := freshDB(t)
 	ctx := context.Background()
@@ -406,6 +420,9 @@ func TestHomeStats(t *testing.T) {
 	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
 	shop := newAdminShop(t, a, adminTok, "+998900000002", "+998900000077")
 	owner, _ := a.login("+998900000002", identity.AppStore)
+	if _, err := pool.Exec(ctx, `UPDATE networks SET plan_key = 'start', plan_trial_until = current_date + 13 WHERE id = $1`, shop.network); err != nil {
+		t.Fatal(err)
+	}
 	hits := "a0000000-0000-4000-8000-000000000004"
 	deals := "a0000000-0000-4000-8000-000000000005"
 
@@ -441,7 +458,7 @@ func TestHomeStats(t *testing.T) {
 		t.Fatalf("basic top = %v", top)
 	}
 
-	a.expect(a.do("POST", "/store/showcase/plan", owner, map[string]any{"plan": "pro"}), 200, "pro")
+	a.expect(a.do("PATCH", "/admin/billing/networks/"+shop.network, adminTok, map[string]any{"plan_key": "network"}), 200, "network plan")
 	f := a.expect(a.do("GET", "/store/home/stats?days=30", owner, nil), 200, "full")
 	if f.str("level") != "full" || f.Body["orders"].(float64) != 1 || f.str("revenue") != "30000.00" || len(f.Body["series"].([]any)) != 1 {
 		t.Fatalf("full = %v", f.Body)
@@ -458,7 +475,7 @@ func TestHomeStats(t *testing.T) {
 	}
 
 	// «Старт» после пробного — статистики нет.
-	if _, err := pool.Exec(ctx, `UPDATE networks SET showcase_trial_until = current_date - 1`); err != nil {
+	if _, err := pool.Exec(ctx, `UPDATE networks SET plan_trial_until = current_date - 1`); err != nil {
 		t.Fatal(err)
 	}
 	a.expect(a.do("POST", "/store/showcase/plan", owner, map[string]any{"plan": "start"}), 200, "start")

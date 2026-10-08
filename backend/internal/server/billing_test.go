@@ -51,25 +51,38 @@ func TestBillingPayoutsReports(t *testing.T) {
 	}
 
 	// ---- Тарифы и настройки.
-	tariffs := a.expect(a.do("GET", "/admin/billing/tariffs", adminTok, nil), 200, "tariffs").items()
-	if len(tariffs) != 2 || tariffs[0]["price_per_store"] != "20.00" || tariffs[1]["price_per_store"] != "15.00" {
-		t.Fatalf("tariffs = %v", tariffs)
+	plans := a.expect(a.do("GET", "/admin/plans", adminTok, nil), 200, "plans").items()
+	if len(plans) != 4 || plans[0]["key"] != "free" || plans[1]["price_uzs"] != "149000.00" || plans[3]["min_stores"].(float64) != 3 {
+		t.Fatalf("plans = %v", plans)
 	}
-	// Тарифы для сайта — без входа, только действующие, с диапазоном магазинов.
+	// Тарифы для сайта — без входа, только действующие и открытые, функции полным списком.
 	pub := a.expect(a.do("GET", "/public/tariffs", "", nil), 200, "public tariffs").items()
-	if len(pub) != 2 || pub[0]["min_stores"] != float64(1) || pub[0]["max_stores"] != float64(2) ||
-		pub[0]["price_per_store"] != "20.00" || pub[1]["max_stores"] != nil || pub[1]["currency"] != "USD" {
+	if len(pub) != 4 || pub[0]["currency"] != "UZS" || pub[0]["order_commission"] != "5.00" || len(pub[0]["features"].([]any)) == 0 {
 		t.Fatalf("public tariffs = %v", pub)
 	}
-	a.expect(a.do("POST", "/admin/billing/tariffs", adminTok, map[string]any{"name": "Дубль", "min_stores": 3, "price_per_store": 10}), 409, "duplicate tariff")
-	a.expect(a.do("POST", "/admin/billing/tariffs", tok, map[string]any{"name": "x", "min_stores": 9, "price_per_store": 1}), 403, "store token on admin billing")
-	st := a.expect(a.do("PUT", "/admin/billing/settings", adminTok, map[string]any{"usd_rate": "12500", "grace_days": 5}), 200, "settings")
-	if st.str("usd_rate") != "12500.0000" || st.Body["grace_days"].(float64) != 5 {
+	a.expect(a.do("PATCH", "/admin/plans/free", adminTok, map[string]any{"is_public": false}), 200, "hide free")
+	if pub := a.expect(a.do("GET", "/public/tariffs", "", nil), 200, "public tariffs").items(); len(pub) != 3 {
+		t.Fatalf("hidden plan on site: %v", pub)
+	}
+	a.expect(a.do("PATCH", "/admin/plans/free", adminTok, map[string]any{"is_public": true}), 200, "show free")
+	a.expect(a.do("POST", "/admin/plans", adminTok, map[string]any{"key": "start", "name": "Дубль"}), 409, "duplicate plan")
+	a.expect(a.do("POST", "/admin/plans", tok, map[string]any{"key": "x1", "name": "x"}), 403, "store token on admin plans")
+	st := a.expect(a.do("PUT", "/admin/billing/settings", adminTok, map[string]any{"grace_days": 5, "trial_days": 7}), 200, "settings")
+	if st.Body["grace_days"].(float64) != 5 || st.Body["trial_days"].(float64) != 7 || st.str("trial_plan") != "business" {
 		t.Fatalf("settings = %v", st.Body)
 	}
+	a.expect(a.do("PUT", "/admin/billing/settings", adminTok, map[string]any{"trial_plan": "nope"}), 400, "unknown trial plan")
+	// Сеть магазинов сразу на «Сети»; супер-админ переводит её на «Старт».
 	nb := a.expect(a.do("GET", "/admin/billing/networks/"+network, adminTok, nil), 200, "network billing")
-	if nb.Body["stores_count"].(float64) != 1 || nb.str("price_per_store") != "20.00" || nb.str("monthly_usd") != "20.00" {
+	if nb.str("plan_key") != "network" || nb.str("price_per_store") != "199000.00" {
 		t.Fatalf("network billing = %v", nb.Body)
+	}
+	nb = a.expect(a.do("PATCH", "/admin/billing/networks/"+network, adminTok, map[string]any{"plan_key": "start", "clear_trial": true}), 200, "start plan")
+	if nb.Body["stores_count"].(float64) != 1 || nb.str("plan_key") != "start" || nb.str("price_per_store") != "149000.00" || nb.str("monthly_uzs") != "149000.00" || nb.Body["trial_until"] != nil {
+		t.Fatalf("network billing = %v", nb.Body)
+	}
+	if mine := a.expect(a.do("GET", "/store/plan", tok, nil), 200, "my plan"); mine.str("current", "key") != "start" || mine.Body["can_change"] != true || mine.Body["stores_count"].(float64) != 1 {
+		t.Fatalf("my plan = %v", mine.Body)
 	}
 
 	// Новая сеть платит со следующего месяца: счёт за текущий не выставляется.
@@ -84,7 +97,7 @@ func TestBillingPayoutsReports(t *testing.T) {
 		t.Fatal("invoice generated twice")
 	}
 	invs := a.expect(a.do("GET", "/store/billing/invoices", tok, nil), 200, "store invoices").items()
-	if len(invs) != 1 || invs[0]["amount_usd"] != "20.00" || invs[0]["amount_uzs"] != "250000.00" || invs[0]["status"] != "unpaid" {
+	if len(invs) != 1 || invs[0]["amount_uzs"] != "149000.00" || invs[0]["currency"] != "UZS" || invs[0]["plan_key"] != "start" || invs[0]["status"] != "unpaid" {
 		t.Fatalf("invoices = %v", invs)
 	}
 	invoice := invs[0]["id"].(string)
@@ -122,7 +135,7 @@ func TestBillingPayoutsReports(t *testing.T) {
 		t.Fatal(err)
 	}
 	bal := a.expect(a.do("GET", "/store/balance", tok, nil), 200, "balance")
-	if bal.str("available") != "250000.00" || bal.str("pending") != "70000.00" {
+	if bal.str("available") != "351000.00" || bal.str("pending") != "70000.00" {
 		t.Fatalf("balance = %v", bal.Body)
 	}
 	if s := sqlStr(t, pool, `SELECT status || ':' || paid_via FROM subscription_invoices WHERE id = $1`, invoice); s != "paid:balance" {
@@ -136,18 +149,18 @@ func TestBillingPayoutsReports(t *testing.T) {
 	payout := func(amount any) resp {
 		return a.do("POST", "/store/payouts", tok, map[string]any{"amount": amount, "requisites": "8600 **** 1234"})
 	}
-	a.expect(payout(300000), 409, "payout over balance")
+	a.expect(payout(400000), 409, "payout over balance")
 	p1 := a.expect(payout(200000), 201, "payout")
 	a.expect(payout(1000), 409, "second payout in a week")
-	if b := a.expect(a.do("GET", "/store/balance", tok, nil), 200, "balance").str("available"); b != "50000.00" {
+	if b := a.expect(a.do("GET", "/store/balance", tok, nil), 200, "balance").str("available"); b != "151000.00" {
 		t.Fatalf("balance after payout = %s", b)
 	}
 	a.expect(a.do("POST", "/admin/payouts/"+p1.str("id")+"/reject", adminTok, map[string]any{}), 400, "reject without note")
 	a.expect(a.do("POST", "/admin/payouts/"+p1.str("id")+"/reject", adminTok, map[string]any{"note": "неверная карта"}), 200, "reject")
-	if b := a.expect(a.do("GET", "/store/balance", tok, nil), 200, "balance").str("available"); b != "250000.00" {
+	if b := a.expect(a.do("GET", "/store/balance", tok, nil), 200, "balance").str("available"); b != "351000.00" {
 		t.Fatalf("balance after reject = %s", b)
 	}
-	p2 := a.expect(payout(250000), 201, "payout after reject")
+	p2 := a.expect(payout(351000), 201, "payout after reject")
 	if q := a.expect(a.do("GET", "/admin/payouts?status=requested", adminTok, nil), 200, "payout queue").items(); len(q) != 1 {
 		t.Fatalf("payout queue = %v", q)
 	}
@@ -161,15 +174,20 @@ func TestBillingPayoutsReports(t *testing.T) {
 	}
 
 	// Индивидуальная цена сети.
-	nb = a.expect(a.do("PATCH", "/admin/billing/networks/"+network, adminTok, map[string]any{"custom_price_per_store": 5}), 200, "custom price")
-	if nb.str("price_per_store") != "5.00" {
+	nb = a.expect(a.do("PATCH", "/admin/billing/networks/"+network, adminTok, map[string]any{"custom_price_uzs": 50000}), 200, "custom price")
+	if nb.str("price_per_store") != "50000.00" || nb.str("custom_price_uzs") != "50000.00" {
 		t.Fatalf("custom price = %v", nb.Body)
 	}
 	nb = a.expect(a.do("PATCH", "/admin/billing/networks/"+network, adminTok, map[string]any{"clear_custom_price": true}), 200, "clear price")
-	if nb.str("price_per_store") != "20.00" {
+	if nb.str("price_per_store") != "149000.00" {
 		t.Fatalf("cleared price = %v", nb.Body)
 	}
 
+	// ---- Отчёты: прибыль и движение денег — на «Старте» их нет, на «Бизнесе» есть.
+	if e := a.expect(a.do("GET", "/store/reports/profit-loss", tok, nil), 403, "p&l on start"); e.Body["error"].(map[string]any)["details"].(map[string]any)["need_plan"] != "business" {
+		t.Fatalf("p&l on start = %v", e.Body)
+	}
+	a.expect(a.do("PATCH", "/admin/billing/networks/"+network, adminTok, map[string]any{"plan_key": "business"}), 200, "business plan")
 	// ---- Отчёты: продажа 2 колы (15 000, себестоимость 10 000), аренда 20 000, списание 1 колы.
 	methods := a.expect(a.do("GET", "/store/finance/payment-methods?store_id="+store, tok, nil), 200, "methods").items()
 	var cash string
@@ -203,8 +221,8 @@ func TestBillingPayoutsReports(t *testing.T) {
 	if exp := pl.Body["expenses"].([]any); len(exp) != 1 || exp[0].(map[string]any)["amount"] != "20000.00" {
 		t.Fatalf("expenses = %v", exp)
 	}
-	// 10 000 − 10 000 − 20 000 − подписка 250 000.
-	if pl.str("platform_subscription") != "250000.00" || pl.str("net_profit") != "-270000.00" {
+	// 10 000 − 10 000 − 20 000 − подписка 149 000.
+	if pl.str("platform_subscription") != "149000.00" || pl.str("net_profit") != "-169000.00" {
 		t.Fatalf("net = %v / %v", pl.str("platform_subscription"), pl.str("net_profit"))
 	}
 	// По магазину подписка (расход сети) не учитывается.

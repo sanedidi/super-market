@@ -122,7 +122,7 @@ func (s *Service) CrowdVerify(ctx context.Context, p *identity.Principal, in Cro
 		return CrowdCourierCard{}, apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
 	}
 	var enabled bool
-	err := s.pool.QueryRow(ctx, `SELECT crowd_enabled FROM stores WHERE id = $1 AND network_id = $2`, in.StoreID, p.NetworkID).Scan(&enabled)
+	err := s.pool.QueryRow(ctx, `SELECT crowd_enabled AND network_has_feature(network_id, 'crowd') FROM stores WHERE id = $1 AND network_id = $2`, in.StoreID, p.NetworkID).Scan(&enabled)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return CrowdCourierCard{}, apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
 	}

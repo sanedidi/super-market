@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/sanedidi/super-market/backend/internal/plans"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
@@ -168,13 +169,17 @@ func (s *Service) UpdateRole(ctx context.Context, p *Principal, id string, in Ro
 	}
 
 	var r Role
-	err := s.pool.QueryRow(ctx, `
+	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		return plans.Guard(ctx, tx, p.NetworkID, staffLimits, func() error {
+			return tx.QueryRow(ctx, `
 		UPDATE roles SET
 			name        = COALESCE($3, name),
 			permissions = CASE WHEN $4::boolean THEN $5::text[] ELSE permissions END
 		WHERE id = $1 AND network_id = $2 AND NOT is_owner
 		RETURNING id, name, permissions, is_owner, created_at`,
-		id, p.NetworkID, name, in.Permissions != nil, perms).Scan(&r.ID, &r.Name, &r.Permissions, &r.IsOwner, &r.CreatedAt)
+				id, p.NetworkID, name, in.Permissions != nil, perms).Scan(&r.ID, &r.Name, &r.Permissions, &r.IsOwner, &r.CreatedAt)
+		})
+	})
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return Role{}, apperr.NotFound("роль не найдена или это роль владельца").Uz("rol topilmadi yoki bu ega roli")
@@ -185,6 +190,9 @@ func (s *Service) UpdateRole(ctx context.Context, p *Principal, id string, in Ro
 }
 
 // ------------------------------------------------------------ сотрудники
+
+// staffLimits — лимиты тарифа, которые меняют сотрудники и роли.
+var staffLimits = []string{plans.LimitStaff, plans.LimitCouriers}
 
 const employeeSelect = `
 	SELECT e.id, e.user_id, u.phone, e.full_name, e.role_id, r.name, r.is_owner, e.status, e.all_stores,
@@ -261,31 +269,33 @@ func (s *Service) CreateEmployee(ctx context.Context, p *Principal, in EmployeeI
 
 	var out Employee
 	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		if err := s.checkAssignableRole(ctx, tx, p.NetworkID, *in.RoleID); err != nil {
-			return err
-		}
-		userID, err := upsertUser(ctx, tx, ph, fullName)
-		if err != nil {
-			return err
-		}
-		var id string
-		err = tx.QueryRow(ctx, `
-			INSERT INTO employees (network_id, user_id, role_id, full_name, all_stores)
-			VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-			p.NetworkID, userID, *in.RoleID, fullName, allStores).Scan(&id)
-		if db.IsUniqueViolation(err, "employees_user_id_key") {
-			return apperr.Conflict("employee_exists", "этот номер уже работает в сети").Uz("bu raqam allaqachon tarmoqda ishlaydi")
-		}
-		if err != nil {
-			return err
-		}
-		if in.StoreIDs != nil {
-			if err := setEmployeeStores(ctx, tx, p.NetworkID, id, *in.StoreIDs); err != nil {
+		return plans.Guard(ctx, tx, p.NetworkID, staffLimits, func() error {
+			if err := s.checkAssignableRole(ctx, tx, p.NetworkID, *in.RoleID); err != nil {
 				return err
 			}
-		}
-		out, err = s.getEmployee(ctx, tx, p.NetworkID, id)
-		return err
+			userID, err := upsertUser(ctx, tx, ph, fullName)
+			if err != nil {
+				return err
+			}
+			var id string
+			err = tx.QueryRow(ctx, `
+			INSERT INTO employees (network_id, user_id, role_id, full_name, all_stores)
+			VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+				p.NetworkID, userID, *in.RoleID, fullName, allStores).Scan(&id)
+			if db.IsUniqueViolation(err, "employees_user_id_key") {
+				return apperr.Conflict("employee_exists", "этот номер уже работает в сети").Uz("bu raqam allaqachon tarmoqda ishlaydi")
+			}
+			if err != nil {
+				return err
+			}
+			if in.StoreIDs != nil {
+				if err := setEmployeeStores(ctx, tx, p.NetworkID, id, *in.StoreIDs); err != nil {
+					return err
+				}
+			}
+			out, err = s.getEmployee(ctx, tx, p.NetworkID, id)
+			return err
+		})
 	})
 	return out, err
 }
@@ -311,55 +321,57 @@ func (s *Service) UpdateEmployee(ctx context.Context, p *Principal, id string, i
 
 	var out Employee
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		cur, err := s.getEmployee(ctx, tx, p.NetworkID, id)
-		if err != nil {
-			return err
-		}
-		if cur.IsOwner && (in.RoleID != nil || in.Status != nil || in.AllStores != nil || in.StoreIDs != nil) {
-			return apperr.Forbidden("у владельца можно менять только имя").Uz("egasining faqat ismini oʻzgartirish mumkin")
-		}
-		if in.RoleID != nil {
-			if err := s.checkAssignableRole(ctx, tx, p.NetworkID, *in.RoleID); err != nil {
-				return err
-			}
-		}
-		if in.AllStores != nil && *in.AllStores != cur.AllStores {
-			if err := checkStoreGrant(p, *in.AllStores, cur.AllStores); err != nil {
-				return err
-			}
-		}
-		if in.StoreIDs != nil {
-			ids, err := mergeStoreIDs(p, cur.StoreIDs, *in.StoreIDs)
+		return plans.Guard(ctx, tx, p.NetworkID, staffLimits, func() error {
+			cur, err := s.getEmployee(ctx, tx, p.NetworkID, id)
 			if err != nil {
 				return err
 			}
-			in.StoreIDs = &ids
-		}
-		if _, err := tx.Exec(ctx, `
+			if cur.IsOwner && (in.RoleID != nil || in.Status != nil || in.AllStores != nil || in.StoreIDs != nil) {
+				return apperr.Forbidden("у владельца можно менять только имя").Uz("egasining faqat ismini oʻzgartirish mumkin")
+			}
+			if in.RoleID != nil {
+				if err := s.checkAssignableRole(ctx, tx, p.NetworkID, *in.RoleID); err != nil {
+					return err
+				}
+			}
+			if in.AllStores != nil && *in.AllStores != cur.AllStores {
+				if err := checkStoreGrant(p, *in.AllStores, cur.AllStores); err != nil {
+					return err
+				}
+			}
+			if in.StoreIDs != nil {
+				ids, err := mergeStoreIDs(p, cur.StoreIDs, *in.StoreIDs)
+				if err != nil {
+					return err
+				}
+				in.StoreIDs = &ids
+			}
+			if _, err := tx.Exec(ctx, `
 			UPDATE employees SET
 				full_name  = COALESCE($3, full_name),
 				role_id    = COALESCE($4, role_id),
 				status     = COALESCE($5, status),
 				all_stores = COALESCE($6, all_stores)
 			WHERE id = $1 AND network_id = $2`,
-			id, p.NetworkID, fullName, in.RoleID, in.Status, in.AllStores); err != nil {
-			return err
-		}
-		if in.StoreIDs != nil {
-			if err := setEmployeeStores(ctx, tx, p.NetworkID, id, *in.StoreIDs); err != nil {
+				id, p.NetworkID, fullName, in.RoleID, in.Status, in.AllStores); err != nil {
 				return err
 			}
-		}
-		if in.Status != nil && *in.Status == "inactive" {
-			// Заблокированный сотрудник сразу теряет все сессии.
-			if _, err := tx.Exec(ctx, `
+			if in.StoreIDs != nil {
+				if err := setEmployeeStores(ctx, tx, p.NetworkID, id, *in.StoreIDs); err != nil {
+					return err
+				}
+			}
+			if in.Status != nil && *in.Status == "inactive" {
+				// Заблокированный сотрудник сразу теряет все сессии.
+				if _, err := tx.Exec(ctx, `
 				UPDATE sessions SET revoked_at = now()
 				WHERE user_id = $1 AND app = 'store' AND revoked_at IS NULL`, cur.UserID); err != nil {
-				return err
+					return err
+				}
 			}
-		}
-		out, err = s.getEmployee(ctx, tx, p.NetworkID, id)
-		return err
+			out, err = s.getEmployee(ctx, tx, p.NetworkID, id)
+			return err
+		})
 	})
 	return out, err
 }

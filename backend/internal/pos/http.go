@@ -12,6 +12,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/debts"
 	"github.com/sanedidi/super-market/backend/internal/finance"
 	"github.com/sanedidi/super-market/backend/internal/identity"
+	"github.com/sanedidi/super-market/backend/internal/plans"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/sales"
@@ -45,10 +46,11 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/pos/returns", m.createReturn)
 		r.Post("/pos/returns/{id}/fiscal", m.returnFiscal)
 		// Долги покупателей: покупатель по номеру, код подтверждения, погашение.
-		r.Get("/pos/debtors", m.debtorLookup)
-		r.Post("/pos/debtors/code", m.debtorCode)
-		r.Post("/pos/debtors/verify", m.debtorVerify)
-		r.Post("/pos/debt-payments", m.debtPayment)
+		debtsOn := identity.RequireFeature(m.svc.pool, m.log, plans.FeatureDebts)
+		r.With(debtsOn).Get("/pos/debtors", m.debtorLookup)
+		r.With(debtsOn).Post("/pos/debtors/code", m.debtorCode)
+		r.With(debtsOn).Post("/pos/debtors/verify", m.debtorVerify)
+		r.With(debtsOn).Post("/pos/debt-payments", m.debtPayment)
 		r.Put("/pos/quick-keys", m.setQuickKeys)
 	})
 	// Панель магазина: кассы, ПИНы, смены, налоговые поля, коды.

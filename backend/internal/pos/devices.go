@@ -18,7 +18,9 @@ import (
 
 	"github.com/sanedidi/super-market/backend/internal/debts"
 	"github.com/sanedidi/super-market/backend/internal/identity"
+	"github.com/sanedidi/super-market/backend/internal/plans"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
+	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/sales"
 )
@@ -135,8 +137,17 @@ func (s *Service) CreateDevice(ctx context.Context, p *identity.Principal, in De
 		return Device{}, apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
 	}
 	var id string
-	if err := s.pool.QueryRow(ctx, `INSERT INTO pos_devices (network_id, store_id, name) VALUES ($1, $2, $3) RETURNING id`,
-		p.NetworkID, in.StoreID, in.Name).Scan(&id); err != nil {
+	if err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		// Сколько касс можно — по тарифу сети (блокировка сети — от гонки двух запросов).
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM networks WHERE id = $1 FOR UPDATE`, p.NetworkID); err != nil {
+			return err
+		}
+		if err := plans.CheckAdd(ctx, tx, p.NetworkID, plans.LimitRegisters); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `INSERT INTO pos_devices (network_id, store_id, name) VALUES ($1, $2, $3) RETURNING id`,
+			p.NetworkID, in.StoreID, in.Name).Scan(&id)
+	}); err != nil {
 		return Device{}, err
 	}
 	return s.NewCode(ctx, p, id)

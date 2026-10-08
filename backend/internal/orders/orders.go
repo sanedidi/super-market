@@ -136,7 +136,7 @@ const orderSelect = `
 	       o.courier_id, COALESCE(ce.full_name, CASE WHEN o.crowd_courier_id IS NOT NULL THEN COALESCE(NULLIF(cc.full_name, ''), loc('Курьер по пути', 'Yoʻl-yoʻlakay kuryer')) END),
 	       o.eta_at, o.cancel_reason, o.fiscal_status, o.created_at,
 	       o.crowd_courier_id, cu.phone, o.crowd_pickup_until,
-	       (o.status = 'picked' AND o.courier_id IS NULL AND o.crowd_courier_id IS NULL AND s.crowd_enabled
+	       (o.status = 'picked' AND o.courier_id IS NULL AND o.crowd_courier_id IS NULL AND (s.crowd_enabled AND network_has_feature(s.network_id, 'crowd'))
 	        AND o.payment_provider <> 'cash' AND o.picked_at > now() - make_interval(mins => (SELECT wait_minutes FROM crowd_settings)))
 	FROM orders o JOIN stores s ON s.id = o.store_id
 	LEFT JOIN employees ce ON ce.id = o.courier_id
@@ -425,7 +425,7 @@ func markDelivered(ctx context.Context, tx pgx.Tx, id, actor string, from ...str
 	if _, err := tx.Exec(ctx, `UPDATE orders SET status = 'delivered', delivered_at = now(), eta_at = NULL WHERE id = $1`, id); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE balance_entries SET status = 'available' WHERE order_id = $1 AND kind = 'order'`, id); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE balance_entries SET status = 'available' WHERE order_id = $1 AND kind IN ('order', 'commission')`, id); err != nil {
 		return err
 	}
 	return addHistory(ctx, tx, id, StatusDelivered, actor, "")
@@ -580,7 +580,7 @@ func (s *Service) cancelLocked(ctx context.Context, tx pgx.Tx, id, status, actor
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM balance_entries WHERE order_id = $1 AND kind = 'order' AND status = 'pending'`, id); err != nil {
+	if _, err := tx.Exec(ctx, `DELETE FROM balance_entries WHERE order_id = $1 AND kind IN ('order', 'commission') AND status = 'pending'`, id); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE orders SET status = $2, cancelled_at = now(), cancel_reason = $3 WHERE id = $1`,
@@ -737,6 +737,14 @@ func (s *Service) MarkPaid(ctx context.Context, tx pgx.Tx, orderID string) error
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO balance_entries (network_id, store_id, order_id, kind, status, amount)
 		VALUES ($1, $2, $3, 'order', 'pending', $4::numeric)`, o.NetworkID, o.StoreID, orderID, o.Total); err != nil {
+		return err
+	}
+	// Комиссия платформы по тарифу сети (на бесплатном тарифе) — сразу
+	// минусом к деньгам заказа; при отмене снимается вместе с ними.
+	if _, err := tx.Exec(ctx, `INSERT INTO balance_entries (network_id, store_id, order_id, kind, status, amount, note)
+		SELECT $1, $2, $3, 'commission', 'pending', -round($4::numeric * p.order_commission / 100, 2),
+		       'Комиссия ' || trim(trailing '.' FROM trim(trailing '0' FROM p.order_commission::text)) || '% по тарифу «' || p.name || '»'
+		FROM plans p WHERE p.key = network_plan($1) AND p.order_commission > 0`, o.NetworkID, o.StoreID, orderID, o.Total); err != nil {
 		return err
 	}
 	if err := addHistory(ctx, tx, orderID, StatusPaid, "payment", ""); err != nil {

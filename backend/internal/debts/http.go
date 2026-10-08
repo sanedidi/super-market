@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
+	"github.com/sanedidi/super-market/backend/internal/plans"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 )
@@ -24,7 +25,7 @@ func NewModule(svc *Service, auth *identity.Authenticator, log *slog.Logger) *Mo
 
 func (m *Module) Routes(r chi.Router) {
 	r.Group(func(r chi.Router) {
-		r.Use(m.auth.Require(identity.AppStore))
+		r.Use(m.auth.Require(identity.AppStore), m.auth.Feature(plans.FeatureDebts))
 		r.Get("/store/debtors", m.list)
 		r.Get("/store/debtors/summary", m.summary)
 		r.Get("/store/debtors/{id}", m.card)

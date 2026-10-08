@@ -13,6 +13,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/catalog"
 	"github.com/sanedidi/super-market/backend/internal/finance"
 	"github.com/sanedidi/super-market/backend/internal/identity"
+	"github.com/sanedidi/super-market/backend/internal/plans"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
@@ -45,6 +46,11 @@ type Network struct {
 	OwnerTempPassword bool       `json:"owner_temp_password"`
 	OwnerPasswordAt   *time.Time `json:"owner_password_changed_at"`
 	OwnerLastLoginAt  *time.Time `json:"owner_last_login_at"`
+	// Тариф: выбранный и действующий сейчас (пробный, если идёт).
+	PlanKey          string  `json:"plan_key"`
+	PlanName         string  `json:"plan_name"`
+	EffectivePlanKey string  `json:"effective_plan_key"`
+	PlanTrialUntil   *string `json:"plan_trial_until"`
 }
 
 const networkSelect = `
@@ -53,7 +59,9 @@ const networkSelect = `
 	       (SELECT count(*) FROM stores s WHERE s.network_id = n.id)::int,
 	       n.created_at,
 	       COALESCE(el.login, ''), COALESCE(el.must_change_password, false),
-	       el.password_changed_at, el.last_login_at
+	       el.password_changed_at, el.last_login_at,
+	       n.plan_key, (SELECT loc(pl.name, pl.name_uz) FROM plans pl WHERE pl.key = n.plan_key), network_plan(n.id),
+	       to_char(n.plan_trial_until, 'YYYY-MM-DD')
 	FROM networks n
 	LEFT JOIN roles r     ON r.network_id = n.id AND r.is_owner
 	LEFT JOIN employees e ON e.role_id = r.id
@@ -68,6 +76,9 @@ type CreateNetworkInput struct {
 	// Логин и временный пароль владельца для панели и «SM Магазин».
 	OwnerLogin    string `json:"owner_login"`
 	OwnerPassword string `json:"owner_password"`
+	// Тариф сети; пусто — одиночному «Бесплатный» (с пробным периодом),
+	// сети магазинов — «Сеть».
+	PlanKey string `json:"plan_key"`
 }
 
 // CreateNetwork создаёт сеть и её владельца (супер-админ).
@@ -86,8 +97,15 @@ func (s *Service) CreateNetwork(ctx context.Context, in CreateNetworkInput) (Net
 	var out Network
 	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		var id string
-		if err := tx.QueryRow(ctx, `INSERT INTO networks (name, kind) VALUES ($1, $2) RETURNING id`,
-			name, in.Kind).Scan(&id); err != nil {
+		planKey := strings.TrimSpace(in.PlanKey)
+		if planKey == "" {
+			planKey = map[string]string{"single": "free", "chain": "network"}[in.Kind]
+		}
+		if p, err := plans.Get(ctx, tx, planKey); err != nil || !p.IsActive {
+			return apperr.Validation("plan_key: тариф не найден").Uz("plan_key: tarif topilmadi")
+		}
+		if err := tx.QueryRow(ctx, `INSERT INTO networks (name, kind, plan_key) VALUES ($1, $2, $3) RETURNING id`,
+			name, in.Kind, planKey).Scan(&id); err != nil {
 			return err
 		}
 		ownerID, err := identity.CreateOwner(ctx, tx, id, in.OwnerPhone, in.OwnerName)
@@ -101,6 +119,10 @@ func (s *Service) CreateNetwork(ctx context.Context, in CreateNetworkInput) (Net
 			return err
 		}
 		if err := finance.CreateMainCashbox(ctx, tx, id); err != nil {
+			return err
+		}
+		// Новая сеть начинает с пробного периода (тариф и срок — в настройках биллинга).
+		if err := plans.StartTrial(ctx, tx, id); err != nil {
 			return err
 		}
 		out, err = getNetwork(ctx, tx, id)
@@ -335,6 +357,10 @@ func (s *Service) CreateStore(ctx context.Context, p *identity.Principal, in Sto
 			if n > 0 {
 				return apperr.Conflict("store_limit", "у одиночного магазина может быть только один магазин").Uz("yakka doʻkonda faqat bitta doʻkon boʻlishi mumkin")
 			}
+		}
+		// Сколько магазинов можно — по тарифу сети.
+		if err := plans.CheckAdd(ctx, tx, p.NetworkID, plans.LimitStores); err != nil {
+			return err
 		}
 
 		var id string

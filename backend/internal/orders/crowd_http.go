@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
+	"github.com/sanedidi/super-market/backend/internal/plans"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 )
@@ -32,8 +33,8 @@ func (m *Module) crowdRoutes(r chi.Router) {
 	})
 	r.Group(func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppStore))
-		r.Post("/store/crowd/lookup", m.storeCrowdLookup)
-		r.Post("/store/crowd/verify", m.storeCrowdVerify)
+		r.With(m.auth.Feature(plans.FeatureCrowd)).Post("/store/crowd/lookup", m.storeCrowdLookup)
+		r.With(m.auth.Feature(plans.FeatureCrowd)).Post("/store/crowd/verify", m.storeCrowdVerify)
 		r.Get("/store/crowd/bonuses", m.storeCrowdBonuses)
 		r.Post("/store/orders/{id}/crowd-handover", m.storeCrowdHandover)
 		r.Post("/store/orders/{id}/crowd-release", m.act(m.svc.CrowdStoreRelease))

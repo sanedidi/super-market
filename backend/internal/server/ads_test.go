@@ -97,7 +97,10 @@ func TestBrandAds(t *testing.T) {
 		t.Fatalf("ads leaked into showcase stats: %v", bl)
 	}
 
-	// Сеть скрывает бренд — рекламы нет; на «Бизнес» выключить рекламу нельзя, на «Про» — можно.
+	// Сеть скрывает бренд — рекламы нет; на «Бизнес» выключить рекламу нельзя, на «Сеть» — можно.
+	if _, err := pool.Exec(ctx, `UPDATE networks SET plan_key = 'business' WHERE id = $1`, shop.network); err != nil {
+		t.Fatal(err)
+	}
 	n := a.expect(a.do("GET", "/store/ads", owner, nil), 200, "store ads")
 	if n.str("share_pct") != "25.00" || len(n.Body["campaigns"].([]any)) != 1 || n.Body["ads_max"].(float64) != 2 {
 		t.Fatalf("store ads = %v", n.Body)
@@ -111,7 +114,7 @@ func TestBrandAds(t *testing.T) {
 		t.Fatal("brand not back")
 	}
 	a.expect(a.do("PUT", "/store/ads", owner, map[string]any{"ads_max": 0}), 409, "business cannot")
-	a.expect(a.do("POST", "/store/showcase/plan", owner, map[string]any{"plan": "pro"}), 200, "pro")
+	a.expect(a.do("PATCH", "/admin/billing/networks/"+shop.network, adminTok, map[string]any{"plan_key": "network"}), 200, "network plan")
 	a.expect(a.do("PUT", "/store/ads", owner, map[string]any{"ads_max": 0}), 200, "pro off")
 	if adBlock() != nil {
 		t.Fatal("ads off on pro")
@@ -120,7 +123,7 @@ func TestBrandAds(t *testing.T) {
 	a.expect(a.do("POST", "/store/showcase/plan", owner, map[string]any{"plan": "start"}), 200, "start")
 
 	// Прошлый месяц: кампания за период 4 000 000 сум, все показы — в этой сети.
-	if _, err := pool.Exec(ctx, `UPDATE networks SET showcase_trial_until = current_date - 1, billing_from = date_trunc('month', now() AT TIME ZONE 'Asia/Tashkent')`); err != nil {
+	if _, err := pool.Exec(ctx, `UPDATE networks SET plan_trial_until = NULL, billing_from = date_trunc('month', now() AT TIME ZONE 'Asia/Tashkent')`); err != nil {
 		t.Fatal(err)
 	}
 	var p0, p1 time.Time
@@ -148,11 +151,11 @@ func TestBrandAds(t *testing.T) {
 		Scan(&invAmount, &invShare, &invStatus); err != nil {
 		t.Fatal(err)
 	}
-	// 4 000 000 × 25% = 1 000 000; счёт 1 магазин × 20 $ × 12 800 = 256 000 закрыт, 744 000 — на баланс.
-	if amount != "1000000.00" || applied != "256000.00" || credited != "744000.00" || invAmount != "0.00" || invShare != "256000.00" || invStatus != "paid" {
+	// 4 000 000 × 25% = 1 000 000; счёт 1 магазин × «Старт» 149 000 закрыт, 851 000 — на баланс.
+	if amount != "1000000.00" || applied != "149000.00" || credited != "851000.00" || invAmount != "0.00" || invShare != "149000.00" || invStatus != "paid" {
 		t.Fatalf("share = %s/%s/%s invoice = %s/%s/%s", amount, applied, credited, invAmount, invShare, invStatus)
 	}
-	if s := sqlStr(t, pool, `SELECT amount::text FROM balance_entries WHERE kind = 'ad_share'`); s != "744000.00" {
+	if s := sqlStr(t, pool, `SELECT amount::text FROM balance_entries WHERE kind = 'ad_share'`); s != "851000.00" {
 		t.Fatalf("balance = %s", s)
 	}
 	if _, err := app.Billing.GenerateInvoices(ctx, now); err != nil {
@@ -161,7 +164,7 @@ func TestBrandAds(t *testing.T) {
 	if s := sqlStr(t, pool, `SELECT count(*)::text FROM balance_entries WHERE kind = 'ad_share'`); s != "1" {
 		t.Fatalf("share credited twice: %s", s)
 	}
-	if r := a.expect(a.do("GET", "/store/ads", owner, nil), 200, "shares").Body["shares"].([]any); len(r) != 1 || r[0].(map[string]any)["credited"] != "744000.00" {
+	if r := a.expect(a.do("GET", "/store/ads", owner, nil), 200, "shares").Body["shares"].([]any); len(r) != 1 || r[0].(map[string]any)["credited"] != "851000.00" {
 		t.Fatalf("store shares = %v", r)
 	}
 

@@ -28,6 +28,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/notify"
 	"github.com/sanedidi/super-market/backend/internal/orders"
 	"github.com/sanedidi/super-market/backend/internal/payments"
+	"github.com/sanedidi/super-market/backend/internal/planapi"
 	"github.com/sanedidi/super-market/backend/internal/platform/config"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/platform/sms"
@@ -93,6 +94,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 
 	dlv, pay, ord := OrderServices(cfg, pool, tg, log)
 	bill := billing.NewService(pool, notify.New(pool, tg, log), log)
+	bill.OnPlanChange(ord.ForgetHomes)
 
 	salesSvc := sales.NewService(pool)
 	debtSvc := debts.NewService(pool, tg, cfg.DevOTPCode, cfg.JWTSecret, sales.CheckShiftTime, log)
@@ -120,6 +122,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		debts.NewModule(debtSvc, auth, log),
 		orders.NewModule(ord, dlv, pay, auth, log),
 		billing.NewModule(bill, auth, log),
+		planapi.NewModule(pool, auth, log, ord.ForgetHomes),
 		ads.NewModule(ads.NewService(pool), auth, log),
 		reports.NewModule(reports.NewService(pool), auth, log),
 		profile.NewModule(profile.NewService(pool, profile.Links{

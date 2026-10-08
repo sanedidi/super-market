@@ -20,6 +20,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/ads"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/notify"
+	"github.com/sanedidi/super-market/backend/internal/plans"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
@@ -38,7 +39,12 @@ type Service struct {
 	notify *notify.Notifier
 	log    *slog.Logger
 	now    func() time.Time
+	// planChanged — супер-админ сменил сети тариф (сбросить кэш витрин).
+	planChanged func()
 }
+
+// OnPlanChange — что сделать, когда супер-админ меняет сети тариф.
+func (s *Service) OnPlanChange(fn func()) { s.planChanged = fn }
 
 func NewService(pool *pgxpool.Pool, n *notify.Notifier, log *slog.Logger) *Service {
 	return &Service{pool: pool, notify: n, log: log.With("component", "billing"), now: time.Now}
@@ -47,215 +53,111 @@ func NewService(pool *pgxpool.Pool, n *notify.Notifier, log *slog.Logger) *Servi
 // ------------------------------------------------------------- настройки
 
 type Settings struct {
-	USDRate           string `json:"usd_rate"`
-	GraceDays         int    `json:"grace_days"`
-	AutoChargeBalance bool   `json:"auto_charge_balance"`
-	// Пробный период витрины: тариф и сколько дней (0 — без пробного).
-	ShowcaseTrialPlan string    `json:"showcase_trial_plan"`
-	ShowcaseTrialDays int       `json:"showcase_trial_days"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	GraceDays         int  `json:"grace_days"`
+	AutoChargeBalance bool `json:"auto_charge_balance"`
+	// Пробный период новых сетей: тариф и сколько дней (0 — без пробного).
+	TrialPlan string    `json:"trial_plan"`
+	TrialDays int       `json:"trial_days"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type SettingsInput struct {
-	USDRate           *money.Rate `json:"usd_rate"`
-	GraceDays         *int        `json:"grace_days"`
-	AutoChargeBalance *bool       `json:"auto_charge_balance"`
-	ShowcaseTrialPlan *string     `json:"showcase_trial_plan"`
-	ShowcaseTrialDays *int        `json:"showcase_trial_days"`
+	GraceDays         *int    `json:"grace_days"`
+	AutoChargeBalance *bool   `json:"auto_charge_balance"`
+	TrialPlan         *string `json:"trial_plan"`
+	TrialDays         *int    `json:"trial_days"`
 }
 
 func (s *Service) GetSettings(ctx context.Context) (Settings, error) {
 	var st Settings
-	err := s.pool.QueryRow(ctx, `SELECT usd_rate::text, grace_days, auto_charge_balance, showcase_trial_plan, showcase_trial_days, updated_at
+	err := s.pool.QueryRow(ctx, `SELECT grace_days, auto_charge_balance, trial_plan, trial_days, updated_at
 		FROM billing_settings WHERE id = 1`).
-		Scan(&st.USDRate, &st.GraceDays, &st.AutoChargeBalance, &st.ShowcaseTrialPlan, &st.ShowcaseTrialDays, &st.UpdatedAt)
+		Scan(&st.GraceDays, &st.AutoChargeBalance, &st.TrialPlan, &st.TrialDays, &st.UpdatedAt)
 	return st, err
 }
 
 func (s *Service) SaveSettings(ctx context.Context, in SettingsInput) (Settings, error) {
-	if in.USDRate != nil && money.D(string(*in.USDRate)).Sign() <= 0 {
-		return Settings{}, apperr.Validation("usd_rate: курс больше нуля").Uz("usd_rate: kurs noldan katta boʻlsin")
-	}
 	if in.GraceDays != nil && (*in.GraceDays < 0 || *in.GraceDays > 60) {
 		return Settings{}, apperr.Validation("grace_days: от 0 до 60 дней").Uz("grace_days: 0 dan 60 kungacha")
 	}
-	if in.ShowcaseTrialDays != nil && (*in.ShowcaseTrialDays < 0 || *in.ShowcaseTrialDays > 365) {
-		return Settings{}, apperr.Validation("showcase_trial_days: от 0 до 365 дней").Uz("showcase_trial_days: 0 dan 365 kungacha")
+	if in.TrialDays != nil && (*in.TrialDays < 0 || *in.TrialDays > 365) {
+		return Settings{}, apperr.Validation("trial_days: от 0 до 365 дней").Uz("trial_days: 0 dan 365 kungacha")
 	}
-	if in.ShowcaseTrialPlan != nil && *in.ShowcaseTrialPlan != "business" && *in.ShowcaseTrialPlan != "pro" {
-		return Settings{}, apperr.Validation("showcase_trial_plan: business или pro").Uz("showcase_trial_plan: business yoki pro")
+	if in.TrialPlan != nil {
+		p, err := plans.Get(ctx, s.pool, *in.TrialPlan)
+		if err != nil {
+			return Settings{}, apperr.Validation("trial_plan: тариф не найден").Uz("trial_plan: tarif topilmadi")
+		}
+		if !p.IsActive {
+			return Settings{}, apperr.Validation("trial_plan: тариф в архиве").Uz("trial_plan: tarif arxivda")
+		}
 	}
-	var rate *string
-	if in.USDRate != nil {
-		v := string(*in.USDRate)
-		rate = &v
-	}
-	if _, err := s.pool.Exec(ctx, `UPDATE billing_settings SET usd_rate = COALESCE($1::numeric, usd_rate),
-		grace_days = COALESCE($2, grace_days), auto_charge_balance = COALESCE($3, auto_charge_balance),
-		showcase_trial_plan = COALESCE($4, showcase_trial_plan), showcase_trial_days = COALESCE($5, showcase_trial_days), updated_at = now()
-		WHERE id = 1`, rate, in.GraceDays, in.AutoChargeBalance, in.ShowcaseTrialPlan, in.ShowcaseTrialDays); err != nil {
+	if _, err := s.pool.Exec(ctx, `UPDATE billing_settings SET
+		grace_days = COALESCE($1, grace_days), auto_charge_balance = COALESCE($2, auto_charge_balance),
+		trial_plan = COALESCE($3, trial_plan), trial_days = COALESCE($4, trial_days), updated_at = now()
+		WHERE id = 1`, in.GraceDays, in.AutoChargeBalance, in.TrialPlan, in.TrialDays); err != nil {
 		return Settings{}, err
 	}
 	return s.GetSettings(ctx)
 }
 
-// ---------------------------------------------------------------- тарифы
-
-type Tariff struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	MinStores     int       `json:"min_stores"`
-	PricePerStore string    `json:"price_per_store"`
-	IsActive      bool      `json:"is_active"`
-	CreatedAt     time.Time `json:"created_at"`
-}
-
-type TariffInput struct {
-	Name          *string       `json:"name"`
-	MinStores     *int          `json:"min_stores"`
-	PricePerStore *money.Amount `json:"price_per_store"`
-	IsActive      *bool         `json:"is_active"`
-}
-
-const tariffSelect = `SELECT id, name, min_stores, price_per_store::text, is_active, created_at FROM tariffs`
-
-func (s *Service) ListTariffs(ctx context.Context, page httpx.Page) ([]Tariff, error) {
-	rows, err := s.pool.Query(ctx, tariffSelect+` ORDER BY is_active DESC, min_stores, id LIMIT $1 OFFSET $2`, page.Limit, page.Offset)
-	if err != nil {
-		return nil, err
-	}
-	return pgx.CollectRows(rows, pgx.RowToStructByPos[Tariff])
-}
-
-// PublicTariff — тариф для сайта: только действующие, с диапазоном числа магазинов.
-type PublicTariff struct {
-	Name          string `json:"name"`
-	MinStores     int    `json:"min_stores"`
-	MaxStores     *int   `json:"max_stores"` // nil — без верхней границы
-	PricePerStore string `json:"price_per_store"`
-	Currency      string `json:"currency"`
-}
-
-// PublicTariffs — действующие тарифы по возрастанию числа магазинов. Сайт
-// показывает их в блоке «Тарифы»; меняет супер-админ в «Биллинге».
-func (s *Service) PublicTariffs(ctx context.Context) ([]PublicTariff, error) {
-	rows, err := s.pool.Query(ctx, `SELECT name, min_stores, price_per_store::text FROM tariffs
-		WHERE is_active ORDER BY min_stores, id`)
-	if err != nil {
-		return nil, err
-	}
-	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (PublicTariff, error) {
-		t := PublicTariff{Currency: "USD"}
-		return t, row.Scan(&t.Name, &t.MinStores, &t.PricePerStore)
-	})
-	if err != nil {
-		return nil, err
-	}
-	for i := 0; i+1 < len(items); i++ {
-		max := items[i+1].MinStores - 1
-		items[i].MaxStores = &max
-	}
-	return items, nil
-}
-
-func (s *Service) getTariff(ctx context.Context, id string) (Tariff, error) {
-	rows, err := s.pool.Query(ctx, tariffSelect+` WHERE id = $1`, id)
-	if err != nil {
-		return Tariff{}, err
-	}
-	t, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[Tariff])
-	if errors.Is(err, pgx.ErrNoRows) {
-		return t, apperr.NotFound("тариф не найден").Uz("tarif topilmadi")
-	}
-	return t, err
-}
-
-// SaveTariff создаёт (id == "") или меняет тариф. Цены действуют со
-// следующего счёта; выставленные счета не пересчитываются.
-func (s *Service) SaveTariff(ctx context.Context, id string, in TariffInput) (Tariff, error) {
-	if in.Name != nil && strings.TrimSpace(*in.Name) == "" {
-		return Tariff{}, apperr.Validation("name: обязательное поле").Uz("name: majburiy maydon")
-	}
-	if in.MinStores != nil && *in.MinStores < 1 {
-		return Tariff{}, apperr.Validation("min_stores: от 1").Uz("min_stores: kamida 1")
-	}
-	var price *string
-	if in.PricePerStore != nil {
-		v := string(*in.PricePerStore)
-		price = &v
-	}
-	var err error
-	if id == "" {
-		if in.Name == nil || in.MinStores == nil || price == nil {
-			return Tariff{}, apperr.Validation("name, min_stores и price_per_store обязательны").Uz("name, min_stores va price_per_store majburiy")
-		}
-		err = s.pool.QueryRow(ctx, `INSERT INTO tariffs (name, min_stores, price_per_store) VALUES ($1, $2, $3::numeric) RETURNING id`,
-			strings.TrimSpace(*in.Name), *in.MinStores, *price).Scan(&id)
-	} else {
-		var name *string
-		if in.Name != nil {
-			v := strings.TrimSpace(*in.Name)
-			name = &v
-		}
-		var tag interface{ RowsAffected() int64 }
-		tag, err = s.pool.Exec(ctx, `UPDATE tariffs SET name = COALESCE($2, name), min_stores = COALESCE($3, min_stores),
-			price_per_store = COALESCE($4::numeric, price_per_store), is_active = COALESCE($5, is_active) WHERE id = $1`,
-			id, name, in.MinStores, price, in.IsActive)
-		if err == nil && tag.RowsAffected() == 0 {
-			return Tariff{}, apperr.NotFound("тариф не найден").Uz("tarif topilmadi")
-		}
-	}
-	if db.IsUniqueViolation(err, "tariffs_min_stores_active") {
-		return Tariff{}, apperr.Conflict("duplicate_tariff", "активный тариф с таким числом магазинов уже есть").Uz("bunday doʻkonlar soniga ega faol tarif allaqachon bor")
-	}
-	if err != nil {
-		return Tariff{}, err
-	}
-	return s.getTariff(ctx, id)
-}
-
 // ---------------------------------------------------------- сети и цены
 
-// priceSQL — цена за магазин для сети n при числе магазинов cnt.
-const priceSQL = `COALESCE(n.custom_price_per_store,
-	(SELECT t.price_per_store FROM tariffs t WHERE t.is_active AND t.min_stores <= cnt ORDER BY t.min_stores DESC LIMIT 1), 0)`
+// priceSQL — цена за магазин для сети n: индивидуальная или по тарифу.
+// Пока идёт пробный период (и пробный тариф выше выбранного), тариф не
+// оплачивается.
+const priceSQL = `CASE WHEN n.plan_trial_until >= $period::date
+	          AND (SELECT tp.sort FROM plans tp JOIN billing_settings bs ON bs.trial_plan = tp.key)
+	            > (SELECT cp.sort FROM plans cp WHERE cp.key = n.plan_key) THEN 0
+	ELSE COALESCE(n.custom_price_uzs, (SELECT pl.price_uzs FROM plans pl WHERE pl.key = n.plan_key), 0) END`
 
 const storesCountSQL = `(SELECT count(*)::int FROM stores s WHERE s.network_id = n.id AND s.status = 'active')`
 
 // Tashkent-дата «сегодня» в SQL.
 const todaySQL = `(now() AT TIME ZONE 'Asia/Tashkent')::date`
 
+// price — priceSQL на дату (SQL-выражение).
+func price(period string) string { return strings.ReplaceAll(priceSQL, "$period", period) }
+
 type NetworkBilling struct {
-	NetworkID           string  `json:"network_id"`
-	NetworkName         string  `json:"network_name"`
-	Kind                string  `json:"kind"`
-	Status              string  `json:"status"`
-	StoresCount         int     `json:"stores_count"`
-	CustomPricePerStore *string `json:"custom_price_per_store"`
-	PricePerStore       string  `json:"price_per_store"`
-	MonthlyUSD          string  `json:"monthly_usd"`
-	BillingFrom         string  `json:"billing_from"`
-	Available           string  `json:"balance_available"`
-	Pending             string  `json:"balance_pending"`
-	UnpaidUZS           string  `json:"unpaid_uzs"`
-	Overdue             bool    `json:"overdue"`
+	NetworkID   string `json:"network_id"`
+	NetworkName string `json:"network_name"`
+	Kind        string `json:"kind"`
+	Status      string `json:"status"`
+	StoresCount int    `json:"stores_count"`
+	// Тариф: выбранный и действующий сейчас (пробный, если идёт).
+	PlanKey          string  `json:"plan_key"`
+	PlanName         string  `json:"plan_name"`
+	EffectivePlanKey string  `json:"effective_plan_key"`
+	TrialUntil       *string `json:"trial_until"`
+	CustomPriceUZS   *string `json:"custom_price_uzs"`
+	// Цена за магазин в месяц и всего в месяц, сум (пробный — 0).
+	PricePerStore string `json:"price_per_store"`
+	MonthlyUZS    string `json:"monthly_uzs"`
+	BillingFrom   string `json:"billing_from"`
+	Available     string `json:"balance_available"`
+	Pending       string `json:"balance_pending"`
+	UnpaidUZS     string `json:"unpaid_uzs"`
+	Overdue       bool   `json:"overdue"`
 }
 
-const networkBillingSQL = `
-	SELECT n.id, n.name, n.kind, n.status, c.cnt, n.custom_price_per_store::text, p.price::text, (p.price * c.cnt)::text,
-	       to_char(n.billing_from, 'YYYY-MM-DD'),
+var networkBillingSQL = `
+	SELECT n.id, n.name, n.kind, n.status, c.cnt, n.plan_key, loc(pl.name, pl.name_uz), network_plan(n.id),
+	       to_char(n.plan_trial_until, 'YYYY-MM-DD'), n.custom_price_uzs::text, p.price::numeric(18,2)::text,
+	       (p.price * c.cnt)::numeric(18,2)::text, to_char(n.billing_from, 'YYYY-MM-DD'),
 	       COALESCE((SELECT sum(amount) FROM balance_entries b WHERE b.network_id = n.id AND b.status = 'available'), 0)::numeric(18,2)::text,
 	       COALESCE((SELECT sum(amount) FROM balance_entries b WHERE b.network_id = n.id AND b.status = 'pending'), 0)::numeric(18,2)::text,
 	       COALESCE((SELECT sum(amount_uzs) FROM subscription_invoices i WHERE i.network_id = n.id AND i.status = 'unpaid'), 0)::numeric(18,2)::text,
 	       EXISTS (SELECT 1 FROM subscription_invoices i WHERE i.network_id = n.id AND i.status = 'unpaid' AND i.due_date < ` + todaySQL + `) AS overdue
 	FROM networks n
+	JOIN plans pl ON pl.key = n.plan_key
 	CROSS JOIN LATERAL (SELECT ` + storesCountSQL + ` AS cnt) c
-	CROSS JOIN LATERAL (SELECT ` + priceSQL + ` AS price) p`
+	CROSS JOIN LATERAL (SELECT ` + price(todaySQL) + ` AS price) p`
 
 func scanNetworkBilling(row pgx.CollectableRow) (NetworkBilling, error) {
 	var b NetworkBilling
-	err := row.Scan(&b.NetworkID, &b.NetworkName, &b.Kind, &b.Status, &b.StoresCount, &b.CustomPricePerStore, &b.PricePerStore,
-		&b.MonthlyUSD, &b.BillingFrom, &b.Available, &b.Pending, &b.UnpaidUZS, &b.Overdue)
+	err := row.Scan(&b.NetworkID, &b.NetworkName, &b.Kind, &b.Status, &b.StoresCount, &b.PlanKey, &b.PlanName, &b.EffectivePlanKey,
+		&b.TrialUntil, &b.CustomPriceUZS, &b.PricePerStore, &b.MonthlyUZS, &b.BillingFrom, &b.Available, &b.Pending, &b.UnpaidUZS, &b.Overdue)
 	return b, err
 }
 
@@ -283,13 +185,14 @@ func (s *Service) NetworkBilling(ctx context.Context, networkID string) (Network
 	return b, err
 }
 
+// NetworkBillingInput — супер-админ: тариф сети, пробный период,
+// индивидуальная цена и начало оплаты.
 type NetworkBillingInput struct {
-	CustomPricePerStore *money.Amount `json:"custom_price_per_store"`
-	ClearCustomPrice    bool          `json:"clear_custom_price"`
-	BillingFrom         *string       `json:"billing_from"` // YYYY-MM-DD, первое число месяца
+	plans.AssignInput
+	BillingFrom *string `json:"billing_from"` // YYYY-MM-DD, первое число месяца
 }
 
-// SaveNetworkBilling — индивидуальная цена сети и начало оплаты (бесплатный период).
+// SaveNetworkBilling — тариф, цена и начало оплаты (бесплатный период) сети.
 func (s *Service) SaveNetworkBilling(ctx context.Context, networkID string, in NetworkBillingInput) (NetworkBilling, error) {
 	if _, err := s.NetworkBilling(ctx, networkID); err != nil {
 		return NetworkBilling{}, err
@@ -303,15 +206,18 @@ func (s *Service) SaveNetworkBilling(ctx context.Context, networkID string, in N
 		t = time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
 		from = &t
 	}
-	var price *string
-	if in.CustomPricePerStore != nil {
-		v := string(*in.CustomPricePerStore)
-		price = &v
-	}
-	if _, err := s.pool.Exec(ctx, `UPDATE networks SET
-		custom_price_per_store = CASE WHEN $2 THEN NULL ELSE COALESCE($3::numeric, custom_price_per_store) END,
-		billing_from = COALESCE($4::date, billing_from) WHERE id = $1`, networkID, in.ClearCustomPrice, price, from); err != nil {
+	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		if err := plans.Assign(ctx, tx, networkID, in.AssignInput); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `UPDATE networks SET billing_from = COALESCE($2::date, billing_from) WHERE id = $1`, networkID, from)
+		return err
+	})
+	if err != nil {
 		return NetworkBilling{}, err
+	}
+	if s.planChanged != nil && (in.PlanKey != nil || in.TrialUntil != nil || in.ClearTrial) {
+		s.planChanged()
 	}
 	return s.NetworkBilling(ctx, networkID)
 }
@@ -319,23 +225,28 @@ func (s *Service) SaveNetworkBilling(ctx context.Context, networkID string, in N
 // -------------------------------------------------------------- счета
 
 type Invoice struct {
-	ID            string     `json:"id"`
-	NetworkID     string     `json:"network_id"`
-	NetworkName   string     `json:"network_name"`
-	Period        string     `json:"period"`
-	StoresCount   int        `json:"stores_count"`
-	PricePerStore string     `json:"price_per_store"`
-	AmountUSD     string     `json:"amount_usd"`
-	Rate          string     `json:"rate"`
-	AmountUZS     string     `json:"amount_uzs"`
-	Status        string     `json:"status"`
-	DueDate       string     `json:"due_date"`
-	Overdue       bool       `json:"overdue"`
-	PaidVia       *string    `json:"paid_via"`
-	PaidAt        *time.Time `json:"paid_at"`
-	Note          string     `json:"note"`
-	CreatedAt     time.Time  `json:"created_at"`
-	// Плата за тариф витрины (входит в amount_uzs).
+	ID            string `json:"id"`
+	NetworkID     string `json:"network_id"`
+	NetworkName   string `json:"network_name"`
+	Period        string `json:"period"`
+	StoresCount   int    `json:"stores_count"`
+	PricePerStore string `json:"price_per_store"`
+	// Валюта price_per_store: UZS — счета по тарифам; USD — старые счета
+	// (тогда amount_usd и rate заполнены).
+	Currency  string     `json:"currency"`
+	AmountUSD *string    `json:"amount_usd"`
+	Rate      *string    `json:"rate"`
+	AmountUZS string     `json:"amount_uzs"`
+	PlanKey   *string    `json:"plan_key"`
+	PlanName  string     `json:"plan_name"`
+	Status    string     `json:"status"`
+	DueDate   string     `json:"due_date"`
+	Overdue   bool       `json:"overdue"`
+	PaidVia   *string    `json:"paid_via"`
+	PaidAt    *time.Time `json:"paid_at"`
+	Note      string     `json:"note"`
+	CreatedAt time.Time  `json:"created_at"`
+	// Старые счета: плата за тариф витрины (входит в amount_uzs).
 	ShowcasePlan *string `json:"showcase_plan"`
 	ShowcaseUZS  string  `json:"showcase_uzs"`
 	// Зачтено из доли сети с рекламы брендов (уже вычтено из amount_uzs).
@@ -344,7 +255,7 @@ type Invoice struct {
 
 const invoiceSelect = `
 	SELECT i.id, i.network_id, n.name, to_char(i.period, 'YYYY-MM'), i.stores_count, i.price_per_store::text,
-	       i.amount_usd::text, i.rate::text, i.amount_uzs::text, i.status, to_char(i.due_date, 'YYYY-MM-DD'),
+	       i.currency, i.amount_usd::text, i.rate::text, i.amount_uzs::text, i.plan_key, i.plan_name, i.status, to_char(i.due_date, 'YYYY-MM-DD'),
 	       i.status = 'unpaid' AND i.due_date < ` + todaySQL + `, i.paid_via, i.paid_at, i.note, i.created_at,
 	       i.showcase_plan, i.showcase_uzs::text, i.ad_share_uzs::text
 	FROM subscription_invoices i JOIN networks n ON n.id = i.network_id`
@@ -396,36 +307,30 @@ func (s *Service) GenerateInvoices(ctx context.Context, now time.Time) (int, err
 		return 0, err
 	}
 	rows, err := s.pool.Query(ctx, `
-		INSERT INTO subscription_invoices (network_id, period, stores_count, price_per_store, amount_usd, rate, amount_uzs, due_date,
-		                                   showcase_plan, showcase_uzs, ad_share_uzs)
-		SELECT n.id, $1::date, c.cnt, p.price, p.price * c.cnt, bs.usd_rate, x.base - x.ad,
-		       $1::date + bs.grace_days, sc.plan, sc.fee, x.ad
+		INSERT INTO subscription_invoices (network_id, period, stores_count, price_per_store, currency, amount_uzs, due_date,
+		                                   plan_key, plan_name, ad_share_uzs)
+		SELECT n.id, $1::date, c.cnt, p.price, 'UZS', x.base - x.ad, $1::date + bs.grace_days, n.plan_key, pl.name, x.ad
 		FROM networks n
+		JOIN plans pl ON pl.key = n.plan_key
 		CROSS JOIN billing_settings bs
 		CROSS JOIN ad_settings ast
 		CROSS JOIN LATERAL (SELECT `+storesCountSQL+` AS cnt) c
-		CROSS JOIN LATERAL (SELECT `+priceSQL+` AS price) p
-		-- Тариф витрины: платный, если выбран и пробный период уже кончился.
-		CROSS JOIN LATERAL (
-			SELECT CASE WHEN sp.price_uzs > 0 AND (n.showcase_trial_until IS NULL OR n.showcase_trial_until < $1::date)
-			            THEN sp.key END AS plan,
-			       CASE WHEN n.showcase_trial_until IS NULL OR n.showcase_trial_until < $1::date THEN sp.price_uzs ELSE 0 END AS fee
-			FROM showcase_plans sp WHERE sp.key = n.showcase_plan) sc
+		CROSS JOIN LATERAL (SELECT `+price("$1")+` AS price) p
 		-- Доля с рекламы за прошлый месяц уменьшает счёт (не больше суммы счёта).
 		LEFT JOIN network_ad_shares sh ON sh.network_id = n.id AND sh.period = $2::date AND sh.settled_at IS NULL
-		CROSS JOIN LATERAL (SELECT round(p.price * c.cnt * bs.usd_rate, 2) + sc.fee AS base) b0
+		CROSS JOIN LATERAL (SELECT round(p.price * c.cnt, 2) AS base) b0
 		CROSS JOIN LATERAL (SELECT b0.base,
 		       CASE WHEN ast.share_to_subscription THEN LEAST(COALESCE(sh.amount, 0), b0.base) ELSE 0 END AS ad) x
-		WHERE n.status = 'active' AND n.billing_from <= $1::date AND c.cnt > 0 AND (p.price > 0 OR sc.fee > 0)
+		WHERE n.status = 'active' AND n.billing_from <= $1::date AND c.cnt > 0 AND p.price > 0
 		ON CONFLICT (network_id, period) DO NOTHING
-		RETURNING network_id, amount_usd::text, amount_uzs::text, to_char(due_date, 'DD.MM.YYYY')`, period, prev)
+		RETURNING network_id, plan_name, amount_uzs::text, to_char(due_date, 'DD.MM.YYYY')`, period, prev)
 	if err != nil {
 		return 0, err
 	}
-	type created struct{ network, usd, uzs, due string }
+	type created struct{ network, plan, uzs, due string }
 	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (created, error) {
 		var c created
-		err := r.Scan(&c.network, &c.usd, &c.uzs, &c.due)
+		err := r.Scan(&c.network, &c.plan, &c.uzs, &c.due)
 		return c, err
 	})
 	if err != nil {
@@ -436,10 +341,10 @@ func (s *Service) GenerateInvoices(ctx context.Context, now time.Time) (int, err
 	}
 	for _, c := range list {
 		s.notify.NetworkOwners(ctx, c.network, identity.PermPayoutsManage, i18n.Text{
-			RU: fmt.Sprintf("Счёт за подписку за %s: %s $ (%s сум к оплате). Оплатить до %s. Если на балансе платформы хватает денег, счёт оплатится автоматически.",
-				period.Format("01.2006"), c.usd, c.uzs, c.due),
-			UZ: fmt.Sprintf("%s uchun obuna hisobi: %s $ (toʻlash uchun %s soʻm). %s gacha toʻlang. Platforma balansida pul yetarli boʻlsa, hisob avtomatik toʻlanadi.",
-				period.Format("01.2006"), c.usd, c.uzs, c.due),
+			RU: fmt.Sprintf("Счёт за подписку за %s (тариф «%s»): %s сум к оплате. Оплатить до %s. Если на балансе платформы хватает денег, счёт оплатится автоматически.",
+				period.Format("01.2006"), c.plan, money.Group(c.uzs), c.due),
+			UZ: fmt.Sprintf("%s uchun obuna hisobi («%s» tarifi): toʻlash uchun %s soʻm. %s gacha toʻlang. Platforma balansida pul yetarli boʻlsa, hisob avtomatik toʻlanadi.",
+				period.Format("01.2006"), c.plan, money.Group(c.uzs), c.due),
 		})
 	}
 	return len(list), nil

@@ -483,6 +483,9 @@ func pickBanners(all []catalog.Banner, ids []string) []catalog.Banner {
 }
 
 // forgetHomes сбрасывает кэш главных (после публикации витрины).
+// ForgetHomes сбрасывает кэш главных (после правки тарифов).
+func (s *Service) ForgetHomes() { s.forgetHomes() }
+
 func (s *Service) forgetHomes() {
 	s.homes.mu.Lock()
 	s.homes.items = nil

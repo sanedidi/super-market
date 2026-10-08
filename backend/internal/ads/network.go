@@ -172,8 +172,8 @@ func (s *Service) SaveNetworkAds(ctx context.Context, networkID string, in Netwo
 			return NetworkAds{}, err
 		}
 		if *in.AdsMax < plan.Effective.AdsMax && !plan.Effective.AdsReducible {
-			return NetworkAds{}, showcase.Limit("ads", plan.Effective, plan.Effective.AdsMax, *in.AdsMax,
-				i18n.Text{RU: "меньше рекламы или без неё — на тарифе «Про»", UZ: "kamroq reklama yoki reklamasiz — «Pro» tarifida"})
+			return NetworkAds{}, showcase.Locked(ctx, s.pool, plan.Effective, "ads",
+				i18n.Text{RU: "меньше рекламы или без неё", UZ: "kamroq reklama yoki reklamasiz"})
 		}
 		max = in.AdsMax
 	}

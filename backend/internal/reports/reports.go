@@ -327,6 +327,19 @@ func (s *Service) ProfitLoss(ctx context.Context, p *identity.Principal, f Filte
 		out.Expenses = append(out.Expenses, ReasonAmount{Name: i18n.T(ctx, "Списанные долги покупателей", "Hisobdan chiqarilgan xaridor qarzlari"), Amount: writtenOff})
 		expenses = expenses.Add(money.D(writtenOff))
 	}
+	// Комиссия Super Market с онлайн-заказов (по тарифу сети).
+	var commission string
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COALESCE(-sum(amount), 0)::numeric(18,2)::text FROM balance_entries
+		WHERE network_id = $1 AND kind = 'commission' AND created_at >= $2 AND created_at < $3
+		  AND ($4::uuid[] IS NULL OR store_id = ANY ($4::uuid[]))`, p.NetworkID, sc.from, sc.to, sc.stores).
+		Scan(&commission); err != nil {
+		return out, err
+	}
+	if money.D(commission).Sign() > 0 {
+		out.Expenses = append(out.Expenses, ReasonAmount{Name: i18n.T(ctx, "Комиссия Super Market с онлайн-заказов", "Onlayn buyurtmalardan Super Market komissiyasi"), Amount: commission})
+		expenses = expenses.Add(money.D(commission))
+	}
 
 	out.Subscription = "0.00"
 	if sc.stores == nil {
