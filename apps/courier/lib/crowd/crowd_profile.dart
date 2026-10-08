@@ -114,9 +114,13 @@ class CrowdProfileScreen extends StatelessWidget {
             ),
             const Divider(height: 1, indent: 56, color: AppColors.line),
             ListTile(
-              leading: const Icon(Icons.language_rounded, color: AppColors.dark),
+              leading: const Icon(Icons.translate_rounded, color: AppColors.dark),
               title: Text(tr('Язык', 'Til'), style: AppText.body),
-              trailing: Text(Lang.names[Lang.instance.code]!, style: AppText.body.copyWith(color: AppColors.text2)),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text(Lang.names[Lang.instance.code]!, style: AppText.body.copyWith(color: AppColors.text2)),
+                const SizedBox(width: 4),
+                const Icon(Icons.chevron_right_rounded, color: AppColors.text2),
+              ]),
               onTap: () => _language(context, st),
             ),
             const Divider(height: 1, indent: 56, color: AppColors.line),

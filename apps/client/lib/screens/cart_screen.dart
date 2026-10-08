@@ -512,7 +512,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final cartStore = s.stores.where((x) => x.id == s.cartStoreId).firstOrNull;
     final a = s.address;
     final timeTitle = _slot == null
-        ? (cartStore?.etaText == null ? tr('Как можно скорее', 'Imkon qadar tez') : tr('Как можно скорее · ${cartStore!.etaText}', 'Imkon qadar tez · ${cartStore!.etaText}'))
+        ? (cartStore?.etaText == null ? tr('Как можно скорее', 'Imkon qadar tez') : tr('Как можно скорее · ${cartStore!.etaText}', 'Imkon qadar tez · ${cartStore.etaText}'))
         : '${dayLabel(_slot!.from).split(',').first}, ${_slot!.range}';
 
     return PopScope(

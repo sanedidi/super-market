@@ -351,7 +351,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           title: tr('Язык приложения', 'Ilova tili'),
           trailing: value(Lang.names[Lang.instance.code]!),
           divider: divider,
-          onTap: () => _pick(tr('Язык приложения', 'Ilova tili'), Lang.names, Lang.instance.code, _setLanguage),
+          onTap: () async {
+            // Шторка из sm_core (Figma Я2): сразу меняет язык; у вошедшего сохраняем в профиль.
+            final v = await pickLanguage(context);
+            if (v != null) await _setLanguage(v);
+          },
         );
     return Scaffold(
       body: SafeArea(

@@ -85,7 +85,7 @@ class MoreScreen extends StatelessWidget {
               onTap: st.stores.length > 1 ? () => pickStore(context) : null,
             ),
             ListTile(
-              leading: const Icon(Icons.language_rounded),
+              leading: const Icon(Icons.translate_rounded),
               title: Text(tr('Язык', 'Til'), style: AppText.bodyStrong),
               subtitle: Text(Lang.names[Lang.instance.code]!, style: AppText.small),
               trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.muted),

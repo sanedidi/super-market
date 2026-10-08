@@ -91,7 +91,9 @@ String pickLang(Map<String, dynamic> m, String field) {
   return '${m[field] ?? ''}';
 }
 
-/// Шторка выбора языка. Возвращает выбранный код или null.
+/// Шторка выбора языка (Figma «Язык приложения · Til», Я2/Я4/Я6): иконка,
+/// заголовок, пояснение и два варианта. Нажатие сразу применяет язык и
+/// закрывает шторку. Возвращает выбранный код или null.
 Future<String?> pickLanguage(BuildContext context) async {
   final picked = await showSheet<String>(
     context,
@@ -99,27 +101,76 @@ Future<String?> pickLanguage(BuildContext context) async {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Text(
-            tr('Язык приложения', 'Ilova tili'),
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-          ),
+        SheetHeader(
+          icon: Icons.translate_rounded,
+          title: tr('Язык приложения', 'Ilova tili'),
+          text: tr('Экраны, уведомления и названия товаров будут на выбранном языке.',
+              'Ekranlar, bildirishnomalar va mahsulot nomlari tanlangan tilda boʻladi.'),
         ),
-        for (final code in Lang.supported)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(Lang.names[code]!, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-            trailing: code == Lang.instance.code
-                ? Icon(Icons.check_rounded, color: Theme.of(ctx).colorScheme.primary)
-                : null,
-            onTap: () => Navigator.of(ctx).pop(code),
-          ),
+        const SizedBox(height: 16),
+        _LangOption(
+          title: Lang.names[Lang.uz]!,
+          caption: tr('Узбекский · латиница', 'Lotin alifbosi'),
+          selected: Lang.instance.isUz,
+          onTap: () => Navigator.of(ctx).pop(Lang.uz),
+        ),
+        const SizedBox(height: 10),
+        _LangOption(
+          title: Lang.names[Lang.ru]!,
+          caption: tr('Русский язык', 'Rus tili'),
+          selected: Lang.instance.isRu,
+          onTap: () => Navigator.of(ctx).pop(Lang.ru),
+        ),
       ],
     ),
   );
   if (picked != null) await Lang.instance.set(picked);
   return picked;
+}
+
+/// Вариант в шторке языка: выбранный — с рамкой цвета бренда и отметкой.
+class _LangOption extends StatelessWidget {
+  const _LangOption({required this.title, required this.caption, required this.selected, required this.onTap});
+
+  final String title;
+  final String caption;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    final radius = BorderRadius.circular(16);
+    return Material(
+      color: selected ? primary.withValues(alpha: 0.08) : const Color(0xFFF3F3F4),
+      shape: RoundedRectangleBorder(
+        borderRadius: radius,
+        side: selected ? BorderSide(color: primary, width: 2) : BorderSide.none,
+      ),
+      child: InkWell(
+        borderRadius: radius,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          child: Row(children: [
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: Color(0xFF151515))),
+                const SizedBox(height: 2),
+                Text(caption, style: const TextStyle(fontSize: 13, color: Color(0xFF6B6B70))),
+              ]),
+            ),
+            const SizedBox(width: 12),
+            Icon(
+              selected ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
+              size: 26,
+              color: selected ? primary : const Color(0xFFB3B3B8),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
 }
 
 /// Готовый пункт настроек «Язык / Til» с текущим языком справа.

@@ -377,7 +377,7 @@ body {
   z-index: 5;
 }
 
-.sm-user-menu button {
+.sm-user-menu .sm-logout {
   width: 100%;
   display: flex;
   align-items: center;
@@ -393,8 +393,62 @@ body {
   cursor: pointer;
 }
 
-.sm-user-menu button:hover {
+.sm-user-menu .sm-logout:hover {
   background: rgba(255, 255, 255, 0.07);
+}
+
+/* Язык в меню пользователя: «Oʻzbekcha | Русский» */
+.sm-user-lang {
+  padding: 4px 4px 6px;
+}
+
+.sm-user-lang-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.sm-lang-seg {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.sm-lang-seg button {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 4px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  background: none;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sm-lang-seg button:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.sm-lang-seg button.on {
+  color: #0f172a;
+  font-weight: 700;
+  background: #fff;
+}
+
+.sm-user-menu-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .sm-collapsed .sm-user-menu {

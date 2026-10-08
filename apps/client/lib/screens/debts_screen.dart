@@ -88,7 +88,7 @@ class DebtsProfileCard extends StatelessWidget {
       if (overdue)
         tr('есть просрочка', 'muddati oʻtgan qarz bor')
       else if (d?['next_due'] != null)
-        tr('ближайший срок ${debtDay(d!['next_due'])}', 'eng yaqin muddat ${debtDay(d!['next_due'])}'),
+        tr('ближайший срок ${debtDay(d!['next_due'])}', 'eng yaqin muddat ${debtDay(d['next_due'])}'),
     ].join(' · ');
     return Padding(
       padding: const EdgeInsets.only(top: 16),
@@ -105,7 +105,7 @@ class DebtsProfileCard extends StatelessWidget {
               const SizedBox(width: 14),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(tr('Мои долги · ${money(d!['total'])}', 'Mening qarzlarim · ${money(d!['total'])}'), style: AppText.bodyStrong.copyWith(fontSize: 16)),
+                  Text(tr('Мои долги · ${money(d!['total'])}', 'Mening qarzlarim · ${money(d['total'])}'), style: AppText.bodyStrong.copyWith(fontSize: 16)),
                   const SizedBox(height: 2),
                   Text(sub, style: AppText.small.copyWith(color: overdue ? AppColors.error : AppColors.text2)),
                 ]),

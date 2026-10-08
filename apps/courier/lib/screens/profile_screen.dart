@@ -76,9 +76,14 @@ class ProfileScreen extends StatelessWidget {
         const SizedBox(height: 18),
         _Group(children: [
           _Item(
-            icon: Icons.language_rounded,
+            icon: Icons.translate_rounded,
             title: tr('Язык', 'Til'),
-            trailing: Text(Lang.names[Lang.instance.code]!, style: _gray),
+            // Figma Я5: текущий язык и стрелка — строка открывает шторку выбора.
+            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+              Text(Lang.names[Lang.instance.code]!, style: _gray),
+              const SizedBox(width: 4),
+              const Icon(Icons.chevron_right_rounded, color: Color(0xFF8E8E93)),
+            ]),
             onTap: () async {
               final code = await pickLanguage(context);
               if (code == null || !st.api.loggedIn) return;

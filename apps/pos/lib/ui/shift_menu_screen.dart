@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:sm_core/sm_core.dart' show Lang, pickLanguage, tr;
+import 'package:sm_core/sm_core.dart' show Lang, tr;
 
 import '../core/journal.dart';
 import '../core/money.dart';
@@ -9,6 +9,7 @@ import '../state/pos.dart';
 import 'close_shift_screen.dart';
 import 'debt_payment_dialog.dart';
 import 'equipment_screen.dart';
+import 'language_dialog.dart';
 import 'quick_keys_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -71,8 +72,10 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
     await showDebtPaymentDialog(context, pos);
   }
 
+  /// Окно выбора языка в стиле кассы (Figma Я8), не мобильная шторка.
   Future<void> _language() async {
-    await pickLanguage(context);
+    await showLanguageDialog(context);
+    if (mounted) setState(() {});
   }
 
   Future<void> _quickKeys() async {
