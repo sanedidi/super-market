@@ -24,7 +24,7 @@ String plainQty(Object? v) {
   return s;
 }
 
-/// Товар для шторок «Начала работы»: из поиска, каталога, фото или черновика.
+/// Товар для шторок «Начала работы»: из поиска, фото или черновика.
 class ProductRef {
   const ProductRef({
     required this.id,
@@ -72,7 +72,8 @@ class ProductRef {
         own: p['network_id'] != null,
       );
 
-  /// Товар из каталога, фото (кандидат) или строки черновика: product_id, current_price.
+  /// Товар из поиска по центральной базе, фото (кандидат) или строки черновика:
+  /// product_id, current_price.
   factory ProductRef.fromItem(Map<String, dynamic> p) => ProductRef(
         id: p['product_id'] as String,
         name: '${p['name'] ?? ''}',
@@ -86,91 +87,6 @@ class ProductRef {
       );
 }
 
-/// Группа каталога: путь категории и бренд со счётчиками «выбрано из».
-class CatalogGroup {
-  const CatalogGroup({
-    required this.categoryIds,
-    required this.categoryNames,
-    required this.brandId,
-    required this.brandName,
-    required this.count,
-    required this.selected,
-  });
-
-  final List<String> categoryIds;
-  final List<String> categoryNames;
-
-  /// null — товары без бренда (в запросах — "none").
-  final String? brandId;
-  final String brandName;
-  final int count;
-  final int selected;
-
-  String get leafId => categoryIds.last;
-  String get brandParam => brandId ?? 'none';
-
-  factory CatalogGroup.fromJson(Map<String, dynamic> j) => CatalogGroup(
-        categoryIds: ((j['category_ids'] as List?) ?? const []).map((e) => '$e').toList(),
-        categoryNames: ((j['category_names'] as List?) ?? const []).map((e) => '$e').toList(),
-        brandId: j['brand_id'] as String?,
-        brandName: '${j['brand_name'] ?? ''}',
-        count: (j['count'] as num?)?.toInt() ?? 0,
-        selected: (j['selected'] as num?)?.toInt() ?? 0,
-      );
-}
-
-/// Подраздел (категория товаров) внутри раздела: бренды с товарами.
-class CatalogLeaf {
-  CatalogLeaf(this.categoryId, this.title);
-
-  final String categoryId;
-
-  /// Путь после раздела: «Газированные» или «Чай / Чёрный».
-  final String title;
-  final List<CatalogGroup> brands = [];
-  int count = 0;
-  int selected = 0;
-}
-
-/// Раздел верхнего уровня («Напитки»).
-class CatalogSection {
-  CatalogSection(this.id, this.name);
-
-  final String id;
-  final String name;
-  final List<CatalogLeaf> leaves = [];
-  int count = 0;
-  int selected = 0;
-}
-
-/// Группы каталога → разделы → подразделы → бренды (порядок сервера сохраняется).
-List<CatalogSection> buildSections(List<CatalogGroup> groups) {
-  final sections = <CatalogSection>[];
-  final byId = <String, CatalogSection>{};
-  final leaves = <String, CatalogLeaf>{};
-  for (final g in groups) {
-    if (g.categoryIds.isEmpty) continue;
-    final root = g.categoryIds.first;
-    final section = byId.putIfAbsent(root, () {
-      final s = CatalogSection(root, g.categoryNames.first);
-      sections.add(s);
-      return s;
-    });
-    final leaf = leaves.putIfAbsent(g.leafId, () {
-      final title = g.categoryNames.length > 1 ? g.categoryNames.sublist(1).join(' / ') : g.categoryNames.first;
-      final l = CatalogLeaf(g.leafId, title);
-      section.leaves.add(l);
-      return l;
-    });
-    leaf.brands.add(g);
-    leaf.count += g.count;
-    leaf.selected += g.selected;
-    section.count += g.count;
-    section.selected += g.selected;
-  }
-  return sections;
-}
-
 /// Строка фото: выбранный товар и сколько штук.
 class PhotoPick {
   const PhotoPick(this.productId, this.qty);
@@ -179,8 +95,9 @@ class PhotoPick {
   final num qty;
 }
 
-/// Выбранное на фото → строки черновика: одинаковые товары складываются,
-/// пропущенные и нулевые — не добавляются. Количество прибавляется к списку.
+/// Выбранное на фото → «Мои товары»: одинаковые товары складываются,
+/// пропущенные и нулевые — не добавляются. Посчитанные штуки подставятся в
+/// количество на шаге «Инвентаризация»; то, что уже в списке, сервер пропустит.
 List<Map<String, dynamic>> photoLines(Iterable<PhotoPick> picks) {
   final sum = <String, num>{};
   for (final p in picks) {
@@ -193,16 +110,48 @@ List<Map<String, dynamic>> photoLines(Iterable<PhotoPick> picks) {
   ];
 }
 
-/// Подпись строки черновика: «24 шт · закупка 11 200 · продажа 15 000».
+/// Строка ещё не заполнена: нет количества или цены продажи.
+bool lineUnfilled(Map<String, dynamic> l) => l['qty'] == null || l['price'] == null;
+
+/// Подпись строки: «24 шт · себестоимость 11 200 · продажа 15 000»;
+/// не введённое — «не заполнено».
 String lineSummary(Map<String, dynamic> l, String Function(Object?) fmt) {
   final unit = (l['unit_short'] as String?) ?? '';
   final cost = l['cost'];
-  final price = l['price'] ?? l['current_price'];
+  final price = l['price'];
+  final none = tr('не заполнено', 'toʻldirilmagan');
   return [
-    '${plainQty(l['qty'])}${unit.isEmpty ? '' : ' $unit'}',
-    cost == null ? tr('без закупки', 'xarid narxisiz') : tr('закупка ${fmt(cost)}', 'xarid narxi ${fmt(cost)}'),
-    tr('продажа ${fmt(price)}', 'sotuv ${fmt(price)}'),
+    l['qty'] == null ? tr('кол-во: $none', 'miqdor: $none') : '${plainQty(l['qty'])}${unit.isEmpty ? '' : ' $unit'}',
+    if (cost != null) tr('себестоимость ${fmt(cost)}', 'tannarx ${fmt(cost)}'),
+    price == null ? tr('цена: $none', 'narx: $none') : tr('продажа ${fmt(price)}', 'sotuv ${fmt(price)}'),
   ].join(' · ');
+}
+
+/// Чем закончилось добавление товара в «Мои товары».
+enum AddKind { added, duplicate, similar }
+
+class AddOutcome {
+  const AddOutcome(this.kind, {this.inStore = false, this.similar});
+
+  final AddKind kind;
+
+  /// Повтор: товар уже в товарах магазина (а не в этом списке).
+  final bool inStore;
+
+  /// Похожий товар, который уже в «Моих товарах» (product_id, name, image, barcode).
+  final Map<String, dynamic>? similar;
+
+  /// Ответ сервера: 409 already_added / similar_exists — не ошибка, а исход.
+  static AddOutcome? fromError(String code, Map<String, dynamic> details) {
+    switch (code) {
+      case 'already_added':
+        return AddOutcome(AddKind.duplicate, inStore: details['in_store'] == true);
+      case 'similar_exists':
+        final s = details['similar'];
+        return AddOutcome(AddKind.similar, similar: s is Map<String, dynamic> ? s : const {});
+    }
+    return null;
+  }
 }
 
 /// Похоже на штрихкод: только цифры, 6–14 знаков.

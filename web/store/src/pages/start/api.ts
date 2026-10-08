@@ -10,7 +10,8 @@ export type Line = {
   unit_short: string
   is_fractional: boolean
   barcode: string | null
-  qty: string
+  /** null — ещё не введено на шаге «Инвентаризация». */
+  qty: string | null
   cost: string | null
   price: string | null
   current_price: string
@@ -28,6 +29,8 @@ export type Totals = {
   price_total: string
   no_cost: number
   pending: number
+  /** Строк без количества или цены продажи. */
+  unfilled: number
 }
 
 export type Draft = {
@@ -41,30 +44,24 @@ export type Draft = {
   totals: Totals
   stock_products: number
   last_posted_at: string | null
+  /** «Начало работы» записано и закрыто. */
+  closed: boolean
 }
 
 export type LineInput = {
   product_id: string
-  qty?: string | number
+  qty?: string | number | null
+  /** Добавить в «Мои товары» (шаг 1): повтор — ошибка already_added. */
   add?: boolean
+  confirm_similar?: boolean
   cost?: string | number | null
   price?: string | number | null
   barcode?: string
   source?: 'photo' | 'barcode' | 'catalog' | 'search' | 'new' | 'manual'
 }
 
-export type CatalogGroup = {
-  category_ids: string[]
-  category_names: string[]
-  brand_id: string | null
-  brand_name: string
-  count: number
-  selected: number
-}
-
-export type Catalog = { groups: CatalogGroup[]; total: number; selected: number }
-
-export type CatalogItem = {
+/** Товар центральной базы в поиске шага 1. */
+export type SearchItem = {
   product_id: string
   name: string
   image: string | null
@@ -72,8 +69,17 @@ export type CatalogItem = {
   current_price: string
   barcode: string | null
   own: boolean
-  selected: boolean
+  moderation: string
+  /** Уже в «Моих товарах». */
+  added: boolean
+  /** Уже в товарах магазина (был на складе или в цене магазина), а не в этом списке. */
+  in_store: boolean
 }
+
+/** Похожий товар из ошибки similar_exists. */
+export type Similar = { product_id: string; name: string; image: string | null; barcode: string | null }
+
+export type LinesResult = { lines: Line[]; totals: Totals; skipped: string[] }
 
 export type Candidate = {
   product_id: string
@@ -122,7 +128,7 @@ export type PostResult = {
 }
 
 /** Все запросы «Начала работы» начинаются с этих ключей — их и обновляем. */
-const KEYS = ['/store/start', '/store/start/catalog', '/store/start/catalog/items']
+const KEYS = ['/store/start', '/store/start/search']
 
 export function useStartRefresh() {
   const qc = useQueryClient()
@@ -146,10 +152,8 @@ export function useStartApi(storeId: string) {
   }
   return {
     refresh,
-    setLines: (items: LineInput[]) => run(api.post<{ lines: Line[]; totals: Totals }>('/store/start/lines', { store_id: storeId, items })),
+    setLines: (items: LineInput[]) => run(api.post<LinesResult>('/store/start/lines', { store_id: storeId, items })),
     deleteLine: (productId: string) => run(api.del(`/store/start/lines/${productId}?store_id=${storeId}`)),
-    select: (body: { category_id?: string; brand_id?: string; exact?: boolean; q?: string; selected: boolean }) =>
-      run(api.post<{ changed: number; totals: Totals }>('/store/start/catalog/select', { store_id: storeId, ...body })),
   }
 }
 

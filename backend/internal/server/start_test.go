@@ -67,10 +67,11 @@ func TestStart(t *testing.T) {
 	zero := product("Напиток Coca-Cola Zero 1 л", pcs, 11990, "")
 	fanta := product("Напиток Fanta Апельсин 1 л", pcs, 11990, "")
 	apples := product("Яблоки Голден", kg, 22000, "")
+	pepsi := product("Напиток Pepsi 1 л", pcs, 9000, "")
 
-	// Пустой черновик: товаров на складе нет.
+	// Пустой черновик: товаров на складе нет, «Начало работы» открыто.
 	d := a.expect(a.do("GET", "/store/start?store_id="+storeID, ownerTok, nil), 200, "empty draft")
-	if d.Body["id"] != nil || d.Body["stock_products"] != 0.0 || d.str("warehouse_name") == "" || len(d.Body["lines"].([]any)) != 0 {
+	if d.Body["id"] != nil || d.Body["stock_products"] != 0.0 || d.str("warehouse_name") == "" || len(d.Body["lines"].([]any)) != 0 || d.Body["closed"] != false {
 		t.Fatalf("empty = %v", d.Body)
 	}
 	a.expect(a.do("GET", "/store/start?store_id="+otherStore, ownerTok, nil), 404, "foreign store")
@@ -79,82 +80,39 @@ func TestStart(t *testing.T) {
 	lines := func(items ...map[string]any) resp {
 		return a.do("POST", "/store/start/lines", ownerTok, map[string]any{"store_id": storeID, "items": items})
 	}
-	// Штрихкод: количество, закупка и своя цена продажи.
-	r := a.expect(lines(map[string]any{"product_id": cola, "qty": 24, "cost": 11200, "price": 16000, "source": "barcode"}), 200, "cola")
-	if l := r.Body["lines"].([]any)[0].(map[string]any); l["qty"] != "24" || l["cost"] != "11200" || l["price"] != "16000.00" ||
-		l["current_price"] != "15000.00" || l["barcode"] != "5449000000996" || l["source"] != "barcode" {
+	code := func(r resp) string { return r.str("error", "code") }
+	search := func(q string) []map[string]any {
+		t.Helper()
+		return a.expect(a.do("GET", "/store/start/search?store_id="+storeID+"&q="+url.QueryEscape(q), ownerTok, nil), 200, "search "+q).items()
+	}
+
+	// Шаг 1 — поиск по центральной базе: каждое слово запроса или штрихкод.
+	if s := search("c"); len(s) != 0 {
+		t.Fatalf("short query = %v", s)
+	}
+	if s := search("coca 1,5"); len(s) != 1 || s[0]["product_id"] != cola || s[0]["added"] != false {
+		t.Fatalf("search = %v", s)
+	}
+	if s := search("5449000000996"); len(s) != 1 || s[0]["product_id"] != cola || s[0]["barcode"] != "5449000000996" {
+		t.Fatalf("by barcode = %v", s)
+	}
+	a.expect(a.do("GET", "/store/start/search?store_id="+otherStore+"&q=coca", ownerTok, nil), 404, "foreign search")
+
+	// Добавить в «Мои товары»: количества и цены ещё нет.
+	r := a.expect(lines(map[string]any{"product_id": cola, "add": true, "source": "barcode"}), 200, "cola")
+	if l := r.Body["lines"].([]any)[0].(map[string]any); l["qty"] != nil || l["price"] != nil || l["barcode"] != "5449000000996" || l["source"] != "barcode" {
 		t.Fatalf("cola line = %v", l)
 	}
-	// Повторный скан — +1 штука; поля, которых нет, не меняются.
-	a.expect(lines(map[string]any{"product_id": cola, "add": true}), 200, "scan again")
-	// Каталог: сразу несколько; дробное количество — только для весовых.
-	a.expect(lines(map[string]any{"product_id": fanta, "qty": 1.5}), 400, "fractional pcs")
-	a.expect(lines(map[string]any{"product_id": fanta, "qty": 0}), 400, "zero qty")
-	a.expect(lines(map[string]any{"product_id": zero}), 400, "no qty for new line")
-	r = a.expect(lines(
-		map[string]any{"product_id": fanta, "qty": 12, "cost": 9800, "source": "catalog"},
-		map[string]any{"product_id": apples, "qty": 3.25, "source": "catalog"},
-		map[string]any{"product_id": zero, "qty": 6, "source": "search"},
-	), 200, "catalog")
-	if tot := r.Body["totals"].(map[string]any); tot["products"] != 4.0 || tot["qty"] != "46.25" || tot["no_cost"] != 2.0 ||
-		tot["cost_total"] != "397600.00" || tot["price_total"] != "687320.00" {
+	if tot := r.Body["totals"].(map[string]any); tot["products"] != 1.0 || tot["unfilled"] != 1.0 {
 		t.Fatalf("totals = %v", tot)
 	}
-	// Привязать штрихкод к товару без штрихкода; чужой штрихкод — 409.
-	a.expect(lines(map[string]any{"product_id": zero, "barcode": "5449000054227"}), 200, "bind barcode")
-	conf := a.expect(lines(map[string]any{"product_id": fanta, "barcode": "5449000000996"}), 409, "taken barcode")
-	if conf.str("error", "details", "product_id") != cola {
-		t.Fatalf("conflict = %v", conf.Body)
+	// Тот же товар второй раз — ошибка, ничего не добавлено.
+	if dup := a.expect(lines(map[string]any{"product_id": cola, "add": true, "source": "barcode"}), 409, "duplicate"); code(dup) != "already_added" || dup.str("error", "details", "product_id") != cola {
+		t.Fatalf("duplicate = %v", dup.Body)
 	}
-	if found := a.expect(a.do("GET", "/store/products?barcode=5449000054227", ownerTok, nil), 200, "by barcode").items(); len(found) != 1 || found[0]["id"] != zero {
-		t.Fatalf("bound barcode = %v", found)
+	if s := search("coca 1,5"); s[0]["added"] != true {
+		t.Fatalf("added flags = %v", s)
 	}
-	// Убрать и вернуть; сброс закупки null.
-	a.expect(a.do("DELETE", "/store/start/lines/"+zero+"?store_id="+storeID, ownerTok, nil), 200, "delete line")
-	a.expect(a.do("DELETE", "/store/start/lines/"+zero+"?store_id="+storeID, ownerTok, nil), 404, "delete twice")
-	a.expect(lines(map[string]any{"product_id": fanta, "cost": nil}), 200, "clear cost")
-
-	d = a.expect(a.do("GET", "/store/start?store_id="+storeID+"&only=no_cost", ownerTok, nil), 200, "no cost filter")
-	if n := len(d.Body["lines"].([]any)); n != 2 {
-		t.Fatalf("no_cost lines = %d %v", n, d.Body["lines"])
-	}
-	d = a.expect(a.do("GET", "/store/start?store_id="+storeID+"&q=coca", ownerTok, nil), 200, "search")
-	if ls := d.Body["lines"].([]any); len(ls) != 1 || ls[0].(map[string]any)["qty"] != "25" {
-		t.Fatalf("search lines = %v", ls)
-	}
-	// Другая сеть не видит черновик.
-	a.expect(a.do("GET", "/store/start?store_id="+storeID, otherTok, nil), 404, "other network")
-
-	// Каталог с галочками: группа «Напитки · Coca-Cola», 3 из 4 уже в черновике.
-	cat := a.expect(a.do("GET", "/store/start/catalog?store_id="+storeID, ownerTok, nil), 200, "catalog")
-	if gs := cat.Body["groups"].([]any); len(gs) != 1 || cat.Body["total"] != 4.0 || cat.Body["selected"] != 3.0 ||
-		gs[0].(map[string]any)["brand_id"] != brand || gs[0].(map[string]any)["category_names"].([]any)[0] != "Напитки" {
-		t.Fatalf("catalog = %v", cat.Body)
-	}
-	citems := a.expect(a.do("GET", "/store/start/catalog/items?store_id="+storeID+"&category_id="+drinks+"&brand_id="+brand, ownerTok, nil), 200, "catalog items").items()
-	sel := 0
-	for _, it := range citems {
-		if it["selected"] == true {
-			sel++
-		} else if it["product_id"] != zero {
-			t.Fatalf("unselected = %v", it)
-		}
-	}
-	if len(citems) != 4 || sel != 3 {
-		t.Fatalf("items = %v", citems)
-	}
-	a.expect(a.do("GET", "/store/start/catalog/items?store_id="+storeID+"&category_id=bad", ownerTok, nil), 400, "bad category")
-	a.expect(a.do("POST", "/store/start/catalog/select", ownerTok, map[string]any{"store_id": storeID, "selected": true}), 400, "select nothing")
-	selected := a.expect(a.do("POST", "/store/start/catalog/select", ownerTok, map[string]any{"store_id": storeID, "category_id": drinks, "selected": true}), 200, "select all")
-	if selected.Body["changed"] != 1.0 || selected.Body["totals"].(map[string]any)["products"] != 4.0 {
-		t.Fatalf("select = %v", selected.Body)
-	}
-	unselected := a.expect(a.do("POST", "/store/start/catalog/select", ownerTok, map[string]any{"store_id": storeID, "category_id": drinks, "exact": true, "brand_id": brand, "q": "zero", "selected": false}), 200, "unselect")
-	if unselected.Body["changed"] != 1.0 || unselected.Body["totals"].(map[string]any)["products"] != 3.0 {
-		t.Fatalf("unselect = %v", unselected.Body)
-	}
-	a.expect(a.do("GET", "/store/start/catalog?store_id="+storeID, otherTok, nil), 404, "foreign catalog")
-
 	// Фото полки: ИИ ещё не подключён.
 	upload := func() string {
 		t.Helper()
@@ -219,38 +177,170 @@ func TestStart(t *testing.T) {
 	if rr := a.expect(a.do("POST", "/store/start/photos/"+bad.str("id")+"/retry", ownerTok, nil), 202, "retry"); rr.str("status") != "ready" {
 		t.Fatalf("retry = %v", rr.Body)
 	}
-	// Найденное — в черновик одним запросом.
-	a.expect(lines(map[string]any{"product_id": zero, "qty": 3, "add": true, "source": "photo"}), 200, "photo lines")
+	// Найденное на фото — одним запросом; то, что уже в списке, пропускается.
+	r = a.expect(lines(
+		map[string]any{"product_id": cola, "add": true, "qty": 8, "source": "photo"},
+		map[string]any{"product_id": fanta, "add": true, "qty": 4, "source": "photo"},
+		map[string]any{"product_id": zero, "add": true, "qty": 3, "source": "photo"},
+	), 200, "photo lines")
+	if sk := r.Body["skipped"].([]any); len(sk) != 1 || sk[0] != cola || len(r.Body["lines"].([]any)) != 2 {
+		t.Fatalf("photo add = %v", r.Body)
+	}
+	a.expect(lines(map[string]any{"product_id": apples, "add": true, "source": "search"}), 200, "apples")
+	// Один товар с фото, который уже в списке, — тоже пропуск, без ошибки.
+	if r := a.expect(lines(map[string]any{"product_id": fanta, "add": true, "qty": 2, "source": "photo"}), 200, "photo single"); len(r.Body["skipped"].([]any)) != 1 {
+		t.Fatalf("photo single = %v", r.Body)
+	}
 
-	// Новый товар сети (нет в каталоге) — на модерацию, но в черновик можно.
+	colaPet := product("Напиток Coca-Cola 1,5 л ПЭТ", pcs, 15000, "")
+	if s := search("coca 1,5"); len(s) != 2 || s[0]["added"] != true || s[1]["product_id"] != colaPet || s[1]["added"] != false {
+		t.Fatalf("search with pet = %v", s)
+	}
+	// Похожий товар (тот же бренд и объём) — спросить; «всё равно добавить» —
+	// для этой пары больше не спрашиваем.
+	sim := a.expect(lines(map[string]any{"product_id": colaPet, "add": true}), 409, "similar")
+	if code(sim) != "similar_exists" || sim.str("error", "details", "similar", "product_id") != cola || sim.str("error", "details", "similar", "barcode") != "5449000000996" {
+		t.Fatalf("similar = %v", sim.Body)
+	}
+	a.expect(lines(map[string]any{"product_id": colaPet, "add": true, "confirm_similar": true}), 200, "add anyway")
+	a.expect(a.do("DELETE", "/store/start/lines/"+colaPet+"?store_id="+storeID, ownerTok, nil), 200, "remove similar")
+	a.expect(lines(map[string]any{"product_id": colaPet, "add": true}), 200, "similar asked once")
+	a.expect(a.do("DELETE", "/store/start/lines/"+colaPet+"?store_id="+storeID, ownerTok, nil), 200, "remove similar again")
+	a.expect(a.do("DELETE", "/store/start/lines/"+colaPet+"?store_id="+storeID, ownerTok, nil), 404, "delete twice")
+
+	// Шаг 2 — «Инвентаризация: Начало работы».
+	a.expect(lines(map[string]any{"product_id": cola, "qty": 1.5}), 400, "fractional pcs")
+	a.expect(lines(map[string]any{"product_id": cola, "qty": -1}), 400, "negative qty")
+	a.expect(lines(map[string]any{"product_id": cola, "price": -5}), 400, "negative price")
+	r = a.expect(lines(map[string]any{"product_id": cola, "qty": 24, "cost": 11200, "price": 16000}), 200, "cola step 2")
+	if l := r.Body["lines"].([]any)[0].(map[string]any); l["qty"] != "24" || l["cost"] != "11200" || l["price"] != "16000.00" || l["current_price"] != "15000.00" {
+		t.Fatalf("cola filled = %v", l)
+	}
+	// Привязать штрихкод к товару без штрихкода; чужой штрихкод — 409.
+	a.expect(lines(map[string]any{"product_id": zero, "barcode": "5449000054227"}), 200, "bind barcode")
+	conf := a.expect(lines(map[string]any{"product_id": fanta, "barcode": "5449000000996"}), 409, "taken barcode")
+	if conf.str("error", "details", "product_id") != cola {
+		t.Fatalf("conflict = %v", conf.Body)
+	}
+	if found := a.expect(a.do("GET", "/store/products?barcode=5449000054227", ownerTok, nil), 200, "by barcode").items(); len(found) != 1 || found[0]["id"] != zero {
+		t.Fatalf("bound barcode = %v", found)
+	}
+	// Очистить количество — строка снова не заполнена.
+	a.expect(lines(map[string]any{"product_id": fanta, "qty": nil}), 200, "clear qty")
+	d = a.expect(a.do("GET", "/store/start?store_id="+storeID+"&only=unfilled", ownerTok, nil), 200, "unfilled")
+	if n := len(d.Body["lines"].([]any)); n != 3 || d.Body["totals"].(map[string]any)["unfilled"] != 3.0 {
+		t.Fatalf("unfilled = %d %v", n, d.Body["totals"])
+	}
+	d = a.expect(a.do("GET", "/store/start?store_id="+storeID+"&q=coca", ownerTok, nil), 200, "search lines")
+	if ls := d.Body["lines"].([]any); len(ls) != 2 {
+		t.Fatalf("search lines = %v", ls)
+	}
+	// Другая сеть не видит черновик.
+	a.expect(a.do("GET", "/store/start?store_id="+storeID, otherTok, nil), 404, "other network")
+
+	// «Записать и закрыть» — только когда у всех строк есть количество и цена.
+	if p := a.expect(a.do("POST", "/store/start/post", ownerTok, map[string]any{"store_id": storeID}), 409, "post unfilled"); code(p) != "lines_unfilled" || p.Body["error"].(map[string]any)["details"].(map[string]any)["count"] != 3.0 {
+		t.Fatalf("unfilled post = %v", p.Body)
+	}
+	a.expect(lines(map[string]any{"product_id": zero, "qty": 0, "price": 0}), 200, "zero: 0 pcs, price 0")
+	a.expect(lines(map[string]any{"product_id": fanta, "qty": 12, "cost": 9800, "price": 11990}), 200, "fanta")
+	a.expect(lines(map[string]any{"product_id": apples, "qty": 3.25, "price": 22000}), 200, "apples: no cost")
+
+	// Новый товар сети (нет в базе) — на модерацию, но в «Мои товары» можно.
 	kvass := a.expect(a.do("POST", "/store/products", ownerTok, map[string]any{"name": "Квас Navruz 1,5 л", "category_id": drinks, "unit_id": pcs,
 		"base_price": 12000, "barcodes": []string{"4780098765432"}}), 201, "own product").str("id")
-	a.expect(lines(map[string]any{"product_id": kvass, "qty": 2, "cost": 9500, "source": "new"}), 200, "kvass line")
+	a.expect(lines(map[string]any{"product_id": kvass, "add": true, "qty": 2, "cost": 9500, "price": 12000, "source": "new"}), 200, "kvass line")
+	// Свой товар, похожий на уже добавленный: из поиска — вопрос, только что созданный — без вопроса.
+	glass := a.expect(a.do("POST", "/store/products", ownerTok, map[string]any{"name": "Напиток Coca-Cola 1,5 л стекло", "category_id": drinks, "unit_id": pcs,
+		"base_price": 15000}), 201, "own similar").str("id")
+	if c := a.expect(lines(map[string]any{"product_id": glass, "add": true, "source": "search"}), 409, "own similar asked"); code(c) != "similar_exists" {
+		t.Fatalf("own similar = %v", c.Body)
+	}
+	a.expect(lines(map[string]any{"product_id": glass, "add": true, "source": "new"}), 200, "new: no question")
+	a.expect(a.do("DELETE", "/store/start/lines/"+glass+"?store_id="+storeID, ownerTok, nil), 200, "remove glass")
 
-	// Проведение.
+	// Записать и закрыть.
 	res := a.expect(a.do("POST", "/store/start/post", ownerTok, map[string]any{"store_id": storeID}), 200, "post")
-	if res.Body["products"] != 5.0 || res.str("qty") != "45.25" || len(res.Body["documents"].([]any)) != 1 || res.Body["price_document"] == nil ||
-		res.Body["visible"] != 4.0 || res.Body["pending"] != 1.0 || res.str("cost_total") != "299000.00" {
+	if res.Body["products"] != 5.0 || res.str("qty") != "41.25" || len(res.Body["documents"].([]any)) != 1 || res.Body["price_document"] == nil ||
+		res.Body["visible"] != 4.0 || res.Body["pending"] != 1.0 || res.str("cost_total") != "405400.00" {
 		t.Fatalf("post = %v", res.Body)
 	}
 	a.expect(a.do("POST", "/store/start/post", ownerTok, map[string]any{"store_id": storeID}), 409, "post twice")
 	doc := a.expect(a.do("GET", "/store/inventory/documents/"+res.Body["documents"].([]any)[0].(map[string]any)["id"].(string), ownerTok, nil), 200, "posting")
-	if doc.str("type") != "posting" || doc.str("status") != "posted" || len(doc.Body["items"].([]any)) != 5 {
+	if doc.str("type") != "posting" || doc.str("status") != "posted" || len(doc.Body["items"].([]any)) != 4 {
 		t.Fatalf("doc = %v", doc.Body)
 	}
-	// Остатки и цена магазина.
+	// Остатки и цены магазина (в том числе 0).
 	stock := a.expect(a.do("GET", "/store/inventory/stock?store_id="+storeID+"&product_id="+cola, ownerTok, nil), 200, "stock").items()
-	if len(stock) != 1 || stock[0]["qty"] != "25.000" {
+	if len(stock) != 1 || stock[0]["qty"] != "24.000" {
 		t.Fatalf("stock = %v", stock)
 	}
-	sp := a.expect(a.do("GET", "/store/products?store_id="+storeID+"&q="+url.QueryEscape("Coca-Cola 1,5"), ownerTok, nil), 200, "price").items()
-	if len(sp) == 0 || sp[0]["price"] != "16000.00" {
-		t.Fatalf("store price = %v", sp)
+	priceOf := func(q string) string {
+		t.Helper()
+		sp := a.expect(a.do("GET", "/store/products?store_id="+storeID+"&q="+url.QueryEscape(q), ownerTok, nil), 200, "price "+q).items()
+		if len(sp) == 0 {
+			t.Fatalf("no product %q", q)
+		}
+		return sp[0]["price"].(string)
 	}
-	// Новый черновик пустой, на складе уже есть товары.
+	if p := priceOf("Coca-Cola 1,5 л"); p != "16000.00" {
+		t.Fatalf("cola price = %s", p)
+	}
+	if p := priceOf("Zero"); p != "0.00" {
+		t.Fatalf("zero price = %s", p)
+	}
+	// «Начало работы» закрыто: больше не показывается, добавить нельзя.
 	d = a.expect(a.do("GET", "/store/start?store_id="+storeID, ownerTok, nil), 200, "after post")
-	if d.Body["id"] != nil || d.Body["stock_products"] != 5.0 || d.Body["last_posted_at"] == nil {
+	if d.Body["id"] != nil || d.Body["closed"] != true || d.Body["stock_products"] != 4.0 || d.Body["last_posted_at"] == nil {
 		t.Fatalf("after = %v", d.Body)
+	}
+	if c := a.expect(lines(map[string]any{"product_id": pepsi, "add": true}), 409, "closed"); code(c) != "start_closed" {
+		t.Fatalf("closed = %v", c.Body)
+	}
+
+	// Раздел «Товары» — только «Мои товары» магазина (scope=mine).
+	mine := func(extra string) map[string]bool {
+		t.Helper()
+		out := map[string]bool{}
+		for _, it := range a.expect(a.do("GET", "/store/products?scope=mine&limit=100"+extra, ownerTok, nil), 200, "mine"+extra).items() {
+			out[it["id"].(string)] = true
+		}
+		return out
+	}
+	if m := mine("&store_id=" + storeID); len(m) != 5 || !m[cola] || !m[zero] || !m[fanta] || !m[apples] || !m[kvass] || m[pepsi] || m[colaPet] {
+		t.Fatalf("mine = %v", m)
+	}
+	if m := mine(""); len(m) != 5 {
+		t.Fatalf("mine in network = %v", m)
+	}
+	if all := a.expect(a.do("GET", "/store/products?store_id="+storeID+"&q=pepsi", ownerTok, nil), 200, "all").items(); len(all) != 1 {
+		t.Fatalf("central base = %v", all)
+	}
+	a.expect(a.do("GET", "/store/products?scope=bad", ownerTok, nil), 400, "bad scope")
+	if g := a.expect(a.do("GET", "/store/products/groups?scope=mine&store_id="+storeID, ownerTok, nil), 200, "mine groups"); g.Body["total"] != 5.0 {
+		t.Fatalf("mine groups = %v", g.Body)
+	}
+	a.expect(a.do("GET", "/store/products/groups?scope=mine&store_id="+otherStore, ownerTok, nil), 404, "foreign groups")
+	if m := a.expect(a.do("GET", "/store/products?scope=mine&store_id="+otherStore, otherTok, nil), 200, "other mine").items(); len(m) != 0 {
+		t.Fatalf("other store mine = %v", m)
+	}
+	// Свой товар из раздела «Товары» сразу в «Моих товарах».
+	own := a.expect(a.do("POST", "/store/products", ownerTok, map[string]any{"name": "Лимонад домашний 1 л", "category_id": drinks, "unit_id": pcs,
+		"base_price": 8000, "store_id": storeID}), 201, "own product in store").str("id")
+	a.expect(a.do("POST", "/store/products", ownerTok, map[string]any{"name": "Лимонад 2 л", "category_id": drinks, "unit_id": pcs,
+		"store_id": otherStore}), 404, "own product foreign store")
+	// Цена магазина на товар — он тоже в «Моих товарах».
+	var retail string
+	for _, pt := range a.expect(a.do("GET", "/store/price-types", ownerTok, nil), 200, "price types").items() {
+		if pt["is_default"] == true {
+			retail = pt["id"].(string)
+		}
+	}
+	pdoc := a.expect(a.do("POST", "/store/price-documents", ownerTok, map[string]any{"price_type_id": retail, "store_id": storeID,
+		"items": []map[string]any{{"product_id": pepsi, "new_price": "9500"}}}), 201, "price doc").str("id")
+	a.expect(a.do("POST", "/store/price-documents/"+pdoc+"/post", ownerTok, nil), 200, "post price doc")
+	if m := mine("&store_id=" + storeID); len(m) != 7 || !m[own] || !m[pepsi] {
+		t.Fatalf("mine after = %v", m)
 	}
 	// Расход ИИ записан как «фото полок».
 	var shelves int

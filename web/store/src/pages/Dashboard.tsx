@@ -211,12 +211,12 @@ function Widgets() {
   )
 }
 
-/** «Начало работы» — пока на складе нет товаров или список не проведён. */
+/** «Начало работы» — пока его не записали и не закрыли. */
 function StartBlock() {
   const { storeId, can } = useStore()
   const nav = useNavigate()
   const d = useItem<Draft>(can('inventory.manage') ? '/store/start' : null, { store_id: storeId, limit: 1 })
-  if (!d.data || (d.data.stock_products > 0 && !d.data.id)) return null
+  if (!d.data || d.data.closed) return null
   const n = d.data.totals.products
   return (
     <Card style={{ marginBottom: 16, borderColor: '#E11D2A' }}>
@@ -230,12 +230,12 @@ function StartBlock() {
             <Typography.Text type="secondary">
               {n > 0
                 ? tr(
-                    `В списке ${n} — проверьте цены и проведите, чтобы товары появились на складе и у покупателей.`,
-                    `Roʻyxatda ${n} ta — mahsulotlar omborda va xaridorlarda paydo boʻlishi uchun narxlarni tekshirib, oʻtkazing.`,
+                    `В «Моих товарах» ${n} — введите количество и цены и нажмите «Записать и закрыть», чтобы товары появились на складе и у покупателей.`,
+                    `«Mahsulotlarim»da ${n} ta — miqdor va narxlarni kiriting va «Yozish va yopish»ni bosing, shunda mahsulotlar omborda va xaridorlarda paydo boʻladi.`,
                   )
                 : tr(
-                    'Добавьте товары, которые уже есть в магазине: фото полок, штрихкод или каталог. Super Market найдёт их в общем каталоге.',
-                    'Doʻkonda bor mahsulotlarni qoʻshing: javon rasmi, shtrix-kod yoki katalog orqali. Super Market ularni umumiy katalogdan topadi.',
+                    'Добавьте товары, которые уже есть в магазине: найдите их в центральной базе по названию или штрихкоду, или загрузите фото полок.',
+                    'Doʻkonda bor mahsulotlarni qoʻshing: ularni markaziy bazadan nomi yoki shtrix-kodi boʻyicha toping yoki javon rasmlarini yuklang.',
                   )}
             </Typography.Text>
           </div>

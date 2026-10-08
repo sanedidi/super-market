@@ -96,9 +96,14 @@ func (s *Service) StoreProductGroups(ctx context.Context, pr *identity.Principal
 	if err := f.validate(); err != nil {
 		return ProductGroups{}, err
 	}
+	if f.StoreID != "" {
+		if err := s.checkStore(ctx, pr, f.StoreID); err != nil {
+			return ProductGroups{}, err
+		}
+	}
 	rows, err := s.pool.Query(ctx, strings.Replace(groupSelect, "%s", `(count(*) FILTER (WHERE p.network_id IS NOT NULL AND p.moderation_status = 'pending'))::int`, 1)+`
-		WHERE (p.network_id IS NULL OR p.network_id = $4)`+filterWhere+groupOrder,
-		strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, pr.NetworkID)
+		WHERE (p.network_id IS NULL OR p.network_id = $4)`+filterWhere+mineWhere(5, 4)+groupOrder,
+		strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, pr.NetworkID, f.mineArg(f.StoreID))
 	if err != nil {
 		return ProductGroups{}, err
 	}

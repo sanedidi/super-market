@@ -19,7 +19,8 @@ import 'start_logic.dart';
 enum StartMode { photo, barcode }
 
 /// Н3 · Камера «Начала работы»: фото товара или полки (Super Market найдёт
-/// товары в каталоге) и сканер штрихкодов подряд (Н5).
+/// товары в центральной базе) и сканер штрихкодов подряд: найденный товар
+/// сразу встаёт в «Мои товары», повтор не добавляется.
 class StartCameraScreen extends StatefulWidget {
   const StartCameraScreen({super.key, required this.start, this.mode = StartMode.photo});
 
@@ -150,9 +151,9 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
       final p = await widget.start.byBarcode(code);
       if (!mounted) return;
       if (p != null) {
-        added = await addProductSheet(context, widget.start, p, code: code);
+        added = await addToMyGoods(context, widget.start, p, source: 'barcode', listButton: false) == AddResult.added;
       } else {
-        final r = await pickProductSheet(context, widget.start, info: tr('Штрихкод $code — нет в каталоге', 'Shtrix-kod $code — katalogda yoʻq'), code: code);
+        final r = await pickProductSheet(context, widget.start, info: tr('Штрихкод $code — нет в центральной базе', 'Shtrix-kod $code — markaziy bazada yoʻq'), code: code);
         if (!mounted || r == null) return;
         if (r.create) {
           final created = await Navigator.of(context).push<ProductRef>(
@@ -160,7 +161,7 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
           );
           added = created != null;
         } else if (r.product != null) {
-          added = await addProductSheet(context, widget.start, r.product!, bind: r.bind ? code : null);
+          added = await addToMyGoods(context, widget.start, r.product!, source: 'barcode', bind: r.bind ? code : null, listButton: false) == AddResult.added;
         }
       }
     } catch (e) {

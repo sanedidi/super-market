@@ -8,7 +8,7 @@ import { useStore } from '../../ctx'
 import { Num, ProductSelect } from '../../ui'
 import type { DictItem, Product } from '../../types'
 import { useStartApi, type Candidate, type Photo, type PhotoItem } from './api'
-import { Thumb } from './CatalogTree'
+import { Thumb } from './Thumb'
 
 const goods = (n: number) => tr(`${n} ${plural(n, 'товар', 'товара', 'товаров')}`, `${n} ta mahsulot`)
 
@@ -23,9 +23,10 @@ export type NewProductInit = {
 }
 
 /**
- * Свой товар, которого нет в каталоге: сразу доступен сети и попадает в
- * список, в общий каталог — после проверки. withLine — сразу в черновик с
- * количеством и закупкой (иначе только создать и вернуть).
+ * Свой товар, которого нет в центральной базе: сразу доступен сети и
+ * попадает в «Мои товары», в общую базу — после проверки. withLine — сразу
+ * в «Мои товары» (иначе только создать и вернуть). Количество и цены — на
+ * шаге «Инвентаризация».
  */
 export function NewProductModal({
   open,
@@ -59,7 +60,6 @@ export function NewProductModal({
       brand_id: init?.brand_id ?? undefined,
       category_id: init?.category_id ?? undefined,
       barcodes: init?.barcode ? [init.barcode] : [],
-      qty: init?.qty ? String(init.qty) : '1',
     })
   }, [open, form])
   // Единица по умолчанию — штука.
@@ -85,8 +85,9 @@ export function NewProductModal({
         description: '',
       })
       if (withLine) {
-        await setLines([{ product_id: p.id, qty: v.qty as string, cost: (v.cost as string) || undefined, source: 'new' }])
-        message.success(tr('Товар создан и добавлен в список', 'Mahsulot yaratildi va roʻyxatga qoʻshildi'))
+        // Цена продажи из карточки — сразу в строку (на шаге 2 её можно поменять).
+        await setLines([{ product_id: p.id, add: true, qty: initRef.current?.qty ?? undefined, price: (v.base_price as string) ?? undefined, source: 'new' }])
+        message.success(tr('Товар создан и добавлен в «Мои товары»', 'Mahsulot yaratildi va «Mahsulotlarim»ga qoʻshildi'))
       }
       onCreated?.(p)
       onClose()
@@ -112,7 +113,7 @@ export function NewProductModal({
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message={tr('Товара нет в каталоге? Создайте его: он сразу встанет в ваш список, а после проверки попадёт в общий каталог и станет виден покупателям.', 'Mahsulot katalogda yoʻqmi? Uni yarating: u darhol roʻyxatingizga tushadi, tekshiruvdan soʻng esa umumiy katalogga qoʻshilib, xaridorlarga koʻrinadi.')}
+        message={tr('Товара нет в центральной базе? Создайте его: он сразу встанет в «Мои товары», а после проверки попадёт в общую базу и станет виден покупателям.', 'Mahsulot markaziy bazada yoʻqmi? Uni yarating: u darhol «Mahsulotlarim»ga tushadi, tekshiruvdan soʻng esa umumiy bazaga qoʻshilib, xaridorlarga koʻrinadi.')}
       />
       <Form form={form} layout="vertical" onFinish={submit}>
         <Row gutter={16}>
@@ -161,26 +162,12 @@ export function NewProductModal({
               <RemoteSelect<DictItem & { short_name: string }> path="/store/catalog/units" label={(u) => `${u.name} (${u.short_name})`} />
             </Form.Item>
           </Col>
-          {withLine && (
-            <>
-              <Col xs={12} md={8}>
-                <Form.Item name="qty" label={tr('Количество', 'Miqdor')} rules={[{ required: true, message: tr('Укажите количество', 'Miqdorni kiriting') }]}>
-                  <Num min="0.001" />
-                </Form.Item>
-              </Col>
-              <Col xs={12} md={8}>
-                <Form.Item name="cost" label={tr('Закупочная цена', 'Xarid narxi')}>
-                  <Num placeholder={tr('сум за единицу', 'birlik uchun soʻm')} />
-                </Form.Item>
-              </Col>
-            </>
-          )}
-          <Col xs={24} md={withLine ? 8 : 16}>
+          <Col xs={24} md={16}>
             <Form.Item name="base_price" label={tr('Цена продажи', 'Sotuv narxi')} rules={[{ required: true, message: tr('Укажите цену', 'Narxni kiriting') }]}>
               <Num min="1" placeholder={tr('сум', 'soʻm')} />
             </Form.Item>
           </Col>
-          <Col xs={24} md={withLine ? 16 : 24}>
+          <Col span={24}>
             <Form.Item name="barcodes" label={tr('Штрихкод', 'Shtrix-kod')} extra={tr('Отсканируйте или введите и нажмите Enter', 'Skanerlang yoki kiriting va Enter tugmasini bosing')}>
               <Select mode="tags" tokenSeparators={[',', ' ']} open={false} />
             </Form.Item>
@@ -220,7 +207,7 @@ export function BarcodeModal({ code, onClose }: { code: string | null; onClose: 
     setSaving(true)
     try {
       await setLines([{ product_id: product.id, add: true, barcode: code, source: 'barcode' }])
-      message.success(tr(`Штрихкод привязан · ${product.name} +1`, `Shtrix-kod bogʻlandi · ${product.name} +1`))
+      message.success(tr(`Штрихкод привязан · ${product.name} добавлен`, `Shtrix-kod bogʻlandi · ${product.name} qoʻshildi`))
       onClose()
     } catch {
       // ошибка уже показана
@@ -272,7 +259,7 @@ export function BarcodeModal({ code, onClose }: { code: string | null; onClose: 
           <ProductSelect value={product?.id} label={product?.name} onChange={(id, p) => setProduct({ id, name: p?.name ?? '' })} autoFocus />
         ) : (
           <Typography.Text>
-            {tr(`Создайте свой товар со штрихкодом ${code}. Он сразу встанет в список.`, `${code} shtrix-kodli oʻz mahsulotingizni yarating. U darhol roʻyxatga tushadi.`)}
+            {tr(`Создайте свой товар со штрихкодом ${code}. Он сразу встанет в «Мои товары».`, `${code} shtrix-kodli oʻz mahsulotingizni yarating. U darhol «Mahsulotlarim»ga tushadi.`)}
           </Typography.Text>
         )}
       </Modal>
@@ -302,7 +289,8 @@ const stateIcon: Record<PhotoItem['state'], JSX.Element> = {
 /**
  * Фото полок: Super Market находит на фото товары каталога и считает штуки.
  * Найденное проверяют, выбирают из похожих или создают новый товар — и
- * добавляют в список одним нажатием (повторно — штуки прибавляются).
+ * добавляют в «Мои товары» одним нажатием; посчитанные штуки подставятся
+ * на шаге «Инвентаризация». То, что уже в списке, повторно не добавляется.
  */
 export function PhotoModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { storeId, can } = useStore()
@@ -389,8 +377,10 @@ export function PhotoModal({ open, onClose }: { open: boolean; onClose: () => vo
   const add = async () => {
     setAdding(true)
     try {
-      await setLines(chosen.map((c) => ({ ...c, add: true, source: 'photo' as const })))
-      message.success(tr(`В список добавлено: ${goods(chosen.length)}`, `Roʻyxatga qoʻshildi: ${goods(chosen.length)}`))
+      const r = await setLines(chosen.map((c) => ({ ...c, add: true, source: 'photo' as const })))
+      const n = chosen.length - r.skipped.length
+      message.success(tr(`В «Мои товары» добавлено: ${goods(n)}`, `«Mahsulotlarim»ga qoʻshildi: ${goods(n)}`))
+      if (r.skipped.length) message.info(tr(`Уже были в списке — не добавлены повторно: ${goods(r.skipped.length)}`, `Roʻyxatda allaqachon bor — qayta qoʻshilmadi: ${goods(r.skipped.length)}`))
       onClose()
     } catch {
       // ошибка уже показана
@@ -521,7 +511,7 @@ export function PhotoModal({ open, onClose }: { open: boolean; onClose: () => vo
                         {it.in_draft && (
                           <div>
                             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              {tr('уже в списке — штуки прибавятся', 'roʻyxatda bor — donalar qoʻshiladi')}
+                              {tr('уже в «Моих товарах» — повторно не добавится', '«Mahsulotlarim»da bor — qayta qoʻshilmaydi')}
                             </Typography.Text>
                           </div>
                         )}

@@ -1,34 +1,35 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import '../main.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'camera_screen.dart';
-import 'catalog_screen.dart';
+import 'count_screen.dart';
 import 'new_product_screen.dart';
-import 'review_screen.dart';
 import 'sheets.dart';
 import 'start_api.dart';
 import 'start_logic.dart';
 
 /// Способы добавить товары (кнопки на главной и на экране «Начало работы»).
-enum StartMethod { photo, barcode, catalog, search }
+enum StartMethod { photo, barcode, search }
 
-/// Открыть способ добавления.
+/// Открыть камеру (фото полок или штрихкод). Поиск — вкладка самого экрана.
 Future<void> openStartMethod(BuildContext context, StartApi start, StartMethod m) async {
-  final Widget screen = switch (m) {
-    StartMethod.photo => StartCameraScreen(start: start),
-    StartMethod.barcode => StartCameraScreen(start: start, mode: StartMode.barcode),
-    StartMethod.catalog => CatalogSectionsScreen(start: start),
-    StartMethod.search => StartSearchScreen(start: start),
-  };
+  if (m == StartMethod.search) return;
+  final screen = StartCameraScreen(start: start, mode: m == StartMethod.barcode ? StartMode.barcode : StartMode.photo);
   await Navigator.of(context).push<Object?>(MaterialPageRoute(builder: (_) => screen));
 }
 
-/// Н2 · Начало работы: сколько добавлено, способы добавить, последние товары,
-/// «Проверить и провести». Черновик общий с веб-панелью.
+/// М1/М2 · Начало работы, шаг 1: вкладки «Поиск в базе» (центральная база по
+/// названию и штрихкоду; камера — фото полок и сканер) и «Мои товары» (полные
+/// названия, штрихкод, убрать). Тот же товар второй раз не добавляется (М3),
+/// на похожий — вопрос (М4). Дальше — «Инвентаризация: Начало работы» (М5).
+/// Черновик общий с веб-панелью.
 class StartScreen extends StatefulWidget {
   const StartScreen({super.key, this.initial});
 
@@ -41,20 +42,40 @@ class StartScreen extends StatefulWidget {
 
 class _StartScreenState extends State<StartScreen> {
   late final StartApi _start = StartApi(context.read<Api>(), context.read<StoreState>().storeId!);
+  final _q = TextEditingController();
+  final _qFocus = FocusNode();
+  Timer? _debounce;
   Map<String, dynamic>? _d;
   Object? _error;
+  int _tab = 0;
+  String? _highlight;
+  List<Map<String, dynamic>> _results = const [];
+  bool _searching = false;
+  String? _busyId;
 
   @override
   void initState() {
     super.initState();
     _load();
     final m = widget.initial;
-    if (m != null) WidgetsBinding.instance.addPostFrameCallback((_) => _open(m));
+    if (m == StartMethod.search) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _qFocus.requestFocus());
+    } else if (m != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _open(m));
+    }
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _q.dispose();
+    _qFocus.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
     try {
-      final d = await _start.draft(limit: 5);
+      final d = await _start.draft(limit: 500);
       if (mounted) {
         setState(() {
           _d = d;
@@ -66,13 +87,63 @@ class _StartScreenState extends State<StartScreen> {
     }
   }
 
+  Future<void> _search() async {
+    final q = _q.text.trim();
+    if (q.length < 2) {
+      setState(() => _results = const []);
+      return;
+    }
+    setState(() => _searching = true);
+    try {
+      final items = await _start.searchBase(q);
+      if (mounted && _q.text.trim() == q) setState(() => _results = items);
+    } catch (e) {
+      if (mounted) showMessage(context, e);
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
+
   Future<void> _open(StartMethod m) async {
     await openStartMethod(context, _start, m);
+    await _load();
+    if (mounted && _q.text.trim().length >= 2) _search();
+  }
+
+  Future<void> _newProduct() async {
+    await Navigator.of(context).push<ProductRef>(MaterialPageRoute(builder: (_) => NewProductScreen(start: _start)));
     _load();
   }
 
-  Future<void> _push(Widget screen) async {
-    await Navigator.of(context).push<Object?>(MaterialPageRoute(builder: (_) => screen));
+  Future<void> _add(Map<String, dynamic> item) async {
+    final p = ProductRef.fromItem(item);
+    setState(() => _busyId = p.id);
+    final r = await addToMyGoods(context, _start, p, source: isBarcode(_q.text) ? 'barcode' : 'search');
+    if (!mounted) return;
+    setState(() {
+      _busyId = null;
+      if (r == AddResult.showList) {
+        _tab = 1;
+        _highlight = p.id;
+      } else if (r == AddResult.added) {
+        _highlight = null;
+      }
+    });
+    await _load();
+    if (mounted) _search();
+  }
+
+  Future<void> _remove(Map<String, dynamic> l) async {
+    try {
+      await _start.deleteLine('${l['product_id']}');
+    } catch (e) {
+      if (mounted) showMessage(context, e);
+    }
+    _load();
+  }
+
+  Future<void> _next() async {
+    await Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => StartCountScreen(start: _start)));
     _load();
   }
 
@@ -82,141 +153,36 @@ class _StartScreenState extends State<StartScreen> {
     final d = _d;
     final t = (d?['totals'] as Map<String, dynamic>?) ?? const {};
     final products = (t['products'] as num?)?.toInt() ?? 0;
-    final lines = ((d?['lines'] as List?) ?? const []).cast<Map<String, dynamic>>();
-    final stock = (d?['stock_products'] as num?)?.toInt() ?? 0;
+    if (d != null && d['closed'] == true && d['id'] == null) return const StartClosedScreen();
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppColors.bg,
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(tr('Начало работы', 'Ishni boshlash')),
-          if (d != null) Text(tr('Склад «${d['warehouse_name']}» · ${st.store?['name'] ?? ''}', '«${d['warehouse_name']}» ombori · ${st.store?['name'] ?? ''}'), style: AppText.small),
+          Text(tr('Найдите товары, которые есть в магазине', 'Doʻkonda bor mahsulotlarni toping'), style: AppText.small),
         ]),
+        actions: [
+          IconButton(tooltip: tr('Фото полок', 'Javon rasmi'), icon: const Icon(Icons.photo_camera_rounded), onPressed: () => _open(StartMethod.photo)),
+          if (st.can('catalog.manage')) IconButton(tooltip: tr('Новый товар', 'Yangi mahsulot'), icon: const Icon(Icons.add_rounded), onPressed: _newProduct),
+        ],
       ),
       body: _error != null && d == null
           ? EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: _error.toString(), action: tr('Повторить', 'Qayta urinish'), onAction: _load)
           : d == null
               ? const Center(child: CircularProgressIndicator())
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24), children: [
-                    AppCard(
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
-                          Text('$products', style: AppText.h1),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                                tr('${plural(products, 'товар', 'товара', 'товаров')} добавлено · ${plainQty(t['qty'] ?? 0)} шт',
-                                    'ta mahsulot qoʻshildi · ${plainQty(t['qty'] ?? 0)} dona'),
-                                style: AppText.small),
-                          ),
-                        ]),
-                        const SizedBox(height: 12),
-                        Row(children: [
-                          Expanded(child: _Kpi(tr('По закупке', 'Xarid narxida'), money(t['cost_total'] ?? 0))),
-                          const SizedBox(width: 8),
-                          Expanded(child: _Kpi(tr('По цене продажи', 'Sotuv narxida'), money(t['price_total'] ?? 0))),
-                        ]),
-                        const SizedBox(height: 10),
-                        Text(tr('Черновик сохраняется: можно продолжить в веб-панели', 'Qoralama saqlanadi: veb-panelda davom ettirish mumkin'), style: AppText.small),
-                      ]),
+              : Column(children: [
+                  const Padding(padding: EdgeInsets.fromLTRB(16, 4, 16, 10), child: StartSteps(step: 1)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: _Tabs(
+                      labels: [tr('Поиск в базе', 'Bazadan qidirish'), tr('Мои товары · $products', 'Mahsulotlarim · $products')],
+                      value: _tab,
+                      onChanged: (v) => setState(() => _tab = v),
                     ),
-                    if (stock > 0 && d['id'] == null) ...[
-                      const SizedBox(height: 12),
-                      AppCard(
-                        color: AppColors.successSoft,
-                        child: Text(
-                          tr('На складе уже ${goods(stock)}. Нашлись ещё товары — добавьте их и проведите снова. Новые поставки — через «Приход по фото».',
-                              'Omborda allaqachon ${goods(stock)} bor. Yana mahsulot topilsa — qoʻshing va qayta oʻtkazing. Yangi yetkazmalar — «Rasm orqali kirim» orqali.'),
-                          style: AppText.small.copyWith(color: AppColors.successInk),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 20),
-                    Text(tr('Как добавить', 'Qanday qoʻshish mumkin'), style: AppText.h3),
-                    const SizedBox(height: 12),
-                    Row(children: [
-                      Expanded(
-                        child: _Method(
-                          icon: Icons.photo_camera_rounded,
-                          bg: AppColors.primarySoft,
-                          fg: AppColors.primary,
-                          title: tr('Фото товара или полки', 'Mahsulot yoki javon rasmi'),
-                          text: tr('Super Market найдёт товары в каталоге', 'Super Market mahsulotlarni katalogdan topadi'),
-                          onTap: () => _open(StartMethod.photo),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _Method(
-                          icon: Icons.qr_code_scanner_rounded,
-                          bg: AppColors.blueSoft,
-                          fg: AppColors.blue,
-                          title: tr('Штрихкод', 'Shtrix-kod'),
-                          text: tr('Сканируйте камерой подряд', 'Kamera bilan ketma-ket skanerlang'),
-                          onTap: () => _open(StartMethod.barcode),
-                        ),
-                      ),
-                    ]),
-                    const SizedBox(height: 12),
-                    Row(children: [
-                      Expanded(
-                        child: _Method(
-                          icon: Icons.category_rounded,
-                          bg: AppColors.successSoft,
-                          fg: AppColors.success,
-                          title: tr('Каталог по разделам', 'Boʻlimlar boʻyicha katalog'),
-                          text: tr('Отметьте галочками, что есть', 'Bor narsalarni belgilang'),
-                          onTap: () => _open(StartMethod.catalog),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _Method(
-                          icon: Icons.search_rounded,
-                          bg: AppColors.warningSoft,
-                          fg: AppColors.warningInk,
-                          title: tr('Поиск', 'Qidirish'),
-                          text: tr('По названию или бренду', 'Nomi yoki brendi boʻyicha'),
-                          onTap: () => _open(StartMethod.search),
-                        ),
-                      ),
-                    ]),
-                    if (st.can('catalog.manage')) ...[
-                      const SizedBox(height: 4),
-                      TextButton.icon(
-                        onPressed: () => _push(NewProductScreen(start: _start)),
-                        icon: const Icon(Icons.add_rounded, color: AppColors.primary),
-                        label: Text(tr('Нет в каталоге — новый товар', 'Katalogda yoʻq — yangi mahsulot'), style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    Row(children: [
-                      Expanded(child: Text(tr('Добавленные', 'Qoʻshilganlar'), style: AppText.h3)),
-                      if (products > 0)
-                        TextButton(
-                          onPressed: () => _push(StartReviewScreen(start: _start)),
-                          child: Text(tr('Все $products', 'Hammasi $products'), style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
-                        ),
-                    ]),
-                    const SizedBox(height: 4),
-                    if (lines.isEmpty)
-                      Text(tr('Пока ничего — начните с фото полки или штрихкода.', 'Hozircha hech narsa yoʻq — javon rasmi yoki shtrix-koddan boshlang.'), style: AppText.small)
-                    else
-                      AppCard(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                        child: Column(children: [
-                          for (final l in lines)
-                            StartLineTile(
-                              line: l,
-                              onTap: () async {
-                                if (await editLineSheet(context, _start, l)) _load();
-                              },
-                            ),
-                        ]),
-                      ),
-                  ]),
-                ),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(child: _tab == 0 ? _searchTab() : _mineTab(d)),
+                ]),
       bottomNavigationBar: d == null
           ? null
           : SafeArea(
@@ -224,68 +190,242 @@ class _StartScreenState extends State<StartScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
                   BigButton(
-                    label: tr('Проверить и провести', 'Tekshirish va oʻtkazish'),
-                    icon: Icons.check_circle_outline_rounded,
-                    onPressed: products == 0 ? null : () => _push(StartReviewScreen(start: _start)),
+                    label: tr('Дальше: инвентаризация · $products', 'Keyingi: inventarizatsiya · $products'),
+                    icon: Icons.arrow_forward_rounded,
+                    onPressed: products == 0 ? null : _next,
                   ),
                   const SizedBox(height: 6),
-                  Text(tr('Товары с остатком сразу увидят покупатели', 'Qoldigʻi bor mahsulotlarni xaridorlar darhol koʻradi'), style: AppText.small),
+                  Text(tr('Количество, себестоимость и цены — на шаге 2', 'Miqdor, tannarx va narxlar — 2-qadamda'), style: AppText.small),
                 ]),
               ),
             ),
     );
   }
-}
 
-class _Kpi extends StatelessWidget {
-  const _Kpi(this.label, this.value);
+  Widget _searchTab() {
+    final q = _q.text.trim();
+    return ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), children: [
+      TextField(
+        controller: _q,
+        focusNode: _qFocus,
+        textInputAction: TextInputAction.search,
+        onChanged: (_) {
+          _debounce?.cancel();
+          _debounce = Timer(const Duration(milliseconds: 300), _search);
+          setState(() {});
+        },
+        onSubmitted: (_) => _search(),
+        decoration: InputDecoration(
+          fillColor: AppColors.white,
+          prefixIcon: const Icon(Icons.search_rounded),
+          hintText: tr('Название или штрихкод', 'Nomi yoki shtrix-kod'),
+          suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (q.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.close_rounded, color: AppColors.muted),
+                onPressed: () {
+                  _q.clear();
+                  setState(() => _results = const []);
+                },
+              ),
+            IconButton(tooltip: tr('Сканировать штрихкод', 'Shtrix-kodni skanerlash'), icon: const Icon(Icons.qr_code_scanner_rounded, color: AppColors.ink), onPressed: () => _open(StartMethod.barcode)),
+          ]),
+        ),
+      ),
+      const SizedBox(height: 12),
+      if (q.length < 2)
+        Text(tr('Введите название (uz / ru) или штрихкод — или отсканируйте камерой.', 'Nomini (uz / ru) yoki shtrix-kodni kiriting — yoki kamera bilan skanerlang.'), style: AppText.small)
+      else if (_searching && _results.isEmpty)
+        const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
+      else if (_results.isEmpty)
+        Text(tr('Ничего не найдено. Нет в базе — создайте свой товар (+ вверху).', 'Hech narsa topilmadi. Bazada yoʻq boʻlsa — oʻz mahsulotingizni yarating (yuqoridagi +).'), style: AppText.small)
+      else ...[
+        Text(
+          _results.length >= 30 ? tr('Найдено больше 30 — уточните запрос', '30 tadan koʻp topildi — soʻrovni aniqlashtiring') : tr('Найдено ${_results.length} · центральная база', 'Topildi: ${_results.length} · markaziy baza'),
+          style: AppText.caption,
+        ),
+        const SizedBox(height: 8),
+        AppCard(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(children: [
+            for (var i = 0; i < _results.length; i++) ...[
+              if (i > 0) const Divider(height: 1, indent: 68, color: AppColors.line),
+              _ResultTile(item: _results[i], busy: _busyId == _results[i]['product_id'], onAdd: () => _add(_results[i])),
+            ],
+          ]),
+        ),
+      ],
+    ]);
+  }
 
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(14)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: AppText.small.copyWith(fontSize: 12)),
-        Text(value, style: AppText.bodyStrong, maxLines: 1, overflow: TextOverflow.ellipsis),
+  Widget _mineTab(Map<String, dynamic> d) {
+    final lines = ((d['lines'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), children: [
+        Text(tr('Последние добавленные сверху', 'Oxirgi qoʻshilganlar yuqorida'), style: AppText.caption),
+        const SizedBox(height: 8),
+        if (lines.isEmpty)
+          Text(tr('Пока пусто — найдите товары во вкладке «Поиск в базе» или снимите полку.', 'Hozircha boʻsh — mahsulotlarni «Bazadan qidirish» boʻlimida toping yoki javonni rasmga oling.'), style: AppText.small)
+        else
+          AppCard(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(children: [
+              for (var i = 0; i < lines.length; i++) ...[
+                if (i > 0) const Divider(height: 1, indent: 68, color: AppColors.line),
+                _MineTile(line: lines[i], highlight: lines[i]['product_id'] == _highlight, onRemove: () => _remove(lines[i])),
+              ],
+            ]),
+          ),
       ]),
     );
   }
 }
 
-class _Method extends StatelessWidget {
-  const _Method({required this.icon, required this.bg, required this.fg, required this.title, required this.text, required this.onTap});
+/// Две вкладки-кнопки (Figma М1/М2).
+class _Tabs extends StatelessWidget {
+  const _Tabs({required this.labels, required this.value, required this.onChanged});
 
-  final IconData icon;
-  final Color bg;
-  final Color fg;
-  final String title;
-  final String text;
-  final VoidCallback onTap;
+  final List<String> labels;
+  final int value;
+  final ValueChanged<int> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      onTap: onTap,
-      padding: const EdgeInsets.all(14),
-      child: SizedBox(
-        height: 128,
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          IconBox(icon, bg: bg, fg: fg, size: 40, iconSize: 22, radius: 12),
-          const SizedBox(height: 10),
-          Text(title, style: AppText.bodyStrong, maxLines: 2, overflow: TextOverflow.ellipsis),
-          const SizedBox(height: 2),
-          Text(text, style: AppText.small, maxLines: 2, overflow: TextOverflow.ellipsis),
-        ]),
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(color: const Color(0xFFEDEDF0), borderRadius: BorderRadius.circular(14)),
+      child: Row(children: [
+        for (var i = 0; i < labels.length; i++)
+          Expanded(
+            child: Material(
+              color: i == value ? AppColors.white : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => onChanged(i),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 9),
+                  child: Text(labels[i], textAlign: TextAlign.center, style: AppText.bodyStrong.copyWith(fontSize: 14, color: i == value ? AppColors.ink : AppColors.text2)),
+                ),
+              ),
+            ),
+          ),
+      ]),
+    );
+  }
+}
+
+/// Товар центральной базы: полное название, штрихкод; «Добавить» или «✓ Добавлен».
+class _ResultTile extends StatelessWidget {
+  const _ResultTile({required this.item, required this.busy, required this.onAdd});
+
+  final Map<String, dynamic> item;
+  final bool busy;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    final added = item['added'] == true;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Row(children: [
+        ProductThumb(item['image'] as String?, size: 44),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('${item['name']}', style: AppText.bodyStrong.copyWith(fontSize: 14)),
+            Text([if (item['barcode'] != null) '${item['barcode']}', if (item['own'] == true) tr('свой товар', 'oʻz mahsulot')].join(' · '), style: AppText.small.copyWith(fontSize: 12)),
+          ]),
+        ),
+        const SizedBox(width: 8),
+        if (added)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(color: AppColors.successSoft, borderRadius: BorderRadius.circular(10)),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.check_rounded, size: 16, color: AppColors.successInk),
+              const SizedBox(width: 4),
+              Text(item['in_store'] == true ? tr('Уже в магазине', 'Doʻkonda bor') : tr('Добавлен', 'Qoʻshilgan'), style: AppText.caption.copyWith(fontSize: 13, color: AppColors.successInk)),
+            ]),
+          )
+        else
+          Material(
+            color: AppColors.ink,
+            borderRadius: BorderRadius.circular(10),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: busy ? null : onAdd,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                child: busy
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.white))
+                    : Row(mainAxisSize: MainAxisSize.min, children: [
+                        const Icon(Icons.add_rounded, size: 16, color: AppColors.white),
+                        const SizedBox(width: 4),
+                        Text(tr('Добавить', 'Qoʻshish'), style: AppText.caption.copyWith(fontSize: 13, color: AppColors.white)),
+                      ]),
+              ),
+            ),
+          ),
+      ]),
+    );
+  }
+}
+
+/// Строка «Моих товаров»: фото, полное название, штрихкод, убрать; повтор — подсветка.
+class _MineTile extends StatelessWidget {
+  const _MineTile({required this.line, required this.highlight, required this.onRemove});
+
+  final Map<String, dynamic> line;
+  final bool highlight;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = line;
+    return Container(
+      color: highlight ? AppColors.errorSoft : null,
+      padding: const EdgeInsets.fromLTRB(14, 10, 4, 10),
+      child: Row(children: [
+        ProductThumb(l['image'] as String?, size: 44),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('${l['name']}', style: AppText.bodyStrong.copyWith(fontSize: 14)),
+            if (highlight)
+              Text(tr('уже добавлен — повтор не добавлен', 'allaqachon qoʻshilgan — takror qoʻshilmadi'), style: AppText.caption.copyWith(color: AppColors.primary))
+            else
+              Text('${l['barcode'] ?? tr('без штрихкода', 'shtrix-kodsiz')}', style: AppText.small.copyWith(fontSize: 12)),
+          ]),
+        ),
+        IconButton(tooltip: tr('Убрать', 'Olib tashlash'), icon: const Icon(Icons.delete_outline_rounded, color: AppColors.text2), onPressed: onRemove),
+      ]),
+    );
+  }
+}
+
+/// «Начало работы» уже записано и закрыто.
+class StartClosedScreen extends StatelessWidget {
+  const StartClosedScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(backgroundColor: AppColors.bg, title: Text(tr('Начало работы', 'Ishni boshlash'))),
+      body: EmptyState(
+        icon: Icons.check_circle_rounded,
+        title: tr('«Начало работы» завершено', '«Ishni boshlash» yakunlangan'),
+        text: tr('Начальные остатки записаны. Новые товары добавляйте приходом или инвентаризацией — они сами появятся в товарах магазина.',
+            'Boshlangʻich qoldiqlar yozilgan. Yangi mahsulotlarni kirim yoki inventarizatsiya orqali qoʻshing — ular doʻkon mahsulotlarida oʻzi paydo boʻladi.'),
+        action: tr('Понятно', 'Tushunarli'),
+        onAction: () => Navigator.of(context).pop(),
       ),
     );
   }
 }
 
-/// Н1 · Блок на главной: пока на складе нет товаров или список не проведён.
+/// Н1 · Блок на главной: пока «Начало работы» не записано и не закрыто.
 class StartHomeBlock extends StatefulWidget {
   const StartHomeBlock({super.key, required this.storeId});
 
@@ -327,9 +467,7 @@ class _StartHomeBlockState extends State<StartHomeBlock> {
   @override
   Widget build(BuildContext context) {
     final d = _d;
-    if (d == null) return const SizedBox.shrink();
-    final stock = (d['stock_products'] as num?)?.toInt() ?? 0;
-    if (stock > 0 && d['id'] == null) return const SizedBox.shrink();
+    if (d == null || d['closed'] == true) return const SizedBox.shrink();
     final products = ((d['totals'] as Map<String, dynamic>?)?['products'] as num?)?.toInt() ?? 0;
     Widget btn(StartMethod m, IconData icon, String label, {bool primary = false}) => Expanded(
           child: Material(
@@ -361,24 +499,22 @@ class _StartHomeBlockState extends State<StartHomeBlock> {
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(tr('Начало работы', 'Ishni boshlash'), style: AppText.title),
-                Text(tr('Добавьте товары, которые уже есть в магазине', 'Doʻkonda allaqachon bor mahsulotlarni qoʻshing'), style: AppText.small),
+                Text(tr('Найдите в центральной базе товары, которые есть в магазине', 'Doʻkonda bor mahsulotlarni markaziy bazadan toping'), style: AppText.small),
               ]),
             ),
           ]),
           const SizedBox(height: 12),
           Row(children: [
-            Expanded(child: Text(tr('Добавлено ${goods(products)}', 'Qoʻshildi: ${goods(products)}'), style: AppText.bodyStrong.copyWith(fontSize: 14))),
+            Expanded(child: Text(tr('В «Моих товарах»: ${goods(products)}', '«Mahsulotlarim»da: ${goods(products)}'), style: AppText.bodyStrong.copyWith(fontSize: 14))),
             Text(tr('черновик сохраняется', 'qoralama saqlanadi'), style: AppText.small),
           ]),
           const SizedBox(height: 12),
           Row(children: [
-            btn(StartMethod.photo, Icons.photo_camera_rounded, tr('Фото', 'Rasm'), primary: true),
+            btn(StartMethod.search, Icons.search_rounded, tr('Поиск', 'Qidirish'), primary: true),
             const SizedBox(width: 8),
             btn(StartMethod.barcode, Icons.qr_code_scanner_rounded, tr('Штрихкод', 'Shtrix-kod')),
             const SizedBox(width: 8),
-            btn(StartMethod.catalog, Icons.category_rounded, tr('Каталог', 'Katalog')),
-            const SizedBox(width: 8),
-            btn(StartMethod.search, Icons.search_rounded, tr('Поиск', 'Qidirish')),
+            btn(StartMethod.photo, Icons.photo_camera_rounded, tr('Фото полки', 'Javon rasmi')),
           ]),
         ]),
       ),

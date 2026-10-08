@@ -9,13 +9,13 @@ import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'camera_screen.dart';
 import 'new_product_screen.dart';
-import 'review_screen.dart';
 import 'sheets.dart';
 import 'start_api.dart';
 import 'start_logic.dart';
 
 /// Н4 · Super Market нашёл товары на фото: проверить, выбрать похожий или
-/// создать новый, поправить штуки → в список. Цены — на следующем шаге.
+/// создать новый, поправить штуки → в «Мои товары». Посчитанные штуки
+/// подставятся на шаге «Инвентаризация», там же — цены.
 class PhotoResultsScreen extends StatefulWidget {
   const PhotoResultsScreen({super.key, required this.start, required this.id});
 
@@ -152,7 +152,7 @@ class _PhotoResultsScreenState extends State<PhotoResultsScreen> {
     if (q != null && mounted) setState(() => _qty[n] = q);
   }
 
-  /// Выбранное — в список (штуки прибавляются к уже добавленным).
+  /// Выбранное — в «Мои товары»; то, что уже там, повторно не добавляется.
   Future<bool> _addChosen() async {
     final lines = photoLines(_items.map((it) {
       final n = (it['n'] as num).toInt();
@@ -161,7 +161,11 @@ class _PhotoResultsScreenState extends State<PhotoResultsScreen> {
     if (lines.isEmpty) return true;
     setState(() => _busy = true);
     try {
-      await widget.start.setLines(lines);
+      final r = await widget.start.setLines(lines);
+      final skipped = ((r['skipped'] as List?) ?? const []).length;
+      if (skipped > 0 && mounted) {
+        showMessage(context, tr('Уже были в «Моих товарах» — не добавлены повторно: ${goods(skipped)}', '«Mahsulotlarim»da bor edi — qayta qoʻshilmadi: ${goods(skipped)}'));
+      }
       return true;
     } catch (e) {
       if (mounted) showMessage(context, e);
@@ -178,9 +182,10 @@ class _PhotoResultsScreenState extends State<PhotoResultsScreen> {
     );
   }
 
+  /// Добавить и вернуться к «Моим товарам».
   Future<void> _next() async {
     if (!await _addChosen() || !mounted) return;
-    await Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => StartReviewScreen(start: widget.start)));
+    Navigator.of(context).pop(true);
   }
 
   @override
@@ -224,8 +229,8 @@ class _PhotoResultsScreenState extends State<PhotoResultsScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
                   Text(
-                      tr('Количество Super Market посчитал по фото — проверьте. Цены укажете на следующем шаге',
-                          'Miqdorni Super Market rasm boʻyicha hisobladi — tekshiring. Narxlarni keyingi qadamda kiritasiz'),
+                      tr('Количество Super Market посчитал по фото — оно подставится на шаге «Инвентаризация», там же укажете цены',
+                          'Miqdorni Super Market rasm boʻyicha hisobladi — u «Inventarizatsiya» qadamida qoʻyiladi, narxlarni ham oʻsha yerda kiritasiz'),
                       style: AppText.small, textAlign: TextAlign.center),
                   const SizedBox(height: 10),
                   Row(children: [
@@ -233,8 +238,8 @@ class _PhotoResultsScreenState extends State<PhotoResultsScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: SmallButton(
-                        label: chosen == 0 ? tr('Дальше', 'Keyingi') : tr('Дальше: цены', 'Keyingi: narxlar'),
-                        icon: Icons.arrow_forward_rounded,
+                        label: chosen == 0 ? tr('Готово', 'Tayyor') : tr('Добавить · $chosen', 'Qoʻshish · $chosen'),
+                        icon: Icons.check_rounded,
                         primary: true,
                         onPressed: _busy ? null : _next,
                       ),
@@ -314,7 +319,7 @@ class _PhotoResultsScreenState extends State<PhotoResultsScreen> {
               Text(ref != null ? ref.name : (state == 'missing' ? tr('Не найден в каталоге', 'Katalogda topilmadi') : '${it['name']}'),
                   style: AppText.bodyStrong, maxLines: 1, overflow: TextOverflow.ellipsis),
               Text(sub, style: AppText.small.copyWith(color: subColor), maxLines: 1, overflow: TextOverflow.ellipsis),
-              if (it['in_draft'] == true) Text(tr('уже в списке — штуки прибавятся', 'roʻyxatda bor — miqdori qoʻshiladi'), style: AppText.small),
+              if (it['in_draft'] == true) Text(tr('уже в «Моих товарах» — повторно не добавится', '«Mahsulotlarim»da bor — qayta qoʻshilmaydi'), style: AppText.small),
             ]),
           ),
           const SizedBox(width: 8),

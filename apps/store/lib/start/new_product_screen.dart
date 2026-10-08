@@ -15,8 +15,9 @@ import 'sheets.dart';
 import 'start_api.dart';
 import 'start_logic.dart';
 
-/// Н8 · Новый товар: его нет в общем каталоге — уходит на модерацию, но сразу
-/// доступен сети и встаёт в список. Возвращает созданный товар.
+/// Н8 · Новый товар: его нет в центральной базе — уходит на модерацию, но сразу
+/// доступен сети и встаёт в «Мои товары». Количество и цены — на шаге
+/// «Инвентаризация». Возвращает созданный товар.
 class NewProductScreen extends StatefulWidget {
   const NewProductScreen({
     super.key,
@@ -40,7 +41,7 @@ class NewProductScreen extends StatefulWidget {
   /// Поля заполнены по фото полки.
   final bool fromPhoto;
 
-  /// Сразу добавить в список с количеством и закупкой.
+  /// Сразу добавить в «Мои товары».
   final bool withLine;
 
   @override
@@ -61,8 +62,6 @@ class _NewProductScreenState extends State<NewProductScreen> {
   late final _nameRu = TextEditingController(text: widget.name ?? '');
   final _nameUz = TextEditingController();
   late final _barcode = TextEditingController(text: widget.barcode ?? '');
-  final _qty = TextEditingController(text: '1');
-  final _cost = TextEditingController();
   final _price = TextEditingController();
   List<_Option> _categories = const [];
   List<_Option> _brands = const [];
@@ -85,8 +84,6 @@ class _NewProductScreenState extends State<NewProductScreen> {
     _nameRu.dispose();
     _nameUz.dispose();
     _barcode.dispose();
-    _qty.dispose();
-    _cost.dispose();
     _price.dispose();
     super.dispose();
   }
@@ -166,13 +163,8 @@ class _NewProductScreenState extends State<NewProductScreen> {
     final nameRu = _nameRu.text.trim();
     final nameUz = _nameUz.text.trim();
     final price = parseNum(_price.text);
-    final qty = parseNum(_qty.text);
     if ((nameRu.isEmpty && nameUz.isEmpty) || _categoryId == null || _unitId == null || price == null || num.parse(price) <= 0) {
       showMessage(context, tr('Заполните название, категорию и цену продажи', 'Nomi, kategoriya va sotuv narxini toʻldiring'));
-      return;
-    }
-    if (widget.withLine && (qty == null || num.parse(qty) <= 0)) {
-      showMessage(context, tr('Укажите количество', 'Miqdorni kiriting'));
       return;
     }
     final api = context.read<Api>();
@@ -197,9 +189,9 @@ class _NewProductScreenState extends State<NewProductScreen> {
         'description': '',
       }) as Map<String, dynamic>;
       if (widget.withLine) {
-        final cost = parseNum(_cost.text);
         await widget.start.setLines([
-          {'product_id': p['id'], 'qty': qty, if (cost != null) 'cost': cost, 'source': 'new'},
+          // Цена продажи из карточки — сразу в строку (на шаге 2 её можно поменять).
+          {'product_id': p['id'], 'add': true, 'price': price, 'source': 'new'},
         ]);
       }
       if (mounted) Navigator.of(context).pop(ProductRef.fromProduct(p));
@@ -260,7 +252,6 @@ class _NewProductScreenState extends State<NewProductScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final unitShort = _units.where((u) => u['id'] == _unitId).map((u) => '${u['short_name']}').firstOrNull ?? tr('шт', 'dona');
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppColors.bg,
@@ -343,15 +334,7 @@ class _NewProductScreenState extends State<NewProductScreen> {
           ),
         ),
         const SizedBox(height: 14),
-        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (widget.withLine) ...[
-            Expanded(child: NumField(label: tr('Кол-во, $unitShort', 'Miqdor, $unitShort'), controller: _qty)),
-            const SizedBox(width: 10),
-            Expanded(child: NumField(label: tr('Закупка', 'Xarid'), controller: _cost, hint: '—')),
-            const SizedBox(width: 10),
-          ],
-          Expanded(child: NumField(label: tr('Продажа', 'Sotuv'), controller: _price)),
-        ]),
+        NumField(label: tr('Цена продажи, сум', 'Sotuv narxi, soʻm'), controller: _price),
       ]),
       bottomNavigationBar: SafeArea(
         child: Padding(

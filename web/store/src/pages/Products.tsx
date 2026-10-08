@@ -1,4 +1,6 @@
-// Товары: общий каталог платформы + свои товары сети (через модерацию).
+// Товары: только «Мои товары» магазина — те, что есть у него (scope=mine).
+// Центральная база видна только в поиске при добавлении («Начало работы»,
+// приход, установка цен); свои товары сети уходят на модерацию.
 import { useState } from 'react'
 import { Alert, Button, Card, Col, Form, Input, Modal, Radio, Row, Select, Space, Table, Tag, Tooltip, Typography, type TableColumnType } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
@@ -39,6 +41,7 @@ export function ProductsPage() {
     q: q || undefined,
     category_id: categoryId,
     store_id: storeId || undefined,
+    scope: 'mine',
   }
   const list = usePaged<Product>(view === 'list' ? '/store/products' : null, params)
   const manage = can('catalog.manage')
@@ -122,6 +125,12 @@ export function ProductsPage() {
         <RemoteSelect<DictItem> path="/store/catalog/categories" value={categoryId} onChange={setCategoryId} allowClear placeholder={tr('Все категории', 'Barcha kategoriyalar')} />
         <ProductViewSwitch value={view} onChange={setView} />
       </PageTitle>
+      <Typography.Paragraph type="secondary" style={{ marginTop: -4 }}>
+        {tr(
+          'Только товары, которые есть в магазине. Новые попадают сюда сами — с приходом, инвентаризацией или установкой цен магазина.',
+          'Faqat doʻkonda bor mahsulotlar. Yangilari bu yerga oʻzi tushadi — kirim, inventarizatsiya yoki doʻkon narxini belgilash bilan.',
+        )}
+      </Typography.Paragraph>
       {view === 'tree' ? (
         <ProductTree<Product>
           groupsPath="/store/products/groups"
@@ -170,6 +179,7 @@ export function ProductsPage() {
 }
 
 function ProductModal({ open, editing, onClose }: { open: boolean; editing: ProductEdit | null; onClose: () => void }) {
+  const { storeId } = useStore()
   const [form] = Form.useForm()
   const uzFirst = getLang() === 'uz'
   // Достаточно названия на одном из языков: пустое русское сервер заполнит узбекским.
@@ -238,7 +248,8 @@ function ProductModal({ open, editing, onClose }: { open: boolean; editing: Prod
         barcodes: v.barcodes ?? [],
         images: v.images ?? [],
       }
-      return editing ? api.patch(`/store/products/${editing.id}`, body) : api.post('/store/products', body)
+      // Новый товар сразу попадает в «Мои товары» текущего магазина.
+      return editing ? api.patch(`/store/products/${editing.id}`, body) : api.post('/store/products', { ...body, store_id: storeId || undefined })
     },
     { success: editing ? tr('Сохранено', 'Saqlandi') : tr('Товар отправлен на модерацию', 'Mahsulot moderatsiyaga yuborildi') },
   )
