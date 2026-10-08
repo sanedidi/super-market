@@ -235,8 +235,8 @@ class _DebtorScreenState extends State<DebtorScreen> {
                 [
                   if (debt > 0 && b?['due_date'] != null)
                     overdue > 0
-                        ? tr('просрочено $overdue дн. · срок был ${shortDate(b!['due_date'])}', 'muddati $overdue kun oʻtgan · muddat ${shortDate(b!['due_date'])} edi')
-                        : tr('Вернуть до ${shortDate(b!['due_date'])}', '${shortDate(b!['due_date'])} gacha qaytarish'),
+                        ? tr('просрочено $overdue дн. · срок был ${shortDate(b!['due_date'])}', 'muddati $overdue kun oʻtgan · muddat ${shortDate(b['due_date'])} edi')
+                        : tr('Вернуть до ${shortDate(b!['due_date'])}', '${shortDate(b['due_date'])} gacha qaytarish'),
                   tr('свободно ${money(b?['available'], suffix: false)}', 'boʻsh limit ${money(b?['available'], suffix: false)}'),
                 ].join(' · '),
                 style: AppText.small.copyWith(color: overdue > 0 ? AppColors.primarySoft : AppColors.muted),
