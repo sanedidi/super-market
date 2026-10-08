@@ -251,8 +251,8 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 | GET/PATCH | `/admin/products/{id}` | |
 | POST | `/admin/products/{id}/approve` | товар сети становится общим (`network_id` → null) |
 | POST | `/admin/products/{id}/reject` | `{"reason"}` |
-| GET | `/store/products?q=&category_id=&barcode=&store_id=&price_type_id=` | общие товары + свои. С `store_id` в ответе есть `price`, `price_source` (`store`/`network`/`base`) и `price_type_id` |
-| POST | `/store/products` | `catalog.manage` — свой товар, уходит на модерацию |
+| GET | `/store/products?q=&category_id=&barcode=&store_id=&price_type_id=&scope=` | центральная база (общие товары + свои). `scope=mine` — только «Мои товары» (ассортимент магазина `store_id`, без него — любого магазина сети): так их показывает раздел «Товары». С `store_id` в ответе есть `price`, `price_source` (`store`/`network`/`base`) и `price_type_id` |
+| POST | `/store/products` | `catalog.manage` — свой товар, уходит на модерацию. `store_id` — сразу в «Мои товары» этого магазина |
 | GET/PATCH | `/store/products/{id}` | свой товар можно править до одобрения; правка отклонённого снова отправляет на модерацию |
 
 Поиск по категории включает все её подкатегории. `q` ищет по названию и точному штрихкоду.
@@ -815,7 +815,7 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 | Метод | Путь | Описание |
 | --- | --- | --- |
 | GET | `/admin/products/groups?q=&category_id=&status=` | `{brands: [{brand_id, brand_name, count, pending, categories: [{category_id, category_name, count, pending}]}], total}` — бренды по алфавиту, `brand_id: null` («Без бренда») в конце; `pending` — на модерации |
-| GET | `/store/products/groups?q=&category_id=` | то же для сети (общий каталог + свои товары); `pending` — свои товары на модерации |
+| GET | `/store/products/groups?q=&category_id=&scope=&store_id=` | то же для сети (общий каталог + свои товары; `scope=mine` — только «Мои товары»); `pending` — свои товары на модерации |
 
 Товары группы — обычный список (`/admin/products`, `/store/products`) с `brand_id` (uuid или `none` — без бренда),
 `leaf_category_id` (ровно эта категория, без подкатегорий) и `sort=name`.
@@ -892,19 +892,23 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 
 Магазин заводит товары, которые у него уже есть. Один открытый черновик на основной склад магазина — общий для
 панели и приложения. Нет основного склада — 409 `no_warehouse`. Товары: общий каталог и свои товары сети.
+Два шага: «Мои товары» (поиск по центральной базе, сканер, фото полок; без количества и цен) и «Инвентаризация:
+Начало работы» (количество и цена продажи обязательны, можно 0; себестоимость — по желанию). «Записать и закрыть»
+проводит черновик один раз — дальше товары заводятся обычными документами.
+
+«Мои товары» (ассортимент магазина, таблица `store_products`) пополняются сами: «Начало работы», любой приход
+товара на склад магазина (приход, оприходование, перемещение, излишек инвентаризации) и цена магазина.
 
 | Метод | Путь | Описание |
 | --- | --- | --- |
-| GET | `/store/start?store_id=&q=&only=no_cost\|new&limit=&offset=` | `{id (null — не начат), store_id, store_name, warehouse_id, warehouse_name, status (open, posting), lines, totals {products, qty, cost_total, price_total, no_cost, pending}, stock_products, last_posted_at}`. Строки — новые сверху (`limit` до 1000, по умолчанию 200): `{product_id, name, image, unit_short, is_fractional, barcode, qty, cost, price, current_price, source, own, moderation, posted, added_at}`. `price` null — останется действующая цена (`current_price`) |
-| POST | `/store/start/lines` | `{store_id, items: [{product_id, qty?, add?, cost?, price?, barcode?, source?}]}` (1–500) → `{lines, totals}`. Черновик создаётся сам. `add: true` — прибавить `qty` (по умолчанию 1) — повторный скан. `cost`/`price: null` — сбросить. `barcode` — привязать штрихкод к товару (право `catalog.manage`; чужой — 409 `barcode_exists`, `details.product_id`). Штучный товар — целое количество. `source`: `photo`, `barcode`, `catalog`, `search`, `new`, `manual` |
+| GET | `/store/start?store_id=&q=&only=unfilled\|no_cost\|new&limit=&offset=` | `{id (null — не начат), store_id, store_name, warehouse_id, warehouse_name, status (open, posting), lines, totals {products, qty, cost_total, price_total, no_cost, pending, unfilled}, stock_products, last_posted_at, closed}`. `closed` — «Начало работы» записано и закрыто: больше не показывается, новые строки — 409 `start_closed`. Строки — новые сверху (`limit` до 1000, по умолчанию 200): `{product_id, name, image, unit_short, is_fractional, barcode, qty, cost, price, current_price, source, own, moderation, posted, added_at}`. `qty`/`price` null — ещё не введены (шаг «Инвентаризация»); `unfilled` — таких строк |
+| GET | `/store/start/search?store_id=&q=&limit=&offset=` | шаг 1 — поиск по центральной базе (общие + свои товары сети): штрихкод точно или каждое слово запроса в русском или узбекском названии; `q` короче 2 символов — пусто. `{product_id, name, image, unit_short, current_price, barcode, own, moderation, added, in_store}` — `added`: уже в «Моих товарах», `in_store`: из них — уже в товарах магазина (а не в этом списке) |
+| POST | `/store/start/lines` | `{store_id, items: [{product_id, add?, confirm_similar?, qty?, cost?, price?, barcode?, source?}]}` (1–500) → `{lines, totals, skipped}`. Черновик создаётся сам. `add: true` — шаг 1, добавить в «Мои товары»: тот же товар (в черновике или уже в товарах магазина) — 409 `already_added` (`details.product_id`, `details.in_store`), в пакете из нескольких — пропуск (`skipped`). Похожий товар (похожее название, те же числа в названии и бренд) — 409 `similar_exists` (`details.similar {product_id, name, image, barcode}`); `confirm_similar: true` — «всё равно добавить», для этой пары больше не спрашиваем; пакет добавляется без вопроса. Без `add` — правка строки (шаг 2): `qty`, `cost`, `price` (≥ 0; `null` — очистить). Штучный товар — целое количество. `barcode` — привязать штрихкод к товару (право `catalog.manage`; чужой — 409 `barcode_exists`, `details.product_id`). `source`: `photo`, `barcode`, `catalog`, `search`, `new`, `manual` |
 | DELETE | `/store/start/lines/{product_id}?store_id=` | убрать товар → `totals` |
-| GET | `/store/start/catalog?store_id=&q=` | `{groups [{category_ids, category_names, brand_id, brand_name, count, selected}], total, selected}` — путь категории от корня + бренд; `selected` — сколько уже в черновике |
-| GET | `/store/start/catalog/items?store_id=&category_id=&brand_id=&q=` | товары группы (ровно эта категория; `brand_id=none` — без бренда), до 200: `{product_id, name, image, unit_short, current_price, barcode, own, selected}` |
-| POST | `/store/start/catalog/select` | `{store_id, category_id?, brand_id?, exact?, q?, selected}` — отметить (по 1 шт) или снять всю группу; `category_id` — с подкатегориями, `exact: true` — только сама категория. До 2000 товаров за раз → `{changed, totals}` |
 | POST | `/store/start/photos` | `{store_id, images: [url, …до 6]}` (из `POST /store/uploads`) → 202, `processing`; Super Market ищет товары в фоне. 409 `ai_not_configured` |
 | GET | `/store/start/photos/{id}` | `{status (processing, ready, failed), error, images, counts {found, choose, missing}, items [{n, name, brand, barcode, qty, state, product, candidates [{product_id, name, image, unit_short, current_price, barcode, score}], brand_id, category_id, in_draft}]}` |
 | POST | `/store/start/photos/{id}/retry` | распознать заново |
-| POST | `/store/start/post` | `{store_id}` → установка цен магазина (изменённые цены, право `prices.manage`) и оприходование на основной склад по закупочным ценам (по 1000 строк; без закупки — себестоимость 0) → `{draft_id, products, qty, cost_total, documents [{id, number}], price_document, visible, pending}`. Пустой — 409 `draft_empty` |
+| POST | `/store/start/post` | «Записать и закрыть» `{store_id}`: у каждой строки нужны количество и цена продажи (иначе 409 `lines_unfilled`, `details.count`). Установка цен магазина (где цена отличается от действующей, право `prices.manage`), оприходование на основной склад по себестоимости (строки с количеством > 0, по 1000; без себестоимости — 0), все товары — в «Мои товары» → `{draft_id, products, qty, cost_total, documents [{id, number}], price_document, visible, pending}`. После этого `closed`. Пустой — 409 `draft_empty` |
 
 Фото: модель перечисляет товары и штуки → поиск по штрихкоду (100%), иначе по похожему названию (pg_trgm, +15 за бренд).
 `found` — лучший ≥ 70 и отрыв от второго ≥ 8; `choose` — есть похожие ≥ 35; `missing` — нет. Расход — в `ai_usage` (`kind = shelf`).

@@ -30,9 +30,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/lines", m.lines)
 		r.Delete("/lines/{product_id}", m.deleteLine)
 		r.Post("/post", m.post)
-		r.Get("/catalog", m.catalog)
-		r.Get("/catalog/items", m.catalogItems)
-		r.Post("/catalog/select", m.selectGroup)
+		r.Get("/search", m.search)
 		r.Post("/photos", m.createPhoto)
 		r.Get("/photos/{id}", m.getPhoto)
 		r.Post("/photos/{id}/retry", m.retryPhoto)
@@ -100,26 +98,10 @@ func (m *Module) retryPhoto(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (m *Module) catalog(w http.ResponseWriter, r *http.Request) {
-	httpx.Respond(w, r, m.log, http.StatusOK, func() (Catalog, error) {
+func (m *Module) search(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[SearchItem], error) {
 		q := r.URL.Query()
-		return m.svc.Catalog(r.Context(), pr(r), q.Get("store_id"), q.Get("q"))
-	})
-}
-
-func (m *Module) catalogItems(w http.ResponseWriter, r *http.Request) {
-	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[CatalogItem], error) {
-		q := r.URL.Query()
-		items, err := m.svc.CatalogItems(r.Context(), pr(r), CatalogFilter{
-			StoreID: q.Get("store_id"), Query: q.Get("q"), CategoryID: q.Get("category_id"), BrandID: q.Get("brand_id"),
-			Page: httpx.PageFrom(r),
-		})
-		return httpx.List[CatalogItem]{Items: items}, err
-	})
-}
-
-func (m *Module) selectGroup(w http.ResponseWriter, r *http.Request) {
-	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in SelectInput) (SelectResult, error) {
-		return m.svc.Select(r.Context(), pr(r), in)
+		items, err := m.svc.Search(r.Context(), pr(r), SearchFilter{StoreID: q.Get("store_id"), Query: q.Get("q"), Page: httpx.PageFrom(r)})
+		return httpx.List[SearchItem]{Items: items}, err
 	})
 }

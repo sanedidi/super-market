@@ -1,7 +1,14 @@
 // Package start — «Начало работы»: магазин заводит товары, которые у него
-// уже есть. Черновик общий для панели и «SM Магазин»: товары добавляют по
-// фото полок (Super Market находит их в каталоге), штрихкоду, каталогу и
-// поиску. Проведение создаёт установку цен магазина и оприходование на склад.
+// уже есть. Черновик общий для панели и «SM Магазин» и идёт в два шага:
+//  1. «Мои товары» — магазин находит свои товары в центральной базе (поиск по
+//     названию и штрихкоду, сканер, фото полок) или создаёт свой. Тот же товар
+//     второй раз не добавляется; на похожий — предупреждение.
+//  2. «Инвентаризация: Начало работы» — количество и цена продажи по каждому
+//     товару (обязательны, можно 0) и, по желанию, себестоимость.
+//
+// «Записать и закрыть» проводит черновик: оприходование на склад, установка
+// цен магазина, товары — в ассортименте магазина. После этого «Начало работы»
+// закрыто: дальше товары заводятся обычными документами.
 package start
 
 import (
@@ -102,13 +109,14 @@ func (s *Service) store(ctx context.Context, q db.Querier, p *identity.Principal
 // --------------------------------------------------------------- черновик
 
 type Line struct {
-	ProductID    string    `json:"product_id"`
-	Name         string    `json:"name"`
-	Image        *string   `json:"image"`
-	UnitShort    string    `json:"unit_short"`
-	IsFractional bool      `json:"is_fractional"`
-	Barcode      *string   `json:"barcode"`
-	Qty          string    `json:"qty"`
+	ProductID    string  `json:"product_id"`
+	Name         string  `json:"name"`
+	Image        *string `json:"image"`
+	UnitShort    string  `json:"unit_short"`
+	IsFractional bool    `json:"is_fractional"`
+	Barcode      *string `json:"barcode"`
+	// Qty и Price — null, пока не введены на шаге «Инвентаризация».
+	Qty          *string   `json:"qty"`
 	Cost         *string   `json:"cost"`
 	Price        *string   `json:"price"`
 	CurrentPrice string    `json:"current_price"`
@@ -126,6 +134,9 @@ type Totals struct {
 	PriceTotal string `json:"price_total"`
 	NoCost     int    `json:"no_cost"`
 	Pending    int    `json:"pending"`
+	// Unfilled — строк без количества или цены продажи: пока они есть,
+	// «Записать и закрыть» не проходит.
+	Unfilled int `json:"unfilled"`
 }
 
 type Draft struct {
@@ -139,11 +150,13 @@ type Draft struct {
 	Totals        Totals     `json:"totals"`
 	StockProducts int        `json:"stock_products"`
 	LastPostedAt  *time.Time `json:"last_posted_at"`
+	// Closed — «Начало работы» уже записано и закрыто: больше не показывается.
+	Closed bool `json:"closed"`
 }
 
 type Filter struct {
 	Query  string
-	Only   string // no_cost | new
+	Only   string // unfilled | no_cost | new
 	Limit  int
 	Offset int
 }
@@ -187,13 +200,14 @@ func (s *Service) totals(ctx context.Context, q db.Querier, draftID string, st s
 		       round(COALESCE(sum(l.qty * l.cost), 0), 2)::text,
 		       round(COALESCE(sum(l.qty * COALESCE(l.price, sp.price, np.price, p.base_price)), 0), 2)::text,
 		       (count(*) FILTER (WHERE l.cost IS NULL))::int,
-		       (count(*) FILTER (WHERE p.network_id IS NOT NULL AND p.moderation_status <> 'approved'))::int
+		       (count(*) FILTER (WHERE p.network_id IS NOT NULL AND p.moderation_status <> 'approved'))::int,
+		       (count(*) FILTER (WHERE l.qty IS NULL OR l.price IS NULL))::int
 		FROM start_lines l
 		JOIN products p ON p.id = l.product_id
 		LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = $2 AND sp.store_id = $3
 		LEFT JOIN prices np ON np.product_id = p.id AND np.price_type_id = $2 AND np.store_id IS NULL
 		WHERE l.draft_id = $1`, draftID, st.PriceTypeID, st.ID).
-		Scan(&t.Products, &t.Qty, &t.CostTotal, &t.PriceTotal, &t.NoCost, &t.Pending)
+		Scan(&t.Products, &t.Qty, &t.CostTotal, &t.PriceTotal, &t.NoCost, &t.Pending, &t.Unfilled)
 	return t, err
 }
 
@@ -211,6 +225,7 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, storeID string
 		Scan(&d.StockProducts, &d.LastPostedAt); err != nil {
 		return d, err
 	}
+	d.Closed = d.LastPostedAt != nil
 	id, status, err := openDraft(ctx, s.pool, st.WarehouseID)
 	if err != nil || id == nil {
 		return d, err
@@ -228,12 +243,14 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, storeID string
 	}
 	switch f.Only {
 	case "":
+	case "unfilled":
+		where += ` AND (l.qty IS NULL OR l.price IS NULL)`
 	case "no_cost":
 		where += ` AND l.cost IS NULL`
 	case "new":
 		where += ` AND p.network_id IS NOT NULL`
 	default:
-		return d, apperr.Validation("only: ожидается no_cost или new").Uz("only: no_cost yoki new boʻlishi kerak")
+		return d, apperr.Validation("only: ожидается unfilled, no_cost или new").Uz("only: unfilled, no_cost yoki new boʻlishi kerak")
 	}
 	limit := f.Limit
 	if limit <= 0 {
@@ -254,13 +271,18 @@ var barcodeRe = regexp.MustCompile(`^[0-9A-Za-z-]{4,32}$`)
 var sources = map[string]bool{"photo": true, "barcode": true, "catalog": true, "search": true, "new": true, "manual": true}
 
 type LineInput struct {
-	ProductID string                       `json:"product_id"`
-	Qty       *money.Qty                   `json:"qty"`
-	Add       bool                         `json:"add"` // прибавить qty к строке (скан ещё одной штуки)
-	Cost      httpx.Optional[money.Price]  `json:"cost"`
-	Price     httpx.Optional[money.Amount] `json:"price"`
-	Barcode   *string                      `json:"barcode"`
-	Source    *string                      `json:"source"`
+	ProductID string `json:"product_id"`
+	// Add — добавить товар в «Мои товары» (шаг 1). Если он уже там — ошибка
+	// already_added; в пакете из нескольких товаров такие пропускаются.
+	// Без Add строка правится (шаг 2) или создаётся.
+	Add bool `json:"add"`
+	// ConfirmSimilar — магазин ответил «всё равно добавить» на похожий товар.
+	ConfirmSimilar bool                         `json:"confirm_similar"`
+	Qty            httpx.Optional[money.Qty]    `json:"qty"`
+	Cost           httpx.Optional[money.Price]  `json:"cost"`
+	Price          httpx.Optional[money.Amount] `json:"price"`
+	Barcode        *string                      `json:"barcode"`
+	Source         *string                      `json:"source"`
 }
 
 type LinesInput struct {
@@ -271,6 +293,8 @@ type LinesInput struct {
 type LinesResult struct {
 	Lines  []Line `json:"lines"`
 	Totals Totals `json:"totals"`
+	// Skipped — товары пакета, которые уже были в «Моих товарах».
+	Skipped []string `json:"skipped"`
 }
 
 // SetLines — добавить или изменить строки черновика (черновик создаётся сам).
@@ -278,7 +302,7 @@ func (s *Service) SetLines(ctx context.Context, p *identity.Principal, in LinesI
 	if len(in.Items) == 0 || len(in.Items) > 500 {
 		return LinesResult{}, apperr.Validation("items: от 1 до 500 товаров").Uz("items: 1 dan 500 tagacha mahsulot")
 	}
-	var out LinesResult
+	out := LinesResult{Lines: []Line{}, Skipped: []string{}}
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		st, err := s.store(ctx, tx, p, in.StoreID)
 		if err != nil {
@@ -288,13 +312,23 @@ func (s *Service) SetLines(ctx context.Context, p *identity.Principal, in LinesI
 		if err != nil {
 			return err
 		}
+		single := len(in.Items) == 1
 		ids := make([]string, 0, len(in.Items))
 		for i, it := range in.Items {
-			if err := s.setLine(ctx, tx, p, id, it); err != nil {
-				if ae, ok := apperr.As(err); ok && len(in.Items) > 1 && ae.Status == 400 {
+			// Спрашиваем (повтор — ошибка, похожий — вопрос) только когда товар
+			// добавляют по одному поиском или сканером. Фото полок и только что
+			// созданный свой товар добавляются без вопросов, повтор — пропуск.
+			ask := single && (it.Source == nil || (*it.Source != "photo" && *it.Source != "new"))
+			skipped, err := s.setLine(ctx, tx, p, st, id, it, ask)
+			if err != nil {
+				if ae, ok := apperr.As(err); ok && !single && ae.Status == 400 {
 					return apperr.Validation(fmt.Sprintf("товар %d: %s", i+1, ae.Message)).Uz(fmt.Sprintf("%d-mahsulot: %s", i+1, ae.Text(i18n.UZ)))
 				}
 				return err
+			}
+			if skipped {
+				out.Skipped = append(out.Skipped, it.ProductID)
+				continue
 			}
 			ids = append(ids, it.ProductID)
 		}
@@ -312,6 +346,11 @@ func (s *Service) SetLines(ctx context.Context, p *identity.Principal, in LinesI
 	return out, err
 }
 
+func errClosed() error {
+	return apperr.Conflict("start_closed", "«Начало работы» уже записано и закрыто — новые товары добавляйте приходом или инвентаризацией").
+		Uz("«Ishni boshlash» allaqachon yozilgan va yopilgan — yangi mahsulotlarni kirim yoki inventarizatsiya orqali qoʻshing")
+}
+
 func (s *Service) ensureDraft(ctx context.Context, tx pgx.Tx, p *identity.Principal, st store) (string, error) {
 	// Сериализуем создание черновика склада.
 	if _, err := tx.Exec(ctx, `SELECT 1 FROM warehouses WHERE id = $1 FOR UPDATE`, st.WarehouseID); err != nil {
@@ -327,6 +366,13 @@ func (s *Service) ensureDraft(ctx context.Context, tx pgx.Tx, p *identity.Princi
 		}
 		return *id, nil
 	}
+	var closed bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM start_drafts WHERE warehouse_id = $1 AND status = 'posted')`, st.WarehouseID).Scan(&closed); err != nil {
+		return "", err
+	}
+	if closed {
+		return "", errClosed()
+	}
 	var nid string
 	err = tx.QueryRow(ctx, `
 		INSERT INTO start_drafts (network_id, store_id, warehouse_id, created_by) VALUES ($1, $2, $3, $4) RETURNING id`,
@@ -334,107 +380,168 @@ func (s *Service) ensureDraft(ctx context.Context, tx pgx.Tx, p *identity.Princi
 	return nid, err
 }
 
-func (s *Service) setLine(ctx context.Context, tx pgx.Tx, p *identity.Principal, draftID string, in LineInput) error {
-	if !httpx.IsUUID(in.ProductID) {
-		return apperr.Validation("product_id: товар не найден").Uz("product_id: mahsulot topilmadi")
+// SimilarMin — с какой похожести названий (pg_trgm, 0…1) товар считается
+// похожим. Кроме того, у похожих совпадают числа в названии (объём, вес) и
+// бренд (или он не указан): «Sprite 1 л» и «Sprite 1,5 л» — разные товары.
+const SimilarMin = 0.7
+
+// similarSQL — товары черновика $1, похожие на товар $2, о которых магазин $3
+// ещё не отвечал «всё равно добавить»; самые похожие первыми.
+const similarSQL = `
+	WITH n AS (SELECT id, brand_id, lower(name) AS name, lower(name_uz) AS name_uz,
+	                  (SELECT array_agg(m[1] ORDER BY m[1]) FROM regexp_matches(replace(name, ',', '.'), '(\d+(?:\.\d+)?)', 'g') m) AS nums
+	           FROM products WHERE id = $2),
+	     o AS (SELECT p.id, p.brand_id, loc(p.name, p.name_uz) AS title, p.images[1] AS image,
+	                  (SELECT min(pb.barcode) FROM product_barcodes pb WHERE pb.product_id = p.id) AS barcode,
+	                  greatest(similarity(lower(p.name), n.name),
+	                           CASE WHEN p.name_uz <> '' AND n.name_uz <> '' THEN similarity(lower(p.name_uz), n.name_uz) ELSE 0 END) AS score,
+	                  (SELECT array_agg(m[1] ORDER BY m[1]) FROM regexp_matches(replace(p.name, ',', '.'), '(\d+(?:\.\d+)?)', 'g') m) AS nums
+	           FROM start_lines l JOIN products p ON p.id = l.product_id, n
+	           WHERE l.draft_id = $1 AND p.id <> n.id
+	             AND (p.brand_id IS NULL OR n.brand_id IS NULL OR p.brand_id = n.brand_id))
+	SELECT o.id, o.title, o.image, o.barcode
+	FROM o, n
+	WHERE o.score >= $4 AND o.nums IS NOT DISTINCT FROM n.nums
+	  AND NOT EXISTS (SELECT 1 FROM start_similar_ok k
+	                  WHERE k.store_id = $3 AND k.product_id = least(o.id, n.id) AND k.similar_id = greatest(o.id, n.id))
+	ORDER BY o.score DESC, o.id`
+
+// Similar — похожий товар, который уже в «Моих товарах».
+type Similar struct {
+	ProductID string  `json:"product_id"`
+	Name      string  `json:"name"`
+	Image     *string `json:"image"`
+	Barcode   *string `json:"barcode"`
+}
+
+func (s *Service) similar(ctx context.Context, tx pgx.Tx, st store, draftID, productID string) ([]Similar, error) {
+	rows, err := tx.Query(ctx, similarSQL, draftID, productID, st.ID, SimilarMin)
+	if err != nil {
+		return nil, err
 	}
-	var fractional, active bool
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Similar, error) {
+		var x Similar
+		err := r.Scan(&x.ProductID, &x.Name, &x.Image, &x.Barcode)
+		return x, err
+	})
+}
+
+// setLine — одна строка. ask — спросить про повтор и похожий товар (иначе
+// повтор пропускается: skipped, похожий добавляется без вопроса).
+func (s *Service) setLine(ctx context.Context, tx pgx.Tx, p *identity.Principal, st store, draftID string, in LineInput, ask bool) (bool, error) {
+	if !httpx.IsUUID(in.ProductID) {
+		return false, apperr.Validation("product_id: товар не найден").Uz("product_id: mahsulot topilmadi")
+	}
+	var fractional, active, inStore bool
 	err := tx.QueryRow(ctx, `
-		SELECT u.is_fractional, p.is_active FROM products p JOIN units u ON u.id = p.unit_id
-		WHERE p.id = $1 AND (p.network_id IS NULL OR p.network_id = $2)`, in.ProductID, p.NetworkID).Scan(&fractional, &active)
+		SELECT u.is_fractional, p.is_active, EXISTS (SELECT 1 FROM store_products a WHERE a.store_id = $3 AND a.product_id = p.id)
+		FROM products p JOIN units u ON u.id = p.unit_id
+		WHERE p.id = $1 AND (p.network_id IS NULL OR p.network_id = $2)`, in.ProductID, p.NetworkID, st.ID).Scan(&fractional, &active, &inStore)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return apperr.Validation("product_id: товар не найден").Uz("product_id: mahsulot topilmadi")
+		return false, apperr.Validation("product_id: товар не найден").Uz("product_id: mahsulot topilmadi")
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
 	if !active {
-		return apperr.Validation("product_id: товар отключён").Uz("product_id: mahsulot oʻchirilgan")
+		return false, apperr.Validation("product_id: товар отключён").Uz("product_id: mahsulot oʻchirilgan")
 	}
 	source := "manual"
 	if in.Source != nil {
 		if !sources[*in.Source] {
-			return apperr.Validation("source: photo, barcode, catalog, search, new или manual").Uz("source: photo, barcode, catalog, search, new yoki manual")
+			return false, apperr.Validation("source: photo, barcode, catalog, search, new или manual").Uz("source: photo, barcode, catalog, search, new yoki manual")
 		}
 		source = *in.Source
 	}
-	var curQty *string
-	err = tx.QueryRow(ctx, `SELECT qty::text FROM start_lines WHERE draft_id = $1 AND product_id = $2 FOR UPDATE`, draftID, in.ProductID).Scan(&curQty)
+	var exists bool
+	err = tx.QueryRow(ctx, `SELECT true FROM start_lines WHERE draft_id = $1 AND product_id = $2 FOR UPDATE`, draftID, in.ProductID).Scan(&exists)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return err
+		return false, err
 	}
-	qty := ""
-	switch {
-	case in.Qty != nil && !in.Qty.Valid():
-		return apperr.Validation("qty: неверное количество").Uz("qty: miqdor notoʻgʻri")
-	case in.Add:
-		add := "1"
-		if in.Qty != nil {
-			add = string(*in.Qty)
+
+	// Шаг 1: тот же товар второй раз не добавляется.
+	if in.Add && (exists || inStore) {
+		if !ask {
+			return true, nil
 		}
-		qty = add
-		if curQty != nil {
-			qty = money.D(*curQty).Add(money.D(add)).Fixed(3)
-		}
-	case in.Qty != nil:
-		qty = string(*in.Qty)
-	case curQty == nil:
-		return apperr.Validation("qty: укажите количество").Uz("qty: miqdorni kiriting")
+		return false, apperr.Conflict("already_added", "товар уже добавлен").Uz("mahsulot allaqachon qoʻshilgan").
+			WithDetails(map[string]any{"product_id": in.ProductID, "in_store": inStore && !exists})
 	}
-	if qty != "" {
-		q := money.D(qty)
-		if q.Sign() <= 0 {
-			return apperr.Validation("qty: количество должно быть больше нуля").Uz("qty: miqdor noldan katta boʻlishi kerak")
+	// Похожий товар — спросить один раз на пару.
+	if in.Add && !exists && ask {
+		sim, err := s.similar(ctx, tx, st, draftID, in.ProductID)
+		if err != nil {
+			return false, err
+		}
+		if len(sim) > 0 {
+			if !in.ConfirmSimilar {
+				return false, apperr.Conflict("similar_exists", "похожий товар уже есть в списке").Uz("oʻxshash mahsulot roʻyxatda allaqachon bor").
+					WithDetails(map[string]any{"product_id": in.ProductID, "similar": sim[0]})
+			}
+			for _, x := range sim {
+				if _, err := tx.Exec(ctx, `
+					INSERT INTO start_similar_ok (store_id, product_id, similar_id) VALUES ($1, least($2::uuid, $3::uuid), greatest($2::uuid, $3::uuid))
+					ON CONFLICT DO NOTHING`, st.ID, in.ProductID, x.ProductID); err != nil {
+					return false, err
+				}
+			}
+		}
+	}
+
+	if v := in.Qty.Or(); v != nil {
+		if !v.Valid() {
+			return false, apperr.Validation("qty: неверное количество").Uz("qty: miqdor notoʻgʻri")
+		}
+		q := money.D(string(*v))
+		if q.Sign() < 0 {
+			return false, apperr.Validation("qty: количество не может быть меньше нуля").Uz("qty: miqdor noldan kichik boʻlmasin")
 		}
 		if !fractional && q.Cmp(money.D(q.Fixed(0))) != 0 {
-			return apperr.Validation("qty: товар штучный — количество целое").Uz("qty: mahsulot donali — miqdor butun son boʻlsin")
+			return false, apperr.Validation("qty: товар штучный — количество целое").Uz("qty: mahsulot donali — miqdor butun son boʻlsin")
 		}
 		if q.Cmp(money.D("99999999")) > 0 {
-			return apperr.Validation("qty: слишком большое количество").Uz("qty: miqdor juda katta")
+			return false, apperr.Validation("qty: слишком большое количество").Uz("qty: miqdor juda katta")
 		}
 	}
-	if in.Price.Set && in.Price.Value != nil && (!in.Price.Value.Valid() || money.D(string(*in.Price.Value)).Sign() <= 0) {
-		return apperr.Validation("price: цена продажи должна быть больше нуля").Uz("price: sotish narxi noldan katta boʻlishi kerak")
+	if v := in.Price.Or(); v != nil && (!v.Valid() || money.D(string(*v)).Sign() < 0) {
+		return false, apperr.Validation("price: неверная цена продажи").Uz("price: sotish narxi notoʻgʻri")
 	}
-	if in.Cost.Set && in.Cost.Value != nil && !in.Cost.Value.Valid() {
-		return apperr.Validation("cost: неверная закупочная цена").Uz("cost: xarid narxi notoʻgʻri")
+	if v := in.Cost.Or(); v != nil && !v.Valid() {
+		return false, apperr.Validation("cost: неверная себестоимость").Uz("cost: tannarx notoʻgʻri")
 	}
 	if in.Barcode != nil && strings.TrimSpace(*in.Barcode) != "" {
 		if err := bindBarcode(ctx, tx, p, in.ProductID, strings.TrimSpace(*in.Barcode)); err != nil {
-			return err
+			return false, err
 		}
 	}
-	var cost, price *string
+	var qty, cost, price *string
+	if v := in.Qty.Or(); v != nil {
+		x := string(*v)
+		qty = &x
+	}
 	if v := in.Cost.Or(); v != nil {
-		c := string(*v)
-		cost = &c
+		x := string(*v)
+		cost = &x
 	}
 	if v := in.Price.Or(); v != nil {
-		pr := string(*v)
-		price = &pr
+		x := string(*v)
+		price = &x
 	}
-	if curQty == nil {
+	if !exists {
 		_, err = tx.Exec(ctx, `
 			INSERT INTO start_lines (draft_id, product_id, qty, cost, price, source, added_by)
 			VALUES ($1, $2, $3::numeric, $4::numeric, $5::numeric, $6, $7)`,
 			draftID, in.ProductID, qty, cost, price, source, p.EmployeeID)
-		return err
+		return false, err
 	}
 	_, err = tx.Exec(ctx, `
-		UPDATE start_lines SET qty = COALESCE($3::numeric, qty),
-		       cost = CASE WHEN $4 THEN $5::numeric ELSE cost END,
-		       price = CASE WHEN $6 THEN $7::numeric ELSE price END,
+		UPDATE start_lines SET qty = CASE WHEN $3 THEN $4::numeric ELSE qty END,
+		       cost = CASE WHEN $5 THEN $6::numeric ELSE cost END,
+		       price = CASE WHEN $7 THEN $8::numeric ELSE price END,
 		       document_id = NULL
 		WHERE draft_id = $1 AND product_id = $2`,
-		draftID, in.ProductID, nilIfEmpty(qty), in.Cost.Set, cost, in.Price.Set, price)
-	return err
-}
-
-func nilIfEmpty(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
+		draftID, in.ProductID, in.Qty.Set, qty, in.Cost.Set, cost, in.Price.Set, price)
+	return false, err
 }
 
 // bindBarcode — привязать штрихкод к товару, если его ещё нет в каталоге.
@@ -525,16 +632,18 @@ type PostResult struct {
 
 type postLine struct {
 	ProductID string
-	Qty       string
+	Qty       *string
 	Cost      *string
 	Price     *string
 	Current   string
 	Posted    bool
 }
 
-// Post — провести черновик: установка цен магазина (если цены изменены)
-// и оприходование на основной склад по закупочным ценам. Проведённые строки
-// отмечаются — повторный вызов после сбоя доделывает оставшееся.
+// Post — «Записать и закрыть»: у каждой строки должны быть количество и цена
+// продажи (можно 0). Создаёт установку цен магазина (где цена отличается от
+// действующей) и оприходование на основной склад по себестоимости (строки с
+// количеством больше нуля), товары попадают в ассортимент магазина. Проведённые
+// строки отмечаются — повторный вызов после сбоя доделывает оставшееся.
 func (s *Service) Post(ctx context.Context, p *identity.Principal, storeID string) (PostResult, error) {
 	st, err := s.store(ctx, s.pool, p, storeID)
 	if err != nil {
@@ -586,6 +695,17 @@ func (s *Service) post(ctx context.Context, p *identity.Principal, st store, dra
 	if len(lines) == 0 {
 		return res, apperr.Conflict("draft_empty", "добавьте товары, которые есть в магазине").Uz("doʻkonda bor mahsulotlarni qoʻshing")
 	}
+	unfilled := 0
+	for _, l := range lines {
+		if l.Qty == nil || l.Price == nil {
+			unfilled++
+		}
+	}
+	if unfilled > 0 {
+		return res, apperr.Conflict("lines_unfilled", fmt.Sprintf("заполните количество и цену продажи — не заполнено строк: %d", unfilled)).
+			Uz(fmt.Sprintf("miqdor va sotish narxini kiriting — toʻldirilmagan qatorlar: %d", unfilled)).
+			WithDetails(map[string]any{"count": unfilled})
+	}
 
 	// 1. Цены: только изменённые относительно действующих.
 	type priceItem = struct {
@@ -623,7 +743,7 @@ func (s *Service) post(ctx context.Context, p *identity.Principal, st store, dra
 	// 2. Оприходование по 1000 строк; каждая порция отмечается сразу.
 	var todo []postLine
 	for _, l := range lines {
-		if !l.Posted {
+		if !l.Posted && money.D(*l.Qty).Sign() > 0 {
 			todo = append(todo, l)
 		}
 	}
@@ -638,7 +758,7 @@ func (s *Service) post(ctx context.Context, p *identity.Principal, st store, dra
 				cost = *l.Cost
 			}
 			price := money.Price(cost)
-			items = append(items, inventory.ItemInput{ProductID: l.ProductID, Qty: money.Qty(l.Qty), Price: &price})
+			items = append(items, inventory.ItemInput{ProductID: l.ProductID, Qty: money.Qty(*l.Qty), Price: &price})
 			ids = append(ids, l.ProductID)
 		}
 		wh := st.WarehouseID
@@ -657,6 +777,14 @@ func (s *Service) post(ctx context.Context, p *identity.Principal, st store, dra
 			draftID, doc.ID, ids); err != nil {
 			return res, err
 		}
+	}
+
+	// 3. Все товары черновика — в ассортимент магазина (и с нулевым остатком).
+	if _, err := s.pool.Exec(ctx, `
+		INSERT INTO store_products (network_id, store_id, product_id)
+		SELECT $2, $3, product_id FROM start_lines WHERE draft_id = $1
+		ON CONFLICT DO NOTHING`, draftID, p.NetworkID, st.ID); err != nil {
+		return res, err
 	}
 
 	err = s.pool.QueryRow(ctx, `

@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../main.dart';
-import '../receipt/receipt_logic.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -66,194 +65,136 @@ class NumField extends StatelessWidget {
   }
 }
 
-/// Количество с кнопками − и +.
-class QtyStepper extends StatelessWidget {
-  const QtyStepper({super.key, required this.label, required this.controller, required this.fractional, this.onChanged});
+/// Чем закончилось «добавить в «Мои товары»» для экрана.
+enum AddResult { added, showList, nothing }
 
-  final String label;
-  final TextEditingController controller;
-  final bool fractional;
-  final VoidCallback? onChanged;
-
-  void _step(int d) {
-    final n = num.tryParse(parseNum(controller.text) ?? '') ?? 0;
-    final next = n + d;
-    if (next <= 0) return;
-    controller.text = plainQty(next);
-    onChanged?.call();
+/// Добавить товар в «Мои товары» (М1). Повтор — шторка «Товар уже добавлен»
+/// (М3), похожий — «Похожий товар уже есть» (М4, спрашиваем один раз на пару).
+/// bind — привязать этот штрихкод к товару (выбрали товар для незнакомого кода).
+/// listButton — показать в шторке повтора «Показать в списке» (там, где список рядом).
+Future<AddResult> addToMyGoods(BuildContext context, StartApi start, ProductRef p, {String source = 'search', String? bind, bool listButton = true}) async {
+  try {
+    var o = await start.add(p.id, source: source, bind: bind);
+    if (!context.mounted) return AddResult.nothing;
+    if (o.kind == AddKind.similar) {
+      final yes = await _similarSheet(context, p, o.similar ?? const {});
+      if (!yes || !context.mounted) return AddResult.nothing;
+      o = await start.add(p.id, source: source, bind: bind, confirmSimilar: true);
+      if (!context.mounted) return AddResult.nothing;
+    }
+    if (o.kind == AddKind.added) {
+      showMessage(context, tr('${p.name} — в «Моих товарах»', '${p.name} — «Mahsulotlarim»da'));
+      return AddResult.added;
+    }
+    if (o.kind == AddKind.duplicate) {
+      return await _duplicateSheet(context, p, o.inStore, listButton) ? AddResult.showList : AddResult.nothing;
+    }
+    return AddResult.nothing;
+  } catch (e) {
+    if (context.mounted) showMessage(context, e);
+    return AddResult.nothing;
   }
+}
+
+/// Карточка товара в шторках: фото, полное название, штрихкод; label — подпись сверху.
+class StartProductCard extends StatelessWidget {
+  const StartProductCard({super.key, required this.name, this.image, this.barcode, this.label, this.accent = false});
+
+  final String name;
+  final String? image;
+  final String? barcode;
+  final String? label;
+  final bool accent;
 
   @override
   Widget build(BuildContext context) {
-    Widget btn(IconData icon, int d) => Material(
-          color: AppColors.white,
-          shape: const CircleBorder(),
-          child: InkWell(customBorder: const CircleBorder(), onTap: () => _step(d), child: SizedBox(width: 36, height: 36, child: Icon(icon, size: 20))),
-        );
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label, style: AppText.small),
-      const SizedBox(height: 6),
-      Container(
-        height: 56,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(color: AppColors.soft, borderRadius: BorderRadius.circular(16)),
-        child: Row(children: [
-          btn(Icons.remove_rounded, -1),
-          Expanded(
-            child: TextField(
-              controller: controller,
-              textAlign: TextAlign.center,
-              onChanged: (_) => onChanged?.call(),
-              style: AppText.title,
-              keyboardType: TextInputType.numberWithOptions(decimal: fractional),
-              decoration: const InputDecoration(filled: false, border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none, contentPadding: EdgeInsets.zero),
-            ),
-          ),
-          btn(Icons.add_rounded, 1),
-        ]),
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.bg,
+        borderRadius: BorderRadius.circular(16),
+        border: accent ? Border.all(color: AppColors.ink, width: 1.5) : null,
       ),
-    ]);
-  }
-}
-
-/// Н5 · Товар найден: количество, закупка, цена продажи, штрихкод → в список.
-/// Количество прибавляется к тому, что уже есть в списке. true — добавлен.
-Future<bool> addProductSheet(
-  BuildContext context,
-  StartApi start,
-  ProductRef p, {
-  String source = 'barcode',
-  String? code,
-  String? note,
-  String? bind,
-  num qty = 1,
-}) async {
-  final ok = await showSheet<bool>(context, (_) => _AddSheet(start: start, p: p, source: source, code: code, note: note, bind: bind, qty: qty));
-  return ok == true;
-}
-
-class _AddSheet extends StatefulWidget {
-  const _AddSheet({required this.start, required this.p, required this.source, required this.code, required this.note, required this.bind, required this.qty});
-
-  final StartApi start;
-  final ProductRef p;
-  final String source;
-  final String? code;
-  final String? note;
-
-  /// Привязать этот штрихкод к товару (выбрали товар для незнакомого штрихкода).
-  final String? bind;
-  final num qty;
-
-  @override
-  State<_AddSheet> createState() => _AddSheetState();
-}
-
-class _AddSheetState extends State<_AddSheet> {
-  late final _qty = TextEditingController(text: plainQty(widget.qty));
-  final _cost = TextEditingController();
-  late final _price = TextEditingController(text: plainQty(widget.p.price));
-  late final _barcode = TextEditingController(text: widget.bind ?? widget.p.barcode ?? widget.code ?? '');
-  bool _busy = false;
-
-  @override
-  void dispose() {
-    _qty.dispose();
-    _cost.dispose();
-    _price.dispose();
-    _barcode.dispose();
-    super.dispose();
-  }
-
-  String? get _markup {
-    final c = num.tryParse(parseNum(_cost.text) ?? '');
-    final p = num.tryParse(parseNum(_price.text) ?? '');
-    if (c == null || p == null || c <= 0) return null;
-    return '${((p - c) / c * 100).round()}%';
-  }
-
-  Future<void> _add() async {
-    final qty = parseNum(_qty.text);
-    if (qty == null || num.parse(qty) <= 0) {
-      showMessage(context, tr('Укажите количество', 'Miqdorni kiriting'));
-      return;
-    }
-    final body = <String, dynamic>{'product_id': widget.p.id, 'qty': qty, 'add': true, 'source': widget.source};
-    final cost = parseNum(_cost.text);
-    if (cost != null) body['cost'] = cost;
-    final price = parseNum(_price.text);
-    if (price != null && num.tryParse(price) != num.tryParse(widget.p.price ?? '')) body['price'] = price;
-    final code = _barcode.text.trim();
-    if (widget.bind != null) {
-      body['barcode'] = widget.bind;
-    } else if (widget.p.barcode == null && code.isNotEmpty) {
-      body['barcode'] = code;
-    }
-    setState(() => _busy = true);
-    try {
-      await widget.start.setLines([body]);
-      if (mounted) Navigator.of(context).pop(true);
-    } catch (e) {
-      if (mounted) showMessage(context, e);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final p = widget.p;
-    final canBind = context.read<StoreState>().can('catalog.manage');
-    final sub = [
-      if (p.barcode != null) p.barcode!,
-      p.own ? tr('свой товар сети', 'tarmoqning oʻz mahsuloti') : tr('найден в общем каталоге', 'umumiy katalogda topildi'),
-    ].join(' · ');
-    final markup = _markup;
-    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Row(children: [
-        ProductThumb(p.image, size: 56),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(p.name, style: AppText.title, maxLines: 2, overflow: TextOverflow.ellipsis),
-            Text(sub, style: AppText.small),
-          ]),
-        ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (label != null) ...[
+          Text(label!, style: AppText.caption.copyWith(fontSize: 11)),
+          const SizedBox(height: 8),
+        ],
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          ProductThumb(image, size: 44),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(name, style: AppText.bodyStrong.copyWith(fontSize: 14)),
+              if (barcode != null) Text(barcode!, style: AppText.small.copyWith(fontSize: 12)),
+            ]),
+          ),
+        ]),
       ]),
-      if (widget.note != null) ...[
-        const SizedBox(height: 10),
-        Text(widget.note!, style: AppText.small.copyWith(color: AppColors.warningInk)),
-      ],
+    );
+  }
+}
+
+/// М3 · Товар уже добавлен. true — «Показать в списке».
+Future<bool> _duplicateSheet(BuildContext context, ProductRef p, bool inStore, bool listButton) async {
+  final r = await showSheet<bool>(
+    context,
+    (ctx) => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      SheetHeader(
+        icon: Icons.error_outline_rounded,
+        title: tr('Товар уже добавлен', 'Mahsulot allaqachon qoʻshilgan'),
+        text: inStore
+            ? tr('Повтор не добавлен — этот товар уже есть в товарах магазина', 'Takror qoʻshilmadi — bu mahsulot doʻkon mahsulotlarida allaqachon bor')
+            : tr('Повтор не добавлен — этот товар уже в «Моих товарах»', 'Takror qoʻshilmadi — bu mahsulot allaqachon «Mahsulotlarim»da'),
+      ),
       const SizedBox(height: 16),
-      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(child: QtyStepper(label: tr('Количество, ${p.unit}', 'Miqdor, ${p.unit}'), controller: _qty, fractional: p.fractional, onChanged: () => setState(() {}))),
-        const SizedBox(width: 12),
-        Expanded(child: NumField(label: tr('Цена закупки, сум', 'Xarid narxi, soʻm'), controller: _cost, hint: '—', onChanged: (_) => setState(() {}))),
+      StartProductCard(name: p.name, image: p.image, barcode: p.barcode),
+      const SizedBox(height: 20),
+      Row(children: [
+        if (!inStore && listButton) ...[
+          Expanded(child: SheetButton(label: tr('Показать в списке', 'Roʻyxatda koʻrsatish'), primary: false, onPressed: () => Navigator.pop(ctx, true))),
+          const SizedBox(width: 10),
+        ],
+        Expanded(child: SheetButton(label: tr('Понятно', 'Tushunarli'), onPressed: () => Navigator.pop(ctx, false))),
       ]),
+    ]),
+  );
+  return r == true;
+}
+
+/// М4 · Похожий товар уже есть. true — «Всё равно добавить».
+Future<bool> _similarSheet(BuildContext context, ProductRef p, Map<String, dynamic> similar) async {
+  final r = await showSheet<bool>(
+    context,
+    (ctx) => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      SheetHeader(
+        title: tr('Похожий товар уже есть', 'Oʻxshash mahsulot allaqachon bor'),
+        text: tr('Может, это тот же товар? Если разные (вкус, упаковка) — добавьте.', 'Balki bu oʻsha mahsulotdir? Agar farqli boʻlsa (taʼm, qadoq) — qoʻshing.'),
+      ),
+      const SizedBox(height: 16),
+      StartProductCard(
+        label: tr('УЖЕ В «МОИХ ТОВАРАХ»', '«MAHSULOTLARIM»DA BOR'),
+        name: '${similar['name'] ?? ''}',
+        image: similar['image'] as String?,
+        barcode: similar['barcode'] as String?,
+      ),
+      const SizedBox(height: 10),
+      StartProductCard(label: tr('ДОБАВЛЯЕТЕ', 'QOʻSHAYAPSIZ'), name: p.name, image: p.image, barcode: p.barcode, accent: true),
       const SizedBox(height: 12),
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(child: NumField(label: tr('Цена продажи, сум', 'Sotuv narxi, soʻm'), controller: _price, onChanged: (_) => setState(() {}))),
-        const SizedBox(width: 12),
-        Expanded(
-          child: NumField(
-            label: tr('Штрихкод', 'Shtrix-kod'),
-            controller: _barcode,
-            hint: tr('нет', 'yoʻq'),
-            digitsOnly: true,
-            enabled: widget.bind == null && p.barcode == null && canBind,
-          ),
-        ),
+        const Icon(Icons.info_outline_rounded, size: 16, color: AppColors.text2),
+        const SizedBox(width: 6),
+        Expanded(child: Text(tr('Спросим один раз — для этой пары больше не появится', 'Bir marta soʻraymiz — bu juftlik uchun boshqa chiqmaydi'), style: AppText.small.copyWith(fontSize: 12))),
       ]),
-      const SizedBox(height: 10),
-      Text(
-        tr('Цена продажи подставлена из каталога — можно изменить.${markup == null ? '' : ' Наценка $markup.'}',
-            'Sotuv narxi katalogdan olindi — oʻzgartirish mumkin.${markup == null ? '' : ' Ustama $markup.'}'),
-        style: AppText.small,
-      ),
-      const SizedBox(height: 16),
-      BigButton(label: tr('Добавить · ${plainQty(parseNum(_qty.text) ?? '0')} ${p.unit}', 'Qoʻshish · ${plainQty(parseNum(_qty.text) ?? '0')} ${p.unit}'), icon: Icons.add_rounded, busy: _busy, onPressed: _add),
-    ]);
-  }
+      const SizedBox(height: 20),
+      Row(children: [
+        Expanded(child: SheetButton(label: tr('Отмена', 'Bekor qilish'), primary: false, onPressed: () => Navigator.pop(ctx, false))),
+        const SizedBox(width: 10),
+        Expanded(child: SheetButton(label: tr('Всё равно добавить', 'Baribir qoʻshish'), onPressed: () => Navigator.pop(ctx, true))),
+      ]),
+    ]),
+  );
+  return r == true;
 }
 
 /// Результат шторки «Какой это товар?».
@@ -439,108 +380,41 @@ class _PickSheetState extends State<_PickSheet> {
   }
 }
 
-/// Изменить строку списка: количество, закупка, продажа, штрихкод; «Убрать».
-/// true — что-то изменилось.
-Future<bool> editLineSheet(BuildContext context, StartApi start, Map<String, dynamic> line) async {
-  final ok = await showSheet<bool>(context, (_) => _LineSheet(start: start, line: line));
-  return ok == true;
-}
+/// Шаги «Начала работы»: «1 · Выбор товаров › 2 · Инвентаризация».
+class StartSteps extends StatelessWidget {
+  const StartSteps({super.key, required this.step});
 
-class _LineSheet extends StatefulWidget {
-  const _LineSheet({required this.start, required this.line});
-
-  final StartApi start;
-  final Map<String, dynamic> line;
-
-  @override
-  State<_LineSheet> createState() => _LineSheetState();
-}
-
-class _LineSheetState extends State<_LineSheet> {
-  late final _qty = TextEditingController(text: plainQty(widget.line['qty']));
-  late final _cost = TextEditingController(text: plainQty(widget.line['cost']));
-  late final _price = TextEditingController(text: plainQty(widget.line['price'] ?? widget.line['current_price']));
-  late final _barcode = TextEditingController(text: (widget.line['barcode'] as String?) ?? '');
-  bool _busy = false;
-
-  @override
-  void dispose() {
-    _qty.dispose();
-    _cost.dispose();
-    _price.dispose();
-    _barcode.dispose();
-    super.dispose();
-  }
-
-  Future<void> _run(Future<void> Function() f) async {
-    setState(() => _busy = true);
-    try {
-      await f();
-      if (mounted) Navigator.of(context).pop(true);
-    } catch (e) {
-      if (mounted) showMessage(context, e);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  void _save() {
-    final l = widget.line;
-    final qty = parseNum(_qty.text);
-    if (qty == null || num.parse(qty) <= 0) {
-      showMessage(context, tr('Укажите количество', 'Miqdorni kiriting'));
-      return;
-    }
-    final body = <String, dynamic>{'product_id': l['product_id']};
-    if (num.parse(qty) != num.tryParse('${l['qty']}')) body['qty'] = qty;
-    final cost = parseNum(_cost.text);
-    if (num.tryParse(cost ?? '') != num.tryParse('${l['cost'] ?? ''}')) body['cost'] = cost;
-    final price = parseNum(_price.text);
-    final shown = num.tryParse('${l['price'] ?? l['current_price']}');
-    if (num.tryParse(price ?? '') != shown) body['price'] = price;
-    final code = _barcode.text.trim();
-    if (l['barcode'] == null && code.isNotEmpty) body['barcode'] = code;
-    if (body.length == 1) {
-      Navigator.of(context).pop(false);
-      return;
-    }
-    _run(() => widget.start.setLines([body]));
-  }
+  final int step;
 
   @override
   Widget build(BuildContext context) {
-    final l = widget.line;
-    final canBind = context.read<StoreState>().can('catalog.manage');
-    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Row(children: [
-        ProductThumb(l['image'] as String?, size: 56),
-        const SizedBox(width: 12),
-        Expanded(child: Text('${l['name']}', style: AppText.title, maxLines: 2, overflow: TextOverflow.ellipsis)),
-      ]),
-      const SizedBox(height: 16),
-      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(child: QtyStepper(label: tr('Количество, ${l['unit_short'] ?? 'шт'}', 'Miqdor, ${l['unit_short'] ?? 'dona'}'), controller: _qty, fractional: l['is_fractional'] == true)),
-        const SizedBox(width: 12),
-        Expanded(child: NumField(label: tr('Цена закупки, сум', 'Xarid narxi, soʻm'), controller: _cost, hint: '—')),
-      ]),
-      const SizedBox(height: 12),
-      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(child: NumField(label: tr('Цена продажи, сум', 'Sotuv narxi, soʻm'), controller: _price)),
-        const SizedBox(width: 12),
-        Expanded(child: NumField(label: tr('Штрихкод', 'Shtrix-kod'), controller: _barcode, hint: tr('нет', 'yoʻq'), digitsOnly: true, enabled: l['barcode'] == null && canBind)),
-      ]),
-      const SizedBox(height: 16),
-      Row(children: [
-        Expanded(
-          child: SmallButton(
-            label: tr('Убрать', 'Olib tashlash'),
-            icon: Icons.delete_outline_rounded,
-            onPressed: _busy ? null : () => _run(() => widget.start.deleteLine('${l['product_id']}')),
+    final labels = [tr('Выбор товаров', 'Mahsulotlarni tanlash'), tr('Инвентаризация', 'Inventarizatsiya')];
+    Widget chip(int n) {
+      final on = n == step;
+      final done = n < step;
+      return Container(
+        padding: const EdgeInsets.fromLTRB(5, 5, 12, 5),
+        decoration: BoxDecoration(color: on ? AppColors.ink : AppColors.white, borderRadius: BorderRadius.circular(16)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 20,
+            height: 20,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: on ? AppColors.white : (done ? AppColors.successSoft : AppColors.bg), shape: BoxShape.circle),
+            child: done
+                ? const Icon(Icons.check_rounded, size: 13, color: AppColors.successInk)
+                : Text('$n', style: AppText.caption.copyWith(fontSize: 11, color: on ? AppColors.ink : AppColors.text2)),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(child: SmallButton(label: tr('Сохранить', 'Saqlash'), icon: Icons.check_rounded, primary: true, onPressed: _busy ? null : _save)),
-      ]),
+          const SizedBox(width: 6),
+          Text(labels[n - 1], style: AppText.caption.copyWith(fontSize: 13, color: on ? AppColors.white : (done ? AppColors.successInk : AppColors.text2))),
+        ]),
+      );
+    }
+
+    return Row(children: [
+      chip(1),
+      const Padding(padding: EdgeInsets.symmetric(horizontal: 6), child: Icon(Icons.chevron_right_rounded, size: 16, color: AppColors.muted)),
+      Flexible(child: chip(2)),
     ]);
   }
 }

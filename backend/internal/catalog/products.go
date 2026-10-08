@@ -104,6 +104,9 @@ type ProductInput struct {
 	Barcodes      *[]string       `json:"barcodes"`
 	IsActive      *bool           `json:"is_active"`
 	Attributes    *map[string]any `json:"attributes"`
+	// StoreID — магазин, в «Мои товары» которого сразу попадает новый товар
+	// сети (только в панели магазина).
+	StoreID *string `json:"store_id"`
 }
 
 // fillFromUz: пришёл только узбекский текст (русское поле не задано при
@@ -385,10 +388,17 @@ type ProductFilter struct {
 	Sort string
 	// Photo — with (есть фото) или without (нет фото); только у супер-админа.
 	Photo string
-	Page  httpx.Page
+	// Scope — mine: только ассортимент магазина StoreID («Мои товары»; без
+	// магазина — любого магазина сети); пусто или all — вся центральная база.
+	Scope   string
+	StoreID string
+	Page    httpx.Page
 }
 
 func (f ProductFilter) validate() error {
+	if f.Scope != "" && f.Scope != "all" && f.Scope != "mine" {
+		return apperr.Validation("scope: ожидается mine или all").Uz("scope: mine yoki all boʻlishi kerak")
+	}
 	if f.CategoryID != "" && !httpx.IsUUID(f.CategoryID) {
 		return apperr.Validation("category_id: неверный id").Uz("category_id: id notoʻgʻri")
 	}
@@ -415,6 +425,41 @@ func groupWhere(n int) string {
 	return fmt.Sprintf(`
 	AND ($%[1]d = '' OR ($%[1]d = 'none' AND p.brand_id IS NULL) OR p.brand_id::text = $%[1]d)
 	AND ($%[2]d = '' OR p.category_id::text = $%[2]d)`, n, n+1)
+}
+
+// checkStore — магазин сети, доступный сотруднику.
+func (s *Service) checkStore(ctx context.Context, pr *identity.Principal, storeID string) error {
+	if !httpx.IsUUID(storeID) || !pr.CanAccessStore(storeID) {
+		return apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
+	}
+	var ok bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM stores WHERE id = $1 AND network_id = $2)`, storeID, pr.NetworkID).Scan(&ok); err != nil {
+		return err
+	}
+	if !ok {
+		return apperr.NotFound("магазин не найден").Uz("doʻkon topilmadi")
+	}
+	return nil
+}
+
+// mineWhere — только «Мои товары» ($n: пусто — все, "any" — любой магазин
+// сети $net, иначе id магазина).
+func mineWhere(n, net int) string {
+	return fmt.Sprintf(`
+	AND ($%[1]d = '' OR EXISTS (SELECT 1 FROM store_products a WHERE a.product_id = p.id AND a.network_id = $%[2]d
+	     AND ($%[1]d = 'any' OR a.store_id::text = $%[1]d)))`, n, net)
+}
+
+// mineArg — значение для mineWhere.
+func (f ProductFilter) mineArg(storeID string) string {
+	switch {
+	case f.Scope != "mine":
+		return ""
+	case storeID != "":
+		return storeID
+	default:
+		return "any"
+	}
 }
 
 // Общие условия фильтра: $1 — строка поиска, $2 — категория (включая
@@ -502,9 +547,9 @@ func (s *Service) StoreListProducts(ctx context.Context, pr *identity.Principal,
 	}
 	if storeID == "" {
 		rows, err := s.pool.Query(ctx, `SELECT `+productCols+productFrom+`
-			WHERE (p.network_id IS NULL OR p.network_id = $4)`+filterWhere+groupWhere(7)+`
+			WHERE (p.network_id IS NULL OR p.network_id = $4)`+filterWhere+groupWhere(7)+mineWhere(9, 4)+`
 			ORDER BY loc(p.name, p.name_uz), p.id LIMIT $5 OFFSET $6`,
-			strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, pr.NetworkID, f.Page.Limit, f.Page.Offset, f.BrandID, f.LeafCategoryID)
+			strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, pr.NetworkID, f.Page.Limit, f.Page.Offset, f.BrandID, f.LeafCategoryID, f.mineArg(""))
 		if err != nil {
 			return nil, err
 		}
@@ -525,9 +570,9 @@ func (s *Service) StoreListProducts(ctx context.Context, pr *identity.Principal,
 		`+productFrom+`
 		LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = $7 AND sp.store_id = $8
 		LEFT JOIN prices np ON np.product_id = p.id AND np.price_type_id = $7 AND np.store_id IS NULL
-		WHERE (p.network_id IS NULL OR p.network_id = $4)`+filterWhere+groupWhere(9)+`
+		WHERE (p.network_id IS NULL OR p.network_id = $4)`+filterWhere+groupWhere(9)+mineWhere(11, 4)+`
 		ORDER BY loc(p.name, p.name_uz), p.id LIMIT $5 OFFSET $6`,
-		strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, pr.NetworkID, f.Page.Limit, f.Page.Offset, typeID, storeID, f.BrandID, f.LeafCategoryID)
+		strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, pr.NetworkID, f.Page.Limit, f.Page.Offset, typeID, storeID, f.BrandID, f.LeafCategoryID, f.mineArg(storeID))
 	if err != nil {
 		return nil, err
 	}
@@ -550,7 +595,20 @@ func (s *Service) StoreCreateProduct(ctx context.Context, pr *identity.Principal
 	if err := pr.Require(identity.PermCatalogManage); err != nil {
 		return Product{}, err
 	}
-	return s.createProduct(ctx, &pr.NetworkID, in)
+	if in.StoreID != nil {
+		if err := s.checkStore(ctx, pr, *in.StoreID); err != nil {
+			return Product{}, err
+		}
+	}
+	out, err := s.createProduct(ctx, &pr.NetworkID, in)
+	if err != nil || in.StoreID == nil {
+		return out, err
+	}
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO store_products (network_id, store_id, product_id)
+		SELECT network_id, id, $3 FROM stores WHERE id = $1 AND network_id = $2
+		ON CONFLICT DO NOTHING`, *in.StoreID, pr.NetworkID, out.ID)
+	return out, err
 }
 
 // StoreUpdateProduct — сеть правит свой товар, пока он не одобрен.

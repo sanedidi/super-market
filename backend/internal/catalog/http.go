@@ -137,6 +137,8 @@ func filterFrom(r *http.Request) ProductFilter {
 		LeafCategoryID: q.Get("leaf_category_id"),
 		Sort:           q.Get("sort"),
 		Photo:          q.Get("photo"),
+		Scope:          q.Get("scope"),
+		StoreID:        q.Get("store_id"),
 		Page:           httpx.PageFrom(r),
 	}
 }

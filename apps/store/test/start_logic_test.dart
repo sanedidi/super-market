@@ -21,52 +21,6 @@ void main() {
     expect(plainQty(null), '');
   });
 
-  test('buildSections: раздел → подраздел → бренды', () {
-    final groups = [
-      CatalogGroup.fromJson({
-        'category_ids': ['d', 'd1'],
-        'category_names': ['Напитки', 'Газированные'],
-        'brand_id': 'cola',
-        'brand_name': 'Coca-Cola',
-        'count': 6,
-        'selected': 2,
-      }),
-      CatalogGroup.fromJson({
-        'category_ids': ['d', 'd1'],
-        'category_names': ['Напитки', 'Газированные'],
-        'brand_id': null,
-        'brand_name': 'Без бренда',
-        'count': 1,
-        'selected': 0,
-      }),
-      CatalogGroup.fromJson({
-        'category_ids': ['d', 'd2', 'd3'],
-        'category_names': ['Напитки', 'Чай', 'Чёрный'],
-        'brand_id': 'ahmad',
-        'brand_name': 'Ahmad',
-        'count': 3,
-        'selected': 1,
-      }),
-      CatalogGroup.fromJson({
-        'category_ids': ['s'],
-        'category_names': ['Сладости'],
-        'brand_id': 'oreo',
-        'brand_name': 'Oreo',
-        'count': 2,
-        'selected': 0,
-      }),
-    ];
-    final s = buildSections(groups);
-    expect(s.map((e) => e.name), ['Напитки', 'Сладости']);
-    expect(s[0].count, 10);
-    expect(s[0].selected, 3);
-    expect(s[0].leaves.map((l) => l.title), ['Газированные', 'Чай / Чёрный']);
-    expect(s[0].leaves[0].brands.length, 2);
-    expect(s[0].leaves[0].brands[1].brandParam, 'none');
-    expect(s[1].leaves.single.title, 'Сладости');
-    expect(s[1].leaves.single.categoryId, 's');
-  });
-
   test('photoLines: складывает одинаковые, пропускает пустые', () {
     final lines = photoLines(const [PhotoPick('a', 6), PhotoPick('b', 4), PhotoPick('a', 2), PhotoPick(null, 3), PhotoPick('c', 0)]);
     expect(lines, [
@@ -95,11 +49,26 @@ void main() {
     expect(c.image, isNull);
   });
 
-  test('lineSummary и isBarcode', () {
+  test('lineSummary, lineUnfilled и isBarcode', () {
     String fmt(Object? v) => plainQty(v);
-    expect(lineSummary({'qty': '24.000', 'unit_short': 'шт', 'cost': '11200', 'current_price': '15000.00'}, fmt), '24 шт · закупка 11200 · продажа 15000');
-    expect(lineSummary({'qty': '6', 'unit_short': 'шт', 'cost': null, 'price': '38990.00', 'current_price': '1'}, fmt), '6 шт · без закупки · продажа 38990');
+    expect(lineSummary({'qty': '24.000', 'unit_short': 'шт', 'cost': '11200', 'price': '15000.00'}, fmt), '24 шт · себестоимость 11200 · продажа 15000');
+    expect(lineSummary({'qty': '0', 'unit_short': 'шт', 'cost': null, 'price': '0.00'}, fmt), '0 шт · продажа 0');
+    expect(lineSummary({'qty': null, 'unit_short': 'шт', 'cost': null, 'price': null}, fmt), 'кол-во: не заполнено · цена: не заполнено');
+    expect(lineUnfilled({'qty': '3', 'price': null}), isTrue);
+    expect(lineUnfilled({'qty': '0', 'price': '0.00'}), isFalse);
     expect(isBarcode('4780012345678'), isTrue);
     expect(isBarcode('cola'), isFalse);
+  });
+
+  test('AddOutcome: повтор и похожий товар из ошибки 409', () {
+    final dup = AddOutcome.fromError('already_added', {'product_id': 'a', 'in_store': true})!;
+    expect(dup.kind, AddKind.duplicate);
+    expect(dup.inStore, isTrue);
+    final sim = AddOutcome.fromError('similar_exists', {
+      'similar': {'product_id': 'b', 'name': 'Sprite 1 л'},
+    })!;
+    expect(sim.kind, AddKind.similar);
+    expect(sim.similar!['name'], 'Sprite 1 л');
+    expect(AddOutcome.fromError('lines_unfilled', {}), isNull);
   });
 }
