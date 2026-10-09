@@ -77,7 +77,7 @@ Future<AddResult> addToMyGoods(BuildContext context, StartApi start, ProductRef 
     var o = await start.add(p.id, source: source, bind: bind);
     if (!context.mounted) return AddResult.nothing;
     if (o.kind == AddKind.similar) {
-      final yes = await _similarSheet(context, p, o.similar ?? const {});
+      final yes = await similarSheet(context, p, o.similar ?? const {});
       if (!yes || !context.mounted) return AddResult.nothing;
       o = await start.add(p.id, source: source, bind: bind, confirmSimilar: true);
       if (!context.mounted) return AddResult.nothing;
@@ -163,7 +163,7 @@ Future<bool> _duplicateSheet(BuildContext context, ProductRef p, bool inStore, b
 }
 
 /// М4 · Похожий товар уже есть. true — «Всё равно добавить».
-Future<bool> _similarSheet(BuildContext context, ProductRef p, Map<String, dynamic> similar) async {
+Future<bool> similarSheet(BuildContext context, ProductRef p, Map<String, dynamic> similar) async {
   final r = await showSheet<bool>(
     context,
     (ctx) => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [

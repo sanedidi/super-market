@@ -17,7 +17,6 @@ import {
   CheckOutlined,
   DeleteOutlined,
   ExclamationCircleFilled,
-  InfoCircleOutlined,
   PlusOutlined,
   RightOutlined,
   SaveOutlined,
@@ -29,7 +28,8 @@ import { useStore } from '../../ctx'
 import { NeedStore } from '../../ui'
 import { docPaths } from '../StockDocs'
 import { plainNum, useStartApi, useStartRefresh, type Draft, type Line, type LineInput, type LinesResult, type PostResult, type SearchItem, type Similar } from './api'
-import { BarcodeModal, NewProductModal, PhotoModal, sum } from './Modals'
+import { BarcodeModal, NewProductModal, PhotoModal, SimilarModal, sum } from './Modals'
+import { TasnifBlock, TasnifLink } from './Tasnif'
 import { Thumb } from './Thumb'
 
 const PAGE = 50
@@ -191,6 +191,8 @@ type Duplicate = { name: string; inStore: boolean }
  * Поиск по центральной базе (V1). USB-сканер «печатает» штрихкод и Enter —
  * найденный товар сразу добавляется. Тот же товар — ошибка и подсветка
  * строки в «Моих товарах» (V2); похожий — окно с выбором (V3).
+ * В базе ничего нет — сразу варианты из каталога ИКПУ (Т1–Т3); нашлось, но
+ * не то — ссылка «Поискать в каталоге ИКПУ» (Т5).
  */
 function SearchCard({ onDuplicate, onNew }: { onDuplicate: (id: string | null) => void; onNew: () => void }) {
   const { storeId, can } = useStore()
@@ -205,6 +207,15 @@ function SearchCard({ onDuplicate, onNew }: { onDuplicate: (id: string | null) =
   const q = useDebounced(text.trim(), 250)
   const found = useList<SearchItem>(q.length >= 2 ? '/store/start/search' : null, { store_id: storeId, q, limit: 30 })
   const items = found.data ?? []
+  // Каталог ИКПУ: сам — когда в базе пусто, по ссылке — когда нашлось не то.
+  const [tasnifAsked, setTasnifAsked] = useState(false)
+  useEffect(() => setTasnifAsked(false), [q])
+  const searched = q.length >= 2 && !!found.data
+  // Варианты остаются на экране, даже когда добавленный товар появился в базе.
+  useEffect(() => {
+    if (searched && items.length === 0) setTasnifAsked(true)
+  }, [searched, items.length])
+  const tasnif = searched && (items.length === 0 || tasnifAsked)
 
   const add = async (it: SearchItem, source: LineInput['source'], confirm = false) => {
     setBusy(it.product_id)
@@ -236,8 +247,8 @@ function SearchCard({ onDuplicate, onNew }: { onDuplicate: (id: string | null) =
     try {
       const r = await api.get<{ items: SearchItem[] }>('/store/start/search', { store_id: storeId, q: code, limit: 2 })
       const exact = (r.items ?? []).filter((x) => x.barcode === code)
+      // Нет в базе — ниже появятся варианты из каталога ИКПУ (или «привязать / создать»).
       if (exact.length === 1) await add(exact[0], 'barcode')
-      else if (!r.items?.length) setMissing(code)
     } catch (e) {
       message.error(errorText(e))
     }
@@ -297,7 +308,11 @@ function SearchCard({ onDuplicate, onNew }: { onDuplicate: (id: string | null) =
                 ? tr('Ищем…', 'Qidirilmoqda…')
                 : items.length >= 30
                   ? tr(`Найдено больше 30 · уточните запрос`, `30 tadan koʻp topildi · soʻrovni aniqlashtiring`)
-                  : tr(`Найдено ${items.length} · по запросу «${q}»`, `Topildi: ${items.length} · «${q}» soʻrovi boʻyicha`)}
+                  : items.length === 0
+                    ? isBarcode(q)
+                      ? tr(`Штрихкода ${q} нет в центральной базе`, `${q} shtrix-kodi markaziy bazada yoʻq`)
+                      : tr(`В центральной базе не найдено · по запросу «${q}»`, `Markaziy bazada topilmadi · «${q}» soʻrovi boʻyicha`)
+                    : tr(`Найдено ${items.length} · по запросу «${q}»`, `Topildi: ${items.length} · «${q}» soʻrovi boʻyicha`)}
             </Typography.Text>
           </div>
           <div style={{ maxHeight: 560, overflowY: 'auto' }}>
@@ -323,10 +338,12 @@ function SearchCard({ onDuplicate, onNew }: { onDuplicate: (id: string | null) =
                 )}
               </Flex>
             ))}
+            {searched && items.length > 0 && !tasnifAsked && <TasnifLink q={q} onClick={() => setTasnifAsked(true)} />}
+            {tasnif && <TasnifBlock q={q} onMissingBarcode={(code) => setMissing(code)} onNew={onNew} />}
           </div>
         </>
       )}
-      {can('catalog.manage') && (
+      {can('catalog.manage') && !tasnif && (
         <Flex align="center" gap={6} style={{ padding: '12px 16px 14px' }}>
           <Typography.Text type="secondary" style={{ fontSize: 13 }}>
             {tr('Нет в базе?', 'Bazada yoʻqmi?')}
@@ -353,58 +370,6 @@ function SearchCard({ onDuplicate, onNew }: { onDuplicate: (id: string | null) =
         }}
       />
     </Card>
-  )
-}
-
-/** V3: похожий товар уже есть — показать оба и спросить. */
-function SimilarModal({ data, onCancel, onConfirm }: { data: { item: SearchItem; similar: Similar } | null; onCancel: () => void; onConfirm: () => void }) {
-  const card = (label: string, p: { name: string; image: string | null; barcode: string | null }, accent?: boolean) => (
-    <div style={{ flex: 1, minWidth: 0, background: '#FCFCFD', border: accent ? '1.5px solid #1F2937' : '1px solid #D0D5DD', borderRadius: 12, padding: 14 }}>
-      <Typography.Text type="secondary" strong style={{ fontSize: 11, display: 'block', marginBottom: 10 }}>
-        {label}
-      </Typography.Text>
-      <Flex gap={12} align="start">
-        <Thumb src={p.image} size={56} />
-        <div style={{ minWidth: 0 }}>
-          <Typography.Text strong style={{ fontWeight: 600, display: 'block' }}>
-            {p.name}
-          </Typography.Text>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {p.barcode ?? '—'}
-          </Typography.Text>
-        </div>
-      </Flex>
-    </div>
-  )
-  return (
-    <Modal
-      open={!!data}
-      width={720}
-      title={tr('Похожий товар уже есть в списке', 'Oʻxshash mahsulot roʻyxatda allaqachon bor')}
-      onCancel={onCancel}
-      footer={
-        <Space>
-          <Button onClick={onCancel}>{tr('Отмена', 'Bekor qilish')}</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={onConfirm}>
-            {tr('Всё равно добавить', 'Baribir qoʻshish')}
-          </Button>
-        </Space>
-      }
-      destroyOnHidden
-    >
-      <Typography.Paragraph type="secondary">
-        {tr('Проверьте — может, это тот же товар. Если разные (вкус, упаковка) — добавьте.', 'Tekshiring — balki bu oʻsha mahsulotdir. Agar farqli boʻlsa (taʼm, qadoq) — qoʻshing.')}
-      </Typography.Paragraph>
-      {data && (
-        <Flex gap={12} wrap>
-          {card(tr('УЖЕ В «МОИХ ТОВАРАХ»', '«MAHSULOTLARIM»DA BOR'), data.similar)}
-          {card(tr('ДОБАВЛЯЕТЕ', 'QOʻSHAYAPSIZ'), data.item, true)}
-        </Flex>
-      )}
-      <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 12 }}>
-        <InfoCircleOutlined /> {tr('Спросим один раз — для этой пары предупреждение больше не появится.', 'Bir marta soʻraymiz — bu juftlik uchun ogohlantirish boshqa chiqmaydi.')}
-      </Typography.Text>
-    </Modal>
   )
 }
 

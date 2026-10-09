@@ -57,7 +57,7 @@ export type LineInput = {
   cost?: string | number | null
   price?: string | number | null
   barcode?: string
-  source?: 'photo' | 'barcode' | 'catalog' | 'search' | 'new' | 'manual'
+  source?: 'photo' | 'barcode' | 'catalog' | 'search' | 'new' | 'manual' | 'tasnif'
 }
 
 /** Товар центральной базы в поиске шага 1. */
@@ -74,6 +74,41 @@ export type SearchItem = {
   added: boolean
   /** Уже в товарах магазина (был на складе или в цене магазина), а не в этом списке. */
   in_store: boolean
+}
+
+/** Вариант из каталога ИКПУ (POST /store/start/tasnif/preview). */
+export type TasnifPreview = {
+  /** Номер записи tasnif в запросе. */
+  index: number
+  name: string
+  barcode: string | null
+  ikpu: string
+  unit_short: string
+  /** Товар с этим штрихкодом уже есть в центральной базе. */
+  product_id: string | null
+  image: string | null
+  added: boolean
+  in_store: boolean
+}
+
+/** Подкатегория: раздел и название на обоих языках. */
+export type CategoryRef = { id: string; section: string; section_uz: string; name: string; name_uz: string }
+
+/** Новая категория (подкатегория в разделе parent_id или в новом разделе parent_name). */
+export type NewCategory = { parent_id: string | null; parent_name: string; parent_name_uz: string; name: string; name_uz: string }
+
+/** Предложение Super Market, когда категорию по коду ИКПУ не определить. */
+export type CategorySuggestion = { category: CategoryRef | null; alternatives: CategoryRef[]; new: NewCategory | null; name_uz: string }
+
+export type TasnifAddResult = {
+  status: 'added' | 'need_category'
+  product_id?: string
+  created: boolean
+  line?: Line
+  totals?: Totals
+  name: string
+  unit_short: string
+  suggestion: CategorySuggestion | null
 }
 
 /** Похожий товар из ошибки similar_exists. */
@@ -128,7 +163,7 @@ export type PostResult = {
 }
 
 /** Все запросы «Начала работы» начинаются с этих ключей — их и обновляем. */
-const KEYS = ['/store/start', '/store/start/search']
+const KEYS = ['/store/start', '/store/start/search', '/store/start/tasnif/preview']
 
 export function useStartRefresh() {
   const qc = useQueryClient()

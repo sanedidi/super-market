@@ -31,6 +31,8 @@ func (m *Module) Routes(r chi.Router) {
 		r.Delete("/lines/{product_id}", m.deleteLine)
 		r.Post("/post", m.post)
 		r.Get("/search", m.search)
+		r.Post("/tasnif/preview", m.tasnifPreview)
+		r.Post("/tasnif", m.tasnifAdd)
 		r.Post("/photos", m.createPhoto)
 		r.Get("/photos/{id}", m.getPhoto)
 		r.Post("/photos/{id}/retry", m.retryPhoto)
@@ -103,5 +105,18 @@ func (m *Module) search(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		items, err := m.svc.Search(r.Context(), pr(r), SearchFilter{StoreID: q.Get("store_id"), Query: q.Get("q"), Page: httpx.PageFrom(r)})
 		return httpx.List[SearchItem]{Items: items}, err
+	})
+}
+
+func (m *Module) tasnifPreview(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in TasnifPreviewInput) (httpx.List[TasnifPreviewItem], error) {
+		items, err := m.svc.Preview(r.Context(), pr(r), in)
+		return httpx.List[TasnifPreviewItem]{Items: items}, err
+	})
+}
+
+func (m *Module) tasnifAdd(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in TasnifAddInput) (TasnifAddResult, error) {
+		return m.svc.AddTasnif(r.Context(), pr(r), in)
 	})
 }

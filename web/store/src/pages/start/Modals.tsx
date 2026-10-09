@@ -2,12 +2,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Alert, App, Button, Col, Flex, Form, Input, InputNumber, Modal, Row, Segmented, Select, Space, Table, Tag, Typography } from 'antd'
-import { CheckCircleFilled, ExclamationCircleFilled, PlusOutlined, QuestionCircleFilled } from '@ant-design/icons'
+import { CheckCircleFilled, ExclamationCircleFilled, InfoCircleOutlined, PlusOutlined, QuestionCircleFilled } from '@ant-design/icons'
 import { FormTranslate, ImageUpload, RemoteSelect, api, errorText, getLang, money, plural, tr, useList } from '@sm/shared'
 import { useStore } from '../../ctx'
 import { Num, ProductSelect } from '../../ui'
 import type { DictItem, Product } from '../../types'
-import { useStartApi, type Candidate, type Photo, type PhotoItem } from './api'
+import { useStartApi, type Candidate, type Photo, type PhotoItem, type Similar } from './api'
 import { Thumb } from './Thumb'
 
 const goods = (n: number) => tr(`${n} ${plural(n, 'товар', 'товара', 'товаров')}`, `${n} ta mahsulot`)
@@ -179,6 +179,63 @@ export function NewProductModal({
           </Col>
         </Row>
       </Form>
+    </Modal>
+  )
+}
+
+// ---------------------------------------------------------- похожий товар
+
+/** Товар для показа: название, фото, штрихкод. */
+export type ShortProduct = { name: string; image: string | null; barcode: string | null }
+
+/** V3: похожий товар уже есть — показать оба и спросить. */
+export function SimilarModal({ data, onCancel, onConfirm }: { data: { item: ShortProduct; similar: Similar } | null; onCancel: () => void; onConfirm: () => void }) {
+  const card = (label: string, p: { name: string; image: string | null; barcode: string | null }, accent?: boolean) => (
+    <div style={{ flex: 1, minWidth: 0, background: '#FCFCFD', border: accent ? '1.5px solid #1F2937' : '1px solid #D0D5DD', borderRadius: 12, padding: 14 }}>
+      <Typography.Text type="secondary" strong style={{ fontSize: 11, display: 'block', marginBottom: 10 }}>
+        {label}
+      </Typography.Text>
+      <Flex gap={12} align="start">
+        <Thumb src={p.image} size={56} />
+        <div style={{ minWidth: 0 }}>
+          <Typography.Text strong style={{ fontWeight: 600, display: 'block' }}>
+            {p.name}
+          </Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {p.barcode ?? '—'}
+          </Typography.Text>
+        </div>
+      </Flex>
+    </div>
+  )
+  return (
+    <Modal
+      open={!!data}
+      width={720}
+      title={tr('Похожий товар уже есть в списке', 'Oʻxshash mahsulot roʻyxatda allaqachon bor')}
+      onCancel={onCancel}
+      footer={
+        <Space>
+          <Button onClick={onCancel}>{tr('Отмена', 'Bekor qilish')}</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={onConfirm}>
+            {tr('Всё равно добавить', 'Baribir qoʻshish')}
+          </Button>
+        </Space>
+      }
+      destroyOnHidden
+    >
+      <Typography.Paragraph type="secondary">
+        {tr('Проверьте — может, это тот же товар. Если разные (вкус, упаковка) — добавьте.', 'Tekshiring — balki bu oʻsha mahsulotdir. Agar farqli boʻlsa (taʼm, qadoq) — qoʻshing.')}
+      </Typography.Paragraph>
+      {data && (
+        <Flex gap={12} wrap>
+          {card(tr('УЖЕ В «МОИХ ТОВАРАХ»', '«MAHSULOTLARIM»DA BOR'), data.similar)}
+          {card(tr('ДОБАВЛЯЕТЕ', 'QOʻSHAYAPSIZ'), data.item, true)}
+        </Flex>
+      )}
+      <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 12 }}>
+        <InfoCircleOutlined /> {tr('Спросим один раз — для этой пары предупреждение больше не появится.', 'Bir marta soʻraymiz — bu juftlik uchun ogohlantirish boshqa chiqmaydi.')}
+      </Typography.Text>
     </Modal>
   )
 }

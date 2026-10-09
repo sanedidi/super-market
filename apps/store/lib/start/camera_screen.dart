@@ -15,6 +15,7 @@ import 'photo_screen.dart';
 import 'sheets.dart';
 import 'start_api.dart';
 import 'start_logic.dart';
+import 'tasnif.dart';
 
 enum StartMode { photo, barcode }
 
@@ -157,6 +158,13 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
       if (p != null) {
         added = await addToMyGoods(context, widget.start, p, source: 'barcode', listButton: false) == AddResult.added;
       } else {
+        // Нет в центральной базе — сначала каталог ИКПУ (tasnif.soliq.uz).
+        final t = await tasnifBarcodeSheet(context, widget.start, code);
+        if (!mounted || t == null) return;
+        if (t) {
+          added = true;
+          return;
+        }
         final r = await pickProductSheet(context, widget.start, info: tr('Штрихкод $code — нет в центральной базе', 'Shtrix-kod $code — markaziy bazada yoʻq'), code: code);
         if (!mounted || r == null) return;
         if (r.create) {
