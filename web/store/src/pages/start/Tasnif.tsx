@@ -13,7 +13,7 @@ import { useStore } from '../../ctx'
 import type { DictItem } from '../../types'
 import { useStartRefresh, type CategoryRef, type NewCategory, type Similar, type TasnifAddResult, type TasnifPreview } from './api'
 import { SimilarModal, type ShortProduct } from './Modals'
-import { TASNIF_SITE, isGtin, searchTasnif, tasnifPhoto, type TasnifRecord } from './tasnif'
+import { TASNIF_SITE, isGtin, searchTasnif, tasnifPhoto, type TasnifRecord } from './tasnifApi'
 import { Thumb } from './Thumb'
 
 const BLUE = '#175CD3'
