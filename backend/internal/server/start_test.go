@@ -96,6 +96,16 @@ func TestStart(t *testing.T) {
 	if s := search("5449000000996"); len(s) != 1 || s[0]["product_id"] != cola || s[0]["barcode"] != "5449000000996" {
 		t.Fatalf("by barcode = %v", s)
 	}
+	// Латиница кириллицей, не та раскладка, начало названия выше.
+	if s := search("кока кола 1,5"); len(s) != 1 || s[0]["product_id"] != cola {
+		t.Fatalf("translit = %v", s)
+	}
+	if s := search("yfgbnjr"); len(s) != 4 || s[0]["product_id"] != cola {
+		t.Fatalf("layout = %v", s)
+	}
+	if s := search("zero"); len(s) != 1 || s[0]["product_id"] != zero {
+		t.Fatalf("zero = %v", s)
+	}
 	a.expect(a.do("GET", "/store/start/search?store_id="+otherStore+"&q=coca", ownerTok, nil), 404, "foreign search")
 
 	// Добавить в «Мои товары»: количества и цены ещё нет.

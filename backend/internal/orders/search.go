@@ -9,6 +9,7 @@ import (
 
 	"github.com/sanedidi/super-market/backend/internal/catalog"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
+	"github.com/sanedidi/super-market/backend/internal/productsearch"
 )
 
 // Поиск по всем магазинам рядом: товар → в каких магазинах есть, почём и
@@ -98,16 +99,25 @@ func (s *Service) Search(ctx context.Context, lat, lng float64, q string, onlyDe
 	if len(ids) == 0 {
 		return out, nil
 	}
+	// Товары по запросу (штрихкод, слова, другая раскладка, опечатки) — по
+	// индексу, см. productsearch; дальше — остатки и цены магазинов рядом.
+	sc := productsearch.Scope{}
+	match, err := productsearch.Resolve(ctx, s.pool, q, sc)
+	if err != nil || match.Empty() {
+		return out, err
+	}
+	args := []any{ids}
+	scope := sc.Where("s", &args)
+	where := match.Where("s", &args)
+	rank := match.Rank("s", &args)
 	rows, err := s.pool.Query(ctx, `
 		WITH st AS (
 			SELECT s.id, s.default_warehouse_id AS wh, COALESCE(s.online_price_type_id, pt.id) AS pt
 			FROM stores s JOIN price_types pt ON pt.network_id = s.network_id AND pt.is_default
 			WHERE s.id = ANY ($1::uuid[]) AND s.default_warehouse_id IS NOT NULL
 		), m AS (
-			SELECT p.id FROM products p
-			WHERE p.network_id IS NULL AND p.is_active
-			  AND (lower(p.name) LIKE '%' || lower($2) || '%' OR lower(p.name_uz) LIKE '%' || lower($2) || '%'
-			       OR EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND pb.barcode = $2))
+			SELECT s.product_id AS id, `+rank+` AS rank, s.score FROM product_search s
+			WHERE `+scope+` AND `+where+`
 		), stock AS (
 			SELECT st.id AS store_id, b.product_id, sum(b.qty_remaining) AS qty
 			FROM st JOIN batches b ON b.warehouse_id = st.wh AND b.qty_remaining > 0
@@ -123,21 +133,24 @@ func (s *Service) Search(ctx context.Context, lat, lng float64, q string, onlyDe
 		       loc(u.short_name, u.short_name_uz), u.is_fractional, p.images,
 		       p.created_at, a.qty::text,
 		       COALESCE(sp.price, np.price, p.base_price) AS regular,
-		       `+catalog.PromoPriceExpr("a.store_id")+` AS promo
+		       `+catalog.PromoPriceExpr("a.store_id")+` AS promo, m.rank
 		FROM a
 		JOIN st ON st.id = a.store_id
+		JOIN m ON m.id = a.product_id
 		JOIN products p ON p.id = a.product_id
 		JOIN units u ON u.id = p.unit_id
 		LEFT JOIN brands br ON br.id = p.brand_id
 		LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = st.pt AND sp.store_id = st.id
 		LEFT JOIN prices np ON np.product_id = p.id AND np.price_type_id = st.pt AND np.store_id IS NULL
 		WHERE a.qty > 0
-		LIMIT 3000`, ids, q)
+		ORDER BY m.rank DESC, m.score DESC
+		LIMIT 3000`, productsearch.Args(args)...)
 	if err != nil {
 		return out, err
 	}
 	defer rows.Close()
 	items := map[string]*SearchItem{}
+	ranks := map[string]int{}
 	order := []string{}
 	seenStores := map[string]bool{}
 	for rows.Next() {
@@ -148,9 +161,10 @@ func (s *Service) Search(ctx context.Context, lat, lng float64, q string, onlyDe
 			available string
 			regular   string
 			promo     *string
+			rank      int
 		)
 		if err := rows.Scan(&storeID, &pr.ID, &pr.Name, &pr.Description, &pr.BrandName, &pr.CategoryID, &pr.UnitShort,
-			&pr.IsFractional, &pr.Images, &created, &available, &regular, &promo); err != nil {
+			&pr.IsFractional, &pr.Images, &created, &available, &regular, &promo, &rank); err != nil {
 			return out, err
 		}
 		pr.IsNew = created.After(time.Now().Add(-30 * 24 * time.Hour))
@@ -172,6 +186,7 @@ func (s *Service) Search(ctx context.Context, lat, lng float64, q string, onlyDe
 		it, ok := items[pr.ID]
 		if !ok {
 			it = &SearchItem{Product: pr}
+			ranks[pr.ID] = rank
 			items[pr.ID] = it
 			order = append(order, pr.ID)
 		}
@@ -181,7 +196,6 @@ func (s *Service) Search(ctx context.Context, lat, lng float64, q string, onlyDe
 	if err := rows.Err(); err != nil {
 		return out, err
 	}
-	lq := strings.ToLower(q)
 	list := make([]*SearchItem, 0, len(order))
 	for _, id := range order {
 		it := items[id]
@@ -194,15 +208,15 @@ func (s *Service) Search(ctx context.Context, lat, lng float64, q string, onlyDe
 		}
 		list = append(list, it)
 	}
-	// Сначала товары, которые привезут; затем название начинается с запроса; больше магазинов; по алфавиту.
+	// Сначала товары, которые привезут; затем точнее совпадение с запросом
+	// (название целиком, начало названия, начало слова); больше магазинов; по алфавиту.
 	sort.SliceStable(list, func(i, j int) bool {
 		a, b := list[i], list[j]
 		if a.Offers[0].Delivers != b.Offers[0].Delivers {
 			return a.Offers[0].Delivers
 		}
-		ap, bp := strings.HasPrefix(strings.ToLower(a.Product.Name), lq), strings.HasPrefix(strings.ToLower(b.Product.Name), lq)
-		if ap != bp {
-			return ap
+		if ra, rb := ranks[a.Product.ID], ranks[b.Product.ID]; ra != rb {
+			return ra > rb
 		}
 		if len(a.Offers) != len(b.Offers) {
 			return len(a.Offers) > len(b.Offers)

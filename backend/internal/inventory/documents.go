@@ -17,6 +17,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
+	"github.com/sanedidi/super-market/backend/internal/productsearch"
 )
 
 // Виды складских документов.
@@ -664,6 +665,8 @@ type StockFilter struct {
 }
 
 func (s *Service) Stock(ctx context.Context, p *identity.Principal, f StockFilter) ([]StockRow, error) {
+	args := []any{p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.WarehouseID, f.StoreID, f.ProductID, f.Page.Limit, f.Page.Offset}
+	search := productsearch.Filter("pr", f.Query, &args)
 	rows, err := s.pool.Query(ctx, `
 		SELECT w.id, w.name, w.store_id, pr.id, loc(pr.name, pr.name_uz), loc(u.short_name, u.short_name_uz),
 		       sum(b.qty_remaining)::text,
@@ -677,11 +680,9 @@ func (s *Service) Stock(ctx context.Context, p *identity.Principal, f StockFilte
 		WHERE b.network_id = $1 AND b.qty_remaining > 0
 		  AND ($2 OR w.store_id = ANY($3::uuid[]))
 		  AND ($4 = '' OR w.id::text = $4) AND ($5 = '' OR w.store_id::text = $5) AND ($6 = '' OR pr.id::text = $6)
-		  AND ($7 = '' OR lower(pr.name) LIKE '%' || lower($7) || '%' OR lower(pr.name_uz) LIKE '%' || lower($7) || '%')
+		  AND `+search+`
 		GROUP BY w.id, w.name, w.store_id, pr.id, pr.name, pr.name_uz, u.short_name, u.short_name_uz
-		ORDER BY w.name, loc(pr.name, pr.name_uz) LIMIT $8 OFFSET $9`,
-		p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.WarehouseID, f.StoreID, f.ProductID, strings.TrimSpace(f.Query),
-		f.Page.Limit, f.Page.Offset)
+		ORDER BY w.name, loc(pr.name, pr.name_uz) LIMIT $7 OFFSET $8`, productsearch.Args(args)...)
 	if err != nil {
 		return nil, err
 	}
@@ -705,6 +706,8 @@ type StockSummary struct {
 func (s *Service) StockSummary(ctx context.Context, p *identity.Principal, f StockFilter) (StockSummary, error) {
 	var out StockSummary
 	var cost string
+	args := []any{p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.WarehouseID, f.StoreID, f.ProductID}
+	search := productsearch.Filter("pr", f.Query, &args)
 	err := s.pool.QueryRow(ctx, `
 		SELECT count(DISTINCT (b.warehouse_id, b.product_id))::int, count(DISTINCT b.product_id)::int,
 		       round(COALESCE(sum(b.qty_remaining * b.unit_cost), 0), 2)::text
@@ -714,8 +717,7 @@ func (s *Service) StockSummary(ctx context.Context, p *identity.Principal, f Sto
 		WHERE b.network_id = $1 AND b.qty_remaining > 0
 		  AND ($2 OR w.store_id = ANY($3::uuid[]))
 		  AND ($4 = '' OR w.id::text = $4) AND ($5 = '' OR w.store_id::text = $5) AND ($6 = '' OR pr.id::text = $6)
-		  AND ($7 = '' OR lower(pr.name) LIKE '%' || lower($7) || '%' OR lower(pr.name_uz) LIKE '%' || lower($7) || '%')`,
-		p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.WarehouseID, f.StoreID, f.ProductID, strings.TrimSpace(f.Query)).
+		  AND `+search, productsearch.Args(args)...).
 		Scan(&out.Positions, &out.Products, &cost)
 	if err == nil && SeesCost(p) {
 		out.CostValue = &cost

@@ -14,6 +14,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/productsearch"
 )
 
 // Витрина приложения: каталог магазина с акциями, сортировками и
@@ -119,8 +120,12 @@ func (s *Service) StoreCatalog(ctx context.Context, storeID string, f CatalogFil
 	if ids == nil {
 		ids = []string{}
 	}
+	args := []any{storeID, st.WarehouseID, st.PriceTypeID, strings.TrimSpace(f.Query), f.CategoryID, f.BrandID, ids,
+		f.Discount, f.New, f.Hits, page.Limit, page.Offset}
+	// Поиск по товарам магазина: слова в любой письменности или штрихкод (productsearch).
+	search := productsearch.Filter("c", f.Query, &args)
 	rows, err := s.pool.Query(ctx, `SELECT `+catalogCols+` FROM (`+catalogBase+`) c
-		WHERE ($4 = '' OR lower(c.name_ru) LIKE '%' || lower($4) || '%' OR lower(c.name_uz) LIKE '%' || lower($4) || '%')
+		WHERE ($4 = '' OR `+search+`)
 		  AND ($5 = '' OR c.category_id IN (
 			WITH RECURSIVE sub AS (SELECT id FROM categories WHERE id::text = $5
 			                       UNION SELECT cc.id FROM categories cc JOIN sub ON cc.parent_id = sub.id)
@@ -130,9 +135,7 @@ func (s *Service) StoreCatalog(ctx context.Context, storeID string, f CatalogFil
 		  AND (NOT $8 OR c.promo < c.regular)
 		  AND (NOT $9 OR c.created_at > now() - interval '30 days')
 		  AND (NOT $10 OR c.purchases >= `+strconv.Itoa(hitPurchases)+`)
-		ORDER BY `+order+` LIMIT $11 OFFSET $12`,
-		storeID, st.WarehouseID, st.PriceTypeID, strings.TrimSpace(f.Query), f.CategoryID, f.BrandID, ids,
-		f.Discount, f.New, f.Hits, page.Limit, page.Offset)
+		ORDER BY `+order+` LIMIT $11 OFFSET $12`, productsearch.Args(args)...)
 	if err != nil {
 		return nil, err
 	}

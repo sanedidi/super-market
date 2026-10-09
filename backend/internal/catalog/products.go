@@ -15,6 +15,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
+	"github.com/sanedidi/super-market/backend/internal/productsearch"
 )
 
 // Product — карточка товара.
@@ -462,17 +463,38 @@ func (f ProductFilter) mineArg(storeID string) string {
 	}
 }
 
-// Общие условия фильтра: $1 — строка поиска, $2 — категория (включая
-// подкатегории), $3 — штрихкод.
-const filterWhere = `
-	AND ($1 = '' OR lower(p.name) LIKE '%' || lower($1) || '%' OR lower(p.name_uz) LIKE '%' || lower($1) || '%'
-	     OR EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND pb.barcode = $1))
+// filterWhere — общие условия фильтра: $1 — строка поиска (сам поиск —
+// search, см. searchWhere), $2 — категория (включая подкатегории), $3 —
+// штрихкод.
+func filterWhere(search string) string {
+	cond := `
+	AND $1 = ''`
+	if search != "" {
+		cond = `
+	AND $1 <> '' AND ` + search
+	}
+	return cond + `
 	AND ($2 = '' OR p.category_id IN (
 	        WITH RECURSIVE sub AS (
 	            SELECT id FROM categories WHERE id::text = $2
 	            UNION SELECT c.id FROM categories c JOIN sub ON c.parent_id = sub.id)
 	        SELECT id FROM sub))
 	AND ($3 = '' OR EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND pb.barcode = $3))`
+}
+
+// searchWhere — условие поиска товаров p по строке q (штрихкод, слова,
+// другая раскладка, опечатки — см. productsearch); значения добавляются в
+// конец args. Пустой запрос — пустое условие.
+func (s *Service) searchWhere(ctx context.Context, q string, sc productsearch.Scope, args *[]any) (string, error) {
+	if strings.TrimSpace(q) == "" {
+		return "", nil
+	}
+	m, err := productsearch.Resolve(ctx, s.pool, q, sc)
+	if err != nil {
+		return "", err
+	}
+	return "p.id IN (" + m.IDs(args) + ")", nil
+}
 
 // ------------------------------------------------------------ супер-админ
 
@@ -480,11 +502,15 @@ func (s *Service) AdminListProducts(ctx context.Context, f ProductFilter) ([]Pro
 	if err := f.validate(); err != nil {
 		return nil, err
 	}
+	args := []any{strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, f.Status, f.Page.Limit, f.Page.Offset, f.BrandID, f.LeafCategoryID, f.Photo}
+	search, err := s.searchWhere(ctx, f.Query, productsearch.Scope{AllNetworks: true, Inactive: true}, &args)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.pool.Query(ctx, `SELECT `+productCols+productFrom+`
-		WHERE ($4 = '' OR p.moderation_status = $4)`+filterWhere+groupWhere(7)+`
+		WHERE ($4 = '' OR p.moderation_status = $4)`+filterWhere(search)+groupWhere(7)+`
 		AND ($9 = '' OR ($9 = 'with') = (cardinality(p.images) > 0))
-		ORDER BY `+adminOrder(f.Sort)+` LIMIT $5 OFFSET $6`,
-		strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, f.Status, f.Page.Limit, f.Page.Offset, f.BrandID, f.LeafCategoryID, f.Photo)
+		ORDER BY `+adminOrder(f.Sort)+` LIMIT $5 OFFSET $6`, productsearch.Args(args)...)
 	if err != nil {
 		return nil, err
 	}
@@ -545,11 +571,16 @@ func (s *Service) StoreListProducts(ctx context.Context, pr *identity.Principal,
 	if err := f.validate(); err != nil {
 		return nil, err
 	}
+	scope := productsearch.Scope{NetworkID: pr.NetworkID, Inactive: true}
 	if storeID == "" {
+		args := []any{strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, pr.NetworkID, f.Page.Limit, f.Page.Offset, f.BrandID, f.LeafCategoryID, f.mineArg("")}
+		search, err := s.searchWhere(ctx, f.Query, scope, &args)
+		if err != nil {
+			return nil, err
+		}
 		rows, err := s.pool.Query(ctx, `SELECT `+productCols+productFrom+`
-			WHERE (p.network_id IS NULL OR p.network_id = $4)`+filterWhere+groupWhere(7)+mineWhere(9, 4)+`
-			ORDER BY loc(p.name, p.name_uz), p.id LIMIT $5 OFFSET $6`,
-			strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, pr.NetworkID, f.Page.Limit, f.Page.Offset, f.BrandID, f.LeafCategoryID, f.mineArg(""))
+			WHERE (p.network_id IS NULL OR p.network_id = $4)`+filterWhere(search)+groupWhere(7)+mineWhere(9, 4)+`
+			ORDER BY loc(p.name, p.name_uz), p.id LIMIT $5 OFFSET $6`, productsearch.Args(args)...)
 		if err != nil {
 			return nil, err
 		}
@@ -563,6 +594,11 @@ func (s *Service) StoreListProducts(ctx context.Context, pr *identity.Principal,
 	if err != nil {
 		return nil, err
 	}
+	args := []any{strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, pr.NetworkID, f.Page.Limit, f.Page.Offset, typeID, storeID, f.BrandID, f.LeafCategoryID, f.mineArg(storeID)}
+	search, err := s.searchWhere(ctx, f.Query, scope, &args)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.pool.Query(ctx, `SELECT `+productCols+`,
 			COALESCE(sp.price, np.price, p.base_price)::text,
 			CASE WHEN sp.price IS NOT NULL THEN 'store' WHEN np.price IS NOT NULL THEN 'network' ELSE 'base' END,
@@ -570,9 +606,8 @@ func (s *Service) StoreListProducts(ctx context.Context, pr *identity.Principal,
 		`+productFrom+`
 		LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = $7 AND sp.store_id = $8
 		LEFT JOIN prices np ON np.product_id = p.id AND np.price_type_id = $7 AND np.store_id IS NULL
-		WHERE (p.network_id IS NULL OR p.network_id = $4)`+filterWhere+groupWhere(9)+mineWhere(11, 4)+`
-		ORDER BY loc(p.name, p.name_uz), p.id LIMIT $5 OFFSET $6`,
-		strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, pr.NetworkID, f.Page.Limit, f.Page.Offset, typeID, storeID, f.BrandID, f.LeafCategoryID, f.mineArg(storeID))
+		WHERE (p.network_id IS NULL OR p.network_id = $4)`+filterWhere(search)+groupWhere(9)+mineWhere(11, 4)+`
+		ORDER BY loc(p.name, p.name_uz), p.id LIMIT $5 OFFSET $6`, productsearch.Args(args)...)
 	if err != nil {
 		return nil, err
 	}

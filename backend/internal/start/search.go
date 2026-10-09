@@ -9,13 +9,11 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/productsearch"
 )
 
 // Поиск по центральной базе на шаге «Мои товары»: товары общего каталога и
 // свои товары сети. У каждого — отметка, что он уже в «Моих товарах».
-
-// Товары, которые магазин может завести: общий каталог и свои товары сети ($1).
-const catalogWhere = `p.is_active AND (p.network_id IS NULL OR p.network_id = $1)`
 
 type SearchItem struct {
 	ProductID    string  `json:"product_id"`
@@ -38,51 +36,56 @@ type SearchFilter struct {
 	Page    httpx.Page
 }
 
-// likeEscape — слово для LIKE '%…%' без спецсимволов.
-func likeEscape(w string) string {
-	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(w)
-}
-
 // Search — товары центральной базы по штрихкоду (точно) или названию: каждое
-// слово запроса должно встречаться в русском или узбекском названии.
-// Сначала — совпадение штрихкода, потом названия, начинающиеся с запроса.
+// слово запроса должно встречаться в русском или узбекском названии (в любой
+// письменности, см. productsearch). Сначала — точные совпадения и названия,
+// начинающиеся с запроса, потом популярные.
 func (s *Service) Search(ctx context.Context, p *identity.Principal, f SearchFilter) ([]SearchItem, error) {
 	st, err := s.store(ctx, s.pool, p, f.StoreID)
 	if err != nil {
 		return nil, err
 	}
-	q := strings.ToLower(strings.TrimSpace(f.Query))
-	if len([]rune(q)) < 2 {
+	if len([]rune(strings.TrimSpace(f.Query))) < 2 {
 		return []SearchItem{}, nil
 	}
-	words := []string{}
-	for _, w := range strings.Fields(q) {
-		words = append(words, likeEscape(w))
+	m, err := productsearch.Resolve(ctx, s.pool, f.Query, productsearch.Scope{NetworkID: p.NetworkID})
+	if err != nil || m.Empty() {
+		return []SearchItem{}, err
 	}
 	draft, err := s.draftID(ctx, s.pool, st)
 	if err != nil {
 		return nil, err
 	}
+	var draftArg any // нет черновика — NULL
+	if draft != "" {
+		draftArg = draft
+	}
+	args := []any{st.PriceTypeID, st.ID, draftArg, f.Page.Limit, f.Page.Offset}
+	scope := productsearch.Scope{NetworkID: p.NetworkID}.Where("s", &args)
+	where := m.Where("s", &args)
+	rank := m.Rank("s", &args)
+	// Сначала отбираем страницу по индексу (узкая таблица product_search),
+	// потом дочитываем товар, цены и отметки — только для неё.
 	rows, err := s.pool.Query(ctx, `
+		WITH c AS (
+			SELECT s.product_id AS id, `+rank+` AS rank, s.score, `+productsearch.NameOrder("s")+` AS sort
+			FROM product_search s
+			WHERE `+scope+` AND `+where+`
+			ORDER BY 2 DESC, 3 DESC, 4, 1
+			LIMIT $4 OFFSET $5
+		)
 		SELECT p.id, loc(p.name, p.name_uz), p.images[1], loc(u.short_name, u.short_name_uz), COALESCE(sp.price, np.price, p.base_price)::text,
 		       (SELECT min(pb.barcode) FROM product_barcodes pb WHERE pb.product_id = p.id),
 		       p.network_id IS NOT NULL, p.moderation_status,
 		       l.product_id IS NOT NULL OR a.product_id IS NOT NULL, l.product_id IS NULL AND a.product_id IS NOT NULL
-		FROM products p
+		FROM c
+		JOIN products p ON p.id = c.id
 		JOIN units u ON u.id = p.unit_id
-		LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = $4 AND sp.store_id = $5
-		LEFT JOIN prices np ON np.product_id = p.id AND np.price_type_id = $4 AND np.store_id IS NULL
-		LEFT JOIN start_lines l ON l.draft_id::text = $6 AND l.product_id = p.id
-		LEFT JOIN store_products a ON a.store_id = $5 AND a.product_id = p.id
-		WHERE `+catalogWhere+`
-		  AND (EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND pb.barcode = $2)
-		       OR NOT EXISTS (SELECT 1 FROM unnest($3::text[]) w
-		                      WHERE NOT (lower(p.name) LIKE '%' || w || '%' OR lower(p.name_uz) LIKE '%' || w || '%')))
-		ORDER BY EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND pb.barcode = $2) DESC,
-		         (lower(p.name) LIKE $7 || '%' OR lower(p.name_uz) LIKE $7 || '%') DESC,
-		         loc(p.name, p.name_uz), p.id
-		LIMIT $8 OFFSET $9`,
-		p.NetworkID, strings.TrimSpace(f.Query), words, st.PriceTypeID, st.ID, draft, likeEscape(q), f.Page.Limit, f.Page.Offset)
+		LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = $1 AND sp.store_id = $2
+		LEFT JOIN prices np ON np.product_id = p.id AND np.price_type_id = $1 AND np.store_id IS NULL
+		LEFT JOIN start_lines l ON l.draft_id = $3::uuid AND l.product_id = p.id
+		LEFT JOIN store_products a ON a.store_id = $2 AND a.product_id = p.id
+		ORDER BY c.rank DESC, c.score DESC, c.sort, c.id`, productsearch.Args(args)...)
 	if err != nil {
 		return nil, err
 	}
