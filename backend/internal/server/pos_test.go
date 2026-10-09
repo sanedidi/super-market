@@ -220,7 +220,14 @@ func TestPOS(t *testing.T) {
 	}
 	// Без интернета продали больше, чем было, и по старой цене: чек уже у
 	// покупателя — продажа проходит по цене кассы, недостача записана.
-	past := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	// Офлайн-продажа «час назад», но не раньше полуночи по Ташкенту: ниже контроль
+	// кассиров и итоги дня берут «сегодня», и с 00:00 до 01:00 тест иначе падал.
+	nowT := time.Now().In(time.FixedZone("Asia/Tashkent", 5*60*60))
+	pastT := nowT.Add(-time.Hour)
+	if midnight := time.Date(nowT.Year(), nowT.Month(), nowT.Day(), 0, 0, 0, 0, nowT.Location()); pastT.Before(midnight) {
+		pastT = midnight
+	}
+	past := pastT.UTC().Format(time.RFC3339)
 	s2 := a.expect(posDo(a, "POST", "/pos/sales", dt, cashier, sale("sale-0002",
 		[]map[string]any{{"product_id": cola, "qty": 10, "price": 14000}},
 		[]map[string]any{{"payment_method_id": card, "amount": 140000}},
