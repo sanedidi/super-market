@@ -267,7 +267,7 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, storeID string
 
 var barcodeRe = regexp.MustCompile(`^[0-9A-Za-z-]{4,32}$`)
 
-var sources = map[string]bool{"photo": true, "barcode": true, "catalog": true, "search": true, "new": true, "manual": true}
+var sources = map[string]bool{"photo": true, "barcode": true, "catalog": true, "search": true, "new": true, "manual": true, "tasnif": true}
 
 type LineInput struct {
 	ProductID string `json:"product_id"`
@@ -448,7 +448,7 @@ func (s *Service) setLine(ctx context.Context, tx pgx.Tx, p *identity.Principal,
 	source := "manual"
 	if in.Source != nil {
 		if !sources[*in.Source] {
-			return false, apperr.Validation("source: photo, barcode, catalog, search, new или manual").Uz("source: photo, barcode, catalog, search, new yoki manual")
+			return false, apperr.Validation("source: photo, barcode, catalog, search, new, tasnif или manual").Uz("source: photo, barcode, catalog, search, new, tasnif yoki manual")
 		}
 		source = *in.Source
 	}

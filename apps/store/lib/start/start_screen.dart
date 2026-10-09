@@ -14,6 +14,7 @@ import 'new_product_screen.dart';
 import 'sheets.dart';
 import 'start_api.dart';
 import 'start_logic.dart';
+import 'tasnif.dart';
 
 /// Способы добавить товары (кнопки на главной и на экране «Начало работы»).
 enum StartMethod { photo, barcode, search }
@@ -28,7 +29,9 @@ Future<void> openStartMethod(BuildContext context, StartApi start, StartMethod m
 /// М1/М2 · Начало работы, шаг 1: вкладки «Поиск в базе» (центральная база по
 /// названию и штрихкоду; камера — фото полок и сканер) и «Мои товары» (полные
 /// названия, штрихкод, убрать). Тот же товар второй раз не добавляется (М3),
-/// на похожий — вопрос (М4). Дальше — «Инвентаризация: Начало работы» (М5).
+/// на похожий — вопрос (М4). Нет в базе — варианты из каталога ИКПУ (М-Т1,
+/// М-Т2); нашлось не то — ссылка «Поискать в каталоге ИКПУ».
+/// Дальше — «Инвентаризация: Начало работы» (М5).
 /// Черновик общий с веб-панелью.
 class StartScreen extends StatefulWidget {
   const StartScreen({super.key, this.initial});
@@ -52,6 +55,10 @@ class _StartScreenState extends State<StartScreen> {
   List<Map<String, dynamic>> _results = const [];
   bool _searching = false;
   String? _busyId;
+  // Запрос, по которому уже есть ответ центральной базы.
+  String _searchedQ = '';
+  // Варианты из каталога ИКПУ: сами — когда в базе пусто, по ссылке — когда не то.
+  bool _tasnif = false;
 
   @override
   void initState() {
@@ -96,9 +103,18 @@ class _StartScreenState extends State<StartScreen> {
     setState(() => _searching = true);
     try {
       final items = await _start.searchBase(q);
-      if (mounted && _q.text.trim() == q) setState(() => _results = items);
+      if (mounted && _q.text.trim() == q) {
+        setState(() {
+          _results = items;
+          _searchedQ = q;
+          if (items.isEmpty) _tasnif = true;
+        });
+      }
     } catch (e) {
-      if (mounted) showMessage(context, e);
+      if (mounted) {
+        setState(() => _searchedQ = q);
+        showMessage(context, e);
+      }
     } finally {
       if (mounted) setState(() => _searching = false);
     }
@@ -110,9 +126,22 @@ class _StartScreenState extends State<StartScreen> {
     if (mounted && _q.text.trim().length >= 2) _search();
   }
 
-  Future<void> _newProduct() async {
-    await Navigator.of(context).push<ProductRef>(MaterialPageRoute(builder: (_) => NewProductScreen(start: _start)));
+  Future<void> _newProduct({String? barcode}) async {
+    await Navigator.of(context).push<ProductRef>(MaterialPageRoute(builder: (_) => NewProductScreen(start: _start, barcode: barcode)));
     _load();
+  }
+
+  /// Штрихкода нет ни в базе, ни в каталоге ИКПУ: привязать к товару базы или создать свой.
+  Future<void> _missingBarcode(String code) async {
+    final r = await pickProductSheet(context, _start, info: tr('Штрихкод $code — нет в центральной базе', 'Shtrix-kod $code — markaziy bazada yoʻq'), code: code);
+    if (!mounted || r == null) return;
+    if (r.create) {
+      await _newProduct(barcode: code);
+    } else if (r.product != null) {
+      await addToMyGoods(context, _start, r.product!, source: 'barcode', bind: r.bind ? code : null);
+      await _load();
+    }
+    if (mounted) _search();
   }
 
   Future<void> _add(Map<String, dynamic> item) async {
@@ -212,7 +241,9 @@ class _StartScreenState extends State<StartScreen> {
         onChanged: (_) {
           _debounce?.cancel();
           _debounce = Timer(const Duration(milliseconds: 300), _search);
-          setState(() {});
+          setState(() {
+            if (_q.text.trim() != _searchedQ) _tasnif = false;
+          });
         },
         onSubmitted: (_) => _search(),
         decoration: InputDecoration(
@@ -235,11 +266,13 @@ class _StartScreenState extends State<StartScreen> {
       const SizedBox(height: 12),
       if (q.length < 2)
         Text(tr('Введите название (uz / ru) или штрихкод — или отсканируйте камерой.', 'Nomini (uz / ru) yoki shtrix-kodni kiriting — yoki kamera bilan skanerlang.'), style: AppText.small)
-      else if (_searching && _results.isEmpty)
+      else if (_searchedQ != q || (_searching && _results.isEmpty))
         const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
-      else if (_results.isEmpty)
-        Text(tr('Ничего не найдено. Нет в базе — создайте свой товар (+ вверху).', 'Hech narsa topilmadi. Bazada yoʻq boʻlsa — oʻz mahsulotingizni yarating (yuqoridagi +).'), style: AppText.small)
-      else ...[
+      else if (_results.isEmpty) ...[
+        Text(isBarcode(q) ? tr('Штрихкода нет в центральной базе', 'Shtrix-kod markaziy bazada yoʻq') : tr('В центральной базе не найдено', 'Markaziy bazada topilmadi'), style: AppText.caption),
+        const SizedBox(height: 8),
+        _tasnifResults(q),
+      ] else ...[
         Text(
           _results.length >= 30 ? tr('Найдено больше 30 — уточните запрос', '30 tadan koʻp topildi — soʻrovni aniqlashtiring') : tr('Найдено ${_results.length} · центральная база', 'Topildi: ${_results.length} · markaziy baza'),
           style: AppText.caption,
@@ -254,9 +287,25 @@ class _StartScreenState extends State<StartScreen> {
             ],
           ]),
         ),
+        const SizedBox(height: 12),
+        if (_tasnif) _tasnifResults(q) else TasnifLink(q: q, onTap: () => setState(() => _tasnif = true)),
       ],
     ]);
   }
+
+  // Ключ — чтобы список вариантов не загружался заново, когда добавленный
+  // товар появился в результатах базы и блок сместился ниже.
+  Widget _tasnifResults(String q) => TasnifResults(
+        key: ValueKey('tasnif-$q'),
+        start: _start,
+        q: q,
+        onAdded: () async {
+          await _load();
+          if (mounted) _search();
+        },
+        onNew: _newProduct,
+        onMissingBarcode: _missingBarcode,
+      );
 
   Widget _mineTab(Map<String, dynamic> d) {
     final lines = ((d['lines'] as List?) ?? const []).cast<Map<String, dynamic>>();

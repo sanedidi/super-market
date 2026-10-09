@@ -57,6 +57,17 @@ class StartApi {
 
   Future<void> retryPhoto(String id) => api.post('/store/start/photos/$id/retry');
 
+  /// Варианты из каталога ИКПУ: названия по правилам каталога и отметки
+  /// «уже есть в базе» / «уже добавлен» (records — записи tasnif как есть).
+  Future<List<Map<String, dynamic>>> tasnifPreview(List<Map<String, dynamic>> records) async {
+    final r = await api.post('/store/start/tasnif/preview', {'store_id': storeId, 'items': records}) as Map<String, dynamic>;
+    return ((r['items'] as List?) ?? const []).cast<Map<String, dynamic>>();
+  }
+
+  /// Добавить вариант из каталога ИКПУ: {status: added | need_category, …}.
+  Future<Map<String, dynamic>> tasnifAdd(Map<String, dynamic> body) async =>
+      await api.post('/store/start/tasnif', {'store_id': storeId, ...body}) as Map<String, dynamic>;
+
   /// Товар по штрихкоду (центральная база и свои товары сети).
   Future<ProductRef?> byBarcode(String code) async {
     final l = await api.list('/store/products', {'barcode': code, 'store_id': storeId, 'limit': 1});
