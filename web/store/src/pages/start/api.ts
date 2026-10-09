@@ -111,6 +111,39 @@ export type TasnifAddResult = {
   suggestion: CategorySuggestion | null
 }
 
+/** Похожий товар базы для карточки по фото. */
+export type NewItemMatch = { product_id: string; name: string; image: string | null; barcode: string | null; own: boolean }
+
+/** Карточка, которую заполнил Super Market по фото. */
+export type NewItemResult = {
+  name: string
+  name_uz: string
+  brand: string
+  brand_id: string | null
+  description: string
+  unit_id: string
+  unit_short: string
+  suggestion: CategorySuggestion | null
+  match: NewItemMatch | null
+}
+
+/** Фото нового товара в очереди «Новые». */
+export type NewItem = {
+  id: string
+  store_id: string
+  status: 'processing' | 'ready' | 'failed' | 'done'
+  error: string
+  barcode: string
+  images: string[]
+  result: NewItemResult | null
+  product_id: string | null
+  created_at: string
+}
+
+export type NewItemConfirmResult = { product_id: string; created: boolean; line: Line; totals: Totals }
+
+export type NewItemList = { items: NewItem[]; counts: { processing: number; ready: number; failed: number } }
+
 /** Похожий товар из ошибки similar_exists. */
 export type Similar = { product_id: string; name: string; image: string | null; barcode: string | null }
 
@@ -163,7 +196,7 @@ export type PostResult = {
 }
 
 /** Все запросы «Начала работы» начинаются с этих ключей — их и обновляем. */
-const KEYS = ['/store/start', '/store/start/search', '/store/start/tasnif/preview']
+const KEYS = ['/store/start', '/store/start/search', '/store/start/tasnif/preview', '/store/start/new-items']
 
 export function useStartRefresh() {
   const qc = useQueryClient()

@@ -68,6 +68,24 @@ class StartApi {
   Future<Map<String, dynamic>> tasnifAdd(Map<String, dynamic> body) async =>
       await api.post('/store/start/tasnif', {'store_id': storeId, ...body}) as Map<String, dynamic>;
 
+  /// Очередь «Новые»: {items, counts {processing, ready, failed}}.
+  Future<Map<String, dynamic>> newItems() async => await api.get('/store/start/new-items', {'store_id': storeId}) as Map<String, dynamic>;
+
+  /// Фото нового товара → Super Market заполняет карточку в фоне.
+  Future<Map<String, dynamic>> createNewItem(List<String> images, {String? barcode}) async => await api.post('/store/start/new-items', {
+        'store_id': storeId,
+        'images': images,
+        if (barcode != null && barcode.isNotEmpty) 'barcode': barcode,
+      }) as Map<String, dynamic>;
+
+  /// Подтвердить карточку: новый товар или {product_id} — «Это он».
+  Future<Map<String, dynamic>> confirmNewItem(String id, Map<String, dynamic> body) async =>
+      await api.post('/store/start/new-items/$id/confirm', {'store_id': storeId, ...body}) as Map<String, dynamic>;
+
+  Future<void> retryNewItem(String id) => api.post('/store/start/new-items/$id/retry');
+
+  Future<void> deleteNewItem(String id) => api.delete('/store/start/new-items/$id');
+
   /// Товар по штрихкоду (центральная база и свои товары сети).
   Future<ProductRef?> byBarcode(String code) async {
     final l = await api.list('/store/products', {'barcode': code, 'store_id': storeId, 'limit': 1});

@@ -6,7 +6,7 @@
 //  2. «Инвентаризация: Начало работы» — количество и цена продажи (обязательны,
 //     можно 0), себестоимость — по желанию. «Записать и закрыть» проводит
 //     черновик, после этого «Начало работы» больше не показывается.
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Alert, App, Button, Card, Col, Flex, Input, InputNumber, Modal, Result, Row, Segmented, Space, Table, Tooltip, Typography, type InputRef } from 'antd'
@@ -30,6 +30,7 @@ import { docPaths } from '../StockDocs'
 import { plainNum, useStartApi, useStartRefresh, type Draft, type Line, type LineInput, type LinesResult, type PostResult, type SearchItem, type Similar } from './api'
 import { BarcodeModal, NewProductModal, PhotoModal, SimilarModal, sum } from './Modals'
 import { TasnifBlock, TasnifLink } from './Tasnif'
+import { NewByPhotoModal, NewItemsList, RightTabs, useNewItems } from './NewItems'
 import { Thumb } from './Thumb'
 
 const PAGE = 50
@@ -135,9 +136,15 @@ function Steps({ step, go }: { step: 1 | 2; go?: (s: 1 | 2) => void }) {
 // ================================================================ шаг 1
 
 function StepGoods({ d, next }: { d: Draft; next: () => void }) {
-  const { can } = useStore()
+  const { can, storeId } = useStore()
   const [photoOpen, setPhotoOpen] = useState(false)
   const [newOpen, setNewOpen] = useState(false)
+  // «Новый товар»: сначала фото для Super Market, ручная форма — по ссылке.
+  const [byPhoto, setByPhoto] = useState(false)
+  const [tab, setTab] = useState<'mine' | 'new'>('mine')
+  const fresh = useNewItems(storeId)
+  const freshCount = fresh.data?.items.length ?? 0
+  const tabs = <RightTabs tab={tab} onTab={setTab} mine={d.totals.products} fresh={freshCount} ready={(fresh.data?.counts.ready ?? 0) > 0} />
   // Повтор: подсвеченная строка «Моих товаров».
   const [highlight, setHighlight] = useState<string | null>(null)
   const n = d.totals.products
@@ -152,7 +159,7 @@ function StepGoods({ d, next }: { d: Draft; next: () => void }) {
               {tr('Фото полок', 'Javon rasmlari')}
             </Button>
             {can('catalog.manage') && (
-              <Button icon={<PlusOutlined />} onClick={() => setNewOpen(true)}>
+              <Button icon={<PlusOutlined />} onClick={() => setByPhoto(true)}>
                 {tr('Новый товар', 'Yangi mahsulot')}
               </Button>
             )}
@@ -171,14 +178,29 @@ function StepGoods({ d, next }: { d: Draft; next: () => void }) {
       <Steps step={1} />
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={10}>
-          <SearchCard onDuplicate={setHighlight} onNew={() => setNewOpen(true)} />
+          <SearchCard onDuplicate={setHighlight} onNew={() => setByPhoto(true)} />
         </Col>
         <Col xs={24} xl={14}>
-          <MyGoods highlight={highlight} />
+          {tab === 'new' ? (
+            <Card title={tabs} styles={{ body: { padding: 0 } }}>
+              <NewItemsList list={fresh.data} loading={fresh.isLoading} />
+            </Card>
+          ) : (
+            <MyGoods highlight={highlight} title={tabs} />
+          )}
         </Col>
       </Row>
       <PhotoModal open={photoOpen} onClose={() => setPhotoOpen(false)} />
       <NewProductModal open={newOpen} onClose={() => setNewOpen(false)} />
+      <NewByPhotoModal
+        open={byPhoto}
+        onClose={() => setByPhoto(false)}
+        onSent={() => setTab('new')}
+        onManual={() => {
+          setByPhoto(false)
+          setNewOpen(true)
+        }}
+      />
     </>
   )
 }
@@ -377,6 +399,7 @@ function sourceText(l: Line) {
   if (!l.own) return { text: tr('центральная база', 'markaziy baza') }
   if (l.moderation === 'approved') return { text: tr('свой товар', 'oʻz mahsulotingiz') }
   if (l.moderation === 'rejected') return { text: tr('новый · отклонён', 'yangi · rad etilgan'), color: '#D92D20' }
+  if (l.moderation === 'draft') return { text: tr('новый · на проверку после инвентаризации', 'yangi · inventarizatsiyadan soʻng tekshiruvga'), color: '#B54708' }
   return { text: tr('новый · на модерации', 'yangi · moderatsiyada'), color: '#C4320A' }
 }
 
@@ -400,7 +423,7 @@ function NameCell({ l, note }: { l: Line; note?: { text: string; color?: string 
 }
 
 /** «Мои товары» шага 1: фото, полное название, штрихкод, убрать. */
-function MyGoods({ highlight }: { highlight: string | null }) {
+function MyGoods({ highlight, title }: { highlight: string | null; title?: ReactNode }) {
   const { storeId, can } = useStore()
   const { deleteLine } = useStartApi(storeId)
   const [page, setPage] = useState(1)
@@ -415,7 +438,7 @@ function MyGoods({ highlight }: { highlight: string | null }) {
 
   return (
     <Card
-      title={`${tr('Мои товары', 'Mahsulotlarim')} · ${total}`}
+      title={title ?? `${tr('Мои товары', 'Mahsulotlarim')} · ${total}`}
       extra={
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {tr('последние добавленные сверху', 'oxirgi qoʻshilganlar yuqorida')}

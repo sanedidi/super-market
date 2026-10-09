@@ -108,6 +108,9 @@ type ProductInput struct {
 	// StoreID — магазин, в «Мои товары» которого сразу попадает новый товар
 	// сети (только в панели магазина).
 	StoreID *string `json:"store_id"`
+	// StartDraft — товар из «Начала работы»: на модерацию уйдёт при
+	// «Записать и закрыть», до этого — статус draft.
+	StartDraft *bool `json:"start_draft"`
 }
 
 // fillFromUz: пришёл только узбекский текст (русское поле не задано при
@@ -195,6 +198,9 @@ func (s *Service) createProduct(ctx context.Context, networkID *string, in Produ
 	status := "approved"
 	if networkID != nil {
 		status = "pending"
+		if in.StartDraft != nil && *in.StartDraft {
+			status = ModerationDraft
+		}
 	}
 	_, brand := nullable(in.BrandID)
 	_, color := nullable(in.ColorID)

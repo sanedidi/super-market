@@ -10,7 +10,7 @@ import '../lock/app_lock.dart';
 import '../main.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
-import 'new_product_screen.dart';
+import 'new_items.dart';
 import 'photo_screen.dart';
 import 'sheets.dart';
 import 'start_api.dart';
@@ -168,10 +168,8 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
         final r = await pickProductSheet(context, widget.start, info: tr('Штрихкод $code — нет в центральной базе', 'Shtrix-kod $code — markaziy bazada yoʻq'), code: code);
         if (!mounted || r == null) return;
         if (r.create) {
-          final created = await Navigator.of(context).push<ProductRef>(
-            MaterialPageRoute(builder: (_) => NewProductScreen(start: widget.start, barcode: code)),
-          );
-          added = created != null;
+          // Фото нового товара → Super Market заполнит карточку в фоне; сканер работает дальше (Р2).
+          await openNewItemCamera(context, widget.start, barcode: code);
         } else if (r.product != null) {
           added = await addToMyGoods(context, widget.start, r.product!, source: 'barcode', bind: r.bind ? code : null, listButton: false) == AddResult.added;
         }

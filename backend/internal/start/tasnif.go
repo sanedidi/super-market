@@ -310,10 +310,6 @@ func (s *Service) translateName(p *identity.Principal, storeID, productID, name 
 	})
 }
 
-type treeNode struct {
-	id, parentID, name, nameUz string
-}
-
 // suggestCategory — предложение Super Market; nil — ИИ не подключён или не
 // ответил (тогда магазин выбирает категорию сам).
 func (s *Service) suggestCategory(ctx context.Context, p *identity.Principal, storeID string, it catalog.TasnifItem) *CategorySuggestion {
@@ -321,49 +317,14 @@ func (s *Service) suggestCategory(ctx context.Context, p *identity.Principal, st
 	if err != nil {
 		return nil
 	}
-	rows, err := s.pool.Query(ctx, `SELECT id::text, COALESCE(parent_id::text, ''), name, name_uz FROM categories WHERE is_active ORDER BY sort, name`)
+	tree, err := loadTree(ctx, s.pool)
 	if err != nil {
 		s.log.Error("tasnif categories", "err", err)
 		return nil
 	}
-	nodes, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (treeNode, error) {
-		var n treeNode
-		err := r.Scan(&n.id, &n.parentID, &n.name, &n.nameUz)
-		return n, err
-	})
-	if err != nil {
-		s.log.Error("tasnif categories", "err", err)
-		return nil
-	}
-	byID := map[string]treeNode{}
-	for _, n := range nodes {
-		byID[n.id] = n
-	}
-	ref := func(id string) *CategoryRef {
-		n, ok := byID[id]
-		if !ok || n.parentID == "" {
-			return nil
-		}
-		sec, ok := byID[n.parentID]
-		if !ok || sec.parentID != "" {
-			return nil
-		}
-		return &CategoryRef{ID: n.id, Section: sec.name, SectionUz: sec.nameUz, Name: n.name, NameUz: n.nameUz}
-	}
-	ask := ai.CategoryAsk{Name: it.Name(), IkpuPath: it.IkpuPath()}
-	for _, n := range nodes {
-		if n.parentID == "" {
-			ask.Sections = append(ask.Sections, ai.CategoryOption{ID: n.id, Path: n.name, PathUz: n.nameUz})
-		} else if r := ref(n.id); r != nil {
-			ask.Leaves = append(ask.Leaves, ai.CategoryOption{ID: r.ID, Path: r.Section + " / " + r.Name, PathUz: r.SectionUz + " / " + r.NameUz})
-		}
-	}
+	ask := ai.CategoryAsk{Name: it.Name(), IkpuPath: it.IkpuPath(), Sections: tree.sections(), Leaves: tree.leaves()}
 	if near, err := catalog.CategoriesNearIkpu(ctx, s.pool, it.Ikpu(), 5); err == nil {
-		for _, id := range near {
-			if r := ref(id); r != nil {
-				ask.Near = append(ask.Near, r.Section+" / "+r.Name)
-			}
-		}
+		ask.Near = tree.paths(near)
 	}
 	ctx2, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
@@ -375,55 +336,7 @@ func (s *Service) suggestCategory(ctx context.Context, p *identity.Principal, st
 		s.log.Warn("tasnif category", "err", err)
 		return nil
 	}
-	out := &CategorySuggestion{Alternatives: []CategoryRef{}, NameUz: strings.TrimSpace(ans.NameUz)}
-	if r := ref(strings.TrimSpace(ans.Match)); r != nil {
-		out.Category = r
-	}
-	for _, id := range ans.Alternatives {
-		r := ref(strings.TrimSpace(id))
-		if r == nil || (out.Category != nil && r.ID == out.Category.ID) || len(out.Alternatives) >= 2 {
-			continue
-		}
-		dup := false
-		for _, a := range out.Alternatives {
-			dup = dup || a.ID == r.ID
-		}
-		if !dup {
-			out.Alternatives = append(out.Alternatives, *r)
-		}
-	}
-	if out.Category == nil && ans.New != nil && strings.TrimSpace(ans.New.Name) != "" {
-		nc := &catalog.NewCategory{Name: strings.TrimSpace(ans.New.Name), NameUz: strings.TrimSpace(ans.New.NameUz)}
-		if sec, ok := byID[strings.TrimSpace(ans.New.ParentID)]; ok && sec.parentID == "" {
-			id := sec.id
-			nc.ParentID, nc.ParentName, nc.ParentNameUz = &id, sec.name, sec.nameUz
-		} else if pn := strings.TrimSpace(ans.New.ParentName); pn != "" {
-			nc.ParentName, nc.ParentNameUz = pn, strings.TrimSpace(ans.New.ParentNameUz)
-			// Раздел с таким названием уже есть — новая подкатегория в нём.
-			for _, n := range nodes {
-				if n.parentID == "" && strings.EqualFold(n.name, pn) {
-					id := n.id
-					nc.ParentID, nc.ParentName, nc.ParentNameUz = &id, n.name, n.nameUz
-					break
-				}
-			}
-		} else {
-			nc = nil
-		}
-		// «Новая» подкатегория уже есть в этом разделе — это совпадение.
-		if nc != nil && nc.ParentID != nil {
-			for _, n := range nodes {
-				if n.parentID == *nc.ParentID && strings.EqualFold(n.name, nc.Name) {
-					out.Category, nc = ref(n.id), nil
-					break
-				}
-			}
-		}
-		out.New = nc
-	}
-	if out.Category == nil && out.New == nil && len(out.Alternatives) > 0 {
-		first := out.Alternatives[0]
-		out.Category, out.Alternatives = &first, out.Alternatives[1:]
-	}
+	out := tree.suggestion(ans.Match, ans.Alternatives, ans.New)
+	out.NameUz = strings.TrimSpace(ans.NameUz)
 	return out
 }

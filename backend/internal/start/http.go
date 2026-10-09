@@ -33,6 +33,12 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/search", m.search)
 		r.Post("/tasnif/preview", m.tasnifPreview)
 		r.Post("/tasnif", m.tasnifAdd)
+		r.Get("/new-items", m.listNewItems)
+		r.Post("/new-items", m.createNewItem)
+		r.Get("/new-items/{id}", m.getNewItem)
+		r.Post("/new-items/{id}/retry", m.retryNewItem)
+		r.Post("/new-items/{id}/confirm", m.confirmNewItem)
+		r.Delete("/new-items/{id}", m.deleteNewItem)
 		r.Post("/photos", m.createPhoto)
 		r.Get("/photos/{id}", m.getPhoto)
 		r.Post("/photos/{id}/retry", m.retryPhoto)
@@ -118,5 +124,56 @@ func (m *Module) tasnifPreview(w http.ResponseWriter, r *http.Request) {
 func (m *Module) tasnifAdd(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in TasnifAddInput) (TasnifAddResult, error) {
 		return m.svc.AddTasnif(r.Context(), pr(r), in)
+	})
+}
+
+// newURLs — ключи фото → ссылки.
+func (m *Module) newURLs(r *http.Request, it NewItem) NewItem {
+	for i, k := range it.Images {
+		it.Images[i] = m.media.URL(r, k)
+	}
+	return it
+}
+
+func (m *Module) listNewItems(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (NewItemList, error) {
+		l, err := m.svc.ListNewItems(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+		for i := range l.Items {
+			l.Items[i] = m.newURLs(r, l.Items[i])
+		}
+		return l, err
+	})
+}
+
+func (m *Module) createNewItem(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusAccepted, "", func(_ string, in NewItemInput) (NewItem, error) {
+		it, err := m.svc.CreateNewItem(r.Context(), pr(r), in)
+		return m.newURLs(r, it), err
+	})
+}
+
+func (m *Module) getNewItem(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (NewItem, error) {
+		it, err := m.svc.GetNewItem(r.Context(), pr(r), id)
+		return m.newURLs(r, it), err
+	})
+}
+
+func (m *Module) retryNewItem(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusAccepted, "id", func(id string) (NewItem, error) {
+		it, err := m.svc.RetryNewItem(r.Context(), pr(r), id)
+		return m.newURLs(r, it), err
+	})
+}
+
+func (m *Module) deleteNewItem(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (struct{}, error) {
+		return struct{}{}, m.svc.DeleteNewItem(r.Context(), pr(r), id)
+	})
+}
+
+func (m *Module) confirmNewItem(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in NewItemConfirm) (NewItemConfirmResult, error) {
+		return m.svc.ConfirmNewItem(r.Context(), pr(r), id, in)
 	})
 }

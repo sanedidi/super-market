@@ -10,7 +10,7 @@ import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'camera_screen.dart';
 import 'count_screen.dart';
-import 'new_product_screen.dart';
+import 'new_items.dart';
 import 'sheets.dart';
 import 'start_api.dart';
 import 'start_logic.dart';
@@ -31,6 +31,7 @@ Future<void> openStartMethod(BuildContext context, StartApi start, StartMethod m
 /// названия, штрихкод, убрать). Тот же товар второй раз не добавляется (М3),
 /// на похожий — вопрос (М4). Нет в базе — варианты из каталога ИКПУ (М-Т1,
 /// М-Т2); нашлось не то — ссылка «Поискать в каталоге ИКПУ».
+/// Вкладка «Новые» — фото новых товаров, карточки заполняет Super Market (Р3).
 /// Дальше — «Инвентаризация: Начало работы» (М5).
 /// Черновик общий с веб-панелью.
 class StartScreen extends StatefulWidget {
@@ -59,6 +60,9 @@ class _StartScreenState extends State<StartScreen> {
   String _searchedQ = '';
   // Варианты из каталога ИКПУ: сами — когда в базе пусто, по ссылке — когда не то.
   bool _tasnif = false;
+  // Очередь «Новые» (фото новых товаров для Super Market).
+  Map<String, dynamic>? _new;
+  late final _poller = NewItemsPoller(_loadNew);
 
   @override
   void initState() {
@@ -74,13 +78,32 @@ class _StartScreenState extends State<StartScreen> {
 
   @override
   void dispose() {
+    _poller.dispose();
     _debounce?.cancel();
     _q.dispose();
     _qFocus.dispose();
     super.dispose();
   }
 
+  Future<void> _loadNew() async {
+    try {
+      final n = await _start.newItems();
+      if (!mounted) return;
+      setState(() => _new = n);
+      _poller.update(n);
+    } catch (_) {
+      // вкладка просто не обновится
+    }
+  }
+
+  /// Новый товар: фото для Super Market (ручная форма — из камеры по ссылке).
+  Future<void> _newItem({String? barcode}) async {
+    await openNewItemCamera(context, _start, barcode: barcode);
+    await _load();
+  }
+
   Future<void> _load() async {
+    _loadNew();
     try {
       final d = await _start.draft(limit: 500);
       if (mounted) {
@@ -126,17 +149,12 @@ class _StartScreenState extends State<StartScreen> {
     if (mounted && _q.text.trim().length >= 2) _search();
   }
 
-  Future<void> _newProduct({String? barcode}) async {
-    await Navigator.of(context).push<ProductRef>(MaterialPageRoute(builder: (_) => NewProductScreen(start: _start, barcode: barcode)));
-    _load();
-  }
-
   /// Штрихкода нет ни в базе, ни в каталоге ИКПУ: привязать к товару базы или создать свой.
   Future<void> _missingBarcode(String code) async {
     final r = await pickProductSheet(context, _start, info: tr('Штрихкод $code — нет в центральной базе', 'Shtrix-kod $code — markaziy bazada yoʻq'), code: code);
     if (!mounted || r == null) return;
     if (r.create) {
-      await _newProduct(barcode: code);
+      await _newItem(barcode: code);
     } else if (r.product != null) {
       await addToMyGoods(context, _start, r.product!, source: 'barcode', bind: r.bind ? code : null);
       await _load();
@@ -182,6 +200,8 @@ class _StartScreenState extends State<StartScreen> {
     final d = _d;
     final t = (d?['totals'] as Map<String, dynamic>?) ?? const {};
     final products = (t['products'] as num?)?.toInt() ?? 0;
+    final freshCount = ((_new?['items'] as List?) ?? const []).length;
+    final freshReady = (((_new?['counts'] as Map<String, dynamic>?)?['ready'] as num?)?.toInt() ?? 0) > 0;
     if (d != null && d['closed'] == true && d['id'] == null) return const StartClosedScreen();
     return Scaffold(
       appBar: AppBar(
@@ -192,7 +212,7 @@ class _StartScreenState extends State<StartScreen> {
         ]),
         actions: [
           IconButton(tooltip: tr('Фото полок', 'Javon rasmi'), icon: const Icon(Icons.photo_camera_rounded), onPressed: () => _open(StartMethod.photo)),
-          if (st.can('catalog.manage')) IconButton(tooltip: tr('Новый товар', 'Yangi mahsulot'), icon: const Icon(Icons.add_rounded), onPressed: _newProduct),
+          if (st.can('catalog.manage')) IconButton(tooltip: tr('Новый товар', 'Yangi mahsulot'), icon: const Icon(Icons.add_rounded), onPressed: () => _newItem()),
         ],
       ),
       body: _error != null && d == null
@@ -204,13 +224,21 @@ class _StartScreenState extends State<StartScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: _Tabs(
-                      labels: [tr('Поиск в базе', 'Bazadan qidirish'), tr('Мои товары · $products', 'Mahsulotlarim · $products')],
+                      labels: freshCount > 0 || _tab == 2
+                          ? [tr('Поиск', 'Qidirish'), tr('Мои · $products', 'Meniki · $products'), tr('Новые · $freshCount', 'Yangi · $freshCount')]
+                          : [tr('Поиск в базе', 'Bazadan qidirish'), tr('Мои товары · $products', 'Mahsulotlarim · $products')],
                       value: _tab,
+                      dot: freshReady ? 2 : null,
                       onChanged: (v) => setState(() => _tab = v),
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Expanded(child: _tab == 0 ? _searchTab() : _mineTab(d)),
+                  Expanded(
+                      child: _tab == 0
+                          ? _searchTab()
+                          : _tab == 1
+                              ? _mineTab(d)
+                              : NewItemsTab(start: _start, data: _new, onChanged: _load)),
                 ]),
       bottomNavigationBar: d == null
           ? null
@@ -303,7 +331,7 @@ class _StartScreenState extends State<StartScreen> {
           await _load();
           if (mounted) _search();
         },
-        onNew: _newProduct,
+        onNew: () => _newItem(),
         onMissingBarcode: _missingBarcode,
       );
 
@@ -333,11 +361,14 @@ class _StartScreenState extends State<StartScreen> {
 
 /// Две вкладки-кнопки (Figma М1/М2).
 class _Tabs extends StatelessWidget {
-  const _Tabs({required this.labels, required this.value, required this.onChanged});
+  const _Tabs({required this.labels, required this.value, required this.onChanged, this.dot});
 
   final List<String> labels;
   final int value;
   final ValueChanged<int> onChanged;
+
+  /// Вкладка с красной точкой (есть готовые к проверке).
+  final int? dot;
 
   @override
   Widget build(BuildContext context) {
@@ -355,7 +386,19 @@ class _Tabs extends StatelessWidget {
                 onTap: () => onChanged(i),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 9),
-                  child: Text(labels[i], textAlign: TextAlign.center, style: AppText.bodyStrong.copyWith(fontSize: 14, color: i == value ? AppColors.ink : AppColors.text2)),
+                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Flexible(
+                      child: Text(labels[i],
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.bodyStrong.copyWith(fontSize: 14, color: i == value ? AppColors.ink : AppColors.text2)),
+                    ),
+                    if (dot == i) ...[
+                      const SizedBox(width: 4),
+                      Container(width: 7, height: 7, decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle)),
+                    ],
+                  ]),
                 ),
               ),
             ),
@@ -444,8 +487,11 @@ class _MineTile extends StatelessWidget {
             Text('${l['name']}', style: AppText.bodyStrong.copyWith(fontSize: 14)),
             if (highlight)
               Text(tr('уже добавлен — повтор не добавлен', 'allaqachon qoʻshilgan — takror qoʻshilmadi'), style: AppText.caption.copyWith(color: AppColors.primary))
-            else
+            else ...[
               Text('${l['barcode'] ?? tr('без штрихкода', 'shtrix-kodsiz')}', style: AppText.small.copyWith(fontSize: 12)),
+              if (l['moderation'] == 'draft')
+                Text(tr('новый · на проверку после инвентаризации', 'yangi · inventarizatsiyadan soʻng tekshiruvga'), style: AppText.small.copyWith(fontSize: 12, color: AppColors.warningInk)),
+            ],
           ]),
         ),
         IconButton(tooltip: tr('Убрать', 'Olib tashlash'), icon: const Icon(Icons.delete_outline_rounded, color: AppColors.text2), onPressed: onRemove),

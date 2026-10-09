@@ -79,14 +79,16 @@ export function NewProductModal({
         category_id: v.category_id,
         unit_id: v.unit_id,
         brand_id: v.brand_id || undefined,
-        base_price: v.base_price,
+        base_price: v.base_price || undefined,
         barcodes: v.barcodes ?? [],
         images: v.images ?? [],
         description: '',
+        // Свой товар из «Начала работы» уходит на модерацию при «Записать и закрыть».
+        start_draft: true,
       })
       if (withLine) {
         // Цена продажи из карточки — сразу в строку (на шаге 2 её можно поменять).
-        await setLines([{ product_id: p.id, add: true, qty: initRef.current?.qty ?? undefined, price: (v.base_price as string) ?? undefined, source: 'new' }])
+        await setLines([{ product_id: p.id, add: true, qty: initRef.current?.qty ?? undefined, price: (v.base_price as string) || undefined, source: 'new' }])
         message.success(tr('Товар создан и добавлен в «Мои товары»', 'Mahsulot yaratildi va «Mahsulotlarim»ga qoʻshildi'))
       }
       onCreated?.(p)
@@ -163,7 +165,7 @@ export function NewProductModal({
             </Form.Item>
           </Col>
           <Col xs={24} md={16}>
-            <Form.Item name="base_price" label={tr('Цена продажи', 'Sotuv narxi')} rules={[{ required: true, message: tr('Укажите цену', 'Narxni kiriting') }]}>
+            <Form.Item name="base_price" label={tr('Цена продажи', 'Sotuv narxi')} extra={tr('Необязательно — цену можно указать на шаге «Инвентаризация»', 'Ixtiyoriy — narxni «Inventarizatsiya» bosqichida kiritish mumkin')}>
               <Num min="1" placeholder={tr('сум', 'soʻm')} />
             </Form.Item>
           </Col>

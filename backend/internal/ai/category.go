@@ -35,16 +35,19 @@ type CategoryAsk struct {
 
 // CategoryAnswer — ответ модели.
 type CategoryAnswer struct {
-	Match        string   `json:"match"`
-	Alternatives []string `json:"alternatives"`
-	New          *struct {
-		ParentID     string `json:"parent_id"`
-		ParentName   string `json:"parent_name"`
-		ParentNameUz string `json:"parent_name_uz"`
-		Name         string `json:"name"`
-		NameUz       string `json:"name_uz"`
-	} `json:"new"`
-	NameUz string `json:"name_uz"`
+	Match        string             `json:"match"`
+	Alternatives []string           `json:"alternatives"`
+	New          *NewCategoryAnswer `json:"new"`
+	NameUz       string             `json:"name_uz"`
+}
+
+// NewCategoryAnswer — новая подкатегория, которую предлагает модель.
+type NewCategoryAnswer struct {
+	ParentID     string `json:"parent_id"`
+	ParentName   string `json:"parent_name"`
+	ParentNameUz string `json:"parent_name_uz"`
+	Name         string `json:"name"`
+	NameUz       string `json:"name_uz"`
 }
 
 func categoryPrompt(in CategoryAsk) string {
@@ -56,15 +59,24 @@ func categoryPrompt(in CategoryAsk) string {
 	if len(in.Near) > 0 {
 		b.WriteString("Products from the same MXIK class are already in subcategories: " + strings.Join(in.Near, ", ") + "\n")
 	}
+	writeTree(&b, in.Sections, in.Leaves)
+	b.WriteString(categoryRules)
+	return b.String()
+}
+
+// writeTree — разделы и подкатегории для модели.
+func writeTree(b *strings.Builder, sections, leaves []CategoryOption) {
 	b.WriteString("\nSections (id | name ru | name uz):\n")
-	for _, s := range in.Sections {
+	for _, s := range sections {
 		b.WriteString(s.ID + " | " + s.Path + " | " + s.PathUz + "\n")
 	}
 	b.WriteString("\nSubcategories (id | section / subcategory ru | uz):\n")
-	for _, s := range in.Leaves {
+	for _, s := range leaves {
 		b.WriteString(s.ID + " | " + s.Path + " | " + s.PathUz + "\n")
 	}
-	b.WriteString(`
+}
+
+const categoryRules = `
 Pick the subcategory where a shopper would look for this product.
 Return JSON:
 {"match": "id of the best existing subcategory, or empty string if none of them really fits",
@@ -76,9 +88,7 @@ Return JSON:
          "name": "subcategory name in Russian, short, plural, like the existing ones",
          "name_uz": "the same in Uzbek"},
  "name_uz": "the product name translated into Uzbek (brands, numbers and units unchanged)"}
-Prefer an existing subcategory when it fits well. Prefer a new subcategory inside an existing section over a new section.`)
-	return b.String()
-}
+Prefer an existing subcategory when it fits well. Prefer a new subcategory inside an existing section over a new section.`
 
 // SuggestCategory — спросить модель. Токены возвращаются и при ошибке разбора.
 func (c Conn) SuggestCategory(ctx context.Context, in CategoryAsk) (CategoryAnswer, Usage, error) {

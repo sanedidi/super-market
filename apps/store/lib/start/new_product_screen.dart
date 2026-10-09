@@ -15,9 +15,15 @@ import 'sheets.dart';
 import 'start_api.dart';
 import 'start_logic.dart';
 
-/// Н8 · Новый товар: его нет в центральной базе — уходит на модерацию, но сразу
-/// доступен сети и встаёт в «Мои товары». Количество и цены — на шаге
-/// «Инвентаризация». Возвращает созданный товар.
+/// Н8 · Новый товар: его нет в центральной базе — сразу доступен сети и
+/// встаёт в «Мои товары»; на модерацию в общую базу уходит при «Записать и
+/// закрыть» (start_draft). Количество и цены — на шаге «Инвентаризация».
+/// Возвращает созданный товар.
+///
+/// Р4 · review — проверка карточки из вкладки «Новые» (её заполнил Super
+/// Market по фото или не смог — тогда заполняет магазин): поля заполнены,
+/// «Похоже, такой товар уже есть» → «Это он», без цены; сохраняется через
+/// /store/start/new-items/{id}/confirm.
 class NewProductScreen extends StatefulWidget {
   const NewProductScreen({
     super.key,
@@ -28,7 +34,11 @@ class NewProductScreen extends StatefulWidget {
     this.categoryId,
     this.fromPhoto = false,
     this.withLine = true,
+    this.review,
   });
+
+  /// Карточка из вкладки «Новые» (ответ /store/start/new-items).
+  final Map<String, dynamic>? review;
 
   final StartApi start;
 
@@ -59,9 +69,19 @@ class _NewProductScreenState extends State<NewProductScreen> {
   final _picker = ImagePicker();
   final _photos = <Uint8List>[];
   // Название на двух языках: name — русский, name_uz — узбекский.
-  late final _nameRu = TextEditingController(text: widget.name ?? '');
-  final _nameUz = TextEditingController();
-  late final _barcode = TextEditingController(text: widget.barcode ?? '');
+  late final Map<String, dynamic>? _res = widget.review?['result'] as Map<String, dynamic>?;
+  late final Map<String, dynamic>? _sg = _res?['suggestion'] as Map<String, dynamic>?;
+  // Фото карточки — уже загруженные ссылки.
+  late final _urls = <String>[...((widget.review?['images'] as List?) ?? const []).map((e) => '$e')];
+  late final _nameRu = TextEditingController(text: (_res?['name'] as String?) ?? widget.name ?? '');
+  late final _nameUz = TextEditingController(text: (_res?['name_uz'] as String?) ?? '');
+  late final _barcode = TextEditingController(text: (widget.review?['barcode'] as String?) ?? widget.barcode ?? '');
+  // Бренд, которого ещё нет в справочнике (распознал Super Market).
+  late String? _brandName = _res?['brand_id'] == null && ((_res?['brand'] as String?) ?? '').isNotEmpty ? _res!['brand'] as String : null;
+  // Новая категория из предложения Super Market.
+  late Map<String, dynamic>? _newCategory = _sg?['category'] == null && _sg?['new'] != null ? Map<String, dynamic>.from(_sg!['new'] as Map) : null;
+  late final Map<String, dynamic>? _match = _res?['match'] as Map<String, dynamic>?;
+  bool get _isReview => widget.review != null;
   final _price = TextEditingController();
   List<_Option> _categories = const [];
   List<_Option> _brands = const [];
@@ -74,8 +94,10 @@ class _NewProductScreenState extends State<NewProductScreen> {
   @override
   void initState() {
     super.initState();
-    _categoryId = widget.categoryId;
-    _brandId = widget.brandId;
+    _categoryId = widget.categoryId ?? (_sg?['category'] as Map<String, dynamic>?)?['id'] as String?;
+    _brandId = widget.brandId ?? _res?['brand_id'] as String?;
+    final unit = _res?['unit_id'] as String?;
+    if (unit != null && unit.isNotEmpty) _unitId = unit;
     _loadDicts();
   }
 
@@ -160,13 +182,16 @@ class _NewProductScreenState extends State<NewProductScreen> {
   }
 
   Future<void> _save() async {
+    if (_isReview) return _confirm();
     final nameRu = _nameRu.text.trim();
     final nameUz = _nameUz.text.trim();
     final price = parseNum(_price.text);
-    if ((nameRu.isEmpty && nameUz.isEmpty) || _categoryId == null || _unitId == null || price == null || num.parse(price) <= 0) {
-      showMessage(context, tr('Заполните название, категорию и цену продажи', 'Nomi, kategoriya va sotuv narxini toʻldiring'));
+    if ((nameRu.isEmpty && nameUz.isEmpty) || _categoryId == null || _unitId == null) {
+      showMessage(context, tr('Заполните название, категорию и единицу', 'Nomi, kategoriya va oʻlchov birligini toʻldiring'));
       return;
     }
+    // Цена необязательна: её вводят на шаге «Инвентаризация».
+    final hasPrice = price != null && num.parse(price) > 0;
     final api = context.read<Api>();
     setState(() => _busy = true);
     try {
@@ -183,15 +208,17 @@ class _NewProductScreenState extends State<NewProductScreen> {
         'category_id': _categoryId,
         'unit_id': _unitId,
         if (_brandId != null) 'brand_id': _brandId,
-        'base_price': price,
+        if (hasPrice) 'base_price': price,
         'barcodes': [if (code.isNotEmpty) code],
         'images': images,
         'description': '',
+        // Свой товар из «Начала работы» уходит на модерацию при «Записать и закрыть».
+        'start_draft': true,
       }) as Map<String, dynamic>;
       if (widget.withLine) {
         await widget.start.setLines([
-          // Цена продажи из карточки — сразу в строку (на шаге 2 её можно поменять).
-          {'product_id': p['id'], 'add': true, 'price': price, 'source': 'new'},
+          // Цена продажи, если указали, — сразу в строку (на шаге 2 её можно поменять).
+          {'product_id': p['id'], 'add': true, if (hasPrice) 'price': price, 'source': 'new'},
         ]);
       }
       if (mounted) Navigator.of(context).pop(ProductRef.fromProduct(p));
@@ -200,6 +227,88 @@ class _NewProductScreenState extends State<NewProductScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Р4: подтвердить карточку — новый товар (draft) или «Это он».
+  Future<void> _confirm({String? productId}) async {
+    final id = widget.review!['id'] as String;
+    final nameRu = _nameRu.text.trim();
+    final nameUz = _nameUz.text.trim();
+    if (productId == null && ((nameRu.isEmpty && nameUz.isEmpty) || (_categoryId == null && _newCategory == null) || _unitId == null)) {
+      showMessage(context, tr('Заполните название, категорию и единицу', 'Nomi, kategoriya va oʻlchov birligini toʻldiring'));
+      return;
+    }
+    final api = context.read<Api>();
+    setState(() => _busy = true);
+    try {
+      final images = [..._urls];
+      for (var i = 0; i < _photos.length; i++) {
+        final res = await api.upload('/store/uploads', _photos[i], 'product_${i + 1}.jpg') as Map<String, dynamic>;
+        images.add(res['url'] as String);
+      }
+      final body = productId != null
+          ? <String, dynamic>{'product_id': productId}
+          : <String, dynamic>{
+              'name': nameRu.isNotEmpty ? nameRu : nameUz,
+              if (nameUz.isNotEmpty) 'name_uz': nameUz,
+              if (_brandId != null) 'brand_id': _brandId else if (_brandName != null) 'brand_name': _brandName,
+              if (_newCategory != null && _categoryId == null) 'new_category': _newCategory else 'category_id': _categoryId,
+              'unit_id': _unitId,
+              'barcode': _barcode.text.trim(),
+              'images': images,
+              'description': (_res?['description'] as String?) ?? '',
+            };
+      final r = await widget.start.confirmNewItem(id, body);
+      if (!mounted) return;
+      final line = (r['line'] as Map<String, dynamic>?) ?? const {};
+      showMessage(context, tr('${line['name'] ?? nameRu} — в «Моих товарах»', '${line['name'] ?? nameRu} — «Mahsulotlarim»da'));
+      Navigator.of(context).pop(ProductRef(id: '${r['product_id']}', name: '${line['name'] ?? nameRu}'));
+    } catch (e) {
+      if (mounted) showMessage(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _retry() async {
+    setState(() => _busy = true);
+    try {
+      await widget.start.retryNewItem(widget.review!['id'] as String);
+      if (mounted) {
+        showMessage(context, tr('Super Market распознаёт заново', 'Super Market qayta aniqlamoqda'));
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) showMessage(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _delete() async {
+    final ok = await confirmSheet(context,
+        title: tr('Убрать карточку?', 'Kartochkani olib tashlaysizmi?'), text: tr('Товар не будет создан.', 'Mahsulot yaratilmaydi.'), confirm: tr('Убрать', 'Olib tashlash'));
+    if (!ok || !mounted) return;
+    try {
+      await widget.start.deleteNewItem(widget.review!['id'] as String);
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) showMessage(context, e);
+    }
+  }
+
+  /// Подпись выбранной категории: из справочника или новая из предложения.
+  String? get _categoryTitle {
+    if (_categoryId != null) {
+      final t = _title(_categories, _categoryId);
+      if (t != null) return t;
+      final c = _sg?['category'] as Map<String, dynamic>?;
+      if (c != null && c['id'] == _categoryId) return '${c['section']} / ${c['name']}';
+      return null;
+    }
+    final n = _newCategory;
+    if (n != null) return '${n['parent_name']} / ${n['name']} · ${tr('новая', 'yangi')}';
+    return null;
   }
 
   Widget _label(String t) => Padding(padding: const EdgeInsets.only(top: 14, bottom: 6), child: Text(t, style: AppText.small));
@@ -257,14 +366,34 @@ class _NewProductScreenState extends State<NewProductScreen> {
         backgroundColor: AppColors.bg,
         leading: IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.of(context).pop()),
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(tr('Новый товар', 'Yangi mahsulot')),
-          Text(tr('Нет в общем каталоге — уйдёт на модерацию', 'Umumiy katalogda yoʻq — moderatsiyaga yuboriladi'), style: AppText.small),
+          Text(!_isReview
+              ? tr('Новый товар', 'Yangi mahsulot')
+              : _res == null
+                  ? tr('Заполните карточку', 'Kartochkani toʻldiring')
+                  : tr('Проверьте карточку', 'Kartochkani tekshiring')),
+          Text(_isReview ? tr('Заполнил Super Market — проверьте', 'Super Market toʻldirdi — tekshiring') : tr('Нет в общем каталоге', 'Umumiy katalogda yoʻq'),
+              style: AppText.small),
         ]),
+        actions: [
+          if (_isReview) IconButton(tooltip: tr('Убрать', 'Olib tashlash'), icon: const Icon(Icons.delete_outline_rounded), onPressed: _busy ? null : _delete),
+        ],
       ),
       body: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
         SizedBox(
           height: 92,
           child: ListView(scrollDirection: Axis.horizontal, children: [
+            for (var i = 0; i < _urls.length; i++)
+              Padding(
+                padding: const EdgeInsets.only(right: 10),
+                child: Stack(children: [
+                  ClipRRect(borderRadius: BorderRadius.circular(16), child: ProductThumb(_urls[i], size: 92)),
+                  Positioned(
+                    right: 2,
+                    top: 2,
+                    child: RoundIcon(icon: Icons.close_rounded, color: AppColors.white, onTap: () => setState(() => _urls.removeAt(i))),
+                  ),
+                ]),
+              ),
             for (var i = 0; i < _photos.length; i++)
               Padding(
                 padding: const EdgeInsets.only(right: 10),
@@ -277,7 +406,7 @@ class _NewProductScreenState extends State<NewProductScreen> {
                   ),
                 ]),
               ),
-            if (_photos.length < 5)
+            if (_urls.length + _photos.length < 5)
               InkWell(
                 onTap: _photo,
                 borderRadius: BorderRadius.circular(16),
@@ -293,7 +422,50 @@ class _NewProductScreenState extends State<NewProductScreen> {
               ),
           ]),
         ),
-        if (widget.fromPhoto) ...[
+        if (_isReview && _res == null) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: AppColors.warningSoft, borderRadius: BorderRadius.circular(12)),
+            child: Row(children: [
+              const Icon(Icons.info_outline_rounded, color: AppColors.warningInk, size: 18),
+              const SizedBox(width: 8),
+              Expanded(child: Text('${widget.review?['error'] ?? ''}', style: AppText.small.copyWith(color: AppColors.warningInk))),
+              TextButton(onPressed: _busy ? null : _retry, child: Text(tr('Ещё раз', 'Qayta'))),
+            ]),
+          ),
+        ],
+        if (_match != null) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: AppColors.warningSoft, borderRadius: BorderRadius.circular(14)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Icon(Icons.help_rounded, size: 16, color: AppColors.warningInk),
+                const SizedBox(width: 6),
+                Expanded(child: Text(tr('Похоже, такой товар уже есть в базе', 'Bunday mahsulot bazada borga oʻxshaydi'), style: AppText.bodyStrong.copyWith(fontSize: 13))),
+              ]),
+              const SizedBox(height: 8),
+              Row(children: [
+                ProductThumb(_match!['image'] as String?, size: 36),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('${_match!['name']}', style: AppText.bodyStrong.copyWith(fontSize: 13)),
+                    Text(
+                        [_match!['own'] == true ? tr('свой товар', 'oʻz mahsulot') : tr('центральная база', 'markaziy baza'), if (_match!['barcode'] != null) '${_match!['barcode']}']
+                            .join(' · '),
+                        style: AppText.small.copyWith(fontSize: 11)),
+                  ]),
+                ),
+                const SizedBox(width: 8),
+                SmallButton(label: tr('Это он', 'Shu'), icon: Icons.check_rounded, primary: true, onPressed: _busy ? null : () => _confirm(productId: '${_match!['product_id']}')),
+              ]),
+            ]),
+          ),
+        ],
+        if (widget.fromPhoto || (_isReview && _res != null)) ...[
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(12),
@@ -307,10 +479,17 @@ class _NewProductScreenState extends State<NewProductScreen> {
         ],
         ..._nameFields(),
         _label(tr('Категория', 'Kategoriya')),
-        _select(_title(_categories, _categoryId), tr('Выберите категорию', 'Kategoriyani tanlang'),
-            () => _choose(tr('Категория', 'Kategoriya'), _categories, (v) => _categoryId = v)),
+        _select(_categoryTitle, tr('Выберите категорию', 'Kategoriyani tanlang'),
+            () => _choose(tr('Категория', 'Kategoriya'), _categories, (v) {
+                  _categoryId = v;
+                  if (v != null) _newCategory = null;
+                })),
         _label(tr('Бренд', 'Brend')),
-        _select(_title(_brands, _brandId), tr('Без бренда', 'Brendsiz'), () => _choose(tr('Бренд', 'Brend'), _brands, (v) => _brandId = v, allowNone: true)),
+        _select(_title(_brands, _brandId) ?? (_brandName == null ? null : '$_brandName · ${tr('новый', 'yangi')}'), tr('Без бренда', 'Brendsiz'),
+            () => _choose(tr('Бренд', 'Brend'), _brands, (v) {
+                  _brandId = v;
+                  _brandName = null;
+                }, allowNone: true)),
         if (_units.length > 1) ...[
           _label(tr('Единица', 'Oʻlchov birligi')),
           Wrap(spacing: 8, runSpacing: 8, children: [
@@ -333,18 +512,28 @@ class _NewProductScreenState extends State<NewProductScreen> {
             suffixIcon: IconButton(icon: const Icon(Icons.qr_code_scanner_rounded), onPressed: _scan),
           ),
         ),
-        const SizedBox(height: 14),
-        NumField(label: tr('Цена продажи, сум', 'Sotuv narxi, soʻm'), controller: _price),
+        if (!_isReview) ...[
+          const SizedBox(height: 14),
+          NumField(label: tr('Цена продажи, сум — необязательно', 'Sotuv narxi, soʻm — ixtiyoriy'), controller: _price),
+        ],
       ]),
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            BigButton(label: widget.withLine ? tr('Создать и добавить', 'Yaratish va qoʻshish') : tr('Создать товар', 'Mahsulot yaratish'), icon: Icons.add_rounded, busy: _busy, onPressed: _save),
+            BigButton(
+                label: _isReview
+                    ? tr('Подтвердить и добавить', 'Tasdiqlash va qoʻshish')
+                    : widget.withLine
+                        ? tr('Создать и добавить', 'Yaratish va qoʻshish')
+                        : tr('Создать товар', 'Mahsulot yaratish'),
+                icon: Icons.add_rounded,
+                busy: _busy,
+                onPressed: _save),
             const SizedBox(height: 8),
             Text(
-                tr('Пока товар на модерации, его можно продавать на кассе. В приложении покупателя он появится после одобрения',
-                    'Mahsulot moderatsiyada boʻlsa ham, uni kassada sotish mumkin. Xaridor ilovasida u tasdiqlangandan keyin paydo boʻladi'),
+                tr('Товар сразу появится в «Моих товарах». В общую базу он уйдёт на проверку после «Инвентаризации»',
+                    'Mahsulot darhol «Mahsulotlarim»da paydo boʻladi. Umumiy bazaga u «Inventarizatsiya»dan soʻng tekshiruvga yuboriladi'),
                 style: AppText.small, textAlign: TextAlign.center),
           ]),
         ),

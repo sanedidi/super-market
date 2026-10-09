@@ -778,7 +778,15 @@ func (s *Service) post(ctx context.Context, p *identity.Principal, st store, dra
 		}
 	}
 
-	// 3. Все товары черновика — в ассортимент магазина (и с нулевым остатком).
+	// 3. Свои новые товары (draft) — на модерацию в общую базу.
+	if _, err := s.pool.Exec(ctx, `
+		UPDATE products SET moderation_status = 'pending'
+		WHERE network_id = $2 AND moderation_status = 'draft'
+		  AND id IN (SELECT product_id FROM start_lines WHERE draft_id = $1)`, draftID, p.NetworkID); err != nil {
+		return res, err
+	}
+
+	// 4. Все товары черновика — в ассортимент магазина (и с нулевым остатком).
 	if _, err := s.pool.Exec(ctx, `
 		INSERT INTO store_products (network_id, store_id, product_id)
 		SELECT $2, $3, product_id FROM start_lines WHERE draft_id = $1
