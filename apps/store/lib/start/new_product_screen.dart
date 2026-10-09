@@ -449,19 +449,19 @@ class _NewProductScreenState extends State<NewProductScreen> {
               ]),
               const SizedBox(height: 8),
               Row(children: [
-                ProductThumb(_match!['image'] as String?, size: 36),
+                ProductThumb(_match['image'] as String?, size: 36),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('${_match!['name']}', style: AppText.bodyStrong.copyWith(fontSize: 13)),
+                    Text('${_match['name']}', style: AppText.bodyStrong.copyWith(fontSize: 13)),
                     Text(
-                        [_match!['own'] == true ? tr('свой товар', 'oʻz mahsulot') : tr('центральная база', 'markaziy baza'), if (_match!['barcode'] != null) '${_match!['barcode']}']
+                        [_match['own'] == true ? tr('свой товар', 'oʻz mahsulot') : tr('центральная база', 'markaziy baza'), if (_match['barcode'] != null) '${_match['barcode']}']
                             .join(' · '),
                         style: AppText.small.copyWith(fontSize: 11)),
                   ]),
                 ),
                 const SizedBox(width: 8),
-                SmallButton(label: tr('Это он', 'Shu'), icon: Icons.check_rounded, primary: true, onPressed: _busy ? null : () => _confirm(productId: '${_match!['product_id']}')),
+                SmallButton(label: tr('Это он', 'Shu'), icon: Icons.check_rounded, primary: true, onPressed: _busy ? null : () => _confirm(productId: '${_match['product_id']}')),
               ]),
             ]),
           ),

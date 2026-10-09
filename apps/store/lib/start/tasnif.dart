@@ -652,7 +652,7 @@ class _CategorySheetState extends State<_CategorySheet> {
             Row(children: [
               const Icon(Icons.create_new_folder_rounded, color: Color(0xFF6938EF)),
               const SizedBox(width: 10),
-              Expanded(child: Text('${_new!['parent_name']} › ${_name.text}', style: AppText.bodyStrong)),
+              Expanded(child: Text('${_new['parent_name']} › ${_name.text}', style: AppText.bodyStrong)),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(color: AppColors.successSoft, borderRadius: BorderRadius.circular(99)),
@@ -660,7 +660,7 @@ class _CategorySheetState extends State<_CategorySheet> {
               ),
             ]),
             const SizedBox(height: 4),
-            Text('${(_new!['parent_name_uz'] as String?)?.isNotEmpty == true ? _new!['parent_name_uz'] : _new!['parent_name']} › ${_nameUz.text}', style: AppText.small),
+            Text('${(_new['parent_name_uz'] as String?)?.isNotEmpty == true ? _new['parent_name_uz'] : _new['parent_name']} › ${_nameUz.text}', style: AppText.small),
             if (_editName) ...[
               const SizedBox(height: 8),
               TextField(controller: _name, onChanged: (_) => setState(() {}), decoration: const InputDecoration(prefixText: 'ru  ', isDense: true)),
