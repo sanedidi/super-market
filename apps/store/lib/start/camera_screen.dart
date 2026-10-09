@@ -12,6 +12,7 @@ import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'new_items.dart';
 import 'photo_screen.dart';
+import 'scanner.dart';
 import 'sheets.dart';
 import 'start_api.dart';
 import 'start_logic.dart';
@@ -64,11 +65,8 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
     super.dispose();
   }
 
-  // Основная камера (1x), а не «любая»: на iPhone с несколькими камерами
-  // mobile_scanner иначе берёт виртуальную камеру, и она стартует со
-  // сверхширокой (0,5x) — картинка мелкая и мутная, штрихкод читается хуже.
-  MobileScannerController _newScanner() => MobileScannerController(
-        lensType: CameraLensType.normal,
+  // Камера для штрихкодов — см. scanner.dart (на iPhone сама включает макро вблизи).
+  MobileScannerController _newScanner() => barcodeScanner(
         formats: const [BarcodeFormat.ean13, BarcodeFormat.ean8, BarcodeFormat.upcA, BarcodeFormat.upcE, BarcodeFormat.code128, BarcodeFormat.code39],
       );
 

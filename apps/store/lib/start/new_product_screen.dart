@@ -11,6 +11,7 @@ import '../main.dart';
 import '../receipt/receipt_logic.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
+import 'scanner.dart';
 import 'sheets.dart';
 import 'start_api.dart';
 import 'start_logic.dart';
@@ -595,8 +596,8 @@ class ScanOnceScreen extends StatefulWidget {
 }
 
 class _ScanOnceScreenState extends State<ScanOnceScreen> {
-  // Основная камера 1x, а не сверхширокая 0,5x (см. camera_screen.dart).
-  final _scanner = MobileScannerController(lensType: CameraLensType.normal);
+  // Камера для штрихкодов — см. scanner.dart.
+  final _scanner = barcodeScanner();
   bool _done = false;
 
   @override
