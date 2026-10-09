@@ -19,6 +19,9 @@ import 'start_api.dart';
 // работает дальше; Super Market в фоне заполняет карточку. Вкладка «Новые»:
 // распознаётся / проверить / не удалось — заполнить. Только после
 // подтверждения товар создаётся и встаёт в «Мои товары».
+// Без дублей (Figma «без дублей в «Новых»», Д1–Д3): штрихкод, который уже в
+// «Новых», — шторка «Этот товар уже в «Новых»» вместо «Новый товар»; похожая
+// карточка помечена «Похоже на дубль», «Это он» объединяет карточки.
 
 const _purple = Color(0xFF6938EF);
 const _purpleSoft = Color(0xFFF4F3FF);
@@ -74,6 +77,14 @@ class _NewItemCameraScreenState extends State<NewItemCameraScreen> {
       final it = await widget.start.createNewItem(urls, barcode: widget.barcode);
       if (!mounted) return;
       Navigator.of(context).pop(it['status'] == 'failed' ? 'failed' : 'sent');
+    } on ApiError catch (e) {
+      if (!mounted) return;
+      // Тот же штрихкод уже в «Новых» (например, отправил другой сотрудник) — вторую карточку не заводим.
+      if (e.code == 'new_item_exists') {
+        Navigator.of(context).pop('exists');
+      } else {
+        showMessage(context, e);
+      }
     } catch (e) {
       if (mounted) showMessage(context, e);
     } finally {
@@ -227,8 +238,145 @@ Future<bool> openNewItemCamera(BuildContext context, StartApi start, {String? ba
       ));
   } else if (r == 'failed') {
     showMessage(context, tr('Фото сохранены — заполните карточку во вкладке «Новые»', 'Rasmlar saqlandi — kartochkani «Yangilar» boʻlimida toʻldiring'));
+  } else if (r == 'exists') {
+    showMessage(context, tr('Этот товар уже в «Новых» — проверьте его карточку', 'Bu mahsulot allaqachon «Yangilar»da — kartochkasini tekshiring'));
   }
   return true;
+}
+
+String _queuedName(Map<String, dynamic> item) => switch (item['status']) {
+      'ready' => '${(item['result'] as Map<String, dynamic>?)?['name'] ?? ''}',
+      'processing' => tr('Распознаётся…', 'Aniqlanmoqda…'),
+      _ => tr('Не удалось распознать', 'Aniqlab boʻlmadi'),
+    };
+
+/// Состояние карточки в «Новых»: готово / распознаётся / не удалось.
+class NewItemStateChip extends StatelessWidget {
+  const NewItemStateChip({super.key, required this.status});
+
+  final Object? status;
+
+  @override
+  Widget build(BuildContext context) {
+    final (Color bg, Color fg, IconData icon, String text) = switch (status) {
+      'ready' => (AppColors.successSoft, AppColors.successInk, Icons.check_circle_rounded, tr('Готово к проверке', 'Tekshirishga tayyor')),
+      'processing' => (_purpleSoft, _purple, Icons.auto_awesome_rounded, tr('Super Market… ~1 мин', 'Super Market… ~1 daq')),
+      _ => (AppColors.errorSoft, AppColors.error, Icons.error_outline_rounded, tr('Не удалось — заполните', 'Boʻlmadi — toʻldiring')),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 13, color: fg),
+        const SizedBox(width: 4),
+        Text(text, style: AppText.caption.copyWith(fontSize: 11, color: fg)),
+      ]),
+    );
+  }
+}
+
+/// Карточка из «Новых» (фото, название, состояние) — в шторке и подсказке.
+class QueuedItemCard extends StatelessWidget {
+  const QueuedItemCard({super.key, required this.item, this.color = AppColors.bg});
+
+  final Map<String, dynamic> item;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final images = (item['images'] as List?) ?? const [];
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(14)),
+      child: Row(children: [
+        ProductThumb(images.isEmpty ? null : '${images.first}', size: 52),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(_queuedName(item), style: AppText.bodyStrong.copyWith(fontSize: 14)),
+            const SizedBox(height: 2),
+            Text(tr('${images.length} фото', '${images.length} ta rasm'), style: AppText.small.copyWith(fontSize: 12)),
+            const SizedBox(height: 4),
+            NewItemStateChip(status: item['status']),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
+/// Открыть карточку из «Новых» на проверку (Р4).
+Future<void> openNewItemReview(BuildContext context, StartApi start, Map<String, dynamic> item) =>
+    Navigator.of(context).push<Object?>(MaterialPageRoute(builder: (_) => NewProductScreen(start: start, review: item)));
+
+/// Д1 · Штрихкод уже в «Новых»: вторую карточку не заводим. «Проверить
+/// карточку» (готова) или «Заполнить» (не удалось) открывает её; пока
+/// распознаётся — только «Сканировать дальше». true — карточку открыли.
+Future<bool> showQueuedSheet(BuildContext context, StartApi start, Map<String, dynamic> item) async {
+  final status = item['status'];
+  final code = '${item['barcode'] ?? ''}';
+  final r = await showSheet<String>(
+    context,
+    (ctx) => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      SheetHeader(
+        icon: Icons.auto_awesome_rounded,
+        title: tr('Этот товар уже в «Новых»', 'Bu mahsulot allaqachon «Yangilar»da'),
+        text: tr('Штрихкод $code вы уже сфотографировали — Super Market готовит карточку. Второй раз добавлять не нужно.',
+            '$code shtrix-kodini allaqachon suratga olgansiz — Super Market kartochkani tayyorlamoqda. Qayta qoʻshish shart emas.'),
+      ),
+      const SizedBox(height: 16),
+      QueuedItemCard(item: item),
+      const SizedBox(height: 20),
+      if (status != 'processing') ...[
+        SheetButton(label: status == 'ready' ? tr('Проверить карточку', 'Kartochkani tekshirish') : tr('Заполнить', 'Toʻldirish'), onPressed: () => Navigator.pop(ctx, 'open')),
+        const SizedBox(height: 10),
+      ],
+      SheetButton(label: tr('Сканировать дальше', 'Skanerlashni davom ettirish'), primary: false, onPressed: () => Navigator.pop(ctx)),
+    ]),
+  );
+  if (r != 'open' || !context.mounted) return false;
+  await openNewItemReview(context, start, item);
+  return true;
+}
+
+/// Подсказка в поиске: штрихкод уже в «Новых» (вместо вариантов ИКПУ и «Новый товар»).
+class QueuedCallout extends StatelessWidget {
+  const QueuedCallout({super.key, required this.item, required this.onOpen});
+
+  final Map<String, dynamic> item;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = item['status'];
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: AppColors.warningSoft, borderRadius: BorderRadius.circular(16)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          const Icon(Icons.content_copy_rounded, size: 16, color: AppColors.warningInk),
+          const SizedBox(width: 6),
+          Expanded(child: Text(tr('Этот товар уже в «Новых»', 'Bu mahsulot allaqachon «Yangilar»da'), style: AppText.bodyStrong.copyWith(fontSize: 14))),
+        ]),
+        const SizedBox(height: 6),
+        Text(tr('Его уже отправили Super Market — второй раз добавлять не нужно.', 'U allaqachon Super Market’ga yuborilgan — qayta qoʻshish shart emas.'), style: AppText.small),
+        const SizedBox(height: 10),
+        QueuedItemCard(item: item, color: AppColors.white),
+        if (status != 'processing') ...[
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerRight,
+            child: SmallButton(
+              label: status == 'ready' ? tr('Проверить', 'Tekshirish') : tr('Заполнить', 'Toʻldirish'),
+              icon: status == 'ready' ? Icons.fact_check_rounded : Icons.edit_rounded,
+              primary: true,
+              onPressed: onOpen,
+            ),
+          ),
+        ],
+      ]),
+    );
+  }
 }
 
 /// Р3 · Вкладка «Новые»: карточки Super Market. Пока что-то распознаётся —
@@ -335,6 +483,19 @@ class _NewTile extends StatelessWidget {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(title, style: AppText.bodyStrong.copyWith(fontSize: 14, color: status == 'processing' ? AppColors.text2 : AppColors.ink)),
               Text(sub, style: AppText.small.copyWith(fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
+              // Д3: похоже, этот товар уже есть в «Новых» — сверить в карточке («Это он»).
+              if (item['duplicate'] != null && status != 'processing') ...[
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(color: AppColors.warningSoft, borderRadius: BorderRadius.circular(8)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.content_copy_rounded, size: 12, color: AppColors.warningInk),
+                    const SizedBox(width: 4),
+                    Text(tr('Похоже на дубль', 'Dublga oʻxshaydi'), style: AppText.caption.copyWith(fontSize: 11, color: AppColors.warningInk)),
+                  ]),
+                ),
+              ],
             ]),
           ),
           const SizedBox(width: 8),

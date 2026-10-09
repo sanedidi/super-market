@@ -4,17 +4,39 @@
 // Вкладка «Новые от Super Market»: распознаётся / проверить / не удалось.
 // Только после «Подтвердить и добавить» товар создаётся (свой, draft) и
 // встаёт в «Мои товары»; на модерацию — при «Записать и закрыть».
+// Без дублей (Figma «без дублей в «Новых»», В1–В3): тот же штрихкод второй
+// раз в «Новые» не попадает; похожая карточка помечается «Похоже на дубль»,
+// «Это он» объединяет карточки.
 import { useEffect, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Alert, App, Button, Col, Flex, Form, Input, Modal, Row, Space, Spin, Tag, Typography } from 'antd'
-import { CheckOutlined, DeleteOutlined, FolderAddOutlined, PlusOutlined, ReloadOutlined, StarFilled, TagsOutlined } from '@ant-design/icons'
+import { CheckOutlined, CopyOutlined, DeleteOutlined, FolderAddOutlined, PlusOutlined, ReloadOutlined, StarFilled, TagsOutlined } from '@ant-design/icons'
 import { ApiError, FormTranslate, ImageUpload, RemoteSelect, api, errorText, getLang, tr } from '@sm/shared'
 import { useStore } from '../../ctx'
 import type { DictItem } from '../../types'
-import { useStartRefresh, type CategoryRef, type CategorySuggestion, type NewCategory, type NewItem, type NewItemConfirmResult, type NewItemList } from './api'
+import { useStartRefresh, type CategoryRef, type CategorySuggestion, type NewCategory, type NewItem, type NewItemConfirmResult, type NewItemDup, type NewItemList } from './api'
 import { Thumb } from './Thumb'
 
 const PURPLE = '#6938EF'
+const AMBER = { bg: '#FFFAEB', border: '#FEDF89', text: '#93370D', icon: '#DC6803' }
+
+/** Чип «Похоже на дубль» у карточки в списке «Новые». */
+function DupChip() {
+  return (
+    <span style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 4, background: AMBER.bg, color: AMBER.text, borderRadius: 6, padding: '1px 8px', fontSize: 12, fontWeight: 600 }}>
+      <CopyOutlined style={{ color: AMBER.icon }} />
+      {tr('Похоже на дубль', 'Dublga oʻxshaydi')}
+    </span>
+  )
+}
+
+/** Что сейчас с карточкой в «Новых» — для подсказок «уже в «Новых»». */
+export const newItemState = (s: NewItem['status']) =>
+  s === 'ready'
+    ? tr('готово к проверке', 'tekshirishga tayyor')
+    : s === 'processing'
+      ? tr('Super Market распознаёт… ~1 мин', 'Super Market aniqlamoqda… ~1 daq')
+      : tr('не удалось распознать — заполните', 'aniqlab boʻlmadi — toʻldiring')
 
 /** Очередь «Новые» магазина; пока что-то распознаётся — обновляется сама. */
 export function useNewItems(storeId: string) {
@@ -52,7 +74,7 @@ export function RightTabs({ tab, onTab, mine, fresh, ready }: { tab: 'mine' | 'n
 }
 
 /** В1: очередь «Новые от Super Market». */
-export function NewItemsList({ list, loading }: { list: NewItemList | undefined; loading: boolean }) {
+export function NewItemsList({ list, loading, highlight }: { list: NewItemList | undefined; loading: boolean; highlight?: string | null }) {
   const [open, setOpen] = useState<NewItem | null>(null)
   const items = list?.items ?? []
   return (
@@ -76,12 +98,15 @@ export function NewItemsList({ list, loading }: { list: NewItemList | undefined;
         </Typography.Paragraph>
       ) : (
         items.map((it) => (
-          <Flex key={it.id} align="center" gap={14} style={{ padding: '12px 20px', borderBottom: '1px solid #EAECF0' }}>
+          <Flex key={it.id} align="center" gap={14} style={{ padding: '12px 20px', borderBottom: '1px solid #EAECF0', background: highlight === it.id ? AMBER.bg : undefined }}>
             <Thumb src={it.images[0]} size={48} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <Typography.Text strong style={{ display: 'block', fontWeight: 600, color: it.status === 'processing' ? '#667085' : undefined }}>
-                {it.status === 'processing' ? tr('Распознаётся…', 'Aniqlanmoqda…') : it.status === 'ready' ? it.result?.name : tr('Не удалось распознать', 'Aniqlab boʻlmadi')}
-              </Typography.Text>
+              <Flex align="center" gap={8} wrap>
+                <Typography.Text strong style={{ fontWeight: 600, color: it.status === 'processing' ? '#667085' : undefined }}>
+                  {it.status === 'processing' ? tr('Распознаётся…', 'Aniqlanmoqda…') : it.status === 'ready' ? it.result?.name : tr('Не удалось распознать', 'Aniqlab boʻlmadi')}
+                </Typography.Text>
+                {it.duplicate && it.status !== 'processing' && <DupChip />}
+              </Flex>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 {[
                   it.barcode || tr('без штрихкода', 'shtrix-kodsiz'),
@@ -148,7 +173,13 @@ export function NewByPhotoModal({ open, onClose, onSent, onManual }: { open: boo
       onSent()
       onClose()
     } catch (e) {
-      message.error(errorText(e))
+      if (e instanceof ApiError && e.code === 'new_item_exists') {
+        // Тот же штрихкод уже в «Новых» — вторую карточку не заводим.
+        message.warning(tr('Этот товар уже в «Новых» — проверьте его карточку', 'Bu mahsulot allaqachon «Yangilar»da — kartochkasini tekshiring'))
+        await refresh()
+        onSent()
+        onClose()
+      } else message.error(errorText(e))
     } finally {
       setSending(false)
     }
@@ -193,12 +224,12 @@ export function NewByPhotoModal({ open, onClose, onSent, onManual }: { open: boo
 type Choice = { category_id: string } | { new_category: NewCategory }
 
 /** Р4: карточка, заполненная Super Market (или пустая — «не удалось»). */
-function ReviewModal({ item, onClose }: { item: NewItem | null; onClose: () => void }) {
+export function ReviewModal({ item, onClose }: { item: NewItem | null; onClose: () => void }) {
   const { storeId } = useStore()
   const { message, modal } = App.useApp()
   const refresh = useStartRefresh()
   const [form] = Form.useForm()
-  const [saving, setSaving] = useState<'' | 'confirm' | 'match' | 'retry' | 'delete'>('')
+  const [saving, setSaving] = useState<'' | 'confirm' | 'match' | 'merge' | 'retry' | 'delete'>('')
   const [choice, setChoice] = useState<Choice | null>(null)
   const res = item?.result ?? null
 
@@ -262,6 +293,22 @@ function ReviewModal({ item, onClose }: { item: NewItem | null; onClose: () => v
       await done(await api.post<NewItemConfirmResult>(`/store/start/new-items/${item.id}/confirm`, { store_id: storeId, product_id: res.match.product_id }))
     } catch (e) {
       await fail(e)
+    } finally {
+      setSaving('')
+    }
+  }
+  // «Это он» — эта карточка — тот же товар, что в «Новых»: фото переходят туда, эта убирается.
+  const merge = async (into: NewItemDup) => {
+    if (!item) return
+    setSaving('merge')
+    try {
+      await api.post<NewItem>(`/store/start/new-items/${item.id}/merge`, { store_id: storeId, into: into.id })
+      message.success(tr('Карточки объединены — фото добавлены к той карточке', 'Kartochkalar birlashtirildi — rasmlar oʻsha kartochkaga qoʻshildi'))
+      await refresh()
+      onClose()
+    } catch (e) {
+      message.error(errorText(e))
+      await refresh()
     } finally {
       setSaving('')
     }
@@ -342,6 +389,7 @@ function ReviewModal({ item, onClose }: { item: NewItem | null; onClose: () => v
               </Typography.Text>
             </Flex>
           )}
+          {item.duplicate && <DupBlock dup={item.duplicate} loading={saving === 'merge'} onMerge={merge} />}
           {res?.match && (
             <Flex vertical gap={8} style={{ background: '#FFF7D6', borderRadius: 12, padding: 12 }}>
               <Typography.Text strong style={{ color: '#7A2E0E' }}>
@@ -420,6 +468,41 @@ function ReviewModal({ item, onClose }: { item: NewItem | null; onClose: () => v
         </Flex>
       )}
     </Modal>
+  )
+}
+
+/** В2: «Похоже, этот товар уже есть в «Новых»» — с кнопкой «Это он». */
+function DupBlock({ dup, loading, onMerge }: { dup: NewItemDup; loading: boolean; onMerge: (d: NewItemDup) => void }) {
+  const name = dup.name || (dup.status === 'processing' ? tr('Распознаётся…', 'Aniqlanmoqda…') : tr('Не удалось распознать', 'Aniqlab boʻlmadi'))
+  return (
+    <Flex vertical gap={10} style={{ background: AMBER.bg, border: `1px solid ${AMBER.border}`, borderRadius: 12, padding: '12px 14px' }}>
+      <Flex align="center" gap={8}>
+        <CopyOutlined style={{ color: AMBER.icon }} />
+        <Typography.Text strong style={{ color: AMBER.text }}>
+          {tr('Похоже, этот товар уже есть в «Новых»', 'Bu mahsulot «Yangilar»da allaqachon borga oʻxshaydi')}
+        </Typography.Text>
+      </Flex>
+      <Flex align="center" gap={12} wrap style={{ background: '#fff', borderRadius: 10, padding: '10px 12px' }}>
+        <Thumb src={dup.image} size={44} />
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <Typography.Text strong style={{ display: 'block', fontWeight: 600 }}>
+            {name}
+          </Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {[dup.barcode, newItemState(dup.status)].filter(Boolean).join(' · ')}
+          </Typography.Text>
+        </div>
+        <Button type="primary" icon={<CheckOutlined />} loading={loading} onClick={() => onMerge(dup)}>
+          {tr('Это он — убрать эту карточку', 'Shu — bu kartochkani olib tashlash')}
+        </Button>
+      </Flex>
+      <Typography.Text style={{ fontSize: 12, color: AMBER.text }}>
+        {tr(
+          '«Это он» — фото этой карточки добавятся к той, а эта уберётся. Если это другой товар — просто подтвердите ниже.',
+          '«Shu» — bu kartochkaning rasmlari oʻshanga qoʻshiladi, bu esa olib tashlanadi. Boshqa mahsulot boʻlsa — pastda tasdiqlang.',
+        )}
+      </Typography.Text>
+    </Flex>
   )
 }
 

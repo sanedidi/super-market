@@ -84,6 +84,17 @@ class StartApi {
 
   Future<void> retryNewItem(String id) => api.post('/store/start/new-items/$id/retry');
 
+  /// Карточка в «Новых» с этим штрихкодом (null — нет): сканер проверяет её,
+  /// прежде чем предлагать «Новый товар» — второй раз тот же товар не заводим.
+  Future<Map<String, dynamic>?> newItemByBarcode(String code) async {
+    final r = await api.get('/store/start/new-items/by-barcode', {'store_id': storeId, 'code': code}) as Map<String, dynamic>;
+    return r['item'] as Map<String, dynamic>?;
+  }
+
+  /// «Это он»: карточка [id] — тот же товар, что [into]; фото переходят туда, [id] убирается.
+  Future<Map<String, dynamic>> mergeNewItem(String id, String into) async =>
+      await api.post('/store/start/new-items/$id/merge', {'store_id': storeId, 'into': into}) as Map<String, dynamic>;
+
   Future<void> deleteNewItem(String id) => api.delete('/store/start/new-items/$id');
 
   /// Товар по штрихкоду (центральная база и свои товары сети).

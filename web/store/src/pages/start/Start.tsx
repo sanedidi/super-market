@@ -2,7 +2,9 @@
 // Черновик общий с «SM Магазин» и идёт в два шага:
 //  1. «Мои товары» — поиск по центральной базе (название, штрихкод, USB-сканер),
 //     фото полок, свой товар. Тот же товар второй раз не добавляется, на
-//     похожий — предупреждение (один раз на пару).
+//     похожий — предупреждение (один раз на пару). Штрихкод, который уже
+//     в «Новых от Super Market», — подсказка «уже в «Новых»» вместо
+//     «Создать свой товар» (Figma «без дублей», В1).
 //  2. «Инвентаризация: Начало работы» — количество и цена продажи (обязательны,
 //     можно 0), себестоимость — по желанию. «Записать и закрыть» проводит
 //     черновик, после этого «Начало работы» больше не показывается.
@@ -15,6 +17,7 @@ import {
   CameraOutlined,
   CheckCircleOutlined,
   CheckOutlined,
+  CopyOutlined,
   DeleteOutlined,
   ExclamationCircleFilled,
   PlusOutlined,
@@ -27,10 +30,10 @@ import { ApiError, LoadError, PageTitle, api, errorText, money, plural, qty as f
 import { useStore } from '../../ctx'
 import { NeedStore } from '../../ui'
 import { docPaths } from '../StockDocs'
-import { plainNum, useStartApi, useStartRefresh, type Draft, type Line, type LineInput, type LinesResult, type PostResult, type SearchItem, type Similar } from './api'
+import { plainNum, useStartApi, useStartRefresh, type Draft, type Line, type LineInput, type LinesResult, type NewItem, type PostResult, type SearchItem, type Similar } from './api'
 import { BarcodeModal, NewProductModal, PhotoModal, SimilarModal, sum } from './Modals'
 import { TasnifBlock, TasnifLink } from './Tasnif'
-import { NewByPhotoModal, NewItemsList, RightTabs, useNewItems } from './NewItems'
+import { NewByPhotoModal, NewItemsList, ReviewModal, RightTabs, newItemState, useNewItems } from './NewItems'
 import { Thumb } from './Thumb'
 
 const PAGE = 50
@@ -147,6 +150,14 @@ function StepGoods({ d, next }: { d: Draft; next: () => void }) {
   const tabs = <RightTabs tab={tab} onTab={setTab} mine={d.totals.products} fresh={freshCount} ready={(fresh.data?.counts.ready ?? 0) > 0} />
   // Повтор: подсвеченная строка «Моих товаров».
   const [highlight, setHighlight] = useState<string | null>(null)
+  // Штрихкод уже в «Новых»: подсвеченная карточка и открытая проверка.
+  const [freshHighlight, setFreshHighlight] = useState<string | null>(null)
+  const [review, setReview] = useState<NewItem | null>(null)
+  const showQueued = (it: NewItem, open: boolean) => {
+    setTab('new')
+    setFreshHighlight(it.id)
+    if (open) setReview(it)
+  }
   const n = d.totals.products
 
   return (
@@ -178,12 +189,12 @@ function StepGoods({ d, next }: { d: Draft; next: () => void }) {
       <Steps step={1} />
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={10}>
-          <SearchCard onDuplicate={setHighlight} onNew={() => setByPhoto(true)} />
+          <SearchCard onDuplicate={setHighlight} onNew={() => setByPhoto(true)} onQueued={showQueued} />
         </Col>
         <Col xs={24} xl={14}>
           {tab === 'new' ? (
             <Card title={tabs} styles={{ body: { padding: 0 } }}>
-              <NewItemsList list={fresh.data} loading={fresh.isLoading} />
+              <NewItemsList list={fresh.data} loading={fresh.isLoading} highlight={freshHighlight} />
             </Card>
           ) : (
             <MyGoods highlight={highlight} title={tabs} />
@@ -191,6 +202,7 @@ function StepGoods({ d, next }: { d: Draft; next: () => void }) {
         </Col>
       </Row>
       <PhotoModal open={photoOpen} onClose={() => setPhotoOpen(false)} />
+      <ReviewModal item={review} onClose={() => setReview(null)} />
       <NewProductModal open={newOpen} onClose={() => setNewOpen(false)} />
       <NewByPhotoModal
         open={byPhoto}
@@ -216,7 +228,16 @@ type Duplicate = { name: string; inStore: boolean }
  * В базе ничего нет — сразу варианты из каталога ИКПУ (Т1–Т3); нашлось, но
  * не то — ссылка «Поискать в каталоге ИКПУ» (Т5).
  */
-function SearchCard({ onDuplicate, onNew }: { onDuplicate: (id: string | null) => void; onNew: () => void }) {
+function SearchCard({
+  onDuplicate,
+  onNew,
+  onQueued,
+}: {
+  onDuplicate: (id: string | null) => void
+  onNew: () => void
+  /** Штрихкод уже в «Новых»: показать карточку справа (open — сразу открыть проверку). */
+  onQueued: (it: NewItem, open: boolean) => void
+}) {
   const { storeId, can } = useStore()
   const { message } = App.useApp()
   const refresh = useStartRefresh()
@@ -237,7 +258,24 @@ function SearchCard({ onDuplicate, onNew }: { onDuplicate: (id: string | null) =
   useEffect(() => {
     if (searched && items.length === 0) setTasnifAsked(true)
   }, [searched, items.length])
-  const tasnif = searched && (items.length === 0 || tasnifAsked)
+  // Штрихкода нет в базе — может, его уже отправили Super Market («Новые»)?
+  const lookup = isBarcode(q) && searched && items.length === 0
+  const queued = useQuery({
+    queryKey: ['/store/start/new-items', 'by-barcode', storeId, q],
+    queryFn: () => api.get<{ item: NewItem | null }>('/store/start/new-items/by-barcode', { store_id: storeId, code: q }),
+    enabled: lookup,
+    // Пока карточка распознаётся — подсказка обновится сама.
+    refetchInterval: (r) => (r.state.data?.item?.status === 'processing' ? 3000 : false),
+  })
+  const inQueue = lookup ? (queued.data?.item ?? null) : null
+  const onQueuedRef = useRef(onQueued)
+  onQueuedRef.current = onQueued
+  // Один раз на карточку: справа — вкладка «Новые» с подсвеченной карточкой.
+  const inQueueId = inQueue?.id
+  useEffect(() => {
+    if (inQueue) onQueuedRef.current(inQueue, false)
+  }, [inQueueId]) // eslint-disable-line react-hooks/exhaustive-deps
+  const tasnif = searched && !inQueue && !(lookup && queued.isLoading) && (items.length === 0 || tasnifAsked)
 
   const add = async (it: SearchItem, source: LineInput['source'], confirm = false) => {
     setBusy(it.product_id)
@@ -360,12 +398,13 @@ function SearchCard({ onDuplicate, onNew }: { onDuplicate: (id: string | null) =
                 )}
               </Flex>
             ))}
+            {inQueue && <QueuedCallout item={inQueue} onOpen={() => onQueued(inQueue, true)} />}
             {searched && items.length > 0 && !tasnifAsked && <TasnifLink q={q} onClick={() => setTasnifAsked(true)} />}
             {tasnif && <TasnifBlock q={q} onMissingBarcode={(code) => setMissing(code)} onNew={onNew} />}
           </div>
         </>
       )}
-      {can('catalog.manage') && !tasnif && (
+      {can('catalog.manage') && !tasnif && !inQueue && (
         <Flex align="center" gap={6} style={{ padding: '12px 16px 14px' }}>
           <Typography.Text type="secondary" style={{ fontSize: 13 }}>
             {tr('Нет в базе?', 'Bazada yoʻqmi?')}
@@ -392,6 +431,50 @@ function SearchCard({ onDuplicate, onNew }: { onDuplicate: (id: string | null) =
         }}
       />
     </Card>
+  )
+}
+
+/** В1: штрихкод уже в «Новых от Super Market» — вторую карточку не заводим. */
+function QueuedCallout({ item, onOpen }: { item: NewItem; onOpen: () => void }) {
+  const name =
+    item.status === 'ready' ? item.result?.name : item.status === 'processing' ? tr('Распознаётся…', 'Aniqlanmoqda…') : tr('Не удалось распознать', 'Aniqlab boʻlmadi')
+  return (
+    <div style={{ padding: '12px 16px 16px' }}>
+      <Flex vertical gap={10} style={{ background: '#FFFAEB', border: '1px solid #FEDF89', borderRadius: 12, padding: 14 }}>
+        <Flex align="center" gap={8}>
+          <CopyOutlined style={{ color: '#DC6803' }} />
+          <Typography.Text strong style={{ color: '#93370D' }}>
+            {tr('Этот товар уже в «Новых от Super Market»', 'Bu mahsulot allaqachon «Super Market yangilari»da')}
+          </Typography.Text>
+        </Flex>
+        <Typography.Text style={{ fontSize: 13, color: '#475467' }}>
+          {tr(
+            `Штрихкод ${item.barcode} уже отправлен Super Market. Второй раз добавлять не нужно — проверьте его карточку.`,
+            `${item.barcode} shtrix-kodi Super Market’ga allaqachon yuborilgan. Qayta qoʻshish shart emas — kartochkasini tekshiring.`,
+          )}
+        </Typography.Text>
+        <Flex align="center" gap={12} style={{ background: '#fff', borderRadius: 10, padding: '10px 12px' }}>
+          <Thumb src={item.images[0]} size={44} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <Typography.Text strong style={{ display: 'block', fontWeight: 600 }}>
+              {name}
+            </Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {[newItemState(item.status), tr(`${item.images.length} фото`, `${item.images.length} ta rasm`)].join(' · ')}
+            </Typography.Text>
+          </div>
+          {item.status === 'processing' ? (
+            <Button size="small" disabled style={{ flex: 'none' }}>
+              Super Market…
+            </Button>
+          ) : (
+            <Button size="small" type={item.status === 'ready' ? 'primary' : 'default'} onClick={onOpen} style={{ flex: 'none' }}>
+              {item.status === 'ready' ? tr('Проверить', 'Tekshirish') : tr('Заполнить', 'Toʻldirish')}
+            </Button>
+          )}
+        </Flex>
+      </Flex>
+    </div>
   )
 }
 

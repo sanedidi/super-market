@@ -62,6 +62,8 @@ class _StartScreenState extends State<StartScreen> {
   bool _tasnif = false;
   // Очередь «Новые» (фото новых товаров для Super Market).
   Map<String, dynamic>? _new;
+  // Штрихкод из поиска уже в «Новых» — подсказка вместо вариантов ИКПУ.
+  Map<String, dynamic>? _queued;
   late final _poller = NewItemsPoller(_loadNew);
 
   @override
@@ -126,9 +128,12 @@ class _StartScreenState extends State<StartScreen> {
     setState(() => _searching = true);
     try {
       final items = await _start.searchBase(q);
+      // Штрихкода нет в базе — может, его уже отправили Super Market («Новые»).
+      final queued = items.isEmpty && isBarcode(q) ? await _start.newItemByBarcode(q) : null;
       if (mounted && _q.text.trim() == q) {
         setState(() {
           _results = items;
+          _queued = queued;
           _searchedQ = q;
           if (items.isEmpty) _tasnif = true;
         });
@@ -299,7 +304,17 @@ class _StartScreenState extends State<StartScreen> {
       else if (_results.isEmpty) ...[
         Text(isBarcode(q) ? tr('Штрихкода нет в центральной базе', 'Shtrix-kod markaziy bazada yoʻq') : tr('В центральной базе не найдено', 'Markaziy bazada topilmadi'), style: AppText.caption),
         const SizedBox(height: 8),
-        _tasnifResults(q),
+        if (_queued != null && _queued!['barcode'] == q)
+          QueuedCallout(
+            item: _queued!,
+            onOpen: () async {
+              await openNewItemReview(context, _start, _queued!);
+              await _load();
+              if (mounted) _search();
+            },
+          )
+        else
+          _tasnifResults(q),
       ] else ...[
         Text(
           _results.length >= 30 ? tr('Найдено больше 30 — уточните запрос', '30 tadan koʻp topildi — soʻrovni aniqlashtiring') : tr('Найдено ${_results.length} · центральная база', 'Topildi: ${_results.length} · markaziy baza'),

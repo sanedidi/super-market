@@ -127,6 +127,9 @@ export type NewItemResult = {
   match: NewItemMatch | null
 }
 
+/** Другая карточка в «Новых», похожая на эту (тот же штрихкод или похожее название). */
+export type NewItemDup = { id: string; name: string; image: string | null; barcode: string; status: 'processing' | 'ready' | 'failed' }
+
 /** Фото нового товара в очереди «Новые». */
 export type NewItem = {
   id: string
@@ -138,6 +141,8 @@ export type NewItem = {
   result: NewItemResult | null
   product_id: string | null
   created_at: string
+  /** Похоже, этот товар уже есть в «Новых» — «Это он» объединяет карточки. */
+  duplicate: NewItemDup | null
 }
 
 export type NewItemConfirmResult = { product_id: string; created: boolean; line: Line; totals: Totals }

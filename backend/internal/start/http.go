@@ -35,7 +35,9 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/tasnif", m.tasnifAdd)
 		r.Get("/new-items", m.listNewItems)
 		r.Post("/new-items", m.createNewItem)
+		r.Get("/new-items/by-barcode", m.newItemByBarcode)
 		r.Get("/new-items/{id}", m.getNewItem)
+		r.Post("/new-items/{id}/merge", m.mergeNewItem)
 		r.Post("/new-items/{id}/retry", m.retryNewItem)
 		r.Post("/new-items/{id}/confirm", m.confirmNewItem)
 		r.Delete("/new-items/{id}", m.deleteNewItem)
@@ -132,7 +134,35 @@ func (m *Module) newURLs(r *http.Request, it NewItem) NewItem {
 	for i, k := range it.Images {
 		it.Images[i] = m.media.URL(r, k)
 	}
+	if it.Duplicate != nil && it.Duplicate.Image != nil {
+		u := m.media.URL(r, *it.Duplicate.Image)
+		it.Duplicate.Image = &u
+	}
 	return it
+}
+
+// NewItemLookup — GET /store/start/new-items/by-barcode: карточка с этим штрихкодом в «Новых» или null.
+type NewItemLookup struct {
+	Item *NewItem `json:"item"`
+}
+
+func (m *Module) newItemByBarcode(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (NewItemLookup, error) {
+		q := r.URL.Query()
+		it, err := m.svc.NewItemByBarcode(r.Context(), pr(r), q.Get("store_id"), q.Get("code"))
+		if it != nil {
+			u := m.newURLs(r, *it)
+			it = &u
+		}
+		return NewItemLookup{Item: it}, err
+	})
+}
+
+func (m *Module) mergeNewItem(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in NewItemMerge) (NewItem, error) {
+		it, err := m.svc.MergeNewItem(r.Context(), pr(r), id, in)
+		return m.newURLs(r, it), err
+	})
 }
 
 func (m *Module) listNewItems(w http.ResponseWriter, r *http.Request) {

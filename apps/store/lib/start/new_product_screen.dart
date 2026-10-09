@@ -82,6 +82,8 @@ class _NewProductScreenState extends State<NewProductScreen> {
   // Новая категория из предложения Super Market.
   late Map<String, dynamic>? _newCategory = _sg?['category'] == null && _sg?['new'] != null ? Map<String, dynamic>.from(_sg!['new'] as Map) : null;
   late final Map<String, dynamic>? _match = _res?['match'] as Map<String, dynamic>?;
+  // Д2: похоже, этот товар уже есть в «Новых» — «Это он» объединяет карточки.
+  late final Map<String, dynamic>? _dup = widget.review?['duplicate'] as Map<String, dynamic>?;
   bool get _isReview => widget.review != null;
   final _price = TextEditingController();
   List<_Option> _categories = const [];
@@ -271,6 +273,21 @@ class _NewProductScreenState extends State<NewProductScreen> {
     }
   }
 
+  /// «Это он»: фото этой карточки переходят к той, что уже в «Новых», эта убирается.
+  Future<void> _merge() async {
+    setState(() => _busy = true);
+    try {
+      await widget.start.mergeNewItem(widget.review!['id'] as String, '${_dup!['id']}');
+      if (!mounted) return;
+      showMessage(context, tr('Карточки объединены — фото добавлены к той карточке', 'Kartochkalar birlashtirildi — rasmlar oʻsha kartochkaga qoʻshildi'));
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) showMessage(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _retry() async {
     setState(() => _busy = true);
     try {
@@ -433,6 +450,51 @@ class _NewProductScreenState extends State<NewProductScreen> {
               const SizedBox(width: 8),
               Expanded(child: Text('${widget.review?['error'] ?? ''}', style: AppText.small.copyWith(color: AppColors.warningInk))),
               TextButton(onPressed: _busy ? null : _retry, child: Text(tr('Ещё раз', 'Qayta'))),
+            ]),
+          ),
+        ],
+        if (_dup != null) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: AppColors.warningSoft, borderRadius: BorderRadius.circular(14)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Icon(Icons.content_copy_rounded, size: 16, color: AppColors.warningInk),
+                const SizedBox(width: 6),
+                Expanded(child: Text(tr('Похоже, этот товар уже в «Новых»', 'Bu mahsulot «Yangilar»da borga oʻxshaydi'), style: AppText.bodyStrong.copyWith(fontSize: 13))),
+              ]),
+              const SizedBox(height: 8),
+              Row(children: [
+                ProductThumb(_dup['image'] as String?, size: 36),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(
+                        '${_dup['name'] ?? ''}'.isNotEmpty
+                            ? '${_dup['name']}'
+                            : _dup['status'] == 'processing'
+                                ? tr('Распознаётся…', 'Aniqlanmoqda…')
+                                : tr('Не удалось распознать', 'Aniqlab boʻlmadi'),
+                        style: AppText.bodyStrong.copyWith(fontSize: 13)),
+                    Text(
+                        [
+                          tr('в «Новых»', '«Yangilar»da'),
+                          if ('${_dup['barcode'] ?? ''}'.isNotEmpty) '${_dup['barcode']}',
+                          if (_dup['status'] == 'ready') tr('ждёт проверки', 'tekshiruvni kutmoqda'),
+                        ].join(' · '),
+                        style: AppText.small.copyWith(fontSize: 11)),
+                  ]),
+                ),
+                const SizedBox(width: 8),
+                SmallButton(label: tr('Это он', 'Shu'), icon: Icons.check_rounded, primary: true, onPressed: _busy ? null : _merge),
+              ]),
+              const SizedBox(height: 8),
+              Text(
+                tr('«Это он» — фото добавятся к той карточке, а эта уберётся. Если это другой товар — просто подтвердите.',
+                    '«Shu» — rasmlar oʻsha kartochkaga qoʻshiladi, bu esa olib tashlanadi. Boshqa mahsulot boʻlsa — shunchaki tasdiqlang.'),
+                style: AppText.small.copyWith(fontSize: 11, color: AppColors.warningInk),
+              ),
             ]),
           ),
         ],

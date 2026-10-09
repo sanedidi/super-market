@@ -150,8 +150,49 @@ func TestStartNewItems(t *testing.T) {
 	a.expect(a.do("DELETE", "/store/start/new-items/"+r.str("id"), ownerTok, nil), 200, "delete")
 	a.expect(a.do("GET", "/store/start/new-items/"+r.str("id"), ownerTok, nil), 404, "deleted")
 
+	// Без дублей: тот же штрихкод второй раз в «Новые» не попадает — сканер
+	// узнаёт карточку по штрихкоду; тот же товар без штрихкода помечается
+	// «похоже на дубль», «Это он» объединяет карточки.
+	fai.set(`{"product":true,"name":"Лапша Биг Ланч, 75 г","name_uz":"Big Lanch lapshasi, 75 g","brand":"Биг Ланч","unit":"шт","match":"`+juices+`"}`, `{"texts":["x"]}`)
+	first := a.expect(a.do("POST", "/store/start/new-items", ownerTok, map[string]any{"store_id": storeID, "barcode": "4780022223333", "images": []string{img}}), 202, "noodles")
+	again := a.expect(a.do("POST", "/store/start/new-items", ownerTok, map[string]any{"store_id": storeID, "barcode": "4780022223333", "images": []string{img}}), 409, "same barcode")
+	if det, _ := again.Body["error"].(map[string]any)["details"].(map[string]any); det["item_id"] != first.str("id") {
+		t.Fatalf("same barcode = %v", again.Body)
+	}
+	if lk := a.expect(a.do("GET", "/store/start/new-items/by-barcode?store_id="+storeID+"&code=4780022223333", ownerTok, nil), 200, "by barcode"); lk.str("item", "id") != first.str("id") {
+		t.Fatalf("by barcode = %v", lk.Body)
+	}
+	if lk := a.expect(a.do("GET", "/store/start/new-items/by-barcode?store_id="+storeID+"&code=4780000000000", ownerTok, nil), 200, "by barcode none"); lk.Body["item"] != nil {
+		t.Fatalf("by barcode none = %v", lk.Body)
+	}
+	a.expect(a.do("GET", "/store/start/new-items/by-barcode?store_id="+storeID+"&code=4780022223333", otherTok, nil), 404, "foreign store")
+	img2, img3 := upload(), upload()
+	dupA := a.expect(a.do("POST", "/store/start/new-items", ownerTok, map[string]any{"store_id": storeID, "images": []string{img2}}), 202, "dup a")
+	dupB := a.expect(a.do("POST", "/store/start/new-items", ownerTok, map[string]any{"store_id": storeID, "images": []string{img3}}), 202, "dup b")
+	marks := map[string]any{}
+	for _, it := range list().items() {
+		marks[it["id"].(string)] = it["duplicate"]
+	}
+	// Помечается только более поздняя карточка; ранняя — нет (её штрихкодом тоже).
+	if d, _ := marks[dupB.str("id")].(map[string]any); d["id"] != first.str("id") && d["id"] != dupA.str("id") {
+		t.Fatalf("dup b mark = %v", marks)
+	}
+	if marks[first.str("id")] != nil {
+		t.Fatalf("first marked = %v", marks)
+	}
+	a.expect(a.do("POST", "/store/start/new-items/"+dupB.str("id")+"/merge", ownerTok, map[string]any{"store_id": storeID, "into": dupB.str("id")}), 400, "merge self")
+	a.expect(a.do("POST", "/store/start/new-items/"+dupB.str("id")+"/merge", otherTok, map[string]any{"store_id": storeID, "into": dupA.str("id")}), 404, "merge foreign")
+	m := a.expect(a.do("POST", "/store/start/new-items/"+dupB.str("id")+"/merge", ownerTok, map[string]any{"store_id": storeID, "into": dupA.str("id")}), 200, "merge")
+	if mi, _ := m.Body["images"].([]any); m.str("id") != dupA.str("id") || len(mi) != 2 {
+		t.Fatalf("merged = %v", m.Body)
+	}
+	a.expect(a.do("GET", "/store/start/new-items/"+dupB.str("id"), ownerTok, nil), 404, "merged away")
+	for _, id := range []string{first.str("id"), dupA.str("id")} {
+		a.expect(a.do("DELETE", "/store/start/new-items/"+id, ownerTok, nil), 200, "cleanup")
+	}
+
 	var usage int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM ai_usage WHERE kind = 'product' AND store_id = $1`, storeID).Scan(&usage); err != nil || usage != 4 {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM ai_usage WHERE kind = 'product' AND store_id = $1`, storeID).Scan(&usage); err != nil || usage != 7 {
 		t.Fatalf("product usage = %d %v", usage, err)
 	}
 

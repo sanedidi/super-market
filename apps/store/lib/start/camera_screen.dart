@@ -156,6 +156,13 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
       if (p != null) {
         added = await addToMyGoods(context, widget.start, p, source: 'barcode', listButton: false) == AddResult.added;
       } else {
+        // Штрихкод уже в «Новых» — вторую карточку не заводим (Д1).
+        final queued = await widget.start.newItemByBarcode(code);
+        if (!mounted) return;
+        if (queued != null) {
+          await showQueuedSheet(context, widget.start, queued);
+          return;
+        }
         // Нет в центральной базе — сначала каталог ИКПУ (tasnif.soliq.uz).
         final t = await tasnifBarcodeSheet(context, widget.start, code);
         if (!mounted || t == null) return;
