@@ -8,6 +8,7 @@ import (
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
+	"github.com/sanedidi/super-market/backend/internal/productsearch"
 )
 
 // Дерево «бренд → категория» для списка товаров в панелях: сколько товаров
@@ -82,10 +83,14 @@ func (s *Service) AdminProductGroups(ctx context.Context, f ProductFilter) (Prod
 	if err := f.validate(); err != nil {
 		return ProductGroups{}, err
 	}
+	args := []any{strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, f.Status, f.Photo}
+	search, err := s.searchWhere(ctx, f.Query, productsearch.Scope{AllNetworks: true, Inactive: true}, &args)
+	if err != nil {
+		return ProductGroups{}, err
+	}
 	rows, err := s.pool.Query(ctx, strings.Replace(groupSelect, "%s", `(count(*) FILTER (WHERE p.moderation_status = 'pending'))::int`, 1)+`
-		WHERE ($4 = '' OR p.moderation_status = $4)`+filterWhere+`
-		AND ($5 = '' OR ($5 = 'with') = (cardinality(p.images) > 0))`+groupOrder,
-		strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, f.Status, f.Photo)
+		WHERE ($4 = '' OR p.moderation_status = $4)`+filterWhere(search)+`
+		AND ($5 = '' OR ($5 = 'with') = (cardinality(p.images) > 0))`+groupOrder, productsearch.Args(args)...)
 	if err != nil {
 		return ProductGroups{}, err
 	}
@@ -101,9 +106,13 @@ func (s *Service) StoreProductGroups(ctx context.Context, pr *identity.Principal
 			return ProductGroups{}, err
 		}
 	}
+	args := []any{strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, pr.NetworkID, f.mineArg(f.StoreID)}
+	search, err := s.searchWhere(ctx, f.Query, productsearch.Scope{NetworkID: pr.NetworkID, Inactive: true}, &args)
+	if err != nil {
+		return ProductGroups{}, err
+	}
 	rows, err := s.pool.Query(ctx, strings.Replace(groupSelect, "%s", `(count(*) FILTER (WHERE p.network_id IS NOT NULL AND p.moderation_status = 'pending'))::int`, 1)+`
-		WHERE (p.network_id IS NULL OR p.network_id = $4)`+filterWhere+mineWhere(5, 4)+groupOrder,
-		strings.TrimSpace(f.Query), f.CategoryID, f.Barcode, pr.NetworkID, f.mineArg(f.StoreID))
+		WHERE (p.network_id IS NULL OR p.network_id = $4)`+filterWhere(search)+mineWhere(5, 4)+groupOrder, productsearch.Args(args)...)
 	if err != nil {
 		return ProductGroups{}, err
 	}

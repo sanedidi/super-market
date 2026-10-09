@@ -33,6 +33,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
+	"github.com/sanedidi/super-market/backend/internal/productsearch"
 )
 
 const (
@@ -236,10 +237,8 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, storeID string
 	}
 	where := ` WHERE l.draft_id = $1`
 	args := []any{*id, st.PriceTypeID, st.ID}
-	if q := strings.ToLower(strings.TrimSpace(f.Query)); q != "" {
-		args = append(args, q)
-		where += fmt.Sprintf(` AND (lower(p.name) LIKE '%%' || $%[1]d || '%%' OR lower(p.name_uz) LIKE '%%' || $%[1]d || '%%'
-			OR EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND pb.barcode = $%[1]d))`, len(args))
+	if strings.TrimSpace(f.Query) != "" {
+		where += ` AND ` + productsearch.Filter("p", f.Query, &args)
 	}
 	switch f.Only {
 	case "":
@@ -256,7 +255,7 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, storeID string
 	if limit <= 0 {
 		limit = 200
 	}
-	rows, err := s.pool.Query(ctx, lineSelect+where+fmt.Sprintf(` ORDER BY l.added_at DESC, loc(p.name, p.name_uz) LIMIT %d OFFSET %d`, min(limit, 1000), max(f.Offset, 0)), args...)
+	rows, err := s.pool.Query(ctx, lineSelect+where+fmt.Sprintf(` ORDER BY l.added_at DESC, loc(p.name, p.name_uz) LIMIT %d OFFSET %d`, min(limit, 1000), max(f.Offset, 0)), productsearch.Args(args)...)
 	if err != nil {
 		return d, err
 	}

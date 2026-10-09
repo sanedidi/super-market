@@ -26,6 +26,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/logger"
 	"github.com/sanedidi/super-market/backend/internal/platform/telegram"
+	"github.com/sanedidi/super-market/backend/internal/productsearch"
 	"github.com/sanedidi/super-market/backend/internal/push"
 	"github.com/sanedidi/super-market/backend/internal/server"
 )
@@ -105,6 +106,15 @@ func run() error {
 		log.Warn("S3_ENDPOINT или MEDIA_BASE_URL не заданы: фото товаров из каталога ИКПУ не загружаются")
 	}
 	defer func() { <-photosDone }()
+
+	// Данные поиска товаров (вес в выдаче, словарь опечаток) — в своей
+	// горутине: пересчёт на большом каталоге не задерживает остальные задачи.
+	searchDone := make(chan struct{})
+	go func() {
+		defer close(searchDone)
+		productsearch.NewRanker(pool).Run(ctx, time.Minute, log)
+	}()
+	defer func() { <-searchDone }()
 
 	dlv, _, ord := server.OrderServices(cfg, pool, sender, log)
 	jobs := []Job{

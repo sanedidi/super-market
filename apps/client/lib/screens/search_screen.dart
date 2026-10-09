@@ -97,7 +97,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   void _onChanged(String _) {
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 400), _search);
+    _debounce = Timer(const Duration(milliseconds: 250), _search);
     setState(() {});
   }
 
