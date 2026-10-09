@@ -1,5 +1,6 @@
 // Package ai — подключение к ИИ-сервису, который выбрал супер-админ:
-// OpenAI и совместимые (OpenRouter, DeepSeek, Groq, своя модель) или Anthropic.
+// OpenAI и совместимые (OpenRouter, DeepSeek, Groq, своя модель), Anthropic
+// или Google Vertex AI (Gemini, см. vertex.go).
 // Ключ хранится зашифрованным, наружу не отдаётся.
 package ai
 
@@ -78,10 +79,15 @@ func (c Conn) do(ctx context.Context, method, path string, body any, out any) er
 		return &ErrService{Msg: "неверный адрес сервиса", MsgUz: "xizmat manzili notoʻgʻri"}
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if c.Provider == ProviderAnthropic {
+	switch c.Provider {
+	case ProviderAnthropic:
 		req.Header.Set("x-api-key", c.Key)
 		req.Header.Set("anthropic-version", anthropicVersion)
-	} else {
+	case ProviderVertex:
+		if err := c.vertexAuth(ctx, req); err != nil {
+			return err
+		}
+	default:
 		req.Header.Set("Authorization", "Bearer "+c.Key)
 	}
 	resp, err := client.Do(req)
@@ -105,8 +111,11 @@ func (c Conn) do(ctx context.Context, method, path string, body any, out any) er
 }
 
 func protoName(p string) string {
-	if p == ProviderAnthropic {
+	switch p {
+	case ProviderAnthropic:
 		return "Anthropic"
+	case ProviderVertex:
+		return "Vertex AI"
 	}
 	return "OpenAI"
 }
@@ -154,6 +163,9 @@ func serviceError(status int, raw []byte) i18n.Text {
 
 // Models — модели, доступные ключу.
 func (c Conn) Models(ctx context.Context) ([]Model, error) {
+	if c.Provider == ProviderVertex {
+		return c.vertexModelList(ctx)
+	}
 	var out struct {
 		Data []struct {
 			ID string `json:"id"`
@@ -191,6 +203,9 @@ func visionGuess(provider, id string) *bool {
 	if provider == ProviderAnthropic {
 		return boolp(!strings.Contains(s, "claude-2") && !strings.Contains(s, "instant"))
 	}
+	if provider == ProviderVertex {
+		return boolp(strings.Contains(s, "gemini") && !strings.Contains(s, "embedding") && !strings.Contains(s, "tts"))
+	}
 	for _, no := range []string{"embedding", "whisper", "tts", "dall-e", "moderation", "gpt-3.5", "davinci", "babbage", "audio", "realtime", "transcribe", "search"} {
 		if strings.Contains(s, no) {
 			return boolp(false)
@@ -214,6 +229,9 @@ type Usage struct {
 func (c Conn) Vision(ctx context.Context, system, prompt string, images []Image) (string, Usage, error) {
 	if c.Model == "" {
 		return "", Usage{}, &ErrService{Msg: "не выбрана модель", MsgUz: "model tanlanmagan"}
+	}
+	if c.Provider == ProviderVertex {
+		return c.vertexGenerate(ctx, system, prompt, images)
 	}
 	if c.Provider == ProviderAnthropic {
 		content := []map[string]any{}

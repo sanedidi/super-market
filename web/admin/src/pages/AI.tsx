@@ -1,4 +1,5 @@
 // ИИ-сервис платформы (Figma «Админка · ИИ-сервис»): сервис, адрес, ключ, модель.
+// Сервисы: OpenAI и совместимые, Anthropic, Google Vertex AI (Gemini).
 // Ключ хранится на сервере зашифрованным и обратно не показывается.
 import { useEffect, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -8,7 +9,7 @@ import { useSearchParams } from 'react-router-dom'
 import { LoadError, PageTitle, api, dateTime, errorText, useItem } from '@sm/shared'
 import { AIUsage } from './AIUsage'
 
-type Provider = 'openai' | 'anthropic'
+type Provider = 'openai' | 'anthropic' | 'vertex'
 
 interface Settings {
   provider: Provider
@@ -38,6 +39,48 @@ interface TestResult {
 const DEFAULT_URL: Record<Provider, string> = {
   openai: 'https://api.openai.com/v1',
   anthropic: 'https://api.anthropic.com',
+  vertex: 'https://aiplatform.googleapis.com/v1',
+}
+
+const PROVIDER_NAME: Record<Provider, string> = {
+  openai: 'OpenAI-совместимый',
+  anthropic: 'Anthropic',
+  vertex: 'Vertex AI (Gemini)',
+}
+
+const MODEL_PLACEHOLDER: Record<Provider, string> = {
+  openai: 'gpt-…',
+  anthropic: 'claude-…',
+  vertex: 'gemini-…',
+}
+
+// Vertex AI: регионы для быстрого выбора. Gemini 3 (preview) — только global.
+const VERTEX_REGIONS = [
+  { label: 'global', value: 'global' },
+  { label: 'Франкфурт', value: 'europe-west3' },
+  { label: 'Нидерланды', value: 'europe-west4' },
+  { label: 'Айова (США)', value: 'us-central1' },
+]
+
+const vertexURL = (project: string, region: string) =>
+  `https://${region === 'global' ? '' : `${region}-`}aiplatform.googleapis.com/v1/projects/${project}/locations/${region}`
+const vertexProject = (url: string) => /\/projects\/([^/]+)/.exec(url)?.[1] ?? ''
+const vertexRegion = (url: string) => /\/locations\/([^/]+)/.exec(url)?.[1] ?? 'global'
+
+interface ServiceAccount {
+  project_id: string
+  client_email: string
+}
+
+/** JSON-ключ сервисного аккаунта Google, если вставили его. */
+function parseServiceAccount(key: string): ServiceAccount | null {
+  if (!key.trim().startsWith('{')) return null
+  try {
+    const j = JSON.parse(key)
+    return j?.type === 'service_account' && j.client_email ? { project_id: j.project_id ?? '', client_email: j.client_email } : null
+  } catch {
+    return null
+  }
 }
 
 // Совместимые с OpenAI сервисы — быстрый выбор адреса.
@@ -124,6 +167,14 @@ function AIConnection() {
   const body = () => ({ provider, base_url: baseURL.trim(), api_key: showSavedKey ? '' : key.trim(), model: model.trim() })
   const dirty = !!s && (s.provider !== provider || s.base_url !== baseURL.trim().replace(/\/+$/, '') || s.model !== model.trim() || !showSavedKey)
 
+  const sa = provider === 'vertex' ? parseServiceAccount(key) : null
+  const changeKey = (v: string) => {
+    setKey(v)
+    // Vertex: по JSON-ключу сразу подставляем адрес его проекта (регион сохраняем).
+    const acc = provider === 'vertex' ? parseServiceAccount(v) : null
+    if (acc?.project_id) setBaseURL(vertexURL(acc.project_id, vertexProject(baseURL) ? vertexRegion(baseURL) : 'global'))
+  }
+
   const switchProvider = (p: Provider) => {
     if (p === provider) return
     setProvider(p)
@@ -192,7 +243,7 @@ function AIConnection() {
             <Space direction="vertical" size={24} style={{ width: '100%' }}>
               <Step n={1} title="Сервис">
                 <Row gutter={[12, 12]}>
-                  <Col xs={24} md={12}>
+                  <Col xs={24} md={8}>
                     <ProviderCard
                       active={provider === 'openai'}
                       title="OpenAI и совместимые"
@@ -200,12 +251,20 @@ function AIConnection() {
                       onClick={() => switchProvider('openai')}
                     />
                   </Col>
-                  <Col xs={24} md={12}>
+                  <Col xs={24} md={8}>
                     <ProviderCard
                       active={provider === 'anthropic'}
                       title="Anthropic (Claude)"
                       text="У Claude свой формат запроса, поэтому его выбирают отдельно"
                       onClick={() => switchProvider('anthropic')}
+                    />
+                  </Col>
+                  <Col xs={24} md={8}>
+                    <ProviderCard
+                      active={provider === 'vertex'}
+                      title="Google Vertex AI (Gemini)"
+                      text="Gemini через Google Cloud: ключ сервисного аккаунта (JSON) или API-ключ Vertex AI"
+                      onClick={() => switchProvider('vertex')}
                     />
                   </Col>
                 </Row>
@@ -224,11 +283,27 @@ function AIConnection() {
                     </Button>
                   </Space>
                 )}
+                {provider === 'vertex' && vertexProject(baseURL) && (
+                  <Space wrap>
+                    {VERTEX_REGIONS.map((r) => (
+                      <Button
+                        key={r.value}
+                        size="small"
+                        type={vertexRegion(baseURL) === r.value ? 'primary' : 'default'}
+                        onClick={() => setBaseURL(vertexURL(vertexProject(baseURL), r.value))}
+                      >
+                        {r.label}
+                      </Button>
+                    ))}
+                  </Space>
+                )}
                 <Input size="large" prefix={<LinkOutlined />} value={baseURL} onChange={(e) => setBaseURL(e.target.value)} placeholder="https://…/v1" />
                 <Hint>
                   {provider === 'openai'
                     ? 'Подставляется автоматически по выбранному сервису. Для другого совместимого сервиса впишите его адрес.'
-                    : 'Подставлен адрес Anthropic. Менять нужно, только если вы ходите через свой прокси.'}
+                    : provider === 'anthropic'
+                      ? 'Подставлен адрес Anthropic. Менять нужно, только если вы ходите через свой прокси.'
+                      : 'Адрес проекта Google Cloud подставится сам, когда вставите JSON-ключ. Регион global — все модели Gemini, включая Gemini 3; для API-ключа Vertex AI (express) оставьте https://aiplatform.googleapis.com/v1.'}
                 </Hint>
               </Step>
 
@@ -245,6 +320,28 @@ function AIConnection() {
                       </Button>
                     }
                   />
+                ) : sa ? (
+                  <Input
+                    size="large"
+                    readOnly
+                    prefix={<CheckCircleFilled style={{ color: '#12B76A' }} />}
+                    value={`Сервисный аккаунт ${sa.client_email}${sa.project_id ? ` · проект ${sa.project_id}` : ''}`}
+                    suffix={
+                      <Button type="link" danger onClick={() => setKey('')} style={{ padding: 0 }}>
+                        Очистить
+                      </Button>
+                    }
+                  />
+                ) : provider === 'vertex' ? (
+                  <Input.TextArea
+                    rows={4}
+                    value={key}
+                    onChange={(e) => changeKey(e.target.value)}
+                    placeholder={'Вставьте JSON-ключ сервисного аккаунта целиком: { "type": "service_account", … }\nили API-ключ Vertex AI'}
+                    autoComplete="off"
+                    spellCheck={false}
+                    style={{ fontFamily: 'monospace', fontSize: 12 }}
+                  />
                 ) : (
                   <Input.Password
                     size="large"
@@ -255,7 +352,11 @@ function AIConnection() {
                     autoComplete="off"
                   />
                 )}
-                <Hint>Ключ берётся в личном кабинете сервиса. Он хранится в вашей организации и обратно не показывается.</Hint>
+                <Hint>
+                  {provider === 'vertex'
+                    ? 'Google Cloud → IAM → Сервисные аккаунты: создайте аккаунт с ролью «Vertex AI User», затем Ключи → Добавить ключ → JSON. В проекте должен быть включён Vertex AI API. Ключ хранится зашифрованным и обратно не показывается.'
+                    : 'Ключ берётся в личном кабинете сервиса. Он хранится в вашей организации и обратно не показывается.'}
+                </Hint>
               </Step>
 
               <Step n={4} title="Модель">
@@ -270,7 +371,7 @@ function AIConnection() {
                     onDropdownVisibleChange={(open) => open && setSearch('')}
                     options={options}
                     filterOption={false}
-                    placeholder={provider === 'anthropic' ? 'claude-…' : 'gpt-…'}
+                    placeholder={MODEL_PLACEHOLDER[provider]}
                   />
                   <Button size="large" icon={<ReloadOutlined />} loading={busy === 'models'} onClick={loadModels}>
                     Показать доступные
@@ -305,7 +406,7 @@ function AIConnection() {
                     <Typography.Text strong style={{ fontSize: 15 }}>
                       {!s?.configured
                         ? 'Не настроено'
-                        : `${s.check_ok === false ? 'Ошибка' : s.check_ok ? 'Подключено' : 'Не проверено'} · ${s.provider === 'anthropic' ? 'Anthropic' : 'OpenAI-совместимый'}`}
+                        : `${s.check_ok === false ? 'Ошибка' : s.check_ok ? 'Подключено' : 'Не проверено'} · ${PROVIDER_NAME[s.provider] ?? s.provider}`}
                     </Typography.Text>
                   }
                 />

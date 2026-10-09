@@ -167,8 +167,8 @@ func (s *Service) conn(ctx context.Context, in Input) (Conn, row, error) {
 	if c.Provider == "" {
 		c.Provider = r.Provider
 	}
-	if c.Provider != ProviderOpenAI && c.Provider != ProviderAnthropic {
-		return c, r, apperr.Validation("provider: openai или anthropic").Uz("provider: openai yoki anthropic")
+	if c.Provider != ProviderOpenAI && c.Provider != ProviderAnthropic && c.Provider != ProviderVertex {
+		return c, r, apperr.Validation("provider: openai, anthropic или vertex").Uz("provider: openai, anthropic yoki vertex")
 	}
 	if c.BaseURL == "" {
 		switch {
@@ -176,6 +176,13 @@ func (s *Service) conn(ctx context.Context, in Input) (Conn, row, error) {
 			c.BaseURL = r.BaseURL
 		case c.Provider == ProviderAnthropic:
 			c.BaseURL = DefaultAnthropicURL
+		case c.Provider == ProviderVertex:
+			// По JSON-ключу — адрес его проекта в регионе global.
+			if p := vertexProject(c.Key); p != "" {
+				c.BaseURL = VertexURL(p, "global")
+			} else {
+				c.BaseURL = DefaultVertexURL
+			}
 		default:
 			c.BaseURL = DefaultOpenAIURL
 		}
@@ -192,7 +199,16 @@ func (s *Service) conn(ctx context.Context, in Input) (Conn, row, error) {
 			return c, r, apperr.Validation("api_key: " + msg.RU).Uz("api_key: " + msg.UZ)
 		}
 	}
-	if len(c.Key) > 500 || strings.ContainsAny(c.Key, " \n\t") {
+	if c.Provider == ProviderVertex && isJSONKey(c.Key) {
+		// JSON сервисного аккаунта Google — многострочный, проверяем разбором.
+		if len(c.Key) > maxVertexKeyLn {
+			return c, r, apperr.Validation("api_key: слишком длинный ключ").Uz("api_key: kalit juda uzun")
+		}
+		if _, err := parseServiceAccount(c.Key); err != nil {
+			msg := keyErrText(err)
+			return c, r, apperr.Validation("api_key: " + msg.RU).Uz("api_key: " + msg.UZ)
+		}
+	} else if len(c.Key) > 500 || strings.ContainsAny(c.Key, " \n\t") {
 		return c, r, apperr.Validation("api_key: неверный ключ").Uz("api_key: kalit notoʻgʻri")
 	}
 	if c.Model == "" && c.Provider == r.Provider {
@@ -228,7 +244,7 @@ func (s *Service) Save(ctx context.Context, adminID string, in Input) (Settings,
 		       check_ok = CASE WHEN $6 THEN NULL ELSE check_ok END,
 		       check_message = CASE WHEN $6 THEN '' ELSE check_message END,
 		       updated_by = $7, updated_at = now()`,
-		c.Provider, c.BaseURL, c.Model, keyEnc, last4(c.Key), changed, adminID)
+		c.Provider, c.BaseURL, c.Model, keyEnc, keyHint(c.Key), changed, adminID)
 	if err != nil {
 		return Settings{}, err
 	}
