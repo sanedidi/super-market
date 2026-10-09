@@ -63,7 +63,11 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
     super.dispose();
   }
 
+  // Основная камера (1x), а не «любая»: на iPhone с несколькими камерами
+  // mobile_scanner иначе берёт виртуальную камеру, и она стартует со
+  // сверхширокой (0,5x) — картинка мелкая и мутная, штрихкод читается хуже.
   MobileScannerController _newScanner() => MobileScannerController(
+        lensType: CameraLensType.normal,
         formats: const [BarcodeFormat.ean13, BarcodeFormat.ean8, BarcodeFormat.upcA, BarcodeFormat.upcE, BarcodeFormat.code128, BarcodeFormat.code39],
       );
 

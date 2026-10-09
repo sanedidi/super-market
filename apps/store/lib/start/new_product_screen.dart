@@ -406,7 +406,8 @@ class ScanOnceScreen extends StatefulWidget {
 }
 
 class _ScanOnceScreenState extends State<ScanOnceScreen> {
-  final _scanner = MobileScannerController();
+  // Основная камера 1x, а не сверхширокая 0,5x (см. camera_screen.dart).
+  final _scanner = MobileScannerController(lensType: CameraLensType.normal);
   bool _done = false;
 
   @override
