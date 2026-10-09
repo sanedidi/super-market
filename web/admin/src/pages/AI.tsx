@@ -58,6 +58,7 @@ const MODEL_PLACEHOLDER: Record<Provider, string> = {
 const VERTEX_REGIONS = [
   { label: 'global', value: 'global' },
   { label: 'Франкфурт', value: 'europe-west3' },
+  { label: 'Бельгия', value: 'europe-west1' },
   { label: 'Нидерланды', value: 'europe-west4' },
   { label: 'Айова (США)', value: 'us-central1' },
 ]
@@ -66,6 +67,15 @@ const vertexURL = (project: string, region: string) =>
   `https://${region === 'global' ? '' : `${region}-`}aiplatform.googleapis.com/v1/projects/${project}/locations/${region}`
 const vertexProject = (url: string) => /\/projects\/([^/]+)/.exec(url)?.[1] ?? ''
 const vertexRegion = (url: string) => /\/locations\/([^/]+)/.exec(url)?.[1] ?? 'global'
+// Адрес самого Google — на нём смена проекта или региона сохранённый ключ не сбрасывает (как на сервере).
+const isGoogleVertexURL = (url: string) => {
+  try {
+    const u = new URL(url)
+    return u.protocol === 'https:' && !u.port && (u.hostname === 'aiplatform.googleapis.com' || u.hostname.endsWith('-aiplatform.googleapis.com'))
+  } catch {
+    return false
+  }
+}
 
 interface ServiceAccount {
   project_id: string
@@ -162,7 +172,11 @@ function AIConnection() {
   }, [s])
 
   // Сохранённый ключ годится, только пока сервис и адрес те же.
-  const savedKeyUsable = !!s?.has_key && s.provider === provider && s.base_url === baseURL.trim().replace(/\/+$/, '')
+  const cleanURL = baseURL.trim().replace(/\/+$/, '')
+  const savedKeyUsable =
+    !!s?.has_key &&
+    s.provider === provider &&
+    (s.base_url === cleanURL || (provider === 'vertex' && isGoogleVertexURL(s.base_url) && isGoogleVertexURL(cleanURL)))
   const showSavedKey = savedKeyUsable && !replacing
   const body = () => ({ provider, base_url: baseURL.trim(), api_key: showSavedKey ? '' : key.trim(), model: model.trim() })
   const dirty = !!s && (s.provider !== provider || s.base_url !== baseURL.trim().replace(/\/+$/, '') || s.model !== model.trim() || !showSavedKey)
@@ -283,19 +297,33 @@ function AIConnection() {
                     </Button>
                   </Space>
                 )}
-                {provider === 'vertex' && vertexProject(baseURL) && (
-                  <Space wrap>
-                    {VERTEX_REGIONS.map((r) => (
-                      <Button
-                        key={r.value}
-                        size="small"
-                        type={vertexRegion(baseURL) === r.value ? 'primary' : 'default'}
-                        onClick={() => setBaseURL(vertexURL(vertexProject(baseURL), r.value))}
-                      >
-                        {r.label}
-                      </Button>
-                    ))}
-                  </Space>
+                {provider === 'vertex' && (
+                  <>
+                    <Input
+                      size="large"
+                      addonBefore="Project ID"
+                      value={vertexProject(baseURL)}
+                      onChange={(e) => {
+                        const p = e.target.value.trim()
+                        setBaseURL(p ? vertexURL(p, vertexRegion(baseURL)) : DEFAULT_URL.vertex)
+                      }}
+                      placeholder="my-project-123456 или номер проекта"
+                    />
+                    <Flex align="center" gap={8} wrap>
+                      <Typography.Text type="secondary">Регион:</Typography.Text>
+                      {VERTEX_REGIONS.map((r) => (
+                        <Button
+                          key={r.value}
+                          size="small"
+                          disabled={!vertexProject(baseURL)}
+                          type={vertexProject(baseURL) && vertexRegion(baseURL) === r.value ? 'primary' : 'default'}
+                          onClick={() => setBaseURL(vertexURL(vertexProject(baseURL), r.value))}
+                        >
+                          {r.label}
+                        </Button>
+                      ))}
+                    </Flex>
+                  </>
                 )}
                 <Input size="large" prefix={<LinkOutlined />} value={baseURL} onChange={(e) => setBaseURL(e.target.value)} placeholder="https://…/v1" />
                 <Hint>
@@ -303,7 +331,7 @@ function AIConnection() {
                     ? 'Подставляется автоматически по выбранному сервису. Для другого совместимого сервиса впишите его адрес.'
                     : provider === 'anthropic'
                       ? 'Подставлен адрес Anthropic. Менять нужно, только если вы ходите через свой прокси.'
-                      : 'Адрес проекта Google Cloud подставится сам, когда вставите JSON-ключ. Регион global — все модели Gemini, включая Gemini 3; для API-ключа Vertex AI (express) оставьте https://aiplatform.googleapis.com/v1.'}
+                      : 'Project ID — на главной странице проекта в Google Cloud Console (подойдёт и номер проекта). По JSON-ключу подставится сам. Gemini 3 (preview) работает только в регионе global; адрес ниже собирается автоматически.'}
                 </Hint>
               </Step>
 
