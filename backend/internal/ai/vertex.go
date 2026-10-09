@@ -47,13 +47,13 @@ var googleTokenURL = "https://oauth2.googleapis.com/token"
 
 // vertexModels — модели Gemini для списка «Показать доступные» (все видят фото).
 // У Vertex нет простого списка моделей проекта, поэтому список свой;
-// другую модель можно вписать вручную. Gemini 3 (preview) — только в регионе global.
+// другую модель можно вписать вручную. Gemini 3.x (preview) — только в регионе global.
 var vertexModels = []string{
 	"gemini-2.5-flash",
 	"gemini-2.5-pro",
 	"gemini-2.5-flash-lite",
+	"gemini-3.1-pro-preview", // gemini-3-pro-preview Google отключил 9 марта 2026
 	"gemini-3-flash-preview",
-	"gemini-3-pro-preview",
 }
 
 // VertexURL — адрес Vertex AI для проекта и региона.
@@ -66,6 +66,16 @@ func VertexURL(project, location string) string {
 		host = location + "-" + host
 	}
 	return "https://" + host + "/v1/projects/" + url.PathEscape(project) + "/locations/" + url.PathEscape(location)
+}
+
+// isGoogleVertexURL — адрес самого Google (aiplatform.googleapis.com или REGION-aiplatform.googleapis.com).
+func isGoogleVertexURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Port() != "" {
+		return false
+	}
+	h := strings.ToLower(u.Hostname())
+	return h == "aiplatform.googleapis.com" || strings.HasSuffix(h, "-aiplatform.googleapis.com")
 }
 
 // isJSONKey — ключ похож на JSON сервисного аккаунта.

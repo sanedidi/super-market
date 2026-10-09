@@ -18,6 +18,8 @@ export type NewProductInit = {
   name?: string
   barcode?: string
   brand_id?: string | null
+  /** Название бренда brand_id — подпись в поле, пока бренда нет в выдаче поиска. */
+  brand?: string
   category_id?: string | null
   qty?: string | number
 }
@@ -156,7 +158,7 @@ export function NewProductModal({
           </Col>
           <Col xs={24} md={12}>
             <Form.Item name="brand_id" label={tr('Бренд', 'Brend')}>
-              <RemoteSelect<DictItem> path="/store/catalog/brands" allowClear />
+              <RemoteSelect<DictItem> path="/store/catalog/brands" search allowClear selectedLabel={init?.brand_id ? init.brand || undefined : undefined} />
             </Form.Item>
           </Col>
           <Col xs={24} md={8}>
@@ -630,7 +632,7 @@ export function PhotoModal({ open, onClose }: { open: boolean; onClose: () => vo
       <NewProductModal
         open={!!creating}
         withLine={false}
-        init={creating ? { name: creating.name, barcode: creating.barcode || undefined, brand_id: creating.brand_id, category_id: creating.category_id } : undefined}
+        init={creating ? { name: creating.name, barcode: creating.barcode || undefined, brand_id: creating.brand_id, brand: creating.brand, category_id: creating.category_id } : undefined}
         onClose={() => setCreating(null)}
         onCreated={(p) => {
           if (!creating) return

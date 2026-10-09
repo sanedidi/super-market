@@ -380,7 +380,14 @@ function ReviewModal({ item, onClose }: { item: NewItem | null; onClose: () => v
               </Col>
               <Col xs={24} md={12}>
                 <Form.Item name="brand_id" label={tr('Бренд', 'Brend')}>
-                  <RemoteSelect<DictItem> path="/store/catalog/brands" search allowClear placeholder={tr('Выберите или впишите ниже', 'Tanlang yoki pastda yozing')} />
+                  <RemoteSelect<DictItem>
+                    path="/store/catalog/brands"
+                    search
+                    allowClear
+                    // Бренд, который нашёл Super Market, может не попасть в первые 50 вариантов — без подписи Select показал бы id.
+                    selectedLabel={res?.brand_id ? res.brand || undefined : undefined}
+                    placeholder={tr('Выберите или впишите ниже', 'Tanlang yoki pastda yozing')}
+                  />
                 </Form.Item>
               </Col>
               <Col xs={24} md={12}>

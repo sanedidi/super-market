@@ -40,6 +40,20 @@ func TestVertexURL(t *testing.T) {
 	}
 }
 
+func TestIsGoogleVertexURL(t *testing.T) {
+	for u, want := range map[string]bool{
+		"https://aiplatform.googleapis.com/v1":                                                true,
+		"https://europe-west4-aiplatform.googleapis.com/v1/projects/p/locations/europe-west4": true,
+		"https://evil.com/aiplatform.googleapis.com":                                          false,
+		"https://aiplatform.googleapis.com.evil.com/v1":                                       false,
+		"http://aiplatform.googleapis.com/v1":                                                 false,
+	} {
+		if isGoogleVertexURL(u) != want {
+			t.Fatal(u)
+		}
+	}
+}
+
 func TestServiceAccountParse(t *testing.T) {
 	key := testServiceAccount(t)
 	if vertexProject(key) != "sm-test" || keyHint(key) != "23ff" {

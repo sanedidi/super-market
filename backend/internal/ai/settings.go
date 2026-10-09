@@ -191,7 +191,9 @@ func (s *Service) conn(ctx context.Context, in Input) (Conn, row, error) {
 		return c, r, err
 	}
 	if c.Key == "" {
-		if !r.HasKey || c.Provider != r.Provider || c.BaseURL != r.BaseURL {
+		// Vertex: смена проекта или региона на адресах самого Google ключ не отдаёт чужим.
+		sameService := c.BaseURL == r.BaseURL || (c.Provider == ProviderVertex && isGoogleVertexURL(c.BaseURL) && isGoogleVertexURL(r.BaseURL))
+		if !r.HasKey || c.Provider != r.Provider || !sameService {
 			return c, r, apperr.Validation("api_key: вставьте ключ из личного кабинета сервиса").Uz("api_key: xizmatning shaxsiy kabinetidagi kalitni qoʻying")
 		}
 		if c.Key, err = s.open(r.keyEnc); err != nil {
