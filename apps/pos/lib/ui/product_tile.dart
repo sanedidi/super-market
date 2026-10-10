@@ -8,7 +8,7 @@ import 'theme.dart';
 
 /// Плитка товара: фото, название, цена; значки «закреплён», «кг», «уже в чеке».
 /// Плитка группы вариаций — та же плитка со своими названием, ценой «от X»
-/// и значком «N вкусов» (см. [VariantTile]).
+/// и значком «N вариантов» (см. [VariantTile]).
 class ProductTile extends StatelessWidget {
   const ProductTile({
     super.key,
@@ -107,7 +107,7 @@ class ProductTile extends StatelessWidget {
 }
 
 /// Плитка группы вариаций (Figma «Ва4»): фото первого товара, название группы,
-/// тёмный значок «N вкусов» справа сверху и цена «от X». Нажатие — окно выбора
+/// тёмный значок «N вариантов» справа сверху и цена «от X». Нажатие — окно выбора
 /// веса и вкуса.
 class VariantTile extends StatelessWidget {
   const VariantTile({super.key, required this.tile, this.pinned = false, this.onTap, this.onLongPress});
@@ -131,7 +131,7 @@ class VariantTile extends StatelessWidget {
       badge: Container(
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
         decoration: BoxDecoration(color: C.dark, borderRadius: BorderRadius.circular(6)),
-        child: Text(flavorsLabel(g.count), style: t(11, w: FontWeight.w600, c: Colors.white)),
+        child: Text(variantsLabel(g.count), style: t(11, w: FontWeight.w600, c: Colors.white)),
       ),
     );
   }

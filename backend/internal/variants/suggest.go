@@ -127,8 +127,10 @@ func (s *Service) Suggest(ctx context.Context, in SuggestInput) (SuggestResult, 
 // proposal — группа до записи в базу.
 type proposal struct {
 	name, nameUz, confidence, note string
-	items                          []naming.Parsed
-	flavorUz                       map[string]string
+	// Названия переключателей; пусто — по значениям (naming.Labels).
+	weightLabel, weightLabelUz, flavorLabel, flavorLabelUz string
+	items                                                  []naming.Parsed
+	flavorUz                                               map[string]string
 }
 
 func byNames(b bucket) []proposal {
@@ -139,7 +141,7 @@ func byNames(b bucket) []proposal {
 	var out []proposal
 	for _, g := range naming.Suggest(items) {
 		out = append(out, proposal{name: g.Name, confidence: "check",
-			note: "Собрано по названиям — проверьте вес и вкус", items: g.Items})
+			note: "Собрано по названиям — проверьте переключатели и значения", items: g.Items})
 	}
 	return out
 }
@@ -171,7 +173,9 @@ func (s *Service) askAI(ctx context.Context, conn ai.Conn, b bucket) ([]proposal
 			continue
 		}
 		p := proposal{name: name, nameUz: strings.TrimSpace(g.NameUz), confidence: "high", note: strings.TrimSpace(g.Note),
-			flavorUz: map[string]string{}}
+			flavorUz:    map[string]string{},
+			weightLabel: clip(naming.Capitalize(strings.TrimSpace(g.WeightLabel)), maxLabel), weightLabelUz: clip(naming.Capitalize(strings.TrimSpace(g.WeightLabelUz)), maxLabel),
+			flavorLabel: clip(naming.Capitalize(strings.TrimSpace(g.FlavorLabel)), maxLabel), flavorLabelUz: clip(naming.Capitalize(strings.TrimSpace(g.FlavorLabelUz)), maxLabel)}
 		if g.Confidence == "check" {
 			p.confidence = "check"
 		}
@@ -192,7 +196,7 @@ func (s *Service) askAI(ctx context.Context, conn ai.Conn, b bucket) ([]proposal
 				Flavor: flavor, Included: true}
 			k := naming.Fold(weight) + "|" + naming.Fold(flavor)
 			if seen[k] {
-				parsed.Included, parsed.Note = false, "Похоже на дубль: тот же вес и вкус"
+				parsed.Included, parsed.Note = false, "Похоже на дубль: те же значения переключателей"
 			} else {
 				seen[k] = true
 				distinct++
@@ -232,11 +236,27 @@ func (s *Service) saveProposals(ctx context.Context, b bucket, groups []proposal
 			if busy > 0 {
 				continue
 			}
+			// Названия переключателей: от ИИ, а чего нет — по значениям.
+			var weights, flavors []string
+			for _, it := range g.items {
+				if it.Included {
+					weights, flavors = append(weights, it.Weight), append(flavors, it.Flavor)
+				}
+			}
+			// Переключатель есть, только если у товаров есть значения (у вазы веса нет).
+			wl, wlUz, fl, flUz := naming.Labels(weights, flavors)
+			if g.weightLabel != "" && wl != "" {
+				wl, wlUz = g.weightLabel, g.weightLabelUz
+			}
+			if g.flavorLabel != "" && fl != "" {
+				fl, flUz = g.flavorLabel, g.flavorLabelUz
+			}
 			var id string
 			if err := tx.QueryRow(ctx, `
-				INSERT INTO variant_groups (name, name_uz, brand_id, category_id, source, confidence, note)
-				VALUES ($1, $2, $3, $4, 'ai', $5, $6) RETURNING id`,
-				g.name, g.nameUz, b.brandID, b.categoryID, g.confidence, g.note).Scan(&id); err != nil {
+				INSERT INTO variant_groups (name, name_uz, brand_id, category_id, source, confidence, note,
+				                            weight_label, weight_label_uz, flavor_label, flavor_label_uz)
+				VALUES ($1, $2, $3, $4, 'ai', $5, $6, $7, $8, $9, $10) RETURNING id`,
+				g.name, g.nameUz, b.brandID, b.categoryID, g.confidence, g.note, wl, wlUz, fl, flUz).Scan(&id); err != nil {
 				return err
 			}
 			for i, it := range g.items {

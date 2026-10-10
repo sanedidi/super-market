@@ -1,6 +1,7 @@
 // Каталог → Вариации (Figma «ВВ2 · Супер-админ: Вариации»): Super Market
 // предлагает группы «бренд + линейка», внутри которых товары отличаются
-// только весом и вкусом; супер-админ правит вес/вкус, снимает лишние товары
+// значениями до двух переключателей (вес/объём/размер и вкус/цвет/аромат…);
+// супер-админ выбирает переключатели, правит значения, снимает лишние товары
 // и подтверждает группу (или отклоняет / расформировывает).
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -75,8 +76,16 @@ interface Group {
   decided_at: string | null
   created_at: string
   stores_count: number
+  /** Переключатель «размера» (Вес, Объём, Размер…); "" — его нет. */
+  weight_label: string
+  weight_label_uz: string
+  /** Переключатель «варианта» (Вкус, Цвет, Аромат…); "" — его нет. */
+  flavor_label: string
+  flavor_label_uz: string
   items: Item[]
 }
+
+type Labels = Pick<Group, 'weight_label' | 'weight_label_uz' | 'flavor_label' | 'flavor_label_uz'>
 
 interface GroupList {
   items: Group[]
@@ -145,7 +154,27 @@ function distinct(values: string[]): string[] {
   return out
 }
 
-const comboKey = (it: Item) => `${it.weight.trim().toLowerCase()}|${it.flavor.trim().toLowerCase()}`
+/** Ключ сочетания значений — только по включённым переключателям группы. */
+const comboKey = (g: Pick<Group, 'weight_label' | 'flavor_label'>, it: Item) =>
+  `${g.weight_label ? it.weight.trim().toLowerCase() : ''}|${g.flavor_label ? it.flavor.trim().toLowerCase() : ''}`
+
+/** Готовые названия переключателей и их перевод на узбекский. */
+const SIZE_PRESETS = ['Вес', 'Объём', 'Количество', 'Размер']
+const VARIANT_PRESETS = ['Вкус', 'Цвет', 'Аромат', 'Модель', 'Вид']
+const PRESET_UZ: Record<string, string> = {
+  Вес: 'Vazn',
+  Объём: 'Hajm',
+  Количество: 'Soni',
+  Размер: 'Oʻlcham',
+  Вкус: 'Taʼm',
+  Цвет: 'Rang',
+  Аромат: 'Hid',
+  Модель: 'Model',
+  Вид: 'Tur',
+}
+/** Значение «Нет» в поле переключателя = переключателя нет (""). */
+const NONE = 'Нет'
+const MAX_LABEL = 30
 
 // ───────────────────────────────────────────────────────────── страница
 
@@ -257,7 +286,7 @@ export function Variants() {
           <>
             Вариации товаров
             <Typography.Text type="secondary" style={{ display: 'block', fontSize: 13, fontWeight: 400, marginTop: 2 }}>
-              Super Market находит товары одного бренда и линейки, которые отличаются только весом или вкусом. Проверьте и подтвердите группы.
+              Super Market находит товары одного бренда и линейки, которые отличаются только весом, объёмом, цветом, вкусом и т. п. Проверьте и подтвердите группы.
             </Typography.Text>
           </>
         }
@@ -294,7 +323,7 @@ export function Variants() {
         <Sparkle style={{ color: '#155eef', fontSize: 18, marginTop: 2 }} />
         <span style={{ color: '#1746a2' }}>
           {suggesting && 'Super Market разбирает товары общего каталога — это может занять несколько минут, страницу можно закрыть. '}
-          Правило: группа = бренд + линейка, внутри — вес и вкус. Разные линейки (Lay's и Lay's MAXX) — разные группы.
+          Правило: группа = бренд + линейка, внутри — до двух переключателей (например, вес и вкус, объём и вкус или только цвет). Разные линейки (Lay's и Lay's MAXX) — разные группы.
         </span>
       </Flex>
 
@@ -365,7 +394,7 @@ function ConfidenceChip({ g }: { g: Group }) {
   if (g.confidence === 'check') {
     return (
       <span style={{ ...base, background: '#fffaeb', color: '#b54708' }}>
-        <WarningFilled /> {g.note.trim() || 'Проверьте вкусы'}
+        <WarningFilled /> {g.note.trim() || 'Проверьте значения'}
       </span>
     )
   }
@@ -413,20 +442,27 @@ function GroupCard({
   const flavors = distinct(included.map((it) => it.flavor))
   const allWeights = distinct(g.items.map((it) => it.weight))
   const allFlavors = distinct(g.items.map((it) => it.flavor))
+  const hasWeight = !!g.weight_label
+  const hasFlavor = !!g.flavor_label
+  const key = (it: Item) => comboKey(g, it)
 
-  // Два отмеченных товара с одинаковыми весом и вкусом — подтвердить нельзя.
+  // Два отмеченных товара с одинаковыми значениями переключателей — подтвердить нельзя.
   const dup = useMemo(() => {
     const n = new Map<string, number>()
-    for (const it of g.items) if (it.included) n.set(comboKey(it), (n.get(comboKey(it)) ?? 0) + 1)
+    for (const it of g.items) if (it.included) n.set(comboKey(g, it), (n.get(comboKey(g, it)) ?? 0) + 1)
     return new Set([...n].filter(([, c]) => c > 1).map(([k]) => k))
-  }, [g.items])
+  }, [g])
+
+  /** «Цвет: 3» или «Вес: 150 г», если значение одно. */
+  const countPart = (label: string, values: string[]) =>
+    !label || values.length === 0 ? null : `${label}: ${values.length === 1 ? values[0] : values.length}`
 
   const sub = [
     g.brand_name,
     g.category_name,
     `${included.length} ${plural(included.length, 'товар', 'товара', 'товаров')}`,
-    weights.length === 1 ? weights[0] : weights.length > 1 ? `${weights.length} ${plural(weights.length, 'вес', 'веса', 'весов')}` : null,
-    flavors.length === 1 ? flavors[0] : flavors.length > 1 ? `${flavors.length} ${plural(flavors.length, 'вкус', 'вкуса', 'вкусов')}` : null,
+    countPart(g.weight_label, weights),
+    countPart(g.flavor_label, flavors),
     g.stores_count > 0 ? `есть в ${g.stores_count} ${plural(g.stores_count, 'магазине', 'магазинах', 'магазинах')}` : null,
   ]
     .filter(Boolean)
@@ -442,12 +478,12 @@ function GroupCard({
   }
 
   /** PATCH с оптимистичным обновлением. */
-  const patch = async (body: { name?: string; name_uz?: string; items?: (ItemPatch & { product_id: string })[] }) => {
+  const patch = async (body: { name?: string; name_uz?: string; items?: (ItemPatch & { product_id: string })[] } & Partial<Labels>) => {
     const prev = g
+    const { items: _items, ...fields } = body
     const next: Group = {
       ...g,
-      ...(body.name !== undefined ? { name: body.name } : {}),
-      ...(body.name_uz !== undefined ? { name_uz: body.name_uz } : {}),
+      ...Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined)),
       items: g.items.map((it) => {
         const ch = body.items?.find((x) => x.product_id === it.product_id)
         return ch ? { ...it, ...ch } : it
@@ -510,7 +546,7 @@ function GroupCard({
     })
 
   const canConfirm = included.length >= 2 && dup.size === 0
-  const confirmHint = included.length < 2 ? 'Отметьте хотя бы два товара' : dup.size ? 'У двух товаров одинаковые вес и вкус' : ''
+  const confirmHint = included.length < 2 ? 'Отметьте хотя бы два товара' : dup.size ? 'У двух товаров одинаковые значения переключателей' : ''
   const letter = (g.brand_name || g.name).trim().charAt(0).toUpperCase() || '?'
 
   const columns: TableColumnsType<Item> = [
@@ -543,46 +579,54 @@ function GroupCard({
         </div>
       ),
     },
-    {
-      title: 'ВЕС',
-      key: 'weight',
-      width: 150,
-      render: (_, it) =>
-        it.included && !splitting ? (
-          <ValueEdit
-            value={it.weight}
-            uz={it.weight_uz}
-            options={allWeights}
-            placeholder="вес"
-            width={120}
-            error={dup.has(comboKey(it))}
-            onSave={(v) => patchItem(it.product_id, { weight: v })}
-            onSaveUz={(v) => patchItem(it.product_id, { weight_uz: v })}
-          />
-        ) : (
-          <Typography.Text type="secondary">{it.weight || '—'}</Typography.Text>
-        ),
-    },
-    {
-      title: 'ВКУС',
-      key: 'flavor',
-      width: 220,
-      render: (_, it) =>
-        it.included && !splitting ? (
-          <ValueEdit
-            value={it.flavor}
-            uz={it.flavor_uz}
-            options={allFlavors}
-            placeholder="вкус"
-            width={190}
-            error={dup.has(comboKey(it))}
-            onSave={(v) => patchItem(it.product_id, { flavor: v })}
-            onSaveUz={(v) => patchItem(it.product_id, { flavor_uz: v })}
-          />
-        ) : (
-          <Typography.Text type="secondary">{it.flavor || '—'}</Typography.Text>
-        ),
-    },
+    ...(!hasWeight
+      ? []
+      : [
+          {
+            title: g.weight_label.toUpperCase(),
+            key: 'weight',
+            width: 150,
+            render: (_: unknown, it: Item) =>
+              it.included && !splitting ? (
+                <ValueEdit
+                  value={it.weight}
+                  uz={it.weight_uz}
+                  options={allWeights}
+                  placeholder={g.weight_label.toLowerCase()}
+                  width={120}
+                  error={dup.has(key(it))}
+                  onSave={(v) => patchItem(it.product_id, { weight: v })}
+                  onSaveUz={(v) => patchItem(it.product_id, { weight_uz: v })}
+                />
+              ) : (
+                <Typography.Text type="secondary">{it.weight || '—'}</Typography.Text>
+              ),
+          },
+        ]),
+    ...(!hasFlavor
+      ? []
+      : [
+          {
+            title: g.flavor_label.toUpperCase(),
+            key: 'flavor',
+            width: 220,
+            render: (_: unknown, it: Item) =>
+              it.included && !splitting ? (
+                <ValueEdit
+                  value={it.flavor}
+                  uz={it.flavor_uz}
+                  options={allFlavors}
+                  placeholder={g.flavor_label.toLowerCase()}
+                  width={190}
+                  error={dup.has(key(it))}
+                  onSave={(v) => patchItem(it.product_id, { flavor: v })}
+                  onSaveUz={(v) => patchItem(it.product_id, { flavor_uz: v })}
+                />
+              ) : (
+                <Typography.Text type="secondary">{it.flavor || '—'}</Typography.Text>
+              ),
+          },
+        ]),
     {
       title: 'ШТРИХКОД',
       dataIndex: 'barcode',
@@ -666,8 +710,22 @@ function GroupCard({
             <Typography.Text type="secondary" style={{ fontSize: 13, marginLeft: 8 }}>
               Переключатели
             </Typography.Text>
-            <SwitchChip label="Вес" on={weights.length > 1} />
-            <SwitchChip label="Вкус" on={flavors.length > 1} />
+            <SwitchEdit
+              kind="size"
+              label={g.weight_label}
+              uz={g.weight_label_uz}
+              other={g.flavor_label}
+              values={weights.length}
+              onSave={(l, u) => patch({ weight_label: l, weight_label_uz: u })}
+            />
+            <SwitchEdit
+              kind="variant"
+              label={g.flavor_label}
+              uz={g.flavor_label_uz}
+              other={g.weight_label}
+              values={flavors.length}
+              onSave={(l, u) => patch({ flavor_label: l, flavor_label_uz: u })}
+            />
           </Flex>
           <div style={{ borderTop: `1px solid ${LINE}` }}>
             <Table<Item>
@@ -716,7 +774,7 @@ function GroupCard({
               </>
             )}
             <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: 'auto' }}>
-              Вес и вкус Super Market взял из названий — их можно поправить. Снятая галочка — товар остаётся отдельным.
+              Значения переключателей Super Market взял из названий — их можно поправить. Снятая галочка — товар остаётся отдельным.
             </Typography.Text>
           </Flex>
         </>
@@ -735,23 +793,117 @@ function GroupCard({
   )
 }
 
-function SwitchChip({ label, on }: { label: string; on: boolean }) {
+/**
+ * Переключатель группы: название из готовых («Вес», «Цвет»…), своё или «Нет»
+ * (переключателя у группы нет). Хотя бы один из двух должен остаться.
+ */
+function SwitchEdit({
+  kind,
+  label,
+  uz,
+  other,
+  values,
+  onSave,
+}: {
+  kind: 'size' | 'variant'
+  label: string
+  uz: string
+  /** Название второго переключателя группы ("" — его нет). */
+  other: string
+  /** Сколько разных значений у отмеченных товаров. */
+  values: number
+  onSave: (label: string, uz: string) => void
+}) {
+  const { message } = App.useApp()
+  const presets = kind === 'size' ? SIZE_PRESETS : VARIANT_PRESETS
+  const shown = label || NONE
+  const [v, setV] = useState(shown)
+  const focused = useRef(false)
+  const latest = useRef(shown)
+  const sent = useRef<string | null>(null)
+  useEffect(() => {
+    sent.current = null
+    if (!focused.current) {
+      setV(shown)
+      latest.current = shown
+    }
+  }, [shown])
+  const change = (x: string) => {
+    latest.current = x
+    setV(x)
+  }
+  const revert = () => change(shown)
+  const commit = () => {
+    const raw = latest.current.trim()
+    // Пустое поле — оставляем как было; выключить — явным «Нет».
+    if (!raw) return revert()
+    const preset = presets.find((p) => p.toLowerCase() === raw.toLowerCase())
+    const off = raw.toLowerCase() === NONE.toLowerCase()
+    const next = off ? '' : (preset ?? raw.charAt(0).toUpperCase() + raw.slice(1)).slice(0, MAX_LABEL)
+    if (next === label || next === sent.current) {
+      if (next !== raw) change(next || NONE)
+      return
+    }
+    if (!next && !other) {
+      message.error('У группы должен остаться хотя бы один переключатель')
+      return revert()
+    }
+    // Узбекское название: у готовых — свой перевод; своё — вводится рядом.
+    const nextUz = !next ? '' : (PRESET_UZ[next] ?? (label && !PRESET_UZ[label] ? uz : ''))
+    sent.current = next
+    if (next !== raw) change(next || NONE)
+    onSave(next, nextUz)
+  }
+  const custom = !!label && !PRESET_UZ[label]
+  const hint = !label
+    ? kind === 'size'
+      ? 'У группы нет переключателя веса, объёма или размера'
+      : 'У группы нет переключателя вкуса, цвета и т. п.'
+    : values > 1
+      ? `В приложении будет переключатель «${label.toLowerCase()}»`
+      : `У всех отмеченных товаров одно значение «${label.toLowerCase()}»`
   return (
-    <Tooltip title={on ? `В приложении будет переключатель «${label.toLowerCase()}»` : `У всех отмеченных товаров один ${label.toLowerCase()}`}>
-      <span
-        style={{
-          padding: '2px 10px',
-          borderRadius: 12,
-          fontSize: 12,
-          fontWeight: 600,
-          background: on ? '#f2f4f7' : '#fff',
-          color: on ? '#344054' : '#98a2b3',
-          border: `1px solid ${on ? '#f2f4f7' : LINE}`,
-        }}
-      >
-        {label}
-      </span>
-    </Tooltip>
+    <Flex align="center" gap={6}>
+      <Tooltip title={hint}>
+        <AutoComplete
+          value={v}
+          size="small"
+          style={{ width: 130 }}
+          placeholder={kind === 'size' ? 'вес, объём…' : 'вкус, цвет…'}
+          maxLength={MAX_LABEL}
+          variant={label ? 'outlined' : 'filled'}
+          options={[
+            ...presets.map((p) => ({ value: p })),
+            {
+              value: NONE,
+              disabled: !other,
+              label: (
+                <Tooltip title={!other ? 'Второй переключатель уже выключен — хотя бы один должен остаться' : ''} placement="right">
+                  <span style={{ color: '#98a2b3' }}>{NONE} — без переключателя</span>
+                </Tooltip>
+              ),
+            },
+          ]}
+          filterOption={false}
+          onChange={change}
+          onSelect={(x: string) => {
+            change(x)
+            commit()
+          }}
+          onFocus={() => (focused.current = true)}
+          onBlur={() => {
+            focused.current = false
+            commit()
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') setTimeout(commit, 0)
+          }}
+        />
+      </Tooltip>
+      {custom && (
+        <TextEdit value={uz} placeholder="nomi" prefix="uz:" width={110} maxLength={MAX_LABEL} onSave={(x) => onSave(label, x)} />
+      )}
+    </Flex>
   )
 }
 
@@ -765,6 +917,7 @@ function TextEdit({
   prefix,
   width,
   required,
+  maxLength = 120,
 }: {
   value: string
   onSave: (v: string) => void
@@ -772,6 +925,7 @@ function TextEdit({
   prefix?: ReactNode
   width: number
   required?: boolean
+  maxLength?: number
 }) {
   const [v, setV] = useState(value)
   const focused = useRef(false)
@@ -791,7 +945,7 @@ function TextEdit({
       value={v}
       placeholder={placeholder}
       prefix={prefix ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>{prefix}</Typography.Text> : undefined}
-      maxLength={120}
+      maxLength={maxLength}
       style={{ width }}
       onChange={(e) => setV(e.target.value)}
       onFocus={() => (focused.current = true)}
@@ -805,7 +959,7 @@ function TextEdit({
 }
 
 /**
- * Вес или вкус: поле с вариантами, которые уже есть в группе, и
+ * Значение переключателя (вес, цвет…): поле с вариантами, которые уже есть в группе, и
  * узбекский перевод строкой ниже (правится по клику).
  */
 function ValueEdit({
@@ -852,7 +1006,7 @@ function ValueEdit({
   }
   return (
     <div>
-      <Tooltip title={error ? 'Такие вес и вкус уже есть у другого товара группы' : ''}>
+      <Tooltip title={error ? 'Такие значения переключателей уже есть у другого товара группы' : ''}>
         <AutoComplete
           value={v}
           size="small"
@@ -949,7 +1103,7 @@ function AddItemModal({ open, group, onClose, onAdded }: { open: boolean; group:
     setBusy(true)
     try {
       const g = await api.post<Group>(`${PATH}/${group.id}/items`, { product_id: id })
-      message.success('Товар добавлен — проверьте вес и вкус')
+      message.success('Товар добавлен — проверьте значения переключателей')
       onAdded(g)
     } catch (e) {
       message.error(errorText(e))
@@ -969,7 +1123,7 @@ function AddItemModal({ open, group, onClose, onAdded }: { open: boolean; group:
       onCancel={onClose}
       destroyOnClose
     >
-      <Typography.Paragraph type="secondary">Товар из общего каталога. Вес и вкус Super Market возьмёт из названия — их можно поправить.</Typography.Paragraph>
+      <Typography.Paragraph type="secondary">Товар из общего каталога. Значения переключателей Super Market возьмёт из названия — их можно поправить.</Typography.Paragraph>
       <ProductSearch exclude={exclude} value={id} onChange={(v) => setId(v as string | undefined)} allowClear />
     </Modal>
   )
@@ -990,7 +1144,7 @@ function CreateGroupModal({ open, onClose, onCreated }: { open: boolean; onClose
         name_uz: (v.name_uz ?? '').trim(),
         product_ids: (v.products ?? []).map((p) => p.value),
       })
-      message.success(`Группа «${g.name}» собрана — проверьте вес и вкус и подтвердите`)
+      message.success(`Группа «${g.name}» собрана — проверьте переключатели и их значения и подтвердите`)
       onCreated(g)
     } catch (e) {
       message.error(errorText(e))
@@ -1020,7 +1174,7 @@ function CreateGroupModal({ open, onClose, onCreated }: { open: boolean; onClose
         <Form.Item
           name="products"
           label="Товары"
-          extra="Товары одной линейки, которые отличаются только весом или вкусом"
+          extra="Товары одной линейки, которые отличаются только весом, объёмом, цветом, вкусом и т. п."
           rules={[{ validator: (_, v: unknown[] | undefined) => ((v?.length ?? 0) >= 2 ? Promise.resolve() : Promise.reject(new Error('Выберите хотя бы два товара'))) }]}
         >
           <ProductSearch mode="multiple" labelInValue />
@@ -1028,7 +1182,7 @@ function CreateGroupModal({ open, onClose, onCreated }: { open: boolean; onClose
       </Form>
       <Flex gap={6} style={{ color: '#667085', fontSize: 12 }}>
         <ThunderboltOutlined />
-        Вес и вкус Super Market возьмёт из названий товаров.
+        Переключатели и их значения Super Market возьмёт из названий товаров.
       </Flex>
     </Modal>
   )

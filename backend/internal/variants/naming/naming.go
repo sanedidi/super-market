@@ -139,7 +139,7 @@ func Suggest(items []Item) []Group {
 			k := fold(p.Weight) + "|" + fold(p.Flavor)
 			if seen[k] {
 				p.Included = false
-				p.Note = "Похоже на дубль: тот же вес и вкус"
+				p.Note = "Похоже на дубль: те же значения переключателей"
 			} else {
 				seen[k] = true
 				distinct++
@@ -213,3 +213,50 @@ func fold(s string) string {
 
 // Fold — ключ для сравнения подписей веса и вкуса.
 func Fold(s string) string { return fold(s) }
+
+// Labels — названия переключателей группы по значениям. Пустое название —
+// переключателя нет: у вазы нет веса, у сока одного вкуса — вкуса. Вес в
+// «мл»/«л» — «Объём», в «шт» — «Количество», иначе «Вес»; вторая ось —
+// «Цвет», если все значения — цвета, иначе «Вкус». ИИ подбирает точнее
+// (размер, аромат…).
+func Labels(weights, flavors []string) (weight, weightUz, flavor, flavorUz string) {
+	hasWeight, hasFlavor := false, false
+	for _, w := range weights {
+		hasWeight = hasWeight || strings.TrimSpace(w) != ""
+	}
+	for _, f := range flavors {
+		hasFlavor = hasFlavor || strings.TrimSpace(f) != ""
+	}
+	if hasWeight {
+		weight, weightUz = "Вес", "Vazn"
+	}
+	if hasFlavor || !hasWeight {
+		flavor, flavorUz = "Вкус", "Taʼm"
+	}
+	for _, w := range weights {
+		w = strings.ToLower(strings.TrimSpace(w))
+		switch {
+		case strings.HasSuffix(w, " мл") || strings.HasSuffix(w, " л"):
+			weight, weightUz = "Объём", "Hajm"
+		case strings.HasSuffix(w, " шт"):
+			weight, weightUz = "Количество", "Soni"
+		}
+	}
+	colors, total := 0, 0
+	for _, f := range flavors {
+		f = strings.TrimSpace(f)
+		if f == "" {
+			continue
+		}
+		total++
+		if colorRe.MatchString(fold(f)) {
+			colors++
+		}
+	}
+	if total > 0 && colors == total {
+		flavor, flavorUz = "Цвет", "Rang"
+	}
+	return
+}
+
+var colorRe = regexp.MustCompile(`^(бел|черн|красн|син|зелен|желт|сер(ый|ая|ое|ые|ебр)|розов|фиолет|оранж|коричн|бежев|золот|бронз|голуб|бордов|прозрачн|мятн|графит|хаки|бирюз|сирен|лилов|молочн|кремов|медн|хром|матов|глянц)`)

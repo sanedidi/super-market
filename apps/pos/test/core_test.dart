@@ -321,7 +321,7 @@ void main() {
 
   group('вариации на быстрых кнопках', () {
     Product chips(String id, String weight, double ws, String flavor, int sort, int price,
-            {String group = 'lays', bool active = true, bool marked = false}) =>
+            {String group = 'lays', bool active = true, bool marked = false, String weightLabel = 'Вес', String flavorLabel = 'Вкус'}) =>
         Product(
           id: id,
           name: "Чипсы Lay's $weight $flavor",
@@ -335,6 +335,8 @@ void main() {
           variantFlavor: flavor,
           variantWeightSort: ws,
           variantSort: sort,
+          variantWeightLabel: weightLabel,
+          variantFlavorLabel: flavorLabel,
         );
     Product item(String id, int price) => Product(id: id, name: 'Товар $id', price: price, category: 'Снеки');
 
@@ -356,14 +358,39 @@ void main() {
       expect(g.name, "Чипсы Lay's");
       expect(g.items.map((p) => p.id), ['l90sour', 'l90cheese', 'l150sour', 'l150cheese', 'l150bacon']);
       expect(g.count, 5);
-      expect(flavorsLabel(g.count), '5 вкусов');
-      expect(flavorsLabel(2), '2 вкуса');
-      expect(flavorsLabel(21), '21 вкус');
-      expect(flavorsLabel(12), '12 вкусов');
+      expect(variantsLabel(g.count), '5 вариантов');
+      expect(variantsLabel(2), '2 варианта');
+      expect(variantsLabel(21), '21 вариант');
+      expect(variantsLabel(12), '12 вариантов');
+      expect(variantsLabel(1), '1 вариант');
+      expect(variantsLabel(114), '114 вариантов');
       expect(g.weights, ['90 г', '150 г']);
+      expect(g.weightLabel, 'Вес');
+      expect(g.flavorLabel, 'Вкус');
+      expect(g.hasWeights, isTrue);
       expect(g.ofWeight('150 г').map((p) => p.variantFlavor), ['Сметана и лук', 'Сыр', 'Бекон']);
       expect(g.priceLabel, 'от 12 000');
       expect(fromPrice(g.ofWeight('90 г')), '12 000');
+    });
+
+    test('названия переключателей — от первого товара группы; пустое — переключателя нет', () {
+      final groups = variantGroups([
+        chips('mug300blue', '300 мл', 300, 'Синий', 1, 5000000, group: 'mug', weightLabel: '', flavorLabel: 'Цвет'),
+        chips('mug300white', '300 мл', 300, 'Белый', 2, 5000000, group: 'mug', weightLabel: '', flavorLabel: 'Цвет'),
+        chips('mug450white', '450 мл', 450, 'Белый', 3, 6000000, group: 'mug', weightLabel: '', flavorLabel: 'Цвет'),
+        chips('cola05', '0,5 л', 500, '', 1, 900000, group: 'cola', weightLabel: 'Объём', flavorLabel: ''),
+        chips('cola1', '1 л', 1000, '', 2, 1400000, group: 'cola', weightLabel: 'Объём', flavorLabel: ''),
+      ]);
+      final mug = groups['mug']!;
+      expect(mug.weightLabel, '');
+      expect(mug.flavorLabel, 'Цвет');
+      // Веса есть, но переключателя нет.
+      expect(mug.weights, ['300 мл', '450 мл']);
+      expect(mug.hasWeights, isFalse);
+      final cola = groups['cola']!;
+      expect(cola.weightLabel, 'Объём');
+      expect(cola.flavorLabel, '');
+      expect(cola.hasWeights, isTrue);
     });
 
     test('2 и больше товара группы на вкладке — одна плитка на месте первого', () {
@@ -417,6 +444,8 @@ void main() {
               'variant_flavor': 'Пицца Пепперони',
               'variant_weight_sort': 150.0,
               'variant_sort': 3,
+              'variant_weight_label': 'Вес',
+              'variant_flavor_label': 'Вкус',
             },
             {'id': 'p2', 'name': 'Хлеб', 'price': '6000.00', 'variant_group_id': null, 'variant_group': ''},
           ],
@@ -431,7 +460,12 @@ void main() {
       expect(p.variantWeightSort, 150.0);
       expect(p.variantSort, 3);
       expect(back.byId('p2')!.variantGroupId, isNull);
+      expect(p.variantWeightLabel, 'Вес');
+      expect(p.variantFlavorLabel, 'Вкус');
       expect(back.byId('p2')!.variantWeight, '');
+      // Поля нет (старый кэш) — пусто: переключателя нет.
+      expect(back.byId('p2')!.variantWeightLabel, '');
+      expect(back.byId('p2')!.variantFlavorLabel, '');
     });
   });
 }

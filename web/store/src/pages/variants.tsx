@@ -1,6 +1,9 @@
 // Группы вариаций в «Товарах» (Figma «ВВ1 · Панель магазина: Товары — группа
 // с вариациями»): товары одной группы сворачиваются в строку группы, внутри —
-// вес (цена на вес для всех вкусов) и вкусы (своя цена, остаток по вкусу).
+// «размер» (вес, объём…: цена на него для всех вариантов) и варианты (вкус,
+// цвет…: своя цена, остаток). Названия переключателей — у группы; если
+// переключателя размера нет, варианты идут прямо под группой, а общая цена —
+// в строке группы.
 import { useRef, useState, type ReactNode } from 'react'
 import { useQueries, useQueryClient } from '@tanstack/react-query'
 import { Button, Dropdown, Flex, InputNumber, Modal, Spin, Tag, Tooltip, Typography } from 'antd'
@@ -32,8 +35,10 @@ const groupPath = (id: string) => `/store/variant-groups/${id}`
 /** Остаток «мало» — подсвечиваем. */
 const LOW_STOCK = 3
 
-const flavors = (n: number) => tr(`${n} ${plural(n, 'вкус', 'вкуса', 'вкусов')}`, `${n} ta taʼm`)
-const weights = (n: number) => tr(`${n} ${plural(n, 'вес', 'веса', 'весов')}`, `${n} ta vazn`)
+/** «Цвет: 3»; без названия переключателя — «3 варианта». */
+const counted = (label: string, n: number) => (label ? `${label}: ${n}` : tr(`${n} ${plural(n, 'вариант', 'варианта', 'вариантов')}`, `${n} ta variant`))
+/** У группы нет переключателя размера: одна общая цена на всю группу. */
+export const flat = (g: VariantGroup) => !g.weight_label
 const pcs = () => tr('шт', 'dona')
 
 // Значки, которых нет в @ant-design/icons: весы и слои.
@@ -52,7 +57,7 @@ const LayersIcon = () => <Icon component={LayersSvg} />
 
 /**
  * Группы вариаций страницы «Товары»: сворачивает товары групп, по раскрытию
- * грузит группу (вес → вкусы) для магазина и меняет цены веса и «свою цену».
+ * грузит группу (размер → варианты) для магазина и меняет общие цены и «свою цену».
  */
 export function useVariantGroups(storeId: string) {
   const qc = useQueryClient()
@@ -98,8 +103,20 @@ export function useVariantGroups(storeId: string) {
       const s = state[g.groupId]
       const data = s?.data
       g.group = data
-      g.children = data
-        ? data.weights.map((w) => ({
+      g.children = !data
+        ? [{ id: `l|${g.groupId}`, kind: 'loading', groupId: g.groupId, error: s?.error ?? null, retry: () => s?.refetch() }]
+        : flat(data)
+          ? data.weights.flatMap((w) =>
+              w.items.map((it) => ({
+                id: `f|${it.product_id}`,
+                kind: 'flavor' as const,
+                group: data,
+                weight: w,
+                item: it,
+                product: byId.get(it.product_id),
+              })),
+            )
+          : data.weights.map((w) => ({
             id: `w|${g.groupId}|${w.weight}`,
             kind: 'weight' as const,
             group: data,
@@ -113,7 +130,6 @@ export function useVariantGroups(storeId: string) {
               product: byId.get(it.product_id),
             })),
           }))
-        : [{ id: `l|${g.groupId}`, kind: 'loading', groupId: g.groupId, error: s?.error ?? null, retry: () => s?.refetch() }]
     }
     return out
   }
@@ -163,9 +179,9 @@ export function variantNameCell(r: VRow): ReactNode {
     const brand = r.group?.brand_name ?? p?.brand_name ?? null
     const parts = [brand, p?.category_name].filter(Boolean) as string[]
     if (r.group) {
-      parts.push(weights(r.group.weights.length))
-      parts.push(flavors(r.group.weights.reduce((n, w) => n + w.items.length, 0)))
-    } else parts.push(flavors(r.products.length))
+      if (r.group.weight_label) parts.push(`${r.group.weight_label}: ${r.group.weights.length}`)
+      parts.push(counted(r.group.flavor_label, r.group.weights.reduce((n, w) => n + w.items.length, 0)))
+    } else parts.push(counted('', r.products.length))
     return (
       <Flex align="center" gap={12}>
         <div className="sm-tree-logo">{(brand || r.name).trim().charAt(0).toUpperCase()}</div>
@@ -191,7 +207,7 @@ export function variantNameCell(r: VRow): ReactNode {
         <ScaleIcon />
         <Typography.Text strong>{r.weight.weight}</Typography.Text>
         <Tag bordered={false} style={{ marginInlineEnd: 0 }}>
-          {flavors(r.weight.items.length)}
+          {counted(r.group.flavor_label, r.weight.items.length)}
         </Tag>
       </Flex>
     )
@@ -206,7 +222,7 @@ export function variantNameCell(r: VRow): ReactNode {
           </div>
         )}
         <div style={{ minWidth: 0 }}>
-          <Typography.Text strong>{r.item.flavor || r.item.name}</Typography.Text>
+          <Typography.Text strong>{(r.group.flavor_label && r.item.flavor) || r.item.name}</Typography.Text>
           <div>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {r.item.name}
@@ -229,7 +245,7 @@ export function variantNameCell(r: VRow): ReactNode {
   return null
 }
 
-/** Остаток вкуса/группы: «12 шт», мало — жёлтым со значком. */
+/** Остаток варианта/группы: «12 шт», мало — жёлтым со значком. */
 export function StockChip({ value, total }: { value: string; total?: boolean }) {
   const low = !total && Number(value) <= LOW_STOCK
   const text = total ? tr(`${qty(value)} ${pcs()} всего`, `jami ${qty(value)} ${pcs()}`) : `${qty(value)} ${pcs()}`
@@ -262,6 +278,11 @@ export function variantStockCell(r: VRow): ReactNode {
 
 /** Цена для строк группы; null — обычный товар. */
 export function variantPriceCell(r: VRow, v: VariantGroups, canEdit: boolean): ReactNode {
+  // Без переключателя размера общая цена — в строке группы (единственный weights[0] с weight "").
+  if (r.kind === 'group') {
+    const w = r.group && flat(r.group) ? r.group.weights[0] : undefined
+    return r.group && w ? <WeightPrice group={r.group} weight={w} v={v} canEdit={canEdit} /> : null
+  }
   if (r.kind === 'weight') return <WeightPrice group={r.group} weight={r.weight} v={v} canEdit={canEdit} />
   if (r.kind === 'flavor')
     return (
@@ -273,7 +294,7 @@ export function variantPriceCell(r: VRow, v: VariantGroups, canEdit: boolean): R
           </Typography.Text>
         ) : (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {tr(`как у ${r.weight.weight}`, `${r.weight.weight} kabi`)}
+            {flat(r.group) ? tr('как у группы', 'guruhdagi kabi') : tr(`как у ${r.weight.weight}`, `${r.weight.weight} kabi`)}
           </Typography.Text>
         )}
       </div>
@@ -281,7 +302,7 @@ export function variantPriceCell(r: VRow, v: VariantGroups, canEdit: boolean): R
   return null
 }
 
-/** Меню строки вкуса «⋯»: своя цена / цена как у веса. */
+/** Меню строки варианта «⋯»: своя цена / общая цена (размера или группы). */
 export function FlavorMenu({ r, v }: { r: Extract<VRow, { kind: 'flavor' }>; v: VariantGroups }) {
   const [open, setOpen] = useState(false)
   const [price, setPrice] = useState<string | null>(null)
@@ -295,7 +316,13 @@ export function FlavorMenu({ r, v }: { r: Extract<VRow, { kind: 'flavor' }>; v: 
           items: it.own_price
             ? [
                 { key: 'edit', icon: <EditOutlined />, label: tr('Изменить свою цену…', 'Oʻz narxini oʻzgartirish…') },
-                { key: 'weight', icon: <UndoOutlined />, label: tr('Цена как у веса', 'Vazn narxiga qaytarish') },
+                {
+                  key: 'weight',
+                  icon: <UndoOutlined />,
+                  label: flat(r.group)
+                    ? tr('Цена как у группы', 'Guruh narxiga qaytarish')
+                    : tr(`Цена как у ${r.weight.weight}`, `${r.weight.weight} narxiga qaytarish`),
+                },
               ]
             : [{ key: 'own', icon: <EditOutlined />, label: tr('Своя цена…', 'Oʻz narxi…') }],
           onClick: ({ key }) => {
@@ -322,10 +349,9 @@ export function FlavorMenu({ r, v }: { r: Extract<VRow, { kind: 'flavor' }>; v: 
         destroyOnHidden
       >
         <Typography.Paragraph type="secondary">
-          {tr(
-            `Цена веса «${r.weight.weight}» не будет менять цену этого вкуса.`,
-            `«${r.weight.weight}» vazn narxi bu taʼm narxini oʻzgartirmaydi.`,
-          )}
+          {flat(r.group)
+            ? tr('Общая цена группы не будет менять цену этого товара.', 'Guruhning umumiy narxi bu mahsulot narxini oʻzgartirmaydi.')
+            : tr(`Цена «${r.weight.weight}» не будет менять цену этого товара.`, `«${r.weight.weight}» narxi bu mahsulot narxini oʻzgartirmaydi.`)}
         </Typography.Paragraph>
         <InputNumber<string>
           stringMode
@@ -353,7 +379,7 @@ const trim = (v: string | null | undefined): string | null => (v === null || v =
 const fmt = (v: string | undefined) => (v ? v.replace(/\B(?=(\d{3})+(?!\d))/g, ' ') : '')
 const parse = (v: string | undefined) => (v ?? '').replace(/[\s ]/g, '').replace(',', '.')
 
-/** Цена веса прямо в строке: Enter, уход из поля или ✓ — «для всех вкусов». */
+/** Общая цена размера (или всей группы) прямо в строке: Enter, уход из поля или ✓ — «для всех вариантов». */
 function WeightPrice({ group, weight, v, canEdit }: { group: VariantGroup; weight: VariantWeight; v: VariantGroups; canEdit: boolean }) {
   const saved = trim(weight.price)
   const [value, setValue] = useState<string | null>(saved)
@@ -379,7 +405,7 @@ function WeightPrice({ group, weight, v, canEdit }: { group: VariantGroup; weigh
   }
   const caption = (
     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-      {tr('для всех вкусов', 'barcha taʼmlar uchun')}
+      {tr('для всех вариантов', 'barcha variantlar uchun')}
     </Typography.Text>
   )
   if (!canEdit)

@@ -63,7 +63,7 @@ export type Product = {
   variant_flavor?: string
 }
 
-/** Вкус в группе вариаций магазина (GET /store/variant-groups/{id}). */
+/** Товар (вариант: вкус, цвет…) в группе вариаций магазина (GET /store/variant-groups/{id}). */
 export type VariantItem = {
   product_id: string
   name: string
@@ -92,6 +92,10 @@ export type VariantGroup = {
   store_id: string
   price_type_id: string
   stock: string
+  /** Название переключателя «размера» (Вес, Объём…); "" — его нет: тогда все товары в одном weights[] с weight "". */
+  weight_label: string
+  /** Название переключателя «варианта» (Вкус, Цвет…); "" — его нет. */
+  flavor_label: string
   weights: VariantWeight[]
 }
 

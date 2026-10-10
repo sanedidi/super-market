@@ -42,6 +42,8 @@ type StoreGroup struct {
 	ID          string        `json:"id"`
 	Name        string        `json:"name"`
 	BrandName   *string       `json:"brand_name"`
+	WeightLabel string        `json:"weight_label"`
+	FlavorLabel string        `json:"flavor_label"`
 	StoreID     string        `json:"store_id"`
 	PriceTypeID string        `json:"price_type_id"`
 	Stock       string        `json:"stock"`
@@ -73,8 +75,9 @@ func (s *Service) StoreGroup(ctx context.Context, pr *identity.Principal, groupI
 	}
 	out.PriceTypeID = typeID
 	err = s.pool.QueryRow(ctx, `
-		SELECT loc(g.name, g.name_uz), b.name FROM variant_groups g LEFT JOIN brands b ON b.id = g.brand_id
-		WHERE g.id = $1 AND g.status = 'confirmed'`, groupID).Scan(&out.Name, &out.BrandName)
+		SELECT loc(g.name, g.name_uz), b.name, loc(g.weight_label, g.weight_label_uz), loc(g.flavor_label, g.flavor_label_uz)
+		FROM variant_groups g LEFT JOIN brands b ON b.id = g.brand_id
+		WHERE g.id = $1 AND g.status = 'confirmed'`, groupID).Scan(&out.Name, &out.BrandName, &out.WeightLabel, &out.FlavorLabel)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return out, apperr.NotFound("группа не найдена").Uz("guruh topilmadi")
 	}

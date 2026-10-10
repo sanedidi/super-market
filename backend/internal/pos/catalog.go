@@ -47,6 +47,9 @@ type CatalogProduct struct {
 	// Порядок внутри группы: вес по возрастанию, затем вкус.
 	VariantWeightSort float64 `json:"variant_weight_sort"`
 	VariantSort       int     `json:"variant_sort"`
+	// Названия переключателей группы: «Вес»/«Объём», «Вкус»/«Цвет»/«Аромат».
+	VariantWeightLabel string `json:"variant_weight_label"`
+	VariantFlavorLabel string `json:"variant_flavor_label"`
 }
 
 type CatalogCashier struct {
@@ -112,8 +115,9 @@ const catalogOverlap = time.Minute
 // CatalogEpoch — поколение каталога кассы. Касса присылает своё (epoch), и если
 // оно другое, получает каталог целиком. 2 — после импорта каталога ИКПУ товары
 // без цены на кассу больше не идут, а старые копии их ещё хранят.
-// 3 — в товарах появились группы вариаций (вес и вкус).
-const CatalogEpoch = 3
+// 3 — в товарах появились группы вариаций (вес и вкус); 4 — названия
+// переключателей группы («Цвет» вместо «Вкус» у посуды и т. п.).
+const CatalogEpoch = 4
 
 func (s *Service) Catalog(ctx context.Context, p *identity.Principal, since *time.Time) (Catalog, error) {
 	out := Catalog{Full: since == nil, Epoch: CatalogEpoch}
@@ -154,7 +158,8 @@ func (s *Service) Catalog(ctx context.Context, p *identity.Principal, since *tim
 		       vg.id, COALESCE(loc(vg.name, vg.name_uz), ''),
 		       CASE WHEN vg.id IS NULL THEN '' ELSE loc(p.variant_weight, p.variant_weight_uz) END,
 		       CASE WHEN vg.id IS NULL THEN '' ELSE loc(p.variant_flavor, p.variant_flavor_uz) END,
-		       p.variant_weight_sort::float8, p.variant_sort
+		       p.variant_weight_sort::float8, p.variant_sort,
+		       COALESCE(loc(vg.weight_label, vg.weight_label_uz), ''), COALESCE(loc(vg.flavor_label, vg.flavor_label_uz), '')
 		FROM products p
 		JOIN units u ON u.id = p.unit_id
 		LEFT JOIN variant_groups vg ON vg.id = p.variant_group_id AND vg.status = 'confirmed'

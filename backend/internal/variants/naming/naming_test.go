@@ -54,3 +54,17 @@ func TestSuggest(t *testing.T) {
 		t.Errorf("Flavor = %q", f)
 	}
 }
+
+func TestLabels(t *testing.T) {
+	w, _, f, fuz := Labels([]string{"", ""}, []string{"Белый", "Бронзовый", "Чёрный"})
+	if w != "" || f != "Цвет" || fuz != "Rang" {
+		t.Errorf("vase = %q %q %q", w, f, fuz)
+	}
+	w, wuz, f, _ := Labels([]string{"0,5 л", "1 л"}, []string{"Сыр", "Белый"})
+	if w != "Объём" || wuz != "Hajm" || f != "Вкус" {
+		t.Errorf("drink = %q %q %q", w, wuz, f)
+	}
+	if w, _, f, _ := Labels([]string{"0,2 л", "1 л"}, []string{"", ""}); w != "Объём" || f != "" {
+		t.Errorf("juice = %q %q", w, f)
+	}
+}

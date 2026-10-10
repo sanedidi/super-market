@@ -66,19 +66,24 @@ type Item struct {
 
 // Group — группа вариаций для супер-админа.
 type Group struct {
-	ID           string     `json:"id"`
-	Name         string     `json:"name"`
-	NameUz       string     `json:"name_uz"`
-	BrandID      *string    `json:"brand_id"`
-	BrandName    *string    `json:"brand_name"`
-	CategoryID   *string    `json:"category_id"`
-	CategoryName *string    `json:"category_name"`
-	Status       string     `json:"status"`
-	Source       string     `json:"source"`
-	Confidence   string     `json:"confidence"`
-	Note         string     `json:"note"`
-	DecidedAt    *time.Time `json:"decided_at"`
-	CreatedAt    time.Time  `json:"created_at"`
+	ID           string  `json:"id"`
+	Name         string  `json:"name"`
+	NameUz       string  `json:"name_uz"`
+	BrandID      *string `json:"brand_id"`
+	BrandName    *string `json:"brand_name"`
+	CategoryID   *string `json:"category_id"`
+	CategoryName *string `json:"category_name"`
+	Status       string  `json:"status"`
+	Source       string  `json:"source"`
+	Confidence   string  `json:"confidence"`
+	Note         string  `json:"note"`
+	// Названия переключателей: «Вес»/«Объём»/«Размер», «Вкус»/«Цвет»/«Аромат».
+	WeightLabel   string     `json:"weight_label"`
+	WeightLabelUz string     `json:"weight_label_uz"`
+	FlavorLabel   string     `json:"flavor_label"`
+	FlavorLabelUz string     `json:"flavor_label_uz"`
+	DecidedAt     *time.Time `json:"decided_at"`
+	CreatedAt     time.Time  `json:"created_at"`
 	// Сколько магазинов продают хотя бы один товар группы.
 	StoresCount int    `json:"stores_count"`
 	Items       []Item `json:"items"`
@@ -93,7 +98,8 @@ type GroupList struct {
 
 const groupSelect = `
 	SELECT g.id, g.name, g.name_uz, g.brand_id, b.name, g.category_id, loc(c.name, c.name_uz),
-	       g.status, g.source, g.confidence, g.note, g.decided_at, g.created_at,
+	       g.status, g.source, g.confidence, g.note,
+	       g.weight_label, g.weight_label_uz, g.flavor_label, g.flavor_label_uz, g.decided_at, g.created_at,
 	       (SELECT count(DISTINCT sp.store_id)::int FROM store_products sp
 	        JOIN variant_group_items i ON i.product_id = sp.product_id AND i.included
 	        WHERE i.group_id = g.id)
@@ -104,7 +110,8 @@ const groupSelect = `
 func scanGroup(row pgx.CollectableRow) (Group, error) {
 	var g Group
 	err := row.Scan(&g.ID, &g.Name, &g.NameUz, &g.BrandID, &g.BrandName, &g.CategoryID, &g.CategoryName,
-		&g.Status, &g.Source, &g.Confidence, &g.Note, &g.DecidedAt, &g.CreatedAt, &g.StoresCount)
+		&g.Status, &g.Source, &g.Confidence, &g.Note,
+		&g.WeightLabel, &g.WeightLabelUz, &g.FlavorLabel, &g.FlavorLabelUz, &g.DecidedAt, &g.CreatedAt, &g.StoresCount)
 	g.Items = []Item{}
 	return g, err
 }
@@ -239,9 +246,13 @@ type ItemInput struct {
 
 // UpdateInput — PATCH группы.
 type UpdateInput struct {
-	Name   *string      `json:"name"`
-	NameUz *string      `json:"name_uz"`
-	Items  *[]ItemInput `json:"items"`
+	Name          *string      `json:"name"`
+	NameUz        *string      `json:"name_uz"`
+	WeightLabel   *string      `json:"weight_label"`
+	WeightLabelUz *string      `json:"weight_label_uz"`
+	FlavorLabel   *string      `json:"flavor_label"`
+	FlavorLabelUz *string      `json:"flavor_label_uz"`
+	Items         *[]ItemInput `json:"items"`
 }
 
 // Update — название и вес/вкус товаров. У подтверждённой группы изменения
@@ -264,6 +275,32 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (Group,
 		}
 		if in.NameUz != nil {
 			if _, err := tx.Exec(ctx, `UPDATE variant_groups SET name_uz = $2 WHERE id = $1`, id, strings.TrimSpace(*in.NameUz)); err != nil {
+				return err
+			}
+		}
+		// Переключатели: пустое название — переключателя у группы нет. Все
+		// четыре поля — одним UPDATE, чтобы «выключить вес и включить вкус»
+		// в одном запросе не упиралось в правило «хотя бы один переключатель».
+		labels := []*string{in.WeightLabel, in.WeightLabelUz, in.FlavorLabel, in.FlavorLabelUz}
+		vals := make([]*string, len(labels))
+		for k, l := range labels {
+			if l == nil {
+				continue
+			}
+			v := strings.TrimSpace(*l)
+			if len([]rune(v)) > maxLabel {
+				return apperr.Validation("названия переключателей — не длиннее 30 символов").Uz("almashtirgich nomlari 30 belgidan oshmasin")
+			}
+			vals[k] = &v
+		}
+		if vals[0] != nil || vals[1] != nil || vals[2] != nil || vals[3] != nil {
+			_, err := tx.Exec(ctx, `UPDATE variant_groups SET weight_label = COALESCE($2, weight_label),
+				weight_label_uz = COALESCE($3, weight_label_uz), flavor_label = COALESCE($4, flavor_label),
+				flavor_label_uz = COALESCE($5, flavor_label_uz) WHERE id = $1`, id, vals[0], vals[1], vals[2], vals[3])
+			if db.IsCheckViolation(err) {
+				return apperr.Validation("у группы должен остаться хотя бы один переключатель").Uz("guruhda kamida bitta almashtirgich qolishi kerak")
+			}
+			if err != nil {
 				return err
 			}
 		}
@@ -384,6 +421,9 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Group, error) {
 				return err
 			}
 		}
+		if err := guessLabels(ctx, tx, id); err != nil {
+			return err
+		}
 		var err error
 		out, err = s.get(ctx, tx, id)
 		return err
@@ -461,6 +501,7 @@ func addItem(ctx context.Context, tx pgx.Tx, groupID, groupName, productID strin
 const (
 	maxWeight = 40
 	maxFlavor = 80
+	maxLabel  = 30
 )
 
 // clip обрезает подпись, разобранную из названия или пришедшую от ИИ, до
@@ -518,8 +559,10 @@ func (s *Service) Split(ctx context.Context, groupID string, in SplitInput) (Spl
 		}
 		var newID string
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO variant_groups (name, name_uz, brand_id, category_id, source, confidence, note)
-			SELECT name, name_uz, brand_id, category_id, 'manual', 'check', '' FROM variant_groups WHERE id = $1
+			INSERT INTO variant_groups (name, name_uz, brand_id, category_id, source, confidence, note,
+			                            weight_label, weight_label_uz, flavor_label, flavor_label_uz)
+			SELECT name, name_uz, brand_id, category_id, 'manual', 'check', '',
+			       weight_label, weight_label_uz, flavor_label, flavor_label_uz FROM variant_groups WHERE id = $1
 			RETURNING id`, groupID).Scan(&newID); err != nil {
 			return err
 		}
@@ -597,9 +640,12 @@ func (s *Service) Reject(ctx context.Context, id string) (Group, error) {
 // validate — группу можно подтвердить: от двух товаров, вес и вкус не
 // повторяются, товары не в другой подтверждённой группе.
 func validate(ctx context.Context, tx pgx.Tx, id string) error {
+	// Значения выключенного переключателя не учитываются (у вазы веса нет).
 	rows, err := tx.Query(ctx, `
-		SELECT p.name, i.weight, i.flavor, og.name
+		SELECT p.name, CASE WHEN g.weight_label = '' THEN '' ELSE i.weight END,
+		       CASE WHEN g.flavor_label = '' THEN '' ELSE i.flavor END, og.name
 		FROM variant_group_items i JOIN products p ON p.id = i.product_id
+		JOIN variant_groups g ON g.id = i.group_id
 		LEFT JOIN variant_groups og ON og.id = p.variant_group_id AND og.id <> i.group_id
 		WHERE i.group_id = $1 AND i.included`, id)
 	if err != nil {
@@ -636,8 +682,8 @@ func validate(ctx context.Context, tx pgx.Tx, id string) error {
 	for _, r := range items {
 		k := naming.Fold(r.weight) + "|" + naming.Fold(r.flavor)
 		if prev, ok := seen[k]; ok {
-			return apperr.Validation("у товаров «" + prev + "» и «" + r.name + "» одинаковые вес и вкус — поправьте или снимите один").
-				Uz("«" + prev + "» va «" + r.name + "» mahsulotlarining vazni va taʼmi bir xil — tuzating yoki bittasini olib tashlang")
+			return apperr.Validation("у товаров «" + prev + "» и «" + r.name + "» одинаковые значения переключателей — поправьте или снимите один").
+				Uz("«" + prev + "» va «" + r.name + "» mahsulotlarining variant qiymatlari bir xil — tuzating yoki bittasini olib tashlang")
 		}
 		seen[k] = r.name
 	}
@@ -654,12 +700,36 @@ func apply(ctx context.Context, tx pgx.Tx, id string) error {
 		return err
 	}
 	_, err := tx.Exec(ctx, `
-		UPDATE products p SET variant_group_id = i.group_id, variant_weight = i.weight, variant_weight_uz = i.weight_uz,
-		       variant_weight_sort = i.weight_sort, variant_flavor = i.flavor, variant_flavor_uz = i.flavor_uz, variant_sort = i.sort
-		FROM variant_group_items i
-		WHERE i.group_id = $1 AND i.included AND p.id = i.product_id
-		  AND (p.variant_group_id IS DISTINCT FROM i.group_id OR p.variant_weight <> i.weight OR p.variant_weight_uz <> i.weight_uz
-		       OR p.variant_flavor <> i.flavor OR p.variant_flavor_uz <> i.flavor_uz OR p.variant_sort <> i.sort
-		       OR p.variant_weight_sort <> i.weight_sort)`, id)
+		WITH v AS (
+			SELECT i.product_id, i.group_id, i.sort,
+			       CASE WHEN g.weight_label = '' THEN '' ELSE i.weight END AS weight,
+			       CASE WHEN g.weight_label = '' THEN '' ELSE i.weight_uz END AS weight_uz,
+			       CASE WHEN g.weight_label = '' THEN 0 ELSE i.weight_sort END AS weight_sort,
+			       CASE WHEN g.flavor_label = '' THEN '' ELSE i.flavor END AS flavor,
+			       CASE WHEN g.flavor_label = '' THEN '' ELSE i.flavor_uz END AS flavor_uz
+			FROM variant_group_items i JOIN variant_groups g ON g.id = i.group_id
+			WHERE i.group_id = $1 AND i.included
+		)
+		UPDATE products p SET variant_group_id = v.group_id, variant_weight = v.weight, variant_weight_uz = v.weight_uz,
+		       variant_weight_sort = v.weight_sort, variant_flavor = v.flavor, variant_flavor_uz = v.flavor_uz, variant_sort = v.sort
+		FROM v
+		WHERE p.id = v.product_id
+		  AND (p.variant_group_id IS DISTINCT FROM v.group_id OR p.variant_weight <> v.weight OR p.variant_weight_uz <> v.weight_uz
+		       OR p.variant_flavor <> v.flavor OR p.variant_flavor_uz <> v.flavor_uz OR p.variant_sort <> v.sort
+		       OR p.variant_weight_sort <> v.weight_sort)`, id)
+	return err
+}
+
+// guessLabels — названия переключателей по весам и вкусам товаров группы
+// (группа, собранная руками).
+func guessLabels(ctx context.Context, tx pgx.Tx, id string) error {
+	var weights, flavors []string
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(array_agg(weight), '{}'), COALESCE(array_agg(flavor), '{}')
+		FROM variant_group_items WHERE group_id = $1 AND included`, id).Scan(&weights, &flavors); err != nil {
+		return err
+	}
+	w, wuz, f, fuz := naming.Labels(weights, flavors)
+	_, err := tx.Exec(ctx, `UPDATE variant_groups SET weight_label = $2, weight_label_uz = $3, flavor_label = $4, flavor_label_uz = $5
+		WHERE id = $1`, id, w, wuz, f, fuz)
 	return err
 }

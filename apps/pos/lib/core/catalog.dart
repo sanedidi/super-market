@@ -27,6 +27,8 @@ class Product {
     this.variantFlavor = '',
     this.variantWeightSort = 0,
     this.variantSort = 0,
+    this.variantWeightLabel = '',
+    this.variantFlavorLabel = '',
   });
 
   final String id;
@@ -59,7 +61,7 @@ class Product {
   final String image;
   final String category;
 
-  /// Вариации (каталог epoch 3): товары одной группы отличаются только весом
+  /// Вариации (каталог epoch 3+): товары одной группы отличаются только весом
   /// и вкусом — «Чипсы Lay's» 90 г / 150 г, «Сметана и лук», «Сыр»… На быстрых
   /// кнопках группа показывается одной плиткой. null — товар без группы.
   final String? variantGroupId;
@@ -72,6 +74,12 @@ class Product {
   /// Порядок весов (по возрастанию) и порядок товара внутри группы.
   final double variantWeightSort;
   final int variantSort;
+
+  /// Названия переключателей группы (каталог epoch 4) на языке кассы: «Вес» /
+  /// «Объём» / «Размер»… и «Вкус» / «Цвет» / «Аромат». Пусто — такого
+  /// переключателя у группы нет (у кружки нет веса, вариации — цвета).
+  final String variantWeightLabel;
+  final String variantFlavorLabel;
 
   factory Product.fromJson(Map<String, dynamic> j) => Product(
         id: j['id'] as String,
@@ -96,6 +104,8 @@ class Product {
         variantFlavor: j['variant_flavor'] as String? ?? '',
         variantWeightSort: (j['variant_weight_sort'] as num?)?.toDouble() ?? 0,
         variantSort: (j['variant_sort'] as num?)?.toInt() ?? 0,
+        variantWeightLabel: j['variant_weight_label'] as String? ?? '',
+        variantFlavorLabel: j['variant_flavor_label'] as String? ?? '',
       );
 
   static String? _nonEmpty(String? s) => s == null || s.isEmpty ? null : s;
@@ -123,6 +133,8 @@ class Product {
         'variant_flavor': variantFlavor,
         'variant_weight_sort': variantWeightSort,
         'variant_sort': variantSort,
+        'variant_weight_label': variantWeightLabel,
+        'variant_flavor_label': variantFlavorLabel,
       };
 }
 

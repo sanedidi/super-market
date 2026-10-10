@@ -832,12 +832,12 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 
 | Метод | Путь | Описание |
 | --- | --- | --- |
-| GET | `/admin/variant-groups?status=proposed\|confirmed\|rejected&q=&limit=&offset=` | `{items: [Group], total, counts: {proposed, confirmed, rejected}}`. Group: `id, name, name_uz, brand_id, brand_name, category_id, category_name, status, source (ai\|manual), confidence (high\|check), note, decided_at, created_at, stores_count, items: [{product_id, name, image, barcode, weight, weight_uz, flavor, flavor_uz, included, note, other_group}]` |
+| GET | `/admin/variant-groups?status=proposed\|confirmed\|rejected&q=&limit=&offset=` | `{items: [Group], total, counts: {proposed, confirmed, rejected}}`. Group: `id, name, name_uz, brand_id, brand_name, category_id, category_name, status, source (ai\|manual), confidence (high\|check), note, weight_label, weight_label_uz, flavor_label, flavor_label_uz (названия переключателей: «Вес»/«Объём»/«Размер», «Вкус»/«Цвет»/«Аромат»; пусто — переключателя нет), decided_at, created_at, stores_count, items: [{product_id, name, image, barcode, weight, weight_uz, flavor, flavor_uz, included, note, other_group}]` |
 | POST | `/admin/variant-groups/suggest` | `{brand_id?}` → `{running, created, checked, ai, more, failed, error, started_at, finished_at}`: запускает в фоне поиск новых предложений по товарам, которые ещё не в группе и не были отклонены (уже идёт — отдаёт текущее состояние). `more: true` — разобрано не всё, можно запустить ещё раз |
 | GET | `/admin/variant-groups/suggest` | то же состояние последнего разбора — панель опрашивает, пока `running: true` |
 | POST | `/admin/variant-groups` | `{name, name_uz?, product_ids: [≥2]}` → Group (собрана руками, вес и вкус — из названий) |
 | GET | `/admin/variant-groups/{id}` | Group |
-| PATCH | `/admin/variant-groups/{id}` | `{name?, name_uz?, items?: [{product_id, weight?, weight_uz?, flavor?, flavor_uz?, included?}]}` → Group; у подтверждённой — сразу в товары |
+| PATCH | `/admin/variant-groups/{id}` | `{name?, name_uz?, weight_label?, weight_label_uz?, flavor_label?, flavor_label_uz?, items?: [{product_id, weight?, weight_uz?, flavor?, flavor_uz?, included?}]}` → Group; у подтверждённой — сразу в товары |
 | POST | `/admin/variant-groups/{id}/items` | `{product_id}` → Group: добавить товар общего каталога |
 | POST | `/admin/variant-groups/{id}/split` | `{product_ids}` → `{group, new_group}`: «Разбить» предложение |
 | POST | `/admin/variant-groups/{id}/confirm` | → Group. 400 — меньше двух товаров или одинаковые вес и вкус; 409 `in_other_group` — товар уже в другой группе |
@@ -847,18 +847,18 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 
 | Метод | Путь | Описание |
 | --- | --- | --- |
-| GET | `/store/variant-groups/{id}?store_id=&price_type_id=` | `{id, name, brand_name, store_id, price_type_id, stock, weights: [{weight, price (общая цена вкусов без своей цены, null — разные), stock, items: [{product_id, name, flavor, barcode, image, price, price_source, own_price, stock}]}]}` |
+| GET | `/store/variant-groups/{id}?store_id=&price_type_id=` | `{id, name, brand_name, weight_label, flavor_label, store_id, price_type_id, stock, weights: [{weight, price (общая цена вкусов без своей цены, null — разные), stock, items: [{product_id, name, flavor, barcode, image, price, price_source, own_price, stock}]}]}` |
 | POST | `/store/variant-groups/{id}/weight-price` | `{store_id, weight, price, price_type_id?}` → то же: проведённая «Установка цен» на все вкусы веса без своей цены |
 | POST | `/store/variant-groups/{id}/own-price` | `{store_id, product_id, own, price?, price_type_id?}` → то же: `own: true` — своя цена (с `price` — сразу установить), `false` — вкус снова по цене веса |
 
 ### Приложение покупателя и касса
 
-`GET /client/stores/{id}/products/{pid}` → `variants`: `null` или `{group_id, name, weight, flavor, weights: [...],
+`GET /client/stores/{id}/products/{pid}` → `variants`: `null` или `{group_id, name, weight_label, flavor_label, weight, flavor, weights: [...],
 options: [{product_id, weight, flavor, image, price, old_price, discount_percent}]}` — только вариации в наличии в
 этом магазине, по весу и порядку группы. В каталоге и поиске каждый вкус — отдельный товар.
 
-`GET /pos/catalog` (`epoch` 3): у товара `variant_group_id`, `variant_group`, `variant_weight`, `variant_flavor`,
-`variant_weight_sort`, `variant_sort` — быстрая кнопка группы открывает выбор веса и вкуса.
+`GET /pos/catalog` (`epoch` 4): у товара `variant_group_id`, `variant_group`, `variant_weight`, `variant_flavor`,
+`variant_weight_sort`, `variant_sort`, `variant_weight_label`, `variant_flavor_label` — быстрая кнопка группы открывает выбор веса и вкуса.
 
 ## ИИ-сервис и приход по фото накладной
 

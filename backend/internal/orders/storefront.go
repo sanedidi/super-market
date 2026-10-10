@@ -191,12 +191,15 @@ type ProductDetail struct {
 
 // ProductVariants — группа вариаций товара в магазине.
 type ProductVariants struct {
-	GroupID string          `json:"group_id"`
-	Name    string          `json:"name"`
-	Weight  string          `json:"weight"` // вес и вкус открытого товара
-	Flavor  string          `json:"flavor"`
-	Weights []string        `json:"weights"` // по возрастанию
-	Options []VariantOption `json:"options"` // по весу, затем в порядке группы
+	GroupID string `json:"group_id"`
+	Name    string `json:"name"`
+	// Названия переключателей: «Вес»/«Объём»/«Размер», «Вкус»/«Цвет»/«Аромат».
+	WeightLabel string          `json:"weight_label"`
+	FlavorLabel string          `json:"flavor_label"`
+	Weight      string          `json:"weight"` // вес и вкус открытого товара
+	Flavor      string          `json:"flavor"`
+	Weights     []string        `json:"weights"` // по возрастанию
+	Options     []VariantOption `json:"options"` // по весу, затем в порядке группы
 }
 
 // VariantOption — вариация в наличии.
@@ -240,8 +243,9 @@ func (s *Service) StoreProduct(ctx context.Context, storeID, productID string) (
 func (s *Service) productVariants(ctx context.Context, storeID string, st storeInfo, productID string) (*ProductVariants, error) {
 	var v ProductVariants
 	err := s.pool.QueryRow(ctx, `
-		SELECT g.id, loc(g.name, g.name_uz) FROM products p JOIN variant_groups g ON g.id = p.variant_group_id
-		WHERE p.id = $1 AND g.status = 'confirmed'`, productID).Scan(&v.GroupID, &v.Name)
+		SELECT g.id, loc(g.name, g.name_uz), loc(g.weight_label, g.weight_label_uz), loc(g.flavor_label, g.flavor_label_uz)
+		FROM products p JOIN variant_groups g ON g.id = p.variant_group_id
+		WHERE p.id = $1 AND g.status = 'confirmed'`, productID).Scan(&v.GroupID, &v.Name, &v.WeightLabel, &v.FlavorLabel)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

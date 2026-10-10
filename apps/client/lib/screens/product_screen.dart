@@ -336,25 +336,31 @@ class _ProductScreenState extends State<ProductScreen> {
   }
 
   /// Вариации: «Вес» — чипы весов, «Вкус» — чипы вкусов выбранного веса с фото.
-  /// null — у товара нет вариаций или выбирать не из чего.
+  /// Названия переключателей — от группы («Объём», «Цвет»…); пустое название —
+  /// переключателя нет. null — у товара нет вариаций или выбирать не из чего.
   Widget? _variants() {
     final v = _p.variants;
     if (v == null) return null;
+    final weightTitle = (v.weightLabel ?? tr('Вес', 'Vazn')).trim();
+    final flavorTitle = (v.flavorLabel ?? tr('Вкус', 'Taʼm')).trim();
     final current = v.byProduct(_p.id);
     final weight = current?.weight ?? v.weight;
     final flavor = current?.flavor ?? v.flavor;
-    final inWeight = v.inWeight(weight);
+    final showWeights = weightTitle.isNotEmpty && v.weights.length >= 2;
+    // Без переключателя весов в ряду — все вариации группы, иначе до других
+    // весов было бы не добраться.
+    final inWeight = weightTitle.isEmpty ? v.options : v.inWeight(weight);
     final flavors = v.options.map((o) => ProductVariants.flavorKey(o.flavor)).where((f) => f.isNotEmpty).toSet();
-    final showWeights = v.weights.length >= 2;
     // Один вкус в весе показываем, только если в других весах вкусы другие.
-    final showFlavors = inWeight.length >= 2 || (inWeight.any((o) => o.flavor.trim().isNotEmpty) && flavors.length >= 2);
+    final showFlavors = flavorTitle.isNotEmpty &&
+        (inWeight.length >= 2 || (inWeight.any((o) => o.flavor.trim().isNotEmpty) && flavors.length >= 2));
     if (!showWeights && !showFlavors) return null;
     final missing = _missing;
     return Padding(
       padding: const EdgeInsets.only(top: 20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         if (showWeights) ...[
-          Padding(padding: _side, child: Text(tr('Вес', 'Vazn'), style: AppText.bodyStrong)),
+          Padding(padding: _side, child: Text(weightTitle, style: AppText.bodyStrong)),
           const SizedBox(height: 10),
           Padding(
             padding: _side,
@@ -368,7 +374,7 @@ class _ProductScreenState extends State<ProductScreen> {
           Padding(
             padding: _side,
             child: Row(children: [
-              Text(tr('Вкус', 'Taʼm'), style: AppText.bodyStrong),
+              Text(flavorTitle, style: AppText.bodyStrong),
               if (missing != null) ...[const SizedBox(width: 8), Flexible(child: AppBadge(label: missing, kind: BadgeKind.warning))],
             ]),
           ),

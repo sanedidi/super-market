@@ -53,6 +53,9 @@ func TestVariants(t *testing.T) {
 		t.Fatalf("proposed = %v", list.Body)
 	}
 	gid := groups[0]["id"].(string)
+	if groups[0]["weight_label"] != "Вес" || groups[0]["flavor_label"] != "Вкус" {
+		t.Fatalf("labels = %v / %v", groups[0]["weight_label"], groups[0]["flavor_label"])
+	}
 	first := groups[0]["items"].([]any)[0].(map[string]any)
 	if first["product_id"] != sour90 || first["weight"] != "90 г" || first["weight_uz"] != "90 g" || first["flavor"] != "Сметана и лук" {
 		t.Fatalf("first item = %v", first)
@@ -71,6 +74,7 @@ func TestVariants(t *testing.T) {
 	if g.str("name_uz") != "Lay's chipslari" {
 		t.Fatalf("patched = %v", g.Body)
 	}
+	a.expect(a.do("PATCH", "/admin/variant-groups/"+gid, adminTok, map[string]any{"weight_label": "", "flavor_label": ""}), 400, "no switches")
 	g = a.expect(a.do("POST", "/admin/variant-groups/"+gid+"/confirm", adminTok, nil), 200, "confirm")
 	if g.str("status") != "confirmed" {
 		t.Fatalf("confirmed = %v", g.Body)
@@ -94,6 +98,9 @@ func TestVariants(t *testing.T) {
 	v, _ := card.Body["variants"].(map[string]any)
 	if v == nil || v["group_id"] != gid || v["weight"] != "150 г" || v["flavor"] != "Сыр" || len(v["options"].([]any)) != 3 {
 		t.Fatalf("variants = %v", card.Body["variants"])
+	}
+	if v["weight_label"] != "Вес" || v["flavor_label"] != "Вкус" {
+		t.Fatalf("variant labels = %v", v)
 	}
 	if w := v["weights"].([]any); len(w) != 2 || w[0] != "90 г" || w[1] != "150 г" {
 		t.Fatalf("weights = %v", v["weights"])
@@ -174,4 +181,18 @@ func TestVariants(t *testing.T) {
 		t.Fatalf("split = %v", sp.Body)
 	}
 	a.expect(a.do("POST", "/admin/variant-groups/"+sp.Body["new_group"].(map[string]any)["id"].(string)+"/confirm", adminTok, nil), 400, "one item")
+
+	// Ваза: веса нет, вариант — цвет. Переключатель веса выключен.
+	vase := func(name string) string {
+		return a.expect(a.do("POST", "/admin/products", adminTok, map[string]any{
+			"name": name, "category_id": cat, "unit_id": pcs, "base_price": 90000,
+		}), 201, "vase "+name).str("id")
+	}
+	vg := a.expect(a.do("POST", "/admin/variant-groups", adminTok, map[string]any{
+		"name": "Ваза home&you MADERROS", "product_ids": []string{vase("Ваза home&you MADERROS белая"), vase("Ваза home&you MADERROS чёрная")},
+	}), 201, "vase group")
+	if vg.str("weight_label") != "" || vg.str("flavor_label") != "Цвет" || vg.str("flavor_label_uz") != "Rang" {
+		t.Fatalf("vase labels = %v", vg.Body)
+	}
+	a.expect(a.do("POST", "/admin/variant-groups/"+vg.str("id")+"/confirm", adminTok, nil), 200, "confirm vase")
 }

@@ -14,6 +14,9 @@ import 'widgets.dart';
 /// сверху веса группы, ниже — большие плитки вкусов выбранного веса. Нажатие на
 /// вкус — товар в чек тем же путём, что и обычная плитка (с набранным «3 ×»),
 /// окно закрывается. Скан пачки при открытом окне пробивает её сразу.
+///
+/// Названия переключателей — от группы: «Объём» вместо «Вес», «Цвет» вместо
+/// «Вкус». Пустое название веса — ряда весов нет, плитки — все товары группы.
 Future<void> showVariantDialog(BuildContext context, SaleController sale, QuickTile tile) async {
   final g = tile.group;
   if (g == null || g.items.isEmpty) return;
@@ -53,6 +56,7 @@ class _VariantDialogState extends State<_VariantDialog> {
   }
 
   void _moveWeight(int d) {
+    if (!widget.group.hasWeights) return;
     final i = (_weights.indexOf(_weight) + d).clamp(0, _weights.length - 1);
     setState(() => _weight = _weights[i]);
   }
@@ -94,7 +98,10 @@ class _VariantDialogState extends State<_VariantDialog> {
   @override
   Widget build(BuildContext context) {
     final g = widget.group;
-    final flavors = g.ofWeight(_weight);
+    final hasWeights = g.hasWeights;
+    // Без ряда весов — все товары группы, иначе до других весов не добраться.
+    final flavors = hasWeights ? g.ofWeight(_weight) : g.items;
+    final withWeight = !hasWeights && _weights.length > 1;
     return Focus(
       autofocus: true,
       onKeyEvent: _onKey,
@@ -113,8 +120,8 @@ class _VariantDialogState extends State<_VariantDialog> {
                     Text(g.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: t(26, w: FontWeight.w700)),
                     const SizedBox(height: 4),
                     Text(
-                      tr('Выберите вес и вкус — или отсканируйте пачку, она пробьётся сразу',
-                          'Vazn va taʼmni tanlang — yoki qadoqni skanerlang, darhol qoʻshiladi'),
+                      tr('Выберите вариант — или отсканируйте товар, он пробьётся сразу',
+                          'Variantni tanlang — yoki mahsulotni skanerlang, darhol qoʻshiladi'),
                       style: t(14, c: C.ts),
                     ),
                   ]),
@@ -134,9 +141,9 @@ class _VariantDialogState extends State<_VariantDialog> {
                 ),
                 _CloseButton(onTap: () => Navigator.of(context).pop()),
               ]),
-              if (_weights.length > 1) ...[
+              if (hasWeights) ...[
                 const SizedBox(height: 22),
-                Text(tr('Вес', 'Vazn'), style: t(14, w: FontWeight.w600, c: C.ts)),
+                Text(g.weightLabel, style: t(14, w: FontWeight.w600, c: C.ts)),
                 const SizedBox(height: 10),
                 Wrap(spacing: 12, runSpacing: 12, children: [
                   for (final w in _weights)
@@ -149,18 +156,15 @@ class _VariantDialogState extends State<_VariantDialog> {
                 ]),
               ],
               const SizedBox(height: 22),
-              Text(
-                _weight.isEmpty ? tr('Вкус', 'Taʼm') : tr('Вкус · $_weight', 'Taʼm · $_weight'),
-                style: t(14, w: FontWeight.w600, c: C.ts),
-              ),
+              Text(_heading(g, hasWeights), style: t(14, w: FontWeight.w600, c: C.ts)),
               const SizedBox(height: 10),
               Wrap(spacing: 12, runSpacing: 12, children: [
-                for (final p in flavors) _FlavorTile(product: p, odd: _oddPrice(p, flavors), onTap: () => _pick(p)),
+                for (final p in flavors) _FlavorTile(product: p, odd: !withWeight && _oddPrice(p, flavors), withWeight: withWeight, onTap: () => _pick(p)),
               ]),
               const SizedBox(height: 18),
               Text(
-                tr('Нажатие на вкус — +1 в чек, окно закрывается. «3 ×» перед плиткой группы — 3 шт выбранного вкуса.',
-                    'Taʼmni bosish — chekka +1, oyna yopiladi. Guruh tugmasidan oldin «3 ×» — tanlangan taʼmdan 3 dona.'),
+                tr('Нажатие на плитку — +1 в чек, окно закрывается. «3 ×» перед плиткой группы — 3 шт выбранного товара.',
+                    'Plitkani bosish — chekka +1, oyna yopiladi. Guruh tugmasidan oldin «3 ×» — tanlangan mahsulotdan 3 dona.'),
                 style: t(13, c: C.ts),
               ),
             ]),
@@ -170,10 +174,17 @@ class _VariantDialogState extends State<_VariantDialog> {
     );
   }
 
-  /// Вторая строка кнопки веса: «18 000 сум · 5 вкусов».
+  /// Заголовок плиток: название переключателя группы («Вкус», «Цвет»…) и
+  /// выбранный вес — «Цвет · 150 мл»; без ряда весов — просто «Цвет».
+  String _heading(VariantGroup g, bool hasWeights) {
+    final label = g.flavorLabel.isNotEmpty ? g.flavorLabel : tr('Варианты', 'Variantlar');
+    return hasWeights && _weight.isNotEmpty ? '$label · $_weight' : label;
+  }
+
+  /// Вторая строка кнопки веса: «18 000 сум · 5 вариантов».
   static String _weightNote(List<Product> items) {
     final price = fromPrice(items);
-    return '${tr('$price сум', '$price soʻm')} · ${flavorsLabel(items.length)}';
+    return '${tr('$price сум', '$price soʻm')} · ${variantsLabel(items.length)}';
   }
 
   /// «Своя цена»: цена вкуса отличается от обычной для этого веса (самой частой).
@@ -220,7 +231,7 @@ class _CloseButton extends StatelessWidget {
       );
 }
 
-/// Вес: «150 г» и «18 000 сум · 5 вкусов»; выбранный — тёмный.
+/// Вес: «150 г» и «18 000 сум · 5 вариантов»; выбранный — тёмный.
 class _WeightButton extends StatelessWidget {
   const _WeightButton({required this.label, required this.note, required this.active, required this.onTap});
 
@@ -255,10 +266,13 @@ class _WeightButton extends StatelessWidget {
 
 /// Плитка вкуса: маленькое фото, вкус (или полное название), цена.
 class _FlavorTile extends StatelessWidget {
-  const _FlavorTile({required this.product, required this.onTap, this.odd = false});
+  const _FlavorTile({required this.product, required this.onTap, this.odd = false, this.withWeight = false});
 
   final Product product;
   final VoidCallback onTap;
+
+  /// Ряда весов нет, а веса в группе разные — вес рядом со вкусом: «Синий · 300 мл».
+  final bool withWeight;
 
   /// Цена отличается от остальных вкусов этого веса — «своя цена» красным.
   final bool odd;
@@ -267,6 +281,9 @@ class _FlavorTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = product;
     final price = p.fractional ? '${fmtMoney(p.price)} / ${p.unit}' : fmtMoney(p.price);
+    final label = p.variantFlavor.isEmpty
+        ? p.name
+        : (withWeight && p.variantWeight.isNotEmpty ? '${p.variantFlavor} · ${p.variantWeight}' : p.variantFlavor);
     return SizedBox(
       width: 170,
       height: 142,
@@ -288,7 +305,7 @@ class _FlavorTile extends StatelessWidget {
               const SizedBox(height: 10),
               Expanded(
                 child: Text(
-                  p.variantFlavor.isNotEmpty ? p.variantFlavor : p.name,
+                  label,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: t(16, w: FontWeight.w600, h: 1.2),

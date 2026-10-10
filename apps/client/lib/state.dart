@@ -75,6 +75,13 @@ class ProductVariants {
   String get weight => (json['weight'] as String?) ?? '';
   String get flavor => (json['flavor'] as String?) ?? '';
 
+  /// Названия переключателей группы на языке запроса: «Вес» / «Объём» /
+  /// «Размер»… и «Вкус» / «Цвет» / «Аромат». Пустая строка — такого
+  /// переключателя у группы нет (у вазы нет веса); null — старый ответ без
+  /// поля, тогда подписи прежние («Вес», «Вкус»).
+  String? get weightLabel => json['weight_label'] as String?;
+  String? get flavorLabel => json['flavor_label'] as String?;
+
   /// Веса по возрастанию — только те, у которых есть вариации в наличии.
   List<String> get weights => ((json['weights'] as List?) ?? const []).map((e) => '$e').toList();
   List<VariantOption> get options => ((json['options'] as List?) ?? const []).whereType<Map<String, dynamic>>().map(VariantOption.new).toList();

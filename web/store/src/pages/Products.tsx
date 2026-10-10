@@ -85,7 +85,7 @@ export function ProductsPage() {
     key: 'barcodes',
     render: (_, r) => (r.kind === 'product' ? barcodes(r.product.barcodes) : r.kind === 'flavor' ? r.item.barcode || '—' : r.kind === 'weight' ? '—' : null),
   }
-  // У строк группы вариаций вместо статуса каталога — остаток по вкусу.
+  // У строк группы вариаций вместо статуса каталога — остаток по варианту.
   const status = (title: string): TableColumnType<VRow> => ({
     title,
     key: 'mod',
@@ -245,8 +245,8 @@ export function ProductsPage() {
       <Typography.Paragraph type="secondary" style={{ marginTop: 12, fontSize: 12 }}>
         <InfoCircleOutlined />{' '}
         {tr(
-          'Цена ставится на вес — все вкусы этого веса её наследуют. «Своя цена» — в меню строки вкуса. Остаток — по каждому вкусу.',
-          'Narx vaznga qoʻyiladi — shu vazndagi barcha taʼmlar uni oladi. «Oʻz narxi» — taʼm qatori menyusida. Qoldiq — har bir taʼm boʻyicha.',
+          'В группе вариаций цена ставится на вес (объём, размер…) или на всю группу — все варианты её наследуют. «Своя цена» — в меню строки варианта. Остаток — по каждому варианту.',
+          'Variatsiyalar guruhida narx vaznga (hajm, oʻlcham…) yoki butun guruhga qoʻyiladi — barcha variantlar uni oladi. «Oʻz narxi» — variant qatori menyusida. Qoldiq — har bir variant boʻyicha.',
         )}
       </Typography.Paragraph>
       <ProductModal open={open} editing={editing} onClose={() => setOpen(false)} />

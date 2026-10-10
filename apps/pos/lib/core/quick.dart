@@ -101,8 +101,16 @@ class VariantGroup {
   /// по весу (по возрастанию), потом по порядку внутри группы.
   final List<Product> items;
 
-  /// Сколько вкусов (товаров) в группе — значок «N вкусов» на плитке.
+  /// Сколько вариаций (товаров) в группе — значок «N вариантов» на плитке.
   int get count => items.length;
+
+  /// Названия переключателей группы («Вес» / «Объём»…, «Вкус» / «Цвет»…) —
+  /// от первого товара группы. Пусто — такого переключателя нет.
+  String get weightLabel => items.isEmpty ? '' : items.first.variantWeightLabel.trim();
+  String get flavorLabel => items.isEmpty ? '' : items.first.variantFlavorLabel.trim();
+
+  /// Есть переключатель весов: название задано и весов больше одного.
+  bool get hasWeights => weightLabel.isNotEmpty && weights.length > 1;
 
   /// Веса по возрастанию («90 г», «150 г»); у группы без веса — один пустой.
   List<String> get weights {
@@ -133,13 +141,13 @@ String fromPrice(Iterable<Product> items) {
   return same ? m : tr('от $m', '$m dan');
 }
 
-/// «5 вкусов» / «5 ta taʼm».
-String flavorsLabel(int n) {
+/// «5 вариантов» / «5 ta variant» — без слова «вкус»: у кружки вариации — цвета.
+String variantsLabel(int n) {
   final m10 = n % 10, m100 = n % 100;
   final ru = m10 == 1 && m100 != 11
-      ? 'вкус'
-      : (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? 'вкуса' : 'вкусов');
-  return tr('$n $ru', '$n ta taʼm');
+      ? 'вариант'
+      : (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? 'варианта' : 'вариантов');
+  return tr('$n $ru', '$n ta variant');
 }
 
 /// Группы вариаций из каталога: id группы → группа. В группу попадают товары
