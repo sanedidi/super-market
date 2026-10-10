@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { Button, ColorPicker, Flex, Form, Image, Input, InputNumber, Modal, Segmented, Space, Switch, Tag, Typography, type TableColumnType } from 'antd'
 import { PictureOutlined } from '@ant-design/icons'
 import {
@@ -9,13 +9,11 @@ import {
   ImageUpload,
   ProductTree,
   ProductViewSwitch,
-  RemoteSelect,
   StatusTag,
   api,
   money,
   useAction,
   useProductView,
-  withRawRu,
   type Lang,
 } from '@sm/shared'
 import { SearchSelect } from '../components'
@@ -188,71 +186,7 @@ function DictionaryPage({ kind }: { kind: string }) {
   )
 }
 
-interface Product {
-  id: string
-  network_id: string | null
-  name: string
-  description: string
-  brand_id: string | null
-  brand_name: string | null
-  category_id: string
-  category_name: string
-  unit_id: string
-  unit_short: string
-  color_id: string | null
-  base_price: string
-  images: string[]
-  barcodes: string[]
-  moderation_status: string
-  rejection_reason: string
-  is_active: boolean
-  attributes: Record<string, unknown> | null
-  // Узбекский перевод; для правки сервер отдаёт и сырые русские name_ru/description_ru.
-  name_uz?: string | null
-  description_uz?: string | null
-  name_ru?: string
-  description_ru?: string
-}
-
-// Характеристики для карточки товара в приложении.
-const TEXT_ATTRS: [string, string, string?][] = [
-  ['composition', 'Состав'],
-  ['shelf_life', 'Срок хранения', '10 суток'],
-  ['storage', 'Условия хранения', 'от +2 до +6 °C'],
-  ['country', 'Страна', 'Узбекистан'],
-  ['manufacturer', 'Производитель'],
-  ['volume', 'Объём / вес', '900 мл'],
-]
-const NUTRITION: [string, string][] = [
-  ['kcal', 'ккал'],
-  ['protein', 'белки, г'],
-  ['fat', 'жиры, г'],
-  ['carbs', 'углеводы, г'],
-]
-
-function attrsToForm(a: Record<string, unknown> | null) {
-  const out: Record<string, unknown> = {}
-  for (const [k] of TEXT_ATTRS) out[`attr_${k}`] = a?.[k] ?? ''
-  const n = (a?.nutrition ?? {}) as Record<string, number>
-  for (const [k] of NUTRITION) out[`nut_${k}`] = n[k] ?? null
-  return out
-}
-
-function formToAttrs(v: Record<string, unknown>) {
-  const attrs: Record<string, unknown> = {}
-  for (const [k] of TEXT_ATTRS) {
-    const val = String(v[`attr_${k}`] ?? '').trim()
-    if (val) attrs[k] = val
-  }
-  const nutrition: Record<string, number> = {}
-  for (const [k] of NUTRITION) {
-    const val = v[`nut_${k}`]
-    if (val !== null && val !== undefined && val !== '') nutrition[k] = Number(val)
-  }
-  if (Object.keys(nutrition).length) attrs.nutrition = nutrition
-  const rest = Object.fromEntries(Object.entries(v).filter(([k]) => !k.startsWith('attr_') && !k.startsWith('nut_')))
-  return { rest, attrs }
-}
+import type { Product } from './Product'
 
 /** Общий каталог товаров; moderation — очередь товаров от сетей. */
 const treeName: TableColumnType<Product> = {
@@ -282,6 +216,7 @@ const treeName: TableColumnType<Product> = {
 }
 
 export function Products({ moderation = false }: { moderation?: boolean }) {
+  const navigate = useNavigate()
   const [q, setQ] = useState('')
   const [category, setCategory] = useState<string>()
   const [tab, setTab] = useState('all')
@@ -319,6 +254,7 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
                   params={params}
                   // В дереве фото — в колонке названия, бренд и категория — в группах.
                   columns={[treeName, ...(cols.slice(2) as TableColumnType<Product>[])]}
+                  onItemClick={(p) => navigate(`/products/${p.id}`)}
                 />
               )
             : undefined
@@ -399,104 +335,7 @@ export function Products({ moderation = false }: { moderation?: boolean }) {
               ]
             : []),
         ]}
-        toForm={(p) => ({ ...withRawRu(p), ...attrsToForm(p.attributes), images: p.images ?? [], barcodes: p.barcodes?.join('\n') })}
-        toBody={(raw) => {
-          const { rest: v, attrs } = formToAttrs(raw)
-          return {
-          ...v,
-          attributes: attrs,
-          // Пустая строка — убрать бренд/цвет; null сервер понимает как «не менять».
-          brand_id: v.brand_id ?? '',
-          color_id: v.color_id ?? '',
-          images: (v.images as string[] | undefined) ?? [],
-          barcodes: String(v.barcodes ?? '')
-            .split(/[\n,]/)
-            .map((s) => s.trim())
-            .filter(Boolean),
-          }
-        }}
-        form={(editing) => (
-          <>
-            <Form.Item name="name" label="Название" rules={[{ required: true }]}>
-              <Input suffix={<Tr from="name_uz" into="name" to="ru" />} />
-            </Form.Item>
-            <Form.Item name="name_uz" label="Название (узб.)" extra="Латиница. Пусто — в приложении будет русское название">
-              <Input suffix={<Tr from="name" into="name_uz" to="uz" />} />
-            </Form.Item>
-            <Form.Item name="category_id" label="Категория" rules={[{ required: true }]}>
-              <SearchSelect path="/admin/catalog/categories" known={{ id: editing?.category_id, label: editing?.category_name }} />
-            </Form.Item>
-            <Space wrap>
-              <Form.Item name="unit_id" label="Единица" rules={[{ required: true }]}>
-                <RemoteSelect path="/admin/catalog/units" style={{ width: 150 }} />
-              </Form.Item>
-              <Form.Item name="base_price" label="Базовая цена, сум" rules={[{ required: true }]}>
-                <InputNumber min={0} precision={2} style={{ width: 170 }} />
-              </Form.Item>
-            </Space>
-            <Space wrap>
-              <Form.Item name="brand_id" label="Бренд">
-                <SearchSelect
-                  path="/admin/catalog/brands"
-                  known={{ id: editing?.brand_id, label: editing?.brand_name }}
-                  allowClear
-                  style={{ width: 200 }}
-                />
-              </Form.Item>
-              <Form.Item name="color_id" label="Цвет">
-                <RemoteSelect path="/admin/catalog/colors" allowClear style={{ width: 200 }} />
-              </Form.Item>
-            </Space>
-            <Form.Item
-              name="description"
-              label={
-                <Space size={4}>
-                  Описание
-                  <Tr from="description_uz" into="description" to="ru" />
-                </Space>
-              }
-            >
-              <Input.TextArea rows={2} />
-            </Form.Item>
-            <Form.Item
-              name="description_uz"
-              label={
-                <Space size={4}>
-                  Описание (узб.)
-                  <Tr from="description" into="description_uz" to="uz" />
-                </Space>
-              }
-            >
-              <Input.TextArea rows={2} />
-            </Form.Item>
-            <Form.Item name="barcodes" label="Штрихкоды" extra="По одному в строке">
-              <Input.TextArea rows={2} />
-            </Form.Item>
-            <Form.Item name="images" label="Фото" extra="До 10 фото, первое — главное. JPG, PNG, WEBP до 8 МБ">
-              <ImageUpload multiple max={10} />
-            </Form.Item>
-            <Typography.Title level={5}>Для карточки в приложении</Typography.Title>
-            <Form.Item label="Пищевая ценность на 100 г" style={{ marginBottom: 0 }}>
-              <Space wrap>
-                {NUTRITION.map(([k, label]) => (
-                  <Form.Item key={k} name={`nut_${k}`} extra={label}>
-                    <InputNumber min={0} max={10000} style={{ width: 100 }} />
-                  </Form.Item>
-                ))}
-              </Space>
-            </Form.Item>
-            {TEXT_ATTRS.map(([k, label, ph]) => (
-              <Form.Item key={k} name={`attr_${k}`} label={label}>
-                <Input placeholder={ph} maxLength={500} />
-              </Form.Item>
-            ))}
-            {editing && (
-              <Form.Item name="is_active" label="Активен" valuePropName="checked">
-                <Switch />
-              </Form.Item>
-            )}
-          </>
-        )}
+        onOpen={(p) => navigate(p ? `/products/${p.id}` : '/products/new')}
       />
       <Modal
         open={rejecting !== null}

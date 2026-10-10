@@ -1121,3 +1121,32 @@ user_id, employee_id, network_id, network_name, created_at, resolved_at}`. `is_o
 
 Супер-админ: `/admin/catalog/{kind}/{id}`, `/admin/products/{id}`, `/admin/banners/{id}`, `/admin/plans/{key}`,
 `/admin/ads/advertisers/{id}`, `/admin/ads/campaigns/{id}` (без показов), `/admin/push/campaigns/{id}` (scheduled/cancelled).
+
+## ИИ для фото (супер-админ, Gemini)
+
+Своё подключение к Google Gemini — отдельно от «ИИ-сервиса» (`/admin/ai`:
+накладные, сопоставление, переводы, вариации). Gemini генерирует и редактирует
+фото товаров. Ключ хранится зашифрованным, наружу не отдаётся.
+
+| Метод | Путь | Что делает |
+|---|---|---|
+| GET | `/admin/ai-photo` | настройки: `mode` (`gemini` — ключ AI Studio, `vertex` — Vertex AI), `base_url`, `model`, `has_key`, `key_last4`, `configured`, `background` (`white`/`light`), `size` (1000/1500/2000), `outpaint`, `web_search`, `before_after`, `prompt` (своя инструкция, пусто — стандартная), `default_prompt`, итог проверки, `month_photos`, `month_failed`, `month_cost_usd` |
+| PUT | `/admin/ai-photo` | сохранить; пустой `api_key` — оставить сохранённый (если способ и адрес те же) |
+| POST | `/admin/ai-photo/models` | модели ключа, которые возвращают картинку |
+| POST | `/admin/ai-photo/test` | проверка на стандартном фото (или `image` — ссылка из хранилища) → **202** задание |
+| POST | `/admin/ai-photo/normalize` | `{product_id?, images: [ссылки]}` — «Нормализовать фото»: квадрат `size`, однотонный фон, товар целиком; готовые фото кладутся в хранилище → **202** задание. Не подключено — 409 `ai_photo_not_configured` |
+| GET | `/admin/ai-photo/jobs/{id}` | задание: `running`, `items[{source, result, error, done, ms}]`, `cost_usd`; у проверки `ok`, `message`, а `result` — `data:image/jpeg;base64,…` |
+
+Gemini рисует 10–60 секунд, а запрос к API живёт 30, поэтому POST сразу
+отвечает заданием, панель опрашивает GET. Расход — `ai_usage.kind` = `photo` /
+`photo_test`, цена по прайсу картинок Google в USD (`/admin/ai/usage` →
+`totals.product_photos`).
+
+## Страница товара (супер-админ)
+
+`GET /admin/products/{id}/overview` — то, чего нет в самом товаре: `updated_at`,
+`source` (откуда товар), `network_name`, `tax` (`ikpu`, `ikpu_name`,
+`package_code`, `vat_rate`, `marked`), `variants` (подтверждённая группа:
+название, переключатели, до 6 других товаров) и `selling` (магазины с товаром:
+`stores`, `networks`, `min_price`, `max_price`, `stock`, `list`). Налоговые поля
+правятся `PUT /admin/pos/products/{id}/tax`.

@@ -13,13 +13,20 @@ import (
 )
 
 type Module struct {
-	svc  *Service
-	auth *identity.Authenticator
-	log  *slog.Logger
+	svc   *Service
+	photo *PhotoService
+	auth  *identity.Authenticator
+	log   *slog.Logger
 }
 
 func NewModule(svc *Service, auth *identity.Authenticator, log *slog.Logger) *Module {
 	return &Module{svc: svc, auth: auth, log: log}
+}
+
+// WithPhoto — маршруты «ИИ для фото» (Gemini).
+func (m *Module) WithPhoto(p *PhotoService) *Module {
+	m.photo = p
+	return m
 }
 
 func (m *Module) Routes(r chi.Router) {
@@ -31,6 +38,14 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/admin/ai/test", m.test)
 		r.Get("/admin/ai/usage", m.usage)
 		r.Put("/admin/ai/prices", m.savePrices)
+		if m.photo != nil {
+			r.Get("/admin/ai-photo", m.photoGet)
+			r.Put("/admin/ai-photo", m.photoSave)
+			r.Post("/admin/ai-photo/models", m.photoModels)
+			r.Post("/admin/ai-photo/test", m.photoTest)
+			r.Post("/admin/ai-photo/normalize", m.photoNormalize)
+			r.Get("/admin/ai-photo/jobs/{id}", m.photoJob)
+		}
 	})
 	// Автоперевод двуязычных полей: панель и приложение магазина, супер-админ.
 	r.With(m.auth.Require(identity.AppStore, identity.AppAdmin)).Post("/translate", m.translate)
@@ -88,4 +103,40 @@ func (m *Module) savePrices(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in Prices) (Prices, error) {
 		return m.svc.SavePrices(r.Context(), identity.FromContext(r.Context()).UserID, in)
 	})
+}
+
+// ------------------------------------------------------------ ИИ для фото
+
+func (m *Module) photoGet(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (PhotoSettings, error) { return m.photo.Get(r.Context()) })
+}
+
+func (m *Module) photoSave(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in PhotoInput) (PhotoSettings, error) {
+		return m.photo.Save(r.Context(), identity.FromContext(r.Context()).UserID, in)
+	})
+}
+
+func (m *Module) photoModels(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in PhotoInput) (httpx.List[Model], error) {
+		items, err := m.photo.Models(r.Context(), in)
+		return httpx.List[Model]{Items: items}, err
+	})
+}
+
+// photoTest и photoNormalize отвечают заданием сразу; готово — GET /admin/ai-photo/jobs/{id}.
+func (m *Module) photoTest(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusAccepted, "", func(_ string, in PhotoInput) (PhotoJob, error) {
+		return m.photo.TestPhoto(r.Context(), in, m.photo.media.URL(r, ""))
+	})
+}
+
+func (m *Module) photoNormalize(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusAccepted, "", func(_ string, in NormalizeInput) (PhotoJob, error) {
+		return m.photo.Normalize(r.Context(), in, m.photo.media.URL(r, ""))
+	})
+}
+
+func (m *Module) photoJob(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (PhotoJob, error) { return m.photo.Job(chi.URLParam(r, "id")) })
 }

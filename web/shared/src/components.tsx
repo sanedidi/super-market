@@ -216,6 +216,11 @@ export interface CrudConfig<T> {
   onSaved?: (result: unknown, editing: T | null, values: Record<string, unknown>) => void
   /** Тело PATCH «Отключить», если запись уже используется (по умолчанию { is_active: false }; null — без кнопки). */
   deactivate?: ((row: T) => Record<string, unknown>) | null
+  /**
+   * Своя страница вместо окна: «Изменить», «Добавить» (row = null) и клик по
+   * строке вызывают её; form тогда не нужен.
+   */
+  onOpen?: (row: T | null) => void
 }
 
 /**
@@ -230,6 +235,11 @@ export function withRawRu<T extends object>(row: T): Record<string, unknown> {
     if (k.endsWith('_ru') && typeof v === 'string') out[k.slice(0, -3)] = v
   }
   return out
+}
+
+/** Клик пришёлся на поле, кнопку или ссылку внутри строки таблицы. */
+function clickedControl(target: EventTarget | null): boolean {
+  return target instanceof Element && !!target.closest('input, button, a, .ant-input-number, .ant-dropdown-trigger, .ant-table-row-expand-icon, .ant-image')
 }
 
 /** Список + модальное окно создания/правки — для справочников. */
@@ -247,6 +257,10 @@ export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
   )
 
   const openForm = (row: T | null) => {
+    if (cfg.onOpen) {
+      cfg.onOpen(row)
+      return
+    }
     setEditing(row)
     form.resetFields()
     if (row) form.setFieldsValue(cfg.toForm ? cfg.toForm(row) : withRawRu(row))
@@ -254,7 +268,7 @@ export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
   }
 
   const columns = [...cfg.columns]
-  const editable = !!cfg.form && cfg.canEdit !== false
+  const editable = (!!cfg.form || !!cfg.onOpen) && cfg.canEdit !== false
   const deletable = (row: T) => (typeof cfg.canDelete === 'function' ? cfg.canDelete(row) : !!cfg.canDelete)
   if (editable || cfg.canDelete) {
     columns.push({
@@ -287,7 +301,7 @@ export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
       <PageTitle
         title={cfg.title}
         extra={
-          cfg.form &&
+          (cfg.form || cfg.onOpen) &&
           cfg.canCreate !== false && (
             <Button type="primary" icon={<PlusOutlined />} onClick={() => openForm(null)}>
               {cfg.createLabel ?? tr('Добавить', 'Qoʻshish')}
@@ -311,6 +325,16 @@ export function CrudPage<T extends { id: string }>(cfg: CrudConfig<T>) {
               pagination={{ ...list.pagination, itemRender: pageItemRender }}
               scroll={{ x: true }}
               expandable={cfg.expandable}
+              onRow={
+                cfg.onOpen && cfg.canEdit !== false
+                  ? (row) => ({
+                      onClick: (e) => {
+                        if (!clickedControl(e.target)) cfg.onOpen!(row)
+                      },
+                      style: { cursor: 'pointer' },
+                    })
+                  : undefined
+              }
             />
           </Card>
         </>

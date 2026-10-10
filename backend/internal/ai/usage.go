@@ -60,22 +60,30 @@ type UsageRecord struct {
 	EmployeeID *string
 	ScanID     *string
 	PhotoID    *string
+	ProductID  *string // «ИИ для фото»: фото какого товара
 	Provider   string
 	Model      string
 	Usage      Usage
 	OK         bool
+	// CostUSD — готовая цена в USD («ИИ для фото» считает по прайсу картинок
+	// Google); nil — по цене токенов ИИ-сервиса.
+	CostUSD *float64
 }
 
 // Record — записать расход; стоимость — по текущей цене.
 func (s *Service) Record(ctx context.Context, r UsageRecord) error {
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO ai_usage (kind, network_id, store_id, employee_id, scan_id, photo_id, provider, model, input_tokens, output_tokens, ok,
+		INSERT INTO ai_usage (kind, network_id, store_id, employee_id, scan_id, photo_id, product_id, provider, model, input_tokens, output_tokens, ok,
 		                      cost, currency, cost_uzs)
-		SELECT $1, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $11::uuid, $6, $7, $8::int, $9::int, $10,
-		       ($8::int * p.price_in + $9::int * p.price_out) / 1000000, p.price_currency,
-		       round(($8::int * p.price_in + $9::int * p.price_out) / 1000000 * p.rate_uzs, 2)
+		SELECT $1, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $11::uuid, $12::uuid, $6, $7, $8::int, $9::int, $10,
+		       COALESCE($13::float8, ($8::int * p.price_in + $9::int * p.price_out) / 1000000),
+		       CASE WHEN $13::float8 IS NULL THEN p.price_currency ELSE 'USD' END,
+		       CASE WHEN $13::float8 IS NULL THEN round(($8::int * p.price_in + $9::int * p.price_out) / 1000000 * p.rate_uzs, 2)
+		            -- Курс сумов к доллару — из ИИ-сервиса, если там цена в USD.
+		            ELSE round(($13::float8 * CASE WHEN p.price_currency = 'USD' THEN p.rate_uzs ELSE 12650 END)::numeric, 2) END
 		FROM ai_settings p`,
-		r.Kind, r.NetworkID, r.StoreID, r.EmployeeID, r.ScanID, r.Provider, r.Model, max(r.Usage.Input, 0), max(r.Usage.Output, 0), r.OK, r.PhotoID)
+		r.Kind, r.NetworkID, r.StoreID, r.EmployeeID, r.ScanID, r.Provider, r.Model, max(r.Usage.Input, 0), max(r.Usage.Output, 0), r.OK, r.PhotoID,
+		r.ProductID, r.CostUSD)
 	return err
 }
 
@@ -88,14 +96,16 @@ type UsageFilter struct {
 }
 
 type UsageTotals struct {
-	Requests int     `json:"requests"`
-	Invoices int     `json:"invoices"`
-	Photos   int     `json:"photos"` // фото полок («Начало работы»)
-	Errors   int     `json:"errors"`
-	Tests    int     `json:"tests"`
-	Input    int64   `json:"input_tokens"`
-	Output   int64   `json:"output_tokens"`
-	CostUZS  float64 `json:"cost_uzs"`
+	Requests int `json:"requests"`
+	Invoices int `json:"invoices"`
+	Photos   int `json:"photos"` // фото полок («Начало работы»)
+	// ProductPhotos — фото товаров через «ИИ для фото» (Gemini).
+	ProductPhotos int     `json:"product_photos"`
+	Errors        int     `json:"errors"`
+	Tests         int     `json:"tests"`
+	Input         int64   `json:"input_tokens"`
+	Output        int64   `json:"output_tokens"`
+	CostUZS       float64 `json:"cost_uzs"`
 }
 
 type UsageDay struct {
@@ -108,20 +118,22 @@ type UsageDay struct {
 
 // UsageItem — строка «Кто сколько использует». ID пустой — проверки подключения.
 type UsageItem struct {
-	ID        string  `json:"id"`
-	Name      string  `json:"name"`
-	Sub       string  `json:"sub"`
-	NetworkID string  `json:"network_id"`
-	Stores    int     `json:"stores"`
-	Employees int     `json:"employees"`
-	Requests  int     `json:"requests"`
-	Invoices  int     `json:"invoices"`
-	Photos    int     `json:"photos"`
-	Errors    int     `json:"errors"`
-	Input     int64   `json:"input_tokens"`
-	Output    int64   `json:"output_tokens"`
-	CostUZS   float64 `json:"cost_uzs"`
-	Share     float64 `json:"share"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Sub       string `json:"sub"`
+	NetworkID string `json:"network_id"`
+	Stores    int    `json:"stores"`
+	Employees int    `json:"employees"`
+	Requests  int    `json:"requests"`
+	Invoices  int    `json:"invoices"`
+	Photos    int    `json:"photos"`
+	// ProductPhotos — фото товаров через «ИИ для фото» (Gemini).
+	ProductPhotos int     `json:"product_photos"`
+	Errors        int     `json:"errors"`
+	Input         int64   `json:"input_tokens"`
+	Output        int64   `json:"output_tokens"`
+	CostUZS       float64 `json:"cost_uzs"`
+	Share         float64 `json:"share"`
 }
 
 type UsageReport struct {
@@ -164,10 +176,11 @@ func (s *Service) Usage(ctx context.Context, f UsageFilter) (UsageReport, error)
 	t := &rep.Totals
 	err = s.pool.QueryRow(ctx, `
 		SELECT count(*)::int, (count(*) FILTER (WHERE u.kind = 'invoice'))::int, (count(*) FILTER (WHERE NOT u.ok))::int,
-		       (count(*) FILTER (WHERE u.kind = 'test'))::int, (count(*) FILTER (WHERE u.kind = 'shelf'))::int,
+		       (count(*) FILTER (WHERE u.kind IN ('test', 'photo_test')))::int, (count(*) FILTER (WHERE u.kind = 'shelf'))::int,
+		       (count(*) FILTER (WHERE u.kind = 'photo'))::int,
 		       COALESCE(sum(u.input_tokens), 0)::int8, COALESCE(sum(u.output_tokens), 0)::int8, COALESCE(sum(u.cost_uzs), 0)::float8
 		FROM ai_usage u WHERE `+where, f.From, f.To, nf).
-		Scan(&t.Requests, &t.Invoices, &t.Errors, &t.Tests, &t.Photos, &t.Input, &t.Output, &t.CostUZS)
+		Scan(&t.Requests, &t.Invoices, &t.Errors, &t.Tests, &t.Photos, &t.ProductPhotos, &t.Input, &t.Output, &t.CostUZS)
 	if err != nil {
 		return rep, err
 	}
@@ -212,7 +225,7 @@ func (s *Service) Usage(ctx context.Context, f UsageFilter) (UsageReport, error)
 		SELECT COALESCE(`+key+`::text, ''), min(`+name+`), min(`+sub+`), COALESCE(min(u.network_id::text), ''),
 		       count(DISTINCT u.store_id)::int, count(DISTINCT u.employee_id)::int,
 		       count(*)::int, (count(*) FILTER (WHERE u.kind = 'invoice'))::int, (count(*) FILTER (WHERE u.kind = 'shelf'))::int,
-		       (count(*) FILTER (WHERE NOT u.ok))::int,
+		       (count(*) FILTER (WHERE u.kind = 'photo'))::int, (count(*) FILTER (WHERE NOT u.ok))::int,
 		       sum(u.input_tokens)::int8, sum(u.output_tokens)::int8, sum(u.cost_uzs)::float8
 		FROM ai_usage u
 		LEFT JOIN networks n ON n.id = u.network_id
@@ -226,7 +239,7 @@ func (s *Service) Usage(ctx context.Context, f UsageFilter) (UsageReport, error)
 	}
 	rep.Items, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (UsageItem, error) {
 		var it UsageItem
-		err := r.Scan(&it.ID, &it.Name, &it.Sub, &it.NetworkID, &it.Stores, &it.Employees, &it.Requests, &it.Invoices, &it.Photos, &it.Errors,
+		err := r.Scan(&it.ID, &it.Name, &it.Sub, &it.NetworkID, &it.Stores, &it.Employees, &it.Requests, &it.Invoices, &it.Photos, &it.ProductPhotos, &it.Errors,
 			&it.Input, &it.Output, &it.CostUZS)
 		return it, err
 	})

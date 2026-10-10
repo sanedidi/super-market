@@ -103,6 +103,8 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 	invSvc := inventory.NewService(pool)
 	mediaSvc := MediaService(cfg)
 	aiSvc := ai.NewService(pool, cfg.JWTSecret)
+	aiPhoto := ai.NewPhotoService(aiSvc, mediaSvc, log)
+	aiPhoto.Sync = InvoicesSync
 	scans := invoices.NewService(pool, aiSvc, mediaSvc, invSvc, log)
 	catSvc := catalog.NewService(pool)
 	tenantSvc := tenant.NewService(pool)
@@ -135,7 +137,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		admin.NewModule(admin.NewService(pool, cfg.AcceptTimeout), auth, log),
 		push.NewModule(push.NewService(pool, fcm), auth, log),
 		media.NewModule(mediaSvc, auth, log),
-		ai.NewModule(aiSvc, auth, log),
+		ai.NewModule(aiSvc, auth, log).WithPhoto(aiPhoto),
 		i18nadmin.NewModule(i18nadmin.NewService(pool, aiSvc), auth, log),
 		invoices.NewModule(scans, mediaSvc, auth, log),
 		start.NewModule(startSvc, mediaSvc, auth, log),

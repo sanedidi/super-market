@@ -40,6 +40,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/admin/products/groups", m.adminProductGroups)
 		r.Post("/admin/products", m.adminCreateProduct)
 		r.Get("/admin/products/{id}", m.adminGetProduct)
+		r.Get("/admin/products/{id}/overview", m.adminProductOverview)
 		r.Patch("/admin/products/{id}", m.adminUpdateProduct)
 		r.Delete("/admin/products/{id}", m.adminDeleteProduct)
 		r.Post("/admin/products/{id}/approve", m.approve)
@@ -178,6 +179,12 @@ func (m *Module) adminCreateProduct(w http.ResponseWriter, r *http.Request) {
 func (m *Module) adminGetProduct(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (Product, error) {
 		return m.svc.AdminGetProduct(r.Context(), id)
+	})
+}
+
+func (m *Module) adminProductOverview(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (ProductOverview, error) {
+		return m.svc.AdminProductOverview(r.Context(), id)
 	})
 }
 

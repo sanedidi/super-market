@@ -9,6 +9,7 @@ import {
   DeliveredProcedureOutlined,
   DashboardOutlined,
   DollarOutlined,
+  PictureOutlined,
   ShopOutlined,
   ShoppingCartOutlined,
   TranslationOutlined,
@@ -17,6 +18,7 @@ import {
 import { Dashboard } from './pages/Dashboard'
 import { Networks } from './pages/Networks'
 import { Products, Dictionary } from './pages/Catalog'
+import { ProductPage } from './pages/Product'
 import { Variants } from './pages/Variants'
 import { Banners } from './pages/Banners'
 import { AppHome } from './pages/AppHome'
@@ -28,6 +30,7 @@ import { Customers } from './pages/Customers'
 import { Crowd } from './pages/Crowd'
 import { Wishes } from './pages/Wishes'
 import { AISettings } from './pages/AI'
+import { AIPhoto } from './pages/AIPhoto'
 import { Translations } from './pages/Translations'
 import { Notifications, PushCampaign, PushNew } from './pages/Push'
 
@@ -78,6 +81,7 @@ const menu: MenuItem[] = [
   { key: '/customers', icon: <UserOutlined />, label: 'Покупатели' },
   { key: '/notifications', icon: <BellOutlined />, label: 'Уведомления' },
   { key: '/ai', icon: <BulbOutlined />, label: 'ИИ-сервис' },
+  { key: '/ai-photo', icon: <PictureOutlined />, label: 'ИИ для фото' },
   { key: '/translations', icon: <TranslationOutlined />, label: 'Переводы' },
 ]
 
@@ -88,6 +92,7 @@ export function AdminRoutes() {
         <Route index element={<Dashboard />} />
         <Route path="networks" element={<Networks />} />
         <Route path="products" element={<Products key="products" />} />
+        <Route path="products/:id" element={<ProductPage />} />
         <Route path="moderation" element={<Products key="moderation" moderation />} />
         <Route path="catalog/variants" element={<Variants />} />
         <Route path="catalog/:kind" element={<Dictionary />} />
@@ -108,6 +113,7 @@ export function AdminRoutes() {
         <Route path="customers" element={<Customers />} />
         <Route path="notifications" element={<Notifications />} />
         <Route path="ai" element={<AISettings />} />
+        <Route path="ai-photo" element={<AIPhoto />} />
         <Route path="translations" element={<Translations />} />
         <Route path="notifications/new" element={<PushNew />} />
         <Route path="notifications/:id" element={<PushCampaign />} />

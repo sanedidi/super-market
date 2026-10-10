@@ -55,7 +55,7 @@ const MODEL_PLACEHOLDER: Record<Provider, string> = {
 }
 
 // Vertex AI: регионы для быстрого выбора. Gemini 3 (preview) — только global.
-const VERTEX_REGIONS = [
+export const VERTEX_REGIONS = [
   { label: 'global', value: 'global' },
   { label: 'Франкфурт', value: 'europe-west3' },
   { label: 'Бельгия', value: 'europe-west1' },
@@ -63,12 +63,12 @@ const VERTEX_REGIONS = [
   { label: 'Айова (США)', value: 'us-central1' },
 ]
 
-const vertexURL = (project: string, region: string) =>
+export const vertexURL = (project: string, region: string) =>
   `https://${region === 'global' ? '' : `${region}-`}aiplatform.googleapis.com/v1/projects/${project}/locations/${region}`
-const vertexProject = (url: string) => /\/projects\/([^/]+)/.exec(url)?.[1] ?? ''
-const vertexRegion = (url: string) => /\/locations\/([^/]+)/.exec(url)?.[1] ?? 'global'
+export const vertexProject = (url: string) => /\/projects\/([^/]+)/.exec(url)?.[1] ?? ''
+export const vertexRegion = (url: string) => /\/locations\/([^/]+)/.exec(url)?.[1] ?? 'global'
 // Адрес самого Google — на нём смена проекта или региона сохранённый ключ не сбрасывает (как на сервере).
-const isGoogleVertexURL = (url: string) => {
+export const isGoogleVertexURL = (url: string) => {
   try {
     const u = new URL(url)
     return u.protocol === 'https:' && !u.port && (u.hostname === 'aiplatform.googleapis.com' || u.hostname.endsWith('-aiplatform.googleapis.com'))
@@ -77,13 +77,13 @@ const isGoogleVertexURL = (url: string) => {
   }
 }
 
-interface ServiceAccount {
+export interface ServiceAccount {
   project_id: string
   client_email: string
 }
 
 /** JSON-ключ сервисного аккаунта Google, если вставили его. */
-function parseServiceAccount(key: string): ServiceAccount | null {
+export function parseServiceAccount(key: string): ServiceAccount | null {
   if (!key.trim().startsWith('{')) return null
   try {
     const j = JSON.parse(key)
@@ -101,7 +101,7 @@ const PRESETS = [
   { label: 'Groq', url: 'https://api.groq.com/openai/v1' },
 ]
 
-function Step({ n, title, children }: { n: number; title: string; children: ReactNode }) {
+export function Step({ n, title, children }: { n: number; title: string; children: ReactNode }) {
   return (
     <Space direction="vertical" size={10} style={{ width: '100%' }}>
       <Flex align="center" gap={10}>
@@ -117,7 +117,7 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
   )
 }
 
-function Hint({ children }: { children: ReactNode }) {
+export function Hint({ children }: { children: ReactNode }) {
   return (
     <Typography.Text type="secondary" style={{ fontSize: 13 }}>
       {children}
@@ -125,7 +125,7 @@ function Hint({ children }: { children: ReactNode }) {
   )
 }
 
-function ProviderCard({ active, title, text, onClick }: { active: boolean; title: string; text: string; onClick: () => void }) {
+export function ProviderCard({ active, title, text, onClick }: { active: boolean; title: string; text: string; onClick: () => void }) {
   return (
     <Card
       hoverable

@@ -182,7 +182,8 @@ export function Variants() {
   const qc = useQueryClient()
   const { message } = App.useApp()
   const [status = 'proposed', setStatus] = useUrlState('status', 'proposed')
-  const [q, setQ] = useState('')
+  // q из адреса — со страницы товара («Открыть группу»).
+  const [q, setQ] = useState(() => new URLSearchParams(window.location.search).get('q') ?? '')
   const [page, setPage] = useState(1)
   const [open, setOpen] = useState<Record<string, boolean>>({})
   const [suggesting, setSuggesting] = useState(false)
@@ -312,7 +313,7 @@ export function Variants() {
           />
         }
       >
-        <Input.Search placeholder="Группа или товар" allowClear onSearch={setQ} style={{ width: 260 }} />
+        <Input.Search placeholder="Группа или товар" allowClear defaultValue={q} onSearch={setQ} style={{ width: 260 }} />
       </PageTitle>
 
       <Flex

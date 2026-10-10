@@ -109,6 +109,7 @@ export function ProductTree<T extends { id: string }, R extends { id: string } =
   mapItems,
   childrenOf,
   onExpandItem,
+  onItemClick,
 }: {
   groupsPath: string
   itemsPath: string
@@ -123,6 +124,8 @@ export function ProductTree<T extends { id: string }, R extends { id: string } =
   childrenOf?: (row: R) => R[] | undefined
   /** Строку товара с вложенными строками раскрыли или свернули. */
   onExpandItem?: (row: R, open: boolean) => void
+  /** Клик по строке товара (без вложенных) — например, открыть его страницу. */
+  onItemClick?: (row: R) => void
 }) {
   const groups = useQuery({
     queryKey: [groupsPath, params],
@@ -343,7 +346,14 @@ export function ProductTree<T extends { id: string }, R extends { id: string } =
                     },
                     style: { cursor: 'pointer' },
                   }
-                : {}
+                : r.kind === 'product' && r.item && onItemClick
+                  ? {
+                      onClick: (e) => {
+                        if (!interactive(e.target)) onItemClick(r.item!)
+                      },
+                      style: { cursor: 'pointer' },
+                    }
+                  : {}
           }
           expandable={{
             expandedRowKeys: expanded,

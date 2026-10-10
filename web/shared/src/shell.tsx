@@ -11,6 +11,7 @@ import 'dayjs/locale/uz-latn'
 import { ApiError, configureApi, type AppName } from './api'
 import { AuthProvider, LoginPage, useAuth } from './auth'
 import { StorePasswordGate } from './passwordLogin'
+import { guardedNavigate } from './leaveGuard'
 import { getLang, i18nEnabled, setLang, tr } from './i18n'
 import './theme.css'
 import logo from './logo.png'
@@ -217,10 +218,11 @@ function Sidebar({
     }
   }, [pinned])
 
-  const go = (key: string) => {
-    navigate(key)
-    onNavigate?.()
-  }
+  const go = (key: string) =>
+    guardedNavigate(() => {
+      navigate(key)
+      onNavigate?.()
+    })
 
   const initials = (user?.name ?? title)
     .split(/\s+/)
@@ -440,7 +442,7 @@ function TabsBar({ nav, storageKey, onMenu }: { nav: NavItem[]; storageKey: stri
               key={t.path}
               ref={active ? activeRef : undefined}
               className={`sm-tab ${active ? 'active' : ''}`}
-              onClick={() => navigate(t.path)}
+              onClick={() => guardedNavigate(() => navigate(t.path))}
               onAuxClick={(e) => {
                 if (e.button === 1) close(t.path)
               }}

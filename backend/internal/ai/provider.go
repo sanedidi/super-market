@@ -87,6 +87,8 @@ func (c Conn) do(ctx context.Context, method, path string, body any, out any) er
 		if err := c.vertexAuth(ctx, req); err != nil {
 			return err
 		}
+	case ProviderGemini:
+		req.Header.Set("x-goog-api-key", c.Key)
 	default:
 		req.Header.Set("Authorization", "Bearer "+c.Key)
 	}
@@ -98,7 +100,8 @@ func (c Conn) do(ctx context.Context, method, path string, body any, out any) er
 		return &ErrService{Msg: "не удалось подключиться к сервису: проверьте адрес", MsgUz: "xizmatga ulanib boʻlmadi: manzilni tekshiring"}
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	// Ответ с картинкой (Gemini) — до нескольких МБ в base64.
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 40<<20))
 	if resp.StatusCode/100 != 2 {
 		msg := serviceError(resp.StatusCode, raw)
 		return &ErrService{Status: resp.StatusCode, Msg: msg.RU, MsgUz: msg.UZ}
@@ -116,6 +119,8 @@ func protoName(p string) string {
 		return "Anthropic"
 	case ProviderVertex:
 		return "Vertex AI"
+	case ProviderGemini:
+		return "Gemini API"
 	}
 	return "OpenAI"
 }
