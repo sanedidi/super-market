@@ -147,7 +147,8 @@ export type NewItem = {
 
 export type NewItemConfirmResult = { product_id: string; created: boolean; line: Line; totals: Totals }
 
-export type NewItemList = { items: NewItem[]; counts: { processing: number; ready: number; failed: number } }
+/** Страница очереди «Новые»: counts и total — по всей очереди магазина. */
+export type NewItemList = { items: NewItem[]; counts: { processing: number; ready: number; failed: number }; total: number }
 
 /** Похожий товар из ошибки similar_exists. */
 export type Similar = { product_id: string; name: string; image: string | null; barcode: string | null }

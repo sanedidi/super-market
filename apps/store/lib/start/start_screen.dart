@@ -87,14 +87,45 @@ class _StartScreenState extends State<StartScreen> {
     super.dispose();
   }
 
+  // Идёт подгрузка следующей страницы «Новых».
+  bool _newMore = false;
+
+  /// Перечитывает «Новые» — столько страниц, сколько уже загружено.
   Future<void> _loadNew() async {
     try {
-      final n = await _start.newItems();
+      final have = ((_new?['items'] as List?) ?? const []).length;
+      final items = <dynamic>[];
+      Map<String, dynamic> n;
+      do {
+        n = await _start.newItems(offset: items.length);
+        final page = (n['items'] as List?) ?? const [];
+        if (page.isEmpty) break;
+        items.addAll(page);
+      } while (items.length < have && items.length < newItemsTotal(n));
       if (!mounted) return;
-      setState(() => _new = n);
+      setState(() => _new = {...n, 'items': uniqueNewItems(items)});
       _poller.update(n);
     } catch (_) {
       // вкладка просто не обновится
+    }
+  }
+
+  /// Следующая страница «Новых» — докрутили до конца списка.
+  Future<void> _moreNew() async {
+    final cur = _new;
+    if (cur == null || _newMore) return;
+    final have = (cur['items'] as List?) ?? const [];
+    if (have.length >= newItemsTotal(cur)) return;
+    _newMore = true;
+    try {
+      final n = await _start.newItems(offset: have.length);
+      if (!mounted) return;
+      setState(() => _new = {...n, 'items': uniqueNewItems([...have, ...((n['items'] as List?) ?? const [])])});
+      _poller.update(n);
+    } catch (_) {
+      // докрутят ещё раз
+    } finally {
+      _newMore = false;
     }
   }
 
@@ -205,7 +236,7 @@ class _StartScreenState extends State<StartScreen> {
     final d = _d;
     final t = (d?['totals'] as Map<String, dynamic>?) ?? const {};
     final products = (t['products'] as num?)?.toInt() ?? 0;
-    final freshCount = ((_new?['items'] as List?) ?? const []).length;
+    final freshCount = newItemsTotal(_new);
     final freshReady = (((_new?['counts'] as Map<String, dynamic>?)?['ready'] as num?)?.toInt() ?? 0) > 0;
     if (d != null && d['closed'] == true && d['id'] == null) return const StartClosedScreen();
     return Scaffold(
@@ -243,7 +274,7 @@ class _StartScreenState extends State<StartScreen> {
                           ? _searchTab()
                           : _tab == 1
                               ? _mineTab(d)
-                              : NewItemsTab(start: _start, data: _new, onChanged: _load)),
+                              : NewItemsTab(start: _start, data: _new, onChanged: _load, onMore: _moreNew)),
                 ]),
       bottomNavigationBar: d == null
           ? null

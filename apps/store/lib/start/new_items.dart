@@ -382,11 +382,14 @@ class QueuedCallout extends StatelessWidget {
 /// Р3 · Вкладка «Новые»: карточки Super Market. Пока что-то распознаётся —
 /// список обновляется сам. onChanged — после подтверждения или удаления.
 class NewItemsTab extends StatefulWidget {
-  const NewItemsTab({super.key, required this.start, required this.data, required this.onChanged});
+  const NewItemsTab({super.key, required this.start, required this.data, required this.onChanged, this.onMore});
 
   final StartApi start;
   final Map<String, dynamic>? data;
   final Future<void> Function() onChanged;
+
+  /// Следующая страница очереди — докрутили до конца.
+  final Future<void> Function()? onMore;
 
   @override
   State<NewItemsTab> createState() => _NewItemsTabState();
@@ -401,44 +404,66 @@ class _NewItemsTabState extends State<NewItemsTab> {
   @override
   Widget build(BuildContext context) {
     final items = ((widget.data?['items'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    final hasMore = widget.onMore != null && items.length < newItemsTotal(widget.data);
     return RefreshIndicator(
       onRefresh: widget.onChanged,
-      child: ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), children: [
-        Text(tr('Super Market заполняет карточки по фото — можно работать дальше', 'Super Market rasmlar boʻyicha kartochkalarni toʻldiradi — ishni davom ettirish mumkin'),
-            style: AppText.caption),
-        const SizedBox(height: 8),
-        if (items.isEmpty)
-          Text(tr('Пока пусто. Нет товара ни в базе, ни в каталоге ИКПУ — нажмите «+» и сфотографируйте его.', 'Hozircha boʻsh. Mahsulot na bazada, na MXIK katalogida boʻlsa — «+»ni bosing va uni suratga oling.'),
-              style: AppText.small)
-        else
-          AppCard(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Column(children: [
-              for (var i = 0; i < items.length; i++) ...[
-                if (i > 0) const Divider(height: 1, indent: 72, color: AppColors.line),
-                _NewTile(item: items[i], onTap: items[i]['status'] == 'processing' ? null : () => _open(items[i])),
-              ],
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (n) {
+          if (hasMore && n.metrics.extentAfter < 400) widget.onMore!();
+          return false;
+        },
+        child: ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), children: [
+          Text(tr('Super Market заполняет карточки по фото — можно работать дальше', 'Super Market rasmlar boʻyicha kartochkalarni toʻldiradi — ishni davom ettirish mumkin'),
+              style: AppText.caption),
+          const SizedBox(height: 8),
+          if (items.isEmpty)
+            Text(tr('Пока пусто. Нет товара ни в базе, ни в каталоге ИКПУ — нажмите «+» и сфотографируйте его.', 'Hozircha boʻsh. Mahsulot na bazada, na MXIK katalogida boʻlsa — «+»ni bosing va uni suratga oling.'),
+                style: AppText.small)
+          else
+            AppCard(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Column(children: [
+                for (var i = 0; i < items.length; i++) ...[
+                  if (i > 0) const Divider(height: 1, indent: 72, color: AppColors.line),
+                  _NewTile(item: items[i], onTap: items[i]['status'] == 'processing' ? null : () => _open(items[i])),
+                ],
+              ]),
+            ),
+          if (hasMore)
+            const Padding(
+              padding: EdgeInsets.only(top: 12),
+              child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+            ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: AppColors.blueSoft, borderRadius: BorderRadius.circular(16)),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Icon(Icons.info_rounded, size: 18, color: AppColors.blue),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  tr('Товар попадёт в «Мои товары» только после вашего подтверждения. Новые товары уйдут на проверку в общую базу после «Инвентаризации».',
+                      'Mahsulot «Mahsulotlarim»ga faqat siz tasdiqlaganingizdan soʻng tushadi. Yangi mahsulotlar «Inventarizatsiya»dan soʻng umumiy bazaga tekshiruvga yuboriladi.'),
+                  style: AppText.small.copyWith(fontSize: 12, color: AppColors.blue),
+                ),
+              ),
             ]),
           ),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: AppColors.blueSoft, borderRadius: BorderRadius.circular(16)),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Icon(Icons.info_rounded, size: 18, color: AppColors.blue),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                tr('Товар попадёт в «Мои товары» только после вашего подтверждения. Новые товары уйдут на проверку в общую базу после «Инвентаризации».',
-                    'Mahsulot «Mahsulotlarim»ga faqat siz tasdiqlaganingizdan soʻng tushadi. Yangi mahsulotlar «Inventarizatsiya»dan soʻng umumiy bazaga tekshiruvga yuboriladi.'),
-                style: AppText.small.copyWith(fontSize: 12, color: AppColors.blue),
-              ),
-            ),
-          ]),
-        ),
-      ]),
+        ]),
+      ),
     );
   }
+}
+
+/// Сколько всего в очереди «Новые» (total с сервера; старый сервер — по items).
+int newItemsTotal(Map<String, dynamic>? data) =>
+    (data?['total'] as num?)?.toInt() ?? ((data?['items'] as List?) ?? const []).length;
+
+/// Страницы «Новых» одной очередью: очередь могла сдвинуться — без повторов.
+List<dynamic> uniqueNewItems(List<dynamic> items) {
+  final seen = <Object?>{};
+  return [for (final it in items) if (seen.add((it as Map)['id'])) it];
 }
 
 class _NewTile extends StatelessWidget {

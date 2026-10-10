@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -103,9 +104,12 @@ type NewItemCounts struct {
 	Failed     int `json:"failed"`
 }
 
+// NewItemList — страница очереди. Counts и Total — по всей очереди магазина,
+// а не по странице.
 type NewItemList struct {
 	Items  []NewItem     `json:"items"`
 	Counts NewItemCounts `json:"counts"`
+	Total  int           `json:"total"`
 }
 
 func errNewOff(lang string) string {
@@ -205,32 +209,51 @@ func newItemArgs(ctx context.Context, a, b string) []any {
 }
 
 // ListNewItems — очередь магазина без добавленных: готовые к проверке сверху.
-func (s *Service) ListNewItems(ctx context.Context, p *identity.Principal, storeID string) (NewItemList, error) {
+// Страница — page (limit/offset); счётчики — по всей очереди.
+func (s *Service) ListNewItems(ctx context.Context, p *identity.Principal, storeID string, page httpx.Page) (NewItemList, error) {
 	st, err := s.store(ctx, s.pool, p, storeID)
 	if err != nil {
 		return NewItemList{}, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT * FROM (`+newItemSelect+` WHERE store_id = $1 AND network_id = $2 AND status <> 'done') x
-		ORDER BY x.status = 'ready' DESC, x.status = 'failed' DESC, x.created_at DESC LIMIT 200`, newItemArgs(ctx, st.ID, p.NetworkID)...)
+	out := NewItemList{Items: []NewItem{}}
+	cnt, err := s.pool.Query(ctx, `
+		SELECT CASE WHEN status = 'processing' AND updated_at < now() - $3::interval THEN 'failed' ELSE status END, count(*)
+		FROM start_new_items WHERE store_id = $1 AND network_id = $2 AND status <> 'done'
+		GROUP BY 1`, st.ID, p.NetworkID, newStale.String())
 	if err != nil {
-		return NewItemList{}, err
+		return out, err
 	}
-	out := NewItemList{}
+	var status string
+	var n int
+	if _, err := pgx.ForEachRow(cnt, []any{&status, &n}, func() error {
+		switch status {
+		case NewProcessing:
+			out.Counts.Processing += n
+		case NewReady:
+			out.Counts.Ready += n
+		case NewFailed:
+			out.Counts.Failed += n
+		}
+		out.Total += n
+		return nil
+	}); err != nil {
+		return out, err
+	}
+	if out.Total == 0 || page.Offset >= out.Total {
+		return out, nil
+	}
+	// id — для стабильного порядка между страницами.
+	rows, err := s.pool.Query(ctx, `SELECT * FROM (`+newItemSelect+` WHERE store_id = $1 AND network_id = $2 AND status <> 'done') x
+		ORDER BY x.status = 'ready' DESC, x.status = 'failed' DESC, x.created_at DESC, x.id
+		LIMIT `+strconv.Itoa(page.Limit)+` OFFSET `+strconv.Itoa(page.Offset), newItemArgs(ctx, st.ID, p.NetworkID)...)
+	if err != nil {
+		return out, err
+	}
 	if out.Items, err = pgx.CollectRows(rows, scanNewItem); err != nil {
 		return out, err
 	}
 	if err := s.attachDuplicates(ctx, out.Items); err != nil {
 		return out, err
-	}
-	for _, it := range out.Items {
-		switch it.Status {
-		case NewProcessing:
-			out.Counts.Processing++
-		case NewReady:
-			out.Counts.Ready++
-		case NewFailed:
-			out.Counts.Failed++
-		}
 	}
 	return out, nil
 }

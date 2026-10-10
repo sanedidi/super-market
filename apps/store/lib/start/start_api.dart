@@ -68,8 +68,10 @@ class StartApi {
   Future<Map<String, dynamic>> tasnifAdd(Map<String, dynamic> body) async =>
       await api.post('/store/start/tasnif', {'store_id': storeId, ...body}) as Map<String, dynamic>;
 
-  /// Очередь «Новые»: {items, counts {processing, ready, failed}}.
-  Future<Map<String, dynamic>> newItems() async => await api.get('/store/start/new-items', {'store_id': storeId}) as Map<String, dynamic>;
+  /// Очередь «Новые», страница: {items, counts {processing, ready, failed}, total};
+  /// counts и total — по всей очереди.
+  Future<Map<String, dynamic>> newItems({int limit = 50, int offset = 0}) async =>
+      await api.get('/store/start/new-items', {'store_id': storeId, 'limit': limit, 'offset': offset}) as Map<String, dynamic>;
 
   /// Фото нового товара → Super Market заполняет карточку в фоне.
   Future<Map<String, dynamic>> createNewItem(List<String> images, {String? barcode}) async => await api.post('/store/start/new-items', {

@@ -146,7 +146,7 @@ function StepGoods({ d, next }: { d: Draft; next: () => void }) {
   const [byPhoto, setByPhoto] = useState(false)
   const [tab, setTab] = useState<'mine' | 'new'>('mine')
   const fresh = useNewItems(storeId)
-  const freshCount = fresh.data?.items.length ?? 0
+  const freshCount = fresh.data?.total ?? 0
   const tabs = <RightTabs tab={tab} onTab={setTab} mine={d.totals.products} fresh={freshCount} ready={(fresh.data?.counts.ready ?? 0) > 0} />
   // Повтор: подсвеченная строка «Моих товаров».
   const [highlight, setHighlight] = useState<string | null>(null)
@@ -194,7 +194,14 @@ function StepGoods({ d, next }: { d: Draft; next: () => void }) {
         <Col xs={24} xl={14}>
           {tab === 'new' ? (
             <Card title={tabs} styles={{ body: { padding: 0 } }}>
-              <NewItemsList list={fresh.data} loading={fresh.isLoading} highlight={freshHighlight} />
+              <NewItemsList
+                list={fresh.data}
+                loading={fresh.isLoading}
+                highlight={freshHighlight}
+                hasMore={fresh.hasNextPage}
+                loadingMore={fresh.isFetchingNextPage}
+                onMore={() => !fresh.isFetchingNextPage && fresh.fetchNextPage()}
+              />
             </Card>
           ) : (
             <MyGoods highlight={highlight} title={tabs} />

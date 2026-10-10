@@ -7,8 +7,8 @@
 // Без дублей (Figma «без дублей в «Новых»», В1–В3): тот же штрихкод второй
 // раз в «Новые» не попадает; похожая карточка помечается «Похоже на дубль»,
 // «Это он» объединяет карточки.
-import { useEffect, useState, type ReactNode } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useInfiniteQuery } from '@tanstack/react-query'
 import { Alert, App, Button, Col, Flex, Form, Input, Modal, Row, Space, Spin, Tag, Typography } from 'antd'
 import { CheckOutlined, CopyOutlined, DeleteOutlined, FolderAddOutlined, PlusOutlined, ReloadOutlined, StarFilled, TagsOutlined } from '@ant-design/icons'
 import { ApiError, FormTranslate, ImageUpload, RemoteSelect, api, errorText, getLang, tr } from '@sm/shared'
@@ -38,13 +38,51 @@ export const newItemState = (s: NewItem['status']) =>
       ? tr('Super Market распознаёт… ~1 мин', 'Super Market aniqlamoqda… ~1 daq')
       : tr('не удалось распознать — заполните', 'aniqlab boʻlmadi — toʻldiring')
 
-/** Очередь «Новые» магазина; пока что-то распознаётся — обновляется сама. */
+const NEW_PAGE = 50
+
+/** Очередь «Новые» магазина постранично (подгрузка при прокрутке); пока что-то
+ * распознаётся — обновляется сама. data — все загруженные страницы одной
+ * очередью; counts и total — по всей очереди с сервера. */
 export function useNewItems(storeId: string) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: ['/store/start/new-items', storeId],
-    queryFn: () => api.get<NewItemList>('/store/start/new-items', { store_id: storeId }),
-    refetchInterval: (q) => ((q.state.data?.counts.processing ?? 0) > 0 ? 3000 : false),
+    queryFn: ({ pageParam }) => api.get<NewItemList>('/store/start/new-items', { store_id: storeId, limit: NEW_PAGE, offset: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: (last, all) => {
+      const loaded = all.reduce((n, p) => n + p.items.length, 0)
+      return last.items.length > 0 && loaded < last.total ? loaded : undefined
+    },
+    select: (d): NewItemList => {
+      const last = d.pages[d.pages.length - 1]
+      // Пока страницы перечитываются, очередь могла сдвинуться — без повторов.
+      const seen = new Set<string>()
+      const items = d.pages.flatMap((p) => p.items).filter((it) => !seen.has(it.id) && (seen.add(it.id), true))
+      return { items, counts: last.counts, total: last.total }
+    },
+    refetchInterval: (q) => {
+      const pages = q.state.data?.pages
+      return (pages?.[pages.length - 1]?.counts.processing ?? 0) > 0 ? 3000 : false
+    },
   })
+}
+
+/** Невидимая метка в конце списка: дошли до неё прокруткой — грузим ещё. */
+function LoadMore({ onMore, loading }: { onMore: () => void; loading: boolean }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const cb = useRef(onMore)
+  cb.current = onMore
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const io = new IntersectionObserver((e) => e[0]?.isIntersecting && cb.current(), { rootMargin: '300px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
+  return (
+    <Flex ref={ref} justify="center" style={{ padding: 12, minHeight: 44 }}>
+      {loading && <Spin size="small" />}
+    </Flex>
+  )
 }
 
 /** Заголовок-вкладка правой колонки: «Мои товары · N» | «Новые от Super Market · M». */
@@ -74,7 +112,21 @@ export function RightTabs({ tab, onTab, mine, fresh, ready }: { tab: 'mine' | 'n
 }
 
 /** В1: очередь «Новые от Super Market». */
-export function NewItemsList({ list, loading, highlight }: { list: NewItemList | undefined; loading: boolean; highlight?: string | null }) {
+export function NewItemsList({
+  list,
+  loading,
+  highlight,
+  hasMore,
+  loadingMore,
+  onMore,
+}: {
+  list: NewItemList | undefined
+  loading: boolean
+  highlight?: string | null
+  hasMore?: boolean
+  loadingMore?: boolean
+  onMore?: () => void
+}) {
   const [open, setOpen] = useState<NewItem | null>(null)
   const items = list?.items ?? []
   return (
@@ -133,6 +185,7 @@ export function NewItemsList({ list, loading, highlight }: { list: NewItemList |
           </Flex>
         ))
       )}
+      {hasMore && onMore && <LoadMore onMore={onMore} loading={!!loadingMore} />}
       <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', padding: '12px 20px 14px' }}>
         {tr('Новые товары уйдут на проверку в общую базу после «Записать и закрыть» на шаге 2.', 'Yangi mahsulotlar 2-qadamdagi «Yozish va yopish»dan soʻng umumiy bazaga tekshiruvga yuboriladi.')}
       </Typography.Text>

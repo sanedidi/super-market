@@ -167,7 +167,12 @@ func (m *Module) mergeNewItem(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) listNewItems(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (NewItemList, error) {
-		l, err := m.svc.ListNewItems(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+		// Без limit — первые 200, как раньше (старые версии «SM Магазин»).
+		page := httpx.PageFrom(r)
+		if !r.URL.Query().Has("limit") {
+			page.Limit = 200
+		}
+		l, err := m.svc.ListNewItems(r.Context(), pr(r), r.URL.Query().Get("store_id"), page)
 		for i := range l.Items {
 			l.Items[i] = m.newURLs(r, l.Items[i])
 		}

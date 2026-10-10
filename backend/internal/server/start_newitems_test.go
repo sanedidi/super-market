@@ -169,6 +169,20 @@ func TestStartNewItems(t *testing.T) {
 	img2, img3 := upload(), upload()
 	dupA := a.expect(a.do("POST", "/store/start/new-items", ownerTok, map[string]any{"store_id": storeID, "images": []string{img2}}), 202, "dup a")
 	dupB := a.expect(a.do("POST", "/store/start/new-items", ownerTok, map[string]any{"store_id": storeID, "images": []string{img3}}), 202, "dup b")
+	// Страницы: в очереди 3 карточки; счётчики и total — по всей очереди.
+	pg := func(q string) resp {
+		return a.expect(a.do("GET", "/store/start/new-items?store_id="+storeID+q, ownerTok, nil), 200, "page"+q)
+	}
+	p1, p2, p3 := pg("&limit=2"), pg("&limit=2&offset=2"), pg("&limit=2&offset=4")
+	if len(p1.items()) != 2 || len(p2.items()) != 1 || len(p3.items()) != 0 || p1.Body["total"] != 3.0 || p3.Body["total"] != 3.0 {
+		t.Fatalf("pages = %v | %v | %v", p1.Body, p2.Body, p3.Body)
+	}
+	if c := p2.Body["counts"].(map[string]any); c["ready"].(float64)+c["failed"].(float64)+c["processing"].(float64) != 3 {
+		t.Fatalf("page counts = %v", p2.Body)
+	}
+	if seen := map[any]bool{p1.items()[0]["id"]: true, p1.items()[1]["id"]: true}; seen[p2.items()[0]["id"]] {
+		t.Fatalf("page overlap = %v | %v", p1.Body, p2.Body)
+	}
 	marks := map[string]any{}
 	for _, it := range list().items() {
 		marks[it["id"].(string)] = it["duplicate"]
