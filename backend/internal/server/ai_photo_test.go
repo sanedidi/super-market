@@ -255,6 +255,18 @@ func TestAIPhoto(t *testing.T) {
 	if r := a.do("GET", "/admin/products/00000000-0000-4000-8000-000000000000/overview", adminTok, nil); r.Status != 404 {
 		t.Fatalf("overview 404 = %d", r.Status)
 	}
+
+	// Прозрачный фон: настройка сохраняется, проверка отдаёт PNG.
+	if s = a.expect(a.do("PUT", "/admin/ai-photo", adminTok, map[string]any{"background": "transparent"}), 200, "transparent"); s.Body["background"] != "transparent" {
+		t.Fatalf("transparent = %v", s.Body)
+	}
+	job = a.expect(a.do("POST", "/admin/ai-photo/test", adminTok, map[string]any{}), 202, "test transparent")
+	if res := job.Body["items"].([]any)[0].(map[string]any)["result"].(string); job.Body["ok"] != true || !strings.HasPrefix(res, "data:image/png;base64,") {
+		t.Fatalf("transparent test = %v", job.Body)
+	}
+	if !strings.Contains(gem.prompts[len(gem.prompts)-1], "#FF00FF") {
+		t.Fatalf("transparent prompt = %q", gem.prompts[len(gem.prompts)-1])
+	}
 }
 
 func checkSquare(t *testing.T, raw []byte, size int, bg color.RGBA) {

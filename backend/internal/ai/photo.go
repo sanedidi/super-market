@@ -68,7 +68,7 @@ type PhotoSettings struct {
 	HasKey        bool       `json:"has_key"`
 	KeyLast4      string     `json:"key_last4"`
 	Configured    bool       `json:"configured"`
-	Background    string     `json:"background"` // white | light
+	Background    string     `json:"background"` // white | light | transparent
 	Size          int        `json:"size"`       // 1000 | 1500 | 2000
 	Outpaint      bool       `json:"outpaint"`
 	WebSearch     bool       `json:"web_search"`
@@ -254,8 +254,8 @@ func (s *PhotoService) conn(ctx context.Context, in PhotoInput) (Conn, photoOpts
 		o.Prompt = strings.TrimSpace(*in.Prompt)
 	}
 	switch {
-	case o.Background != "white" && o.Background != "light":
-		return c, o, r, apperr.Validation("background: white или light").Uz("background: white yoki light")
+	case o.Background != "white" && o.Background != "light" && o.Background != "transparent":
+		return c, o, r, apperr.Validation("background: white, light или transparent").Uz("background: white, light yoki transparent")
 	case o.Size != 1000 && o.Size != 1500 && o.Size != 2000:
 		return c, o, r, apperr.Validation("size: 1000, 1500 или 2000").Uz("size: 1000, 1500 yoki 2000")
 	case len([]rune(o.Prompt)) > maxPhotoPrompt:
@@ -530,16 +530,22 @@ func (s *PhotoService) one(ctx context.Context, t photoTask, i int) (string, flo
 	if err != nil {
 		return "", cost, err
 	}
-	bg := color.RGBA{255, 255, 255, 255}
-	if t.opts.Background == "light" {
-		bg = color.RGBA{242, 242, 242, 255}
+	var out []byte
+	outMime := "image/jpeg"
+	switch t.opts.Background {
+	case "transparent":
+		out, err = transparentPhoto(img.Data, t.opts.Size)
+		outMime = "image/png"
+	case "light":
+		out, err = squarePhoto(img.Data, t.opts.Size, color.RGBA{242, 242, 242, 255})
+	default:
+		out, err = squarePhoto(img.Data, t.opts.Size, color.RGBA{255, 255, 255, 255})
 	}
-	out, err := squarePhoto(img.Data, t.opts.Size, bg)
 	if err != nil {
 		return "", cost, &ErrService{Msg: err.Error(), MsgUz: "Gemini yuborgan rasmni oʻqib boʻlmadi"}
 	}
 	if t.test {
-		return "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(out), cost, nil
+		return "data:" + outMime + ";base64," + base64.StdEncoding.EncodeToString(out), cost, nil
 	}
 	key, err := s.media.Upload(ctx, out)
 	if err != nil {
@@ -556,9 +562,13 @@ func photoPrompt(o photoOpts, product string) string {
 	} else {
 		b.WriteString(DefaultPhotoPrompt)
 	}
-	if o.Background == "light" {
+	switch o.Background {
+	case "transparent":
+		// Прозрачность Gemini не рисует: ровный пурпурный фон вырезается на сервере (cutout.go).
+		b.WriteString("\nBackground color: pure flat magenta #FF00FF filling the whole background, perfectly uniform, no gradient, no shadow, no reflections, no vignette. Do not use this magenta color anywhere on the product.")
+	case "light":
 		b.WriteString("\nBackground color: very light gray #F2F2F2, plain and solid.")
-	} else {
+	default:
 		b.WriteString("\nBackground color: pure white #FFFFFF, plain and solid.")
 	}
 	if o.Outpaint {

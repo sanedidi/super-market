@@ -25,6 +25,7 @@ import { Hint, ProviderCard, Step, VERTEX_REGIONS, isGoogleVertexURL, parseServi
 import { usePhotoJob, usd } from '../photoJob'
 
 type Mode = 'gemini' | 'vertex'
+type Background = 'white' | 'light' | 'transparent'
 
 interface PhotoSettings {
   mode: Mode
@@ -33,7 +34,7 @@ interface PhotoSettings {
   has_key: boolean
   key_last4: string
   configured: boolean
-  background: 'white' | 'light'
+  background: Background
   size: 1000 | 1500 | 2000
   outpaint: boolean
   web_search: boolean
@@ -129,7 +130,17 @@ function BeforeAfter({ before, after, busy }: { before?: string; after?: string;
       <ArrowRightOutlined style={{ fontSize: 22, color: '#98A2B3' }} />
       <Flex vertical align="center" gap={8}>
         {after ? (
-          <Image src={after} style={{ ...tile, display: 'block', border: '1px solid #EAECF0' }} />
+          <Image
+            src={after}
+            style={{
+              ...tile,
+              display: 'block',
+              objectFit: 'contain',
+              border: '1px solid #EAECF0',
+              // Шахматка — видно прозрачный фон.
+              background: 'repeating-conic-gradient(#EAECF0 0% 25%, #fff 0% 50%) 50% / 20px 20px',
+            }}
+          />
         ) : (
           <Flex align="center" justify="center" style={{ ...tile, background: '#fff', border: '1px dashed #D0D5DD', color: '#98A2B3' }}>
             {busy ? <LoadingOutlined style={{ fontSize: 28 }} /> : 'Фото от Gemini'}
@@ -154,7 +165,7 @@ function PhotoConnection() {
   const [model, setModel] = useState('')
   const [search, setSearch] = useState('')
   const [models, setModels] = useState<Model[] | null>(null)
-  const [background, setBackground] = useState<'white' | 'light'>('white')
+  const [background, setBackground] = useState<Background>('white')
   const [size, setSize] = useState<1000 | 1500 | 2000>(1000)
   const [outpaint, setOutpaint] = useState(true)
   const [webSearch, setWebSearch] = useState(true)
@@ -429,13 +440,17 @@ function PhotoConnection() {
 
               <Step n={mode === 'vertex' ? 5 : 4} title="Каким делать фото">
                 <div>
-                  <SettingRow title="Фон" text="Товар вырезается и кладётся на однотонный фон">
+                  <SettingRow
+                    title="Фон"
+                    text={background === 'transparent' ? 'Фона нет: товар вырезается, фото сохраняется в PNG с прозрачностью' : 'Товар вырезается и кладётся на однотонный фон'}
+                  >
                     <Segmented
                       value={background}
-                      onChange={(v) => setBackground(v as 'white' | 'light')}
+                      onChange={(v) => setBackground(v as Background)}
                       options={[
                         { value: 'white', label: 'Белый' },
                         { value: 'light', label: 'Светло-серый' },
+                        { value: 'transparent', label: 'Прозрачный' },
                       ]}
                     />
                   </SettingRow>

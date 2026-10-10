@@ -1130,7 +1130,7 @@ user_id, employee_id, network_id, network_name, created_at, resolved_at}`. `is_o
 
 | Метод | Путь | Что делает |
 |---|---|---|
-| GET | `/admin/ai-photo` | настройки: `mode` (`gemini` — ключ AI Studio, `vertex` — Vertex AI), `base_url`, `model`, `has_key`, `key_last4`, `configured`, `background` (`white`/`light`), `size` (1000/1500/2000), `outpaint`, `web_search`, `before_after`, `prompt` (своя инструкция, пусто — стандартная), `default_prompt`, итог проверки, `month_photos`, `month_failed`, `month_cost_usd` |
+| GET | `/admin/ai-photo` | настройки: `mode` (`gemini` — ключ AI Studio, `vertex` — Vertex AI), `base_url`, `model`, `has_key`, `key_last4`, `configured`, `background` (`white`/`light`/`transparent` — PNG без фона), `size` (1000/1500/2000), `outpaint`, `web_search`, `before_after`, `prompt` (своя инструкция, пусто — стандартная), `default_prompt`, итог проверки, `month_photos`, `month_failed`, `month_cost_usd` |
 | PUT | `/admin/ai-photo` | сохранить; пустой `api_key` — оставить сохранённый (если способ и адрес те же) |
 | POST | `/admin/ai-photo/models` | модели ключа, которые возвращают картинку |
 | POST | `/admin/ai-photo/test` | проверка на стандартном фото (или `image` — ссылка из хранилища) → **202** задание |
