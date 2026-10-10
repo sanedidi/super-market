@@ -170,11 +170,11 @@ export function CountDrawer({ line, onClose, onSaved }: { line: Line | null; onC
   const [qty, setQty] = useState<string | null>(null)
   const [cost, setCost] = useState<string | null>(null)
   const [price, setPrice] = useState<string | null>(null)
-  const [photo, setPhoto] = useState('')
+  const [photos, setPhotos] = useState<string[]>([])
   const [add, setAdd] = useState(false)
   const [busy, setBusy] = useState(false)
   const filled = !!line && line.qty !== null
-  const needPhoto = !!line && !line.image && !photo
+  const needPhoto = !!line && !line.image && photos.length === 0
 
   useEffect(() => {
     if (!line) return
@@ -183,7 +183,7 @@ export function CountDrawer({ line, onClose, onSaved }: { line: Line | null; onC
     setQty(line.qty !== null ? '1' : null)
     setCost(line.cost)
     setPrice(line.price ?? (Number(line.current_price) > 0 ? line.current_price : null))
-    setPhoto('')
+    setPhotos([])
   }, [line])
 
   if (!line) return null
@@ -205,8 +205,8 @@ export function CountDrawer({ line, onClose, onSaved }: { line: Line | null; onC
     }
     setBusy(true)
     try {
-      if (photo && !line.image) {
-        await api.post<LinesResult>(`/store/start/lines/${line.product_id}/photo`, { store_id: storeId, images: [photo] })
+      if (photos.length > 0 && !line.image) {
+        await api.post<LinesResult>(`/store/start/lines/${line.product_id}/photo`, { store_id: storeId, images: photos })
       }
       await api.post<LinesResult>('/store/start/lines', {
         store_id: storeId,
@@ -338,11 +338,11 @@ export function CountDrawer({ line, onClose, onSaved }: { line: Line | null; onC
             <div>
               <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
                 {tr(
-                  'Без фото покупатель не увидит товар в каталоге, и «Записать и закрыть» не пройдёт. Сфотографируйте товар и загрузите снимок.',
-                  'Rasmsiz xaridor mahsulotni katalogda koʻrmaydi va «Yozish va yopish» oʻtmaydi. Mahsulotni suratga oling va rasmni yuklang.',
+                  'Без фото покупатель не увидит товар в каталоге, и «Записать и закрыть» не пройдёт. Загрузите снимок — можно несколько: лицевая сторона, этикетка, состав (до 6).',
+                  'Rasmsiz xaridor mahsulotni katalogda koʻrmaydi va «Yozish va yopish» oʻtmaydi. Rasm yuklang — bir nechta boʻlishi mumkin: old tomoni, yorligʻi, tarkibi (6 tagacha).',
                 )}
               </Typography.Paragraph>
-              <ImageUpload value={photo} onChange={setPhoto} />
+              <ImageUpload multiple max={6} value={photos} onChange={setPhotos} />
             </div>
           }
         />

@@ -448,8 +448,11 @@ class _CountSheetState extends State<_CountSheet> {
   late final _qty = TextEditingController(text: _add ? '1' : '');
   late final _price = TextEditingController(text: plainQty(_initialPrice(widget.line)));
   late final _cost = TextEditingController(text: plainQty(widget.line['cost']));
-  String? _photo;
+  /// Фото товара, снятые здесь же (до 6: лицевая сторона, этикетка, состав).
+  final _photos = <String>[];
   bool _busy = false;
+
+  static const _maxPhotos = 6;
 
   static Object? _initialPrice(Map<String, dynamic> l) {
     if (l['price'] != null) return l['price'];
@@ -457,10 +460,12 @@ class _CountSheetState extends State<_CountSheet> {
     return cur != null && cur > 0 ? l['current_price'] : null;
   }
 
-  bool get _hasPhoto {
+  bool get _hadPhoto {
     final img = widget.line['image'];
-    return (img != null && '$img'.isNotEmpty) || _photo != null;
+    return img != null && '$img'.isNotEmpty;
   }
+
+  bool get _hasPhoto => _hadPhoto || _photos.isNotEmpty;
 
   @override
   void dispose() {
@@ -482,6 +487,7 @@ class _CountSheetState extends State<_CountSheet> {
   }
 
   Future<void> _takePhoto() async {
+    if (_photos.length >= _maxPhotos) return;
     final api = context.read<Api>();
     final lock = context.read<AppLock>();
     try {
@@ -489,10 +495,11 @@ class _CountSheetState extends State<_CountSheet> {
       if (x == null || !mounted) return;
       setState(() => _busy = true);
       final bytes = await x.readAsBytes();
-      final res = await api.upload('/store/uploads', bytes, 'product.jpg') as Map<String, dynamic>;
+      final res = await api.upload('/store/uploads', bytes, 'product_${_photos.length + 1}.jpg') as Map<String, dynamic>;
       if (!mounted) return;
       setState(() {
-        _photo = res['url'] as String?;
+        final url = res['url'] as String?;
+        if (url != null) _photos.add(url);
         _busy = false;
       });
     } catch (e) {
@@ -526,9 +533,8 @@ class _CountSheetState extends State<_CountSheet> {
     }
     setState(() => _busy = true);
     try {
-      final img = widget.line['image'];
-      if (_photo != null && (img == null || '$img'.isEmpty)) {
-        await widget.start.setPhoto('${widget.line['product_id']}', [_photo!]);
+      if (_photos.isNotEmpty && !_hadPhoto) {
+        await widget.start.setPhoto('${widget.line['product_id']}', _photos);
       }
       await widget.start.setLines([
         {'product_id': widget.line['product_id'], 'qty': total, 'price': price, 'cost': cost},
@@ -557,24 +563,62 @@ class _CountSheetState extends State<_CountSheet> {
       const SizedBox(height: 14),
       StartProductCard(
         name: '${l['name']}',
-        image: _photo ?? l['image'] as String?,
+        image: _photos.isNotEmpty ? _photos.first : l['image'] as String?,
         barcode: l['barcode'] as String? ?? tr('без штрихкода', 'shtrix-kodsiz'),
         label: filled ? tr('БЫЛО: ${plainQty(l['qty'])} $unit', 'BOR EDI: ${plainQty(l['qty'])} $unit') : null,
       ),
-      if (!_hasPhoto) ...[
+      if (!_hadPhoto) ...[
         const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(color: AppColors.errorSoft, borderRadius: BorderRadius.circular(16)),
-          child: Column(children: [
-            const Icon(Icons.photo_camera_rounded, color: AppColors.primary, size: 28),
-            const SizedBox(height: 8),
-            Text(tr('Сфотографируйте товар', 'Mahsulotni suratga oling'), style: AppText.bodyStrong.copyWith(color: AppColors.error), textAlign: TextAlign.center),
-            const SizedBox(height: 4),
-            Text(tr('Без фото покупатель не увидит товар в каталоге', 'Rasmsiz xaridor mahsulotni katalogda koʻrmaydi'),
-                style: AppText.small.copyWith(color: AppColors.error), textAlign: TextAlign.center),
+          decoration: BoxDecoration(color: _photos.isEmpty ? AppColors.errorSoft : AppColors.bg, borderRadius: BorderRadius.circular(16)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            if (_photos.isEmpty) ...[
+              const Icon(Icons.photo_camera_rounded, color: AppColors.primary, size: 28),
+              const SizedBox(height: 8),
+              Text(tr('Сфотографируйте товар', 'Mahsulotni suratga oling'), style: AppText.bodyStrong.copyWith(color: AppColors.error), textAlign: TextAlign.center),
+              const SizedBox(height: 4),
+              Text(tr('Без фото покупатель не увидит товар. Можно снять несколько: лицевая сторона, этикетка, состав',
+                  'Rasmsiz xaridor mahsulotni koʻrmaydi. Bir nechta olish mumkin: old tomoni, yorligʻi, tarkibi'),
+                  style: AppText.small.copyWith(color: AppColors.error), textAlign: TextAlign.center),
+            ] else ...[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(tr('Фото: ${_photos.length} из $_maxPhotos', 'Rasm: ${_photos.length} / $_maxPhotos'), style: AppText.caption),
+              ),
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                for (var i = 0; i < _photos.length; i++)
+                  Stack(children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.network(_photos[i], width: 64, height: 64, fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(width: 64, height: 64, color: AppColors.soft)),
+                    ),
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      child: GestureDetector(
+                        onTap: () => setState(() => _photos.removeAt(i)),
+                        child: Container(
+                          decoration: const BoxDecoration(color: AppColors.ink, shape: BoxShape.circle),
+                          padding: const EdgeInsets.all(2),
+                          child: const Icon(Icons.close_rounded, size: 14, color: AppColors.white),
+                        ),
+                      ),
+                    ),
+                  ]),
+              ]),
+            ],
             const SizedBox(height: 10),
-            SheetButton(label: tr('Сделать фото', 'Rasmga olish'), busy: _busy, onPressed: _takePhoto),
+            SheetButton(
+              label: _photos.isEmpty
+                  ? tr('Сделать фото', 'Rasmga olish')
+                  : tr('Добавить ещё фото', 'Yana rasm qoʻshish'),
+              primary: _photos.isEmpty,
+              busy: _busy,
+              onPressed: _photos.length >= _maxPhotos ? null : _takePhoto,
+            ),
           ]),
         ),
       ],
