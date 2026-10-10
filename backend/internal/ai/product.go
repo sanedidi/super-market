@@ -38,6 +38,11 @@ type ProductAnswer struct {
 	// магазину на проверку или встанет в «Мои товары» сама.
 	Confidence string `json:"confidence"`
 	Note       string `json:"note"`
+	// Size и Pack — объём или вес с единицей («500 мл», «100 г») и штук в
+	// упаковке (пакетиков, таблеток, рулонов) с этикетки: по ним отличают
+	// фасовки одного товара («10 пакетиков» и «25 пакетиков» — разные товары).
+	Size string `json:"size"`
+	Pack int    `json:"pack"`
 	CategoryAnswer
 }
 
@@ -57,6 +62,8 @@ Return JSON:
  "brand": "brand as written on the package, or empty",
  "unit": "шт for packaged goods, кг only for loose goods sold by weight",
  "description": "one short sentence in Russian from the label (composition or key facts), or empty",
+ "size": "net volume or weight with unit exactly as on the package, in мл, л, г or кг — e.g. «500 мл», «1,5 л», «100 г»; empty if not visible",
+ "pack": number of pieces inside the package (tea bags, tablets, rolls, bottles in a multipack), or 0 if it is a single item or not visible,
  "confidence": "high only when the package is sharp and readable and you are sure of the name, brand, volume and category; \"check\" whenever anything had to be guessed",
  "note": "short note in Russian for the shop when confidence is \"check\" — what exactly is unclear; otherwise empty",
  "match": "id of the subcategory where a shopper would look for it, or empty if none really fits",

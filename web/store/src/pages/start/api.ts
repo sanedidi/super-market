@@ -116,7 +116,15 @@ export type TasnifAddResult = {
 }
 
 /** Похожий товар базы для карточки по фото. */
-export type NewItemMatch = { product_id: string; name: string; image: string | null; barcode: string | null; own: boolean }
+export type NewItemMatch = {
+  product_id: string
+  name: string
+  image: string | null
+  barcode: string | null
+  own: boolean
+  /** Найден по штрихкоду. Иначе — совпали бренд, объём и фасовка, а штрихкод другой. */
+  same_barcode?: boolean
+}
 
 /** Карточка, которую заполнил Super Market по фото. */
 export type NewItemResult = {
@@ -131,6 +139,9 @@ export type NewItemResult = {
   match: NewItemMatch | null
   /** Почему нужна проверка: Super Market что-то домыслил. Пусто — сомнений не было. */
   note?: string
+  /** Объём/вес и штук в упаковке с этикетки. */
+  size?: string
+  pack?: number
 }
 
 /** Другая карточка в «Новых», похожая на эту (тот же штрихкод или похожее название). */
@@ -149,6 +160,8 @@ export type NewItem = {
   created_at: string
   /** Похоже, этот товар уже есть в «Новых» — «Это он» объединяет карточки. */
   duplicate: NewItemDup | null
+  /** Контрольная цифра штрихкода не сходится — скорее всего, опечатка. */
+  barcode_invalid?: boolean
 }
 
 export type NewItemConfirmResult = { product_id: string; created: boolean; line: Line; totals: Totals }

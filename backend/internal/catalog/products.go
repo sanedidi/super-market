@@ -360,7 +360,17 @@ func setBarcodes(ctx context.Context, q db.Querier, productID string, codes []st
 	}
 	for _, c := range clean {
 		var owner string
-		err := q.QueryRow(ctx, `
+		// Один код — один товар с точностью до ведущих нулей: UPC-A 012345678905
+		// и EAN-13 0012345678905 — один и тот же штрихкод.
+		err := q.QueryRow(ctx, `SELECT product_id FROM product_barcodes WHERE barcode_key(barcode) = barcode_key($1) AND product_id <> $2 LIMIT 1`, c, productID).Scan(&owner)
+		if err == nil {
+			return apperr.Conflict("barcode_exists", "штрихкод "+c+" уже есть у другого товара").Uz(c + " shtrix-kodi boshqa mahsulotda allaqachon bor").
+				WithDetails(map[string]any{"barcode": c, "product_id": owner})
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		err = q.QueryRow(ctx, `
 			INSERT INTO product_barcodes (barcode, product_id) VALUES ($1, $2)
 			ON CONFLICT (barcode) DO UPDATE SET barcode = EXCLUDED.barcode
 			RETURNING product_id`, c, productID).Scan(&owner)

@@ -561,8 +561,15 @@ func bindBarcode(ctx context.Context, tx pgx.Tx, p *identity.Principal, productI
 	if !barcodeRe.MatchString(code) {
 		return apperr.Validation("barcode: неверный штрихкод").Uz("barcode: shtrix-kod notoʻgʻri")
 	}
+	// Тот же код с точностью до ведущих нулей (UPC-A и EAN-13) — тоже занят.
 	var owner string
-	err := tx.QueryRow(ctx, `SELECT product_id FROM product_barcodes WHERE barcode = $1`, code).Scan(&owner)
+	var exact bool
+	err := tx.QueryRow(ctx, `SELECT product_id, barcode = $1 FROM product_barcodes WHERE barcode_key(barcode) = barcode_key($1)
+		ORDER BY product_id = $2, barcode = $1 DESC LIMIT 1`, code, productID).Scan(&owner, &exact)
+	if err == nil && owner == productID && !exact {
+		// Тот же код в другом формате — запомнить и его, чтобы находился сканером.
+		err = pgx.ErrNoRows
+	}
 	if err == nil {
 		if owner == productID {
 			return nil

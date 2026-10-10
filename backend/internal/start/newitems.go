@@ -58,6 +58,10 @@ type NewItemMatch struct {
 	Image     *string `json:"image"`
 	Barcode   *string `json:"barcode"`
 	Own       bool    `json:"own"`
+	// SameBarcode — найден по штрихкоду (тот же товар наверняка). Иначе —
+	// совпали бренд, объём и фасовка, а штрихкод другой: «Это он» привяжет
+	// штрихкод карточки к этому товару.
+	SameBarcode bool `json:"same_barcode"`
 }
 
 // NewItemResult — карточка, которую заполнил Super Market.
@@ -74,7 +78,13 @@ type NewItemResult struct {
 	// Note — почему карточка требует внимания магазина (Super Market что-то
 	// домыслил). Пусто — сомнений не было.
 	Note string `json:"note"`
+	// Size и Pack — объём/вес («500 мл») и штук в упаковке с этикетки: по ним
+	// (и по названию) решается, тот же это товар или другой (см. Spec).
+	Size string `json:"size,omitempty"`
+	Pack int    `json:"pack,omitempty"`
 }
+
+func (r *NewItemResult) spec() Spec { return specOf(r.Name, r.Size, r.Pack) }
 
 // NewItemDup — другая карточка в «Новых» этого магазина, похожая на эту:
 // тот же штрихкод или похожее название (по распознанному). Помечается
@@ -101,6 +111,9 @@ type NewItem struct {
 	CreatedAt time.Time      `json:"created_at"`
 	// Duplicate — похоже, этот товар уже есть в «Новых» (см. NewItemDup).
 	Duplicate *NewItemDup `json:"duplicate"`
+	// BarcodeInvalid — контрольная цифра штрихкода не сходится (опечатка):
+	// сам товар не добавляется, магазин проверяет код.
+	BarcodeInvalid bool `json:"barcode_invalid"`
 }
 
 type NewItemCounts struct {
@@ -159,10 +172,10 @@ func (s *Service) CreateNewItem(ctx context.Context, p *identity.Principal, in N
 		if code != "" {
 			// Тот же штрихкод уже в «Новых» — вторую карточку не заводим (даже
 			// если два сотрудника сканируют одновременно: блокировка на штрихкод).
-			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('start_new_items:' || $1::text || ':' || $2))`, st.ID, code); err != nil {
+			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('start_new_items:' || $1::text || ':' || barcode_key($2)))`, st.ID, code); err != nil {
 				return err
 			}
-			err := tx.QueryRow(ctx, `SELECT id FROM start_new_items WHERE store_id = $1 AND barcode = $2 AND status <> 'done' ORDER BY created_at LIMIT 1`,
+			err := tx.QueryRow(ctx, `SELECT id FROM start_new_items WHERE store_id = $1 AND barcode <> '' AND barcode_key(barcode) = barcode_key($2) AND status <> 'done' ORDER BY created_at LIMIT 1`,
 				st.ID, code).Scan(&existing)
 			if err == nil {
 				return nil
@@ -199,6 +212,7 @@ func scanNewItem(r pgx.CollectableRow) (NewItem, error) {
 	var it NewItem
 	var raw []byte
 	err := r.Scan(&it.ID, &it.StoreID, &it.Status, &it.Error, &it.Barcode, &it.Images, &raw, &it.ProductID, &it.CreatedAt)
+	it.BarcodeInvalid = it.Barcode != "" && !BarcodeValid(it.Barcode)
 	if err == nil && (it.Status == NewReady || it.Status == NewFailed) && len(raw) > 2 {
 		var res NewItemResult
 		if json.Unmarshal(raw, &res) == nil {
@@ -288,54 +302,94 @@ func (s *Service) GetNewItem(ctx context.Context, p *identity.Principal, id stri
 	return items[0], nil
 }
 
-// dupSQL — для карточек $1 (ещё не добавленных) самая похожая более ранняя
-// карточка в «Новых» того же магазина: тот же штрихкод или похожее название.
+// dupSQL — для карточек $1 (ещё не добавленных) более ранние карточки в
+// «Новых» того же магазина — кандидаты в дубли: тот же штрихкод (с точностью
+// до ведущих нулей) или похожее название. Решает queueDups — по полям.
 const dupSQL = `
-	SELECT x.id, d.id, d.name, d.image, d.barcode, d.status
+	SELECT x.id, x.result, d.id, d.name, d.image, d.barcode, d.status, d.result, d.same_code, d.core
 	FROM start_new_items x
 	JOIN LATERAL (
-		SELECT o.id, COALESCE(o.result->>'name', '') AS name, o.images[1] AS image, o.barcode,
-		       CASE WHEN o.status = 'processing' AND o.updated_at < now() - $2::interval THEN 'failed' ELSE o.status END AS status
+		SELECT o.id, COALESCE(o.result->>'name', '') AS name, o.images[1] AS image, o.barcode, o.result,
+		       CASE WHEN o.status = 'processing' AND o.updated_at < now() - $2::interval THEN 'failed' ELSE o.status END AS status,
+		       (x.barcode <> '' AND o.barcode <> '' AND barcode_key(o.barcode) = barcode_key(x.barcode)) AS same_code,
+		       similarity(CORE_O, CORE_X) AS core
 		FROM start_new_items o
 		WHERE o.store_id = x.store_id AND o.id <> x.id AND o.status <> 'done'
 		  AND (o.created_at, o.id) < (x.created_at, x.id)
-		  AND ((x.barcode <> '' AND o.barcode = x.barcode)
+		  AND ((x.barcode <> '' AND o.barcode <> '' AND barcode_key(o.barcode) = barcode_key(x.barcode))
 		       OR (COALESCE(x.result->>'name', '') <> '' AND COALESCE(o.result->>'name', '') <> ''
 		           AND similarity(lower(o.result->>'name'), lower(x.result->>'name')) >= $3))
-		ORDER BY (x.barcode <> '' AND o.barcode = x.barcode) DESC,
-		         similarity(lower(COALESCE(o.result->>'name', '')), lower(COALESCE(x.result->>'name', ''))) DESC, o.created_at
-		LIMIT 1
+		ORDER BY same_code DESC, core DESC, o.created_at
+		LIMIT 5
 	) d ON true
 	WHERE x.id = ANY($1::uuid[]) AND x.status <> 'done'`
 
-// attachDuplicates — заполнить Duplicate у карточек (см. NewItemDup).
-func (s *Service) attachDuplicates(ctx context.Context, items []NewItem) error {
-	if len(items) == 0 {
-		return nil
+var dupQuery = strings.NewReplacer(
+	"CORE_O", coreSQL("COALESCE(o.result->>'name', '')"),
+	"CORE_X", coreSQL("COALESCE(x.result->>'name', '')"),
+).Replace(dupSQL)
+
+// queueDups — для карточек ids самая ранняя карточка очереди, которая, похоже,
+// тот же товар: тот же штрихкод, или бренд, объём и фасовка не противоречат,
+// а названия без чисел почти совпадают (см. Spec). Нет — карточки нет в ответе.
+func (s *Service) queueDups(ctx context.Context, q db.Querier, ids []string) (map[string]NewItemDup, error) {
+	out := map[string]NewItemDup{}
+	if len(ids) == 0 {
+		return out, nil
 	}
-	ids := make([]string, len(items))
-	at := make(map[string]int, len(items))
-	for i, it := range items {
-		ids[i] = it.ID
-		at[it.ID] = i
-	}
-	rows, err := s.pool.Query(ctx, dupSQL, ids, newStale.String(), SimilarMin)
+	rows, err := q.Query(ctx, dupQuery, ids, newStale.String(), CandidateMin)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var id string
+		var xRaw, dRaw []byte
 		var d NewItemDup
-		if err := rows.Scan(&id, &d.ID, &d.Name, &d.Image, &d.Barcode, &d.Status); err != nil {
-			return err
+		var sameCode bool
+		var core *float64
+		if err := rows.Scan(&id, &xRaw, &d.ID, &d.Name, &d.Image, &d.Barcode, &d.Status, &dRaw, &sameCode, &core); err != nil {
+			return nil, err
 		}
-		if i, ok := at[id]; ok {
-			dup := d
-			items[i].Duplicate = &dup
+		if _, done := out[id]; done {
+			continue
+		}
+		if !sameCode && !sameCard(xRaw, dRaw, core) {
+			continue
+		}
+		out[id] = d
+	}
+	return out, rows.Err()
+}
+
+// sameCard — две распознанные карточки с разными штрихкодами — один товар?
+func sameCard(xRaw, dRaw []byte, core *float64) bool {
+	if core == nil || *core < CoreMin {
+		return false
+	}
+	var x, d NewItemResult
+	if json.Unmarshal(xRaw, &x) != nil || json.Unmarshal(dRaw, &d) != nil {
+		return false
+	}
+	return !brandConflicts(x.BrandID, x.Brand, d.BrandID, d.Brand) && !x.spec().Conflicts(d.spec())
+}
+
+// attachDuplicates — заполнить Duplicate у карточек (см. NewItemDup).
+func (s *Service) attachDuplicates(ctx context.Context, items []NewItem) error {
+	ids := make([]string, len(items))
+	for i, it := range items {
+		ids[i] = it.ID
+	}
+	dups, err := s.queueDups(ctx, s.pool, ids)
+	if err != nil {
+		return err
+	}
+	for i := range items {
+		if d, ok := dups[items[i].ID]; ok {
+			items[i].Duplicate = &d
 		}
 	}
-	return rows.Err()
+	return nil
 }
 
 // NewItemByBarcode — карточка в «Новых» магазина с этим штрихкодом (nil — нет):
@@ -350,7 +404,7 @@ func (s *Service) NewItemByBarcode(ctx context.Context, p *identity.Principal, s
 		return nil, nil
 	}
 	var id string
-	err = s.pool.QueryRow(ctx, `SELECT id FROM start_new_items WHERE store_id = $1 AND network_id = $2 AND barcode = $3 AND status <> 'done' ORDER BY created_at LIMIT 1`,
+	err = s.pool.QueryRow(ctx, `SELECT id FROM start_new_items WHERE store_id = $1 AND network_id = $2 AND barcode <> '' AND barcode_key(barcode) = barcode_key($3) AND status <> 'done' ORDER BY created_at LIMIT 1`,
 		st.ID, p.NetworkID, code).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -528,6 +582,22 @@ func (s *Service) processNewItem(ctx context.Context, id, lang string) error {
 		Scan(&keys, &networkID, &storeID, &employeeID, &code); err != nil {
 		return err
 	}
+	// Штрихкод уже есть в базе — это тот же товар, распознавать нечего.
+	if code != "" {
+		m, err := productByBarcode(ctx, s.pool, networkID, code)
+		if err != nil {
+			return err
+		}
+		if m != nil {
+			res := NewItemResult{Name: m.Name, Match: m}
+			raw, _ := json.Marshal(res)
+			if _, err := s.pool.Exec(ctx, `UPDATE start_new_items SET status = 'ready', error = '', result = $2 WHERE id = $1 AND status = 'processing'`, id, raw); err != nil {
+				return err
+			}
+			_, err = s.tryAutoAdd(ctx, id, networkID, storeID, employeeID, code, res, keys)
+			return err
+		}
+	}
 	conn, err := s.ai.Conn(ctx)
 	if err != nil {
 		return err
@@ -560,7 +630,8 @@ func (s *Service) processNewItem(ctx context.Context, id, lang string) error {
 		return apperr.Validation(upperFirst(msg) + " — переснимите или заполните сами").
 			Uz(upperFirst(msg) + " — qayta suratga oling yoki oʻzingiz toʻldiring")
 	}
-	res := NewItemResult{Name: ans.Name, NameUz: ans.NameUz, Brand: ans.Brand, Description: strings.TrimSpace(ans.Description)}
+	res := NewItemResult{Name: ans.Name, NameUz: ans.NameUz, Brand: ans.Brand, Description: strings.TrimSpace(ans.Description),
+		Size: strings.TrimSpace(ans.Size), Pack: max(ans.Pack, 0)}
 	if res.Brand != "" {
 		if bid, err := catalog.BrandByName(ctx, s.pool, res.Brand); err != nil {
 			return err
@@ -577,11 +648,14 @@ func (s *Service) processNewItem(ctx context.Context, id, lang string) error {
 	}
 	res.UnitShort = unit
 	res.Suggestion = tree.suggestion(ans.Match, ans.Alternatives, ans.New)
-	if res.Match, err = similarProduct(ctx, s.pool, networkID, ans.Name, ans.NameUz); err != nil {
+	if res.Match, err = sameProduct(ctx, s.pool, networkID, code, &res); err != nil {
 		return err
 	}
 	if !strings.EqualFold(strings.TrimSpace(ans.Confidence), "high") {
 		res.Note = strings.TrimSpace(ans.Note)
+		if res.Note == "" {
+			res.Note = i18n.Pick(lang, "Super Market не уверен в карточке — проверьте название и категорию", "Super Market kartochkaga ishonchi komil emas — nomi va kategoriyani tekshiring")
+		}
 	}
 	raw, _ := json.Marshal(res)
 	if _, err := s.pool.Exec(ctx, `UPDATE start_new_items SET status = 'ready', error = '', result = $2 WHERE id = $1 AND status = 'processing'`, id, raw); err != nil {
@@ -589,46 +663,67 @@ func (s *Service) processNewItem(ctx context.Context, id, lang string) error {
 	}
 	// Сомнений нет — товар встаёт в «Мои товары» сам; магазину остаётся
 	// только то, что требует внимания.
-	_, err = s.tryAutoAdd(ctx, id, networkID, storeID, employeeID, res, keys)
+	_, err = s.tryAutoAdd(ctx, id, networkID, storeID, employeeID, code, res, keys)
 	return err
 }
 
 // tryAutoAdd — добавить готовую карточку в «Мои товары», если она не требует
-// внимания (см. canAutoAdd). Похожий товар базы перепроверяется прямо сейчас:
-// пока карточка ждала, такой товар мог появиться (например, его добавили из
-// более ранней карточки) — тогда Match сохраняется в карточку для магазина.
-func (s *Service) tryAutoAdd(ctx context.Context, id, networkID, storeID, employeeID string, res NewItemResult, keys []string) (bool, error) {
-	match, err := similarProduct(ctx, s.pool, networkID, res.Name, res.NameUz)
+// внимания. Тот же товар в базе ищется заново прямо сейчас: пока карточка
+// ждала, он мог появиться (например, его добавили из более ранней карточки);
+// изменился — Match сохраняется в карточку для магазина.
+//   - Тот же штрихкод в базе — карточка добавляет этот товар.
+//   - Иначе новый товар создаётся, только если нет кандидата в базе и в
+//     очереди, Super Market уверен, категория из дерева и штрихкод верный.
+func (s *Service) tryAutoAdd(ctx context.Context, id, networkID, storeID, employeeID, code string, res NewItemResult, keys []string) (bool, error) {
+	match, err := sameProduct(ctx, s.pool, networkID, code, &res)
 	if err != nil {
 		return false, err
 	}
-	if match != nil && res.Match == nil {
+	if !sameMatch(match, res.Match) {
 		res.Match = match
 		raw, _ := json.Marshal(res)
 		if _, err := s.pool.Exec(ctx, `UPDATE start_new_items SET result = $2 WHERE id = $1 AND status = 'ready'`, id, raw); err != nil {
 			return false, err
 		}
 	}
-	ok, err := s.canAutoAdd(ctx, id, res)
+	p := &identity.Principal{NetworkID: networkID, EmployeeID: employeeID, IsOwner: true}
+	if res.Match != nil {
+		if !res.Match.SameBarcode {
+			return false, nil
+		}
+		if _, err := s.ConfirmNewItem(ctx, p, id, NewItemConfirm{StoreID: storeID, ProductID: res.Match.ProductID}); err != nil {
+			s.log.Info("новый товар: не добавили сами", "id", id, "err", err)
+			return false, nil
+		}
+		return true, nil
+	}
+	ok, err := s.canAutoAdd(ctx, id, code, res)
 	if err != nil || !ok {
 		return false, err
 	}
-	return s.autoAddNewItem(ctx, id, networkID, storeID, employeeID, res, keys), nil
+	return s.autoAddNewItem(ctx, p, id, storeID, res, keys), nil
+}
+
+func sameMatch(a, b *NewItemMatch) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.ProductID == b.ProductID && a.SameBarcode == b.SameBarcode
 }
 
 // SweepNewItems — разово пройти карточки «ready», распознанные до
 // автодобавления (или когда оно не сработало), и добавить те, что не требуют
-// внимания. По порядку создания: из пары похожих добавится ранняя, а поздняя
-// увидит её как похожий товар и останется магазину.
+// внимания. По порядку создания: из пары одинаковых добавится ранняя, а поздняя
+// найдёт её как тот же товар и останется магазину.
 func (s *Service) SweepNewItems() {
 	s.run(func() {
 		ctx := context.Background()
 		type card struct {
-			id, networkID, storeID, employeeID string
-			keys                               []string
-			raw                                []byte
+			id, networkID, storeID, employeeID, code string
+			keys                                     []string
+			raw                                      []byte
 		}
-		rows, err := s.pool.Query(ctx, `SELECT id, network_id, store_id, created_by, images, result FROM start_new_items
+		rows, err := s.pool.Query(ctx, `SELECT id, network_id, store_id, created_by, barcode, images, result FROM start_new_items
 			WHERE status = 'ready' ORDER BY created_at, id`)
 		if err != nil {
 			s.log.Error("новые товары: обход", "err", err)
@@ -637,7 +732,7 @@ func (s *Service) SweepNewItems() {
 		var cards []card
 		for rows.Next() {
 			var c card
-			if err := rows.Scan(&c.id, &c.networkID, &c.storeID, &c.employeeID, &c.keys, &c.raw); err != nil {
+			if err := rows.Scan(&c.id, &c.networkID, &c.storeID, &c.employeeID, &c.code, &c.keys, &c.raw); err != nil {
 				rows.Close()
 				s.log.Error("новые товары: обход", "err", err)
 				return
@@ -651,7 +746,7 @@ func (s *Service) SweepNewItems() {
 			if len(c.raw) <= 2 || json.Unmarshal(c.raw, &res) != nil {
 				continue
 			}
-			ok, err := s.tryAutoAdd(ctx, c.id, c.networkID, c.storeID, c.employeeID, res, c.keys)
+			ok, err := s.tryAutoAdd(ctx, c.id, c.networkID, c.storeID, c.employeeID, c.code, res, c.keys)
 			if err != nil {
 				s.log.Error("новые товары: обход", "id", c.id, "err", err)
 				continue
@@ -666,31 +761,32 @@ func (s *Service) SweepNewItems() {
 	})
 }
 
-// canAutoAdd — карточку можно добавить без магазина: Super Market уверен,
-// категория нашлась в дереве, похожего товара в базе нет и в очереди нет
-// более ранней похожей карточки (возможного дубля).
-func (s *Service) canAutoAdd(ctx context.Context, id string, res NewItemResult) (bool, error) {
+// canAutoAdd — новый товар можно создать без магазина: Super Market уверен,
+// категория нашлась в дереве, штрихкод верный (или его нет) и в очереди нет
+// более ранней карточки того же товара.
+func (s *Service) canAutoAdd(ctx context.Context, id, code string, res NewItemResult) (bool, error) {
 	if res.Note != "" || res.Match != nil || strings.TrimSpace(res.Name) == "" || res.UnitID == "" {
 		return false, nil
 	}
 	if res.Suggestion == nil || res.Suggestion.Category == nil {
 		return false, nil
 	}
-	var dupID string
-	err := s.pool.QueryRow(ctx, `SELECT q.dup FROM (`+dupSQL+`) AS q(card, dup, name, image, barcode, status) LIMIT 1`,
-		[]string{id}, newStale.String(), SimilarMin).Scan(&dupID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return true, nil
+	if code != "" && !BarcodeValid(code) {
+		return false, nil
 	}
-	return false, err
+	dups, err := s.queueDups(ctx, s.pool, []string{id})
+	if err != nil {
+		return false, err
+	}
+	return len(dups) == 0, nil
 }
 
 // autoAddNewItem — создать товар и поставить его в «Мои товары» от имени
 // магазина. Системный Principal ограничен сетью и магазином самой карточки;
 // товар создаётся как свой товар сети в статусе draft и всё равно уходит на
 // модерацию при «Записать и закрыть». Не получилось — карточка остаётся
-// магазину в «Требует внимания», это не ошибка распознавания.
-func (s *Service) autoAddNewItem(ctx context.Context, id, networkID, storeID, employeeID string, res NewItemResult, keys []string) bool {
+// магазину в «Требуют внимания», это не ошибка распознавания.
+func (s *Service) autoAddNewItem(ctx context.Context, p *identity.Principal, id, storeID string, res NewItemResult, keys []string) bool {
 	images := make([]string, 0, len(keys))
 	for _, k := range keys {
 		u := s.media.PublicURL(k)
@@ -706,7 +802,6 @@ func (s *Service) autoAddNewItem(ctx context.Context, id, networkID, storeID, em
 	} else {
 		in.BrandName = res.Brand
 	}
-	p := &identity.Principal{NetworkID: networkID, EmployeeID: employeeID, IsOwner: true}
 	if _, err := s.ConfirmNewItem(ctx, p, id, in); err != nil {
 		s.log.Info("новый товар: не добавили сами", "id", id, "err", err)
 		return false
@@ -722,19 +817,21 @@ func upperFirst(s string) string {
 	return strings.ToUpper(string(r[:1])) + string(r[1:])
 }
 
-// similarProduct — самый похожий по названию товар базы (общий каталог и свои
-// товары сети), если похож достаточно, — чтобы не завести дубль.
-func similarProduct(ctx context.Context, q db.Querier, networkID, name, nameUz string) (*NewItemMatch, error) {
-	var m NewItemMatch
+// productByBarcode — товар базы (общий каталог и свои товары сети) с этим
+// штрихкодом с точностью до ведущих нулей. Внутренний код магазина (2…)
+// ищется только среди своих товаров сети: у другой сети это другой товар.
+func productByBarcode(ctx context.Context, q db.Querier, networkID, code string) (*NewItemMatch, error) {
+	if strings.TrimSpace(code) == "" {
+		return nil, nil
+	}
+	m := NewItemMatch{SameBarcode: true}
 	err := q.QueryRow(ctx, `
-		SELECT p.id, loc(p.name, p.name_uz), p.images[1],
-		       (SELECT min(pb.barcode) FROM product_barcodes pb WHERE pb.product_id = p.id), p.network_id IS NOT NULL
-		FROM products p
-		WHERE p.is_active AND (p.network_id IS NULL OR p.network_id = $1)
-		  AND (lower(p.name) % lower($2) OR ($3 <> '' AND lower(p.name_uz) % lower($3)))
-		  AND greatest(similarity(lower(p.name), lower($2)), CASE WHEN $3 <> '' THEN similarity(lower(p.name_uz), lower($3)) ELSE 0 END) >= 0.55
-		ORDER BY greatest(similarity(lower(p.name), lower($2)), CASE WHEN $3 <> '' THEN similarity(lower(p.name_uz), lower($3)) ELSE 0 END) DESC, p.id
-		LIMIT 1`, networkID, name, nameUz).Scan(&m.ProductID, &m.Name, &m.Image, &m.Barcode, &m.Own)
+		SELECT p.id, loc(p.name, p.name_uz), p.images[1], pb.barcode, p.network_id IS NOT NULL
+		FROM product_barcodes pb JOIN products p ON p.id = pb.product_id
+		WHERE barcode_key(pb.barcode) = barcode_key($2) AND p.is_active
+		  AND (p.network_id = $1 OR (p.network_id IS NULL AND NOT $3))
+		ORDER BY pb.barcode = $2 DESC, p.network_id IS NULL DESC, p.id
+		LIMIT 1`, networkID, strings.TrimSpace(code), InternalBarcode(code)).Scan(&m.ProductID, &m.Name, &m.Image, &m.Barcode, &m.Own)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -742,6 +839,51 @@ func similarProduct(ctx context.Context, q db.Querier, networkID, name, nameUz s
 		return nil, err
 	}
 	return &m, nil
+}
+
+// sameProductSQL — кандидаты в тот же товар по названию: похожие товары базы
+// с брендом и похожестью «ядер» названий; решает sameProduct — по полям.
+var sameProductSQL = `
+	SELECT p.id, loc(p.name, p.name_uz), p.name, p.images[1],
+	       (SELECT min(pb.barcode) FROM product_barcodes pb WHERE pb.product_id = p.id), p.network_id IS NOT NULL,
+	       p.brand_id, COALESCE(b.name, ''), similarity(` + coreSQL("p.name") + `, ` + coreSQL("$2") + `)
+	FROM products p LEFT JOIN brands b ON b.id = p.brand_id
+	WHERE p.is_active AND (p.network_id IS NULL OR p.network_id = $1)
+	  AND (lower(p.name) % lower($2) OR ($3 <> '' AND lower(p.name_uz) % lower($3)))
+	  AND greatest(similarity(lower(p.name), lower($2)), CASE WHEN $3 <> '' THEN similarity(lower(p.name_uz), lower($3)) ELSE 0 END) >= $4
+	ORDER BY greatest(similarity(lower(p.name), lower($2)), CASE WHEN $3 <> '' THEN similarity(lower(p.name_uz), lower($3)) ELSE 0 END) DESC, p.id
+	LIMIT 10`
+
+// sameProduct — тот же товар в базе: по штрихкоду, а если его нет — по полям
+// (бренд, объём, фасовка, название без чисел; см. Spec). nil — такого нет,
+// можно создавать новый.
+func sameProduct(ctx context.Context, q db.Querier, networkID, code string, res *NewItemResult) (*NewItemMatch, error) {
+	if m, err := productByBarcode(ctx, q, networkID, code); m != nil || err != nil {
+		return m, err
+	}
+	if strings.TrimSpace(res.Name) == "" {
+		return nil, nil
+	}
+	rows, err := q.Query(ctx, sameProductSQL, networkID, res.Name, res.NameUz, CandidateMin)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	spec := res.spec()
+	for rows.Next() {
+		var m NewItemMatch
+		var name, brandName string
+		var brandID *string
+		var core float64
+		if err := rows.Scan(&m.ProductID, &m.Name, &name, &m.Image, &m.Barcode, &m.Own, &brandID, &brandName, &core); err != nil {
+			return nil, err
+		}
+		if core < CoreMin || brandConflicts(res.BrandID, res.Brand, brandID, brandName) || spec.Conflicts(ParseSpec(name)) {
+			continue
+		}
+		return &m, nil
+	}
+	return nil, rows.Err()
 }
 
 // NewItemConfirm — POST /store/start/new-items/{id}/confirm: магазин проверил

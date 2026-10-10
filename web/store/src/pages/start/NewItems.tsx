@@ -35,13 +35,19 @@ function ReasonChip({ children, icon }: { children: ReactNode; icon?: ReactNode 
 function reasons(it: NewItem): ReactNode[] {
   if (it.status !== 'ready') return []
   const out: ReactNode[] = []
+  if (it.barcode_invalid) out.push(<ReasonChip key="code">{tr('Проверьте штрихкод', 'Shtrix-kodni tekshiring')}</ReasonChip>)
   if (it.duplicate)
     out.push(
       <ReasonChip key="dup" icon={<CopyOutlined style={{ color: AMBER.icon }} />}>
         {tr('Похоже на дубль', 'Dublga oʻxshaydi')}
       </ReasonChip>,
     )
-  if (it.result?.match) out.push(<ReasonChip key="match">{tr('Уже есть в базе?', 'Bazada bormi?')}</ReasonChip>)
+  if (it.result?.match)
+    out.push(
+      <ReasonChip key="match">
+        {it.result.match.same_barcode ? tr('Уже есть в базе', 'Bazada bor') : tr('Тот же товар, другой штрихкод?', 'Shu mahsulot, boshqa shtrix-kod?')}
+      </ReasonChip>,
+    )
   if (it.result && !it.result.suggestion?.category) out.push(<ReasonChip key="cat">{tr('Нет категории', 'Kategoriya yoʻq')}</ReasonChip>)
   if (it.result?.note) out.push(<ReasonChip key="note">{tr('Есть сомнения', 'Shubha bor')}</ReasonChip>)
   return out
@@ -460,12 +466,29 @@ export function ReviewModal({ item, onClose }: { item: NewItem | null; onClose: 
             </Flex>
           )}
           {!failed && res?.note && <Alert type="warning" showIcon message={tr('Проверьте', 'Tekshiring')} description={res.note} />}
+          {item.barcode_invalid && (
+            <Alert
+              type="warning"
+              showIcon
+              message={tr(`Штрихкод ${item.barcode} не проходит проверку — похоже на опечатку`, `${item.barcode} shtrix-kodi tekshiruvdan oʻtmadi — xatoga oʻxshaydi`)}
+              description={tr('Сверьте цифры с упаковкой и исправьте поле «Штрихкод» ниже.', 'Raqamlarni qadoq bilan solishtiring va pastdagi «Shtrix-kod» maydonini tuzating.')}
+            />
+          )}
           {item.duplicate && <DupBlock dup={item.duplicate} loading={saving === 'merge'} onMerge={merge} />}
           {res?.match && (
             <Flex vertical gap={8} style={{ background: '#FFF7D6', borderRadius: 12, padding: 12 }}>
               <Typography.Text strong style={{ color: '#7A2E0E' }}>
-                {tr('Похоже, такой товар уже есть в базе', 'Bunday mahsulot bazada allaqachon borga oʻxshaydi')}
+                {res.match.same_barcode
+                  ? tr('Этот штрихкод уже есть в базе', 'Bu shtrix-kod bazada allaqachon bor')
+                  : tr('Похоже, это тот же товар с другим штрихкодом', 'Bu boshqa shtrix-kodli xuddi shu mahsulotga oʻxshaydi')}
               </Typography.Text>
+              {!res.match.same_barcode && (
+                <Typography.Text style={{ fontSize: 12, color: '#7A2E0E' }}>
+                  {item.barcode
+                    ? tr(`Бренд, объём и фасовка совпадают. «Это он» добавит штрихкод ${item.barcode} к этому товару. Если товар другой — подтвердите ниже.`, `Brend, hajm va qadoq mos keladi. «Shu» ${item.barcode} shtrix-kodini shu mahsulotga qoʻshadi. Boshqa mahsulot boʻlsa — pastda tasdiqlang.`)
+                    : tr('Бренд, объём и фасовка совпадают. Если товар другой — подтвердите ниже.', 'Brend, hajm va qadoq mos keladi. Boshqa mahsulot boʻlsa — pastda tasdiqlang.')}
+                </Typography.Text>
+              )}
               <Flex align="center" gap={10}>
                 <Thumb src={res.match.image} size={40} />
                 <div style={{ flex: 1, minWidth: 0 }}>
