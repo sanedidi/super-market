@@ -17,11 +17,18 @@ import (
 // так меньше трафика и входных токенов, а качества хватает.
 const photoInputSide = 1600
 
+// geminiReads — форматы, которые Gemini принимает на вход.
+var geminiReads = map[string]bool{"image/jpeg": true, "image/png": true, "image/webp": true}
+
 // shrinkForModel — JPEG не больше photoInputSide по большей стороне.
 // Маленькие JPEG/PNG уходят как есть.
 func shrinkForModel(raw []byte, mime string) (Image, error) {
 	src, _, err := image.Decode(bytes.NewReader(raw))
 	if err != nil {
+		// WEBP (и PNG/JPEG, которые Go не разобрал) Gemini читает сам — отдаём как есть.
+		if geminiReads[mime] {
+			return Image{MIME: mime, Data: raw}, nil
+		}
 		return Image{}, errors.New("не удалось прочитать фото")
 	}
 	b := src.Bounds()
