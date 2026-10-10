@@ -32,7 +32,8 @@ class ProductThumb extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: url == null || url!.isEmpty
           ? empty
-          : Image.network(url!, fit: BoxFit.contain, errorBuilder: (_, __, ___) => empty),
+          // cacheWidth — декодируем под размер плитки: иначе сотни фото в списке съедают память.
+          : Image.network(url!, fit: BoxFit.contain, cacheWidth: (size * 3).round(), errorBuilder: (_, __, ___) => empty),
     );
   }
 }

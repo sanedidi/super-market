@@ -222,7 +222,27 @@ class _StartCountScreenState extends State<StartCountScreen> {
               ? const Center(child: CircularProgressIndicator())
               : RefreshIndicator(
                   onRefresh: _load,
-                  child: ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24), children: [
+                  // Список строится лениво: с сотнями строк (у каждой — поля ввода
+                  // и фото) всё сразу не помещалось в память и приложение закрывалось.
+                  child: ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                    itemCount: lines.length + 1,
+                    itemBuilder: (_, index) {
+                      if (index > 0) {
+                        final l = lines[index - 1];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _CountCard(
+                              key: ValueKey(l['product_id']),
+                              line: l,
+                              start: widget.start,
+                              onSaved: _saved,
+                              onPending: _track,
+                              onRemove: () => _remove(l),
+                              onOpen: () => _open(l)),
+                        );
+                      }
+                      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                     const StartSteps(step: 2),
                     const SizedBox(height: 12),
                     // И1 · тот же поиск и сканер, что при добавлении товара.
@@ -323,11 +343,9 @@ class _StartCountScreenState extends State<StartCountScreen> {
                     const SizedBox(height: 12),
                     if (lines.isEmpty)
                       Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Text(_only == null && _query == null ? tr('Нет товаров — добавьте их на шаге 1', 'Mahsulotlar yoʻq — ularni 1-qadamda qoʻshing') : tr('Таких товаров нет', 'Bunday mahsulotlar yoʻq'), style: AppText.small)),
-                    for (final l in lines) ...[
-                      _CountCard(key: ValueKey(l['product_id']), line: l, start: widget.start, onSaved: _saved, onPending: _track, onRemove: () => _remove(l), onOpen: () => _open(l)),
-                      const SizedBox(height: 10),
-                    ],
-                  ]),
+                      ]);
+                    },
+                  ),
                 ),
       bottomNavigationBar: d == null
           ? null

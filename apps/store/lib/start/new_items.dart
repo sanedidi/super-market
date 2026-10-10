@@ -412,30 +412,45 @@ class _NewItemsTabState extends State<NewItemsTab> {
           if (hasMore && n.metrics.extentAfter < 400) widget.onMore!();
           return false;
         },
-        child: ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), children: [
-          Text(tr('Super Market заполняет карточки по фото — можно работать дальше', 'Super Market rasmlar boʻyicha kartochkalarni toʻldiradi — ishni davom ettirish mumkin'),
-              style: AppText.caption),
-          const SizedBox(height: 8),
-          if (items.isEmpty)
-            Text(tr('Пока пусто. Нет товара ни в базе, ни в каталоге ИКПУ — нажмите «+» и сфотографируйте его.', 'Hozircha boʻsh. Mahsulot na bazada, na MXIK katalogida boʻlsa — «+»ni bosing va uni suratga oling.'),
-                style: AppText.small)
-          else
-            AppCard(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Column(children: [
-                for (var i = 0; i < items.length; i++) ...[
+        // Лениво: в очереди бывают сотни карточек с фото — все сразу телефон не держит.
+        child: ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          itemCount: items.length + 2,
+          itemBuilder: (_, index) {
+            if (index == 0) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(tr('Super Market заполняет карточки по фото — можно работать дальше', 'Super Market rasmlar boʻyicha kartochkalarni toʻldiradi — ishni davom ettirish mumkin'),
+                    style: AppText.caption),
+              );
+            }
+            if (index <= items.length) {
+              final i = index - 1;
+              return DecoratedBox(
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(i == 0 ? 20 : 0),
+                    bottom: Radius.circular(i == items.length - 1 ? 20 : 0),
+                  ),
+                ),
+                child: Column(children: [
                   if (i > 0) const Divider(height: 1, indent: 72, color: AppColors.line),
                   _NewTile(item: items[i], onTap: items[i]['status'] == 'processing' ? null : () => _open(items[i])),
-                ],
-              ]),
-            ),
-          if (hasMore)
-            const Padding(
-              padding: EdgeInsets.only(top: 12),
-              child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
-            ),
-          const SizedBox(height: 12),
-          Container(
+                ]),
+              );
+            }
+            return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              if (items.isEmpty)
+                Text(tr('Пока пусто. Нет товара ни в базе, ни в каталоге ИКПУ — нажмите «+» и сфотографируйте его.', 'Hozircha boʻsh. Mahsulot na bazada, na MXIK katalogida boʻlsa — «+»ni bosing va uni suratga oling.'),
+                    style: AppText.small),
+              if (hasMore)
+                const Padding(
+                  padding: EdgeInsets.only(top: 12),
+                  child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+                ),
+              const SizedBox(height: 12),
+              Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(color: AppColors.blueSoft, borderRadius: BorderRadius.circular(16)),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -447,10 +462,12 @@ class _NewItemsTabState extends State<NewItemsTab> {
                       'Mahsulot «Mahsulotlarim»ga faqat siz tasdiqlaganingizdan soʻng tushadi. Yangi mahsulotlar «Inventarizatsiya»dan soʻng umumiy bazaga tekshiruvga yuboriladi.'),
                   style: AppText.small.copyWith(fontSize: 12, color: AppColors.blue),
                 ),
-              ),
-            ]),
-          ),
-        ]),
+                ),
+              ]),
+            ),
+            ]);
+          },
+        ),
       ),
     );
   }

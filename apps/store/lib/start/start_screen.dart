@@ -138,7 +138,7 @@ class _StartScreenState extends State<StartScreen> {
   Future<void> _load() async {
     _loadNew();
     try {
-      final d = await _start.draft(limit: 500);
+      final d = await _start.draft(limit: 1000);
       if (mounted) {
         setState(() {
           _d = d;
@@ -384,26 +384,42 @@ class _StartScreenState extends State<StartScreen> {
         onMissingBarcode: _missingBarcode,
       );
 
+  /// Список строится лениво (ListView.builder): с сотнями товаров обычный
+  /// Column держал в памяти все строки с фото — на телефоне приложение закрывалось.
   Widget _mineTab(Map<String, dynamic> d) {
     final lines = ((d['lines'] as List?) ?? const []).cast<Map<String, dynamic>>();
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), children: [
-        Text(tr('Последние добавленные сверху', 'Oxirgi qoʻshilganlar yuqorida'), style: AppText.caption),
-        const SizedBox(height: 8),
-        if (lines.isEmpty)
-          Text(tr('Пока пусто — найдите товары во вкладке «Поиск в базе» или снимите полку.', 'Hozircha boʻsh — mahsulotlarni «Bazadan qidirish» boʻlimida toping yoki javonni rasmga oling.'), style: AppText.small)
-        else
-          AppCard(
-            padding: const EdgeInsets.symmetric(vertical: 4),
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        itemCount: lines.length + 1,
+        itemBuilder: (_, index) {
+          if (index == 0) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: lines.isEmpty
+                  ? Text(tr('Пока пусто — найдите товары во вкладке «Поиск в базе» или снимите полку.', 'Hozircha boʻsh — mahsulotlarni «Bazadan qidirish» boʻlimida toping yoki javonni rasmga oling.'),
+                      style: AppText.small)
+                  : Text(tr('Последние добавленные сверху', 'Oxirgi qoʻshilganlar yuqorida'), style: AppText.caption),
+            );
+          }
+          final i = index - 1;
+          final l = lines[i];
+          return DecoratedBox(
+            decoration: BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(i == 0 ? 20 : 0),
+                bottom: Radius.circular(i == lines.length - 1 ? 20 : 0),
+              ),
+            ),
             child: Column(children: [
-              for (var i = 0; i < lines.length; i++) ...[
-                if (i > 0) const Divider(height: 1, indent: 68, color: AppColors.line),
-                _MineTile(line: lines[i], highlight: lines[i]['product_id'] == _highlight, onRemove: () => _remove(lines[i])),
-              ],
+              if (i > 0) const Divider(height: 1, indent: 68, color: AppColors.line),
+              _MineTile(line: l, highlight: l['product_id'] == _highlight, onRemove: () => _remove(l)),
             ]),
-          ),
-      ]),
+          );
+        },
+      ),
     );
   }
 }
