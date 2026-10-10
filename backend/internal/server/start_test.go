@@ -258,7 +258,7 @@ func TestStart(t *testing.T) {
 
 	// Новый товар сети (нет в базе) — на модерацию, но в «Мои товары» можно.
 	kvass := a.expect(a.do("POST", "/store/products", ownerTok, map[string]any{"name": "Квас Navruz 1,5 л", "category_id": drinks, "unit_id": pcs,
-		"base_price": 12000, "barcodes": []string{"4780098765432"}}), 201, "own product").str("id")
+		"base_price": 12000, "barcodes": []string{"4780098765432"}, "images": []string{"https://cdn.example/kvass.png"}}), 201, "own product").str("id")
 	a.expect(lines(map[string]any{"product_id": kvass, "add": true, "qty": 2, "cost": 9500, "price": 12000, "source": "new"}), 200, "kvass line")
 	// Свой товар, похожий на уже добавленный: из поиска — вопрос, только что созданный — без вопроса.
 	glass := a.expect(a.do("POST", "/store/products", ownerTok, map[string]any{"name": "Напиток Coca-Cola 1,5 л стекло", "category_id": drinks, "unit_id": pcs,

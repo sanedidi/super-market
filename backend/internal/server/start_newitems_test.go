@@ -51,7 +51,8 @@ func TestStartNewItems(t *testing.T) {
 			pcs = u["id"].(string)
 		}
 	}
-	known := a.expect(a.do("POST", "/admin/products", adminTok, map[string]any{"name": "Сок Bliss яблочный, 1 л", "category_id": juices, "unit_id": pcs}), 201, "known").str("id")
+	known := a.expect(a.do("POST", "/admin/products", adminTok, map[string]any{"name": "Сок Bliss яблочный, 1 л", "category_id": juices, "unit_id": pcs,
+		"images": []string{"https://cdn.example/bliss.png"}}), 201, "known").str("id")
 
 	upload := func() string {
 		t.Helper()
