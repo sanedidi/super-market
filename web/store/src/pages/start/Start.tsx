@@ -34,6 +34,7 @@ import { plainNum, useStartApi, useStartRefresh, type Draft, type Line, type Lin
 import { BarcodeModal, NewProductModal, PhotoModal, SimilarModal, sum } from './Modals'
 import { TasnifBlock, TasnifLink } from './Tasnif'
 import { NewByPhotoModal, NewItemsList, ReviewModal, RightTabs, newItemState, useNewItems } from './NewItems'
+import { CountDrawer, ScanCard } from './CountScan'
 import { Thumb } from './Thumb'
 
 const PAGE = 50
@@ -52,8 +53,12 @@ export function StartPage() {
 function Start() {
   const { storeId } = useStore()
   const [params, setParams] = useSearchParams()
-  const step = params.get('step') === '2' ? 2 : 1
-  const setStep = (s: 1 | 2) => setParams(s === 2 ? { step: '2' } : {})
+  const urlStep = params.get('step')
+  // Шаг запоминается в черновике — «SM Магазин» на главной показывает тот же.
+  const setStep = (s: 1 | 2) => {
+    setParams({ step: String(s) })
+    api.post('/store/start/step', { store_id: storeId, step: s }).catch(() => {})
+  }
   const [result, setResult] = useState<PostResult | null>(null)
 
   // Шапка черновика: закрыт ли, итоги, склад.
@@ -63,6 +68,7 @@ function Start() {
     placeholderData: keepPreviousData,
   })
   const d = head.data
+  const step = urlStep === '2' ? 2 : urlStep === '1' ? 1 : d?.step === 2 ? 2 : 1
 
   if (result) return <Posted r={result} />
   if (head.error) return <LoadError error={head.error} retry={() => head.refetch()} />
@@ -686,7 +692,7 @@ function NumCell({
   )
 }
 
-type Only = '' | 'unfilled' | 'no_cost'
+type Only = '' | 'unfilled' | 'no_cost' | 'no_photo'
 
 /** V4: документ «Инвентаризация: Начало работы». */
 function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted: (r: PostResult) => void }) {
@@ -695,6 +701,8 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
   const { setLines, deleteLine, refresh } = useStartApi(storeId)
   const [only, setOnly] = useState<Only>('')
   const [page, setPage] = useState(1)
+  // Товар, который открыт в шторке ввода (скан или поиск по названию).
+  const [sheet, setSheet] = useState<Line | null>(null)
   useEffect(() => setPage(1), [only, storeId])
   const params = { store_id: storeId, only: only || undefined, limit: PAGE + 1, offset: (page - 1) * PAGE }
   const draft = useQuery({ queryKey: ['/store/start', params], queryFn: () => api.get<Draft>('/store/start', params), placeholderData: keepPreviousData })
@@ -715,6 +723,11 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
 
   const post = () => {
     ;(document.activeElement as HTMLElement | null)?.blur()
+    if (t.no_photo > 0) {
+      setOnly('no_photo')
+      message.error(tr(`Добавьте фото: товаров без фото — ${t.no_photo}`, `Rasm qoʻshing: rasmsiz mahsulotlar — ${t.no_photo}`))
+      return
+    }
     if (t.unfilled > 0) {
       setOnly('unfilled')
       message.error(tr(`Заполните ${rows(t.unfilled)}: количество и цена продажи обязательны`, `${rows(t.unfilled)}ni toʻldiring: miqdor va sotish narxi majburiy`))
@@ -758,6 +771,7 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
         } catch (e) {
           message.error(errorText(e))
           if (e instanceof ApiError && e.code === 'lines_unfilled') setOnly('unfilled')
+          if (e instanceof ApiError && e.code === 'lines_no_photo') setOnly('no_photo')
           await refresh()
           throw e
         }
@@ -790,12 +804,32 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
         )}
       </Typography.Paragraph>
       <Steps step={2} go={back} />
+      <div style={{ marginBottom: 16 }}>
+        <ScanCard onFound={setSheet} />
+      </div>
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Stat title={tr('Товаров', 'Mahsulotlar')} value={String(t.products)} />
         <Stat title={tr('Заполнено', 'Toʻldirilgan')} value={tr(`${filled} из ${t.products}`, `${filled} / ${t.products}`)} warn={t.unfilled > 0} />
         <Stat title={tr('По себестоимости', 'Tannarxda')} value={sum(t.cost_total)} />
         <Stat title={tr('По цене продажи', 'Sotish narxida')} value={sum(t.price_total)} />
       </Row>
+      {t.no_photo > 0 && (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={tr(`Без фото: ${goods(t.no_photo)}`, `Rasmsiz: ${goods(t.no_photo)}`)}
+          description={tr(
+            'Покупатель не увидит товар без фото, поэтому «Записать и закрыть» с такими товарами не пройдёт. Откройте товар и загрузите снимок.',
+            'Xaridor rasmsiz mahsulotni koʻrmaydi, shuning uchun «Yozish va yopish» oʻtmaydi. Mahsulotni oching va rasm yuklang.',
+          )}
+          action={
+            <Button size="small" onClick={() => setOnly('no_photo')}>
+              {tr('Показать', 'Koʻrsatish')}
+            </Button>
+          }
+        />
+      )}
       {t.unfilled > 0 && (
         <Card style={{ borderColor: RED, borderWidth: 1.5, marginBottom: 16 }} styles={{ body: { padding: '12px 14px' } }}>
           <Flex gap={10} align="start">
@@ -824,7 +858,8 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
             options={[
               { value: '', label: `${tr('Все', 'Hammasi')} · ${t.products}` },
               { value: 'unfilled', label: `${tr('Не заполнено', 'Toʻldirilmagan')} · ${t.unfilled}` },
-              { value: 'no_cost', label: `${tr('Без себестоимости', 'Tannarxsiz')} · ${t.no_cost}` },
+              { value: 'no_cost', label: `${tr('Без цены закупки', 'Xarid narxisiz')} · ${t.no_cost}` },
+              { value: 'no_photo', label: `${tr('Без фото', 'Rasmsiz')} · ${t.no_photo}` },
             ]}
           />
         }
@@ -863,7 +898,7 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
               render: (_, l) => <NumCell value={l.qty} required placeholder={tr('обязательно', 'majburiy')} onSave={(v) => save(l, { qty: v })} />,
             },
             {
-              title: tr('Себестоимость', 'Tannarx'),
+              title: tr('Цена закупки', 'Xarid narxi'),
               key: 'cost',
               width: 140,
               render: (_, l) => <NumCell value={l.cost} placeholder={tr('необязательно', 'ixtiyoriy')} onSave={(v) => save(l, { cost: v })} />,
@@ -880,6 +915,15 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
                   title={Number(l.current_price) > 0 ? tr(`В базе: ${money(l.current_price)}`, `Bazada: ${money(l.current_price)}`) : undefined}
                   onSave={(v) => save(l, { price: v })}
                 />
+              ),
+            },
+            {
+              key: 'fill',
+              width: 44,
+              render: (_, l) => (
+                <Tooltip title={l.image ? tr('Количество и цены', 'Miqdor va narxlar') : tr('Нужно фото товара', 'Mahsulot rasmi kerak')}>
+                  <Button type="text" size="small" danger={!l.image} icon={l.image ? <RightOutlined /> : <CameraOutlined />} onClick={() => setSheet(l)} />
+                </Tooltip>
               ),
             },
             {
@@ -908,6 +952,15 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
           }
         />
       </Card>
+      <CountDrawer
+        line={sheet}
+        onClose={() => setSheet(null)}
+        onSaved={async () => {
+          setSheet(null)
+          await refresh()
+          await draft.refetch()
+        }}
+      />
     </>
   )
 }

@@ -227,6 +227,9 @@ class _StartScreenState extends State<StartScreen> {
 
   Future<void> _next() async {
     await Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => StartCountScreen(start: _start)));
+    if (!mounted) return;
+    // Вернулись к выбору товаров — «Штрихкод» на главной снова добавляет товар.
+    _start.setStep(1).catchError((_) {});
     _load();
   }
 
@@ -288,7 +291,7 @@ class _StartScreenState extends State<StartScreen> {
                     onPressed: products == 0 ? null : _next,
                   ),
                   const SizedBox(height: 6),
-                  Text(tr('Количество, себестоимость и цены — на шаге 2', 'Miqdor, tannarx va narxlar — 2-qadamda'), style: AppText.small),
+                  Text(tr('Количество, цена продажи и цена закупки — на шаге 2', 'Miqdor, sotish narxi va xarid narxi — 2-qadamda'), style: AppText.small),
                 ]),
               ),
             ),
@@ -605,11 +608,96 @@ class _StartHomeBlockState extends State<StartHomeBlock> {
     _load();
   }
 
+  /// Шаг 2: те же кнопки ведут в «Инвентаризацию» — «Штрихкод» сразу открывает
+  /// сканер, и найденный товар просит количество и цены, а не добавление.
+  Future<void> _openCount({bool scan = false}) async {
+    final api = StartApi(context.read<Api>(), widget.storeId);
+    await Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => StartCountScreen(start: api, initialScan: scan)));
+    _load();
+  }
+
+  /// Н1 (шаг 2) · «Шаг 2 · Инвентаризация»: заполнено столько-то, «Штрихкод» —
+  /// основная кнопка, она открывает ввод количества и цен.
+  Widget _countBlock(int products, int unfilled) {
+    Widget btn(IconData icon, String label, VoidCallback onTap, {bool primary = false}) => Expanded(
+          child: Material(
+            color: primary ? AppColors.primary : AppColors.soft,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Column(children: [
+                  Icon(icon, color: primary ? AppColors.white : AppColors.ink, size: 22),
+                  const SizedBox(height: 4),
+                  Text(label, style: AppText.caption.copyWith(color: primary ? AppColors.white : AppColors.ink)),
+                ]),
+              ),
+            ),
+          ),
+        );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: AppCard(
+        border: AppColors.primary,
+        onTap: () => _openCount(),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const IconBox(Icons.inventory_2_rounded, bg: AppColors.primarySoft, fg: AppColors.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(tr('Шаг 2 · Инвентаризация', '2-qadam · Inventarizatsiya'), style: AppText.title),
+                Text(tr('Впишите количество и цены — можно сканером', 'Miqdor va narxlarni kiriting — skaner bilan ham boʻladi'), style: AppText.small),
+              ]),
+            ),
+          ]),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(
+              child: Text(tr('Заполнено ${products - unfilled} из $products', 'Toʻldirilgan ${products - unfilled} / $products'),
+                  style: AppText.bodyStrong.copyWith(fontSize: 14)),
+            ),
+            Text(tr('черновик сохраняется', 'qoralama saqlanadi'), style: AppText.small),
+          ]),
+          const SizedBox(height: 12),
+          Row(children: [
+            btn(Icons.qr_code_scanner_rounded, tr('Штрихкод', 'Shtrix-kod'), () => _openCount(scan: true), primary: true),
+            const SizedBox(width: 8),
+            btn(Icons.list_alt_rounded, tr('Список', 'Roʻyxat'), () => _openCount()),
+            const SizedBox(width: 8),
+            btn(Icons.add_rounded, tr('Товар', 'Mahsulot'), () => _open(StartMethod.search)),
+          ]),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: AppColors.successSoft, borderRadius: BorderRadius.circular(12)),
+            child: Row(children: [
+              const Icon(Icons.info_outline_rounded, size: 16, color: AppColors.successInk),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(tr('Теперь штрихкод открывает количество и цены, а не добавление товара',
+                    'Endi shtrix-kod mahsulot qoʻshishni emas, miqdor va narxlarni ochadi'),
+                    style: AppText.small.copyWith(fontSize: 12, color: AppColors.successInk)),
+              ),
+            ]),
+          ),
+        ]),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final d = _d;
     if (d == null || d['closed'] == true) return const SizedBox.shrink();
-    final products = ((d['totals'] as Map<String, dynamic>?)?['products'] as num?)?.toInt() ?? 0;
+    final totals = (d['totals'] as Map<String, dynamic>?) ?? const {};
+    final products = (totals['products'] as num?)?.toInt() ?? 0;
+    final unfilled = (totals['unfilled'] as num?)?.toInt() ?? 0;
+    // Шаг черновика общий с веб-панелью: на шаге 2 сканер — это инвентаризация.
+    final count = ((d['step'] as num?)?.toInt() ?? 1) == 2 && products > 0;
+    if (count) return _countBlock(products, unfilled);
     Widget btn(StartMethod m, IconData icon, String label, {bool primary = false}) => Expanded(
           child: Material(
             color: primary ? AppColors.primary : AppColors.soft,

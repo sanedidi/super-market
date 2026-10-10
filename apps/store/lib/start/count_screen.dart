@@ -5,6 +5,7 @@ import '../main.dart';
 import '../receipt/receipt_logic.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
+import 'camera_screen.dart';
 import 'sheets.dart';
 import 'start_api.dart';
 import 'start_logic.dart';
@@ -15,9 +16,12 @@ import 'start_logic.dart';
 /// «Сохранить» — черновик; «Записать и закрыть» — остатки и цены магазина,
 /// после этого «Начало работы» больше не показывается.
 class StartCountScreen extends StatefulWidget {
-  const StartCountScreen({super.key, required this.start});
+  const StartCountScreen({super.key, required this.start, this.initialScan = false});
 
   final StartApi start;
+
+  /// Сразу открыть сканер (нажали «Штрихкод» в блоке на главной на шаге 2).
+  final bool initialScan;
 
   @override
   State<StartCountScreen> createState() => _StartCountScreenState();
@@ -27,19 +31,76 @@ class _StartCountScreenState extends State<StartCountScreen> {
   Map<String, dynamic>? _d;
   Object? _error;
   String? _only;
+  String? _query;
   bool _busy = false;
+  final _q = TextEditingController();
   // Сохранения полей, которые ещё идут.
   final _pending = <Future<void>>{};
 
   @override
   void initState() {
     super.initState();
+    // Магазин на шаге 2: теперь «Штрихкод» на главной открывает инвентаризацию.
+    widget.start.setStep(2).catchError((_) {});
     _load();
+    if (widget.initialScan) WidgetsBinding.instance.addPostFrameCallback((_) => _scan());
+  }
+
+  @override
+  void dispose() {
+    _q.dispose();
+    super.dispose();
+  }
+
+  /// Сканер поверх камеры: найденный товар открывает шторку количества и цен.
+  Future<void> _scan() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => StartCameraScreen(start: widget.start, mode: StartMode.barcode, inventory: true)),
+    );
+    if (mounted) _load();
+  }
+
+  /// Поиск: штрихкод — сразу шторка, название — фильтр по товарам документа.
+  Future<void> _find(String text) async {
+    final t = text.trim();
+    if (t.isEmpty) {
+      setState(() => _query = null);
+      _load();
+      return;
+    }
+    if (!RegExp(r'^[0-9]{6,14}$').hasMatch(t)) {
+      setState(() => _query = t);
+      _load();
+      return;
+    }
+    try {
+      final r = await widget.start.scan(t);
+      if (!mounted) return;
+      final l = r['line'];
+      if (l is Map) {
+        await countSheet(context, widget.start, l.cast<String, dynamic>());
+        if (!mounted) return;
+        _q.clear();
+        _load();
+        return;
+      }
+      showMessage(context, tr('Штрихкода $t нет в этом документе — отсканируйте его камерой', '$t shtrix-kodi bu hujjatda yoʻq — uni kamera bilan skanerlang'));
+    } catch (e) {
+      if (mounted) showMessage(context, e);
+    }
+  }
+
+  /// Открыть шторку количества и цен по строке списка.
+  Future<void> _open(Map<String, dynamic> line) async {
+    await _flush();
+    if (!mounted) return;
+    await countSheet(context, widget.start, line);
+    if (mounted) _load();
   }
 
   Future<void> _load() async {
     try {
-      final d = await widget.start.draft(only: _only, limit: 1000);
+      final d = await widget.start.draft(only: _only, q: _query, limit: 1000);
       if (mounted) {
         setState(() {
           _d = d;
@@ -132,6 +193,7 @@ class _StartCountScreenState extends State<StartCountScreen> {
       if (!mounted) return;
       showMessage(context, e);
       if (e.code == 'lines_unfilled') _filter('unfilled');
+      if (e.code == 'lines_no_photo') _filter('no_photo');
     } catch (e) {
       if (mounted) showMessage(context, e);
     } finally {
@@ -163,6 +225,74 @@ class _StartCountScreenState extends State<StartCountScreen> {
                   child: ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24), children: [
                     const StartSteps(step: 2),
                     const SizedBox(height: 12),
+                    // И1 · тот же поиск и сканер, что при добавлении товара.
+                    Row(children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _q,
+                          textInputAction: TextInputAction.search,
+                          onSubmitted: _find,
+                          onChanged: (_) => setState(() {}),
+                          decoration: InputDecoration(
+                            prefixIcon: const Icon(Icons.search_rounded, color: AppColors.muted),
+                            hintText: tr('Штрихкод или название товара', 'Shtrix-kod yoki mahsulot nomi'),
+                            suffixIcon: _q.text.isEmpty
+                                ? null
+                                : IconButton(
+                                    icon: const Icon(Icons.close_rounded, color: AppColors.muted),
+                                    onPressed: () {
+                                      _q.clear();
+                                      _find('');
+                                    },
+                                  ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Material(
+                        color: AppColors.ink,
+                        borderRadius: BorderRadius.circular(14),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(14),
+                          onTap: _scan,
+                          child: const Padding(
+                            padding: EdgeInsets.all(14),
+                            child: Icon(Icons.qr_code_scanner_rounded, color: AppColors.white),
+                          ),
+                        ),
+                      ),
+                    ]),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: AppColors.successSoft, borderRadius: BorderRadius.circular(14)),
+                      child: Row(children: [
+                        const Icon(Icons.qr_code_scanner_rounded, size: 20, color: AppColors.successInk),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(tr('Сканируйте штрихкод — снизу откроется ввод количества и цен', 'Shtrix-kodni skanerlang — pastdan miqdor va narx kiritish ochiladi'),
+                              style: AppText.small.copyWith(color: AppColors.successInk, fontWeight: FontWeight.w500)),
+                        ),
+                      ]),
+                    ),
+                    const SizedBox(height: 12),
+                    if (_n('no_photo') > 0) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(color: AppColors.errorSoft, borderRadius: BorderRadius.circular(14)),
+                        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          const Icon(Icons.photo_camera_rounded, color: AppColors.primary, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                                tr('Без фото: ${goods(_n('no_photo'))} — покупатель их не увидит, документ не запишется. Откройте товар и сделайте фото.',
+                                    'Rasmsiz: ${goods(_n('no_photo'))} — xaridor ularni koʻrmaydi, hujjat yozilmaydi. Mahsulotni ochib, rasmga oling.'),
+                                style: AppText.small.copyWith(color: AppColors.error, fontWeight: FontWeight.w500)),
+                          ),
+                        ]),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     if (unfilled > 0) ...[
                       Container(
                         padding: const EdgeInsets.all(12),
@@ -185,14 +315,16 @@ class _StartCountScreenState extends State<StartCountScreen> {
                         const SizedBox(width: 6),
                         _Chip(tr('Не заполнено · $unfilled', 'Toʻldirilmagan · $unfilled'), on: _only == 'unfilled', tone: AppColors.error, onTap: () => _filter('unfilled')),
                         const SizedBox(width: 6),
-                        _Chip(tr('Без себест. · ${_n('no_cost')}', 'Tannarxsiz · ${_n('no_cost')}'), on: _only == 'no_cost', tone: AppColors.warningInk, onTap: () => _filter('no_cost')),
+                        _Chip(tr('Без закупки · ${_n('no_cost')}', 'Xarid narxisiz · ${_n('no_cost')}'), on: _only == 'no_cost', tone: AppColors.warningInk, onTap: () => _filter('no_cost')),
+                        const SizedBox(width: 6),
+                        _Chip(tr('Без фото · ${_n('no_photo')}', 'Rasmsiz · ${_n('no_photo')}'), on: _only == 'no_photo', tone: AppColors.error, onTap: () => _filter('no_photo')),
                       ]),
                     ),
                     const SizedBox(height: 12),
                     if (lines.isEmpty)
-                      Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Text(_only == null ? tr('Нет товаров — добавьте их на шаге 1', 'Mahsulotlar yoʻq — ularni 1-qadamda qoʻshing') : tr('Таких товаров нет', 'Bunday mahsulotlar yoʻq'), style: AppText.small)),
+                      Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Text(_only == null && _query == null ? tr('Нет товаров — добавьте их на шаге 1', 'Mahsulotlar yoʻq — ularni 1-qadamda qoʻshing') : tr('Таких товаров нет', 'Bunday mahsulotlar yoʻq'), style: AppText.small)),
                     for (final l in lines) ...[
-                      _CountCard(key: ValueKey(l['product_id']), line: l, start: widget.start, onSaved: _saved, onPending: _track, onRemove: () => _remove(l)),
+                      _CountCard(key: ValueKey(l['product_id']), line: l, start: widget.start, onSaved: _saved, onPending: _track, onRemove: () => _remove(l), onOpen: () => _open(l)),
                       const SizedBox(height: 10),
                     ],
                   ]),
@@ -251,11 +383,14 @@ class _Chip extends StatelessWidget {
 /// Карточка товара: название целиком, штрихкод; поля «Кол-во *», «Себестоимость»,
 /// «Цена продажи *». Поле сохраняется, когда из него уходят.
 class _CountCard extends StatefulWidget {
-  const _CountCard({super.key, required this.line, required this.start, required this.onSaved, required this.onPending, required this.onRemove});
+  const _CountCard({super.key, required this.line, required this.start, required this.onSaved, required this.onPending, required this.onRemove, required this.onOpen});
 
   final Map<String, dynamic> line;
   final StartApi start;
   final ValueChanged<Map<String, dynamic>> onSaved;
+
+  /// Открыть шторку количества и цен (там же — фото, если его нет).
+  final VoidCallback onOpen;
 
   /// Начатое сохранение — экран дождётся его перед «Сохранить» и «Записать».
   final ValueChanged<Future<void>> onPending;
@@ -363,18 +498,40 @@ class _CountCardState extends State<_CountCard> {
   Widget build(BuildContext context) {
     final l = widget.line;
     final unit = (l['unit_short'] as String?) ?? tr('шт', 'dona');
+    final img = l['image'];
+    final noPhoto = img == null || '$img'.isEmpty;
     return AppCard(
       padding: const EdgeInsets.fromLTRB(14, 12, 4, 14),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          ProductThumb(l['image'] as String?, size: 44),
+          noPhoto
+              ? Container(
+                  width: 44,
+                  height: 44,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.errorSoft,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.primary, width: 1.5),
+                  ),
+                  child: const Icon(Icons.photo_camera_rounded, size: 20, color: AppColors.primary),
+                )
+              : ProductThumb(l['image'] as String?, size: 44),
           const SizedBox(width: 10),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('${l['name']}', style: AppText.bodyStrong.copyWith(fontSize: 14)),
-              Text('${l['barcode'] ?? tr('без штрихкода', 'shtrix-kodsiz')}', style: AppText.small.copyWith(fontSize: 12)),
+              Text(
+                  noPhoto
+                      ? tr('нужно фото товара', 'mahsulot rasmi kerak')
+                      : '${l['barcode'] ?? tr('без штрихкода', 'shtrix-kodsiz')}',
+                  style: AppText.small.copyWith(fontSize: 12, color: noPhoto ? AppColors.error : null)),
             ]),
           ),
+          IconButton(
+              tooltip: noPhoto ? tr('Сделать фото', 'Rasmga olish') : tr('Количество и цены', 'Miqdor va narxlar'),
+              icon: Icon(noPhoto ? Icons.add_a_photo_rounded : Icons.edit_note_rounded, color: noPhoto ? AppColors.primary : AppColors.text2),
+              onPressed: widget.onOpen),
           IconButton(tooltip: tr('Убрать', 'Olib tashlash'), icon: const Icon(Icons.delete_outline_rounded, color: AppColors.text2), onPressed: widget.onRemove),
         ]),
         const SizedBox(height: 10),
@@ -383,7 +540,7 @@ class _CountCardState extends State<_CountCard> {
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             _field('qty', tr('Кол-во, $unit *', 'Miqdor, $unit *'), required: true),
             const SizedBox(width: 8),
-            _field('cost', tr('Себестоимость', 'Tannarx'), required: false),
+            _field('cost', tr('Цена закупки', 'Xarid narxi'), required: false),
             const SizedBox(width: 8),
             _field('price', tr('Цена продажи *', 'Sotish narxi *'), required: true),
           ]),

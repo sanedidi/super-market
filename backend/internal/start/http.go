@@ -31,6 +31,9 @@ func (m *Module) Routes(r chi.Router) {
 		r.Delete("/lines/{product_id}", m.deleteLine)
 		r.Post("/post", m.post)
 		r.Get("/search", m.search)
+		r.Get("/scan", m.scan)
+		r.Post("/step", m.setStep)
+		r.Post("/lines/{product_id}/photo", m.linePhoto)
 		r.Post("/tasnif/preview", m.tasnifPreview)
 		r.Post("/tasnif", m.tasnifAdd)
 		r.Get("/new-items", m.listNewItems)
@@ -210,5 +213,34 @@ func (m *Module) deleteNewItem(w http.ResponseWriter, r *http.Request) {
 func (m *Module) confirmNewItem(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in NewItemConfirm) (NewItemConfirmResult, error) {
 		return m.svc.ConfirmNewItem(r.Context(), pr(r), id, in)
+	})
+}
+
+func (m *Module) scan(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (ScanResult, error) {
+		q := r.URL.Query()
+		return m.svc.Scan(r.Context(), pr(r), q.Get("store_id"), q.Get("code"))
+	})
+}
+
+type stepInput struct {
+	StoreID string `json:"store_id"`
+	Step    int    `json:"step"`
+}
+
+func (m *Module) setStep(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in stepInput) (Draft, error) {
+		return m.svc.SetStep(r.Context(), pr(r), in.StoreID, in.Step)
+	})
+}
+
+type linePhotoInput struct {
+	StoreID string   `json:"store_id"`
+	Images  []string `json:"images"`
+}
+
+func (m *Module) linePhoto(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "product_id", func(id string, in linePhotoInput) (LinesResult, error) {
+		return m.svc.SetPhoto(r.Context(), pr(r), in.StoreID, id, in.Images)
 	})
 }

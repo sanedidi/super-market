@@ -99,6 +99,21 @@ class StartApi {
 
   Future<void> deleteNewItem(String id) => api.delete('/store/start/new-items/$id');
 
+  /// Шаг 2 «Инвентаризация»: что нашлось по штрихкоду —
+  /// {status: line | product | none, line, product}. line — товар уже в «Моих
+  /// товарах» (сразу количество и цены), product — есть в центральной базе, но
+  /// не добавлен, none — нет нигде (дальше каталог ИКПУ или новый товар).
+  Future<Map<String, dynamic>> scan(String code) async =>
+      await api.get('/store/start/scan', {'store_id': storeId, 'code': code}) as Map<String, dynamic>;
+
+  /// Запомнить шаг (1 — выбор товаров, 2 — инвентаризация). Шаг общий с
+  /// веб-панелью: от него зависит, что делает «Штрихкод» на главной.
+  Future<void> setStep(int step) => api.post('/store/start/step', {'store_id': storeId, 'step': step});
+
+  /// Фото товару, у которого его нет, — прямо из инвентаризации.
+  Future<Map<String, dynamic>> setPhoto(String productId, List<String> images) async =>
+      await api.post('/store/start/lines/$productId/photo', {'store_id': storeId, 'images': images}) as Map<String, dynamic>;
+
   /// Товар по штрихкоду (центральная база и свои товары сети).
   Future<ProductRef?> byBarcode(String code) async {
     final l = await api.list('/store/products', {'barcode': code, 'store_id': storeId, 'limit': 1});

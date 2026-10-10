@@ -137,6 +137,7 @@ func TestStartNewItems(t *testing.T) {
 	}
 	c = a.expect(a.do("POST", "/store/start/new-items/"+r.str("id")+"/confirm", ownerTok, map[string]any{
 		"store_id": storeID, "name": res["name"], "name_uz": res["name_uz"], "brand_name": res["brand"], "new_category": nc, "unit_id": res["unit_id"],
+		"images": []string{img},
 	}), 200, "cookies confirm")
 	cookies := c.str("product_id")
 
@@ -224,6 +225,16 @@ func TestStartNewItems(t *testing.T) {
 		items = append(items, map[string]any{"product_id": l.(map[string]any)["product_id"], "qty": 1, "price": 1000})
 	}
 	a.expect(a.do("POST", "/store/start/lines", ownerTok, map[string]any{"store_id": storeID, "items": items}), 200, "fill")
+
+	// Товар без фото покупатель не увидит — записать нельзя, пока не добавят снимок.
+	np := a.expect(a.do("POST", "/store/start/post", ownerTok, map[string]any{"store_id": storeID}), 409, "post no photo")
+	if code(np) != "lines_no_photo" || np.Body["error"].(map[string]any)["details"].(map[string]any)["count"] != 1.0 {
+		t.Fatalf("no photo post = %v", np.Body)
+	}
+	a.expect(a.do("POST", "/store/start/lines/"+manual.str("id")+"/photo", ownerTok, map[string]any{"store_id": storeID, "images": []string{img}}), 200, "line photo")
+	if d := a.expect(a.do("GET", "/store/start?store_id="+storeID, ownerTok, nil), 200, "no photo gone"); d.Body["totals"].(map[string]any)["no_photo"] != 0.0 {
+		t.Fatalf("no_photo = %v", d.Body["totals"])
+	}
 	a.expect(a.do("POST", "/store/start/post", ownerTok, map[string]any{"store_id": storeID}), 200, "post")
 	for _, id := range []string{kvass, cookies, manual.str("id")} {
 		var st string

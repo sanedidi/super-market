@@ -138,15 +138,21 @@ type Totals struct {
 	// Unfilled — строк без количества или цены продажи: пока они есть,
 	// «Записать и закрыть» не проходит.
 	Unfilled int `json:"unfilled"`
+	// NoPhoto — строк без фото товара: пока они есть, «Записать и закрыть»
+	// не проходит — без фото покупатель не увидит товар в каталоге.
+	NoPhoto int `json:"no_photo"`
 }
 
 type Draft struct {
-	ID            *string    `json:"id"`
-	StoreID       string     `json:"store_id"`
-	StoreName     string     `json:"store_name"`
-	WarehouseID   string     `json:"warehouse_id"`
-	WarehouseName string     `json:"warehouse_name"`
-	Status        string     `json:"status"`
+	ID            *string `json:"id"`
+	StoreID       string  `json:"store_id"`
+	StoreName     string  `json:"store_name"`
+	WarehouseID   string  `json:"warehouse_id"`
+	WarehouseName string  `json:"warehouse_name"`
+	Status        string  `json:"status"`
+	// Step — на каком шаге магазин: 1 — выбор товаров, 2 — инвентаризация.
+	// Общий для панели и «SM Магазин»: от него зависит, что делает сканер.
+	Step          int        `json:"step"`
 	Lines         []Line     `json:"lines"`
 	Totals        Totals     `json:"totals"`
 	StockProducts int        `json:"stock_products"`
@@ -202,13 +208,14 @@ func (s *Service) totals(ctx context.Context, q db.Querier, draftID string, st s
 		       round(COALESCE(sum(l.qty * COALESCE(l.price, sp.price, np.price, p.base_price)), 0), 2)::text,
 		       (count(*) FILTER (WHERE l.cost IS NULL))::int,
 		       (count(*) FILTER (WHERE p.network_id IS NOT NULL AND p.moderation_status <> 'approved'))::int,
-		       (count(*) FILTER (WHERE l.qty IS NULL OR l.price IS NULL))::int
+		       (count(*) FILTER (WHERE l.qty IS NULL OR l.price IS NULL))::int,
+		       (count(*) FILTER (WHERE COALESCE(cardinality(p.images), 0) = 0))::int
 		FROM start_lines l
 		JOIN products p ON p.id = l.product_id
 		LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = $2 AND sp.store_id = $3
 		LEFT JOIN prices np ON np.product_id = p.id AND np.price_type_id = $2 AND np.store_id IS NULL
 		WHERE l.draft_id = $1`, draftID, st.PriceTypeID, st.ID).
-		Scan(&t.Products, &t.Qty, &t.CostTotal, &t.PriceTotal, &t.NoCost, &t.Pending, &t.Unfilled)
+		Scan(&t.Products, &t.Qty, &t.CostTotal, &t.PriceTotal, &t.NoCost, &t.Pending, &t.Unfilled, &t.NoPhoto)
 	return t, err
 }
 
@@ -219,7 +226,7 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, storeID string
 		return Draft{}, err
 	}
 	d := Draft{StoreID: st.ID, StoreName: st.Name, WarehouseID: st.WarehouseID, WarehouseName: st.WarehouseName,
-		Status: StatusOpen, Lines: []Line{}, Totals: Totals{Qty: "0", CostTotal: "0.00", PriceTotal: "0.00"}}
+		Status: StatusOpen, Step: 1, Lines: []Line{}, Totals: Totals{Qty: "0", CostTotal: "0.00", PriceTotal: "0.00"}}
 	if err := s.pool.QueryRow(ctx, `
 		SELECT (SELECT count(DISTINCT b.product_id)::int FROM batches b WHERE b.warehouse_id = $1 AND b.qty_remaining > 0),
 		       (SELECT max(posted_at) FROM start_drafts WHERE warehouse_id = $1 AND status = 'posted')`, st.WarehouseID).
@@ -232,6 +239,9 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, storeID string
 		return d, err
 	}
 	d.ID, d.Status = id, status
+	if err := s.pool.QueryRow(ctx, `SELECT step FROM start_drafts WHERE id = $1`, *id).Scan(&d.Step); err != nil {
+		return d, err
+	}
 	if d.Totals, err = s.totals(ctx, s.pool, *id, st); err != nil {
 		return d, err
 	}
@@ -248,8 +258,10 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, storeID string
 		where += ` AND l.cost IS NULL`
 	case "new":
 		where += ` AND p.network_id IS NOT NULL`
+	case "no_photo":
+		where += ` AND COALESCE(cardinality(p.images), 0) = 0`
 	default:
-		return d, apperr.Validation("only: ожидается unfilled, no_cost или new").Uz("only: unfilled, no_cost yoki new boʻlishi kerak")
+		return d, apperr.Validation("only: ожидается unfilled, no_cost, no_photo или new").Uz("only: unfilled, no_cost, no_photo yoki new boʻlishi kerak")
 	}
 	limit := f.Limit
 	if limit <= 0 {
@@ -636,6 +648,7 @@ type postLine struct {
 	Price     *string
 	Current   string
 	Posted    bool
+	NoPhoto   bool
 }
 
 // Post — «Записать и закрыть»: у каждой строки должны быть количество и цена
@@ -674,7 +687,8 @@ func (s *Service) post(ctx context.Context, p *identity.Principal, st store, dra
 	res := PostResult{DraftID: draftID, Documents: []DocRef{}}
 	rows, err := s.pool.Query(ctx, `
 		SELECT l.product_id, trim_scale(l.qty)::text, l.cost::text, l.price::text,
-		       COALESCE(sp.price, np.price, p.base_price)::text, l.document_id IS NOT NULL
+		       COALESCE(sp.price, np.price, p.base_price)::text, l.document_id IS NOT NULL,
+		       COALESCE(cardinality(p.images), 0) = 0
 		FROM start_lines l
 		JOIN products p ON p.id = l.product_id
 		LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = $2 AND sp.store_id = $3
@@ -685,7 +699,7 @@ func (s *Service) post(ctx context.Context, p *identity.Principal, st store, dra
 	}
 	lines, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (postLine, error) {
 		var l postLine
-		err := r.Scan(&l.ProductID, &l.Qty, &l.Cost, &l.Price, &l.Current, &l.Posted)
+		err := r.Scan(&l.ProductID, &l.Qty, &l.Cost, &l.Price, &l.Current, &l.Posted, &l.NoPhoto)
 		return l, err
 	})
 	if err != nil {
@@ -704,6 +718,17 @@ func (s *Service) post(ctx context.Context, p *identity.Principal, st store, dra
 		return res, apperr.Conflict("lines_unfilled", fmt.Sprintf("заполните количество и цену продажи — не заполнено строк: %d", unfilled)).
 			Uz(fmt.Sprintf("miqdor va sotish narxini kiriting — toʻldirilmagan qatorlar: %d", unfilled)).
 			WithDetails(map[string]any{"count": unfilled})
+	}
+	noPhoto := 0
+	for _, l := range lines {
+		if l.NoPhoto {
+			noPhoto++
+		}
+	}
+	if noPhoto > 0 {
+		return res, apperr.Conflict("lines_no_photo", fmt.Sprintf("добавьте фото товаров — без фото: %d", noPhoto)).
+			Uz(fmt.Sprintf("mahsulot rasmlarini qoʻshing — rasmsiz: %d", noPhoto)).
+			WithDetails(map[string]any{"count": noPhoto})
 	}
 
 	// 1. Цены: только изменённые относительно действующих.

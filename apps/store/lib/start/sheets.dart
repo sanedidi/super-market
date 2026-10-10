@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import '../lock/app_lock.dart';
 import '../main.dart';
 import '../state.dart';
 import '../ui/theme.dart';
@@ -417,4 +419,216 @@ class StartSteps extends StatelessWidget {
       Flexible(child: chip(2)),
     ]);
   }
+}
+
+/// И2–И6 · Шторка инвентаризации (поверх камеры или списка): количество и цена
+/// продажи обязательны (можно 0), цена закупки — по желанию. Товар уже
+/// заполняли — «Прибавить» или «Заменить». У товара нет фото — сначала снимок:
+/// без фото покупатель не увидит товар и документ не записывается.
+/// true — строка сохранена.
+Future<bool> countSheet(BuildContext context, StartApi start, Map<String, dynamic> line) async {
+  final r = await showSheet<bool>(context, (_) => _CountSheet(start: start, line: line));
+  return r == true;
+}
+
+class _CountSheet extends StatefulWidget {
+  const _CountSheet({required this.start, required this.line});
+
+  final StartApi start;
+  final Map<String, dynamic> line;
+
+  @override
+  State<_CountSheet> createState() => _CountSheetState();
+}
+
+class _CountSheetState extends State<_CountSheet> {
+  /// Товар уже заполняли — по умолчанию «Прибавить» (сканируют упаковки подряд).
+  late bool _add = widget.line['qty'] != null;
+  late final _qty = TextEditingController(text: _add ? '1' : '');
+  late final _price = TextEditingController(text: plainQty(_initialPrice(widget.line)));
+  late final _cost = TextEditingController(text: plainQty(widget.line['cost']));
+  String? _photo;
+  bool _busy = false;
+
+  static Object? _initialPrice(Map<String, dynamic> l) {
+    if (l['price'] != null) return l['price'];
+    final cur = num.tryParse('${l['current_price'] ?? ''}');
+    return cur != null && cur > 0 ? l['current_price'] : null;
+  }
+
+  bool get _hasPhoto {
+    final img = widget.line['image'];
+    return (img != null && '$img'.isNotEmpty) || _photo != null;
+  }
+
+  @override
+  void dispose() {
+    _qty.dispose();
+    _price.dispose();
+    _cost.dispose();
+    super.dispose();
+  }
+
+  /// Итоговое количество: «Прибавить» — к тому, что уже было.
+  String? _total() {
+    final t = _qty.text.trim();
+    if (t.isEmpty) return null;
+    final v = parseNum(t);
+    if (v == null) return null;
+    if (!_add) return v;
+    final was = num.tryParse('${widget.line['qty'] ?? 0}') ?? 0;
+    return plainQty(was + (num.tryParse(v) ?? 0));
+  }
+
+  Future<void> _takePhoto() async {
+    final api = context.read<Api>();
+    final lock = context.read<AppLock>();
+    try {
+      final x = await lock.hold(() => ImagePicker().pickImage(source: ImageSource.camera, maxWidth: 2000, maxHeight: 2000, imageQuality: 80));
+      if (x == null || !mounted) return;
+      setState(() => _busy = true);
+      final bytes = await x.readAsBytes();
+      final res = await api.upload('/store/uploads', bytes, 'product.jpg') as Map<String, dynamic>;
+      if (!mounted) return;
+      setState(() {
+        _photo = res['url'] as String?;
+        _busy = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      showMessage(context, tr('Не удалось снять фото. Разрешите доступ к камере в настройках телефона.', 'Rasmga olib boʻlmadi. Telefon sozlamalarida kameraga ruxsat bering.'));
+    }
+  }
+
+  Future<void> _save() async {
+    final total = _total();
+    if (total == null) {
+      showMessage(context, tr('Количество обязательно — можно 0', 'Miqdor majburiy — 0 boʻlishi mumkin'));
+      return;
+    }
+    final priceText = _price.text.trim();
+    final price = priceText.isEmpty ? null : parseNum(priceText);
+    if (price == null) {
+      showMessage(context, tr('Цена продажи обязательна — можно 0', 'Sotish narxi majburiy — 0 boʻlishi mumkin'));
+      return;
+    }
+    final costText = _cost.text.trim();
+    final cost = costText.isEmpty ? null : parseNum(costText);
+    if (costText.isNotEmpty && cost == null) {
+      showMessage(context, tr('Цена закупки: неверное число', 'Xarid narxi: notoʻgʻri son'));
+      return;
+    }
+    if (!_hasPhoto) {
+      showMessage(context, tr('Сначала сфотографируйте товар', 'Avval mahsulotni suratga oling'));
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final img = widget.line['image'];
+      if (_photo != null && (img == null || '$img'.isEmpty)) {
+        await widget.start.setPhoto('${widget.line['product_id']}', [_photo!]);
+      }
+      await widget.start.setLines([
+        {'product_id': widget.line['product_id'], 'qty': total, 'price': price, 'cost': cost},
+      ]);
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      showMessage(context, e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = widget.line;
+    final unit = (l['unit_short'] as String?) ?? tr('шт', 'dona');
+    final filled = l['qty'] != null;
+    final total = _total();
+    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      SheetHeader(
+        title: tr('Количество и цены', 'Miqdor va narxlar'),
+        text: filled
+            ? tr('Этот товар уже заполняли', 'Bu mahsulot allaqachon toʻldirilgan')
+            : tr('Нашли в ваших товарах', '«Mahsulotlarim» ichidan topildi'),
+      ),
+      const SizedBox(height: 14),
+      StartProductCard(
+        name: '${l['name']}',
+        image: _photo ?? l['image'] as String?,
+        barcode: l['barcode'] as String? ?? tr('без штрихкода', 'shtrix-kodsiz'),
+        label: filled ? tr('БЫЛО: ${plainQty(l['qty'])} $unit', 'BOR EDI: ${plainQty(l['qty'])} $unit') : null,
+      ),
+      if (!_hasPhoto) ...[
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(color: AppColors.errorSoft, borderRadius: BorderRadius.circular(16)),
+          child: Column(children: [
+            const Icon(Icons.photo_camera_rounded, color: AppColors.primary, size: 28),
+            const SizedBox(height: 8),
+            Text(tr('Сфотографируйте товар', 'Mahsulotni suratga oling'), style: AppText.bodyStrong.copyWith(color: AppColors.error), textAlign: TextAlign.center),
+            const SizedBox(height: 4),
+            Text(tr('Без фото покупатель не увидит товар в каталоге', 'Rasmsiz xaridor mahsulotni katalogda koʻrmaydi'),
+                style: AppText.small.copyWith(color: AppColors.error), textAlign: TextAlign.center),
+            const SizedBox(height: 10),
+            SheetButton(label: tr('Сделать фото', 'Rasmga olish'), busy: _busy, onPressed: _takePhoto),
+          ]),
+        ),
+      ],
+      if (filled) ...[
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(14)),
+          child: Row(children: [
+            Expanded(child: _segment(tr('Прибавить', 'Qoʻshish'), _add, () => setState(() => _add = true))),
+            Expanded(child: _segment(tr('Заменить', 'Almashtirish'), !_add, () => setState(() => _add = false))),
+          ]),
+        ),
+      ],
+      const SizedBox(height: 14),
+      NumField(
+        label: _add ? tr('Прибавить, $unit *', 'Qoʻshish, $unit *') : tr('Количество, $unit *', 'Miqdor, $unit *'),
+        controller: _qty,
+        hint: tr('обязательно', 'majburiy'),
+        decimal: l['is_fractional'] == true,
+        onChanged: (_) => setState(() {}),
+      ),
+      if (_add && total != null) ...[
+        const SizedBox(height: 4),
+        Text(tr('станет $total $unit', '$total $unit boʻladi'), style: AppText.small),
+      ],
+      const SizedBox(height: 12),
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: NumField(label: tr('Цена продажи *', 'Sotish narxi *'), controller: _price, hint: tr('обязательно', 'majburiy'))),
+        const SizedBox(width: 10),
+        Expanded(child: NumField(label: tr('Цена закупки', 'Xarid narxi'), controller: _cost, hint: tr('по желанию', 'ixtiyoriy'))),
+      ]),
+      const SizedBox(height: 8),
+      Text(tr('Цена закупки нужна только для расчёта прибыли — можно не заполнять', 'Xarid narxi faqat foydani hisoblash uchun kerak — toʻldirmasa ham boʻladi'), style: AppText.small),
+      const SizedBox(height: 16),
+      SheetButton(label: tr('Сохранить и сканировать дальше', 'Saqlash va skanerlashni davom ettirish'), busy: _busy, onPressed: _hasPhoto ? _save : null),
+      if (!_hasPhoto) ...[
+        const SizedBox(height: 6),
+        Text(tr('Кнопка включится, когда появится фото', 'Rasm paydo boʻlgach tugma ishlaydi'), style: AppText.small, textAlign: TextAlign.center),
+      ],
+    ]);
+  }
+
+  Widget _segment(String label, bool on, VoidCallback onTap) => Material(
+        color: on ? AppColors.white : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        elevation: on ? 1 : 0,
+        shadowColor: Colors.black12,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Text(label, textAlign: TextAlign.center, style: AppText.caption.copyWith(fontSize: 14, color: on ? AppColors.ink : AppColors.text2)),
+          ),
+        ),
+      );
 }

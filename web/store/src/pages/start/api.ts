@@ -31,6 +31,8 @@ export type Totals = {
   pending: number
   /** Строк без количества или цены продажи. */
   unfilled: number
+  /** Строк без фото товара: пока они есть, «Записать и закрыть» не проходит. */
+  no_photo: number
 }
 
 export type Draft = {
@@ -40,6 +42,8 @@ export type Draft = {
   warehouse_id: string
   warehouse_name: string
   status: 'open' | 'posting' | 'posted'
+  /** 1 — выбор товаров, 2 — инвентаризация; общий с «SM Магазин». */
+  step: 1 | 2
   lines: Line[]
   totals: Totals
   stock_products: number
@@ -155,6 +159,13 @@ export type Similar = { product_id: string; name: string; image: string | null; 
 
 export type LinesResult = { lines: Line[]; totals: Totals; skipped: string[] }
 
+/**
+ * Что нашлось по штрихкоду на шаге «Инвентаризация» (GET /store/start/scan):
+ * line — товар уже в документе, product — есть в базе, но не добавлен,
+ * none — нет нигде.
+ */
+export type ScanResult = { status: 'line' | 'product' | 'none'; code: string; line: Line | null; product: SearchItem | null }
+
 export type Candidate = {
   product_id: string
   name: string
@@ -227,6 +238,8 @@ export function useStartApi(storeId: string) {
   return {
     refresh,
     setLines: (items: LineInput[]) => run(api.post<LinesResult>('/store/start/lines', { store_id: storeId, items })),
+    /** Шаг «Начала работы» (1 — выбор товаров, 2 — инвентаризация): от него зависит, что делает сканер на главной. */
+    setStep: (step: 1 | 2) => api.post<Draft>('/store/start/step', { store_id: storeId, step }),
     deleteLine: (productId: string) => run(api.del(`/store/start/lines/${productId}?store_id=${storeId}`)),
   }
 }

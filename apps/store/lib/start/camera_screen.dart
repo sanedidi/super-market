@@ -24,10 +24,13 @@ enum StartMode { photo, barcode }
 /// товары в центральной базе) и сканер штрихкодов подряд: найденный товар
 /// сразу встаёт в «Мои товары», повтор не добавляется.
 class StartCameraScreen extends StatefulWidget {
-  const StartCameraScreen({super.key, required this.start, this.mode = StartMode.photo});
+  const StartCameraScreen({super.key, required this.start, this.mode = StartMode.photo, this.inventory = false});
 
   final StartApi start;
   final StartMode mode;
+
+  /// Шаг 2: найденный штрихкод открывает не «Добавить», а шторку количества и цен.
+  final bool inventory;
 
   @override
   State<StartCameraScreen> createState() => _StartCameraScreenState();
@@ -151,6 +154,10 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
     _handling = true;
     var added = false;
     try {
+      if (widget.inventory) {
+        added = await _count(code);
+        return;
+      }
       final p = await widget.start.byBarcode(code);
       if (!mounted) return;
       if (p != null) {
@@ -187,6 +194,61 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
       _handling = false;
       if (added && mounted) setState(() => _added++);
     }
+  }
+
+  /// И2–И5 · Шаг «Инвентаризация»: штрихкод из «Моих товаров» — сразу шторка
+  /// количества и цен поверх камеры; товар есть в базе, но не добавлен —
+  /// «Добавить и заполнить»; нет нигде — как на шаге 1 (каталог ИКПУ, новый
+  /// товар, привязка штрихкода). true — строка записана.
+  Future<bool> _count(String code) async {
+    final r = await widget.start.scan(code);
+    if (!mounted) return false;
+    final line = r['line'];
+    if (line is Map) return countSheet(context, widget.start, line.cast<String, dynamic>());
+    final product = r['product'];
+    if (product is Map) {
+      final p = ProductRef.fromItem(product.cast<String, dynamic>());
+      final yes = await confirmSheet(context,
+          title: tr('Товара нет в вашем списке', 'Mahsulot roʻyxatingizda yoʻq'),
+          text: tr('«${p.name}» есть в центральной базе, но вы не добавляли его на шаге 1. Добавим в «Мои товары» и сразу откроем количество и цены.',
+              '«${p.name}» markaziy bazada bor, lekin siz uni 1-qadamda qoʻshmagansiz. «Mahsulotlarim»ga qoʻshamiz va darhol miqdor va narxlarni ochamiz.'),
+          confirm: tr('Добавить и заполнить', 'Qoʻshish va toʻldirish'),
+          cancel: tr('Пропустить', 'Oʻtkazib yuborish'),
+          icon: Icons.add_rounded);
+      if (!yes || !mounted) return false;
+      if (await addToMyGoods(context, widget.start, p, source: 'barcode', listButton: false) != AddResult.added || !mounted) return false;
+      final again = await widget.start.scan(code);
+      if (!mounted) return false;
+      final l = again['line'];
+      if (l is Map) return countSheet(context, widget.start, l.cast<String, dynamic>());
+      return true;
+    }
+    // Нет ни в «Моих товарах», ни в центральной базе — дальше как на шаге 1.
+    return _missing(code);
+  }
+
+  /// Штрихкода нет в центральной базе: карточка в «Новых», каталог ИКПУ,
+  /// новый товар по фото или привязка кода к товару из базы.
+  Future<bool> _missing(String code) async {
+    final queued = await widget.start.newItemByBarcode(code);
+    if (!mounted) return false;
+    if (queued != null) {
+      await showQueuedSheet(context, widget.start, queued);
+      return false;
+    }
+    final t = await tasnifBarcodeSheet(context, widget.start, code);
+    if (!mounted || t == null) return false;
+    if (t) return true;
+    final r = await pickProductSheet(context, widget.start, info: tr('Штрихкод $code — нет в центральной базе', 'Shtrix-kod $code — markaziy bazada yoʻq'), code: code);
+    if (!mounted || r == null) return false;
+    if (r.create) {
+      await openNewItemCamera(context, widget.start, barcode: code);
+      return false;
+    }
+    if (r.product != null) {
+      return await addToMyGoods(context, widget.start, r.product!, source: 'barcode', bind: r.bind ? code : null, listButton: false) == AddResult.added;
+    }
+    return false;
   }
 
   @override
@@ -305,7 +367,7 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          _ModeSwitch(mode: _mode, onChanged: _setMode),
+          if (!widget.inventory) _ModeSwitch(mode: _mode, onChanged: _setMode),
           const Spacer(),
           Container(
             width: 260,
@@ -315,9 +377,18 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
           ),
           const SizedBox(height: 14),
           Text(tr('Наведите на штрихкод', 'Shtrix-kodga qarating'), style: AppText.bodyStrong.copyWith(color: AppColors.white)),
+          if (widget.inventory) ...[
+            const SizedBox(height: 6),
+            Text(tr('Снизу откроется количество и цены', 'Pastdan miqdor va narxlar ochiladi'), style: AppText.small.copyWith(color: AppColors.muted)),
+          ],
           const Spacer(),
           if (_added > 0) ...[
-            StatusChip(tr('Добавлено: ${goods(_added)}', 'Qoʻshildi: ${goods(_added)}'), icon: Icons.check_circle_rounded, tone: ChipTone.green),
+            StatusChip(
+                widget.inventory
+                    ? tr('Заполнено: ${goods(_added)}', 'Toʻldirildi: ${goods(_added)}')
+                    : tr('Добавлено: ${goods(_added)}', 'Qoʻshildi: ${goods(_added)}'),
+                icon: Icons.check_circle_rounded,
+                tone: ChipTone.green),
             const SizedBox(height: 12),
           ],
           Padding(
