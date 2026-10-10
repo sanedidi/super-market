@@ -34,6 +34,8 @@ type Service struct {
 	cat  *catalog.Service
 	ai   *ai.Service
 	log  *slog.Logger
+	// Фоновый разбор «Найти новые группы».
+	job suggestJob
 }
 
 func NewService(pool *pgxpool.Pool, cat *catalog.Service, aiSvc *ai.Service, log *slog.Logger) *Service {

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
+	"github.com/sanedidi/super-market/backend/internal/variants"
 )
 
 // TestVariants — группы вариаций: Super Market предлагает группу по
@@ -12,6 +13,8 @@ import (
 // вариациям в наличии; магазин ставит цену на вес, «своя цена» вкуса её
 // не меняет; расформированная группа снимается с товаров.
 func TestVariants(t *testing.T) {
+	variants.SuggestSync = true
+	t.Cleanup(func() { variants.SuggestSync = false })
 	pool := freshDB(t)
 	cfg := testConfig()
 	cfg.DevOTPCode = "111111"
@@ -38,7 +41,7 @@ func TestVariants(t *testing.T) {
 
 	// Без ИИ Super Market собирает группу по названиям.
 	sg := a.expect(a.do("POST", "/admin/variant-groups/suggest", adminTok, map[string]any{}), 200, "suggest")
-	if sg.Body["created"] != float64(1) || sg.Body["ai"] != false {
+	if sg.Body["created"] != float64(1) || sg.Body["ai"] != false || sg.Body["running"] != false {
 		t.Fatalf("suggest = %v", sg.Body)
 	}
 	if again := a.expect(a.do("POST", "/admin/variant-groups/suggest", adminTok, map[string]any{}), 200, "suggest again"); again.Body["created"] != float64(0) {

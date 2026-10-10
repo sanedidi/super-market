@@ -84,12 +84,17 @@ interface GroupList {
   counts: Partial<Record<Status, number>>
 }
 
+/** Состояние фонового разбора «Найти новые группы». */
 interface SuggestResult {
+  running: boolean
   created: number
   checked: number
   ai: boolean
   more: boolean
   failed: number
+  error: string
+  started_at: string | null
+  finished_at: string | null
 }
 
 /** Товар общего каталога из /admin/products (для поиска). */
@@ -172,25 +177,67 @@ export function Variants() {
     )
   const reload = () => qc.invalidateQueries({ queryKey: [PATH] })
 
+  // Разбор идёт на сервере в фоне (минуты): запускаем и опрашиваем состояние.
+  const finishSuggest = async (r: SuggestResult) => {
+    if (r.error) {
+      message.error(r.error, 8)
+      return
+    }
+    let text = `Найдено групп: ${r.created}`
+    if (!r.ai) text += ' — по названиям, ИИ-сервис не подключён'
+    text += '.'
+    if (r.failed > 0) text += ` ИИ не смог разобрать наборов товаров: ${r.failed}.`
+    if (r.more) text += ' Ещё есть товары — нажмите ещё раз.'
+    if (r.failed > 0) message.warning(text, 8)
+    else message.success(text, r.more ? 8 : 5)
+    if (status !== 'proposed') setStatus('proposed')
+    await reload()
+  }
+
+  const waitSuggest = async (first: SuggestResult) => {
+    let r = first
+    while (r.running) {
+      await new Promise((res) => setTimeout(res, 3000))
+      r = await api.get<SuggestResult>(`${PATH}/suggest`)
+      // Новые предложения видно сразу, не дожидаясь конца разбора.
+      if (r.running) void reload()
+    }
+    return r
+  }
+
   const suggest = async () => {
     setSuggesting(true)
     try {
-      const r = await api.post<SuggestResult>(`${PATH}/suggest`, {})
-      let text = `Найдено групп: ${r.created}`
-      if (!r.ai) text += ' — по названиям, ИИ-сервис не подключён'
-      text += '.'
-      if (r.failed > 0) text += ` ИИ не смог разобрать наборов товаров: ${r.failed}.`
-      if (r.more) text += ' Ещё есть товары — нажмите ещё раз.'
-      if (r.failed > 0) message.warning(text, 8)
-      else message.success(text, r.more ? 8 : 5)
-      if (status !== 'proposed') setStatus('proposed')
-      await reload()
+      const r = await waitSuggest(await api.post<SuggestResult>(`${PATH}/suggest`, {}))
+      await finishSuggest(r)
     } catch (e) {
       message.error(errorText(e))
     } finally {
       setSuggesting(false)
     }
   }
+
+  // Открыли страницу, пока разбор ещё идёт (например, после перезагрузки) — ждём его.
+  useEffect(() => {
+    let alive = true
+    api
+      .get<SuggestResult>(`${PATH}/suggest`)
+      .then(async (r) => {
+        if (!r.running || !alive) return
+        setSuggesting(true)
+        try {
+          const done = await waitSuggest(r)
+          if (alive) await finishSuggest(done)
+        } finally {
+          if (alive) setSuggesting(false)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const tabLabel = (title: string, n: number | undefined) => (
     <span>
@@ -246,7 +293,7 @@ export function Variants() {
       >
         <Sparkle style={{ color: '#155eef', fontSize: 18, marginTop: 2 }} />
         <span style={{ color: '#1746a2' }}>
-          {suggesting && 'Super Market разбирает товары общего каталога — это может занять до полутора минут. '}
+          {suggesting && 'Super Market разбирает товары общего каталога — это может занять несколько минут, страницу можно закрыть. '}
           Правило: группа = бренд + линейка, внутри — вес и вкус. Разные линейки (Lay's и Lay's MAXX) — разные группы.
         </span>
       </Flex>

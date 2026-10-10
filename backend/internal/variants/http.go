@@ -26,6 +26,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/admin/variant-groups", m.list)
 		r.Post("/admin/variant-groups", m.create)
 		r.Post("/admin/variant-groups/suggest", m.suggest)
+		r.Get("/admin/variant-groups/suggest", m.suggestState)
 		r.Get("/admin/variant-groups/{id}", m.get)
 		r.Patch("/admin/variant-groups/{id}", m.update)
 		r.Post("/admin/variant-groups/{id}/items", m.addItem)
@@ -63,8 +64,14 @@ func (m *Module) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) suggest(w http.ResponseWriter, r *http.Request) {
-	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in SuggestInput) (SuggestResult, error) {
-		return m.svc.Suggest(r.Context(), in)
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in SuggestInput) (SuggestStatus, error) {
+		return m.svc.StartSuggest(r.Context(), in)
+	})
+}
+
+func (m *Module) suggestState(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (SuggestStatus, error) {
+		return m.svc.SuggestState(), nil
 	})
 }
 

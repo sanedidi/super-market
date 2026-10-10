@@ -833,7 +833,8 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 | Метод | Путь | Описание |
 | --- | --- | --- |
 | GET | `/admin/variant-groups?status=proposed\|confirmed\|rejected&q=&limit=&offset=` | `{items: [Group], total, counts: {proposed, confirmed, rejected}}`. Group: `id, name, name_uz, brand_id, brand_name, category_id, category_name, status, source (ai\|manual), confidence (high\|check), note, decided_at, created_at, stores_count, items: [{product_id, name, image, barcode, weight, weight_uz, flavor, flavor_uz, included, note, other_group}]` |
-| POST | `/admin/variant-groups/suggest` | `{brand_id?}` → `{created, checked, ai, more, failed}`: новые предложения по товарам, которые ещё не в группе и не были отклонены. `more: true` — разобрано не всё, можно нажать ещё раз |
+| POST | `/admin/variant-groups/suggest` | `{brand_id?}` → `{running, created, checked, ai, more, failed, error, started_at, finished_at}`: запускает в фоне поиск новых предложений по товарам, которые ещё не в группе и не были отклонены (уже идёт — отдаёт текущее состояние). `more: true` — разобрано не всё, можно запустить ещё раз |
+| GET | `/admin/variant-groups/suggest` | то же состояние последнего разбора — панель опрашивает, пока `running: true` |
 | POST | `/admin/variant-groups` | `{name, name_uz?, product_ids: [≥2]}` → Group (собрана руками, вес и вкус — из названий) |
 | GET | `/admin/variant-groups/{id}` | Group |
 | PATCH | `/admin/variant-groups/{id}` | `{name?, name_uz?, items?: [{product_id, weight?, weight_uz?, flavor?, flavor_uz?, included?}]}` → Group; у подтверждённой — сразу в товары |
