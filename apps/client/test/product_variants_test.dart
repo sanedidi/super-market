@@ -130,8 +130,11 @@ void main() {
 
     // Пока p90s грузится, выбрали «Сыр»: подсказка уходит, загружается p90c.
     // Сначала ряд вкусов докручивается к выбранному (250 мс) — во время
-    // прокрутки Scrollable не принимает нажатия.
-    await t.pump(const Duration(milliseconds: 400));
+    // прокрутки Scrollable не принимает нажатия. Отсчёт анимации идёт с её
+    // первого кадра, поэтому прокручиваем несколькими кадрами.
+    for (var i = 0; i < 6; i++) {
+      await t.pump(const Duration(milliseconds: 100));
+    }
     await t.tap(find.text('Сыр'));
     await settle();
     expect(find.text('«Пицца Пепперони» нет в 90 г'), findsNothing);
