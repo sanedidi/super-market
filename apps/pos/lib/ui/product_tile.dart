@@ -3,9 +3,12 @@ import 'package:sm_core/sm_core.dart' show tr;
 
 import '../core/catalog.dart';
 import '../core/money.dart';
+import '../core/quick.dart';
 import 'theme.dart';
 
 /// Плитка товара: фото, название, цена; значки «закреплён», «кг», «уже в чеке».
+/// Плитка группы вариаций — та же плитка со своими названием, ценой «от X»
+/// и значком «N вкусов» (см. [VariantTile]).
 class ProductTile extends StatelessWidget {
   const ProductTile({
     super.key,
@@ -17,6 +20,8 @@ class ProductTile extends StatelessWidget {
     this.badge,
     this.dim = false,
     this.border,
+    this.title,
+    this.priceText,
   });
 
   final Product product;
@@ -32,10 +37,14 @@ class ProductTile extends StatelessWidget {
   final bool dim;
   final Color? border;
 
+  /// Своё название и цена вместо товарных (плитка группы вариаций).
+  final String? title;
+  final String? priceText;
+
   @override
   Widget build(BuildContext context) {
     final p = product;
-    final price = p.fractional ? '${fmtMoney(p.price)} / ${p.unit}' : fmtMoney(p.price);
+    final price = priceText ?? (p.fractional ? '${fmtMoney(p.price)} / ${p.unit}' : fmtMoney(p.price));
     final count = p.fractional ? (inCart > 0 ? '✓' : '') : (inCart > 0 ? fmtQty(inCart) : '');
     return Opacity(
       opacity: dim ? 0.75 : 1,
@@ -78,7 +87,7 @@ class ProductTile extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Expanded(
-                child: Text(p.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: t(14, w: FontWeight.w500, h: 1.2)),
+                child: Text(title ?? p.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: t(14, w: FontWeight.w500, h: 1.2)),
               ),
               Text(price, maxLines: 1, overflow: TextOverflow.ellipsis, style: t(16, w: FontWeight.w700)),
             ]),
@@ -95,6 +104,37 @@ class ProductTile extends StatelessWidget {
         decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(12)),
         child: child,
       );
+}
+
+/// Плитка группы вариаций (Figma «Ва4»): фото первого товара, название группы,
+/// тёмный значок «N вкусов» справа сверху и цена «от X». Нажатие — окно выбора
+/// веса и вкуса.
+class VariantTile extends StatelessWidget {
+  const VariantTile({super.key, required this.tile, this.pinned = false, this.onTap, this.onLongPress});
+
+  final QuickTile tile;
+  final bool pinned;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final g = tile.group;
+    if (g == null) return ProductTile(product: tile.product, pinned: pinned, onTap: onTap, onLongPress: onLongPress);
+    return ProductTile(
+      product: tile.product,
+      title: g.name,
+      priceText: g.priceLabel,
+      pinned: pinned,
+      onTap: onTap,
+      onLongPress: onLongPress,
+      badge: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        decoration: BoxDecoration(color: C.dark, borderRadius: BorderRadius.circular(6)),
+        child: Text(flavorsLabel(g.count), style: t(11, w: FontWeight.w600, c: Colors.white)),
+      ),
+    );
+  }
 }
 
 /// Фото товара или цветная заглушка (цвет — от названия, чтобы плитки различались).

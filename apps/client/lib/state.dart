@@ -52,6 +52,69 @@ class Product {
 
   /// Шаг количества: 1 шт или 0,5 кг.
   num get step => fractional ? 0.5 : 1;
+
+  /// Вариации (вес и вкус) — только в полной карточке товара, иначе null.
+  ProductVariants? get variants {
+    final v = json['variants'];
+    return v is Map<String, dynamic> ? ProductVariants(v) : null;
+  }
+}
+
+/// Группа вариаций товара: один товар разного веса и вкуса («Чипсы Lay's»:
+/// 90 г и 150 г; «Сметана и лук», «Сыр»). Каждая вариация — отдельный товар.
+/// В [options] — только то, что есть в наличии в этом магазине, по весу и
+/// порядку в группе. Подписи сервер отдаёт на языке запроса.
+class ProductVariants {
+  ProductVariants(this.json);
+  final Map<String, dynamic> json;
+
+  String get groupId => (json['group_id'] as String?) ?? '';
+  String get name => (json['name'] as String?) ?? '';
+
+  /// Вес и вкус открытого товара («150 г», «Пицца Пепперони»); могут быть пустыми.
+  String get weight => (json['weight'] as String?) ?? '';
+  String get flavor => (json['flavor'] as String?) ?? '';
+
+  /// Веса по возрастанию — только те, у которых есть вариации в наличии.
+  List<String> get weights => ((json['weights'] as List?) ?? const []).map((e) => '$e').toList();
+  List<VariantOption> get options => ((json['options'] as List?) ?? const []).whereType<Map<String, dynamic>>().map(VariantOption.new).toList();
+
+  /// Вариации одного веса.
+  List<VariantOption> inWeight(String weight) => options.where((o) => o.weight == weight).toList();
+
+  /// Вариация товара [productId], если она есть в наличии.
+  VariantOption? byProduct(String productId) => options.where((o) => o.productId == productId).firstOrNull;
+
+  /// Выбрали вес: тот же вкус в этом весе ([exact]), а если его нет —
+  /// первая вариация веса. null — у веса нет вариаций.
+  ({VariantOption option, bool exact})? pickForWeight(String weight, String flavor) {
+    final list = inWeight(weight);
+    if (list.isEmpty) return null;
+    final key = flavorKey(flavor);
+    final same = list.where((o) => flavorKey(o.flavor) == key).firstOrNull;
+    return same != null ? (option: same, exact: true) : (option: list.first, exact: false);
+  }
+
+  /// Вкусы сравниваем без регистра и пробелов по краям.
+  static String flavorKey(String s) => s.trim().toLowerCase();
+}
+
+/// Вариация из [ProductVariants.options]: товар, его вес, вкус, фото и цена.
+class VariantOption {
+  VariantOption(this.json);
+  final Map<String, dynamic> json;
+
+  String get productId => json['product_id'] as String;
+  String get weight => (json['weight'] as String?) ?? '';
+  String get flavor => (json['flavor'] as String?) ?? '';
+  String? get image {
+    final u = json['image'] as String?;
+    return u == null || u.isEmpty ? null : u;
+  }
+
+  String get price => '${json['price'] ?? '0'}';
+  String? get oldPrice => json['old_price'] as String?;
+  int? get discountPercent => (json['discount_percent'] as num?)?.toInt();
 }
 
 /// Магазин из /client/home: доставка считается для выбранного адреса.

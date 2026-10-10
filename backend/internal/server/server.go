@@ -42,6 +42,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/start"
 	"github.com/sanedidi/super-market/backend/internal/summary"
 	"github.com/sanedidi/super-market/backend/internal/tenant"
+	"github.com/sanedidi/super-market/backend/internal/variants"
 )
 
 // App — собранное приложение: HTTP-обработчик и сервисы, которые нужны
@@ -115,6 +116,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		tenant.NewModule(tenantSvc, auth, log),
 		setup.NewModule(setup.NewService(pool, tenantSvc, dlv), auth, log),
 		catalog.NewModule(catSvc, auth, log),
+		variants.NewModule(variants.NewService(pool, catSvc, aiSvc, log), auth, log),
 		finance.NewModule(finance.NewService(pool), auth, log),
 		inventory.NewModule(invSvc, auth, log),
 		sales.NewModule(salesSvc, auth, log),

@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"errors"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -448,6 +449,35 @@ func (s *Service) PostPriceDoc(ctx context.Context, pr *identity.Principal, id s
 		return err
 	})
 	return out, err
+}
+
+// ResolvePriceType — тип цены магазина: явно указанный, тип магазина для
+// приложения или тип по умолчанию.
+func (s *Service) ResolvePriceType(ctx context.Context, networkID, storeID, explicit string) (string, error) {
+	return s.resolvePriceType(ctx, networkID, storeID, explicit)
+}
+
+// SetStorePrices создаёт и сразу проводит «Установку цен» магазина — так
+// цена веса группы вариаций попадает в историю цен, как любая другая.
+func (s *Service) SetStorePrices(ctx context.Context, pr *identity.Principal, storeID, priceTypeID, note string,
+	prices map[string]money.Amount) (PriceDocument, error) {
+	ids := make([]string, 0, len(prices))
+	for id := range prices {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	items := make([]struct {
+		ProductID string       `json:"product_id"`
+		NewPrice  money.Amount `json:"new_price"`
+	}, len(ids))
+	for i, id := range ids {
+		items[i].ProductID, items[i].NewPrice = id, prices[id]
+	}
+	doc, err := s.CreatePriceDoc(ctx, pr, PriceDocInput{PriceTypeID: &priceTypeID, StoreID: &storeID, Note: &note, Items: &items})
+	if err != nil {
+		return doc, err
+	}
+	return s.PostPriceDoc(ctx, pr, doc.ID)
 }
 
 // DefaultPriceType — тип цены по умолчанию в сети.

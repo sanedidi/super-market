@@ -1,6 +1,8 @@
 // Дерево товаров «бренд → категория → товар» (Figma «Товары · бренд → категория»).
 // Группы и их счётчики — одним запросом (groupsPath), товары категории —
 // списком itemsPath с brand_id и leaf_category_id, по pageSize с «Показать ещё».
+// mapItems/childrenOf — свои строки вместо товаров категории (например, группа
+// вариаций «вес → вкус» в панели магазина); по умолчанию строка = товар.
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { Button, Card, Flex, Segmented, Spin, Table, Tag, Typography, type TableColumnType } from 'antd'
@@ -34,14 +36,14 @@ export type ProductGroupBrand = {
 }
 export type ProductGroups = { brands: ProductGroupBrand[]; total: number }
 
-type Row<T> = {
+type Row<R> = {
   key: string
   kind: 'brand' | 'category' | 'product' | 'more' | 'loading'
   brand?: ProductGroupBrand
   cat?: ProductGroupCategory
-  item?: T
+  item?: R
   left?: number
-  children?: Row<T>[]
+  children?: Row<R>[]
 }
 
 /** Склонение: 1 товар, 2 товара, 5 товаров. */
@@ -89,24 +91,38 @@ export function ProductViewSwitch({ value, onChange }: { value: ProductView; onC
   )
 }
 
+/** Клик пришёл из поля ввода, кнопки или меню внутри строки (а не по самой строке). */
+export function interactive(target: EventTarget | null): boolean {
+  return target instanceof Element && !!target.closest('input, button, a, .ant-input-number, .ant-dropdown-trigger, .ant-table-row-expand-icon')
+}
+
 const brandKey = (b: ProductGroupBrand) => `b|${b.brand_id ?? 'none'}`
 const catKey = (b: ProductGroupBrand, c: ProductGroupCategory) => `c|${b.brand_id ?? 'none'}|${c.category_id}`
 
-export function ProductTree<T extends { id: string }>({
+export function ProductTree<T extends { id: string }, R extends { id: string } = T>({
   groupsPath,
   itemsPath,
   params,
   columns,
   pendingText = (n) => tr(`${n} на модерации`, `${n} ta moderatsiyada`),
   pageSize = 20,
+  mapItems,
+  childrenOf,
+  onExpandItem,
 }: {
   groupsPath: string
   itemsPath: string
   params?: Params
   /** Колонки строки товара; первая — название (в ней отступ дерева). */
-  columns: TableColumnType<T>[]
+  columns: TableColumnType<R>[]
   pendingText?: (n: number) => string
   pageSize?: number
+  /** Строки категории из её товаров (по умолчанию — сами товары). id строк уникальны в категории. */
+  mapItems?: (items: T[]) => R[]
+  /** Вложенные строки строки товара (раскрываются шевроном). */
+  childrenOf?: (row: R) => R[] | undefined
+  /** Строку товара с вложенными строками раскрыли или свернули. */
+  onExpandItem?: (row: R, open: boolean) => void
 }) {
   const groups = useQuery({
     queryKey: [groupsPath, params],
@@ -171,20 +187,27 @@ export function ProductTree<T extends { id: string }>({
     if (q?.data) loaded[o.key] = { items: q.data, fetching: q.isFetching }
   })
 
-  const data: Row<T>[] = brands.map((b) => ({
+  const itemRow = (prefix: string, item: R): Row<R> => {
+    const kids = childrenOf?.(item)
+    return {
+      key: `${prefix}|${item.id}`,
+      kind: 'product',
+      item,
+      children: kids?.map((c) => itemRow(prefix, c)),
+    }
+  }
+
+  const data: Row<R>[] = brands.map((b) => ({
     key: brandKey(b),
     kind: 'brand',
     brand: b,
     children: b.categories.map((c) => {
       const k = catKey(b, c)
       const l = loaded[k]
-      const children: Row<T>[] = l
+      const rows = l ? (mapItems ? mapItems(l.items) : (l.items as unknown as R[])) : []
+      const children: Row<R>[] = l
         ? [
-            ...l.items.map((item) => ({
-              key: `${k}|${item.id}`,
-              kind: 'product' as const,
-              item,
-            })),
+            ...rows.map((item) => itemRow(k, item)),
             ...(c.count > l.items.length
               ? [
                   {
@@ -203,8 +226,13 @@ export function ProductTree<T extends { id: string }>({
   }))
 
   const toggle = (key: string) => setExpanded((e) => (e.includes(key) ? e.filter((x) => x !== key) : [...e, key]))
+  const toggleRow = (r: Row<R>) => {
+    const willOpen = !expanded.includes(r.key)
+    toggle(r.key)
+    if (r.kind === 'product' && r.item) onExpandItem?.(r.item, willOpen)
+  }
 
-  const groupCell = (r: Row<T>): ReactNode => {
+  const groupCell = (r: Row<R>): ReactNode => {
     if (r.kind === 'brand' && r.brand) {
       const b = r.brand
       const none = b.brand_id === null
@@ -274,7 +302,7 @@ export function ProductTree<T extends { id: string }>({
     return <Spin size="small" />
   }
 
-  const cols: TableColumnType<Row<T>>[] = columns.map((col, i) => {
+  const cols: TableColumnType<Row<R>>[] = columns.map((col, i) => {
     const { dataIndex, render, onCell } = col
     return {
       title: col.title as ReactNode,
@@ -282,9 +310,9 @@ export function ProductTree<T extends { id: string }>({
       width: col.width,
       className: col.className,
       key: String(col.key ?? (typeof dataIndex === 'string' ? dataIndex : i)),
-      onCell: (r: Row<T>, idx?: number) =>
+      onCell: (r: Row<R>, idx?: number) =>
         r.kind === 'product' && r.item ? ((onCell?.(r.item, idx) ?? {}) as object) : { colSpan: i === 0 ? columns.length : 0 },
-      render: (_: unknown, r: Row<T>, idx: number) => {
+      render: (_: unknown, r: Row<R>, idx: number) => {
         if (r.kind !== 'product' || !r.item) return i === 0 ? groupCell(r) : null
         const v = typeof dataIndex === 'string' ? (r.item as Record<string, unknown>)[dataIndex] : undefined
         return render ? (render(v, r.item, idx) as ReactNode) : (v as ReactNode)
@@ -296,7 +324,7 @@ export function ProductTree<T extends { id: string }>({
     <>
       <LoadError error={groups.error} retry={() => groups.refetch()} />
       <Card styles={{ body: { padding: 0 } }} className="sm-tree">
-        <Table<Row<T>>
+        <Table<Row<R>>
           rowKey="key"
           size="middle"
           loading={groups.isLoading || (groups.isFetching && !groups.data)}
@@ -304,10 +332,22 @@ export function ProductTree<T extends { id: string }>({
           columns={cols}
           scroll={{ x: true }}
           rowClassName={(r) => `sm-tree-${r.kind}`}
-          onRow={(r) => (r.kind === 'brand' || r.kind === 'category' ? { onClick: () => toggle(r.key), style: { cursor: 'pointer' } } : {})}
+          onRow={(r) =>
+            r.kind === 'brand' || r.kind === 'category'
+              ? { onClick: () => toggle(r.key), style: { cursor: 'pointer' } }
+              : r.kind === 'product' && r.children
+                ? {
+                    // Строка с вложенными: клик раскрывает, но не по полям и кнопкам внутри неё.
+                    onClick: (e) => {
+                      if (!interactive(e.target)) toggleRow(r)
+                    },
+                    style: { cursor: 'pointer' },
+                  }
+                : {}
+          }
           expandable={{
             expandedRowKeys: expanded,
-            onExpand: (_, r) => toggle(r.key),
+            onExpand: (_, r) => toggleRow(r),
             indentSize: 28,
           }}
           title={

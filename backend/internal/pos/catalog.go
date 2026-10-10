@@ -39,6 +39,14 @@ type CatalogProduct struct {
 	// В фискальный чек идёт name_ru (основное название, как и раньше).
 	NameRu string `json:"name_ru"`
 	NameUz string `json:"name_uz"`
+	// Группа вариаций: быстрая кнопка группы открывает выбор веса и вкуса.
+	VariantGroupID *string `json:"variant_group_id"`
+	VariantGroup   string  `json:"variant_group"`
+	VariantWeight  string  `json:"variant_weight"`
+	VariantFlavor  string  `json:"variant_flavor"`
+	// Порядок внутри группы: вес по возрастанию, затем вкус.
+	VariantWeightSort float64 `json:"variant_weight_sort"`
+	VariantSort       int     `json:"variant_sort"`
 }
 
 type CatalogCashier struct {
@@ -104,7 +112,8 @@ const catalogOverlap = time.Minute
 // CatalogEpoch — поколение каталога кассы. Касса присылает своё (epoch), и если
 // оно другое, получает каталог целиком. 2 — после импорта каталога ИКПУ товары
 // без цены на кассу больше не идут, а старые копии их ещё хранят.
-const CatalogEpoch = 2
+// 3 — в товарах появились группы вариаций (вес и вкус).
+const CatalogEpoch = 3
 
 func (s *Service) Catalog(ctx context.Context, p *identity.Principal, since *time.Time) (Catalog, error) {
 	out := Catalog{Full: since == nil, Epoch: CatalogEpoch}
@@ -141,9 +150,14 @@ func (s *Service) Catalog(ctx context.Context, p *identity.Principal, since *tim
 		       p.ikpu, p.package_code, p.vat_rate::text, p.is_marked, pl.plu,
 		       COALESCE(p.images[1], ''),
 		       COALESCE(loc(c2.name, c2.name_uz), loc(c1.name, c1.name_uz), loc(c.name, c.name_uz), ''),
-		       p.name, p.name_uz
+		       p.name, p.name_uz,
+		       vg.id, COALESCE(loc(vg.name, vg.name_uz), ''),
+		       CASE WHEN vg.id IS NULL THEN '' ELSE loc(p.variant_weight, p.variant_weight_uz) END,
+		       CASE WHEN vg.id IS NULL THEN '' ELSE loc(p.variant_flavor, p.variant_flavor_uz) END,
+		       p.variant_weight_sort::float8, p.variant_sort
 		FROM products p
 		JOIN units u ON u.id = p.unit_id
+		LEFT JOIN variant_groups vg ON vg.id = p.variant_group_id AND vg.status = 'confirmed'
 		LEFT JOIN categories c ON c.id = p.category_id
 		LEFT JOIN categories c1 ON c1.id = c.parent_id
 		LEFT JOIN categories c2 ON c2.id = c1.parent_id
@@ -156,7 +170,7 @@ func (s *Service) Catalog(ctx context.Context, p *identity.Principal, since *tim
 		  -- свои, с ценой сети или магазина, с кодом на кассе или с базовой ценой.
 		  AND (p.network_id = $1 OR sp.price IS NOT NULL OR np.price IS NOT NULL OR pl.plu IS NOT NULL OR p.base_price > 0)
 		  AND ($4::timestamptz IS NULL OR p.updated_at > $4 OR u.updated_at > $4 OR sp.updated_at > $4
-		       OR np.updated_at > $4 OR pl.updated_at > $4)
+		       OR np.updated_at > $4 OR pl.updated_at > $4 OR vg.updated_at > $4)
 		ORDER BY loc(p.name, p.name_uz)`, p.NetworkID, storeID, priceType, from)
 	if err != nil {
 		return out, err

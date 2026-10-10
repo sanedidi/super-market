@@ -134,7 +134,7 @@ func TestPOS(t *testing.T) {
 		t.Fatalf("empty delta = %v", d.Body["products"])
 	}
 	a.expect(a.do("PUT", "/admin/pos/products/"+sugar+"/tax", adminTok, map[string]any{"package_code": "1500"}), 200, "touch sugar")
-	if d := a.expect(posDo(a, "GET", "/pos/catalog?epoch=1&since="+ver, dt, "", nil), 200, "old epoch"); d.Body["full"] != true || d.Body["epoch"] != float64(2) {
+	if d := a.expect(posDo(a, "GET", "/pos/catalog?epoch=1&since="+ver, dt, "", nil), 200, "old epoch"); d.Body["full"] != true || d.Body["epoch"] != float64(3) {
 		t.Fatalf("old epoch = %v", d.Body["full"])
 	}
 	if d := a.expect(posDo(a, "GET", "/pos/catalog?since="+ver, dt, "", nil), 200, "delta"); len(d.Body["products"].([]any)) != 1 {

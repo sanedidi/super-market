@@ -13,6 +13,9 @@ import '../wish.dart';
 import 'root_shell.dart';
 import 'search_screen.dart';
 
+/// Поля шторки по бокам.
+const _side = EdgeInsets.symmetric(horizontal: 20);
+
 /// Карточка товара: фото, цена со скидкой, магазин, пищевая ценность,
 /// описание и характеристики, «С этим покупают», количество внизу.
 class ProductScreen extends StatefulWidget {
@@ -35,46 +38,129 @@ class _ProductScreenState extends State<ProductScreen> {
   final _page = PageController();
   int _photo = 0;
 
+  /// Номер загрузки карточки: ответ на прежний выбор вариации отбрасываем.
+  int _seq = 0;
+
+  /// Подсказка у «Вкус» после смены веса: «Пицца Пепперони» нет в 90 г.
+  String? _missing;
+
+  /// Ряд вкусов прокручивается к выбранному чипу.
+  final _flavors = ScrollController();
+  final _flavorKey = GlobalKey();
+
   StoreRef get _store => widget.store;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load(widget.product.id));
   }
 
   @override
   void dispose() {
     _page.dispose();
+    _flavors.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
+  /// Полная карточка товара [id], «С этим покупают» и где его привезут.
+  Future<void> _load(String id) async {
+    final seq = ++_seq;
     final api = context.read<Api>();
-    final base = '/client/stores/${_store.id}/products/${widget.product.id}';
+    final base = '/client/stores/${_store.id}/products/$id';
     try {
       final j = await api.get(base) as Map<String, dynamic>;
-      if (mounted) setState(() => _p = Product(j));
+      if (!mounted || seq != _seq) return;
+      // Вариации пришли впервые — показываем выбранный вкус в ряду.
+      final first = _p.variants == null;
+      setState(() => _p = Product(j));
+      if (first) _revealFlavor(animate: false);
     } catch (e) {
-      if (mounted) showError(context, e);
+      if (!mounted) return;
+      if (seq == _seq) showError(context, e);
     }
     try {
       final items = await api.list('$base/related');
-      if (mounted) setState(() => _related = items.map(Product.new).toList());
+      if (mounted && seq == _seq) setState(() => _related = items.map(Product.new).toList());
     } catch (_) {
       // Рекомендации не обязательны.
     }
-    if (!mounted) return;
+    if (!mounted || seq != _seq) return;
     final state = context.read<AppState>();
     final a = state.address;
     if (a == null || state.canOrder(_store.id)) return;
     try {
       final r = await api.get('/client/search', {'lat': a.lat, 'lng': a.lng, 'q': _p.name, 'only_delivering': 1, 'limit': 50}) as Map<String, dynamic>;
       final found = ((r['items'] as List?) ?? const []).cast<Map<String, dynamic>>().map(SearchItem.new).where((it) => it.product['id'] == _p.id).firstOrNull;
-      if (mounted) setState(() => _elsewhere = found);
+      if (mounted && seq == _seq) setState(() => _elsewhere = found);
     } catch (_) {
       // Подсказка не обязательна.
     }
+  }
+
+  /// Выбрали вариацию: сразу показываем её фото, название и цену из
+  /// [VariantOption], полную карточку догружаем. [missing] — подсказка
+  /// «вкуса нет в этом весе» (null — убрать).
+  void _select(VariantOption o, {String? missing}) {
+    final v = _p.variants;
+    if (v == null || o.productId == _p.id) {
+      setState(() => _missing = missing);
+      return;
+    }
+    setState(() {
+      _missing = missing;
+      _p = Product(_preview(v, o));
+      _elsewhere = null;
+      _photo = 0;
+    });
+    if (_page.hasClients) _page.jumpToPage(0);
+    _load(o.productId);
+  }
+
+  /// Временная карточка вариации до ответа сервера: остальное — от текущего товара.
+  Map<String, dynamic> _preview(ProductVariants v, VariantOption o) {
+    final name = [v.name, o.flavor].map((s) => s.trim()).where((s) => s.isNotEmpty).join(' ');
+    final image = o.image;
+    final attrs = {..._attrs};
+    // Объём в подзаголовке — это вес вариации («Lay's · 90 г»).
+    if (o.weight.isNotEmpty && '${attrs['volume'] ?? ''}'.trim() == v.weight.trim()) attrs['volume'] = o.weight;
+    return {
+      ..._p.json,
+      'id': o.productId,
+      'name': o.weight.isEmpty ? name : '$name, ${o.weight}',
+      'price': o.price,
+      'old_price': o.oldPrice,
+      'discount_percent': o.discountPercent,
+      'images': [if (image != null) image],
+      'is_new': false,
+      'attributes': attrs,
+      // В вариациях только то, что есть в наличии.
+      if ((num.tryParse(_p.available) ?? 0) <= 0) 'available': '1',
+    };
+  }
+
+  /// Выбрали вес: тот же вкус в этом весе, а если его нет — первый вкус веса
+  /// и подсказка: «Пицца Пепперони» нет в 90 г.
+  void _pickWeight(ProductVariants v, String weight, String flavor) {
+    final r = v.pickForWeight(weight, flavor);
+    if (r == null) return;
+    final old = flavor.trim();
+    _select(r.option, missing: r.exact || old.isEmpty ? null : tr('«$old» нет в $weight', '«$old» $weight da yoʻq'));
+    _revealFlavor();
+  }
+
+  /// Прокрутить ряд вкусов к выбранному чипу (после отрисовки кадра).
+  void _revealFlavor({bool animate = true}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final box = _flavorKey.currentContext?.findRenderObject();
+      if (!mounted || box == null || !_flavors.hasClients) return;
+      _flavors.position.ensureVisible(
+        box,
+        alignment: 0.5,
+        duration: animate ? const Duration(milliseconds: 250) : Duration.zero,
+        curve: Curves.easeOutCubic,
+      );
+    });
   }
 
   Future<void> _addFrom(SearchOffer o, Product p, num q) async {
@@ -128,6 +214,7 @@ class _ProductScreenState extends State<ProductScreen> {
         if ('${attrs[k] ?? ''}'.trim().isNotEmpty) (label, '${attrs[k]}'),
     ];
     final available = num.tryParse(_p.available) ?? 0;
+    final variants = _variants();
 
     return Scaffold(
       backgroundColor: AppColors.white,
@@ -140,76 +227,88 @@ class _ProductScreenState extends State<ProductScreen> {
               borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
               boxShadow: [BoxShadow(color: Color(0x10000000), blurRadius: 16, offset: Offset(0, -4))],
             ),
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            // Поля по бокам — у блоков внутри: ряд вкусов прокручивается от края до края.
+            padding: const EdgeInsets.fromLTRB(0, 12, 0, 24),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Center(
-                child: Container(width: 40, height: 5, decoration: BoxDecoration(color: AppColors.line, borderRadius: BorderRadius.circular(3))),
-              ),
-              const SizedBox(height: 20),
-              Text.rich(
-                TextSpan(children: [
-                  TextSpan(text: _p.name, style: AppText.h2.copyWith(fontSize: 26, height: 1.25)),
-                  TextSpan(text: '  1 ${_p.unit}', style: AppText.h2.copyWith(fontSize: 26, height: 1.25, color: AppColors.muted)),
-                ]),
-              ),
-              if (subtitle.isNotEmpty) ...[const SizedBox(height: 6), Text(subtitle, style: AppText.body.copyWith(color: AppColors.text2))],
-              if (!canOrder) ...[const SizedBox(height: 10), Text(money(_p.price), style: AppText.h2.copyWith(fontSize: 26))],
-              if (_p.description.trim().isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text(_p.description, style: AppText.body.copyWith(fontSize: 17, color: AppColors.text2)),
-              ],
-              const SizedBox(height: 12),
-              Wrap(spacing: 8, runSpacing: 8, children: [
-                if (_p.isNew) AppBadge(label: tr('Новинка', 'Yangi'), kind: BadgeKind.isNew),
-                available > 0
-                    ? AppBadge(label: tr('В наличии', 'Mavjud'), kind: BadgeKind.success)
-                    : AppBadge(label: tr('Нет в наличии', 'Mavjud emas'), kind: BadgeKind.error),
-              ]),
-              const SizedBox(height: 20),
-              _StoreRow(
-                  name: _store.name,
-                  logoUrl: store?.logoUrl,
-                  eta: canOrder ? store?.etaText : null,
-                  note: canOrder || store == null ? null : tr('Есть в магазине · ${noDeliveryText(store)}', 'Doʻkonda bor · ${noDeliveryText(store)}'),
-                  onTap: store == null
-                      ? null
-                      : () {
-                          state.openCatalog(store);
-                          Navigator.of(context).popUntil((r) => r.isFirst);
-                        }),
-              if (!canOrder && _elsewhere != null) ...[
-                const SizedBox(height: 16),
-                _Elsewhere(item: _elsewhere!, state: state, onAdd: _addFrom),
-              ],
-              if (nutrition.isNotEmpty) ...[
-                const SizedBox(height: 24),
-                Text(tr('Пищевая ценность на 100 г', '100 g dagi ozuqaviy qiymat'), style: AppText.title),
-                const SizedBox(height: 12),
-                Row(children: [
-                  for (final (k, label, unit) in [
-                    ('kcal', tr('ккал', 'kkal'), ''),
-                    ('protein', tr('белки', 'oqsillar'), tr(' г', ' g')),
-                    ('fat', tr('жиры', 'yogʻlar'), tr(' г', ' g')),
-                    ('carbs', tr('углеводы', 'uglevodlar'), tr(' г', ' g')),
-                  ]) ...[
-                    if (k != 'kcal') const SizedBox(width: 8),
-                    Expanded(child: _Nutrient(value: nutrition[k] == null ? '—' : '${qty(nutrition[k])}$unit', label: label)),
-                  ],
-                ]),
-              ],
-              if (details.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                for (final (label, value) in details)
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.line))),
-                    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      SizedBox(width: 130, child: Text(label, style: AppText.small.copyWith(fontSize: 14))),
-                      const SizedBox(width: 12),
-                      Expanded(child: Text(value, textAlign: TextAlign.right, style: AppText.bodyMedium.copyWith(fontSize: 14))),
+              Padding(
+                padding: _side,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Center(
+                    child: Container(width: 40, height: 5, decoration: BoxDecoration(color: AppColors.line, borderRadius: BorderRadius.circular(3))),
+                  ),
+                  const SizedBox(height: 20),
+                  Text.rich(
+                    TextSpan(children: [
+                      TextSpan(text: _p.name, style: AppText.h2.copyWith(fontSize: 26, height: 1.25)),
+                      TextSpan(text: '  1 ${_p.unit}', style: AppText.h2.copyWith(fontSize: 26, height: 1.25, color: AppColors.muted)),
                     ]),
                   ),
-              ],
+                  if (subtitle.isNotEmpty) ...[const SizedBox(height: 6), Text(subtitle, style: AppText.body.copyWith(color: AppColors.text2))],
+                  if (!canOrder) ...[const SizedBox(height: 10), Text(money(_p.price), style: AppText.h2.copyWith(fontSize: 26))],
+                  if (_p.description.trim().isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(_p.description, style: AppText.body.copyWith(fontSize: 17, color: AppColors.text2)),
+                  ],
+                ]),
+              ),
+              if (variants != null) variants,
+              Padding(
+                padding: _side,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const SizedBox(height: 12),
+                  Wrap(spacing: 8, runSpacing: 8, children: [
+                    if (_p.isNew) AppBadge(label: tr('Новинка', 'Yangi'), kind: BadgeKind.isNew),
+                    available > 0
+                        ? AppBadge(label: tr('В наличии', 'Mavjud'), kind: BadgeKind.success)
+                        : AppBadge(label: tr('Нет в наличии', 'Mavjud emas'), kind: BadgeKind.error),
+                  ]),
+                  const SizedBox(height: 20),
+                  _StoreRow(
+                      name: _store.name,
+                      logoUrl: store?.logoUrl,
+                      eta: canOrder ? store?.etaText : null,
+                      note: canOrder || store == null ? null : tr('Есть в магазине · ${noDeliveryText(store)}', 'Doʻkonda bor · ${noDeliveryText(store)}'),
+                      onTap: store == null
+                          ? null
+                          : () {
+                              state.openCatalog(store);
+                              Navigator.of(context).popUntil((r) => r.isFirst);
+                            }),
+                  if (!canOrder && _elsewhere != null) ...[
+                    const SizedBox(height: 16),
+                    _Elsewhere(item: _elsewhere!, state: state, onAdd: _addFrom),
+                  ],
+                  if (nutrition.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    Text(tr('Пищевая ценность на 100 г', '100 g dagi ozuqaviy qiymat'), style: AppText.title),
+                    const SizedBox(height: 12),
+                    Row(children: [
+                      for (final (k, label, unit) in [
+                        ('kcal', tr('ккал', 'kkal'), ''),
+                        ('protein', tr('белки', 'oqsillar'), tr(' г', ' g')),
+                        ('fat', tr('жиры', 'yogʻlar'), tr(' г', ' g')),
+                        ('carbs', tr('углеводы', 'uglevodlar'), tr(' г', ' g')),
+                      ]) ...[
+                        if (k != 'kcal') const SizedBox(width: 8),
+                        Expanded(child: _Nutrient(value: nutrition[k] == null ? '—' : '${qty(nutrition[k])}$unit', label: label)),
+                      ],
+                    ]),
+                  ],
+                  if (details.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    for (final (label, value) in details)
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.line))),
+                        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          SizedBox(width: 130, child: Text(label, style: AppText.small.copyWith(fontSize: 14))),
+                          const SizedBox(width: 12),
+                          Expanded(child: Text(value, textAlign: TextAlign.right, style: AppText.bodyMedium.copyWith(fontSize: 14))),
+                        ]),
+                      ),
+                  ],
+                ]),
+              ),
             ]),
           ),
         ),
@@ -233,6 +332,66 @@ class _ProductScreenState extends State<ProductScreen> {
                 ? AppButton(label: tr('Магазин не доставляет', 'Doʻkon yetkazib bermaydi'), onPressed: null)
                 : WishButton(store: store, label: tr('Хочу доставку из ${store.name}', '«${store.name}» yetkazib bersin'), height: 56),
       ),
+    );
+  }
+
+  /// Вариации: «Вес» — чипы весов, «Вкус» — чипы вкусов выбранного веса с фото.
+  /// null — у товара нет вариаций или выбирать не из чего.
+  Widget? _variants() {
+    final v = _p.variants;
+    if (v == null) return null;
+    final current = v.byProduct(_p.id);
+    final weight = current?.weight ?? v.weight;
+    final flavor = current?.flavor ?? v.flavor;
+    final inWeight = v.inWeight(weight);
+    final flavors = v.options.map((o) => ProductVariants.flavorKey(o.flavor)).where((f) => f.isNotEmpty).toSet();
+    final showWeights = v.weights.length >= 2;
+    // Один вкус в весе показываем, только если в других весах вкусы другие.
+    final showFlavors = inWeight.length >= 2 || (inWeight.any((o) => o.flavor.trim().isNotEmpty) && flavors.length >= 2);
+    if (!showWeights && !showFlavors) return null;
+    final missing = _missing;
+    return Padding(
+      padding: const EdgeInsets.only(top: 20),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (showWeights) ...[
+          Padding(padding: _side, child: Text(tr('Вес', 'Vazn'), style: AppText.bodyStrong)),
+          const SizedBox(height: 10),
+          Padding(
+            padding: _side,
+            child: Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final w in v.weights) AppChip(label: w, selected: w == weight, onTap: () => _pickWeight(v, w, flavor)),
+            ]),
+          ),
+        ],
+        if (showWeights && showFlavors) const SizedBox(height: 16),
+        if (showFlavors) ...[
+          Padding(
+            padding: _side,
+            child: Row(children: [
+              Text(tr('Вкус', 'Taʼm'), style: AppText.bodyStrong),
+              if (missing != null) ...[const SizedBox(width: 8), Flexible(child: AppBadge(label: missing, kind: BadgeKind.warning))],
+            ]),
+          ),
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            controller: _flavors,
+            scrollDirection: Axis.horizontal,
+            padding: _side,
+            child: Row(children: [
+              for (final (i, o) in inWeight.indexed) ...[
+                if (i > 0) const SizedBox(width: 8),
+                _FlavorChip(
+                  key: o.productId == _p.id ? _flavorKey : null,
+                  label: o.flavor.trim().isEmpty ? v.name : o.flavor,
+                  image: o.image,
+                  selected: o.productId == _p.id,
+                  onTap: () => _select(o),
+                ),
+              ],
+            ]),
+          ),
+        ],
+      ]),
     );
   }
 
@@ -349,6 +508,35 @@ class _ProductScreenState extends State<ProductScreen> {
         ),
       ),
     ]);
+  }
+}
+
+/// Чип вкуса: как [AppChip], слева круглое фото вариации.
+class _FlavorChip extends StatelessWidget {
+  const _FlavorChip({super.key, required this.label, required this.image, required this.selected, required this.onTap});
+  final String label;
+  final String? image;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? AppColors.dark : AppColors.soft,
+      shape: const StadiumBorder(),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(6, 5, 16, 5),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            SizedBox(width: 30, height: 30, child: ProductImage(url: image, radius: 15, iconSize: 16)),
+            const SizedBox(width: 8),
+            Text(label, style: AppText.bodyMedium.copyWith(fontSize: 15, color: selected ? AppColors.white : AppColors.ink)),
+          ]),
+        ),
+      ),
+    );
   }
 }
 

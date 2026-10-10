@@ -17,6 +17,7 @@ import {
 import { Dashboard } from './pages/Dashboard'
 import { Networks } from './pages/Networks'
 import { Products, Dictionary } from './pages/Catalog'
+import { Variants } from './pages/Variants'
 import { Banners } from './pages/Banners'
 import { AppHome } from './pages/AppHome'
 import { Ads } from './pages/Ads'
@@ -39,6 +40,7 @@ const menu: MenuItem[] = [
     label: 'Каталог',
     children: [
       { key: '/products', label: 'Товары' },
+      { key: '/catalog/variants', label: 'Вариации' },
       { key: '/moderation', label: 'Модерация' },
       { key: '/catalog/categories', label: 'Категории' },
       { key: '/catalog/brands', label: 'Бренды' },
@@ -87,6 +89,7 @@ export function AdminRoutes() {
         <Route path="networks" element={<Networks />} />
         <Route path="products" element={<Products key="products" />} />
         <Route path="moderation" element={<Products key="moderation" moderation />} />
+        <Route path="catalog/variants" element={<Variants />} />
         <Route path="catalog/:kind" element={<Dictionary />} />
         <Route path="banners" element={<Banners />} />
         <Route path="app-home" element={<AppHome />} />

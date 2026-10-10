@@ -3,11 +3,12 @@
 // приход, установка цен); свои товары сети уходят на модерацию.
 import { useState } from 'react'
 import { Alert, Button, Card, Col, Form, Input, Modal, Radio, Row, Select, Space, Table, Tag, Tooltip, Typography, type TableColumnType } from 'antd'
-import { PlusOutlined } from '@ant-design/icons'
-import { DeleteButton, FormTranslate, ImageUpload, LoadError, PageTitle, ProductTree, ProductViewSwitch, RemoteSelect, api, getLang, money, tr, useAction, usePaged, useProductView } from '@sm/shared'
+import { InfoCircleOutlined, PlusOutlined } from '@ant-design/icons'
+import { DeleteButton, FormTranslate, ImageUpload, LoadError, PageTitle, ProductTree, ProductViewSwitch, RemoteSelect, api, getLang, interactive, money, tr, useAction, usePaged, useProductView } from '@sm/shared'
 import { useStore } from '../ctx'
 import { Num } from '../ui'
 import type { DictItem, Product } from '../types'
+import { FlavorMenu, childrenOf, useVariantGroups, variantNameCell, variantPriceCell, variantStockCell, type VRow } from './variants'
 
 // Для редактирования API отдаёт ещё и сырые названия на обоих языках.
 type ProductEdit = Product & { name_ru?: string; name_uz?: string; description_ru?: string; description_uz?: string }
@@ -30,6 +31,23 @@ const priceSource: Record<string, string> = {
   base: tr('базовая', 'asosiy'),
 }
 
+const priceCell = (r: Product) =>
+  r.price ? (
+    <>
+      {money(r.price)}
+      {r.price_source && <Typography.Text type="secondary"> ({priceSource[r.price_source] ?? r.price_source})</Typography.Text>}
+    </>
+  ) : (
+    '—'
+  )
+
+const barcodes = (v: string[] | null) => (v ?? []).join(', ') || '—'
+
+/** Строка «загрузка группы» — на всю ширину таблицы. */
+function spanLoading(cols: TableColumnType<VRow>[]): TableColumnType<VRow>[] {
+  return cols.map((c, i) => ({ ...c, onCell: (r: VRow) => (r.kind === 'loading' ? { colSpan: i === 0 ? cols.length : 0 } : {}) }))
+}
+
 export function ProductsPage() {
   const { storeId, can } = useStore()
   const [q, setQ] = useState('')
@@ -37,6 +55,7 @@ export function ProductsPage() {
   const [editing, setEditing] = useState<ProductEdit | null>(null)
   const [open, setOpen] = useState(false)
   const [view, setView] = useProductView()
+  const [expanded, setExpanded] = useState<string[]>([])
   const params = {
     q: q || undefined,
     category_id: categoryId,
@@ -45,26 +64,42 @@ export function ProductsPage() {
   }
   const list = usePaged<Product>(view === 'list' ? '/store/products' : null, params)
   const manage = can('catalog.manage')
-  const price: TableColumnType<Product> = {
+  const prices = can('prices.manage')
+  const variants = useVariantGroups(storeId)
+  const rows = variants.build(list.items)
+  const hasGroups = rows.some((r) => r.kind === 'group')
+
+  const price: TableColumnType<VRow> = {
     title: tr('Цена в магазине', 'Doʻkondagi narx'),
-    dataIndex: 'price',
+    key: 'price',
     align: 'right',
-    render: (v: string | undefined, r) =>
-      v ? (
-        <>
-          {money(v)}
-          {r.price_source && <Typography.Text type="secondary"> ({priceSource[r.price_source] ?? r.price_source})</Typography.Text>}
-        </>
-      ) : (
-        '—'
-      ),
+    render: (_, r) => (r.kind === 'product' ? priceCell(r.product) : variantPriceCell(r, variants, prices)),
   }
-  const editCol: TableColumnType<Product> = {
+  const unit: TableColumnType<VRow> = {
+    title: tr('Ед.', 'Birl.'),
+    key: 'unit',
+    render: (_, r) => (r.kind === 'product' ? r.product.unit_short : r.kind === 'flavor' ? (r.product?.unit_short ?? tr('шт', 'dona')) : null),
+  }
+  const barcode: TableColumnType<VRow> = {
+    title: tr('Штрихкод', 'Shtrix-kod'),
+    key: 'barcodes',
+    render: (_, r) => (r.kind === 'product' ? barcodes(r.product.barcodes) : r.kind === 'flavor' ? r.item.barcode || '—' : r.kind === 'weight' ? '—' : null),
+  }
+  // У строк группы вариаций вместо статуса каталога — остаток по вкусу.
+  const status = (title: string): TableColumnType<VRow> => ({
+    title,
+    key: 'mod',
+    render: (_, r) => (r.kind === 'product' ? <Moderation p={r.product} /> : variantStockCell(r)),
+  })
+  const editCol: TableColumnType<VRow> = {
     key: 'edit',
     width: 190,
     align: 'right',
-    render: (_, r) =>
-      manage && r.network_id ? (
+    render: (_, row) => {
+      if (row.kind === 'flavor') return prices ? <FlavorMenu r={row} v={variants} /> : null
+      if (row.kind !== 'product') return null
+      const r = row.product
+      return manage && r.network_id ? (
         <Space size={8}>
           <Button
             size="small"
@@ -81,26 +116,64 @@ export function ProductsPage() {
             deactivate={() => api.patch(`/store/products/${r.id}`, { is_active: false })}
           />
         </Space>
-      ) : null,
+      ) : null
+    },
   }
   // Дерево: бренд и категория — в группах, поэтому в строке товара их нет.
-  const treeColumns: TableColumnType<Product>[] = [
+  const treeColumns = spanLoading([
     {
       title: tr('Бренд · категория · товар', 'Brend · kategoriya · mahsulot'),
       key: 'name',
-      render: (_, r) => (
-        <>
-          {r.name}
-          {!r.is_active && <Tag style={{ marginLeft: 6 }}>{tr('Отключён', 'Oʻchirilgan')}</Tag>}
-        </>
-      ),
+      render: (_, r) =>
+        r.kind === 'product' ? (
+          <>
+            {r.product.name}
+            {!r.product.is_active && <Tag style={{ marginLeft: 6 }}>{tr('Отключён', 'Oʻchirilgan')}</Tag>}
+          </>
+        ) : (
+          variantNameCell(r)
+        ),
     },
-    { title: tr('Ед.', 'Birl.'), dataIndex: 'unit_short' },
+    unit,
     price,
-    { title: tr('Штрихкод', 'Shtrix-kod'), dataIndex: 'barcodes', render: (v: string[] | null) => (v ?? []).join(', ') || '—' },
-    { title: tr('Каталог', 'Katalog'), key: 'mod', render: (_, r) => <Moderation p={r} /> },
+    barcode,
+    status(tr('Каталог / остаток', 'Katalog / qoldiq')),
     editCol,
-  ]
+  ])
+  const listColumns = spanLoading([
+    {
+      title: tr('Товар', 'Mahsulot'),
+      key: 'name',
+      render: (_, row) => {
+        if (row.kind !== 'product') return variantNameCell(row)
+        const r = row.product
+        return (
+          <>
+            {r.name}
+            {r.brand_name && <Typography.Text type="secondary"> · {r.brand_name}</Typography.Text>}
+            {!r.is_active && <Tag style={{ marginLeft: 6 }}>{tr('Отключён', 'Oʻchirilgan')}</Tag>}
+          </>
+        )
+      },
+    },
+    barcode,
+    { title: tr('Категория', 'Kategoriya'), key: 'category', render: (_, r) => (r.kind === 'product' ? r.product.category_name : null) },
+    unit,
+    {
+      title: tr('Базовая цена', 'Asosiy narx'),
+      key: 'base_price',
+      align: 'right',
+      render: (_, r) => (r.kind === 'product' ? money(r.product.base_price) : r.kind === 'flavor' && r.product ? money(r.product.base_price) : null),
+    },
+    price,
+    status(hasGroups ? tr('Каталог / остаток', 'Katalog / qoldiq') : tr('Каталог', 'Katalog')),
+    editCol,
+  ])
+  const toggle = (r: VRow) => {
+    const willOpen = !expanded.includes(r.id)
+    setExpanded((e) => (willOpen ? [...e, r.id] : e.filter((x) => x !== r.id)))
+    if (willOpen && r.kind === 'group') variants.load(r.groupId)
+  }
 
   return (
     <>
@@ -132,47 +205,50 @@ export function ProductsPage() {
         )}
       </Typography.Paragraph>
       {view === 'tree' ? (
-        <ProductTree<Product>
+        <ProductTree<Product, VRow>
           groupsPath="/store/products/groups"
           itemsPath="/store/products"
           params={params}
           columns={treeColumns}
+          mapItems={variants.build}
+          childrenOf={childrenOf}
+          onExpandItem={(r, isOpen) => isOpen && r.kind === 'group' && variants.load(r.groupId)}
           pendingText={(n) => tr(`Свои на модерации: ${n}`, `Moderatsiyadagi oʻz mahsulotlar: ${n}`)}
         />
       ) : (
         <>
           <LoadError error={list.error} retry={() => list.refetch()} />
-          <Card styles={{ body: { padding: 0 } }}>
-            <Table<Product>
-          rowKey="id"
-          loading={list.isLoading || list.isFetching}
-          dataSource={list.items}
-          scroll={{ x: true }}
-          pagination={list.pagination}
-          columns={[
-            {
-              title: tr('Товар', 'Mahsulot'),
-              dataIndex: 'name',
-              render: (v: string, r) => (
-                <>
-                  {v}
-                  {r.brand_name && <Typography.Text type="secondary"> · {r.brand_name}</Typography.Text>}
-                  {!r.is_active && <Tag style={{ marginLeft: 6 }}>{tr('Отключён', 'Oʻchirilgan')}</Tag>}
-                </>
-              ),
-            },
-            { title: tr('Штрихкод', 'Shtrix-kod'), dataIndex: 'barcodes', render: (v: string[] | null) => (v ?? []).join(', ') || '—' },
-            { title: tr('Категория', 'Kategoriya'), dataIndex: 'category_name' },
-            { title: tr('Ед.', 'Birl.'), dataIndex: 'unit_short' },
-            { title: tr('Базовая цена', 'Asosiy narx'), dataIndex: 'base_price', align: 'right', render: (v: string) => money(v) },
-            price,
-            { title: tr('Каталог', 'Katalog'), key: 'mod', render: (_, r) => <Moderation p={r} /> },
-            editCol,
-          ]}
-        />
+          <Card styles={{ body: { padding: 0 } }} className="sm-tree">
+            <Table<VRow>
+              rowKey="id"
+              loading={list.isLoading || list.isFetching}
+              dataSource={rows}
+              scroll={{ x: true }}
+              pagination={list.pagination}
+              columns={listColumns}
+              rowClassName={(r) => `sm-variant-${r.kind}`}
+              onRow={(r) =>
+                r.kind === 'group' || r.kind === 'weight'
+                  ? {
+                      onClick: (e) => {
+                        if (!interactive(e.target)) toggle(r)
+                      },
+                      style: { cursor: 'pointer' },
+                    }
+                  : {}
+              }
+              expandable={{ expandedRowKeys: expanded, onExpand: (_, r) => toggle(r), indentSize: 28 }}
+            />
           </Card>
         </>
       )}
+      <Typography.Paragraph type="secondary" style={{ marginTop: 12, fontSize: 12 }}>
+        <InfoCircleOutlined />{' '}
+        {tr(
+          'Цена ставится на вес — все вкусы этого веса её наследуют. «Своя цена» — в меню строки вкуса. Остаток — по каждому вкусу.',
+          'Narx vaznga qoʻyiladi — shu vazndagi barcha taʼmlar uni oladi. «Oʻz narxi» — taʼm qatori menyusida. Qoldiq — har bir taʼm boʻyicha.',
+        )}
+      </Typography.Paragraph>
       <ProductModal open={open} editing={editing} onClose={() => setOpen(false)} />
     </>
   )

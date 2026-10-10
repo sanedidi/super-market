@@ -56,6 +56,43 @@ export type Product = {
   price?: string
   price_source?: string
   price_type_id?: string
+  /** Группа вариаций (подтверждённая): «Чипсы Lay's», вес «150 г», вкус «Сыр». */
+  variant_group_id?: string | null
+  variant_group_name?: string | null
+  variant_weight?: string
+  variant_flavor?: string
+}
+
+/** Вкус в группе вариаций магазина (GET /store/variant-groups/{id}). */
+export type VariantItem = {
+  product_id: string
+  name: string
+  flavor: string
+  barcode: string
+  image: string | null
+  price: string
+  price_source: 'store' | 'network' | 'base'
+  /** «Своя цена»: цена веса её не перезаписывает. */
+  own_price: boolean
+  stock: string
+}
+
+export type VariantWeight = {
+  weight: string
+  /** Общая цена вкусов без своей цены; null — у них разные цены. */
+  price: string | null
+  stock: string
+  items: VariantItem[]
+}
+
+export type VariantGroup = {
+  id: string
+  name: string
+  brand_name: string | null
+  store_id: string
+  price_type_id: string
+  stock: string
+  weights: VariantWeight[]
 }
 
 export type DictItem = {

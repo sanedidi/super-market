@@ -184,6 +184,30 @@ type ProductDetail struct {
 	Attributes   map[string]any `json:"attributes"`
 	StoreID      string         `json:"store_id"`
 	StoreName    string         `json:"store_name"`
+	// Variants — переключатели «Вес» и «Вкус»: только то, что есть в
+	// магазине; null — товар без группы или других вариаций в наличии нет.
+	Variants *ProductVariants `json:"variants"`
+}
+
+// ProductVariants — группа вариаций товара в магазине.
+type ProductVariants struct {
+	GroupID string          `json:"group_id"`
+	Name    string          `json:"name"`
+	Weight  string          `json:"weight"` // вес и вкус открытого товара
+	Flavor  string          `json:"flavor"`
+	Weights []string        `json:"weights"` // по возрастанию
+	Options []VariantOption `json:"options"` // по весу, затем в порядке группы
+}
+
+// VariantOption — вариация в наличии.
+type VariantOption struct {
+	ProductID       string  `json:"product_id"`
+	Weight          string  `json:"weight"`
+	Flavor          string  `json:"flavor"`
+	Image           *string `json:"image"`
+	Price           string  `json:"price"`
+	OldPrice        *string `json:"old_price"`
+	DiscountPercent *int    `json:"discount_percent"`
 }
 
 func (s *Service) StoreProduct(ctx context.Context, storeID, productID string) (ProductDetail, error) {
@@ -204,8 +228,54 @@ func (s *Service) StoreProduct(ctx context.Context, storeID, productID string) (
 	if errors.Is(err, pgx.ErrNoRows) {
 		return out, apperr.NotFound("товара нет в наличии в этом магазине").Uz("mahsulot bu doʻkonda mavjud emas")
 	}
+	if err != nil {
+		return out, err
+	}
 	out.StoreID, out.StoreName = storeID, st.Name
+	out.Variants, err = s.productVariants(ctx, storeID, st, productID)
 	return out, err
+}
+
+// productVariants — вариации группы товара, которые есть в магазине.
+func (s *Service) productVariants(ctx context.Context, storeID string, st storeInfo, productID string) (*ProductVariants, error) {
+	var v ProductVariants
+	err := s.pool.QueryRow(ctx, `
+		SELECT g.id, loc(g.name, g.name_uz) FROM products p JOIN variant_groups g ON g.id = p.variant_group_id
+		WHERE p.id = $1 AND g.status = 'confirmed'`, productID).Scan(&v.GroupID, &v.Name)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, `SELECT c.id, loc(vp.variant_weight, vp.variant_weight_uz), loc(vp.variant_flavor, vp.variant_flavor_uz),
+		       c.images[1],
+		       (CASE WHEN c.promo < c.regular THEN c.promo ELSE c.regular END)::text,
+		       CASE WHEN c.promo < c.regular THEN c.regular::text END,
+		       CASE WHEN c.promo < c.regular THEN round((1 - c.promo / NULLIF(c.regular, 0)) * 100)::int END
+		FROM (`+catalogBase+`) c JOIN products vp ON vp.id = c.id
+		WHERE vp.variant_group_id = $4
+		ORDER BY vp.variant_weight_sort, vp.variant_weight, vp.variant_sort, c.name`,
+		storeID, st.WarehouseID, st.PriceTypeID, v.GroupID)
+	if err != nil {
+		return nil, err
+	}
+	if v.Options, err = pgx.CollectRows(rows, pgx.RowToStructByPos[VariantOption]); err != nil {
+		return nil, err
+	}
+	if len(v.Options) < 2 {
+		return nil, nil
+	}
+	v.Weights = []string{}
+	for _, o := range v.Options {
+		if o.ProductID == productID {
+			v.Weight, v.Flavor = o.Weight, o.Flavor
+		}
+		if n := len(v.Weights); n == 0 || v.Weights[n-1] != o.Weight {
+			v.Weights = append(v.Weights, o.Weight)
+		}
+	}
+	return &v, nil
 }
 
 // RelatedProducts — «С этим покупают»: что чаще всего брали вместе с товаром

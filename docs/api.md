@@ -820,6 +820,45 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 Товары группы — обычный список (`/admin/products`, `/store/products`) с `brand_id` (uuid или `none` — без бренда),
 `leaf_category_id` (ровно эта категория, без подкатегорий) и `sort=name`.
 
+## Вариации товара: группа → вес → вкус
+
+Группа (бренд + линейка, «Чипсы Lay's») связывает товары, которые отличаются только весом и вкусом. Каждая вариация —
+обычный товар (свой штрихкод, фото, ИКПУ, остаток). Lay's и Lay's MAXX — разные группы. Группы предлагает Super Market
+(ИИ-сервис; без него — разбор названий) по товарам общего каталога, супер-админ правит и подтверждает. Только
+подтверждённая группа попадает в товары: поля `variant_group_id`, `variant_group_name`, `variant_weight`,
+`variant_flavor` в `/admin/products`, `/store/products`.
+
+### Супер-админ
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET | `/admin/variant-groups?status=proposed\|confirmed\|rejected&q=&limit=&offset=` | `{items: [Group], total, counts: {proposed, confirmed, rejected}}`. Group: `id, name, name_uz, brand_id, brand_name, category_id, category_name, status, source (ai\|manual), confidence (high\|check), note, decided_at, created_at, stores_count, items: [{product_id, name, image, barcode, weight, weight_uz, flavor, flavor_uz, included, note, other_group}]` |
+| POST | `/admin/variant-groups/suggest` | `{brand_id?}` → `{created, checked, ai, more, failed}`: новые предложения по товарам, которые ещё не в группе и не были отклонены. `more: true` — разобрано не всё, можно нажать ещё раз |
+| POST | `/admin/variant-groups` | `{name, name_uz?, product_ids: [≥2]}` → Group (собрана руками, вес и вкус — из названий) |
+| GET | `/admin/variant-groups/{id}` | Group |
+| PATCH | `/admin/variant-groups/{id}` | `{name?, name_uz?, items?: [{product_id, weight?, weight_uz?, flavor?, flavor_uz?, included?}]}` → Group; у подтверждённой — сразу в товары |
+| POST | `/admin/variant-groups/{id}/items` | `{product_id}` → Group: добавить товар общего каталога |
+| POST | `/admin/variant-groups/{id}/split` | `{product_ids}` → `{group, new_group}`: «Разбить» предложение |
+| POST | `/admin/variant-groups/{id}/confirm` | → Group. 400 — меньше двух товаров или одинаковые вес и вкус; 409 `in_other_group` — товар уже в другой группе |
+| POST | `/admin/variant-groups/{id}/reject` | → Group: отклонить предложение или расформировать группу (товары снова отдельно) |
+
+### Панель магазина (цены — право `prices.manage`)
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET | `/store/variant-groups/{id}?store_id=&price_type_id=` | `{id, name, brand_name, store_id, price_type_id, stock, weights: [{weight, price (общая цена вкусов без своей цены, null — разные), stock, items: [{product_id, name, flavor, barcode, image, price, price_source, own_price, stock}]}]}` |
+| POST | `/store/variant-groups/{id}/weight-price` | `{store_id, weight, price, price_type_id?}` → то же: проведённая «Установка цен» на все вкусы веса без своей цены |
+| POST | `/store/variant-groups/{id}/own-price` | `{store_id, product_id, own, price?, price_type_id?}` → то же: `own: true` — своя цена (с `price` — сразу установить), `false` — вкус снова по цене веса |
+
+### Приложение покупателя и касса
+
+`GET /client/stores/{id}/products/{pid}` → `variants`: `null` или `{group_id, name, weight, flavor, weights: [...],
+options: [{product_id, weight, flavor, image, price, old_price, discount_percent}]}` — только вариации в наличии в
+этом магазине, по весу и порядку группы. В каталоге и поиске каждый вкус — отдельный товар.
+
+`GET /pos/catalog` (`epoch` 3): у товара `variant_group_id`, `variant_group`, `variant_weight`, `variant_flavor`,
+`variant_weight_sort`, `variant_sort` — быстрая кнопка группы открывает выбор веса и вкуса.
+
 ## ИИ-сервис и приход по фото накладной
 
 ### Супер-админ

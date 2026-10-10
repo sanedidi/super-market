@@ -48,6 +48,11 @@ type Product struct {
 	// Характеристики для карточки в приложении: nutrition, composition,
 	// shelf_life, storage, country, volume и любые другие строки.
 	Attributes map[string]any `json:"attributes"`
+	// Группа вариаций (подтверждённая): «Чипсы Lay's», вес «150 г», вкус «Сыр».
+	VariantGroupID   *string `json:"variant_group_id"`
+	VariantGroupName *string `json:"variant_group_name"`
+	VariantWeight    string  `json:"variant_weight"`
+	VariantFlavor    string  `json:"variant_flavor"`
 	// Заполняется, когда в запросе указан магазин.
 	Price       *string `json:"price,omitempty"`
 	PriceSource *string `json:"price_source,omitempty"` // store | network | base
@@ -60,7 +65,9 @@ const productCols = `
 	p.brand_id, b.name, p.category_id, loc(c.name, c.name_uz), p.unit_id, loc(u.short_name, u.short_name_uz), u.is_fractional,
 	p.color_id, p.base_price::text, p.images,
 	COALESCE((SELECT array_agg(pb.barcode ORDER BY pb.barcode) FROM product_barcodes pb WHERE pb.product_id = p.id), '{}'),
-	p.moderation_status, p.rejection_reason, p.is_active, p.created_at, p.attributes`
+	p.moderation_status, p.rejection_reason, p.is_active, p.created_at, p.attributes,
+	p.variant_group_id, (SELECT loc(vg.name, vg.name_uz) FROM variant_groups vg WHERE vg.id = p.variant_group_id),
+	loc(p.variant_weight, p.variant_weight_uz), loc(p.variant_flavor, p.variant_flavor_uz)`
 
 const productFrom = `
 	FROM products p
@@ -74,7 +81,8 @@ func scanProduct(row pgx.CollectableRow) (Product, error) {
 		&p.NameRu, &p.NameUz, &p.DescriptionRu, &p.DescriptionUz,
 		&p.BrandID, &p.BrandName, &p.CategoryID, &p.CategoryName, &p.UnitID, &p.UnitShort, &p.IsFractional,
 		&p.ColorID, &p.BasePrice, &p.Images, &p.Barcodes,
-		&p.ModerationStatus, &p.RejectionReason, &p.IsActive, &p.CreatedAt, &p.Attributes)
+		&p.ModerationStatus, &p.RejectionReason, &p.IsActive, &p.CreatedAt, &p.Attributes,
+		&p.VariantGroupID, &p.VariantGroupName, &p.VariantWeight, &p.VariantFlavor)
 	return p, err
 }
 
@@ -85,6 +93,7 @@ func scanProductWithPrice(row pgx.CollectableRow) (Product, error) {
 		&p.BrandID, &p.BrandName, &p.CategoryID, &p.CategoryName, &p.UnitID, &p.UnitShort, &p.IsFractional,
 		&p.ColorID, &p.BasePrice, &p.Images, &p.Barcodes,
 		&p.ModerationStatus, &p.RejectionReason, &p.IsActive, &p.CreatedAt, &p.Attributes,
+		&p.VariantGroupID, &p.VariantGroupName, &p.VariantWeight, &p.VariantFlavor,
 		&p.Price, &p.PriceSource, &p.PriceTypeID)
 	return p, err
 }

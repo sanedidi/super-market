@@ -318,4 +318,120 @@ void main() {
       expect(back.byId('p1')!.category, 'Хлеб');
     });
   });
+
+  group('вариации на быстрых кнопках', () {
+    Product chips(String id, String weight, double ws, String flavor, int sort, int price,
+            {String group = 'lays', bool active = true, bool marked = false}) =>
+        Product(
+          id: id,
+          name: "Чипсы Lay's $weight $flavor",
+          price: price,
+          category: 'Снеки',
+          active: active,
+          marked: marked,
+          variantGroupId: group,
+          variantGroup: "Чипсы Lay's",
+          variantWeight: weight,
+          variantFlavor: flavor,
+          variantWeightSort: ws,
+          variantSort: sort,
+        );
+    Product item(String id, int price) => Product(id: id, name: 'Товар $id', price: price, category: 'Снеки');
+
+    Catalog catalog() => Catalog(products: [
+          chips('l150cheese', '150 г', 150, 'Сыр', 2, 1800000),
+          chips('l90sour', '90 г', 90, 'Сметана и лук', 1, 1200000),
+          chips('l150sour', '150 г', 150, 'Сметана и лук', 1, 1800000),
+          chips('l90cheese', '90 г', 90, 'Сыр', 2, 1200000),
+          chips('l150bacon', '150 г', 150, 'Бекон', 3, 1900000),
+          chips('l150old', '150 г', 150, 'Краб', 4, 1800000, active: false),
+          chips('l150mark', '150 г', 150, 'Пицца', 5, 1800000, marked: true),
+          item('cola', 1200000),
+          item('water', 550000),
+        ]);
+
+    test('группа: товары в продаже по весу и порядку, веса, цена «от»', () {
+      final groups = variantGroups(catalog().products);
+      final g = groups['lays']!;
+      expect(g.name, "Чипсы Lay's");
+      expect(g.items.map((p) => p.id), ['l90sour', 'l90cheese', 'l150sour', 'l150cheese', 'l150bacon']);
+      expect(g.count, 5);
+      expect(flavorsLabel(g.count), '5 вкусов');
+      expect(flavorsLabel(2), '2 вкуса');
+      expect(flavorsLabel(21), '21 вкус');
+      expect(flavorsLabel(12), '12 вкусов');
+      expect(g.weights, ['90 г', '150 г']);
+      expect(g.ofWeight('150 г').map((p) => p.variantFlavor), ['Сметана и лук', 'Сыр', 'Бекон']);
+      expect(g.priceLabel, 'от 12 000');
+      expect(fromPrice(g.ofWeight('90 г')), '12 000');
+    });
+
+    test('2 и больше товара группы на вкладке — одна плитка на месте первого', () {
+      final c = catalog();
+      final groups = variantGroups(c.products);
+      final list = [c.byId('cola')!, c.byId('l150cheese')!, c.byId('water')!, c.byId('l90sour')!];
+      final tiles = mergeVariantTiles(list, groups);
+      expect(tiles.length, 3);
+      expect(tiles.map((t) => t.product.id), ['cola', 'l150cheese', 'water']);
+      expect(tiles[0].group, isNull);
+      expect(tiles[1].group?.id, 'lays');
+      expect(tiles[2].group, isNull);
+    });
+
+    test('один товар группы на вкладке — обычная плитка', () {
+      final c = catalog();
+      final tiles = mergeVariantTiles([c.byId('l90cheese')!, c.byId('cola')!], variantGroups(c.products));
+      expect(tiles.map((t) => t.product.id), ['l90cheese', 'cola']);
+      expect(tiles.every((t) => t.group == null), isTrue);
+    });
+
+    test('вкладки: закреплённый вкус показывается плиткой группы, товары вкладки не меняются', () {
+      final c = catalog()
+        ..quickPinned = ['l150cheese']
+        ..quickTop = ['cola', 'l90sour', 'l150sour'];
+      final tabs = buildQuickTabs(c);
+      final frequent = tabs.first;
+      expect(frequent.products.map((p) => p.id), ['l150cheese', 'cola', 'l90sour', 'l150sour']);
+      expect(frequent.tiles.map((t) => t.product.id), ['l150cheese', 'cola']);
+      expect(frequent.tiles.first.group?.count, 5);
+      final snacks = tabs[1];
+      expect(snacks.name, 'Снеки');
+      expect(snacks.tiles.where((t) => t.group != null).length, 1);
+      expect(snacks.tiles.length, 3); // cola, группа, water
+    });
+
+    test('каталог: поля вариаций переживают сохранение на диск', () {
+      final c = Catalog()
+        ..apply({
+          'full': true,
+          'version': 'v3',
+          'epoch': 3,
+          'products': [
+            {
+              'id': 'p1',
+              'name': "Чипсы Lay's 150 г Пицца Пепперони",
+              'price': '18000.00',
+              'variant_group_id': 'g1',
+              'variant_group': "Чипсы Lay's",
+              'variant_weight': '150 г',
+              'variant_flavor': 'Пицца Пепперони',
+              'variant_weight_sort': 150.0,
+              'variant_sort': 3,
+            },
+            {'id': 'p2', 'name': 'Хлеб', 'price': '6000.00', 'variant_group_id': null, 'variant_group': ''},
+          ],
+        });
+      final back = Catalog.fromJson(c.toJson());
+      expect(back.epoch, 3);
+      final p = back.byId('p1')!;
+      expect(p.variantGroupId, 'g1');
+      expect(p.variantGroup, "Чипсы Lay's");
+      expect(p.variantWeight, '150 г');
+      expect(p.variantFlavor, 'Пицца Пепперони');
+      expect(p.variantWeightSort, 150.0);
+      expect(p.variantSort, 3);
+      expect(back.byId('p2')!.variantGroupId, isNull);
+      expect(back.byId('p2')!.variantWeight, '');
+    });
+  });
 }

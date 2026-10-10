@@ -21,6 +21,12 @@ class Product {
     this.plu,
     this.image = '',
     this.category = '',
+    this.variantGroupId,
+    this.variantGroup = '',
+    this.variantWeight = '',
+    this.variantFlavor = '',
+    this.variantWeightSort = 0,
+    this.variantSort = 0,
   });
 
   final String id;
@@ -53,6 +59,20 @@ class Product {
   final String image;
   final String category;
 
+  /// Вариации (каталог epoch 3): товары одной группы отличаются только весом
+  /// и вкусом — «Чипсы Lay's» 90 г / 150 г, «Сметана и лук», «Сыр»… На быстрых
+  /// кнопках группа показывается одной плиткой. null — товар без группы.
+  final String? variantGroupId;
+
+  /// Название группы, вес («150 г») и вкус — на языке кассы; пусто — нет.
+  final String variantGroup;
+  final String variantWeight;
+  final String variantFlavor;
+
+  /// Порядок весов (по возрастанию) и порядок товара внутри группы.
+  final double variantWeightSort;
+  final int variantSort;
+
   factory Product.fromJson(Map<String, dynamic> j) => Product(
         id: j['id'] as String,
         name: j['name'] as String? ?? '',
@@ -70,7 +90,15 @@ class Product {
         plu: (j['plu'] as num?)?.toInt(),
         image: j['image'] as String? ?? '',
         category: j['category'] as String? ?? '',
+        variantGroupId: _nonEmpty(j['variant_group_id'] as String?),
+        variantGroup: j['variant_group'] as String? ?? '',
+        variantWeight: j['variant_weight'] as String? ?? '',
+        variantFlavor: j['variant_flavor'] as String? ?? '',
+        variantWeightSort: (j['variant_weight_sort'] as num?)?.toDouble() ?? 0,
+        variantSort: (j['variant_sort'] as num?)?.toInt() ?? 0,
       );
+
+  static String? _nonEmpty(String? s) => s == null || s.isEmpty ? null : s;
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -89,6 +117,12 @@ class Product {
         'plu': plu,
         'image': image,
         'category': category,
+        'variant_group_id': variantGroupId,
+        'variant_group': variantGroup,
+        'variant_weight': variantWeight,
+        'variant_flavor': variantFlavor,
+        'variant_weight_sort': variantWeightSort,
+        'variant_sort': variantSort,
       };
 }
 

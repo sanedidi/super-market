@@ -16,6 +16,7 @@ import 'quick_keys_screen.dart';
 import 'return_screen.dart';
 import 'shift_menu_screen.dart';
 import 'theme.dart';
+import 'variant_dialog.dart';
 import 'widgets.dart';
 
 /// Продажа (Figma «POS v4 · Продажа · клавиатура и быстрые товары»): чек слева,
@@ -98,6 +99,13 @@ class _SaleScreenState extends State<SaleScreen> {
       return;
     }
     await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const QuickKeysScreen()));
+    if (mounted) _focus.requestFocus();
+  }
+
+  /// Плитка группы вариаций: окно выбора веса и вкуса (Figma «Ва4»).
+  Future<void> _openGroup(QuickTile tile) async {
+    if (sale.busy || sale.mode == SaleMode.held) return;
+    await showVariantDialog(context, sale, tile);
     if (mounted) _focus.requestFocus();
   }
 
@@ -190,7 +198,7 @@ class _SaleScreenState extends State<SaleScreen> {
                       return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                         const Expanded(child: _Left()),
                         const SizedBox(width: 16),
-                        SizedBox(width: right, child: _Right(onQuickKeys: _quickKeys)),
+                        SizedBox(width: right, child: _Right(onQuickKeys: _quickKeys, onGroup: _openGroup)),
                       ]);
                     }),
                   ),
@@ -571,9 +579,10 @@ String _hm(DateTime d) => '${d.hour.toString().padLeft(2, '0')}:${d.minute.toStr
 // ----------------------------------------------------------------- справа
 
 class _Right extends StatelessWidget {
-  const _Right({required this.onQuickKeys});
+  const _Right({required this.onQuickKeys, required this.onGroup});
 
   final VoidCallback onQuickKeys;
+  final void Function(QuickTile tile) onGroup;
 
   @override
   Widget build(BuildContext context) {
@@ -582,7 +591,7 @@ class _Right extends StatelessWidget {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _Tabs(onQuickKeys: onQuickKeys),
       const SizedBox(height: 12),
-      Expanded(child: _Tiles(onQuickKeys: onQuickKeys)),
+      Expanded(child: _Tiles(onQuickKeys: onQuickKeys, onGroup: onGroup)),
       const SizedBox(height: 6),
       Text(
         tr('Нажатие — +1 в чек · цифры, потом плитка — столько штук · долгое нажатие — настроить кнопки', 'Bosish — chekka +1 · raqamlar, keyin tugma — shuncha dona · uzoq bosish — tugmalarni sozlash'),
@@ -705,11 +714,13 @@ class _Tabs extends StatelessWidget {
   }
 }
 
-/// Сетка плиток выбранной вкладки: 3 в ряд, дальше — прокрутка.
+/// Сетка плиток выбранной вкладки: 3 в ряд, дальше — прокрутка. Вариации
+/// одной группы — одна плитка группы, нажатие открывает выбор веса и вкуса.
 class _Tiles extends StatelessWidget {
-  const _Tiles({required this.onQuickKeys});
+  const _Tiles({required this.onQuickKeys, required this.onGroup});
 
   final VoidCallback onQuickKeys;
+  final void Function(QuickTile tile) onGroup;
 
   @override
   Widget build(BuildContext context) {
@@ -739,9 +750,19 @@ class _Tiles extends StatelessWidget {
           crossAxisSpacing: 12,
           mainAxisSpacing: 10,
         ),
-        itemCount: tab.products.length,
+        itemCount: tab.tiles.length,
         itemBuilder: (_, i) {
-          final p = tab.products[i];
+          final tile = tab.tiles[i];
+          final g = tile.group;
+          if (g != null) {
+            return VariantTile(
+              tile: tile,
+              pinned: g.items.any((p) => pinned.contains(p.id)),
+              onTap: () => onGroup(tile),
+              onLongPress: onQuickKeys,
+            );
+          }
+          final p = tile.product;
           return ProductTile(
             product: p,
             pinned: pinned.contains(p.id),
