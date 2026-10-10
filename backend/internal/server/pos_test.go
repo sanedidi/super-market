@@ -228,6 +228,10 @@ func TestPOS(t *testing.T) {
 		pastT = midnight
 	}
 	past := pastT.UTC().Format(time.RFC3339)
+	// «Непробитый чек» попадает в контроль кассиров только через час после продажи
+	// (fiscalGrace). С 00:00 до 01:00 продажа упёрлась в полночь и состариться не
+	// успела — тогда флага «fiscal» ещё нет, и проверять его нечестно.
+	fiscalSeen := pastT.Before(nowT.Add(-time.Hour))
 	s2 := a.expect(posDo(a, "POST", "/pos/sales", dt, cashier, sale("sale-0002",
 		[]map[string]any{{"product_id": cola, "qty": 10, "price": 14000}},
 		[]map[string]any{{"payment_method_id": card, "amount": 140000}},
@@ -376,7 +380,7 @@ func TestPOS(t *testing.T) {
 		}
 	}
 	if dil == nil || dil["sales_count"].(float64) != 2 || dil["revenue"] != "188000.00" || dil["shortage"] != "3000.00" ||
-		!strings.Contains(fmt.Sprint(dil["flags"]), "shortage") || !strings.Contains(fmt.Sprint(dil["flags"]), "fiscal") ||
+		!strings.Contains(fmt.Sprint(dil["flags"]), "shortage") || (fiscalSeen && !strings.Contains(fmt.Sprint(dil["flags"]), "fiscal")) ||
 		len(dil["shifts"].([]any)) != 1 {
 		t.Fatalf("cashier stat = %v", dil)
 	}
