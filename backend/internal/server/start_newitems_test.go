@@ -228,7 +228,7 @@ func TestStartNewItems(t *testing.T) {
 
 	// Товар без фото покупатель не увидит — записать нельзя, пока не добавят снимок.
 	np := a.expect(a.do("POST", "/store/start/post", ownerTok, map[string]any{"store_id": storeID}), 409, "post no photo")
-	if code(np) != "lines_no_photo" || np.Body["error"].(map[string]any)["details"].(map[string]any)["count"] != 1.0 {
+	if np.str("error", "code") != "lines_no_photo" || np.Body["error"].(map[string]any)["details"].(map[string]any)["count"] != 1.0 {
 		t.Fatalf("no photo post = %v", np.Body)
 	}
 	a.expect(a.do("POST", "/store/start/lines/"+manual.str("id")+"/photo", ownerTok, map[string]any{"store_id": storeID, "images": []string{img}}), 200, "line photo")

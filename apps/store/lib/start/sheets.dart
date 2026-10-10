@@ -8,6 +8,7 @@ import 'package:sm_core/sm_core.dart';
 
 import '../lock/app_lock.dart';
 import '../main.dart';
+import '../receipt/receipt_logic.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
