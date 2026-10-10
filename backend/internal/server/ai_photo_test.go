@@ -137,7 +137,7 @@ func TestAIPhoto(t *testing.T) {
 	if s.Body["configured"] != false || s.Body["mode"] != "gemini" || !strings.Contains(s.Body["default_prompt"].(string), "12.") {
 		t.Fatalf("settings = %v", s.Body)
 	}
-	if r := a.do("POST", "/admin/ai-photo/normalize", adminTok, map[string]any{"images": []string{"x"}}); r.Status != 409 || r.Body["code"] != "ai_photo_not_configured" {
+	if r := a.do("POST", "/admin/ai-photo/normalize", adminTok, map[string]any{"images": []string{"x"}}); r.Status != 409 || errCode(r) != "ai_photo_not_configured" {
 		t.Fatalf("normalize off = %d %v", r.Status, r.Body)
 	}
 	// JSON-ключ сервисного аккаунта — это Vertex AI, не Gemini API.
