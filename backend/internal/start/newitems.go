@@ -24,9 +24,11 @@ import (
 // базе, ни в каталоге ИКПУ: магазин фотографирует его (1–3 фото) и работает
 // дальше. Super Market в фоне заполняет карточку: название ru/uz, бренд,
 // единицу, категорию (из дерева или новую) и ищет похожий товар в базе.
-// Магазин проверяет карточку и подтверждает — только тогда создаётся свой
-// товар сети (статус draft) и встаёт в «Мои товары». На модерацию в общую
-// базу он уходит при «Записать и закрыть».
+// Распознал уверенно и это не дубль (нет похожего товара в базе и похожей
+// карточки в очереди) — товар сети (статус draft) создаётся сам и встаёт в
+// «Мои товары». Остальное (дубли, сомнения, не распознал) магазин видит во
+// вкладке «Требуют внимания» и подтверждает сам. На модерацию в общую базу
+// товар уходит при «Записать и закрыть».
 //
 // ИИ не подключён или не справился — карточка в статусе failed: фото и
 // штрихкод уже есть, остальное магазин заполняет сам.
@@ -69,6 +71,9 @@ type NewItemResult struct {
 	UnitShort   string              `json:"unit_short"`
 	Suggestion  *CategorySuggestion `json:"suggestion"`
 	Match       *NewItemMatch       `json:"match"`
+	// Note — почему карточка требует внимания магазина (Super Market что-то
+	// домыслил). Пусто — сомнений не было.
+	Note string `json:"note"`
 }
 
 // NewItemDup — другая карточка в «Новых» этого магазина, похожая на эту:
@@ -575,9 +580,138 @@ func (s *Service) processNewItem(ctx context.Context, id, lang string) error {
 	if res.Match, err = similarProduct(ctx, s.pool, networkID, ans.Name, ans.NameUz); err != nil {
 		return err
 	}
+	if !strings.EqualFold(strings.TrimSpace(ans.Confidence), "high") {
+		res.Note = strings.TrimSpace(ans.Note)
+	}
 	raw, _ := json.Marshal(res)
-	_, err = s.pool.Exec(ctx, `UPDATE start_new_items SET status = 'ready', error = '', result = $2 WHERE id = $1 AND status = 'processing'`, id, raw)
+	if _, err := s.pool.Exec(ctx, `UPDATE start_new_items SET status = 'ready', error = '', result = $2 WHERE id = $1 AND status = 'processing'`, id, raw); err != nil {
+		return err
+	}
+	// Сомнений нет — товар встаёт в «Мои товары» сам; магазину остаётся
+	// только то, что требует внимания.
+	_, err = s.tryAutoAdd(ctx, id, networkID, storeID, employeeID, res, keys)
 	return err
+}
+
+// tryAutoAdd — добавить готовую карточку в «Мои товары», если она не требует
+// внимания (см. canAutoAdd). Похожий товар базы перепроверяется прямо сейчас:
+// пока карточка ждала, такой товар мог появиться (например, его добавили из
+// более ранней карточки) — тогда Match сохраняется в карточку для магазина.
+func (s *Service) tryAutoAdd(ctx context.Context, id, networkID, storeID, employeeID string, res NewItemResult, keys []string) (bool, error) {
+	match, err := similarProduct(ctx, s.pool, networkID, res.Name, res.NameUz)
+	if err != nil {
+		return false, err
+	}
+	if match != nil && res.Match == nil {
+		res.Match = match
+		raw, _ := json.Marshal(res)
+		if _, err := s.pool.Exec(ctx, `UPDATE start_new_items SET result = $2 WHERE id = $1 AND status = 'ready'`, id, raw); err != nil {
+			return false, err
+		}
+	}
+	ok, err := s.canAutoAdd(ctx, id, res)
+	if err != nil || !ok {
+		return false, err
+	}
+	return s.autoAddNewItem(ctx, id, networkID, storeID, employeeID, res, keys), nil
+}
+
+// SweepNewItems — разово пройти карточки «ready», распознанные до
+// автодобавления (или когда оно не сработало), и добавить те, что не требуют
+// внимания. По порядку создания: из пары похожих добавится ранняя, а поздняя
+// увидит её как похожий товар и останется магазину.
+func (s *Service) SweepNewItems() {
+	s.run(func() {
+		ctx := context.Background()
+		type card struct {
+			id, networkID, storeID, employeeID string
+			keys                               []string
+			raw                                []byte
+		}
+		rows, err := s.pool.Query(ctx, `SELECT id, network_id, store_id, created_by, images, result FROM start_new_items
+			WHERE status = 'ready' ORDER BY created_at, id`)
+		if err != nil {
+			s.log.Error("новые товары: обход", "err", err)
+			return
+		}
+		var cards []card
+		for rows.Next() {
+			var c card
+			if err := rows.Scan(&c.id, &c.networkID, &c.storeID, &c.employeeID, &c.keys, &c.raw); err != nil {
+				rows.Close()
+				s.log.Error("новые товары: обход", "err", err)
+				return
+			}
+			cards = append(cards, c)
+		}
+		rows.Close()
+		added := 0
+		for _, c := range cards {
+			var res NewItemResult
+			if len(c.raw) <= 2 || json.Unmarshal(c.raw, &res) != nil {
+				continue
+			}
+			ok, err := s.tryAutoAdd(ctx, c.id, c.networkID, c.storeID, c.employeeID, res, c.keys)
+			if err != nil {
+				s.log.Error("новые товары: обход", "id", c.id, "err", err)
+				continue
+			}
+			if ok {
+				added++
+			}
+		}
+		if len(cards) > 0 {
+			s.log.Info("новые товары: добавлены сами", "added", added, "checked", len(cards))
+		}
+	})
+}
+
+// canAutoAdd — карточку можно добавить без магазина: Super Market уверен,
+// категория нашлась в дереве, похожего товара в базе нет и в очереди нет
+// более ранней похожей карточки (возможного дубля).
+func (s *Service) canAutoAdd(ctx context.Context, id string, res NewItemResult) (bool, error) {
+	if res.Note != "" || res.Match != nil || strings.TrimSpace(res.Name) == "" || res.UnitID == "" {
+		return false, nil
+	}
+	if res.Suggestion == nil || res.Suggestion.Category == nil {
+		return false, nil
+	}
+	var dupID string
+	err := s.pool.QueryRow(ctx, `SELECT q.dup FROM (`+dupSQL+`) AS q(card, dup, name, image, barcode, status) LIMIT 1`,
+		[]string{id}, newStale.String(), SimilarMin).Scan(&dupID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return true, nil
+	}
+	return false, err
+}
+
+// autoAddNewItem — создать товар и поставить его в «Мои товары» от имени
+// магазина. Системный Principal ограничен сетью и магазином самой карточки;
+// товар создаётся как свой товар сети в статусе draft и всё равно уходит на
+// модерацию при «Записать и закрыть». Не получилось — карточка остаётся
+// магазину в «Требует внимания», это не ошибка распознавания.
+func (s *Service) autoAddNewItem(ctx context.Context, id, networkID, storeID, employeeID string, res NewItemResult, keys []string) bool {
+	images := make([]string, 0, len(keys))
+	for _, k := range keys {
+		u := s.media.PublicURL(k)
+		if u == "" {
+			return false
+		}
+		images = append(images, u)
+	}
+	in := NewItemConfirm{StoreID: storeID, Name: res.Name, NameUz: res.NameUz, Description: res.Description,
+		CategoryID: res.Suggestion.Category.ID, UnitID: res.UnitID, Images: images}
+	if res.BrandID != nil {
+		in.BrandID = *res.BrandID
+	} else {
+		in.BrandName = res.Brand
+	}
+	p := &identity.Principal{NetworkID: networkID, EmployeeID: employeeID, IsOwner: true}
+	if _, err := s.ConfirmNewItem(ctx, p, id, in); err != nil {
+		s.log.Info("новый товар: не добавили сами", "id", id, "err", err)
+		return false
+	}
+	return true
 }
 
 func upperFirst(s string) string {

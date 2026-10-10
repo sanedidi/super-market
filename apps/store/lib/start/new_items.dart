@@ -233,11 +233,11 @@ Future<bool> openNewItemCamera(BuildContext context, StartApi start, {String? ba
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(
-        content: Text(tr('Отправлено Super Market — карточка будет готова через минуту во вкладке «Новые»',
-            'Super Market’ga yuborildi — kartochka bir daqiqada «Yangilar» boʻlimida tayyor boʻladi')),
+        content: Text(tr('Отправлено Super Market — через минуту товар встанет в «Мои товары» или попадёт во «Внимание»',
+            'Super Market’ga yuborildi — bir daqiqada mahsulot «Mahsulotlarim»ga tushadi yoki «Eʼtibor»ga oʻtadi')),
       ));
   } else if (r == 'failed') {
-    showMessage(context, tr('Фото сохранены — заполните карточку во вкладке «Новые»', 'Rasmlar saqlandi — kartochkani «Yangilar» boʻlimida toʻldiring'));
+    showMessage(context, tr('Фото сохранены — заполните карточку во вкладке «Внимание»', 'Rasmlar saqlandi — kartochkani «Eʼtibor» boʻlimida toʻldiring'));
   } else if (r == 'exists') {
     showMessage(context, tr('Этот товар уже в «Новых» — проверьте его карточку', 'Bu mahsulot allaqachon «Yangilar»da — kartochkasini tekshiring'));
   }
@@ -458,8 +458,8 @@ class _NewItemsTabState extends State<NewItemsTab> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  tr('Товар попадёт в «Мои товары» только после вашего подтверждения. Новые товары уйдут на проверку в общую базу после «Инвентаризации».',
-                      'Mahsulot «Mahsulotlarim»ga faqat siz tasdiqlaganingizdan soʻng tushadi. Yangi mahsulotlar «Inventarizatsiya»dan soʻng umumiy bazaga tekshiruvga yuboriladi.'),
+                  tr('Распознанные товары без дублей Super Market сам добавляет в «Мои товары». Здесь — то, что нужно проверить. Новые товары уйдут на проверку в общую базу после «Инвентаризации».',
+                      'Aniqlangan va dubl boʻlmagan mahsulotlarni Super Market oʻzi «Mahsulotlarim»ga qoʻshadi. Bu yerda — tekshirish kerak boʻlganlar. Yangi mahsulotlar «Inventarizatsiya»dan soʻng umumiy bazaga tekshiruvga yuboriladi.'),
                   style: AppText.small.copyWith(fontSize: 12, color: AppColors.blue),
                 ),
                 ),

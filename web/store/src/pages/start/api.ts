@@ -129,6 +129,8 @@ export type NewItemResult = {
   unit_short: string
   suggestion: CategorySuggestion | null
   match: NewItemMatch | null
+  /** Почему нужна проверка: Super Market что-то домыслил. Пусто — сомнений не было. */
+  note?: string
 }
 
 /** Другая карточка в «Новых», похожая на эту (тот же штрихкод или похожее название). */

@@ -112,6 +112,9 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 	if InvoicesSync {
 		scans.Sync()
 		startSvc.Sync()
+	} else {
+		// Карточки «Новых», распознанные до автодобавления, — в «Мои товары».
+		startSvc.SweepNewItems()
 	}
 	h := httpx.NewRouter(log, pool,
 		identity.NewModule(idSvc, auth, log),

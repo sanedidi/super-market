@@ -97,6 +97,15 @@ func KeyFromURL(raw string) (string, bool) {
 	return raw, keyRe.MatchString(raw)
 }
 
+// PublicURL — ссылка на фото для фоновых задач, где нет запроса. Пусто, если
+// базовый адрес не настроен: вызывающий тогда делает по-старому.
+func (s *Service) PublicURL(key string) string {
+	if s.baseURL == "" || !keyRe.MatchString(key) {
+		return ""
+	}
+	return s.baseURL + "/api/v1/media/" + key
+}
+
 // Read — содержимое фото и его тип.
 func (s *Service) Read(ctx context.Context, key string) ([]byte, string, error) {
 	if !keyRe.MatchString(key) {

@@ -33,6 +33,11 @@ type ProductAnswer struct {
 	Brand       string `json:"brand"`
 	Unit        string `json:"unit"`
 	Description string `json:"description"`
+	// Confidence — high: сомнений нет; check: что-то пришлось домысливать
+	// (тогда Note — что именно). От этого зависит, попадёт ли карточка к
+	// магазину на проверку или встанет в «Мои товары» сама.
+	Confidence string `json:"confidence"`
+	Note       string `json:"note"`
 	CategoryAnswer
 }
 
@@ -52,6 +57,8 @@ Return JSON:
  "brand": "brand as written on the package, or empty",
  "unit": "шт for packaged goods, кг only for loose goods sold by weight",
  "description": "one short sentence in Russian from the label (composition or key facts), or empty",
+ "confidence": "high only when the package is sharp and readable and you are sure of the name, brand, volume and category; \"check\" whenever anything had to be guessed",
+ "note": "short note in Russian for the shop when confidence is \"check\" — what exactly is unclear; otherwise empty",
  "match": "id of the subcategory where a shopper would look for it, or empty if none really fits",
  "alternatives": ["up to 2 more subcategory ids that could also fit"],
  "new": null or, only when "match" is empty, a new subcategory:

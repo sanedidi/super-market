@@ -3,14 +3,14 @@
 //  1. «Мои товары» — поиск по центральной базе (название, штрихкод, USB-сканер),
 //     фото полок, свой товар. Тот же товар второй раз не добавляется, на
 //     похожий — предупреждение (один раз на пару). Штрихкод, который уже
-//     в «Новых от Super Market», — подсказка «уже в «Новых»» вместо
+//     в «Требуют внимания», — подсказка «уже в «Требуют внимания»» вместо
 //     «Создать свой товар» (Figma «без дублей», В1).
 //  2. «Инвентаризация: Начало работы» — количество и цена продажи (обязательны,
 //     можно 0), себестоимость — по желанию. «Записать и закрыть» проводит
 //     черновик, после этого «Начало работы» больше не показывается.
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Alert, App, Button, Card, Col, Flex, Input, InputNumber, Modal, Result, Row, Segmented, Space, Table, Tooltip, Typography, type InputRef } from 'antd'
 import {
   ArrowRightOutlined,
@@ -153,6 +153,15 @@ function StepGoods({ d, next }: { d: Draft; next: () => void }) {
   const [tab, setTab] = useState<'mine' | 'new'>('mine')
   const fresh = useNewItems(storeId)
   const freshCount = fresh.data?.total ?? 0
+  // Super Market добавляет распознанные товары в «Мои товары» сам: очередь
+  // сдвинулась — перечитать черновик.
+  const qc = useQueryClient()
+  const queueSig = fresh.data ? `${fresh.data.counts.processing}/${fresh.data.total}` : ''
+  const prevSig = useRef(queueSig)
+  useEffect(() => {
+    if (prevSig.current && queueSig && prevSig.current !== queueSig) qc.invalidateQueries({ queryKey: ['/store/start'] })
+    prevSig.current = queueSig
+  }, [queueSig, qc])
   const tabs = <RightTabs tab={tab} onTab={setTab} mine={d.totals.products} fresh={freshCount} ready={(fresh.data?.counts.ready ?? 0) > 0} />
   // Повтор: подсвеченная строка «Моих товаров».
   const [highlight, setHighlight] = useState<string | null>(null)
@@ -457,7 +466,7 @@ function QueuedCallout({ item, onOpen }: { item: NewItem; onOpen: () => void }) 
         <Flex align="center" gap={8}>
           <CopyOutlined style={{ color: '#DC6803' }} />
           <Typography.Text strong style={{ color: '#93370D' }}>
-            {tr('Этот товар уже в «Новых от Super Market»', 'Bu mahsulot allaqachon «Super Market yangilari»da')}
+            {tr('Этот товар уже в «Требуют внимания»', 'Bu mahsulot allaqachon «Eʼtibor talab qiladi»da')}
           </Typography.Text>
         </Flex>
         <Typography.Text style={{ fontSize: 13, color: '#475467' }}>

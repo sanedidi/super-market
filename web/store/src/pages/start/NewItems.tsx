@@ -1,9 +1,10 @@
 // Новый товар по фото (Figma «Панель магазина · новый товар по фото», В1;
 // «SM Магазин» Р1–Р5). Товара нет ни в базе, ни в каталоге ИКПУ — магазин
 // отправляет фото и работает дальше; Super Market в фоне заполняет карточку.
-// Вкладка «Новые от Super Market»: распознаётся / проверить / не удалось.
-// Только после «Подтвердить и добавить» товар создаётся (свой, draft) и
-// встаёт в «Мои товары»; на модерацию — при «Записать и закрыть».
+// Распознал уверенно и не дубль — товар сам встаёт в «Мои товары». Во вкладке
+// «Требуют внимания» — только дубли, сомнения и то, что не распознано:
+// распознаётся / проверить / не удалось. Товар создаётся (свой, draft) после
+// «Подтвердить и добавить»; на модерацию — при «Записать и закрыть».
 // Без дублей (Figma «без дублей в «Новых»», В1–В3): тот же штрихкод второй
 // раз в «Новые» не попадает; похожая карточка помечается «Похоже на дубль»,
 // «Это он» объединяет карточки.
@@ -20,14 +21,30 @@ import { Thumb } from './Thumb'
 const PURPLE = '#6938EF'
 const AMBER = { bg: '#FFFAEB', border: '#FEDF89', text: '#93370D', icon: '#DC6803' }
 
-/** Чип «Похоже на дубль» у карточки в списке «Новые». */
-function DupChip() {
+/** Чип-причина у карточки в списке «Требуют внимания». */
+function ReasonChip({ children, icon }: { children: ReactNode; icon?: ReactNode }) {
   return (
     <span style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 4, background: AMBER.bg, color: AMBER.text, borderRadius: 6, padding: '1px 8px', fontSize: 12, fontWeight: 600 }}>
-      <CopyOutlined style={{ color: AMBER.icon }} />
-      {tr('Похоже на дубль', 'Dublga oʻxshaydi')}
+      {icon}
+      {children}
     </span>
   )
+}
+
+/** Почему карточка не встала в «Мои товары» сама. */
+function reasons(it: NewItem): ReactNode[] {
+  if (it.status !== 'ready') return []
+  const out: ReactNode[] = []
+  if (it.duplicate)
+    out.push(
+      <ReasonChip key="dup" icon={<CopyOutlined style={{ color: AMBER.icon }} />}>
+        {tr('Похоже на дубль', 'Dublga oʻxshaydi')}
+      </ReasonChip>,
+    )
+  if (it.result?.match) out.push(<ReasonChip key="match">{tr('Уже есть в базе?', 'Bazada bormi?')}</ReasonChip>)
+  if (it.result && !it.result.suggestion?.category) out.push(<ReasonChip key="cat">{tr('Нет категории', 'Kategoriya yoʻq')}</ReasonChip>)
+  if (it.result?.note) out.push(<ReasonChip key="note">{tr('Есть сомнения', 'Shubha bor')}</ReasonChip>)
+  return out
 }
 
 /** Что сейчас с карточкой в «Новых» — для подсказок «уже в «Новых»». */
@@ -85,7 +102,7 @@ function LoadMore({ onMore, loading }: { onMore: () => void; loading: boolean })
   )
 }
 
-/** Заголовок-вкладка правой колонки: «Мои товары · N» | «Новые от Super Market · M». */
+/** Заголовок-вкладка правой колонки: «Мои товары · N» | «Требуют внимания · M». */
 export function RightTabs({ tab, onTab, mine, fresh, ready }: { tab: 'mine' | 'new'; onTab: (t: 'mine' | 'new') => void; mine: number; fresh: number; ready: boolean }) {
   const item = (key: 'mine' | 'new', label: ReactNode) => (
     <span
@@ -103,7 +120,7 @@ export function RightTabs({ tab, onTab, mine, fresh, ready }: { tab: 'mine' | 'n
         item(
           'new',
           <>
-            {tr('Новые от Super Market', 'Super Market yangilari')} · {fresh}
+            {tr('Требуют внимания', 'Eʼtibor talab qiladi')} · {fresh}
             {ready && <span style={{ width: 8, height: 8, borderRadius: 4, background: '#E11D2A', display: 'inline-block' }} />}
           </>,
         )}
@@ -111,7 +128,7 @@ export function RightTabs({ tab, onTab, mine, fresh, ready }: { tab: 'mine' | 'n
   )
 }
 
-/** В1: очередь «Новые от Super Market». */
+/** В1: очередь «Требуют внимания». */
 export function NewItemsList({
   list,
   loading,
@@ -135,8 +152,8 @@ export function NewItemsList({
         <StarFilled style={{ color: PURPLE, marginTop: 3 }} />
         <Typography.Text style={{ fontSize: 13, color: '#3E1C96' }}>
           {tr(
-            'Фото новых товаров из «SM Магазин» и кнопки «Новый товар». Super Market заполняет карточку, вы проверяете — только после подтверждения товар встаёт в «Мои товары».',
-            '«SM Магазин» va «Yangi mahsulot» tugmasidan yangi mahsulotlar rasmlari. Super Market kartochkani toʻldiradi, siz tekshirasiz — faqat tasdiqlangandan soʻng mahsulot «Mahsulotlarim»ga tushadi.',
+            'Super Market распознаёт фото новых товаров: если всё ясно и это не дубль — товар сам встаёт в «Мои товары». Здесь — то, что нужно проверить: похожие на дубль, с сомнениями и нераспознанные.',
+            'Super Market yangi mahsulotlar rasmlarini aniqlaydi: hammasi aniq va dubl boʻlmasa — mahsulot oʻzi «Mahsulotlarim»ga tushadi. Bu yerda — tekshirish kerak boʻlganlar: dublga oʻxshash, shubhali va aniqlanmaganlar.',
           )}
         </Typography.Text>
       </Flex>
@@ -146,7 +163,7 @@ export function NewItemsList({
         </Flex>
       ) : items.length === 0 ? (
         <Typography.Paragraph type="secondary" style={{ padding: '20px', margin: 0 }}>
-          {tr('Пока пусто. Нет товара ни в базе, ни в каталоге ИКПУ — нажмите «Новый товар» и отправьте фото.', 'Hozircha boʻsh. Mahsulot na bazada, na MXIK katalogida boʻlsa — «Yangi mahsulot»ni bosing va rasm yuboring.')}
+          {tr('Всё проверено — распознанные товары уже в «Моих товарах».', 'Hammasi tekshirilgan — aniqlangan mahsulotlar «Mahsulotlarim»da.')}
         </Typography.Paragraph>
       ) : (
         items.map((it) => (
@@ -157,7 +174,7 @@ export function NewItemsList({
                 <Typography.Text strong style={{ fontWeight: 600, color: it.status === 'processing' ? '#667085' : undefined }}>
                   {it.status === 'processing' ? tr('Распознаётся…', 'Aniqlanmoqda…') : it.status === 'ready' ? it.result?.name : tr('Не удалось распознать', 'Aniqlab boʻlmadi')}
                 </Typography.Text>
-                {it.duplicate && it.status !== 'processing' && <DupChip />}
+                {reasons(it)}
               </Flex>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 {[
@@ -219,8 +236,8 @@ export function NewByPhotoModal({ open, onClose, onSent, onManual }: { open: boo
       const it = await api.post<NewItem>('/store/start/new-items', { store_id: storeId, images, barcode: barcode.trim() || undefined })
       message.success(
         it.status === 'failed'
-          ? tr('Фото сохранены — заполните карточку во вкладке «Новые»', 'Rasmlar saqlandi — kartochkani «Yangilar» boʻlimida toʻldiring')
-          : tr('Отправлено Super Market — карточка будет готова через минуту во вкладке «Новые»', 'Super Market’ga yuborildi — kartochka bir daqiqada «Yangilar» boʻlimida tayyor boʻladi'),
+          ? tr('Фото сохранены — заполните карточку во вкладке «Требуют внимания»', 'Rasmlar saqlandi — kartochkani «Eʼtibor talab qiladi» boʻlimida toʻldiring')
+          : tr('Отправлено Super Market — через минуту товар встанет в «Мои товары» или попадёт в «Требуют внимания»', 'Super Market’ga yuborildi — bir daqiqada mahsulot «Mahsulotlarim»ga tushadi yoki «Eʼtibor talab qiladi»ga oʻtadi'),
       )
       await refresh()
       onSent()
@@ -228,7 +245,7 @@ export function NewByPhotoModal({ open, onClose, onSent, onManual }: { open: boo
     } catch (e) {
       if (e instanceof ApiError && e.code === 'new_item_exists') {
         // Тот же штрихкод уже в «Новых» — вторую карточку не заводим.
-        message.warning(tr('Этот товар уже в «Новых» — проверьте его карточку', 'Bu mahsulot allaqachon «Yangilar»da — kartochkasini tekshiring'))
+        message.warning(tr('Этот товар уже в «Требуют внимания» — проверьте его карточку', 'Bu mahsulot allaqachon «Eʼtibor talab qiladi»da — kartochkasini tekshiring'))
         await refresh()
         onSent()
         onClose()
@@ -259,8 +276,8 @@ export function NewByPhotoModal({ open, onClose, onSent, onManual }: { open: boo
     >
       <Typography.Paragraph type="secondary">
         {tr(
-          'Сфотографируйте лицевую сторону и этикетку с составом и весом (до 3 фото). Super Market сам заполнит карточку — продолжайте работу, проверите её во вкладке «Новые».',
-          'Old tomoni va tarkibi hamda ogʻirligi yozilgan yorligʻini suratga oling (3 tagacha). Super Market kartochkani oʻzi toʻldiradi — ishni davom ettiring, uni «Yangilar» boʻlimida tekshirasiz.',
+          'Сфотографируйте лицевую сторону и этикетку с составом и весом (до 3 фото). Super Market сам заполнит карточку и добавит товар в «Мои товары» — продолжайте работу. Если что-то неясно, товар попадёт во вкладку «Требуют внимания».',
+          'Old tomoni va tarkibi hamda ogʻirligi yozilgan yorligʻini suratga oling (3 tagacha). Super Market kartochkani oʻzi toʻldiradi va mahsulotni «Mahsulotlarim»ga qoʻshadi — ishni davom ettiring. Biror narsa noaniq boʻlsa, mahsulot «Eʼtibor talab qiladi» boʻlimiga tushadi.',
         )}
       </Typography.Paragraph>
       <ImageUpload multiple max={3} value={images} onChange={setImages} />
@@ -442,6 +459,7 @@ export function ReviewModal({ item, onClose }: { item: NewItem | null; onClose: 
               </Typography.Text>
             </Flex>
           )}
+          {!failed && res?.note && <Alert type="warning" showIcon message={tr('Проверьте', 'Tekshiring')} description={res.note} />}
           {item.duplicate && <DupBlock dup={item.duplicate} loading={saving === 'merge'} onMerge={merge} />}
           {res?.match && (
             <Flex vertical gap={8} style={{ background: '#FFF7D6', borderRadius: 12, padding: 12 }}>
@@ -532,7 +550,7 @@ function DupBlock({ dup, loading, onMerge }: { dup: NewItemDup; loading: boolean
       <Flex align="center" gap={8}>
         <CopyOutlined style={{ color: AMBER.icon }} />
         <Typography.Text strong style={{ color: AMBER.text }}>
-          {tr('Похоже, этот товар уже есть в «Новых»', 'Bu mahsulot «Yangilar»da allaqachon borga oʻxshaydi')}
+          {tr('Похоже, этот товар уже есть в «Требуют внимания»', 'Bu mahsulot «Eʼtibor talab qiladi»da allaqachon borga oʻxshaydi')}
         </Typography.Text>
       </Flex>
       <Flex align="center" gap={12} wrap style={{ background: '#fff', borderRadius: 10, padding: '10px 12px' }}>

@@ -264,7 +264,7 @@ class _StartScreenState extends State<StartScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: _Tabs(
                       labels: freshCount > 0 || _tab == 2
-                          ? [tr('Поиск', 'Qidirish'), tr('Мои · $products', 'Meniki · $products'), tr('Новые · $freshCount', 'Yangi · $freshCount')]
+                          ? [tr('Поиск', 'Qidirish'), tr('Мои · $products', 'Meniki · $products'), tr('Внимание · $freshCount', 'Eʼtibor · $freshCount')]
                           : [tr('Поиск в базе', 'Bazadan qidirish'), tr('Мои товары · $products', 'Mahsulotlarim · $products')],
                       value: _tab,
                       dot: freshReady ? 2 : null,
