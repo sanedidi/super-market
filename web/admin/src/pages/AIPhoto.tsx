@@ -392,7 +392,7 @@ function PhotoConnection() {
                     style={{ fontFamily: 'monospace', fontSize: 12 }}
                   />
                 ) : (
-                  <Input.Password size="large" prefix={<KeyOutlined />} value={key} onChange={(e) => setKey(e.target.value)} placeholder="AIza…" autoComplete="off" />
+                  <Input.Password size="large" prefix={<KeyOutlined />} value={key} onChange={(e) => setKey(e.target.value)} placeholder="AQ.… (или старый AIza…)" autoComplete="off" />
                 )}
                 <Hint>
                   {mode === 'vertex'
