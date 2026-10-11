@@ -651,7 +651,7 @@ func (s *Service) processNewItem(ctx context.Context, id, lang string) error {
 	if res.Match, err = sameProduct(ctx, s.pool, networkID, code, &res); err != nil {
 		return err
 	}
-	if !strings.EqualFold(strings.TrimSpace(ans.Confidence), "high") {
+	if !strings.EqualFold(strings.TrimSpace(ans.Confidence), "high") && !minorDoubts(ans.Unclear) {
 		res.Note = strings.TrimSpace(ans.Note)
 		if res.Note == "" {
 			res.Note = i18n.Pick(lang, "Super Market не уверен в карточке — проверьте название и категорию", "Super Market kartochkaga ishonchi komil emas — nomi va kategoriyani tekshiring")
@@ -765,7 +765,7 @@ func (s *Service) SweepNewItems() {
 // категория нашлась в дереве, штрихкод верный (или его нет) и в очереди нет
 // более ранней карточки того же товара.
 func (s *Service) canAutoAdd(ctx context.Context, id, code string, res NewItemResult) (bool, error) {
-	if res.Note != "" || res.Match != nil || strings.TrimSpace(res.Name) == "" || res.UnitID == "" {
+	if (res.Note != "" && !sizeOnlyNote(res.Note)) || res.Match != nil || strings.TrimSpace(res.Name) == "" || res.UnitID == "" {
 		return false, nil
 	}
 	if res.Suggestion == nil || res.Suggestion.Category == nil {
@@ -1021,4 +1021,41 @@ func (s *Service) ConfirmNewItem(ctx context.Context, p *identity.Principal, id 
 		s.translateName(p, in.StoreID, out.ProductID, strings.TrimSpace(in.Name))
 	}
 	return out, nil
+}
+
+// minorDoubts — модель сомневалась только в том, чего нет на упаковке: весе,
+// объёме или числе штук. Такая карточка не требует внимания магазина —
+// размер дописывают потом, если надо.
+func minorDoubts(unclear []string) bool {
+	if len(unclear) == 0 {
+		return false
+	}
+	for _, u := range unclear {
+		switch strings.ToLower(strings.TrimSpace(u)) {
+		case "size", "pack":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// sizeOnlyNote — карточки, распознанные до поля unclear: заметка только о том,
+// что не виден вес или объём (и, бывает, о рукописной цене). Если в заметке
+// есть что-то про название, бренд, категорию или качество фото — сомнение
+// настоящее, карточка остаётся магазину.
+func sizeOnlyNote(note string) bool {
+	n := strings.ToLower(strings.ReplaceAll(note, "ё", "е"))
+	if !strings.Contains(n, "вес") && !strings.Contains(n, "объем") {
+		return false
+	}
+	if !strings.Contains(n, "не вид") && !strings.Contains(n, "не указ") && !strings.Contains(n, "не чита") && !strings.Contains(n, "нет на упаков") {
+		return false
+	}
+	for _, w := range []string{"назван", "бренд", "марк", "категор", "вкус", "размыт", "нечетк", "не разобрать", "не уверен", "производител", "вариант"} {
+		if strings.Contains(n, w) {
+			return false
+		}
+	}
+	return true
 }
