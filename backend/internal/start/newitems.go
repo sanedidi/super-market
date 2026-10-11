@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -1040,22 +1041,54 @@ func minorDoubts(unclear []string) bool {
 	return true
 }
 
-// sizeOnlyNote — карточки, распознанные до поля unclear: заметка только о том,
-// что не виден вес или объём (и, бывает, о рукописной цене). Если в заметке
-// есть что-то про название, бренд, категорию или качество фото — сомнение
+// sizeOnlyNote — карточки, распознанные до поля unclear: каждое предложение
+// заметки безобидно — не виден вес или объём, рукописная цена, деталь не
+// попала в название, потому что её нет на упаковке, «проверьте по штрихкоду».
+// Хоть одно другое предложение (название, бренд, категория, фото) — сомнение
 // настоящее, карточка остаётся магазину.
 func sizeOnlyNote(note string) bool {
 	n := strings.ToLower(strings.ReplaceAll(note, "ё", "е"))
-	if !strings.Contains(n, "вес") && !strings.Contains(n, "объем") {
-		return false
-	}
-	if !strings.Contains(n, "не вид") && !strings.Contains(n, "не указ") && !strings.Contains(n, "не чита") && !strings.Contains(n, "нет на упаков") {
-		return false
-	}
-	for _, w := range []string{"назван", "бренд", "марк", "категор", "вкус", "размыт", "нечетк", "не разобрать", "не уверен", "производител", "вариант"} {
-		if strings.Contains(n, w) {
+	parts := noteSplit.Split(n, -1)
+	seen := 0
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		seen++
+		if !harmlessSentence(p) {
 			return false
 		}
 	}
-	return true
+	return seen > 0
+}
+
+var noteSplit = regexp.MustCompile(`[.!?\n]+`)
+
+// realDoubt — слова настоящего сомнения: если они есть, предложение не безобидно.
+var realDoubt = []string{"бренд", "марк", "категор", "вкус", "размыт", "нечетк", "не разобрать", "не уверен", "читается плохо", "плохо читается", "производител", "другой товар", "похож"}
+
+func harmlessSentence(p string) bool {
+	has := func(ws ...string) bool {
+		for _, w := range ws {
+			if strings.Contains(p, w) {
+				return true
+			}
+		}
+		return false
+	}
+	if has(realDoubt...) {
+		return false
+	}
+	switch {
+	case strings.HasPrefix(p, "проверьте по штрихкоду"):
+		return true
+	case has("рукописн"):
+		return true
+	case has("вес", "объем", "size") && has("не вид", "не указ", "не чита", "нет ", "пуст", "не напечат"):
+		return !has("назван")
+	case has("не указ", "не вид", "не написан", "не напечат") && has("в названии этого нет", "в названии нет", "не добавил", "не стал добавл", "не включ", "не указан в названии"):
+		return true
+	}
+	return false
 }

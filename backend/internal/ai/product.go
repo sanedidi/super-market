@@ -68,9 +68,9 @@ Return JSON:
  "description": "one short sentence in Russian from the label (composition or key facts), or empty",
  "size": "net volume or weight with unit exactly as on the package, in мл, л, г or кг — e.g. «500 мл», «1,5 л», «100 г»; empty if not visible",
  "pack": number of pieces inside the package (tea bags, tablets, rolls, bottles in a multipack), or 0 if it is a single item or not visible,
- "confidence": "high when the package is sharp and readable and you are sure of the name, brand and category; \"check\" whenever any of them had to be guessed. Weight, volume or piece count that is not printed or not visible is NOT a reason for \"check\": leave size or pack empty and keep high. Handwritten numbers on the package are shop prices — ignore them",
+ "confidence": "high when the package is sharp and readable and you are sure of the name, brand and category; \"check\" whenever any of them had to be guessed. None of these is a reason for \"check\", keep high: weight, volume or piece count that is not printed or not visible (leave size or pack empty; for goods counted in pieces — pads, napkins, tea bags, razor cartridges — the piece count is enough and size stays empty); a detail you left out of the name because it is not printed on the package (e.g. «ночные» when it is not written); handwritten numbers on the package (they are shop prices — ignore them). Never ask the shop to check by barcode",
  "note": "short note in Russian for the shop when confidence is \"check\" — what exactly is unclear; otherwise empty",
- "unclear": ["what had to be guessed, from: name, brand, size, pack, category, photo, other; empty when confidence is high"],
+ "unclear": ["what had to be guessed, from: name, brand, size, pack, category, photo, other; empty when confidence is high; a detail left out of the name is not «name»"],
  "match": "id of the subcategory where a shopper would look for it, or empty if none really fits",
  "alternatives": ["up to 2 more subcategory ids that could also fit"],
  "new": null or, only when "match" is empty, a new subcategory:
