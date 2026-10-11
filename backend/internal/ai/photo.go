@@ -49,11 +49,11 @@ const (
 const DefaultPhotoPrompt = `You edit product photos for an online grocery catalog. Turn the photo into a clean catalog product shot.
 1. Keep exactly the same product: the same package shape, colors, logo, text and label layout. Never invent, translate or change any text on the package.
 2. Remove the background completely and put the product on a plain solid background of the color given below.
-3. Square 1:1 image, the product centered, upright and straight, facing the camera.
+3. Square 1:1 image, the product centered, level and facing the camera, in its natural orientation: a horizontal package (a butter or cheese brick, a chocolate bar, a flat box) stays horizontal, a tall package (a bottle, a carton) stays vertical. Never rotate the product by 90 degrees to fill the square; empty space above and below is fine.
 4. The product fills about 80% of the frame with even margins on all sides; nothing is cut off.
 5. Remove hands, fingers, price tags, shelf edges, reflections of the room and any other objects.
 6. Remove glare and harsh reflections; soft even studio lighting; correct white balance.
-7. Fix perspective and rotation so that vertical edges are vertical.
+7. Fix perspective and a slight tilt so that the edges of the package are straight; do not change which side of the package is long and which is short.
 8. Keep only a subtle natural shadow under the product; no other effects.
 9. Do not add props, text, watermarks, borders or extra products.
 10. If several identical units are visible, keep only one.
@@ -571,6 +571,8 @@ func photoPrompt(o photoOpts, product string) string {
 	default:
 		b.WriteString("\nBackground color: pure white #FFFFFF, plain and solid.")
 	}
+	// И для своей инструкции: модель любит ставить всё вертикально под квадрат.
+	b.WriteString("\nOrientation: keep the product exactly as it is oriented in reality; the text on the front must read the same way as on the real package. Do not turn a horizontal product into a vertical one.")
 	if o.Outpaint {
 		b.WriteString("\nIf part of the product is cut off by the edge of the photo (for example the cap, the lid or an edge of the package), complete the missing part realistically so that the whole product is visible.")
 	} else {

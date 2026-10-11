@@ -20,8 +20,8 @@ const photoInputSide = 1600
 // geminiReads — форматы, которые Gemini принимает на вход.
 var geminiReads = map[string]bool{"image/jpeg": true, "image/png": true, "image/webp": true}
 
-// shrinkForModel — JPEG не больше photoInputSide по большей стороне.
-// Маленькие JPEG/PNG уходят как есть.
+// shrinkForModel — JPEG не больше photoInputSide по большей стороне, повёрнутый
+// по EXIF, как его видит человек. Маленькие JPEG/PNG без поворота уходят как есть.
 func shrinkForModel(raw []byte, mime string) (Image, error) {
 	src, _, err := image.Decode(bytes.NewReader(raw))
 	if err != nil {
@@ -31,12 +31,18 @@ func shrinkForModel(raw []byte, mime string) (Image, error) {
 		}
 		return Image{}, errors.New("не удалось прочитать фото")
 	}
+	// Пометку EXIF «повернуть» Go не применяет и при перекодировании теряет —
+	// поворачиваем сами и всегда перекодируем такое фото.
+	o := jpegOrientation(raw)
 	b := src.Bounds()
-	if b.Dx() <= photoInputSide && b.Dy() <= photoInputSide && (mime == "image/jpeg" || mime == "image/png") {
+	if o == 1 && b.Dx() <= photoInputSide && b.Dy() <= photoInputSide && (mime == "image/jpeg" || mime == "image/png") {
 		return Image{MIME: mime, Data: raw}, nil
 	}
-	nw, nh := fitIn(b.Dx(), b.Dy(), photoInputSide)
-	rgba := flatten(src, color.RGBA{255, 255, 255, 255})
+	rgba := orient(flatten(src, color.RGBA{255, 255, 255, 255}), o)
+	nw, nh := rgba.Bounds().Dx(), rgba.Bounds().Dy()
+	if nw > photoInputSide || nh > photoInputSide {
+		nw, nh = fitIn(nw, nh, photoInputSide)
+	}
 	out := resize(rgba, nw, nh)
 	data, err := encodeJPEG(out, 90)
 	return Image{MIME: "image/jpeg", Data: data}, err
