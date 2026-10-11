@@ -154,47 +154,50 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
   Future<void> _handle(String code) async {
     _handling = true;
     var added = false;
-    try {
-      if (widget.inventory) {
-        added = await _count(code);
-        return;
-      }
-      final p = await widget.start.byBarcode(code);
-      if (!mounted) return;
-      if (p != null) {
-        added = await addToMyGoods(context, widget.start, p, source: 'barcode', listButton: false) == AddResult.added;
-      } else {
-        // Штрихкод уже в «Новых» — вторую карточку не заводим (Д1).
-        final queued = await widget.start.newItemByBarcode(code);
+    // Пока открыты шторки и экраны после скана, камера сканера выключена.
+    await whileScannerIdle(_scanner, () async {
+      try {
+        if (widget.inventory) {
+          added = await _count(code);
+          return;
+        }
+        final p = await widget.start.byBarcode(code);
         if (!mounted) return;
-        if (queued != null) {
-          await showQueuedSheet(context, widget.start, queued);
-          return;
+        if (p != null) {
+          added = await addToMyGoods(context, widget.start, p, source: 'barcode', listButton: false) == AddResult.added;
+        } else {
+          // Штрихкод уже в «Новых» — вторую карточку не заводим (Д1).
+          final queued = await widget.start.newItemByBarcode(code);
+          if (!mounted) return;
+          if (queued != null) {
+            await showQueuedSheet(context, widget.start, queued);
+            return;
+          }
+          // Нет в центральной базе — сначала каталог ИКПУ (tasnif.soliq.uz).
+          final t = await tasnifBarcodeSheet(context, widget.start, code);
+          if (!mounted || t == null) return;
+          if (t) {
+            added = true;
+            return;
+          }
+          final r = await pickProductSheet(context, widget.start, info: tr('Штрихкод $code — нет в центральной базе', 'Shtrix-kod $code — markaziy bazada yoʻq'), code: code);
+          if (!mounted || r == null) return;
+          if (r.create) {
+            // Фото нового товара → Super Market заполнит карточку в фоне; сканер работает дальше (Р2).
+            await openNewItemCamera(context, widget.start, barcode: code);
+          } else if (r.product != null) {
+            added = await addToMyGoods(context, widget.start, r.product!, source: 'barcode', bind: r.bind ? code : null, listButton: false) == AddResult.added;
+          }
         }
-        // Нет в центральной базе — сначала каталог ИКПУ (tasnif.soliq.uz).
-        final t = await tasnifBarcodeSheet(context, widget.start, code);
-        if (!mounted || t == null) return;
-        if (t) {
-          added = true;
-          return;
-        }
-        final r = await pickProductSheet(context, widget.start, info: tr('Штрихкод $code — нет в центральной базе', 'Shtrix-kod $code — markaziy bazada yoʻq'), code: code);
-        if (!mounted || r == null) return;
-        if (r.create) {
-          // Фото нового товара → Super Market заполнит карточку в фоне; сканер работает дальше (Р2).
-          await openNewItemCamera(context, widget.start, barcode: code);
-        } else if (r.product != null) {
-          added = await addToMyGoods(context, widget.start, r.product!, source: 'barcode', bind: r.bind ? code : null, listButton: false) == AddResult.added;
-        }
+      } catch (e) {
+        if (mounted) showMessage(context, e);
+      } finally {
+        _lastCode = code;
+        _lastAt = DateTime.now();
+        _handling = false;
+        if (added && mounted) setState(() => _added++);
       }
-    } catch (e) {
-      if (mounted) showMessage(context, e);
-    } finally {
-      _lastCode = code;
-      _lastAt = DateTime.now();
-      _handling = false;
-      if (added && mounted) setState(() => _added++);
-    }
+    });
   }
 
   /// И2–И5 · Шаг «Инвентаризация»: штрихкод из «Моих товаров» — сразу шторка

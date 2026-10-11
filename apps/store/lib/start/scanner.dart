@@ -67,28 +67,53 @@ Future<void> disposeScanner(MobileScannerController c) async {
   }
 }
 
+/// Камера сканера не нужна, пока поверх него шторка или другой экран.
+///
+/// После скана открываются шторки и экраны («Количество и цены», «Новый товар»),
+/// а камера под ними продолжала снимать и искать штрихкоды — телефон грелся
+/// и садился. Выключаем камеру сканера, после — запускаем снова.
+/// Именно stop, а не pause: у плагина одно состояние камеры на все сканеры,
+/// и после pause второй сканер (например, «Новый товар» → штрихкод) путал его.
+Future<T> whileScannerIdle<T>(MobileScannerController? c, Future<T> Function() action) async {
+  if (c == null) return action();
+  final paused = await _pause(c);
+  try {
+    return await action();
+  } finally {
+    if (paused) _resume(c);
+  }
+}
+
 /// Системная камера (фото товара) поверх работающего сканера.
 ///
 /// Шторка количества и цен и «Новый товар» открывают камеру iPhone, пока под
 /// ними работает сканер штрихкодов. Две камеры сразу — приложение закрывалось.
-/// Поэтому сканеры на время снимка останавливаем, а после — запускаем снова.
+/// Поэтому сканеры на время снимка выключаем, а после — запускаем снова.
 Future<T> withScannersPaused<T>(Future<T> Function() action) async {
-  final stopped = <MobileScannerController>[];
+  final paused = <MobileScannerController>[];
   for (final c in _live.toList()) {
-    await _settle(c);
-    if (!c.value.isRunning) continue;
-    try {
-      await c.stop();
-      stopped.add(c);
-    } catch (_) {
-      // не остановился — значит и не держит камеру
-    }
+    if (await _pause(c)) paused.add(c);
   }
   try {
     return await action();
   } finally {
-    for (final c in stopped) {
-      if (_live.contains(c)) unawaited(c.start().catchError((Object _) {}));
-    }
+    paused.forEach(_resume);
   }
+}
+
+/// Выключить камеру сканера (true — она работала и выключена).
+Future<bool> _pause(MobileScannerController c) async {
+  await _settle(c);
+  if (!c.value.isRunning) return false;
+  try {
+    await c.stop();
+    return true;
+  } catch (_) {
+    // не остановился — значит и не держит камеру
+    return false;
+  }
+}
+
+void _resume(MobileScannerController c) {
+  if (_live.contains(c)) unawaited(c.start().catchError((Object _) {}));
 }
