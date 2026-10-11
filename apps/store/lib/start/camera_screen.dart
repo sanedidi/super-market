@@ -64,7 +64,8 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
 
   @override
   void dispose() {
-    _scanner?.dispose();
+    final s = _scanner;
+    if (s != null) disposeScanner(s);
     super.dispose();
   }
 
@@ -81,7 +82,7 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
       _torch = false;
       _scanner = m == StartMode.barcode ? _newScanner() : null;
     });
-    if (old != null) WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+    if (old != null) WidgetsBinding.instance.addPostFrameCallback((_) => disposeScanner(old));
   }
 
   void _cameraAfterTransition() {
@@ -105,7 +106,7 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
     if (_shots.length >= maxShots) return;
     final lock = context.read<AppLock>();
     try {
-      final x = await lock.hold(() => _picker.pickImage(source: source, maxWidth: 2000, maxHeight: 2000, imageQuality: 80));
+      final x = await lock.hold(() => withScannersPaused(() => _picker.pickImage(source: source, maxWidth: 2000, maxHeight: 2000, imageQuality: 80)));
       WidgetsBinding.instance.scheduleFrame();
       if (x == null) return;
       final bytes = await x.readAsBytes();
@@ -295,7 +296,7 @@ class _StartCameraScreenState extends State<StartCameraScreen> {
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 0.8),
                   itemCount: _shots.length,
                   itemBuilder: (_, i) => Stack(children: [
-                    Positioned.fill(child: ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.memory(_shots[i], fit: BoxFit.cover))),
+                    Positioned.fill(child: ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.memory(_shots[i], fit: BoxFit.cover, cacheWidth: 600))),
                     Positioned(left: 8, top: 8, child: StatusChip(tr('Фото ${i + 1}', 'Rasm ${i + 1}'))),
                     Positioned(
                       right: 4,

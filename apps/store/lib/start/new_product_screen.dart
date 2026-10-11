@@ -169,7 +169,7 @@ class _NewProductScreenState extends State<NewProductScreen> {
   Future<void> _photo() async {
     final lock = context.read<AppLock>();
     try {
-      final x = await lock.hold(() => _picker.pickImage(source: ImageSource.camera, maxWidth: 1600, maxHeight: 1600, imageQuality: 85));
+      final x = await lock.hold(() => withScannersPaused(() => _picker.pickImage(source: ImageSource.camera, maxWidth: 1600, maxHeight: 1600, imageQuality: 85)));
       WidgetsBinding.instance.scheduleFrame();
       if (x == null) return;
       final bytes = await x.readAsBytes();
@@ -416,7 +416,7 @@ class _NewProductScreenState extends State<NewProductScreen> {
               Padding(
                 padding: const EdgeInsets.only(right: 10),
                 child: Stack(children: [
-                  ClipRRect(borderRadius: BorderRadius.circular(16), child: Image.memory(_photos[i], width: 92, height: 92, fit: BoxFit.cover)),
+                  ClipRRect(borderRadius: BorderRadius.circular(16), child: Image.memory(_photos[i], width: 92, height: 92, fit: BoxFit.cover, cacheWidth: 276)),
                   Positioned(
                     right: 2,
                     top: 2,
@@ -664,7 +664,7 @@ class _ScanOnceScreenState extends State<ScanOnceScreen> {
 
   @override
   void dispose() {
-    _scanner.dispose();
+    disposeScanner(_scanner);
     super.dispose();
   }
 

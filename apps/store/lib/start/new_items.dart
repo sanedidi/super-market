@@ -11,6 +11,7 @@ import '../main.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'new_product_screen.dart';
+import 'scanner.dart';
 import 'sheets.dart';
 import 'start_api.dart';
 
@@ -55,7 +56,7 @@ class _NewItemCameraScreenState extends State<NewItemCameraScreen> {
     if (_shots.length >= maxShots) return;
     final lock = context.read<AppLock>();
     try {
-      final x = await lock.hold(() => _picker.pickImage(source: source, maxWidth: 1600, maxHeight: 1600, imageQuality: 82));
+      final x = await lock.hold(() => withScannersPaused(() => _picker.pickImage(source: source, maxWidth: 1600, maxHeight: 1600, imageQuality: 82)));
       WidgetsBinding.instance.scheduleFrame();
       if (x == null) return;
       final bytes = await x.readAsBytes();
@@ -141,7 +142,7 @@ class _NewItemCameraScreenState extends State<NewItemCameraScreen> {
                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 10, crossAxisSpacing: 10),
                     itemCount: _shots.length,
                     itemBuilder: (_, i) => Stack(children: [
-                      Positioned.fill(child: ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.memory(_shots[i], fit: BoxFit.cover))),
+                      Positioned.fill(child: ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.memory(_shots[i], fit: BoxFit.cover, cacheWidth: 600))),
                       Positioned(
                         right: 6,
                         top: 6,

@@ -12,6 +12,7 @@ import '../receipt/receipt_logic.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
+import 'scanner.dart';
 import 'start_api.dart';
 import 'start_logic.dart';
 
@@ -492,7 +493,7 @@ class _CountSheetState extends State<_CountSheet> {
     final api = context.read<Api>();
     final lock = context.read<AppLock>();
     try {
-      final x = await lock.hold(() => ImagePicker().pickImage(source: ImageSource.camera, maxWidth: 2000, maxHeight: 2000, imageQuality: 80));
+      final x = await lock.hold(() => withScannersPaused(() => ImagePicker().pickImage(source: ImageSource.camera, maxWidth: 2000, maxHeight: 2000, imageQuality: 80)));
       if (x == null || !mounted) return;
       setState(() => _busy = true);
       final bytes = await x.readAsBytes();
@@ -593,7 +594,7 @@ class _CountSheetState extends State<_CountSheet> {
                   Stack(children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(12),
-                      child: Image.network(_photos[i], width: 64, height: 64, fit: BoxFit.cover,
+                      child: Image.network(_photos[i], width: 64, height: 64, fit: BoxFit.cover, cacheWidth: 192,
                           errorBuilder: (_, __, ___) => Container(width: 64, height: 64, color: AppColors.soft)),
                     ),
                     Positioned(
