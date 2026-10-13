@@ -256,3 +256,125 @@ func photoSources(images []string) (keys []string, base string) {
 	}
 	return keys, base
 }
+
+// backfillSQL — старые фото «Начала работы», снятые до нормализации, по
+// ai.BackfillBatch на сеть (старые — первыми); сети, где пачка ещё
+// делается, пропускаются.
+//   - карточки «Новых», готовые к проверке: товара нет в базе, заданий не было;
+//   - свои товары (ещё не в общей базе) из карточек «Новых» и строк
+//     «Инвентаризации»: заданий не было ни у товара, ни у его карточки
+//     (магазин мог выбрать своё фото).
+//
+// Фото не из нашего хранилища (ссылки со стороны) не берутся.
+const backfillSQL = `
+WITH busy AS (
+	SELECT DISTINCT network_id FROM photo_jobs WHERE backfill AND status IN ('queued', 'processing')),
+cards AS (
+	SELECT n.network_id, n.store_id, n.created_by AS employee_id, n.id AS new_item_id, NULL::uuid AS product_id,
+	       n.images, n.media_base, false AS lines, n.created_at
+	FROM start_new_items n
+	WHERE n.status = 'ready' AND jsonb_typeof(n.result -> 'match') IS DISTINCT FROM 'object'
+	  AND cardinality(n.images) > 0
+	  AND NOT EXISTS (SELECT 1 FROM photo_jobs j WHERE j.new_item_id = n.id)),
+prods AS (
+	SELECT p.network_id, src.store_id, src.employee_id, NULL::uuid AS new_item_id, p.id AS product_id,
+	       p.images, '' AS media_base, src.lines, p.created_at
+	FROM products p
+	JOIN LATERAL (
+		SELECT * FROM (
+			SELECT n.store_id, n.created_by AS employee_id, false AS lines, 0 AS o
+			FROM start_new_items n WHERE n.product_id = p.id AND n.network_id = p.network_id
+			UNION ALL
+			SELECT d.store_id, l.added_by, true, 1
+			FROM start_lines l JOIN start_drafts d ON d.id = l.draft_id
+			WHERE l.product_id = p.id AND d.network_id = p.network_id) s
+		ORDER BY o LIMIT 1) src ON true
+	WHERE p.network_id IS NOT NULL AND cardinality(p.images) > 0
+	  AND p.images[1] ~ '(^|/api/v1/media/)[0-9]{4}/[0-9]{2}/[0-9a-f]{32}\.(jpg|png|webp|gif)$'
+	  AND NOT EXISTS (SELECT 1 FROM photo_jobs j WHERE j.product_id = p.id)
+	  AND NOT EXISTS (SELECT 1 FROM start_new_items n JOIN photo_jobs j ON j.new_item_id = n.id WHERE n.product_id = p.id))
+SELECT network_id, store_id, employee_id, new_item_id, product_id, images, media_base, lines FROM (
+	SELECT x.*, row_number() OVER (PARTITION BY x.network_id ORDER BY x.created_at, x.new_item_id, x.product_id) AS rn
+	FROM (SELECT * FROM cards UNION ALL SELECT * FROM prods) x
+	WHERE x.network_id NOT IN (SELECT network_id FROM busy) AND ((NOT x.lines AND $2) OR (x.lines AND $3))) y
+WHERE rn <= $1
+ORDER BY network_id, rn`
+
+// BackfillPhotos — старые фото магазинов (ai.PhotoService.Backfill): Super
+// Market делает их чистыми сам, понемногу и в лимите тарифа — запас месяца
+// остаётся новым фото (ai.BackfillReserve). Готовое фото ложится как обычно:
+// в карточку «Новых» («до / после») или первым в товар.
+func (s *Service) BackfillPhotos(ctx context.Context) error {
+	if s.Photos == nil {
+		return nil
+	}
+	newItems, lines, err := s.Photos.StoreKinds(ctx)
+	if err != nil || (!newItems && !lines) {
+		return err
+	}
+	queued := 0
+	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		// Один обход за раз (несколько серверов — тоже).
+		var ok bool
+		if err := tx.QueryRow(ctx, `SELECT pg_try_advisory_xact_lock(hashtext('photo_jobs_backfill'))`).Scan(&ok); err != nil || !ok {
+			return err
+		}
+		rows, err := tx.Query(ctx, backfillSQL, ai.BackfillBatch, newItems, lines)
+		if err != nil {
+			return err
+		}
+		type cand struct {
+			networkID, storeID, employeeID string
+			newItemID, productID           *string
+			images                         []string
+			base                           string
+			lines                          bool
+		}
+		var cs []cand
+		for rows.Next() {
+			var c cand
+			if err := rows.Scan(&c.networkID, &c.storeID, &c.employeeID, &c.newItemID, &c.productID, &c.images, &c.base, &c.lines); err != nil {
+				rows.Close()
+				return err
+			}
+			cs = append(cs, c)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		full := map[string]bool{} // сеть: запас месяца кончился
+		for _, c := range cs {
+			if full[c.networkID] {
+				continue
+			}
+			keys, base := c.images, c.base
+			if c.productID != nil {
+				keys, base = photoSources(c.images)
+			}
+			if len(keys) == 0 {
+				continue
+			}
+			st, err := s.Photos.Enqueue(ctx, tx, ai.StoreJob{NetworkID: c.networkID, StoreID: c.storeID, EmployeeID: c.employeeID,
+				NewItemID: c.newItemID, ProductID: c.productID, Sources: keys, MediaBase: base, Lines: c.lines, Backfill: true})
+			if err != nil {
+				return err
+			}
+			if st == "" {
+				// Запас месяца кончился — сеть ждёт следующего месяца.
+				full[c.networkID] = true
+				continue
+			}
+			queued++
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if queued > 0 {
+		s.log.Info("фото магазинов: старые фото в очереди", "queued", queued)
+		s.kickPhotos(ai.JobQueued)
+	}
+	return nil
+}

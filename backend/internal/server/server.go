@@ -54,6 +54,7 @@ type App struct {
 	Orders   *orders.Service
 	Payments *payments.Service
 	Billing  *billing.Service
+	Start    *start.Service
 }
 
 // New создаёт обработчик API. tg — отправитель кодов; nil — взять из
@@ -115,6 +116,8 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 	// Нормализация фото для магазина: очередь photo_jobs, лимит — по тарифу.
 	startSvc.Photos = aiPhoto
 	aiPhoto.OnStoreDone = startSvc.ApplyStorePhoto
+	// Старые фото «Начала работы» (до нормализации) — понемногу, в лимите.
+	aiPhoto.Backfill = startSvc.BackfillPhotos
 	aiPhoto.Limit = func(ctx context.Context, q db.Querier, networkID string) (*int, error) {
 		p, err := plans.Effective(ctx, q, networkID)
 		if err != nil {
@@ -164,7 +167,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		summary.NewModule(summary.NewService(pool, log), auth, log),
 		account.NewModule(account.NewService(pool, idSvc, notify.New(pool, tg, log), log), auth, log),
 	)
-	return &App{Handler: h, Orders: ord, Payments: pay, Billing: bill}, nil
+	return &App{Handler: h, Orders: ord, Payments: pay, Billing: bill, Start: startSvc}, nil
 }
 
 // MediaService — фото в MinIO; без S3_ENDPOINT загрузка выключена.

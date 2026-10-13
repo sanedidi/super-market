@@ -119,6 +119,9 @@ type PhotoService struct {
 	// OnStoreDone — положить готовое фото (карточка «Новых» или товар) и
 	// отметить задание done — в одной транзакции.
 	OnStoreDone func(ctx context.Context, d StoreDone) error
+	// Backfill — поставить в очередь старые фото магазинов (снятые до
+	// нормализации); вызывает воркер раз в backfillEvery.
+	Backfill func(ctx context.Context) error
 }
 
 func NewPhotoService(ai *Service, m *media.Service, log *slog.Logger) *PhotoService {

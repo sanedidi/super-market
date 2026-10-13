@@ -360,3 +360,168 @@ func TestStorePhotosWorker(t *testing.T) {
 		}
 	}
 }
+
+// TestStorePhotosBackfill — старые фото «Начала работы», снятые до
+// нормализации: Super Market сам делает их чистыми — понемногу, в лимите
+// тарифа, оставляя запас месяца новым фото. Магазин ничего не нажимает.
+func TestStorePhotosBackfill(t *testing.T) {
+	pool := freshDB(t)
+	ctx := context.Background()
+	s3 := &fakeS3{buckets: map[string]bool{}, objects: map[string][]byte{}, types: map[string]string{}}
+	s3srv := httptest.NewServer(s3)
+	t.Cleanup(s3srv.Close)
+	fai := &fakeCategoryAI{}
+	aisrv := httptest.NewServer(fai)
+	t.Cleanup(aisrv.Close)
+	gem := &fakeGemini{key: "AIzaSyTest-Xq7c"}
+	gemsrv := httptest.NewServer(gem)
+	t.Cleanup(gemsrv.Close)
+
+	cfg := testConfig()
+	cfg.DevOTPCode = "111111"
+	cfg.S3Endpoint, cfg.S3AccessKey, cfg.S3SecretKey, cfg.S3Bucket = s3srv.URL, "minio", "secret", "media"
+	server.InvoicesSync = true
+	t.Cleanup(func() { server.InvoicesSync = false })
+	app, err := server.Build(ctx, cfg, pool, &fakeTelegram{}, quietLog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(app.Handler)
+	t.Cleanup(srv.Close)
+	a := api{t: t, srv: srv, pool: pool}
+	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
+	ownerTok, storeID := setupNetwork(t, a, adminTok, "+998900000002")
+
+	drinks := a.expect(a.do("POST", "/admin/catalog/categories", adminTok, map[string]any{"name": "Напитки"}), 201, "drinks").str("id")
+	juices := a.expect(a.do("POST", "/admin/catalog/categories", adminTok, map[string]any{"name": "Соки и нектары", "parent_id": drinks}), 201, "juices").str("id")
+	var pcs string
+	for _, u := range a.expect(a.do("GET", "/admin/catalog/units", adminTok, nil), 200, "units").items() {
+		if u["short_name"] == "шт" {
+			pcs = u["id"].(string)
+		}
+	}
+	upload := func() string {
+		t.Helper()
+		var body bytes.Buffer
+		mw := multipart.NewWriter(&body)
+		fw, _ := mw.CreateFormFile("file", "item.png")
+		_, _ = fw.Write(tinyPNG)
+		_ = mw.Close()
+		req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/v1/store/uploads", &body)
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+		req.Header.Set("Authorization", "Bearer "+ownerTok)
+		res, err := srv.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		out := map[string]any{}
+		_ = json.NewDecoder(res.Body).Decode(&out)
+		return out["url"].(string)
+	}
+	images := func(productID string) []string {
+		t.Helper()
+		var imgs []string
+		if err := pool.QueryRow(ctx, `SELECT images FROM products WHERE id = $1`, productID).Scan(&imgs); err != nil {
+			t.Fatal(err)
+		}
+		return imgs
+	}
+	recognize := func(name string) {
+		fai.set(`{"product":true,"name":"`+name+`","name_uz":"`+name+`","brand":"Bliss","unit":"шт","match":"`+juices+`","alternatives":[]}`, `{"texts":["x"]}`)
+	}
+	newItem := func(name, img string) string {
+		recognize(name)
+		r := a.expect(a.do("POST", "/store/start/new-items", ownerTok, map[string]any{"store_id": storeID, "images": []string{img}}), 202, name)
+		if r.str("status") != "ready" {
+			t.Fatalf("%s = %v", name, r.Body)
+		}
+		return r.str("id")
+	}
+	confirm := func(id, name, img string, keepOwn bool) string {
+		return a.expect(a.do("POST", "/store/start/new-items/"+id+"/confirm", ownerTok, map[string]any{
+			"store_id": storeID, "name": name, "category_id": juices, "unit_id": pcs, "images": []string{img}, "keep_own_photo": keepOwn,
+		}), 200, "confirm "+name).str("product_id")
+	}
+	lineProduct := func(name string) string {
+		id := a.expect(a.do("POST", "/store/products", ownerTok, map[string]any{"name": name, "category_id": juices, "unit_id": pcs, "start_draft": true}), 201, name).str("id")
+		a.expect(a.do("POST", "/store/start/lines", ownerTok, map[string]any{"store_id": storeID, "items": []map[string]any{{"product_id": id, "add": true, "source": "new"}}}), 200, name+" line")
+		return id
+	}
+	front, label := upload(), upload()
+	backfill := func() {
+		t.Helper()
+		if err := app.Start.BackfillPhotos(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// До нормализации: «ИИ для фото» не подключён — фото магазина как есть.
+	a.expect(a.do("PUT", "/admin/ai", adminTok, map[string]any{"provider": "openai", "base_url": aisrv.URL + "/v1", "api_key": "sk-cat", "model": "gpt-4o"}), 200, "ai on")
+	card := newItem("Сок Bliss вишнёвый, 1 л", front)
+	cherry := confirm(newItem("Сок Bliss яблочный, 1 л", front), "Сок Bliss яблочный, 1 л", front, false)
+	tea := lineProduct("Чай Ахмад, 100 г")
+	a.expect(a.do("POST", "/store/start/lines/"+tea+"/photo", ownerTok, map[string]any{"store_id": storeID, "images": []string{label}}), 200, "tea photo")
+	// Фото со стороны (не из нашего хранилища) не берётся.
+	ext := lineProduct("Кофе Жокей, 100 г")
+	if _, err := pool.Exec(ctx, `UPDATE products SET images = ARRAY['https://other.example/coffee.jpg'] WHERE id = $1`, ext); err != nil {
+		t.Fatal(err)
+	}
+	var jobs int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM photo_jobs`).Scan(&jobs); err != nil || jobs != 0 {
+		t.Fatalf("jobs before = %d %v", jobs, err)
+	}
+	// Ничего не подключено — обход ничего не делает.
+	backfill()
+
+	a.expect(a.do("PUT", "/admin/ai-photo", adminTok, map[string]any{
+		"mode": "gemini", "base_url": gemsrv.URL, "api_key": gem.key, "model": "gemini-3-pro-image", "web_search": false,
+	}), 200, "photo ai on")
+	// После нормализации: магазин выбрал своё фото — старым оно не считается.
+	pearItem := newItem("Сок Bliss грушевый, 1 л", front)
+	pear := confirm(pearItem, "Сок Bliss грушевый, 1 л", front, true)
+	calls := gem.calls
+
+	// Лимит месяца почти кончился — старые фото ждут, запас — новым.
+	if _, err := pool.Exec(ctx, `UPDATE plans SET limits = limits || '{"ai_photos": 6}'`); err != nil {
+		t.Fatal(err)
+	}
+	backfill()
+	if gem.calls != calls {
+		t.Fatalf("over reserve: calls %d → %d", calls, gem.calls)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE plans SET limits = limits || '{"ai_photos": 100}'`); err != nil {
+		t.Fatal(err)
+	}
+
+	backfill()
+	if gem.calls != calls+3 {
+		t.Fatalf("backfill calls %d → %d", calls, gem.calls)
+	}
+	// Карточка «Новых» — «до / после», как у новой.
+	c := a.expect(a.do("GET", "/store/start/new-items/"+card, ownerTok, nil), 200, "card")
+	if c.str("photo", "status") != "done" || !strings.HasPrefix(c.str("photo", "image"), srv.URL+"/api/v1/media/") {
+		t.Fatalf("card photo = %v", c.Body["photo"])
+	}
+	// Товары — чистое фото первым, фото магазина остаётся.
+	for id, own := range map[string]string{cherry: front, tea: label} {
+		if imgs := images(id); len(imgs) != 2 || imgs[1] != own || !strings.HasPrefix(imgs[0], srv.URL+"/api/v1/media/") {
+			t.Fatalf("product %s images = %v", id, imgs)
+		}
+	}
+	if imgs := images(pear); len(imgs) != 1 || imgs[0] != front {
+		t.Fatalf("keep own = %v", imgs)
+	}
+	if imgs := images(ext); len(imgs) != 1 {
+		t.Fatalf("external = %v", imgs)
+	}
+	var backfilled int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM photo_jobs WHERE backfill AND status = 'done'`).Scan(&backfilled); err != nil || backfilled != 3 {
+		t.Fatalf("backfill jobs = %d %v", backfilled, err)
+	}
+	// Повторный обход — уже нечего делать.
+	backfill()
+	if gem.calls != calls+3 {
+		t.Fatalf("second backfill calls = %d", gem.calls)
+	}
+}

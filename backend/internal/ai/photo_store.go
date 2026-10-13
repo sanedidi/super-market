@@ -46,7 +46,15 @@ const (
 	// Столько раз задание берётся в работу, потом — failed.
 	storeJobAttempts = 3
 	storeJobPoll     = 20 * time.Second
+	// Старые фото ставятся в очередь не чаще этого и пачками по BackfillBatch
+	// на сеть — следующая пачка, когда предыдущая сделана.
+	backfillEvery = 5 * time.Minute
+	BackfillBatch = 30
 )
+
+// BackfillReserve — сколько фото месяца старые фото оставляют новым: десятая
+// часть лимита, но не меньше 5.
+func BackfillReserve(limit int) int { return max(limit/10, 5) }
 
 // StoreJob — задание магазина: для карточки «Новых» или для товара.
 type StoreJob struct {
@@ -61,6 +69,10 @@ type StoreJob struct {
 	MediaBase string
 	// Lines — фото строки на «Инвентаризации» (иначе — новый товар по фото).
 	Lines bool
+	// Backfill — старое фото (снято до нормализации): идёт после новых и
+	// только пока в лимите месяца остаётся запас для новых (BackfillReserve);
+	// иначе задания нет ("") — старое фото возьмём в следующем месяце.
+	Backfill bool
 }
 
 // StoreDone — готовое задание для OnStoreDone.
@@ -146,6 +158,16 @@ func (s *PhotoService) SaveStore(ctx context.Context, adminID string, in StoreSe
 // storeOn — Super Market делает фото магазинам: подключено и включено.
 func (r photoRow) storeOn() bool { return r.Configured && r.StoreEnabled }
 
+// StoreKinds — какие фото магазинов Super Market сейчас делает: нового
+// товара по фото и строки «Инвентаризации».
+func (s *PhotoService) StoreKinds(ctx context.Context) (newItems, lines bool, err error) {
+	r, err := s.load(ctx)
+	if err != nil {
+		return false, false, err
+	}
+	return r.storeOn() && r.StoreNewItems, r.storeOn() && r.StoreLines, nil
+}
+
 // Enqueue — поставить задание магазина (в транзакции вызывающего). Выключено
 // или не подключено — задания нет (""), лимит месяца кончился — задание
 // skipped/limit (магазин видит «ваше фото · лимит месяца»). После коммита —
@@ -175,16 +197,19 @@ func (s *PhotoService) Enqueue(ctx context.Context, q db.Querier, j StoreJob) (s
 			if err := q.QueryRow(ctx, StoreUsedSQL, j.NetworkID).Scan(&used); err != nil {
 				return "", err
 			}
-			if used >= *limit {
+			switch {
+			case j.Backfill && used+BackfillReserve(*limit) >= *limit:
+				return "", nil
+			case used >= *limit:
 				status, reason = JobSkipped, SkipLimit
 			}
 		}
 	}
 	var id string
 	err = q.QueryRow(ctx, `
-		INSERT INTO photo_jobs (network_id, store_id, employee_id, new_item_id, product_id, sources, media_base, status, error)
-		VALUES ($1, NULLIF($2, '')::uuid, NULLIF($3, '')::uuid, $4, $5, $6, $7, $8, $9) RETURNING id`,
-		j.NetworkID, j.StoreID, j.EmployeeID, j.NewItemID, j.ProductID, j.Sources, trimBase(j.MediaBase), status, reason).Scan(&id)
+		INSERT INTO photo_jobs (network_id, store_id, employee_id, new_item_id, product_id, sources, media_base, status, error, backfill)
+		VALUES ($1, NULLIF($2, '')::uuid, NULLIF($3, '')::uuid, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+		j.NetworkID, j.StoreID, j.EmployeeID, j.NewItemID, j.ProductID, j.Sources, trimBase(j.MediaBase), status, reason, j.Backfill).Scan(&id)
 	if err != nil {
 		return "", err
 	}
@@ -215,13 +240,19 @@ func (s *PhotoService) Kick() {
 func (s *PhotoService) initWorker() { s.worker.wake = make(chan struct{}, 1) }
 
 // StartWorker — фоновый воркер очереди: по сигналу Kick и раз в storeJobPoll
-// (задания, взятые до перезапуска сервера, подхватываются тоже).
+// (задания, взятые до перезапуска сервера, подхватываются тоже). Раз в
+// backfillEvery — Backfill: старые фото в очередь.
 func (s *PhotoService) StartWorker(ctx context.Context) {
 	s.worker.once.Do(s.initWorker)
 	go func() {
 		t := time.NewTicker(storeJobPoll)
 		defer t.Stop()
+		var lastBackfill time.Time
 		for {
+			if s.Backfill != nil && time.Since(lastBackfill) >= backfillEvery {
+				lastBackfill = time.Now()
+				s.safeBackfill(ctx)
+			}
 			s.safeRun(ctx)
 			select {
 			case <-ctx.Done():
@@ -231,6 +262,17 @@ func (s *PhotoService) StartWorker(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+func (s *PhotoService) safeBackfill(ctx context.Context) {
+	defer func() {
+		if p := recover(); p != nil {
+			s.log.Error("фото магазинов: старые фото, паника", "panic", p)
+		}
+	}()
+	if err := s.Backfill(ctx); err != nil {
+		s.log.Error("фото магазинов: старые фото", "err", err)
+	}
 }
 
 func (s *PhotoService) safeRun(ctx context.Context) {
@@ -304,7 +346,7 @@ func (s *PhotoService) claim(ctx context.Context, n int) ([]storeJob, error) {
 		WHERE id IN (
 			SELECT id FROM photo_jobs
 			WHERE status = 'queued' OR (status = 'processing' AND started_at < now() - $1::interval)
-			ORDER BY created_at LIMIT $2 FOR UPDATE SKIP LOCKED)
+			ORDER BY backfill, created_at LIMIT $2 FOR UPDATE SKIP LOCKED)
 		RETURNING id, network_id, store_id, employee_id, new_item_id, product_id, sources, media_base, attempts`,
 		storeJobStale.String(), n)
 	if err != nil {
