@@ -33,7 +33,7 @@ import { docPaths } from '../StockDocs'
 import { plainNum, useStartApi, useStartRefresh, type Draft, type Line, type LineInput, type LinesResult, type NewItem, type PostResult, type SearchItem, type Similar } from './api'
 import { BarcodeModal, NewProductModal, PhotoModal, SimilarModal, sum } from './Modals'
 import { TasnifBlock, TasnifLink } from './Tasnif'
-import { NewByPhotoModal, NewItemsList, ReviewModal, RightTabs, newItemState, useNewItems } from './NewItems'
+import { NEW_PAGE, NewByPhotoModal, NewItemsList, ReviewModal, RightTabs, newItemState, useNewItems } from './NewItems'
 import { CountDrawer, ScanCard } from './CountScan'
 import { Thumb } from './Thumb'
 
@@ -151,8 +151,14 @@ function StepGoods({ d, next }: { d: Draft; next: () => void }) {
   // «Новый товар»: сначала фото для Super Market, ручная форма — по ссылке.
   const [byPhoto, setByPhoto] = useState(false)
   const [tab, setTab] = useState<'mine' | 'new'>('mine')
-  const fresh = useNewItems(storeId)
+  const [freshPage, setFreshPage] = useState(1)
+  const fresh = useNewItems(storeId, freshPage)
   const freshCount = fresh.data?.total ?? 0
+  // Очередь сократилась (провели, проверили) — страницы за концом больше нет.
+  const freshPages = Math.max(1, Math.ceil(freshCount / NEW_PAGE))
+  useEffect(() => {
+    if (fresh.data && freshPage > freshPages) setFreshPage(freshPages)
+  }, [fresh.data, freshPage, freshPages])
   // Super Market добавляет распознанные товары в «Мои товары» сам: очередь
   // сдвинулась — перечитать черновик.
   const qc = useQueryClient()
@@ -213,9 +219,8 @@ function StepGoods({ d, next }: { d: Draft; next: () => void }) {
                 list={fresh.data}
                 loading={fresh.isLoading}
                 highlight={freshHighlight}
-                hasMore={fresh.hasNextPage}
-                loadingMore={fresh.isFetchingNextPage}
-                onMore={() => !fresh.isFetchingNextPage && fresh.fetchNextPage()}
+                page={freshPage}
+                onPage={setFreshPage}
               />
             </Card>
           ) : (

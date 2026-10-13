@@ -9,8 +9,8 @@
 // раз в «Новые» не попадает; похожая карточка помечается «Похоже на дубль»,
 // «Это он» объединяет карточки.
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { useInfiniteQuery } from '@tanstack/react-query'
-import { Alert, App, Button, Col, Flex, Form, Input, Modal, Progress, Row, Space, Spin, Tag, Typography } from 'antd'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { Alert, App, Button, Col, Flex, Form, Input, Modal, Pagination, Progress, Row, Space, Spin, Tag, Typography } from 'antd'
 import { CheckOutlined, CopyOutlined, DeleteOutlined, FolderAddOutlined, PlusOutlined, ReloadOutlined, StarFilled, TagsOutlined } from '@ant-design/icons'
 import { ApiError, FormTranslate, ImageUpload, RemoteSelect, api, errorText, getLang, tr } from '@sm/shared'
 import { useStore } from '../../ctx'
@@ -61,51 +61,17 @@ export const newItemState = (s: NewItem['status']) =>
       ? tr('Super Market распознаёт… ~1 мин', 'Super Market aniqlamoqda… ~1 daq')
       : tr('не удалось распознать — заполните', 'aniqlab boʻlmadi — toʻldiring')
 
-const NEW_PAGE = 50
+export const NEW_PAGE = 50
 
-/** Очередь «Новые» магазина постранично (подгрузка при прокрутке); пока что-то
- * распознаётся — обновляется сама. data — все загруженные страницы одной
- * очередью; counts и total — по всей очереди с сервера. */
-export function useNewItems(storeId: string) {
-  return useInfiniteQuery({
-    queryKey: ['/store/start/new-items', storeId],
-    queryFn: ({ pageParam }) => api.get<NewItemList>('/store/start/new-items', { store_id: storeId, limit: NEW_PAGE, offset: pageParam }),
-    initialPageParam: 0,
-    getNextPageParam: (last, all) => {
-      const loaded = all.reduce((n, p) => n + p.items.length, 0)
-      return last.items.length > 0 && loaded < last.total ? loaded : undefined
-    },
-    select: (d): NewItemList => {
-      const last = d.pages[d.pages.length - 1]
-      // Пока страницы перечитываются, очередь могла сдвинуться — без повторов.
-      const seen = new Set<string>()
-      const items = d.pages.flatMap((p) => p.items).filter((it) => !seen.has(it.id) && (seen.add(it.id), true))
-      return { items, counts: last.counts, total: last.total }
-    },
-    refetchInterval: (q) => {
-      const pages = q.state.data?.pages
-      return (pages?.[pages.length - 1]?.counts.processing ?? 0) > 0 ? 3000 : false
-    },
+/** Очередь «Новые» магазина, страница page (с 1); пока что-то распознаётся —
+ * обновляется сама. counts и total — по всей очереди с сервера. */
+export function useNewItems(storeId: string, page: number) {
+  return useQuery({
+    queryKey: ['/store/start/new-items', storeId, page],
+    queryFn: () => api.get<NewItemList>('/store/start/new-items', { store_id: storeId, limit: NEW_PAGE, offset: (page - 1) * NEW_PAGE }),
+    placeholderData: keepPreviousData,
+    refetchInterval: (q) => ((q.state.data?.counts.processing ?? 0) > 0 ? 3000 : false),
   })
-}
-
-/** Невидимая метка в конце списка: дошли до неё прокруткой — грузим ещё. */
-function LoadMore({ onMore, loading }: { onMore: () => void; loading: boolean }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const cb = useRef(onMore)
-  cb.current = onMore
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const io = new IntersectionObserver((e) => e[0]?.isIntersecting && cb.current(), { rootMargin: '300px' })
-    io.observe(el)
-    return () => io.disconnect()
-  }, [])
-  return (
-    <Flex ref={ref} justify="center" style={{ padding: 12, minHeight: 44 }}>
-      {loading && <Spin size="small" />}
-    </Flex>
-  )
 }
 
 /** Заголовок-вкладка правой колонки: «Мои товары · N» | «Требуют внимания · M». */
@@ -139,21 +105,38 @@ export function NewItemsList({
   list,
   loading,
   highlight,
-  hasMore,
-  loadingMore,
-  onMore,
+  page,
+  onPage,
 }: {
   list: NewItemList | undefined
   loading: boolean
   highlight?: string | null
-  hasMore?: boolean
-  loadingMore?: boolean
-  onMore?: () => void
+  page: number
+  onPage: (p: number) => void
 }) {
   const [open, setOpen] = useState<NewItem | null>(null)
   const items = list?.items ?? []
+  const top = useRef<HTMLDivElement>(null)
+  const total = list?.total ?? 0
+  const pager = total > NEW_PAGE && (
+    <Flex justify="center" style={{ padding: '12px 20px', borderBottom: '1px solid #EAECF0' }}>
+      <Pagination
+        size="small"
+        current={page}
+        pageSize={NEW_PAGE}
+        total={total}
+        showSizeChanger={false}
+        showTotal={(t, [a, b]) => tr(`${a}–${b} из ${t}`, `${t} tadan ${a}–${b}`)}
+        onChange={(p) => {
+          onPage(p)
+          top.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+        }}
+      />
+    </Flex>
+  )
   return (
     <>
+      <div ref={top} />
       <Flex gap={10} style={{ padding: '10px 20px', background: '#F4F3FF' }}>
         <StarFilled style={{ color: PURPLE, marginTop: 3 }} />
         <Typography.Text style={{ fontSize: 13, color: '#3E1C96' }}>
@@ -164,6 +147,7 @@ export function NewItemsList({
         </Typography.Text>
       </Flex>
       {(list?.counts.bulk ?? 0) > 0 && <BulkBar ready={list!.counts.bulk!} rest={(list?.total ?? 0) - list!.counts.bulk!} />}
+      {pager}
       {loading && !list ? (
         <Flex justify="center" style={{ padding: 24 }}>
           <Spin />
@@ -209,7 +193,7 @@ export function NewItemsList({
           </Flex>
         ))
       )}
-      {hasMore && onMore && <LoadMore onMore={onMore} loading={!!loadingMore} />}
+      {pager}
       <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', padding: '12px 20px 14px' }}>
         {tr('Новые товары уйдут на проверку в общую базу после «Записать и закрыть» на шаге 2.', 'Yangi mahsulotlar 2-qadamdagi «Yozish va yopish»dan soʻng umumiy bazaga tekshiruvga yuboriladi.')}
       </Typography.Text>
