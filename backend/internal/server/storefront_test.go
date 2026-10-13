@@ -59,6 +59,27 @@ func TestStorefront(t *testing.T) {
 	}), 200, "attributes")
 	a.expect(a.do("PATCH", "/admin/products/"+cola, adminTok, map[string]any{"attributes": map[string]any{"color": "red"}}), 400, "unknown attribute")
 	a.expect(a.do("PATCH", "/admin/products/"+cola, adminTok, map[string]any{"attributes": map[string]any{"nutrition": map[string]any{"kcal": "много"}}}), 400, "bad nutrition")
+	// Товар добавил магазин: служебные поля (кто добавил, откуда) и поля из
+	// импорта форма присылает обратно как были — сохранение проходит, поля
+	// остаются; не прислала — служебные всё равно остаются; менять их нельзя.
+	if _, err := pool.Exec(context.Background(), `UPDATE products SET attributes = attributes || jsonb_build_object('added_by_store', $2::text, 'source', 'photo', 'pack', '6 шт') WHERE id = $1`, cola, store); err != nil {
+		t.Fatal(err)
+	}
+	a.expect(a.do("PATCH", "/admin/products/"+cola, adminTok, map[string]any{"attributes": map[string]any{
+		"country": "Узбекистан", "nutrition": map[string]any{"kcal": 42, "carbs": 10.6}, "added_by_store": store, "source": "photo", "pack": "6 шт",
+	}}), 200, "store product attributes")
+	a.expect(a.do("PATCH", "/admin/products/"+cola, adminTok, map[string]any{"attributes": map[string]any{
+		"country": "Узбекистан", "nutrition": map[string]any{"kcal": 42, "carbs": 10.6},
+	}}), 200, "without system attributes")
+	var attrs map[string]any
+	if err := pool.QueryRow(context.Background(), `SELECT attributes FROM products WHERE id = $1`, cola).Scan(&attrs); err != nil {
+		t.Fatal(err)
+	}
+	if attrs["added_by_store"] != store || attrs["source"] != "photo" || attrs["country"] != "Узбекистан" || attrs["pack"] != nil || attrs["nutrition"] == nil {
+		t.Fatalf("attributes = %v", attrs)
+	}
+	a.expect(a.do("PATCH", "/admin/products/"+cola, adminTok, map[string]any{"attributes": map[string]any{"source": "manual"}}), 400, "change system attribute")
+	a.expect(a.do("PATCH", "/admin/products/"+cola, adminTok, map[string]any{"attributes": map[string]any{"pack": "6 шт"}}), 400, "add unknown again")
 
 	// Акция: кола 15 000 → 12 000 (−20%), сахар 12 000 → 13 000 не повышает цену.
 	now := time.Now()

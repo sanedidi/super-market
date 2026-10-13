@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -167,8 +168,9 @@ func (in ProductInput) validate(create bool) error {
 			return apperr.Validation(name + ": запись не найдена").Uz(name + ": yozuv topilmadi")
 		}
 	}
-	if in.Attributes != nil {
-		if err := validateAttributes(*in.Attributes); err != nil {
+	// При правке характеристики сверяются с товаром (mergeAttributes).
+	if in.Attributes != nil && create {
+		if err := validateAttributes(*in.Attributes, nil); err != nil {
 			return err
 		}
 	}
@@ -290,6 +292,17 @@ func (s *Service) updateProduct(ctx context.Context, id string, in ProductInput,
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		if err := checkRefs(ctx, tx, brand, in.CategoryID, in.UnitID, color); err != nil {
 			return err
+		}
+		if in.Attributes != nil {
+			var old map[string]any
+			if err := tx.QueryRow(ctx, `SELECT attributes FROM products WHERE id = $1 FOR UPDATE`, id).Scan(&old); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+			attrs, err := mergeAttributes(old, *in.Attributes)
+			if err != nil {
+				return err
+			}
+			in.Attributes = &attrs
 		}
 		_, err := tx.Exec(ctx, `
 			UPDATE products SET
@@ -696,13 +709,45 @@ var (
 	nutritionKeys = map[string]bool{"kcal": true, "protein": true, "fat": true, "carbs": true}
 )
 
+// systemAttributeKeys — служебные поля товара, их пишет сервер: кто из
+// магазинов добавил товар, откуда он (фото, ИКПУ), ИКПУ и маркировка. В
+// форме их нет — при правке они остаются как были.
+var systemAttributeKeys = []string{"added_by_store", "source", "ikpu", "ikpu_name", "marked"}
+
+// mergeAttributes — характеристики при правке товара. Форма присылает
+// характеристики целиком, вместе со служебными и пришедшими из импорта полями,
+// которых в форме нет: такие поля без изменений проходят, служебные, которых
+// не прислали, остаются. Менять или добавлять неизвестные поля нельзя.
+func mergeAttributes(old, in map[string]any) (map[string]any, error) {
+	out := make(map[string]any, len(in)+len(systemAttributeKeys))
+	for k, v := range in {
+		out[k] = v
+	}
+	for _, k := range systemAttributeKeys {
+		if v, ok := old[k]; ok {
+			if _, sent := out[k]; !sent {
+				out[k] = v
+			}
+		}
+	}
+	if err := validateAttributes(out, old); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // validateAttributes: известные ключи; строки до 500 символов; nutrition —
-// объект с числами на 100 г (kcal, protein, fat, carbs).
-func validateAttributes(a map[string]any) error {
-	if len(a) > 20 {
+// объект с числами на 100 г (kcal, protein, fat, carbs). old — характеристики
+// товара при правке: другие поля, которые уже есть в товаре, проходят без
+// изменений.
+func validateAttributes(a, old map[string]any) error {
+	if len(a) > 20+len(old) {
 		return apperr.Validation("attributes: слишком много характеристик").Uz("attributes: xususiyatlar juda koʻp")
 	}
 	for k, v := range a {
+		if prev, ok := old[k]; ok && !attributeKeys[k] && reflect.DeepEqual(prev, v) {
+			continue
+		}
 		if !attributeKeys[k] {
 			return apperr.Validation("attributes: неизвестная характеристика " + k).Uz("attributes: nomaʼlum xususiyat " + k)
 		}
