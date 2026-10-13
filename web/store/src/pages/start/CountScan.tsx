@@ -171,7 +171,6 @@ export function CountDrawer({ line, onClose, onSaved }: { line: Line | null; onC
   const [cost, setCost] = useState<string | null>(null)
   const [price, setPrice] = useState<string | null>(null)
   const [photos, setPhotos] = useState<string[]>([])
-  const [add, setAdd] = useState(false)
   const [busy, setBusy] = useState(false)
   const quota = usePhotoQuota(storeId).data
   const filled = !!line && line.qty !== null
@@ -179,17 +178,14 @@ export function CountDrawer({ line, onClose, onSaved }: { line: Line | null; onC
 
   useEffect(() => {
     if (!line) return
-    // Товар уже заполняли — по умолчанию «Прибавить» (сканируют упаковки подряд).
-    setAdd(line.qty !== null)
-    setQty(line.qty !== null ? '1' : null)
+    // Товар уже заполняли — в поле то количество, что вводили; его можно исправить.
+    setQty(line.qty !== null ? plainNum(line.qty) : null)
     setCost(line.cost)
     setPrice(line.price ?? (Number(line.current_price) > 0 ? line.current_price : null))
     setPhotos([])
   }, [line])
 
   if (!line) return null
-  const was = Number(line.qty ?? 0)
-  const total = add ? was + Number(qty ?? 0) : Number(qty ?? 0)
 
   const save = async () => {
     if (qty === null || qty === '') {
@@ -211,7 +207,7 @@ export function CountDrawer({ line, onClose, onSaved }: { line: Line | null; onC
       }
       await api.post<LinesResult>('/store/start/lines', {
         store_id: storeId,
-        items: [{ product_id: line.product_id, qty: String(total), price, cost: cost === '' ? null : cost }],
+        items: [{ product_id: line.product_id, qty, price, cost: cost === '' ? null : cost }],
       })
       message.success(tr(`${line.name} — записано`, `${line.name} — yozildi`))
       await onSaved()
@@ -252,21 +248,11 @@ export function CountDrawer({ line, onClose, onSaved }: { line: Line | null; onC
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {tr('Этот товар уже заполняли', 'Bu mahsulot allaqachon toʻldirilgan')}
             </Typography.Text>
-            <div>
-              <Space.Compact>
-                <Button type={add ? 'primary' : 'default'} onClick={() => setAdd(true)}>
-                  {tr('Прибавить', 'Qoʻshish')}
-                </Button>
-                <Button type={add ? 'default' : 'primary'} onClick={() => setAdd(false)}>
-                  {tr('Заменить', 'Almashtirish')}
-                </Button>
-              </Space.Compact>
-            </div>
           </div>
         )}
         <div>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {add ? tr('Прибавить', 'Qoʻshish') : tr('Количество', 'Miqdor')} *
+            {tr('Количество', 'Miqdor')} *
           </Typography.Text>
           <div>
             <InputNumber
@@ -282,11 +268,6 @@ export function CountDrawer({ line, onClose, onSaved }: { line: Line | null; onC
               onChange={(v) => setQty(v === null ? null : String(v))}
             />
           </div>
-          {add && (
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {tr(`станет ${plainNum(String(total))} ${line.unit_short}`, `${plainNum(String(total))} ${line.unit_short} boʻladi`)}
-            </Typography.Text>
-          )}
         </div>
         <div>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>

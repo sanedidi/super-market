@@ -461,7 +461,7 @@ class StartSteps extends StatelessWidget {
 
 /// И2–И6 · Шторка инвентаризации (поверх камеры или списка): количество и цена
 /// продажи обязательны (можно 0), цена закупки — по желанию. Товар уже
-/// заполняли — «Прибавить» или «Заменить». У товара нет фото — сначала снимок:
+/// заполняли — в поле прежнее количество, его можно исправить. Нет фото — сначала снимок:
 /// без фото покупатель не увидит товар и документ не записывается.
 /// true — строка сохранена.
 Future<bool> countSheet(BuildContext context, StartApi start, Map<String, dynamic> line) async {
@@ -480,9 +480,8 @@ class _CountSheet extends StatefulWidget {
 }
 
 class _CountSheetState extends State<_CountSheet> {
-  /// Товар уже заполняли — по умолчанию «Прибавить» (сканируют упаковки подряд).
-  late bool _add = widget.line['qty'] != null;
-  late final _qty = TextEditingController(text: _add ? '1' : '');
+  /// Товар уже заполняли — в поле то количество, что вводили; его можно исправить.
+  late final _qty = TextEditingController(text: plainQty(widget.line['qty']));
   late final _price = TextEditingController(text: plainQty(_initialPrice(widget.line)));
   late final _cost = TextEditingController(text: plainQty(widget.line['cost']));
   /// Фото товара, снятые здесь же (до 6: лицевая сторона, этикетка, состав).
@@ -526,15 +525,11 @@ class _CountSheetState extends State<_CountSheet> {
     super.dispose();
   }
 
-  /// Итоговое количество: «Прибавить» — к тому, что уже было.
+  /// Количество из поля — оно и сохраняется (без прибавления к прежнему).
   String? _total() {
     final t = _qty.text.trim();
     if (t.isEmpty) return null;
-    final v = parseNum(t);
-    if (v == null) return null;
-    if (!_add) return v;
-    final was = num.tryParse('${widget.line['qty'] ?? 0}') ?? 0;
-    return plainQty(was + (num.tryParse(v) ?? 0));
+    return parseNum(t);
   }
 
   Future<void> _takePhoto() async {
@@ -603,7 +598,6 @@ class _CountSheetState extends State<_CountSheet> {
     final l = widget.line;
     final unit = (l['unit_short'] as String?) ?? tr('шт', 'dona');
     final filled = l['qty'] != null;
-    final total = _total();
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       SheetHeader(
         title: tr('Количество и цены', 'Miqdor va narxlar'),
@@ -688,29 +682,14 @@ class _CountSheetState extends State<_CountSheet> {
           ]),
         ),
       ],
-      if (filled) ...[
-        const SizedBox(height: 14),
-        Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(14)),
-          child: Row(children: [
-            Expanded(child: _segment(tr('Прибавить', 'Qoʻshish'), _add, () => setState(() => _add = true))),
-            Expanded(child: _segment(tr('Заменить', 'Almashtirish'), !_add, () => setState(() => _add = false))),
-          ]),
-        ),
-      ],
       const SizedBox(height: 14),
       NumField(
-        label: _add ? tr('Прибавить, $unit *', 'Qoʻshish, $unit *') : tr('Количество, $unit *', 'Miqdor, $unit *'),
+        label: tr('Количество, $unit *', 'Miqdor, $unit *'),
         controller: _qty,
         hint: tr('обязательно', 'majburiy'),
         decimal: l['is_fractional'] == true,
         onChanged: (_) => setState(() {}),
       ),
-      if (_add && total != null) ...[
-        const SizedBox(height: 4),
-        Text(tr('станет $total $unit', '$total $unit boʻladi'), style: AppText.small),
-      ],
       const SizedBox(height: 12),
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Expanded(child: NumField(label: tr('Цена продажи *', 'Sotish narxi *'), controller: _price, hint: tr('обязательно', 'majburiy'))),
@@ -727,19 +706,4 @@ class _CountSheetState extends State<_CountSheet> {
       ],
     ]);
   }
-
-  Widget _segment(String label, bool on, VoidCallback onTap) => Material(
-        color: on ? AppColors.white : Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-        elevation: on ? 1 : 0,
-        shadowColor: Colors.black12,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Text(label, textAlign: TextAlign.center, style: AppText.caption.copyWith(fontSize: 14, color: on ? AppColors.ink : AppColors.text2)),
-          ),
-        ),
-      );
 }
