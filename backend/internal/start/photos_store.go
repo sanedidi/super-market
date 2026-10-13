@@ -265,7 +265,8 @@ func photoSources(images []string) (keys []string, base string) {
 //     «Инвентаризации»: заданий не было ни у товара, ни у его карточки
 //     (магазин мог выбрать своё фото).
 //
-// Фото не из нашего хранилища (ссылки со стороны) не берутся.
+// Фото не из нашего хранилища (ссылки со стороны) не берутся; заблокированные
+// сети и выключенные магазины — тоже.
 const backfillSQL = `
 WITH busy AS (
 	SELECT DISTINCT network_id FROM photo_jobs WHERE backfill AND status IN ('queued', 'processing')),
@@ -296,6 +297,8 @@ prods AS (
 SELECT network_id, store_id, employee_id, new_item_id, product_id, images, media_base, lines FROM (
 	SELECT x.*, row_number() OVER (PARTITION BY x.network_id ORDER BY x.created_at, x.new_item_id, x.product_id) AS rn
 	FROM (SELECT * FROM cards UNION ALL SELECT * FROM prods) x
+	JOIN networks n ON n.id = x.network_id AND n.status = 'active'
+	JOIN stores s ON s.id = x.store_id AND s.status = 'active'
 	WHERE x.network_id NOT IN (SELECT network_id FROM busy) AND ((NOT x.lines AND $2) OR (x.lines AND $3))) y
 WHERE rn <= $1
 ORDER BY network_id, rn`

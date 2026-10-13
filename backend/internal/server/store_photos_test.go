@@ -391,6 +391,7 @@ func TestStorePhotosBackfill(t *testing.T) {
 	a := api{t: t, srv: srv, pool: pool}
 	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
 	ownerTok, storeID := setupNetwork(t, a, adminTok, "+998900000002")
+	otherTok, otherStore := setupNetwork(t, a, adminTok, "+998900000003")
 
 	drinks := a.expect(a.do("POST", "/admin/catalog/categories", adminTok, map[string]any{"name": "Напитки"}), 201, "drinks").str("id")
 	juices := a.expect(a.do("POST", "/admin/catalog/categories", adminTok, map[string]any{"name": "Соки и нектары", "parent_id": drinks}), 201, "juices").str("id")
@@ -462,6 +463,10 @@ func TestStorePhotosBackfill(t *testing.T) {
 	cherry := confirm(newItem("Сок Bliss яблочный, 1 л", front), "Сок Bliss яблочный, 1 л", front, false)
 	tea := lineProduct("Чай Ахмад, 100 г")
 	a.expect(a.do("POST", "/store/start/lines/"+tea+"/photo", ownerTok, map[string]any{"store_id": storeID, "images": []string{label}}), 200, "tea photo")
+	// Товар сети, которую потом заблокируют.
+	blockedTea := a.expect(a.do("POST", "/store/products", otherTok, map[string]any{"name": "Чай Каркаде, 100 г", "category_id": juices, "unit_id": pcs, "start_draft": true}), 201, "blocked tea").str("id")
+	a.expect(a.do("POST", "/store/start/lines", otherTok, map[string]any{"store_id": otherStore, "items": []map[string]any{{"product_id": blockedTea, "add": true, "source": "new"}}}), 200, "blocked tea line")
+	a.expect(a.do("POST", "/store/start/lines/"+blockedTea+"/photo", otherTok, map[string]any{"store_id": otherStore, "images": []string{label}}), 200, "blocked tea photo")
 	// Фото со стороны (не из нашего хранилища) не берётся.
 	ext := lineProduct("Кофе Жокей, 100 г")
 	if _, err := pool.Exec(ctx, `UPDATE products SET images = ARRAY['https://other.example/coffee.jpg'] WHERE id = $1`, ext); err != nil {
@@ -481,6 +486,15 @@ func TestStorePhotosBackfill(t *testing.T) {
 	pearItem := newItem("Сок Bliss грушевый, 1 л", front)
 	pear := confirm(pearItem, "Сок Bliss грушевый, 1 л", front, true)
 	calls := gem.calls
+
+	// Сеть заблокировали — её фото не делаются.
+	setNetwork := func(storeID, status string) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, `UPDATE networks SET status = $2 WHERE id = (SELECT network_id FROM stores WHERE id = $1)`, storeID, status); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setNetwork(otherStore, "blocked")
 
 	// Лимит месяца почти кончился — старые фото ждут, запас — новым.
 	if _, err := pool.Exec(ctx, `UPDATE plans SET limits = limits || '{"ai_photos": 6}'`); err != nil {
@@ -515,6 +529,9 @@ func TestStorePhotosBackfill(t *testing.T) {
 	if imgs := images(ext); len(imgs) != 1 {
 		t.Fatalf("external = %v", imgs)
 	}
+	if imgs := images(blockedTea); len(imgs) != 1 {
+		t.Fatalf("blocked network = %v", imgs)
+	}
 	var backfilled int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM photo_jobs WHERE backfill AND status = 'done'`).Scan(&backfilled); err != nil || backfilled != 3 {
 		t.Fatalf("backfill jobs = %d %v", backfilled, err)
@@ -523,5 +540,43 @@ func TestStorePhotosBackfill(t *testing.T) {
 	backfill()
 	if gem.calls != calls+3 {
 		t.Fatalf("second backfill calls = %d", gem.calls)
+	}
+
+	// Сеть разблокировали — её старое фото тоже делается.
+	setNetwork(otherStore, "active")
+	backfill()
+	if imgs := images(blockedTea); gem.calls != calls+4 || len(imgs) != 2 || imgs[1] != label {
+		t.Fatalf("unblocked: calls %d, images %v", gem.calls, imgs)
+	}
+
+	// Задание ждало в очереди, а сеть заблокировали: старое фото уходит из
+	// очереди, новое — не делается.
+	var network string
+	if err := pool.QueryRow(ctx, `SELECT network_id FROM stores WHERE id = $1`, storeID).Scan(&network); err != nil {
+		t.Fatal(err)
+	}
+	key := strings.TrimPrefix(front, srv.URL+"/api/v1/media/")
+	var oldJob, newJob string
+	if err := pool.QueryRow(ctx, `INSERT INTO photo_jobs (network_id, store_id, product_id, sources, backfill) VALUES ($1, $2, $3, ARRAY[$4], true) RETURNING id`,
+		network, storeID, pear, key).Scan(&oldJob); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO photo_jobs (network_id, store_id, product_id, sources) VALUES ($1, $2, $3, ARRAY[$4]) RETURNING id`,
+		network, storeID, pear, key).Scan(&newJob); err != nil {
+		t.Fatal(err)
+	}
+	setNetwork(storeID, "blocked")
+	calls = gem.calls
+	app.Start.Photos.Kick()
+	var oldLeft int
+	var newStatus, newErr string
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM photo_jobs WHERE id = $1`, oldJob).Scan(&oldLeft); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT status, error FROM photo_jobs WHERE id = $1`, newJob).Scan(&newStatus, &newErr); err != nil {
+		t.Fatal(err)
+	}
+	if gem.calls != calls || oldLeft != 0 || newStatus != "skipped" || newErr != "off" {
+		t.Fatalf("blocked queue: calls %d → %d, old left %d, new %s/%s", calls, gem.calls, oldLeft, newStatus, newErr)
 	}
 }

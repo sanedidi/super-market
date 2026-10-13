@@ -186,6 +186,14 @@ func (s *PhotoService) Enqueue(ctx context.Context, q db.Querier, j StoreJob) (s
 	if !r.storeOn() || (j.Lines && !r.StoreLines) || (!j.Lines && !r.StoreNewItems) {
 		return "", nil
 	}
+	// Сеть заблокирована или магазин выключен — фото не делаются.
+	var active bool
+	if err := q.QueryRow(ctx, activeSQL, j.NetworkID, j.StoreID).Scan(&active); err != nil {
+		return "", err
+	}
+	if !active {
+		return "", nil
+	}
 	status, reason := JobQueued, ""
 	if s.Limit != nil {
 		limit, err := s.Limit(ctx, q, j.NetworkID)
@@ -332,9 +340,26 @@ func (s *PhotoService) RunQueued(ctx context.Context) {
 	}
 }
 
+// activeSQL — сеть не заблокирована и магазин (если есть) включён.
+const activeSQL = `SELECT EXISTS (SELECT 1 FROM networks WHERE id = $1 AND status = 'active')
+	AND NOT EXISTS (SELECT 1 FROM stores WHERE id = NULLIF($2, '')::uuid AND status <> 'active')`
+
+// inactiveJobSQL — задание сети, которую заблокировали, или выключенного магазина.
+const inactiveJobSQL = `(EXISTS (SELECT 1 FROM networks n WHERE n.id = photo_jobs.network_id AND n.status <> 'active')
+	OR EXISTS (SELECT 1 FROM stores st WHERE st.id = photo_jobs.store_id AND st.status <> 'active'))`
+
 // claim — взять задания в работу. Зависшие «processing» (сервер
-// перезапускали) берутся снова, пока не кончатся попытки.
+// перезапускали) берутся снова, пока не кончатся попытки. Сеть заблокировали
+// или магазин выключили, пока задание ждало, — не делаем: старое фото уходит
+// из очереди (разблокируют — возьмём снова), новое — skipped/off.
 func (s *PhotoService) claim(ctx context.Context, n int) ([]storeJob, error) {
+	waiting := `(status = 'queued' OR (status = 'processing' AND started_at < now() - $1::interval)) AND ` + inactiveJobSQL
+	if _, err := s.ai.pool.Exec(ctx, `DELETE FROM photo_jobs WHERE backfill AND `+waiting, storeJobStale.String()); err != nil {
+		return nil, err
+	}
+	if _, err := s.ai.pool.Exec(ctx, `UPDATE photo_jobs SET status = 'skipped', error = $2 WHERE `+waiting, storeJobStale.String(), SkipOff); err != nil {
+		return nil, err
+	}
 	if _, err := s.ai.pool.Exec(ctx, `
 		UPDATE photo_jobs SET status = 'failed', error = 'не успели сделать фото'
 		WHERE status = 'processing' AND started_at < now() - $1::interval AND attempts >= $2`,
@@ -345,7 +370,7 @@ func (s *PhotoService) claim(ctx context.Context, n int) ([]storeJob, error) {
 		UPDATE photo_jobs SET status = 'processing', started_at = now(), attempts = attempts + 1
 		WHERE id IN (
 			SELECT id FROM photo_jobs
-			WHERE status = 'queued' OR (status = 'processing' AND started_at < now() - $1::interval)
+			WHERE (status = 'queued' OR (status = 'processing' AND started_at < now() - $1::interval)) AND NOT `+inactiveJobSQL+`
 			ORDER BY backfill, created_at LIMIT $2 FOR UPDATE SKIP LOCKED)
 		RETURNING id, network_id, store_id, employee_id, new_item_id, product_id, sources, media_base, attempts`,
 		storeJobStale.String(), n)
