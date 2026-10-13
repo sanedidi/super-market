@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, App, Button, Card, Col, Flex, Input, InputNumber, Modal, Result, Row, Segmented, Space, Table, Tooltip, Typography, type InputRef } from 'antd'
+import { Alert, App, Button, Card, Col, Flex, Input, InputNumber, Modal, Pagination, Result, Row, Segmented, Space, Table, Tag, Tooltip, Typography, type InputRef, type TableColumnsType } from 'antd'
 import {
   ArrowRightOutlined,
   CameraOutlined,
@@ -30,10 +30,11 @@ import { ApiError, LoadError, PageTitle, api, errorText, money, plural, qty as f
 import { useStore } from '../../ctx'
 import { NeedStore } from '../../ui'
 import { docPaths } from '../StockDocs'
-import { plainNum, useStartApi, useStartRefresh, type Draft, type Line, type LineInput, type LinesResult, type NewItem, type PostResult, type SearchItem, type Similar } from './api'
+import { plainNum, useStartApi, useStartRefresh, type Draft, type Line, type LineInput, type LineVariant, type LinesResult, type NewItem, type PostResult, type SearchItem, type Similar } from './api'
 import { BarcodeModal, NewProductModal, PhotoModal, SimilarModal, sum } from './Modals'
 import { TasnifBlock, TasnifLink } from './Tasnif'
-import { NEW_PAGE, NewByPhotoModal, NewItemsList, ReviewModal, RightTabs, newItemState, useNewItems } from './NewItems'
+import { NEW_PAGE, NewByPhotoModal, NewItemsList, ReviewModal, RightTabs, newItemState, useNewItems, type RightTab } from './NewItems'
+import { OwnVariantsStart, useOwnGroups } from '../OwnVariants'
 import { CountDrawer, ScanCard } from './CountScan'
 import { Thumb } from './Thumb'
 
@@ -150,7 +151,9 @@ function StepGoods({ d, next }: { d: Draft; next: () => void }) {
   const [newOpen, setNewOpen] = useState(false)
   // «Новый товар»: сначала фото для Super Market, ручная форма — по ссылке.
   const [byPhoto, setByPhoto] = useState(false)
-  const [tab, setTab] = useState<'mine' | 'new'>('mine')
+  const [tab, setTab] = useState<RightTab>('mine')
+  // Группы вариаций своих товаров, которые ждут проверки (вкладка «Вариации»).
+  const variantsCount = useOwnGroups('proposed', 1).data?.total ?? 0
   const [freshPage, setFreshPage] = useState(1)
   const fresh = useNewItems(storeId, freshPage)
   const freshCount = fresh.data?.total ?? 0
@@ -168,7 +171,9 @@ function StepGoods({ d, next }: { d: Draft; next: () => void }) {
     if (prevSig.current && queueSig && prevSig.current !== queueSig) qc.invalidateQueries({ queryKey: ['/store/start'] })
     prevSig.current = queueSig
   }, [queueSig, qc])
-  const tabs = <RightTabs tab={tab} onTab={setTab} mine={d.totals.products} fresh={freshCount} ready={(fresh.data?.counts.ready ?? 0) > 0} />
+  const tabs = (
+    <RightTabs tab={tab} onTab={setTab} mine={d.totals.products} fresh={freshCount} ready={(fresh.data?.counts.ready ?? 0) > 0} variants={variantsCount} />
+  )
   // Повтор: подсвеченная строка «Моих товаров».
   const [highlight, setHighlight] = useState<string | null>(null)
   // Штрихкод уже в «Новых»: подсвеченная карточка и открытая проверка.
@@ -222,6 +227,10 @@ function StepGoods({ d, next }: { d: Draft; next: () => void }) {
                 page={freshPage}
                 onPage={setFreshPage}
               />
+            </Card>
+          ) : tab === 'variants' ? (
+            <Card title={tabs} styles={{ body: { padding: 0 } }}>
+              <OwnVariantsStart />
             </Card>
           ) : (
             <MyGoods highlight={highlight} title={tabs} />
@@ -718,7 +727,8 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
   // Товар, который открыт в шторке ввода (скан или поиск по названию).
   const [sheet, setSheet] = useState<Line | null>(null)
   useEffect(() => setPage(1), [only, storeId])
-  const params = { store_id: storeId, only: only || undefined, limit: PAGE + 1, offset: (page - 1) * PAGE }
+  // Сначала группы вариаций (группа → вес → вариант), потом обычные товары.
+  const params = { store_id: storeId, only: only || undefined, order: 'groups', limit: PAGE + 1, offset: (page - 1) * PAGE }
   const draft = useQuery({ queryKey: ['/store/start', params], queryFn: () => api.get<Draft>('/store/start', params), placeholderData: keepPreviousData })
   const t = draft.data?.totals ?? d.totals
   const raw = draft.data?.lines ?? []
@@ -880,91 +890,28 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
         styles={{ body: { padding: 0 } }}
       >
         <LoadError error={draft.error} retry={() => draft.refetch()} />
-        <Table<Line>
-          rowKey="product_id"
-          size="middle"
+        <LineTables
+          lines={lines}
           loading={draft.isLoading}
-          dataSource={lines}
-          scroll={{ x: 900 }}
-          rowClassName={(l) => (l.qty === null || l.price === null ? 'sm-start-unfilled' : '')}
-          pagination={
-            page > 1 || hasMore
-              ? { current: page, pageSize: PAGE, total: (page - 1) * PAGE + lines.length + (hasMore ? 1 : 0), onChange: setPage, showSizeChanger: false }
-              : false
-          }
-          locale={{ emptyText: only ? tr('Таких товаров нет', 'Bunday mahsulotlar yoʻq') : tr('Нет товаров — добавьте их на шаге 1', 'Mahsulotlar yoʻq — ularni 1-qadamda qoʻshing') }}
-          columns={[
-            { title: tr('Товар', 'Mahsulot'), key: 'name', render: (_, l) => <NameCell l={l} /> },
-            {
-              title: tr('Штрихкод', 'Shtrix-kod'),
-              key: 'barcode',
-              width: 140,
-              render: (_, l) => (
-                <Typography.Text type="secondary" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
-                  {l.barcode ?? '—'}
-                </Typography.Text>
-              ),
-            },
-            {
-              title: `${tr('Кол-во', 'Miqdor')} *`,
-              key: 'qty',
-              width: 130,
-              render: (_, l) => <NumCell value={l.qty} required placeholder={tr('обязательно', 'majburiy')} onSave={(v) => save(l, { qty: v })} />,
-            },
-            {
-              title: tr('Цена закупки', 'Xarid narxi'),
-              key: 'cost',
-              width: 140,
-              render: (_, l) => <NumCell value={l.cost} placeholder={tr('необязательно', 'ixtiyoriy')} onSave={(v) => save(l, { cost: v })} />,
-            },
-            {
-              title: `${tr('Цена продажи', 'Sotish narxi')} *`,
-              key: 'price',
-              width: 140,
-              render: (_, l) => (
-                <NumCell
-                  value={l.price}
-                  required
-                  placeholder={tr('обязательно', 'majburiy')}
-                  title={Number(l.current_price) > 0 ? tr(`В базе: ${money(l.current_price)}`, `Bazada: ${money(l.current_price)}`) : undefined}
-                  onSave={(v) => save(l, { price: v })}
-                />
-              ),
-            },
-            {
-              key: 'fill',
-              width: 44,
-              render: (_, l) => (
-                <Tooltip title={l.image ? tr('Количество и цены', 'Miqdor va narxlar') : tr('Нужно фото товара', 'Mahsulot rasmi kerak')}>
-                  <Button type="text" size="small" danger={!l.image} icon={l.image ? <RightOutlined /> : <CameraOutlined />} onClick={() => setSheet(l)} />
-                </Tooltip>
-              ),
-            },
-            {
-              key: 'del',
-              width: 44,
-              render: (_, l) => (
-                <Tooltip title={tr('Убрать из списка', 'Roʻyxatdan olib tashlash')}>
-                  <Button type="text" size="small" icon={<DeleteOutlined />} onClick={() => deleteLine(l.product_id).catch(() => {})} />
-                </Tooltip>
-              ),
-            },
-          ]}
-          footer={
-            lines.length
-              ? () => (
-                  <Flex justify="space-between" wrap gap={8}>
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      {tr(`Показано ${(page - 1) * PAGE + 1}–${(page - 1) * PAGE + lines.length}`, `Koʻrsatilgan: ${(page - 1) * PAGE + 1}–${(page - 1) * PAGE + lines.length}`)}
-                    </Typography.Text>
-                    <Typography.Text strong>
-                      {tr(`Итого: себестоимость ${sum(t.cost_total)} · продажа ${sum(t.price_total)}`, `Jami: tannarx ${sum(t.cost_total)} · sotish ${sum(t.price_total)}`)}
-                    </Typography.Text>
-                  </Flex>
-                )
-              : undefined
-          }
+          empty={only ? tr('Таких товаров нет', 'Bunday mahsulotlar yoʻq') : tr('Нет товаров — добавьте их на шаге 1', 'Mahsulotlar yoʻq — ularni 1-qadamda qoʻshing')}
+          save={save}
+          onSheet={setSheet}
+          onDelete={(l) => deleteLine(l.product_id).catch(() => {})}
+          refresh={refresh}
         />
+        {lines.length > 0 && (
+          <Flex justify="space-between" align="center" wrap gap={8} style={{ padding: '12px 16px', borderTop: '1px solid #EAECF0' }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {tr(`Показано ${(page - 1) * PAGE + 1}–${(page - 1) * PAGE + lines.length}`, `Koʻrsatilgan: ${(page - 1) * PAGE + 1}–${(page - 1) * PAGE + lines.length}`)}
+            </Typography.Text>
+            {(page > 1 || hasMore) && (
+              <Pagination size="small" current={page} pageSize={PAGE} total={(page - 1) * PAGE + lines.length + (hasMore ? 1 : 0)} onChange={setPage} showSizeChanger={false} />
+            )}
+            <Typography.Text strong>
+              {tr(`Итого: себестоимость ${sum(t.cost_total)} · продажа ${sum(t.price_total)}`, `Jami: tannarx ${sum(t.cost_total)} · sotish ${sum(t.price_total)}`)}
+            </Typography.Text>
+          </Flex>
+        )}
       </Card>
       <CountDrawer
         line={sheet}
@@ -976,6 +923,348 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
         }}
       />
     </>
+  )
+}
+
+// ------------------------------------------------ инвентаризация по группам
+
+/** Кусок страницы: группа вариаций подряд или обычные товары. */
+type Segment = { kind: 'group'; v: LineVariant; lines: Line[] } | { kind: 'plain'; lines: Line[] }
+
+function segments(lines: Line[]): Segment[] {
+  const out: Segment[] = []
+  for (const l of lines) {
+    const last = out[out.length - 1]
+    if (l.variant) {
+      if (last?.kind === 'group' && last.v.group_id === l.variant.group_id) last.lines.push(l)
+      else out.push({ kind: 'group', v: l.variant, lines: [l] })
+    } else if (last?.kind === 'plain') last.lines.push(l)
+    else out.push({ kind: 'plain', lines: [l] })
+  }
+  return out
+}
+
+const fold = (s: string) => s.trim().toLowerCase().replace(/ё/g, 'е')
+
+/** «4 вкуса», «3 цвета», иначе «Аромат: 3». */
+function counted(label: string, n: number) {
+  const l = label.toLowerCase()
+  if (l === 'вкус') return tr(`${n} ${plural(n, 'вкус', 'вкуса', 'вкусов')}`, `${n} ta taʼm`)
+  if (l === 'цвет') return tr(`${n} ${plural(n, 'цвет', 'цвета', 'цветов')}`, `${n} ta rang`)
+  if (l === 'вес') return tr(`${n} ${plural(n, 'вес', 'веса', 'весов')}`, `${n} ta vazn`)
+  return label ? `${label}: ${n}` : tr(`${n} ${plural(n, 'вариант', 'варианта', 'вариантов')}`, `${n} ta variant`)
+}
+
+/** «для всех вкусов» / «для всех цветов» / «для всех вариантов». */
+function forAll(label: string) {
+  const l = label.toLowerCase()
+  const ru = l === 'вкус' ? 'вкусов' : l === 'цвет' ? 'цветов' : l === 'аромат' ? 'ароматов' : l === 'размер' ? 'размеров' : 'вариантов'
+  return tr(`для всех ${ru}`, 'barcha variantlar uchun')
+}
+
+/** «Все цвета» / «Все вкусы» / «Все варианты» — строка цены группы без веса. */
+function allOf(label: string) {
+  const l = label.toLowerCase()
+  const ru = l === 'вкус' ? 'вкусы' : l === 'цвет' ? 'цвета' : l === 'аромат' ? 'ароматы' : l === 'размер' ? 'размеры' : 'варианты'
+  return tr(`Все ${ru}`, 'Barcha variantlar')
+}
+
+/** Общая цена строк без «своей цены»; null — разные или ещё не введены. */
+function commonPrice(lines: Line[]): string | null {
+  let common: string | null = null
+  for (const l of lines) {
+    if (l.variant?.own_price) continue
+    if (l.price === null) return null
+    if (common === null) common = l.price
+    else if (Number(common) !== Number(l.price)) return null
+  }
+  return common
+}
+
+type GRow = { key: string; head?: { label: string; lines: Line[] }; line?: Line }
+
+/**
+ * Строки инвентаризации таблицами друг над другом (Figma «Вариации своих
+ * товаров», В3): группа вариаций — своя таблица с колонками своих
+ * переключателей, цена продажи — один раз на вес (или на группу, если веса
+ * нет), количество — у каждого варианта; обычные товары — последней таблицей.
+ */
+function LineTables({
+  lines,
+  loading,
+  empty,
+  save,
+  onSheet,
+  onDelete,
+  refresh,
+}: {
+  lines: Line[]
+  loading: boolean
+  empty: string
+  save: (l: Line, patch: Omit<LineInput, 'product_id'>) => Promise<unknown>
+  onSheet: (l: Line) => void
+  onDelete: (l: Line) => void
+  refresh: () => Promise<unknown>
+}) {
+  const { storeId } = useStore()
+  const { message } = App.useApp()
+  const segs = segments(lines)
+  const call = async (p: Promise<unknown>) => {
+    try {
+      await p
+    } catch (e) {
+      message.error(errorText(e))
+      throw e
+    } finally {
+      await refresh()
+    }
+  }
+  const groupPrice = (v: LineVariant, weight: string, price: string | null) =>
+    price === null ? Promise.resolve() : call(api.post('/store/start/group-price', { store_id: storeId, group_id: v.group_id, weight, price }))
+  const ownPrice = (l: Line, own: boolean, price?: string | null) =>
+    call(api.post(`/store/start/lines/${l.product_id}/own-price`, { store_id: storeId, own, price: price ?? undefined }))
+
+  const unfilled = (l: Line) => l.qty === null || l.price === null
+  const tail: TableColumnsType<GRow> = [
+    {
+      title: tr('Штрихкод', 'Shtrix-kod'),
+      key: 'barcode',
+      width: 140,
+      render: (_, r) =>
+        r.line && (
+          <Typography.Text type="secondary" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
+            {r.line.barcode ?? '—'}
+          </Typography.Text>
+        ),
+    },
+    {
+      title: `${tr('Кол-во', 'Miqdor')} *`,
+      key: 'qty',
+      width: 130,
+      render: (_, r) => r.line && <NumCell value={r.line.qty} required placeholder={tr('обязательно', 'majburiy')} onSave={(v) => save(r.line!, { qty: v })} />,
+    },
+    {
+      title: tr('Цена закупки', 'Xarid narxi'),
+      key: 'cost',
+      width: 140,
+      render: (_, r) => r.line && <NumCell value={r.line.cost} placeholder={tr('необязательно', 'ixtiyoriy')} onSave={(v) => save(r.line!, { cost: v })} />,
+    },
+  ]
+  const actions: TableColumnsType<GRow> = [
+    {
+      key: 'fill',
+      width: 44,
+      render: (_, r) =>
+        r.line && (
+          <Tooltip title={r.line.image ? tr('Количество и цены', 'Miqdor va narxlar') : tr('Нужно фото товара', 'Mahsulot rasmi kerak')}>
+            <Button type="text" size="small" danger={!r.line.image} icon={r.line.image ? <RightOutlined /> : <CameraOutlined />} onClick={() => onSheet(r.line!)} />
+          </Tooltip>
+        ),
+    },
+    {
+      key: 'del',
+      width: 44,
+      render: (_, r) =>
+        r.line && (
+          <Tooltip title={tr('Убрать из списка', 'Roʻyxatdan olib tashlash')}>
+            <Button type="text" size="small" icon={<DeleteOutlined />} onClick={() => onDelete(r.line!)} />
+          </Tooltip>
+        ),
+    },
+  ]
+  const plainPrice: TableColumnsType<GRow>[number] = {
+    title: `${tr('Цена продажи', 'Sotish narxi')} *`,
+    key: 'price',
+    width: 150,
+    render: (_, r) =>
+      r.line && (
+        <NumCell
+          value={r.line.price}
+          required
+          placeholder={tr('обязательно', 'majburiy')}
+          title={Number(r.line.current_price) > 0 ? tr(`В базе: ${money(r.line.current_price)}`, `Bazada: ${money(r.line.current_price)}`) : undefined}
+          onSave={(v) => save(r.line!, { price: v })}
+        />
+      ),
+  }
+  const table = (rows: GRow[], columns: TableColumnsType<GRow>) => (
+    <Table<GRow>
+      rowKey="key"
+      size="middle"
+      dataSource={rows}
+      columns={columns}
+      pagination={false}
+      scroll={{ x: 900 }}
+      rowClassName={(r) => (r.line && unfilled(r.line) ? 'sm-start-unfilled' : r.head ? 'sm-variant-weight' : '')}
+      onRow={(r) => (r.head ? { style: { background: '#FCFCFD' } } : {})}
+    />
+  )
+
+  if (loading && lines.length === 0) return table([], [{ key: 'x', title: tr('Товар', 'Mahsulot') }])
+  if (lines.length === 0)
+    return (
+      <Typography.Paragraph type="secondary" style={{ padding: 24, margin: 0, textAlign: 'center' }}>
+        {empty}
+      </Typography.Paragraph>
+    )
+  const many = segs.length > 1
+  return (
+    <Flex vertical gap={16} style={{ padding: many ? 16 : 0 }}>
+      {segs.map((seg, i) => {
+        if (seg.kind === 'plain') {
+          const rows = seg.lines.map((l) => ({ key: l.product_id, line: l }))
+          const cols: TableColumnsType<GRow> = [{ title: tr('Товар', 'Mahsulot'), key: 'name', render: (_, r) => r.line && <NameCell l={r.line} /> }, ...tail, plainPrice, ...actions]
+          return many ? (
+            <Card key={`plain-${i}`} size="small" title={tr('Товары без вариаций', 'Variatsiyasiz mahsulotlar')} styles={{ body: { padding: 0 } }}>
+              {table(rows, cols)}
+            </Card>
+          ) : (
+            <div key={`plain-${i}`}>{table(rows, cols)}</div>
+          )
+        }
+        const v = seg.v
+        const hasWeight = !!v.weight_label
+        // Строки группы: заголовок веса (или «Все цвета» без веса), под ним варианты.
+        const rows: GRow[] = []
+        if (hasWeight) {
+          let cur: GRow | null = null
+          for (const l of seg.lines) {
+            const w = l.variant?.weight ?? ''
+            if (!cur || fold(cur.head!.label) !== fold(w)) {
+              cur = { key: `w-${v.group_id}-${w}`, head: { label: w, lines: [] } }
+              rows.push(cur)
+            }
+            cur.head!.lines.push(l)
+            rows.push({ key: l.product_id, line: l })
+          }
+        } else {
+          rows.push({ key: `all-${v.group_id}`, head: { label: '', lines: seg.lines } })
+          for (const l of seg.lines) rows.push({ key: l.product_id, line: l })
+        }
+        const weights = new Set(seg.lines.map((l) => fold(l.variant?.weight ?? ''))).size
+        const sub = [
+          tr('Переключатели', 'Almashtirgichlar') + ': ' + [v.weight_label, v.flavor_label].filter(Boolean).join(' → '),
+          hasWeight ? counted(v.weight_label, weights) : null,
+          v.flavor_label ? counted(v.flavor_label, seg.lines.length) : null,
+          hasWeight ? null : tr('цена одна на группу', 'narx guruh uchun bitta'),
+        ]
+          .filter(Boolean)
+          .join(' · ')
+        const firstTitle = [v.weight_label, v.flavor_label].filter(Boolean).join(' · ') || tr('Товар', 'Mahsulot')
+        const cols: TableColumnsType<GRow> = [
+          {
+            title: firstTitle,
+            key: 'name',
+            render: (_, r) => {
+              if (r.head) {
+                return (
+                  <Flex align="center" gap={8}>
+                    <Typography.Text strong>{r.head.label || allOf(v.flavor_label)}</Typography.Text>
+                    {hasWeight && v.flavor_label && (
+                      <Tag bordered={false} style={{ marginInlineEnd: 0 }}>
+                        {counted(v.flavor_label, r.head.lines.length)}
+                      </Tag>
+                    )}
+                  </Flex>
+                )
+              }
+              const l = r.line!
+              return (
+                <Flex align="center" gap={10} style={{ paddingLeft: 20 }}>
+                  <Thumb src={l.image} size={32} />
+                  <div style={{ minWidth: 0 }}>
+                    <Typography.Text style={{ fontWeight: 600 }}>{l.variant?.flavor || l.variant?.weight || l.name}</Typography.Text>
+                    <Typography.Text type="secondary" style={{ display: 'block', fontSize: 12 }}>
+                      {l.name}
+                      {l.own ? ` · ${tr('свой', 'oʻziniki')}` : ''}
+                    </Typography.Text>
+                  </div>
+                </Flex>
+              )
+            },
+          },
+          ...tail.map((c) => ({ ...c })),
+          {
+            title: `${tr('Цена продажи', 'Sotish narxi')} *`,
+            key: 'price',
+            width: 170,
+            render: (_, r) => {
+              if (r.head) {
+                const common = commonPrice(r.head.lines)
+                const mixed = common === null && r.head.lines.some((l) => !l.variant?.own_price && l.price !== null)
+                return (
+                  <div>
+                    <NumCell
+                      value={common}
+                      required={!mixed}
+                      placeholder={mixed ? tr('разные цены', 'turli narxlar') : tr('обязательно', 'majburiy')}
+                      onSave={(p) => groupPrice(v, r.head!.label, p)}
+                    />
+                    <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                      {forAll(v.flavor_label)}
+                    </Typography.Text>
+                  </div>
+                )
+              }
+              const l = r.line!
+              const own = !!l.variant?.own_price
+              const where = hasWeight ? tr(`как у ${l.variant?.weight}`, `${l.variant?.weight} kabi`) : tr('как у группы', 'guruhdagidek')
+              return (
+                <div>
+                  <NumCell
+                    value={l.price}
+                    required
+                    placeholder={tr('обязательно', 'majburiy')}
+                    title={own ? undefined : tr('Другая цена — станет «своей ценой» этого варианта', 'Boshqa narx — bu variantning «oʻz narxi» boʻladi')}
+                    onSave={(p) => (own ? save(l, { price: p }) : ownPrice(l, true, p))}
+                  />
+                  {own ? (
+                    <Typography.Text style={{ fontSize: 11, color: '#B54708' }}>
+                      {tr('своя цена', 'oʻz narxi')} ·{' '}
+                      <a onClick={() => ownPrice(l, false).catch(() => {})}>{hasWeight ? tr('вернуть цену веса', 'vazn narxini qaytarish') : tr('вернуть цену группы', 'guruh narxini qaytarish')}</a>
+                    </Typography.Text>
+                  ) : (
+                    <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                      {where}
+                    </Typography.Text>
+                  )}
+                </div>
+              )
+            },
+          },
+          ...actions,
+        ]
+        return (
+          <Card
+            key={`g-${v.group_id}-${i}`}
+            size="small"
+            styles={{ body: { padding: 0 } }}
+            title={
+              <Flex align="center" gap={10} style={{ padding: '6px 0' }}>
+                <Flex align="center" justify="center" style={{ width: 30, height: 30, borderRadius: 8, background: '#FEF3F2', color: '#E11D2A', fontWeight: 800, flex: 'none' }}>
+                  {v.group_name.trim().charAt(0).toUpperCase() || '?'}
+                </Flex>
+                <div>
+                  <Flex align="center" gap={8} wrap>
+                    <Typography.Text strong style={{ fontSize: 14 }}>
+                      {v.group_name}
+                    </Typography.Text>
+                    <Tag color="blue" bordered={false} style={{ marginInlineEnd: 0 }}>
+                      {tr('Группа вариаций', 'Variatsiyalar guruhi')}
+                    </Tag>
+                  </Flex>
+                  <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
+                    {sub}
+                  </Typography.Text>
+                </div>
+              </Flex>
+            }
+          >
+            {table(rows, cols)}
+          </Card>
+        )
+      })}
+    </Flex>
   )
 }
 

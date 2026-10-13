@@ -28,6 +28,8 @@ func (m *Module) Routes(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppStore))
 		r.Get("/", m.get)
 		r.Post("/lines", m.lines)
+		r.Post("/group-price", m.groupPrice)
+		r.Post("/lines/{product_id}/own-price", m.ownPrice)
 		r.Delete("/lines/{product_id}", m.deleteLine)
 		r.Post("/post", m.post)
 		r.Get("/search", m.search)
@@ -65,7 +67,7 @@ func (m *Module) urls(r *http.Request) func(Photo, error) (Photo, error) {
 func (m *Module) get(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (Draft, error) {
 		q := r.URL.Query()
-		f := Filter{Query: q.Get("q"), Only: q.Get("only")}
+		f := Filter{Query: q.Get("q"), Only: q.Get("only"), Order: q.Get("order")}
 		f.Limit, _ = strconv.Atoi(q.Get("limit"))
 		f.Offset, _ = strconv.Atoi(q.Get("offset"))
 		return m.svc.Get(r.Context(), pr(r), q.Get("store_id"), f)
@@ -249,5 +251,17 @@ type linePhotoInput struct {
 func (m *Module) linePhoto(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "product_id", func(id string, in linePhotoInput) (LinesResult, error) {
 		return m.svc.SetPhoto(r.Context(), pr(r), in.StoreID, id, in.Images)
+	})
+}
+
+func (m *Module) groupPrice(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in GroupPriceInput) (LinesResult, error) {
+		return m.svc.SetGroupPrice(r.Context(), pr(r), in)
+	})
+}
+
+func (m *Module) ownPrice(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "product_id", func(id string, in OwnPriceInput) (LinesResult, error) {
+		return m.svc.SetOwnPrice(r.Context(), pr(r), id, in)
 	})
 }

@@ -74,9 +74,25 @@ export function useNewItems(storeId: string, page: number) {
   })
 }
 
-/** Заголовок-вкладка правой колонки: «Мои товары · N» | «Требуют внимания · M». */
-export function RightTabs({ tab, onTab, mine, fresh, ready }: { tab: 'mine' | 'new'; onTab: (t: 'mine' | 'new') => void; mine: number; fresh: number; ready: boolean }) {
-  const item = (key: 'mine' | 'new', label: ReactNode) => (
+/** Заголовок-вкладка правой колонки: «Мои товары · N» | «Требуют внимания · M» | «Вариации · K». */
+export type RightTab = 'mine' | 'new' | 'variants'
+export function RightTabs({
+  tab,
+  onTab,
+  mine,
+  fresh,
+  ready,
+  variants = 0,
+}: {
+  tab: RightTab
+  onTab: (t: RightTab) => void
+  mine: number
+  fresh: number
+  ready: boolean
+  /** Сколько групп вариаций ждут проверки (Figma «Вариации своих товаров», В2). */
+  variants?: number
+}) {
+  const item = (key: RightTab, label: ReactNode) => (
     <span
       role="button"
       onClick={() => onTab(key)}
@@ -94,6 +110,14 @@ export function RightTabs({ tab, onTab, mine, fresh, ready }: { tab: 'mine' | 'n
           <>
             {tr('Требуют внимания', 'Eʼtibor talab qiladi')} · {fresh}
             {ready && <span style={{ width: 8, height: 8, borderRadius: 4, background: '#E11D2A', display: 'inline-block' }} />}
+          </>,
+        )}
+      {(variants > 0 || tab === 'variants') &&
+        item(
+          'variants',
+          <>
+            {tr('Вариации', 'Variatsiyalar')} · {variants}
+            {variants > 0 && <span style={{ width: 8, height: 8, borderRadius: 4, background: PURPLE, display: 'inline-block' }} />}
           </>,
         )}
     </Flex>

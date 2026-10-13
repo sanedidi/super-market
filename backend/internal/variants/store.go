@@ -77,7 +77,8 @@ func (s *Service) StoreGroup(ctx context.Context, pr *identity.Principal, groupI
 	err = s.pool.QueryRow(ctx, `
 		SELECT loc(g.name, g.name_uz), b.name, loc(g.weight_label, g.weight_label_uz), loc(g.flavor_label, g.flavor_label_uz)
 		FROM variant_groups g LEFT JOIN brands b ON b.id = g.brand_id
-		WHERE g.id = $1 AND g.status = 'confirmed'`, groupID).Scan(&out.Name, &out.BrandName, &out.WeightLabel, &out.FlavorLabel)
+		WHERE g.id = $1 AND g.status = 'confirmed' AND (g.network_id IS NULL OR g.network_id = $2)`, groupID, pr.NetworkID).
+		Scan(&out.Name, &out.BrandName, &out.WeightLabel, &out.FlavorLabel)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return out, apperr.NotFound("группа не найдена").Uz("guruh topilmadi")
 	}
@@ -94,8 +95,8 @@ func (s *Service) StoreGroup(ctx context.Context, pr *identity.Principal, groupI
 		FROM products p
 		LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = $3 AND sp.store_id = $2
 		LEFT JOIN prices np ON np.product_id = p.id AND np.price_type_id = $3 AND np.store_id IS NULL
-		WHERE p.variant_group_id = $1 AND p.is_active
-		ORDER BY p.variant_weight_sort, p.variant_weight, p.variant_sort, p.name`, groupID, storeID, typeID, wh)
+		WHERE p.variant_group_id = $1 AND p.is_active AND (p.network_id IS NULL OR p.network_id = $5)
+		ORDER BY p.variant_weight_sort, p.variant_weight, p.variant_sort, p.name`, groupID, storeID, typeID, wh, pr.NetworkID)
 	if err != nil {
 		return out, err
 	}

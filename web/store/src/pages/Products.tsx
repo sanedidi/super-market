@@ -2,13 +2,14 @@
 // Центральная база видна только в поиске при добавлении («Начало работы»,
 // приход, установка цен); свои товары сети уходят на модерацию.
 import { useState } from 'react'
-import { Alert, Button, Card, Col, Form, Input, Modal, Radio, Row, Select, Space, Table, Tag, Tooltip, Typography, type TableColumnType } from 'antd'
+import { Alert, Button, Card, Col, Form, Input, Modal, Radio, Row, Select, Space, Table, Tabs, Tag, Tooltip, Typography, type TableColumnType } from 'antd'
 import { InfoCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import { DeleteButton, FormTranslate, ImageUpload, LoadError, PageTitle, ProductTree, ProductViewSwitch, RemoteSelect, api, getLang, interactive, money, tr, useAction, usePaged, useProductView } from '@sm/shared'
 import { useStore } from '../ctx'
 import { Num } from '../ui'
 import type { DictItem, Product } from '../types'
 import { FlavorMenu, childrenOf, useVariantGroups, variantNameCell, variantPriceCell, variantStockCell, type VRow } from './variants'
+import { OwnVariantsTab, useOwnGroups } from './OwnVariants'
 
 // Для редактирования API отдаёт ещё и сырые названия на обоих языках.
 type ProductEdit = Product & { name_ru?: string; name_uz?: string; description_ru?: string; description_uz?: string }
@@ -49,6 +50,9 @@ function spanLoading(cols: TableColumnType<VRow>[]): TableColumnType<VRow>[] {
 }
 
 export function ProductsPage() {
+  // Вкладки «Товары» и «Вариации» (Figma «Панель магазина · Вариации своих товаров», В1).
+  const [tab, setTab] = useState<'goods' | 'variants'>('goods')
+  const proposed = useOwnGroups('proposed', 1).data?.counts.proposed ?? 0
   const { storeId, can } = useStore()
   const [q, setQ] = useState('')
   const [categoryId, setCategoryId] = useState<string>()
@@ -179,8 +183,27 @@ export function ProductsPage() {
     <>
       <PageTitle
         title={tr('Товары', 'Mahsulotlar')}
+        tabs={
+          <Tabs
+            activeKey={tab}
+            onChange={(k) => setTab(k as 'goods' | 'variants')}
+            items={[
+              { key: 'goods', label: tr('Товары', 'Mahsulotlar') },
+              {
+                key: 'variants',
+                label: (
+                  <span>
+                    {tr('Вариации', 'Variatsiyalar')}
+                    {proposed > 0 && <Tag color="purple" bordered={false} style={{ marginLeft: 6, marginInlineEnd: 0 }}>{proposed}</Tag>}
+                  </span>
+                ),
+              },
+            ]}
+          />
+        }
         extra={
-          manage && (
+          manage &&
+          tab === 'goods' && (
             <Button
               type="primary"
               icon={<PlusOutlined />}
@@ -194,61 +217,71 @@ export function ProductsPage() {
           )
         }
       >
-        <Input.Search placeholder={tr('Название или штрихкод', 'Nomi yoki shtrix-kod')} allowClear onSearch={setQ} style={{ width: 240 }} />
-        <RemoteSelect<DictItem> path="/store/catalog/categories" value={categoryId} onChange={setCategoryId} allowClear placeholder={tr('Все категории', 'Barcha kategoriyalar')} />
-        <ProductViewSwitch value={view} onChange={setView} />
-      </PageTitle>
-      <Typography.Paragraph type="secondary" style={{ marginTop: -4 }}>
-        {tr(
-          'Только товары, которые есть в магазине. Новые попадают сюда сами — с приходом, инвентаризацией или установкой цен магазина.',
-          'Faqat doʻkonda bor mahsulotlar. Yangilari bu yerga oʻzi tushadi — kirim, inventarizatsiya yoki doʻkon narxini belgilash bilan.',
+        {tab === 'goods' && (
+          <>
+            <Input.Search placeholder={tr('Название или штрихкод', 'Nomi yoki shtrix-kod')} allowClear onSearch={setQ} style={{ width: 240 }} />
+            <RemoteSelect<DictItem> path="/store/catalog/categories" value={categoryId} onChange={setCategoryId} allowClear placeholder={tr('Все категории', 'Barcha kategoriyalar')} />
+            <ProductViewSwitch value={view} onChange={setView} />
+          </>
         )}
-      </Typography.Paragraph>
-      {view === 'tree' ? (
-        <ProductTree<Product, VRow>
-          groupsPath="/store/products/groups"
-          itemsPath="/store/products"
-          params={params}
-          columns={treeColumns}
-          mapItems={variants.build}
-          childrenOf={childrenOf}
-          onExpandItem={(r, isOpen) => isOpen && r.kind === 'group' && variants.load(r.groupId)}
-          pendingText={(n) => tr(`Свои на модерации: ${n}`, `Moderatsiyadagi oʻz mahsulotlar: ${n}`)}
-        />
+      </PageTitle>
+      {tab === 'variants' ? (
+        <OwnVariantsTab />
       ) : (
         <>
-          <LoadError error={list.error} retry={() => list.refetch()} />
-          <Card styles={{ body: { padding: 0 } }} className="sm-tree">
-            <Table<VRow>
-              rowKey="id"
-              loading={list.isLoading || list.isFetching}
-              dataSource={rows}
-              scroll={{ x: true }}
-              pagination={list.pagination}
-              columns={listColumns}
-              rowClassName={(r) => `sm-variant-${r.kind}`}
-              onRow={(r) =>
-                r.kind === 'group' || r.kind === 'weight'
-                  ? {
-                      onClick: (e) => {
-                        if (!interactive(e.target)) toggle(r)
-                      },
-                      style: { cursor: 'pointer' },
-                    }
-                  : {}
-              }
-              expandable={{ expandedRowKeys: expanded, onExpand: (_, r) => toggle(r), indentSize: 28 }}
+          <Typography.Paragraph type="secondary" style={{ marginTop: -4 }}>
+            {tr(
+              'Только товары, которые есть в магазине. Новые попадают сюда сами — с приходом, инвентаризацией или установкой цен магазина.',
+              'Faqat doʻkonda bor mahsulotlar. Yangilari bu yerga oʻzi tushadi — kirim, inventarizatsiya yoki doʻkon narxini belgilash bilan.',
+            )}
+          </Typography.Paragraph>
+          {view === 'tree' ? (
+            <ProductTree<Product, VRow>
+              groupsPath="/store/products/groups"
+              itemsPath="/store/products"
+              params={params}
+              columns={treeColumns}
+              mapItems={variants.build}
+              childrenOf={childrenOf}
+              onExpandItem={(r, isOpen) => isOpen && r.kind === 'group' && variants.load(r.groupId)}
+              pendingText={(n) => tr(`Свои на модерации: ${n}`, `Moderatsiyadagi oʻz mahsulotlar: ${n}`)}
             />
-          </Card>
+          ) : (
+            <>
+              <LoadError error={list.error} retry={() => list.refetch()} />
+              <Card styles={{ body: { padding: 0 } }} className="sm-tree">
+                <Table<VRow>
+                  rowKey="id"
+                  loading={list.isLoading || list.isFetching}
+                  dataSource={rows}
+                  scroll={{ x: true }}
+                  pagination={list.pagination}
+                  columns={listColumns}
+                  rowClassName={(r) => `sm-variant-${r.kind}`}
+                  onRow={(r) =>
+                    r.kind === 'group' || r.kind === 'weight'
+                      ? {
+                          onClick: (e) => {
+                            if (!interactive(e.target)) toggle(r)
+                          },
+                          style: { cursor: 'pointer' },
+                        }
+                      : {}
+                  }
+                  expandable={{ expandedRowKeys: expanded, onExpand: (_, r) => toggle(r), indentSize: 28 }}
+                />
+              </Card>
+            </>
+          )}
+          <Typography.Paragraph type="secondary" style={{ marginTop: 12, fontSize: 12 }}>
+            <InfoCircleOutlined />{' '}
+            {tr(
+              'В группе вариаций цена ставится на вес (объём, размер…) или на всю группу — все варианты её наследуют. «Своя цена» — в меню строки варианта. Остаток — по каждому варианту.',
+              'Variatsiyalar guruhida narx vaznga (hajm, oʻlcham…) yoki butun guruhga qoʻyiladi — barcha variantlar uni oladi. «Oʻz narxi» — variant qatori menyusida. Qoldiq — har bir variant boʻyicha.',
+            )}
+          </Typography.Paragraph>
         </>
       )}
-      <Typography.Paragraph type="secondary" style={{ marginTop: 12, fontSize: 12 }}>
-        <InfoCircleOutlined />{' '}
-        {tr(
-          'В группе вариаций цена ставится на вес (объём, размер…) или на всю группу — все варианты её наследуют. «Своя цена» — в меню строки варианта. Остаток — по каждому варианту.',
-          'Variatsiyalar guruhida narx vaznga (hajm, oʻlcham…) yoki butun guruhga qoʻyiladi — barcha variantlar uni oladi. «Oʻz narxi» — variant qatori menyusida. Qoldiq — har bir variant boʻyicha.',
-        )}
-      </Typography.Paragraph>
       <ProductModal open={open} editing={editing} onClose={() => setOpen(false)} />
     </>
   )

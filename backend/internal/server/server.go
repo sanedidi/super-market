@@ -109,19 +109,23 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 	catSvc := catalog.NewService(pool)
 	tenantSvc := tenant.NewService(pool)
 	startSvc := start.NewService(pool, aiSvc, mediaSvc, invSvc, catSvc, log)
+	varSvc := variants.NewService(pool, catSvc, aiSvc, log)
 	if InvoicesSync {
 		scans.Sync()
 		startSvc.Sync()
 	} else {
 		// Карточки «Новых», распознанные до автодобавления, — в «Мои товары».
 		startSvc.SweepNewItems()
+		// Группы вариаций своих товаров: раз в день и после «Провести все».
+		varSvc.StartDaily()
+		startSvc.OnOwnAdded = func(networkID string) { varSvc.StartNetSuggest(context.Background(), networkID) }
 	}
 	h := httpx.NewRouter(log, pool,
 		identity.NewModule(idSvc, auth, log),
 		tenant.NewModule(tenantSvc, auth, log),
 		setup.NewModule(setup.NewService(pool, tenantSvc, dlv), auth, log),
 		catalog.NewModule(catSvc, auth, log),
-		variants.NewModule(variants.NewService(pool, catSvc, aiSvc, log), auth, log),
+		variants.NewModule(varSvc, auth, log),
 		finance.NewModule(finance.NewService(pool), auth, log),
 		inventory.NewModule(invSvc, auth, log),
 		sales.NewModule(salesSvc, auth, log),

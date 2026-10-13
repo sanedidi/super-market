@@ -228,6 +228,9 @@ func (s *Service) ConfirmAllNewItems(ctx context.Context, p *identity.Principal,
 			}
 		}
 	}
+	if out.Added > 0 && s.OnOwnAdded != nil {
+		s.OnOwnAdded(p.NetworkID)
+	}
 	out.Remaining = out.Ready - out.Added
 	if tried < limit {
 		// Прошли все — что не провелось, остаётся магазину.

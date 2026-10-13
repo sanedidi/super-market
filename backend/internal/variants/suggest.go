@@ -46,6 +46,11 @@ type bucket struct {
 	brandID, brand    string
 	categoryID, catNm string
 	ids, names        []string
+	// Для своих товаров сети: сеть и товары общего каталога из уже
+	// подтверждённых групп той же марки и категории (id → группа) — свой
+	// товар может войти в такую группу.
+	network *string
+	base    map[string]string
 }
 
 func (s *Service) Suggest(ctx context.Context, in SuggestInput) (SuggestResult, error) {
@@ -157,7 +162,7 @@ func (s *Service) askAI(ctx context.Context, conn ai.Conn, b bucket) ([]proposal
 	ans, u, err := conn.GroupVariants(actx, ask)
 	cancel()
 	if u.Input+u.Output > 0 || err == nil {
-		if rerr := s.ai.Record(context.WithoutCancel(ctx), ai.UsageRecord{Kind: "variants", Provider: conn.Provider,
+		if rerr := s.ai.Record(context.WithoutCancel(ctx), ai.UsageRecord{Kind: "variants", NetworkID: b.network, Provider: conn.Provider,
 			Model: conn.Model, Usage: u, OK: err == nil}); rerr != nil {
 			s.log.Error("ai usage", "kind", "variants", "err", rerr)
 		}

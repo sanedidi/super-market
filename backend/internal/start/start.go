@@ -54,6 +54,9 @@ type Service struct {
 	log   *slog.Logger
 	// run — распознавание фото (в тестах — синхронно).
 	run func(func())
+	// OnOwnAdded — в сеть добавились свои товары («Провести все»): Super
+	// Market ищет среди них группы вариаций.
+	OnOwnAdded func(networkID string)
 }
 
 func NewService(pool *pgxpool.Pool, aiSvc *ai.Service, mediaSvc *media.Service, inv *inventory.Service, cat *catalog.Service, log *slog.Logger) *Service {
@@ -126,6 +129,21 @@ type Line struct {
 	Moderation   string    `json:"moderation"`
 	Posted       bool      `json:"posted"`
 	AddedAt      time.Time `json:"added_at"`
+	// Variant — товар в подтверждённой группе вариаций: инвентаризация
+	// показывает группу своей таблицей, цена ставится на вес (или на группу).
+	Variant *LineVariant `json:"variant"`
+}
+
+// LineVariant — место товара в группе вариаций.
+type LineVariant struct {
+	GroupID     string `json:"group_id"`
+	GroupName   string `json:"group_name"`
+	WeightLabel string `json:"weight_label"`
+	FlavorLabel string `json:"flavor_label"`
+	Weight      string `json:"weight"`
+	Flavor      string `json:"flavor"`
+	// OwnPrice — «своя цена»: цена веса этот товар не меняет.
+	OwnPrice bool `json:"own_price"`
 }
 
 type Totals struct {
@@ -166,6 +184,9 @@ type Filter struct {
 	Only   string // unfilled | no_cost | new
 	Limit  int
 	Offset int
+	// Order — "groups": сначала группы вариаций (группа → вес → вариант),
+	// потом обычные товары — инвентаризация показывает группу своей таблицей.
+	Order string
 }
 
 // openDraft — открытый черновик склада (nil — ещё не начат).
@@ -186,18 +207,35 @@ const lineSelect = `
 	       (SELECT min(pb.barcode) FROM product_barcodes pb WHERE pb.product_id = p.id),
 	       trim_scale(l.qty)::text, trim_scale(l.cost)::text, l.price::text,
 	       COALESCE(sp.price, np.price, p.base_price)::text,
-	       l.source, p.network_id IS NOT NULL, p.moderation_status, l.document_id IS NOT NULL, l.added_at
+	       l.source, p.network_id IS NOT NULL, p.moderation_status, l.document_id IS NOT NULL, l.added_at,
+	       vg.id, loc(vg.name, vg.name_uz), loc(vg.weight_label, vg.weight_label_uz), loc(vg.flavor_label, vg.flavor_label_uz),
+	       loc(p.variant_weight, p.variant_weight_uz), loc(p.variant_flavor, p.variant_flavor_uz),
+	       EXISTS (SELECT 1 FROM variant_own_prices o WHERE o.store_id = $3 AND o.product_id = p.id)
 	FROM start_lines l
 	JOIN products p ON p.id = l.product_id
 	JOIN units u ON u.id = p.unit_id
+	LEFT JOIN variant_groups vg ON vg.id = p.variant_group_id AND vg.status = 'confirmed'
 	LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = $2 AND sp.store_id = $3
 	LEFT JOIN prices np ON np.product_id = p.id AND np.price_type_id = $2 AND np.store_id IS NULL`
 
 func scanLine(row pgx.CollectableRow) (Line, error) {
 	var l Line
+	var gid, gname, wl, fl, w, f *string
+	var own bool
 	err := row.Scan(&l.ProductID, &l.Name, &l.Image, &l.UnitShort, &l.IsFractional, &l.Barcode, &l.Qty, &l.Cost, &l.Price,
-		&l.CurrentPrice, &l.Source, &l.Own, &l.Moderation, &l.Posted, &l.AddedAt)
+		&l.CurrentPrice, &l.Source, &l.Own, &l.Moderation, &l.Posted, &l.AddedAt, &gid, &gname, &wl, &fl, &w, &f, &own)
+	if err == nil && gid != nil {
+		l.Variant = &LineVariant{GroupID: *gid, GroupName: deref(gname), WeightLabel: deref(wl), FlavorLabel: deref(fl),
+			Weight: deref(w), Flavor: deref(f), OwnPrice: own}
+	}
 	return l, err
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 func (s *Service) totals(ctx context.Context, q db.Querier, draftID string, st store) (Totals, error) {
@@ -267,7 +305,16 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, storeID string
 	if limit <= 0 {
 		limit = 200
 	}
-	rows, err := s.pool.Query(ctx, lineSelect+where+fmt.Sprintf(` ORDER BY l.added_at DESC, loc(p.name, p.name_uz) LIMIT %d OFFSET %d`, min(limit, 1000), max(f.Offset, 0)), productsearch.Args(args)...)
+	order := `l.added_at DESC, loc(p.name, p.name_uz)`
+	switch f.Order {
+	case "":
+	case "groups":
+		order = `vg.id IS NULL, loc(vg.name, vg.name_uz), vg.id, p.variant_weight_sort, p.variant_weight, p.variant_sort,
+			loc(p.name, p.name_uz), l.product_id`
+	default:
+		return d, apperr.Validation("order: ожидается groups").Uz("order: groups boʻlishi kerak")
+	}
+	rows, err := s.pool.Query(ctx, lineSelect+where+fmt.Sprintf(` ORDER BY %s LIMIT %d OFFSET %d`, order, min(limit, 1000), max(f.Offset, 0)), productsearch.Args(args)...)
 	if err != nil {
 		return d, err
 	}

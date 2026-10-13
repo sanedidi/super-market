@@ -20,6 +20,21 @@ export type Line = {
   moderation: string
   posted: boolean
   added_at: string
+  /** Товар в подтверждённой группе вариаций: инвентаризация показывает группу своей таблицей. */
+  variant: LineVariant | null
+}
+
+/** Место товара в группе вариаций (Figma «Вариации своих товаров», В3). */
+export type LineVariant = {
+  group_id: string
+  group_name: string
+  /** Переключатель веса (Вес, Объём, Размер…); "" — его нет, цена одна на группу. */
+  weight_label: string
+  flavor_label: string
+  weight: string
+  flavor: string
+  /** «Своя цена»: цена веса этот товар не меняет. */
+  own_price: boolean
 }
 
 export type Totals = {
