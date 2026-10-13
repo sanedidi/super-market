@@ -144,7 +144,11 @@ func TestStartNewItemsSame(t *testing.T) {
 		return a.expect(a.do("POST", "/store/start/new-items/confirm-all", ownerTok, map[string]any{"store_id": storeID, "dry_run": dry}), 200, "confirm all")
 	}
 	num := func(r resp, k string) int { f, _ := r.Body[k].(float64); return int(f) }
-	left := func(r resp, k string) int { l, _ := r.Body["left"].(map[string]any); f, _ := l[k].(float64); return int(f) }
+	left := func(r resp, k string) int {
+		l, _ := r.Body["left"].(map[string]any)
+		f, _ := l[k].(float64)
+		return int(f)
+	}
 	list := a.expect(a.do("GET", "/store/start/new-items?store_id="+storeID, ownerTok, nil), 200, "list")
 	if cn, _ := list.Body["counts"].(map[string]any); cn["bulk"] != float64(1) {
 		t.Fatalf("counts = %v", list.Body["counts"])
