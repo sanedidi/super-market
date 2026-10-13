@@ -121,6 +121,8 @@ type NewItemCounts struct {
 	Processing int `json:"processing"`
 	Ready      int `json:"ready"`
 	Failed     int `json:"failed"`
+	// Bulk — сколько карточек «Провести все» поставит в «Мои товары».
+	Bulk int `json:"bulk"`
 }
 
 // NewItemList — страница очереди. Counts и Total — по всей очереди магазина,
@@ -259,6 +261,11 @@ func (s *Service) ListNewItems(ctx context.Context, p *identity.Principal, store
 	}); err != nil {
 		return out, err
 	}
+	if out.Counts.Ready > 0 {
+		if out.Counts.Bulk, err = s.bulkReady(ctx, p.NetworkID, st.ID); err != nil {
+			return out, err
+		}
+	}
 	if out.Total == 0 || page.Offset >= out.Total {
 		return out, nil
 	}
@@ -334,11 +341,15 @@ var dupQuery = strings.NewReplacer(
 // тот же товар: тот же штрихкод, или бренд, объём и фасовка не противоречат,
 // а названия без чисел почти совпадают (см. Spec). Нет — карточки нет в ответе.
 func (s *Service) queueDups(ctx context.Context, q db.Querier, ids []string) (map[string]NewItemDup, error) {
+	return s.dupsBy(ctx, q, dupQuery, ids)
+}
+
+func (s *Service) dupsBy(ctx context.Context, q db.Querier, query string, ids []string) (map[string]NewItemDup, error) {
 	out := map[string]NewItemDup{}
 	if len(ids) == 0 {
 		return out, nil
 	}
-	rows, err := q.Query(ctx, dupQuery, ids, newStale.String(), CandidateMin)
+	rows, err := q.Query(ctx, query, ids, newStale.String(), CandidateMin)
 	if err != nil {
 		return nil, err
 	}
@@ -676,16 +687,8 @@ func (s *Service) processNewItem(ctx context.Context, id, lang string) error {
 //   - Иначе новый товар создаётся, только если нет кандидата в базе и в
 //     очереди, Super Market уверен, категория из дерева и штрихкод верный.
 func (s *Service) tryAutoAdd(ctx context.Context, id, networkID, storeID, employeeID, code string, res NewItemResult, keys []string) (bool, error) {
-	match, err := sameProduct(ctx, s.pool, networkID, code, &res)
-	if err != nil {
+	if err := s.refreshMatch(ctx, id, networkID, code, &res); err != nil {
 		return false, err
-	}
-	if !sameMatch(match, res.Match) {
-		res.Match = match
-		raw, _ := json.Marshal(res)
-		if _, err := s.pool.Exec(ctx, `UPDATE start_new_items SET result = $2 WHERE id = $1 AND status = 'ready'`, id, raw); err != nil {
-			return false, err
-		}
 	}
 	p := &identity.Principal{NetworkID: networkID, EmployeeID: employeeID, IsOwner: true}
 	if res.Match != nil {
@@ -703,6 +706,22 @@ func (s *Service) tryAutoAdd(ctx context.Context, id, networkID, storeID, employ
 		return false, err
 	}
 	return s.autoAddNewItem(ctx, p, id, storeID, res, keys), nil
+}
+
+// refreshMatch — заново найти тот же товар в базе для карточки; изменился —
+// сохранить в карточку (магазин увидит «Это он»).
+func (s *Service) refreshMatch(ctx context.Context, id, networkID, code string, res *NewItemResult) error {
+	match, err := sameProduct(ctx, s.pool, networkID, code, res)
+	if err != nil {
+		return err
+	}
+	if sameMatch(match, res.Match) {
+		return nil
+	}
+	res.Match = match
+	raw, _ := json.Marshal(res)
+	_, err = s.pool.Exec(ctx, `UPDATE start_new_items SET result = $2 WHERE id = $1 AND status = 'ready'`, id, raw)
+	return err
 }
 
 func sameMatch(a, b *NewItemMatch) bool {

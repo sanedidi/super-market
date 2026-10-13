@@ -402,6 +402,136 @@ class _NewItemsTabState extends State<NewItemsTab> {
     await widget.onChanged();
   }
 
+  // «Провести все»: null — не идёт; иначе сколько уже проведено из _bulkOf.
+  int? _bulkDone;
+  int _bulkOf = 0;
+  bool _bulkAsking = false;
+
+  /// Figma «Требуют внимания — «Провести все»» В2: шторка с разбивкой, затем
+  /// проводим порциями (сервер — до 100 за запрос).
+  Future<void> _bulk() async {
+    setState(() => _bulkAsking = true);
+    Map<String, dynamic>? got;
+    try {
+      got = await widget.start.confirmAllNewItems(dryRun: true);
+    } catch (e) {
+      if (mounted) showMessage(context, e);
+    }
+    if (!mounted) return;
+    setState(() => _bulkAsking = false);
+    if (got == null) return;
+    final plan = got;
+    int n(Map<String, dynamic>? m, String k) => (m?[k] as num?)?.toInt() ?? 0;
+    final ready = n(plan, 'ready');
+    if (ready == 0) {
+      showMessage(context, tr('Провести как есть больше нечего — проверьте карточки по одной', 'Boricha oʻtkazadigan narsa qolmadi — kartochkalarni birma-bir tekshiring'));
+      await widget.onChanged();
+      return;
+    }
+    final existing = n(plan, 'existing');
+    final left = plan['left'] as Map<String, dynamic>?;
+    final stay = <(int, String)>[
+      (n(left, 'no_category'), tr('Нет категории', 'Kategoriya yoʻq')),
+      (n(left, 'duplicate'), tr('Похоже на дубль', 'Dublga oʻxshaydi')),
+      (n(left, 'barcode'), tr('Проверьте штрихкод', 'Shtrix-kodni tekshiring')),
+      (n(left, 'processing'), tr('распознаются', 'aniqlanmoqda')),
+      (n(left, 'failed'), tr('не удалось распознать', 'aniqlab boʻlmadi')),
+      (n(left, 'other'), tr('другое', 'boshqa')),
+    ].where((e) => e.$1 > 0).toList();
+    final stayTotal = stay.fold<int>(0, (a, e) => a + e.$1);
+    Widget box(Color bg, Color fg, String title, List<String> lines) => Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(14)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title, style: AppText.bodyStrong.copyWith(fontSize: 14, color: fg)),
+            const SizedBox(height: 4),
+            for (final l in lines) Text('•  $l', style: AppText.small.copyWith(fontSize: 13, color: AppColors.ink)),
+          ]),
+        );
+    final ok = await showSheet<bool>(
+      context,
+      (ctx) => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        SheetHeader(
+          icon: Icons.done_all_rounded,
+          title: tr('Провести ${_goodsRu(ready)} в «Мои товары»?', '$ready ta mahsulotni «Mahsulotlarim»ga oʻtkazasizmi?'),
+          text: tr('Товары добавятся так, как их заполнил Super Market: название, бренд, категория, единица, штрихкод и фото. Количество и цены — на шаге 2.',
+              'Mahsulotlar Super Market toʻldirgandek qoʻshiladi: nomi, brend, kategoriya, oʻlchov birligi, shtrix-kod va rasm. Miqdor va narxlar — 2-qadamda.'),
+        ),
+        const SizedBox(height: 16),
+        box(AppColors.successSoft, AppColors.successInk, tr('В «Мои товары» — $ready', '«Mahsulotlarim»ga — $ready'), [
+          if (ready - existing > 0) tr('${ready - existing} — новые товары (уйдут на модерацию после инвентаризации)', '${ready - existing} — yangi mahsulotlar (inventarizatsiyadan soʻng moderatsiyaga)'),
+          if (existing > 0) tr('$existing — штрихкод уже есть в базе: добавится товар из базы', '$existing — shtrix-kod bazada bor: bazadagi mahsulot qoʻshiladi'),
+          tr('«Тот же товар, другой штрихкод?» и «Есть сомнения» — как новые товары', '«Shu mahsulot, boshqa shtrix-kod?» va «Shubha bor» — yangi mahsulot sifatida'),
+        ]),
+        if (stayTotal > 0) ...[
+          const SizedBox(height: 10),
+          box(AppColors.warningSoft, AppColors.warningInk, tr('Останутся во «Внимании» — $stayTotal', '«Eʼtibor»da qoladi — $stayTotal'), [for (final e in stay) '${e.$1} — ${e.$2}']),
+        ],
+        const SizedBox(height: 20),
+        SheetButton(label: tr('Провести $ready', 'Oʻtkazish · $ready'), onPressed: () => Navigator.pop(ctx, true)),
+        const SizedBox(height: 10),
+        SheetButton(label: tr('Отмена', 'Bekor qilish'), primary: false, onPressed: () => Navigator.pop(ctx, false)),
+      ]),
+    );
+    if (ok != true || !mounted) return;
+    setState(() {
+      _bulkDone = 0;
+      _bulkOf = ready;
+    });
+    var added = 0;
+    try {
+      for (var i = 0; i < 100; i++) {
+        final r = await widget.start.confirmAllNewItems();
+        added += n(r, 'added');
+        if (mounted) setState(() => _bulkDone = added);
+        if (n(r, 'remaining') == 0 || n(r, 'added') == 0) break;
+      }
+    } catch (e) {
+      if (mounted) showMessage(context, e);
+    }
+    await widget.onChanged();
+    if (!mounted) return;
+    setState(() => _bulkDone = null);
+    if (added > 0) showMessage(context, tr('${_goodsRu(added)} — в «Моих товарах»', '$added ta mahsulot — «Mahsulotlarim»da'));
+  }
+
+  /// В1: полоса «Провести все» над списком.
+  Widget _bulkBar(int ready, int rest) {
+    final running = _bulkDone != null;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text(tr('${_cardsRu(ready)} Super Market уже заполнил', '$ready ta kartochkani Super Market toʻldirib boʻldi'), style: AppText.bodyStrong.copyWith(fontSize: 14)),
+        const SizedBox(height: 2),
+        Text(
+          rest > 0
+              ? tr('Можно провести все сразу — как на карточках. Ещё $rest — проверьте по одной.', 'Hammasini birdan oʻtkazish mumkin — kartochkadagidek. Yana $rest tasini birma-bir tekshiring.')
+              : tr('Можно провести все сразу — как на карточках.', 'Hammasini birdan oʻtkazish mumkin — kartochkadagidek.'),
+          style: AppText.small.copyWith(fontSize: 12),
+        ),
+        const SizedBox(height: 10),
+        if (running) ...[
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(value: _bulkOf == 0 ? null : (_bulkDone! / _bulkOf).clamp(0, 1).toDouble(), minHeight: 6),
+          ),
+          const SizedBox(height: 6),
+          Text(tr('Проводим… $_bulkDone из $_bulkOf', 'Oʻtkazilmoqda… $_bulkDone / $_bulkOf'), style: AppText.small.copyWith(fontSize: 12)),
+        ] else
+          BigButton(
+            label: tr('Провести все в «Мои товары» · $ready', 'Hammasini «Mahsulotlarim»ga · $ready'),
+            icon: Icons.done_all_rounded,
+            color: AppColors.ink,
+            height: 48,
+            busy: _bulkAsking,
+            onPressed: _bulk,
+          ),
+      ]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final items = ((widget.data?['items'] as List?) ?? const []).cast<Map<String, dynamic>>();
@@ -419,11 +549,15 @@ class _NewItemsTabState extends State<NewItemsTab> {
           itemCount: items.length + 2,
           itemBuilder: (_, index) {
             if (index == 0) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(tr('Super Market заполняет карточки по фото — можно работать дальше', 'Super Market rasmlar boʻyicha kartochkalarni toʻldiradi — ishni davom ettirish mumkin'),
-                    style: AppText.caption),
-              );
+              final bulk = (((widget.data?['counts'] as Map<String, dynamic>?)?['bulk'] as num?)?.toInt() ?? 0);
+              return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(tr('Super Market заполняет карточки по фото — можно работать дальше', 'Super Market rasmlar boʻyicha kartochkalarni toʻldiradi — ishni davom ettirish mumkin'),
+                      style: AppText.caption),
+                ),
+                if (bulk > 0 || _bulkDone != null) _bulkBar(bulk, newItemsTotal(widget.data) - bulk),
+              ]);
             }
             if (index <= items.length) {
               final i = index - 1;
@@ -473,6 +607,14 @@ class _NewItemsTabState extends State<NewItemsTab> {
     );
   }
 }
+
+String _plural(int n, String one, String few, String many) {
+  final a = n % 10, b = n % 100;
+  return a == 1 && b != 11 ? one : (a >= 2 && a <= 4 && (b < 12 || b > 14) ? few : many);
+}
+
+String _goodsRu(int n) => '$n ${_plural(n, 'товар', 'товара', 'товаров')}';
+String _cardsRu(int n) => '$n ${_plural(n, 'карточку', 'карточки', 'карточек')}';
 
 /// Сколько всего в очереди «Новые» (total с сервера; старый сервер — по items).
 int newItemsTotal(Map<String, dynamic>? data) =>

@@ -136,4 +136,44 @@ func TestStartNewItemsSame(t *testing.T) {
 	if other.str("status") != "done" || other.Body["duplicate"] != nil {
 		t.Fatalf("lux 100 = %v", other.Body)
 	}
+
+	// «Провести все»: в «Требуют внимания» — неверный штрихкод, Lux 50 с
+	// сомнениями и его дубль. Проводится только Lux 50; остальные остаются.
+	bulk := func(dry bool) resp {
+		t.Helper()
+		return a.expect(a.do("POST", "/store/start/new-items/confirm-all", ownerTok, map[string]any{"store_id": storeID, "dry_run": dry}), 200, "confirm all")
+	}
+	num := func(r resp, k string) int { f, _ := r.Body[k].(float64); return int(f) }
+	left := func(r resp, k string) int { l, _ := r.Body["left"].(map[string]any); f, _ := l[k].(float64); return int(f) }
+	list := a.expect(a.do("GET", "/store/start/new-items?store_id="+storeID, ownerTok, nil), 200, "list")
+	if cn, _ := list.Body["counts"].(map[string]any); cn["bulk"] != float64(1) {
+		t.Fatalf("counts = %v", list.Body["counts"])
+	}
+	pre := bulk(true)
+	if num(pre, "ready") != 1 || num(pre, "added") != 0 || left(pre, "barcode") != 1 || left(pre, "duplicate") != 1 {
+		t.Fatalf("dry run = %v", pre.Body)
+	}
+	if st := a.expect(a.do("GET", "/store/start/new-items/"+first.str("id"), ownerTok, nil), 200, "lux 50").str("status"); st != "ready" {
+		t.Fatalf("dry run changed card: %s", st)
+	}
+	run := bulk(false)
+	if num(run, "added") != 1 || num(run, "remaining") != 0 {
+		t.Fatalf("run = %v", run.Body)
+	}
+	lux := a.expect(a.do("GET", "/store/start/new-items/"+first.str("id"), ownerTok, nil), 200, "lux 50 after")
+	if lux.str("status") != "done" || lux.str("product_id") == "" {
+		t.Fatalf("lux 50 after = %v", lux.Body)
+	}
+	// Дубль не стал вторым товаром: остался магазину, а в карточке — товар Lux 50 («Это он»).
+	d := a.expect(a.do("GET", "/store/start/new-items/"+dup.str("id"), ownerTok, nil), 200, "dup after")
+	if m := match(d); d.str("status") != "ready" || m == nil || m["product_id"] != lux.str("product_id") {
+		t.Fatalf("dup after = %v", d.Body)
+	}
+	again := bulk(true)
+	if num(again, "ready") != 0 || left(again, "duplicate") != 1 || left(again, "barcode") != 1 {
+		t.Fatalf("after run = %v", again.Body)
+	}
+	if r := bulk(false); num(r, "added") != 0 {
+		t.Fatalf("nothing to run = %v", r.Body)
+	}
 }

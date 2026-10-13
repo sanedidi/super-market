@@ -10,12 +10,12 @@
 // «Это он» объединяет карточки.
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
-import { Alert, App, Button, Col, Flex, Form, Input, Modal, Row, Space, Spin, Tag, Typography } from 'antd'
+import { Alert, App, Button, Col, Flex, Form, Input, Modal, Progress, Row, Space, Spin, Tag, Typography } from 'antd'
 import { CheckOutlined, CopyOutlined, DeleteOutlined, FolderAddOutlined, PlusOutlined, ReloadOutlined, StarFilled, TagsOutlined } from '@ant-design/icons'
 import { ApiError, FormTranslate, ImageUpload, RemoteSelect, api, errorText, getLang, tr } from '@sm/shared'
 import { useStore } from '../../ctx'
 import type { DictItem } from '../../types'
-import { useStartRefresh, type CategoryRef, type CategorySuggestion, type NewCategory, type NewItem, type NewItemConfirmResult, type NewItemDup, type NewItemList } from './api'
+import { useStartRefresh, type CategoryRef, type CategorySuggestion, type NewCategory, type NewItem, type NewItemConfirmResult, type NewItemDup, type NewItemList, type NewItemsBulk } from './api'
 import { Thumb } from './Thumb'
 
 const PURPLE = '#6938EF'
@@ -163,6 +163,7 @@ export function NewItemsList({
           )}
         </Typography.Text>
       </Flex>
+      {(list?.counts.bulk ?? 0) > 0 && <BulkBar ready={list!.counts.bulk!} rest={(list?.total ?? 0) - list!.counts.bulk!} />}
       {loading && !list ? (
         <Flex justify="center" style={{ padding: 24 }}>
           <Spin />
@@ -213,6 +214,150 @@ export function NewItemsList({
         {tr('Новые товары уйдут на проверку в общую базу после «Записать и закрыть» на шаге 2.', 'Yangi mahsulotlar 2-qadamdagi «Yozish va yopish»dan soʻng umumiy bazaga tekshiruvga yuboriladi.')}
       </Typography.Text>
       <ReviewModal item={open} onClose={() => setOpen(null)} />
+    </>
+  )
+}
+
+// ------------------------------------------------------- «Провести все»
+
+const plural = (n: number, one: string, few: string, many: string) => {
+  const a = n % 10, b = n % 100
+  return a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 12 || b > 14) ? few : many
+}
+const goodsRu = (n: number) => `${n} ${plural(n, 'товар', 'товара', 'товаров')}`
+const cardsRu = (n: number) => `${n} ${plural(n, 'карточку', 'карточки', 'карточек')}`
+
+/** В1 (Figma «Требуют внимания — «Провести все»»): полоса над списком. */
+function BulkBar({ ready, rest }: { ready: number; rest: number }) {
+  const { storeId } = useStore()
+  const { message } = App.useApp()
+  const refresh = useStartRefresh()
+  const [plan, setPlan] = useState<NewItemsBulk | null>(null)
+  const [asking, setAsking] = useState(false)
+  const [done, setDone] = useState<number | null>(null)
+
+  const ask = async () => {
+    setAsking(true)
+    try {
+      const p = await api.post<NewItemsBulk>('/store/start/new-items/confirm-all', { store_id: storeId, dry_run: true })
+      if (p.ready === 0) {
+        message.info(tr('Провести как есть больше нечего — проверьте карточки по одной', 'Boricha oʻtkazadigan narsa qolmadi — kartochkalarni birma-bir tekshiring'))
+        await refresh()
+      } else setPlan(p)
+    } catch (e) {
+      message.error(errorText(e))
+    } finally {
+      setAsking(false)
+    }
+  }
+  // Сервер проводит до 100 карточек за запрос — зовём, пока есть что проводить.
+  const run = async () => {
+    if (!plan) return
+    setDone(0)
+    let added = 0
+    try {
+      for (let i = 0; i < 100; i++) {
+        const r = await api.post<NewItemsBulk>('/store/start/new-items/confirm-all', { store_id: storeId })
+        added += r.added
+        setDone(added)
+        if (r.remaining === 0 || r.added === 0) break
+      }
+    } catch (e) {
+      message.error(errorText(e))
+    }
+    await refresh()
+    if (added > 0) {
+      message.success(tr(`${goodsRu(added)} — в «Моих товарах»`, `${added} ta mahsulot — «Mahsulotlarim»da`))
+    }
+    setPlan(null)
+    setDone(null)
+  }
+
+  const l = plan?.left
+  const stay = l ? [
+    [l.no_category, tr('Нет категории', 'Kategoriya yoʻq')],
+    [l.duplicate, tr('Похоже на дубль', 'Dublga oʻxshaydi')],
+    [l.barcode, tr('Проверьте штрихкод', 'Shtrix-kodni tekshiring')],
+    [l.processing, tr('распознаются', 'aniqlanmoqda')],
+    [l.failed, tr('не удалось распознать', 'aniqlab boʻlmadi')],
+    [l.other, tr('другое', 'boshqa')],
+  ].filter(([n]) => (n as number) > 0) as [number, string][] : []
+  const stayTotal = stay.reduce((n, [x]) => n + x, 0)
+  const box = (bg: string, color: string, title: string, lines: string[]) => (
+    <div style={{ background: bg, borderRadius: 10, padding: '10px 14px' }}>
+      <Typography.Text strong style={{ color, display: 'block', marginBottom: 4 }}>
+        {title}
+      </Typography.Text>
+      {lines.map((t) => (
+        <Typography.Text key={t} style={{ display: 'block', fontSize: 13, color: '#344054' }}>
+          • {t}
+        </Typography.Text>
+      ))}
+    </div>
+  )
+  const running = done !== null
+  return (
+    <>
+      <Flex align="center" gap={16} wrap style={{ padding: '12px 20px', borderBottom: '1px solid #EAECF0' }}>
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <Typography.Text strong style={{ display: 'block' }}>
+            {tr(`${cardsRu(ready)} Super Market уже заполнил`, `${ready} ta kartochkani Super Market toʻldirib boʻldi`)}
+          </Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {rest > 0
+              ? tr(`Можно провести все сразу — название, категория и фото как на карточке. Ещё ${rest} — проверьте по одной.`, `Hammasini birdan oʻtkazish mumkin — nomi, kategoriya va rasm kartochkadagidek. Yana ${rest} tasini birma-bir tekshiring.`)
+              : tr('Можно провести все сразу — название, категория и фото как на карточке.', 'Hammasini birdan oʻtkazish mumkin — nomi, kategoriya va rasm kartochkadagidek.')}
+          </Typography.Text>
+        </div>
+        <Button type="primary" icon={<CheckOutlined />} loading={asking} onClick={ask}>
+          {tr('Провести все в «Мои товары»', 'Hammasini «Mahsulotlarim»ga oʻtkazish')} · {ready}
+        </Button>
+      </Flex>
+      <Modal
+        open={!!plan}
+        width={520}
+        title={plan ? tr(`Провести ${goodsRu(plan.ready)} в «Мои товары»?`, `${plan.ready} ta mahsulotni «Mahsulotlarim»ga oʻtkazasizmi?`) : null}
+        onCancel={() => !running && setPlan(null)}
+        closable={!running}
+        maskClosable={!running}
+        destroyOnHidden
+        footer={
+          <Space>
+            <Button disabled={running} onClick={() => setPlan(null)}>
+              {tr('Отмена', 'Bekor qilish')}
+            </Button>
+            <Button type="primary" icon={<CheckOutlined />} loading={running} onClick={run}>
+              {tr('Провести', 'Oʻtkazish')} {plan?.ready}
+            </Button>
+          </Space>
+        }
+      >
+        {plan && (
+          <Flex vertical gap={12}>
+            <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+              {tr(
+                'Товары добавятся так, как их заполнил Super Market: название (uz / ru), бренд, категория, единица, штрихкод и фото. Количество и цены — на шаге 2.',
+                'Mahsulotlar Super Market toʻldirgandek qoʻshiladi: nomi (uz / ru), brend, kategoriya, oʻlchov birligi, shtrix-kod va rasm. Miqdor va narxlar — 2-qadamda.',
+              )}
+            </Typography.Text>
+            {box('#ECFDF3', '#067647', tr(`В «Мои товары» — ${plan.ready}`, `«Mahsulotlarim»ga — ${plan.ready}`), [
+              ...(plan.ready - plan.existing > 0
+                ? [tr(`${plan.ready - plan.existing} — новые товары (уйдут на модерацию после «Записать и закрыть»)`, `${plan.ready - plan.existing} — yangi mahsulotlar («Yozish va yopish»dan soʻng moderatsiyaga yuboriladi)`)]
+                : []),
+              ...(plan.existing > 0 ? [tr(`${plan.existing} — этот штрихкод уже есть в базе: добавится товар из базы`, `${plan.existing} — bu shtrix-kod bazada bor: bazadagi mahsulot qoʻshiladi`)] : []),
+              tr('«Тот же товар, другой штрихкод?» и «Есть сомнения» — добавятся как новые товары', '«Shu mahsulot, boshqa shtrix-kod?» va «Shubha bor» — yangi mahsulot sifatida qoʻshiladi'),
+            ])}
+            {stayTotal > 0 &&
+              box(
+                '#FFFAEB',
+                '#93370D',
+                tr(`Останутся в «Требуют внимания» — ${stayTotal}`, `«Eʼtibor talab qiladi»da qoladi — ${stayTotal}`),
+                stay.map(([n, t]) => `${n} — ${t}`),
+              )}
+            {running && <Progress percent={Math.min(100, Math.round(((done ?? 0) / plan.ready) * 100))} format={() => `${done} / ${plan.ready}`} />}
+          </Flex>
+        )}
+      </Modal>
     </>
   )
 }

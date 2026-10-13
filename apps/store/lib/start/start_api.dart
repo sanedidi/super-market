@@ -84,6 +84,13 @@ class StartApi {
   Future<Map<String, dynamic>> confirmNewItem(String id, Map<String, dynamic> body) async =>
       await api.post('/store/start/new-items/$id/confirm', {'store_id': storeId, ...body}) as Map<String, dynamic>;
 
+  /// «Провести все»: карточки, которые Super Market заполнил, — в «Мои товары»
+  /// как есть. dryRun — только посчитать: {ready, existing, added, remaining,
+  /// left {no_category, duplicate, barcode, processing, failed, other}}.
+  /// Сервер проводит до 100 за вызов — зовите, пока remaining > 0.
+  Future<Map<String, dynamic>> confirmAllNewItems({bool dryRun = false}) async =>
+      await api.post('/store/start/new-items/confirm-all', {'store_id': storeId, 'dry_run': dryRun}) as Map<String, dynamic>;
+
   Future<void> retryNewItem(String id) => api.post('/store/start/new-items/$id/retry');
 
   /// Карточка в «Новых» с этим штрихкодом (null — нет): сканер проверяет её,

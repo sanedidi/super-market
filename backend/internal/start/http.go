@@ -39,6 +39,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/new-items", m.listNewItems)
 		r.Post("/new-items", m.createNewItem)
 		r.Get("/new-items/by-barcode", m.newItemByBarcode)
+		r.Post("/new-items/confirm-all", m.confirmAllNewItems)
 		r.Get("/new-items/{id}", m.getNewItem)
 		r.Post("/new-items/{id}/merge", m.mergeNewItem)
 		r.Post("/new-items/{id}/retry", m.retryNewItem)
@@ -213,6 +214,12 @@ func (m *Module) deleteNewItem(w http.ResponseWriter, r *http.Request) {
 func (m *Module) confirmNewItem(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in NewItemConfirm) (NewItemConfirmResult, error) {
 		return m.svc.ConfirmNewItem(r.Context(), pr(r), id, in)
+	})
+}
+
+func (m *Module) confirmAllNewItems(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in NewItemsBulkInput) (NewItemsBulk, error) {
+		return m.svc.ConfirmAllNewItems(r.Context(), pr(r), in)
 	})
 }
 

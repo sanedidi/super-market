@@ -167,7 +167,18 @@ export type NewItem = {
 export type NewItemConfirmResult = { product_id: string; created: boolean; line: Line; totals: Totals }
 
 /** Страница очереди «Новые»: counts и total — по всей очереди магазина. */
-export type NewItemList = { items: NewItem[]; counts: { processing: number; ready: number; failed: number }; total: number }
+export type NewItemList = { items: NewItem[]; counts: { processing: number; ready: number; failed: number; bulk?: number }; total: number }
+
+/** «Провести все» (POST /store/start/new-items/confirm-all): ready — можно
+ * провести (existing из них — товар базы с тем же штрихкодом), added —
+ * проведено этим вызовом, remaining — ещё можно; left — что останется. */
+export type NewItemsBulk = {
+  ready: number
+  existing: number
+  added: number
+  remaining: number
+  left: { no_category: number; duplicate: number; barcode: number; processing: number; failed: number; other: number }
+}
 
 /** Похожий товар из ошибки similar_exists. */
 export type Similar = { product_id: string; name: string; image: string | null; barcode: string | null }
