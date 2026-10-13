@@ -91,6 +91,12 @@ class StartApi {
   Future<Map<String, dynamic>> confirmAllNewItems({bool dryRun = false}) async =>
       await api.post('/store/start/new-items/confirm-all', {'store_id': storeId, 'dry_run': dryRun}) as Map<String, dynamic>;
 
+  /// «Распознать заново» все нераспознанные карточки разом: {count} — сколько ушло.
+  Future<int> retryAllNewItems() async {
+    final r = await api.post('/store/start/new-items/retry-all', {'store_id': storeId}) as Map<String, dynamic>;
+    return (r['count'] as num?)?.toInt() ?? 0;
+  }
+
   Future<void> retryNewItem(String id) => api.post('/store/start/new-items/$id/retry');
 
   /// Карточка в «Новых» с этим штрихкодом (null — нет): сканер проверяет её,

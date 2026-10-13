@@ -42,6 +42,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/new-items", m.createNewItem)
 		r.Get("/new-items/by-barcode", m.newItemByBarcode)
 		r.Post("/new-items/confirm-all", m.confirmAllNewItems)
+		r.Post("/new-items/retry-all", m.retryAllNewItems)
 		r.Get("/new-items/{id}", m.getNewItem)
 		r.Post("/new-items/{id}/merge", m.mergeNewItem)
 		r.Post("/new-items/{id}/retry", m.retryNewItem)
@@ -263,5 +264,11 @@ func (m *Module) groupPrice(w http.ResponseWriter, r *http.Request) {
 func (m *Module) ownPrice(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "product_id", func(id string, in OwnPriceInput) (LinesResult, error) {
 		return m.svc.SetOwnPrice(r.Context(), pr(r), id, in)
+	})
+}
+
+func (m *Module) retryAllNewItems(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusAccepted, "", func(_ string, in RetryAllInput) (RetryAllResult, error) {
+		return m.svc.RetryAllNewItems(r.Context(), pr(r), in)
 	})
 }

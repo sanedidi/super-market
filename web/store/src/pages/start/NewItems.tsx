@@ -171,6 +171,7 @@ export function NewItemsList({
         </Typography.Text>
       </Flex>
       {(list?.counts.bulk ?? 0) > 0 && <BulkBar ready={list!.counts.bulk!} rest={(list?.total ?? 0) - list!.counts.bulk!} />}
+      {(list?.counts.failed ?? 0) > 0 && <RetryBar failed={list!.counts.failed} />}
       {pager}
       {loading && !list ? (
         <Flex justify="center" style={{ padding: 24 }}>
@@ -367,6 +368,48 @@ function BulkBar({ ready, rest }: { ready: number; rest: number }) {
         )}
       </Modal>
     </>
+  )
+}
+
+/** В4: «Распознать заново» — все нераспознанные карточки разом. */
+function RetryBar({ failed }: { failed: number }) {
+  const { storeId } = useStore()
+  const { message } = App.useApp()
+  const refresh = useStartRefresh()
+  const [busy, setBusy] = useState(false)
+  const run = async () => {
+    setBusy(true)
+    try {
+      const r = await api.post<{ count: number }>('/store/start/new-items/retry-all', { store_id: storeId })
+      if (r.count > 0)
+        message.info(
+          tr(`Super Market распознаёт заново ${cardsRu(r.count)} — ~1–4 мин, можно работать дальше`, `Super Market ${r.count} ta kartochkani qayta aniqlamoqda — ~1–4 daq, ishni davom ettirish mumkin`),
+          6,
+        )
+      await refresh()
+    } catch (e) {
+      message.error(errorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Flex align="center" gap={16} wrap style={{ padding: '12px 20px', borderBottom: '1px solid #EAECF0', background: '#FEF3F2' }}>
+      <div style={{ flex: 1, minWidth: 220 }}>
+        <Typography.Text strong style={{ display: 'block' }}>
+          {tr(`${cardsRu(failed)} не удалось распознать`, `${failed} ta kartochkani aniqlab boʻlmadi`)}
+        </Typography.Text>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {tr(
+            'Super Market попробует ещё раз по тем же фото. Если снова не выйдет — заполните вручную или переснимите.',
+            'Super Market oʻsha rasmlar boʻyicha yana urinib koʻradi. Yana chiqmasa — qoʻlda toʻldiring yoki qayta suratga oling.',
+          )}
+        </Typography.Text>
+      </div>
+      <Button icon={<ReloadOutlined />} loading={busy} onClick={run}>
+        {tr('Распознать заново', 'Qayta aniqlash')} · {failed}
+      </Button>
+    </Flex>
   )
 }
 

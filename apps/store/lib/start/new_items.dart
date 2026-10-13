@@ -495,6 +495,48 @@ class _NewItemsTabState extends State<NewItemsTab> {
     if (added > 0) showMessage(context, tr('${_goodsRu(added)} — в «Моих товарах»', '$added ta mahsulot — «Mahsulotlarim»da'));
   }
 
+  bool _retrying = false;
+
+  /// В4: «Распознать заново» — все нераспознанные карточки разом.
+  Future<void> _retryAll() async {
+    setState(() => _retrying = true);
+    try {
+      final n = await widget.start.retryAllNewItems();
+      if (mounted && n > 0) {
+        showMessage(context, tr('Super Market распознаёт заново ${_cardsRu(n)} — ~1–4 мин, можно работать дальше', 'Super Market $n ta kartochkani qayta aniqlamoqda — ~1–4 daq, ishni davom ettirish mumkin'));
+      }
+    } catch (e) {
+      if (mounted) showMessage(context, e);
+    }
+    await widget.onChanged();
+    if (mounted) setState(() => _retrying = false);
+  }
+
+  Widget _retryBar(int failed) => Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(color: AppColors.errorSoft, borderRadius: BorderRadius.circular(20)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text(tr('${_cardsRu(failed)} не удалось распознать', '$failed ta kartochkani aniqlab boʻlmadi'), style: AppText.bodyStrong.copyWith(fontSize: 14)),
+          const SizedBox(height: 2),
+          Text(
+            tr('Super Market попробует ещё раз по тем же фото. Если снова не выйдет — заполните вручную или переснимите.',
+                'Super Market oʻsha rasmlar boʻyicha yana urinib koʻradi. Yana chiqmasa — qoʻlda toʻldiring yoki qayta suratga oling.'),
+            style: AppText.small.copyWith(fontSize: 12),
+          ),
+          const SizedBox(height: 10),
+          BigButton(
+            label: tr('Распознать заново · $failed', 'Qayta aniqlash · $failed'),
+            icon: Icons.refresh_rounded,
+            color: AppColors.white,
+            foreground: AppColors.ink,
+            height: 48,
+            busy: _retrying,
+            onPressed: _retryAll,
+          ),
+        ]),
+      );
+
   /// В1: полоса «Провести все» над списком.
   Widget _bulkBar(int ready, int rest) {
     final running = _bulkDone != null;
@@ -550,6 +592,7 @@ class _NewItemsTabState extends State<NewItemsTab> {
           itemBuilder: (_, index) {
             if (index == 0) {
               final bulk = (((widget.data?['counts'] as Map<String, dynamic>?)?['bulk'] as num?)?.toInt() ?? 0);
+              final failed = (((widget.data?['counts'] as Map<String, dynamic>?)?['failed'] as num?)?.toInt() ?? 0);
               return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
@@ -557,6 +600,7 @@ class _NewItemsTabState extends State<NewItemsTab> {
                       style: AppText.caption),
                 ),
                 if (bulk > 0 || _bulkDone != null) _bulkBar(bulk, newItemsTotal(widget.data) - bulk),
+                if (failed > 0) _retryBar(failed),
               ]);
             }
             if (index <= items.length) {

@@ -149,7 +149,18 @@ func TestStartNewItems(t *testing.T) {
 		t.Fatalf("blurry = %v", r.Body)
 	}
 	a.expect(a.do("POST", "/store/start/new-items/"+r.str("id")+"/retry", ownerTok, nil), 202, "retry")
+	// «Распознать заново» — все нераспознанные разом; снова не вышло — опять «не удалось».
+	if ra := a.expect(a.do("POST", "/store/start/new-items/retry-all", ownerTok, map[string]any{"store_id": storeID}), 202, "retry all"); ra.Body["count"] != 1.0 {
+		t.Fatalf("retry all = %v", ra.Body)
+	}
+	if g := a.expect(a.do("GET", "/store/start/new-items/"+r.str("id"), ownerTok, nil), 200, "after retry all"); g.str("status") != "failed" {
+		t.Fatalf("after retry all = %v", g.Body)
+	}
+	a.expect(a.do("POST", "/store/start/new-items/retry-all", otherTok, map[string]any{"store_id": storeID}), 404, "retry all foreign store")
 	a.expect(a.do("DELETE", "/store/start/new-items/"+r.str("id"), ownerTok, nil), 200, "delete")
+	if ra := a.expect(a.do("POST", "/store/start/new-items/retry-all", ownerTok, map[string]any{"store_id": storeID}), 202, "retry all empty"); ra.Body["count"] != 0.0 {
+		t.Fatalf("retry all empty = %v", ra.Body)
+	}
 	a.expect(a.do("GET", "/store/start/new-items/"+r.str("id"), ownerTok, nil), 404, "deleted")
 
 	// Без дублей: тот же штрихкод второй раз в «Новые» не попадает — сканер
@@ -208,7 +219,7 @@ func TestStartNewItems(t *testing.T) {
 	}
 
 	var usage int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM ai_usage WHERE kind = 'product' AND store_id = $1`, storeID).Scan(&usage); err != nil || usage != 7 {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM ai_usage WHERE kind = 'product' AND store_id = $1`, storeID).Scan(&usage); err != nil || usage != 8 {
 		t.Fatalf("product usage = %d %v", usage, err)
 	}
 

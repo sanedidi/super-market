@@ -564,27 +564,30 @@ func (s *Service) DeleteNewItem(ctx context.Context, p *identity.Principal, id s
 }
 
 func (s *Service) startNewItem(id, lang string) {
-	s.run(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
-		defer cancel()
-		if err := s.processNewItem(ctx, id, lang); err != nil {
-			msg := i18n.Pick(lang, "Super Market не смог разобрать фото — переснимите или заполните сами",
-				"Super Market rasmni aniqlay olmadi — qayta suratga oling yoki oʻzingiz toʻldiring")
-			var ae *apperr.Error
-			switch {
-			case errors.As(err, &ae) && ae.Code == "ai_not_configured":
-				msg = errNewOff(lang)
-			case errors.As(err, &ae) && ae.Status < 500:
-				msg = ae.Text(lang)
-			default:
-				s.log.Error("start new item", "id", id, "err", err)
-			}
-			if _, err := s.pool.Exec(context.Background(),
-				`UPDATE start_new_items SET status = 'failed', error = $2 WHERE id = $1 AND status = 'processing'`, id, msg); err != nil {
-				s.log.Error("start new item fail", "id", id, "err", err)
-			}
+	s.run(func() { s.recognizeNewItem(id, lang) })
+}
+
+// recognizeNewItem — распознать одну карточку; не вышло — она «не удалось».
+func (s *Service) recognizeNewItem(id, lang string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	if err := s.processNewItem(ctx, id, lang); err != nil {
+		msg := i18n.Pick(lang, "Super Market не смог разобрать фото — переснимите или заполните сами",
+			"Super Market rasmni aniqlay olmadi — qayta suratga oling yoki oʻzingiz toʻldiring")
+		var ae *apperr.Error
+		switch {
+		case errors.As(err, &ae) && ae.Code == "ai_not_configured":
+			msg = errNewOff(lang)
+		case errors.As(err, &ae) && ae.Status < 500:
+			msg = ae.Text(lang)
+		default:
+			s.log.Error("start new item", "id", id, "err", err)
 		}
-	})
+		if _, err := s.pool.Exec(context.Background(),
+			`UPDATE start_new_items SET status = 'failed', error = $2 WHERE id = $1 AND status = 'processing'`, id, msg); err != nil {
+			s.log.Error("start new item fail", "id", id, "err", err)
+		}
+	}
 }
 
 func (s *Service) processNewItem(ctx context.Context, id, lang string) error {
