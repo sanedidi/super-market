@@ -4,7 +4,7 @@
 // Ключ хранится на сервере зашифрованным и обратно не показывается.
 import { useEffect, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Alert, App, AutoComplete, Badge, Button, Card, Col, Flex, Image, Input, Modal, Row, Segmented, Space, Statistic, Switch, Tag, Typography, Upload } from 'antd'
+import { Alert, App, AutoComplete, Badge, Button, Card, Checkbox, Col, Flex, Image, Input, InputNumber, Modal, Row, Segmented, Space, Statistic, Switch, Tag, Typography, Upload } from 'antd'
 import {
   ArrowRightOutlined,
   CameraOutlined,
@@ -16,11 +16,13 @@ import {
   LoadingOutlined,
   LockOutlined,
   ReloadOutlined,
+  ShopOutlined,
   ThunderboltOutlined,
   UploadOutlined,
 } from '@ant-design/icons'
 import { Link } from 'react-router-dom'
-import { LoadError, PageTitle, api, dateTime, errorText, useItem } from '@sm/shared'
+import { LoadError, PageTitle, api, dateTime, errorText, useItem, useList } from '@sm/shared'
+import type { Plan } from './Plans'
 import { Hint, ProviderCard, Step, VERTEX_REGIONS, isGoogleVertexURL, parseServiceAccount, vertexProject, vertexRegion, vertexURL } from './AI'
 import { usePhotoJob, usd } from '../photoJob'
 
@@ -47,7 +49,21 @@ interface PhotoSettings {
   month_photos: number
   month_failed: number
   month_cost_usd: number
+  // «Фото для магазинов»: Super Market сам делает фото новых товаров и строк инвентаризации.
+  store_enabled: boolean
+  store_new_items: boolean
+  store_lines: boolean
+  store_model: string
+  store_photos: number
+  store_failed: number
+  store_cost_usd: number
+  store_networks: number
+  store_top: { network_id: string; name: string; photos: number; used: number; limit: number | null; cost_usd: number }[]
 }
+
+/** Лимит тарифа «Фото от Super Market в месяц» и его значение по умолчанию. */
+const PHOTO_LIMIT = 'ai_photos'
+const PHOTO_LIMIT_DEFAULT = 300
 
 interface Model {
   id: string
@@ -151,6 +167,182 @@ function BeforeAfter({ before, after, busy }: { before?: string; after?: string;
         </Typography.Text>
       </Flex>
     </Flex>
+  )
+}
+
+/** Н5 (Figma «Нормализация фото для магазина»): блок «Фото для магазинов». */
+function StorePhotosCard({ s, models, onSaved }: { s: PhotoSettings; models: Model[] | null; onSaved: () => void }) {
+  const { message } = App.useApp()
+  const qc = useQueryClient()
+  const plans = useList<Plan>('/admin/plans')
+  const [enabled, setEnabled] = useState(s.store_enabled)
+  const [newItems, setNewItems] = useState(s.store_new_items)
+  const [lines, setLines] = useState(s.store_lines)
+  const [model, setModel] = useState(s.store_model)
+  const [limits, setLimits] = useState<Record<string, number | null>>({})
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    setEnabled(s.store_enabled)
+    setNewItems(s.store_new_items)
+    setLines(s.store_lines)
+    setModel(s.store_model)
+  }, [s])
+  useEffect(() => {
+    const out: Record<string, number | null> = {}
+    for (const p of plans.data ?? []) out[p.key] = p.limits[PHOTO_LIMIT] ?? null
+    setLimits(out)
+  }, [plans.data])
+
+  const active = (plans.data ?? []).filter((p) => p.is_active)
+  const changedPlans = active.filter((p) => (p.limits[PHOTO_LIMIT] ?? null) !== (limits[p.key] ?? null))
+  const dirty = enabled !== s.store_enabled || newItems !== s.store_new_items || lines !== s.store_lines || model.trim() !== s.store_model || changedPlans.length > 0
+
+  const save = async () => {
+    setBusy(true)
+    try {
+      await api.put<PhotoSettings>('/admin/ai-photo/store', { store_enabled: enabled, store_new_items: newItems, store_lines: lines, store_model: model.trim() })
+      for (const p of changedPlans) {
+        const next: Record<string, number | null> = { ...p.limits }
+        const v = limits[p.key]
+        if (v === null || v === undefined) delete next[PHOTO_LIMIT]
+        else next[PHOTO_LIMIT] = v
+        await api.patch(`/admin/plans/${p.key}`, { limits: next })
+      }
+      await qc.invalidateQueries({ queryKey: ['/admin/plans'] })
+      message.success('Сохранено')
+      onSaved()
+    } catch (e) {
+      message.error(errorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const check = (on: boolean, set: (v: boolean) => void, title: string, text: string, disabled?: boolean) => (
+    <Flex gap={10} align="flex-start">
+      <Checkbox checked={on} disabled={disabled} onChange={(e) => set(e.target.checked)} style={{ marginTop: 2 }} />
+      <div>
+        <Typography.Text strong style={{ color: disabled ? '#98A2B3' : undefined }}>
+          {title}
+        </Typography.Text>
+        <div>
+          <Hint>{text}</Hint>
+        </div>
+      </div>
+    </Flex>
+  )
+  const price = PRICES.find(([m]) => (model.trim() || s.model).includes(m))?.[1]
+  const stat = (title: string, value: ReactNode) => (
+    <Card size="small" style={{ background: '#F8FAFC', flex: 1, minWidth: 130 }}>
+      <Statistic title={title} value={value as string} groupSeparator=" " />
+    </Card>
+  )
+
+  return (
+    <Card style={{ marginTop: 24 }} styles={{ body: { padding: 24 } }}>
+      <Space direction="vertical" size={20} style={{ width: '100%' }}>
+        <Flex align="center" gap={12}>
+          <div style={{ flex: 1 }}>
+            <Space size={8}>
+              <ShopOutlined style={{ fontSize: 18 }} />
+              <Typography.Text strong style={{ fontSize: 16 }}>
+                Фото для магазинов
+              </Typography.Text>
+              {enabled && s.configured ? <Tag color="green">Включено</Tag> : <Tag>Выключено</Tag>}
+            </Space>
+            <div>
+              <Hint>Super Market сам нормализует фото магазинов — по правилам из «Каким делать фото». Магазину ничего нажимать не нужно.</Hint>
+            </div>
+          </div>
+          <Switch checked={enabled} onChange={setEnabled} />
+        </Flex>
+        {!s.configured && <Alert type="warning" showIcon message="Сначала подключите Gemini выше — без него фото магазинам не делаются." />}
+
+        <Space direction="vertical" size={10}>
+          <Typography.Text strong>Когда запускать</Typography.Text>
+          {check(newItems, setNewItems, 'Новый товар по фото', 'После распознавания карточки. Из 1–3 фото магазина — одно фото лицевой стороны')}
+          {check(lines, setLines, 'Фото строки на «Инвентаризации»', 'Только если у товара не было фото')}
+          {check(false, () => undefined, 'Кнопка «Сделать фото Super Market» у своего товара', 'Вторая очередь', true)}
+        </Space>
+
+        <Space direction="vertical" size={6} style={{ width: '100%' }}>
+          <Typography.Text strong>Модель для магазинов</Typography.Text>
+          <AutoComplete
+            size="large"
+            style={{ maxWidth: 460, width: '100%' }}
+            value={model}
+            onChange={setModel}
+            options={(models ?? []).map((m) => ({ value: m.id }))}
+            placeholder={`Как у супер-админа: ${s.model || '—'}`}
+            allowClear
+          />
+          <Hint>
+            {price !== undefined ? `${usd(price)} за фото. ` : ''}Пусто — та же модель, что выше. Nano Banana и Flash Image дешевле, gemini-3-pro-image
+            точнее рисует надписи на упаковке.
+          </Hint>
+        </Space>
+
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <Typography.Text strong>Фото в месяц по тарифу</Typography.Text>
+          <Flex gap={12} wrap>
+            {active.map((p) => (
+              <div key={p.key}>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {p.name}
+                </Typography.Text>
+                <div>
+                  <InputNumber
+                    style={{ width: 160 }}
+                    min={0}
+                    max={1000000}
+                    value={limits[p.key] ?? null}
+                    placeholder={String(PHOTO_LIMIT_DEFAULT)}
+                    addonAfter="фото / мес"
+                    onChange={(v) => setLimits((l) => ({ ...l, [p.key]: v === null ? null : Number(v) }))}
+                  />
+                </div>
+              </div>
+            ))}
+          </Flex>
+          <Hint>Пусто — {PHOTO_LIMIT_DEFAULT}. 0 — на тарифе выключено. «Переделать» тоже считается. Закончились — товары остаются с фото магазина. То же поле — в{' '}
+            <Link to="/billing/tariffs">«Тарифах»</Link>.
+          </Hint>
+        </Space>
+
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <Typography.Text strong>Магазины в этом месяце</Typography.Text>
+          <Flex gap={10} wrap>
+            {stat('Фото', s.store_photos)}
+            {stat('Не вышло', s.store_failed)}
+            {stat('Расход', usd(s.store_cost_usd))}
+            {stat('Сетей', s.store_networks)}
+          </Flex>
+          {s.store_top.length > 0 && (
+            <div>
+              {s.store_top.map((t) => (
+                <Flex key={t.network_id} gap={12} align="center" style={{ borderTop: '1px solid #EAECF0', padding: '8px 0' }}>
+                  <Typography.Text style={{ flex: 1 }}>{t.name}</Typography.Text>
+                  <Typography.Text type="secondary">{t.limit !== null ? `${t.used} из ${t.limit}` : t.used}</Typography.Text>
+                  <Typography.Text strong style={{ width: 80, textAlign: 'right' }}>
+                    {usd(t.cost_usd)}
+                  </Typography.Text>
+                </Flex>
+              ))}
+            </div>
+          )}
+        </Space>
+
+        <Flex justify="space-between" align="center" gap={12} wrap style={{ borderTop: '1px solid #EAECF0', paddingTop: 16 }}>
+          <Hint>
+            Подробно — <Link to="/ai?tab=usage">«ИИ-сервис» → Расход</Link>, строка «фото магазинов».
+          </Hint>
+          <Button size="large" type="primary" loading={busy} disabled={!dirty} onClick={save}>
+            Сохранить
+          </Button>
+        </Flex>
+      </Space>
+    </Card>
   )
 }
 
@@ -528,6 +720,7 @@ function PhotoConnection() {
               </Flex>
             </Space>
           </Card>
+          {s && <StorePhotosCard s={s} models={models} onSaved={() => refetch()} />}
         </Col>
         <Col xs={24} xl={8}>
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -597,11 +790,11 @@ function PhotoConnection() {
                 </div>
                 <div>
                   <Typography.Text strong>
-                    <CameraOutlined /> Генерация фото товара
+                    <ShopOutlined /> Фото для магазинов
                   </Typography.Text>{' '}
-                  <Tag>скоро</Tag>
+                  {s?.configured && s.store_enabled ? <Tag color="green">включено</Tag> : <Tag>выключено</Tag>}
                   <div>
-                    <Hint>новый товар по фото: из снимка в магазине — чистое фото для каталога</Hint>
+                    <Hint>Super Market сам делает чистое фото нового товара и товара без фото на инвентаризации — блок слева</Hint>
                   </div>
                 </div>
               </Space>

@@ -110,6 +110,8 @@ type NewItem struct {
 	Result    *NewItemResult `json:"result"`
 	ProductID *string        `json:"product_id"`
 	CreatedAt time.Time      `json:"created_at"`
+	// Photo — чистое фото от Super Market (photos_store.go); nil — не делалось.
+	Photo *NewItemPhoto `json:"photo"`
 	// Duplicate — похоже, этот товар уже есть в «Новых» (см. NewItemDup).
 	Duplicate *NewItemDup `json:"duplicate"`
 	// BarcodeInvalid — контрольная цифра штрихкода не сходится (опечатка):
@@ -131,6 +133,14 @@ type NewItemList struct {
 	Items  []NewItem     `json:"items"`
 	Counts NewItemCounts `json:"counts"`
 	Total  int           `json:"total"`
+}
+
+// mediaBase — начало ссылки первого фото (см. media.BaseOf).
+func mediaBase(images []string) string {
+	if len(images) == 0 {
+		return ""
+	}
+	return media.BaseOf(images[0])
 }
 
 func errNewOff(lang string) string {
@@ -188,9 +198,9 @@ func (s *Service) CreateNewItem(ctx context.Context, p *identity.Principal, in N
 			}
 		}
 		return tx.QueryRow(ctx, `
-			INSERT INTO start_new_items (network_id, store_id, created_by, barcode, images, status, error)
-			VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-			p.NetworkID, st.ID, p.EmployeeID, code, keys, status, msg).Scan(&id)
+			INSERT INTO start_new_items (network_id, store_id, created_by, barcode, images, status, error, media_base)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+			p.NetworkID, st.ID, p.EmployeeID, code, keys, status, msg, mediaBase(in.Images)).Scan(&id)
 	})
 	if err != nil {
 		return NewItem{}, err
@@ -208,13 +218,15 @@ const newItemSelect = `
 	SELECT id, store_id,
 	       CASE WHEN status = 'processing' AND updated_at < now() - $3::interval THEN 'failed' ELSE status END,
 	       CASE WHEN status = 'processing' AND updated_at < now() - $3::interval THEN $4 ELSE error END,
-	       barcode, images, result, product_id, created_at
+	       barcode, images, result, product_id, created_at, ` + newItemPhotoSQL + ` AS photo
 	FROM start_new_items`
 
 func scanNewItem(r pgx.CollectableRow) (NewItem, error) {
 	var it NewItem
 	var raw []byte
-	err := r.Scan(&it.ID, &it.StoreID, &it.Status, &it.Error, &it.Barcode, &it.Images, &raw, &it.ProductID, &it.CreatedAt)
+	var job []string
+	err := r.Scan(&it.ID, &it.StoreID, &it.Status, &it.Error, &it.Barcode, &it.Images, &raw, &it.ProductID, &it.CreatedAt, &job)
+	it.Photo = newItemPhoto(job)
 	it.BarcodeInvalid = it.Barcode != "" && !BarcodeValid(it.Barcode)
 	if err == nil && (it.Status == NewReady || it.Status == NewFailed) && len(raw) > 2 {
 		var res NewItemResult
@@ -676,6 +688,10 @@ func (s *Service) processNewItem(ctx context.Context, id, lang string) error {
 	if _, err := s.pool.Exec(ctx, `UPDATE start_new_items SET status = 'ready', error = '', result = $2 WHERE id = $1 AND status = 'processing'`, id, raw); err != nil {
 		return err
 	}
+	// Новый товар — Super Market делает его чистое фото (в фоне).
+	if res.Match == nil {
+		s.photoNewItem(ctx, id, networkID, storeID, employeeID, keys)
+	}
 	// Сомнений нет — товар встаёт в «Мои товары» сам; магазину остаётся
 	// только то, что требует внимания.
 	_, err = s.tryAutoAdd(ctx, id, networkID, storeID, employeeID, code, res, keys)
@@ -926,6 +942,9 @@ type NewItemConfirm struct {
 	UnitID      string               `json:"unit_id"`
 	Barcode     *string              `json:"barcode"`
 	Images      []string             `json:"images"`
+	// KeepOwnPhoto — «Оставить моё фото»: чистое фото Super Market не ставить
+	// первым (Images — как прислал магазин).
+	KeepOwnPhoto bool `json:"keep_own_photo"`
 }
 
 type NewItemConfirmResult struct {
@@ -1024,6 +1043,9 @@ func (s *Service) ConfirmNewItem(ctx context.Context, p *identity.Principal, id 
 			}
 		}
 		if _, err := tx.Exec(ctx, `UPDATE start_new_items SET status = 'done', product_id = $2 WHERE id = $1`, id, pid); err != nil {
+			return err
+		}
+		if err := s.confirmPhoto(ctx, tx, id, pid, out.Created, in.KeepOwnPhoto); err != nil {
 			return err
 		}
 		out.ProductID = pid

@@ -16,15 +16,50 @@ import 'scanner.dart';
 import 'start_api.dart';
 import 'start_logic.dart';
 
-/// Фото товара или серый квадрат.
+/// Цвета фото от Super Market (Figma «Нормализация фото для магазина»).
+const kPhotoPurple = Color(0xFF6938EF);
+const kPhotoPurpleSoft = Color(0xFFF4F3FF);
+const kPhotoPurpleInk = Color(0xFF3E1C96);
+const kPhotoGreen = Color(0xFF079455);
+
+/// Фото товара или серый квадрат. badge — метка фото от Super Market:
+/// processing — делается (фиолетовая), done — готово (зелёная).
 class ProductThumb extends StatelessWidget {
-  const ProductThumb(this.url, {super.key, this.size = 44});
+  const ProductThumb(this.url, {super.key, this.size = 44, this.badge});
 
   final String? url;
   final double size;
+  final Object? badge;
 
   @override
   Widget build(BuildContext context) {
+    final thumb = _thumb();
+    if (badge != 'processing' && badge != 'done') return thumb;
+    final double d = (size * 0.36).clamp(16.0, 40.0).toDouble();
+    return SizedBox(
+      width: size + 3,
+      height: size + 3,
+      child: Stack(children: [
+        thumb,
+        Positioned(
+          right: 0,
+          bottom: 0,
+          child: Container(
+            width: d,
+            height: d,
+            decoration: BoxDecoration(
+              color: badge == 'processing' ? kPhotoPurple : kPhotoGreen,
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.white, width: 2),
+            ),
+            child: Icon(badge == 'processing' ? Icons.auto_awesome_rounded : Icons.check_rounded, size: d * 0.6, color: AppColors.white),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _thumb() {
     final empty = Icon(Icons.image_rounded, size: size * 0.45, color: AppColors.muted);
     return Container(
       width: size,
@@ -453,6 +488,20 @@ class _CountSheetState extends State<_CountSheet> {
   /// Фото товара, снятые здесь же (до 6: лицевая сторона, этикетка, состав).
   final _photos = <String>[];
   bool _busy = false;
+  // Super Market сделает из снимка чистое фото (М3) — если включено и лимит не кончился.
+  bool _cleanPhoto = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!_hadPhoto) {
+      widget.start.photoQuota().then((q) {
+        final limit = q['limit'] as num?;
+        final on = q['enabled'] == true && (limit == null || ((q['used'] as num?) ?? 0) < limit);
+        if (mounted) setState(() => _cleanPhoto = on);
+      }).catchError((Object _) {});
+    }
+  }
 
   static const _maxPhotos = 6;
 
@@ -611,6 +660,21 @@ class _CountSheetState extends State<_CountSheet> {
                     ),
                   ]),
               ]),
+            ],
+            if (_photos.isNotEmpty && _cleanPhoto) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(color: kPhotoPurpleSoft, borderRadius: BorderRadius.circular(12)),
+                child: Row(children: [
+                  const Icon(Icons.auto_awesome_rounded, size: 18, color: kPhotoPurple),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(tr('Super Market делает чистое фото — сохраняйте, ждать не нужно', 'Super Market toza rasm tayyorlaydi — saqlang, kutish shart emas'),
+                        style: AppText.small.copyWith(fontSize: 13, color: kPhotoPurpleInk, fontWeight: FontWeight.w500)),
+                  ),
+                ]),
+              ),
             ],
             const SizedBox(height: 10),
             SheetButton(

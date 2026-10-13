@@ -29,7 +29,9 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/orders"
 	"github.com/sanedidi/super-market/backend/internal/payments"
 	"github.com/sanedidi/super-market/backend/internal/planapi"
+	"github.com/sanedidi/super-market/backend/internal/plans"
 	"github.com/sanedidi/super-market/backend/internal/platform/config"
+	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/platform/sms"
 	"github.com/sanedidi/super-market/backend/internal/platform/telegram"
@@ -110,6 +112,16 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 	tenantSvc := tenant.NewService(pool)
 	startSvc := start.NewService(pool, aiSvc, mediaSvc, invSvc, catSvc, log)
 	varSvc := variants.NewService(pool, catSvc, aiSvc, log)
+	// Нормализация фото для магазина: очередь photo_jobs, лимит — по тарифу.
+	startSvc.Photos = aiPhoto
+	aiPhoto.OnStoreDone = startSvc.ApplyStorePhoto
+	aiPhoto.Limit = func(ctx context.Context, q db.Querier, networkID string) (*int, error) {
+		p, err := plans.Effective(ctx, q, networkID)
+		if err != nil {
+			return nil, err
+		}
+		return p.Limit(plans.LimitAIPhotos), nil
+	}
 	if InvoicesSync {
 		scans.Sync()
 		startSvc.Sync()
@@ -118,6 +130,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		startSvc.SweepNewItems()
 		// Группы вариаций своих товаров: раз в день и после «Провести все».
 		varSvc.StartDaily()
+		aiPhoto.StartWorker(context.Background())
 		startSvc.OnOwnAdded = func(networkID string) { varSvc.StartNetSuggest(context.Background(), networkID) }
 	}
 	h := httpx.NewRouter(log, pool,

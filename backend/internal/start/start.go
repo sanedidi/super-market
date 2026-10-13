@@ -57,6 +57,8 @@ type Service struct {
 	// OnOwnAdded — в сеть добавились свои товары («Провести все»): Super
 	// Market ищет среди них группы вариаций.
 	OnOwnAdded func(networkID string)
+	// Photos — нормализация фото для магазина (photos_store.go); nil — выключена.
+	Photos *ai.PhotoService
 }
 
 func NewService(pool *pgxpool.Pool, aiSvc *ai.Service, mediaSvc *media.Service, inv *inventory.Service, cat *catalog.Service, log *slog.Logger) *Service {
@@ -132,6 +134,9 @@ type Line struct {
 	// Variant — товар в подтверждённой группе вариаций: инвентаризация
 	// показывает группу своей таблицей, цена ставится на вес (или на группу).
 	Variant *LineVariant `json:"variant"`
+	// Photo — фото от Super Market: processing — делается, done — первым
+	// стоит его фото, "" — нет.
+	Photo string `json:"photo"`
 }
 
 // LineVariant — место товара в группе вариаций.
@@ -210,7 +215,8 @@ const lineSelect = `
 	       l.source, p.network_id IS NOT NULL, p.moderation_status, l.document_id IS NOT NULL, l.added_at,
 	       vg.id, loc(vg.name, vg.name_uz), loc(vg.weight_label, vg.weight_label_uz), loc(vg.flavor_label, vg.flavor_label_uz),
 	       loc(p.variant_weight, p.variant_weight_uz), loc(p.variant_flavor, p.variant_flavor_uz),
-	       EXISTS (SELECT 1 FROM variant_own_prices o WHERE o.store_id = $3 AND o.product_id = p.id)
+	       EXISTS (SELECT 1 FROM variant_own_prices o WHERE o.store_id = $3 AND o.product_id = p.id),
+	       COALESCE(` + linePhotoSQL + `, '')
 	FROM start_lines l
 	JOIN products p ON p.id = l.product_id
 	JOIN units u ON u.id = p.unit_id
@@ -223,7 +229,7 @@ func scanLine(row pgx.CollectableRow) (Line, error) {
 	var gid, gname, wl, fl, w, f *string
 	var own bool
 	err := row.Scan(&l.ProductID, &l.Name, &l.Image, &l.UnitShort, &l.IsFractional, &l.Barcode, &l.Qty, &l.Cost, &l.Price,
-		&l.CurrentPrice, &l.Source, &l.Own, &l.Moderation, &l.Posted, &l.AddedAt, &gid, &gname, &wl, &fl, &w, &f, &own)
+		&l.CurrentPrice, &l.Source, &l.Own, &l.Moderation, &l.Posted, &l.AddedAt, &gid, &gname, &wl, &fl, &w, &f, &own, &l.Photo)
 	if err == nil && gid != nil {
 		l.Variant = &LineVariant{GroupID: *gid, GroupName: deref(gname), WeightLabel: deref(wl), FlavorLabel: deref(fl),
 			Weight: deref(w), Flavor: deref(f), OwnPrice: own}

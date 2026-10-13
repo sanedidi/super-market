@@ -11,11 +11,25 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Alert, App, Button, Col, Flex, Form, Input, Modal, Pagination, Progress, Row, Space, Spin, Tag, Typography } from 'antd'
-import { CheckOutlined, CopyOutlined, DeleteOutlined, FolderAddOutlined, PlusOutlined, ReloadOutlined, StarFilled, TagsOutlined } from '@ant-design/icons'
+import {
+  CameraOutlined,
+  CheckCircleFilled,
+  CheckOutlined,
+  CopyOutlined,
+  DeleteOutlined,
+  FolderAddOutlined,
+  PictureOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  RollbackOutlined,
+  StarFilled,
+  TagsOutlined,
+} from '@ant-design/icons'
 import { ApiError, FormTranslate, ImageUpload, RemoteSelect, api, errorText, getLang, tr } from '@sm/shared'
 import { useStore } from '../../ctx'
 import type { DictItem } from '../../types'
-import { useStartRefresh, type CategoryRef, type CategorySuggestion, type NewCategory, type NewItem, type NewItemConfirmResult, type NewItemDup, type NewItemList, type NewItemsBulk } from './api'
+import { Link } from 'react-router-dom'
+import { quotaOut, usePhotoQuota, useStartRefresh, type CategoryRef, type CategorySuggestion, type NewCategory, type NewItem, type NewItemConfirmResult, type NewItemDup, type NewItemList, type NewItemsBulk } from './api'
 import { Thumb } from './Thumb'
 
 const PURPLE = '#6938EF'
@@ -53,6 +67,62 @@ function reasons(it: NewItem): ReactNode[] {
   return out
 }
 
+/** Метка фото от Super Market (Figma «Нормализация фото для магазина», Н1). */
+function PhotoChip({ it }: { it: NewItem }) {
+  const ph = it.photo
+  if (!ph) return null
+  const chip = (bg: string, color: string, icon: ReactNode, text: string) => (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: bg, color, borderRadius: 6, padding: '1px 8px', fontSize: 12, fontWeight: 600 }}>
+      {icon}
+      {text}
+    </span>
+  )
+  switch (ph.status) {
+    case 'processing':
+      return chip('#F4F3FF', '#5925DC', <StarFilled />, tr('Super Market делает фото… ~1 мин', 'Super Market rasm tayyorlamoqda… ~1 daq'))
+    case 'done':
+      return chip('#ECFDF3', '#067647', <CheckOutlined />, tr('Фото Super Market', 'Super Market rasmi'))
+    case 'failed':
+      return chip('#F2F4F7', '#475467', <PictureOutlined />, tr('Фото не вышло — осталось ваше', 'Rasm chiqmadi — sizniki qoldi'))
+    case 'limit':
+      return chip('#F2F4F7', '#475467', <PictureOutlined />, tr('Ваше фото · лимит месяца', 'Sizning rasmingiz · oylik limit'))
+  }
+}
+
+/** Миниатюра карточки: готовое фото Super Market — оно, иначе фото магазина. */
+export const newItemThumb = (it: NewItem) => (it.photo?.status === 'done' && it.photo.image ? it.photo.image : it.images[0])
+export const newItemBadge = (it: NewItem) => (it.photo?.status === 'processing' || it.photo?.status === 'done' ? it.photo.status : undefined)
+
+/** Н4: фото Super Market на этот месяц закончились — товары остаются с фото магазина. */
+export function PhotoLimitBar() {
+  const { storeId } = useStore()
+  const q = usePhotoQuota(storeId).data
+  if (!quotaOut(q)) return null
+  const month = new Date(new Date(q!.resets_on).getTime() - 86400000).toLocaleDateString(getLang() === 'uz' ? 'uz-UZ' : 'ru-RU', { month: 'long' })
+  const next = new Date(q!.resets_on).toLocaleDateString(getLang() === 'uz' ? 'uz-UZ' : 'ru-RU', { day: 'numeric', month: 'long' })
+  return (
+    <Flex gap={10} style={{ padding: '12px 20px', background: AMBER.bg, borderBottom: '1px solid #EAECF0' }}>
+      <CameraOutlined style={{ color: AMBER.icon, fontSize: 16, marginTop: 2 }} />
+      <div>
+        <Typography.Text strong style={{ color: AMBER.text, display: 'block' }}>
+          {tr(`Фото Super Market на ${month} закончились — ${q!.used} из ${q!.limit}`, `${month} uchun Super Market rasmlari tugadi — ${q!.limit} tadan ${q!.used}`)}
+        </Typography.Text>
+        <Typography.Text style={{ color: AMBER.text, fontSize: 13 }}>
+          {tr(
+            `Новые товары сохраняются с вашими фото. С ${next} Super Market снова делает фото сам. Больше фото в месяц — на другом тарифе.`,
+            `Yangi mahsulotlar sizning rasmlaringiz bilan saqlanadi. ${next}dan Super Market yana rasmni oʻzi tayyorlaydi. Oyiga koʻproq rasm — boshqa tarifda.`,
+          )}
+        </Typography.Text>
+        <div>
+          <Link to="/plan" style={{ color: '#E11D2A', fontWeight: 600, fontSize: 13 }}>
+            {tr('Сравнить тарифы →', 'Tariflarni solishtirish →')}
+          </Link>
+        </div>
+      </div>
+    </Flex>
+  )
+}
+
 /** Что сейчас с карточкой в «Новых» — для подсказок «уже в «Новых»». */
 export const newItemState = (s: NewItem['status']) =>
   s === 'ready'
@@ -70,7 +140,9 @@ export function useNewItems(storeId: string, page: number) {
     queryKey: ['/store/start/new-items', storeId, page],
     queryFn: () => api.get<NewItemList>('/store/start/new-items', { store_id: storeId, limit: NEW_PAGE, offset: (page - 1) * NEW_PAGE }),
     placeholderData: keepPreviousData,
-    refetchInterval: (q) => ((q.state.data?.counts.processing ?? 0) > 0 ? 3000 : false),
+    // Пока что-то распознаётся или Super Market делает фото — обновляется сама.
+    refetchInterval: (q) =>
+      (q.state.data?.counts.processing ?? 0) > 0 || q.state.data?.items.some((it) => it.photo?.status === 'processing') ? 3000 : false,
   })
 }
 
@@ -170,6 +242,7 @@ export function NewItemsList({
           )}
         </Typography.Text>
       </Flex>
+      <PhotoLimitBar />
       {(list?.counts.bulk ?? 0) > 0 && <BulkBar ready={list!.counts.bulk!} rest={(list?.total ?? 0) - list!.counts.bulk!} />}
       {(list?.counts.failed ?? 0) > 0 && <RetryBar failed={list!.counts.failed} />}
       {pager}
@@ -184,7 +257,7 @@ export function NewItemsList({
       ) : (
         items.map((it) => (
           <Flex key={it.id} align="center" gap={14} style={{ padding: '12px 20px', borderBottom: '1px solid #EAECF0', background: highlight === it.id ? AMBER.bg : undefined }}>
-            <Thumb src={it.images[0]} size={48} />
+            <Thumb src={newItemThumb(it)} size={48} badge={newItemBadge(it)} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <Flex align="center" gap={8} wrap>
                 <Typography.Text strong style={{ fontWeight: 600, color: it.status === 'processing' ? '#667085' : undefined }}>
@@ -201,6 +274,11 @@ export function NewItemsList({
                   .filter(Boolean)
                   .join(' · ')}
               </Typography.Text>
+              {it.photo && it.status !== 'processing' && (
+                <div style={{ marginTop: 4 }}>
+                  <PhotoChip it={it} />
+                </div>
+              )}
             </div>
             {it.status === 'processing' ? (
               <Tag color="purple" bordered={false} style={{ marginInlineEnd: 0 }}>
@@ -493,6 +571,111 @@ export function NewByPhotoModal({ open, onClose, onSent, onManual }: { open: boo
 
 // ------------------------------------------------------------ проверка (Р4)
 
+/** Н2 (Figma «Нормализация фото для магазина»): до / после. Фото Super Market
+ * встаёт первым; «Оставить моё фото» — первым снова снимок магазина;
+ * «Переделать» — Super Market делает фото ещё раз. */
+function PhotoCompare({ item, images, onImages, onItem }: { item: NewItem; images: string[]; onImages: (v: string[]) => void; onItem: (it: NewItem) => void }) {
+  const { message } = App.useApp()
+  const refresh = useStartRefresh()
+  const [busy, setBusy] = useState(false)
+  const ph = item.photo!
+  const clean = ph.status === 'done' ? ph.image : null
+  const main = !!clean && images[0] === clean
+  const own = item.images
+  const redo = async () => {
+    setBusy(true)
+    try {
+      onItem(await api.post<NewItem>(`/store/start/new-items/${item.id}/photo`))
+      await refresh()
+    } catch (e) {
+      message.error(errorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const keepOwn = () => clean && onImages([...images.filter((u) => u !== clean), clean])
+  const useClean = () => clean && onImages([clean, ...images.filter((u) => u !== clean)])
+  const box = 168
+  return (
+    <div>
+      <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>
+        {tr('Фото Super Market', 'Super Market rasmi')}
+      </Typography.Text>
+      <Flex gap={20} wrap style={{ background: '#F9FAFB', borderRadius: 12, padding: 14 }}>
+        <Flex vertical gap={8} style={{ width: box }}>
+          <div
+            style={{
+              width: box,
+              height: box,
+              borderRadius: 12,
+              background: '#fff',
+              border: '1px solid #EAECF0',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'hidden',
+            }}
+          >
+            {clean ? (
+              <img src={clean} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+            ) : ph.status === 'processing' ? (
+              <Flex vertical align="center" gap={8} style={{ padding: 12, textAlign: 'center' }}>
+                <Spin />
+                <Typography.Text style={{ fontSize: 12, color: '#5925DC' }}>{tr('Super Market делает фото… ~1 мин', 'Super Market rasm tayyorlamoqda… ~1 daq')}</Typography.Text>
+              </Flex>
+            ) : (
+              <Flex vertical align="center" gap={6} style={{ padding: 12, textAlign: 'center' }}>
+                <PictureOutlined style={{ fontSize: 24, color: '#98A2B3' }} />
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {ph.status === 'limit'
+                    ? tr('Фото Super Market на этот месяц закончились', 'Bu oy uchun Super Market rasmlari tugadi')
+                    : tr('Фото не вышло — осталось ваше', 'Rasm chiqmadi — sizniki qoldi')}
+                </Typography.Text>
+              </Flex>
+            )}
+          </div>
+          {clean && (
+            <Typography.Text style={{ fontSize: 12, fontWeight: 600, color: main ? '#067647' : '#475467' }}>
+              {main ? <CheckCircleFilled style={{ marginRight: 4 }} /> : null}
+              {main ? tr('Фото Super Market · главное', 'Super Market rasmi · asosiy') : tr('Фото Super Market · не главное', 'Super Market rasmi · asosiy emas')}
+            </Typography.Text>
+          )}
+        </Flex>
+        <Flex vertical gap={10} style={{ flex: 1, minWidth: 200 }}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {tr('Ваши фото', 'Sizning rasmlaringiz')} · {own.length}
+          </Typography.Text>
+          <Flex gap={8} wrap>
+            {own.map((u) => (
+              <Thumb key={u} src={u} size={72} />
+            ))}
+          </Flex>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {tr('Остаются в карточке — их видит модератор', 'Kartochkada qoladi — moderator koʻradi')}
+          </Typography.Text>
+          <Space wrap>
+            {clean && main && (
+              <Button icon={<RollbackOutlined />} onClick={keepOwn}>
+                {tr('Оставить моё фото', 'Oʻz rasmimni qoldirish')}
+              </Button>
+            )}
+            {clean && !main && (
+              <Button icon={<StarFilled style={{ color: PURPLE }} />} onClick={useClean}>
+                {tr('Главным — фото Super Market', 'Asosiy — Super Market rasmi')}
+              </Button>
+            )}
+            {ph.status !== 'processing' && (
+              <Button icon={<ReloadOutlined />} loading={busy} disabled={ph.status === 'limit'} onClick={redo}>
+                {tr('Переделать', 'Qayta tayyorlash')}
+              </Button>
+            )}
+          </Space>
+        </Flex>
+      </Flex>
+    </div>
+  )
+}
+
 type Choice = { category_id: string } | { new_category: NewCategory }
 
 /** Р4: карточка, заполненная Super Market (или пустая — «не удалось»). */
@@ -504,10 +687,40 @@ export function ReviewModal({ item, onClose }: { item: NewItem | null; onClose: 
   const [saving, setSaving] = useState<'' | 'confirm' | 'match' | 'merge' | 'retry' | 'delete'>('')
   const [choice, setChoice] = useState<Choice | null>(null)
   const res = item?.result ?? null
+  // Карточка со свежим фото Super Market: пока делается — опрашиваем.
+  const [cur, setCur] = useState<NewItem | null>(item)
+  const clean = cur?.photo?.status === 'done' ? cur.photo.image : null
+  const lastClean = useRef<string | null>(null)
+  const images: string[] = Form.useWatch('images', form) ?? []
+
+  useEffect(() => {
+    setCur(item)
+    lastClean.current = item?.photo?.status === 'done' ? item.photo.image : null
+  }, [item])
+  useEffect(() => {
+    if (!cur || cur.photo?.status !== 'processing') return
+    const t = setInterval(async () => {
+      try {
+        setCur(await api.get<NewItem>(`/store/start/new-items/${cur.id}`))
+      } catch {
+        /* следующая попытка */
+      }
+    }, 3000)
+    return () => clearInterval(t)
+  }, [cur])
+  // Фото готово (или переделано) — встаёт первым, прежнее фото Super Market заменяется.
+  useEffect(() => {
+    if (!clean || clean === lastClean.current) return
+    const was = lastClean.current
+    lastClean.current = clean
+    const now: string[] = form.getFieldValue('images') ?? []
+    form.setFieldValue('images', [clean, ...now.filter((u) => u !== clean && u !== was)])
+  }, [clean, form])
 
   useEffect(() => {
     if (!item) return
     const r = item.result
+    const ready = item.photo?.status === 'done' && item.photo.image ? item.photo.image : null
     form.resetFields()
     form.setFieldsValue({
       name: r?.name,
@@ -516,7 +729,7 @@ export function ReviewModal({ item, onClose }: { item: NewItem | null; onClose: 
       brand_name: r?.brand_id ? '' : (r?.brand ?? ''),
       unit_id: r?.unit_id || undefined,
       barcode: item.barcode,
-      images: item.images,
+      images: ready ? [ready, ...item.images] : item.images,
       description: r?.description ?? '',
     })
     setChoice(null)
@@ -549,6 +762,8 @@ export function ReviewModal({ item, onClose }: { item: NewItem | null; onClose: 
         unit_id: v.unit_id,
         barcode: String(v.barcode ?? '').trim(),
         images: (v.images as string[]) ?? [],
+        // «Оставить моё фото»: первым стоит не фото Super Market.
+        keep_own_photo: !!clean && ((v.images as string[]) ?? [])[0] !== clean,
         ...choice,
       })
       await done(r)
@@ -660,6 +875,14 @@ export function ReviewModal({ item, onClose }: { item: NewItem | null; onClose: 
                 {tr(`Super Market заполнил по ${item.images.length} фото — проверьте название и категорию`, `Super Market ${item.images.length} ta rasm boʻyicha toʻldirdi — nomi va kategoriyani tekshiring`)}
               </Typography.Text>
             </Flex>
+          )}
+          {cur?.photo && (
+            <PhotoCompare
+              item={cur}
+              images={images}
+              onImages={(v) => form.setFieldValue('images', v)}
+              onItem={setCur}
+            />
           )}
           {!failed && res?.note && <Alert type="warning" showIcon message={tr('Проверьте', 'Tekshiring')} description={res.note} />}
           {item.barcode_invalid && (

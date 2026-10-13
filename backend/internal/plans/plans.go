@@ -516,6 +516,9 @@ var usageSQL = map[string]string{
 		WHERE e.network_id = $1 AND e.status = 'active' AND NOT r.is_owner AND NOT ('orders.deliver' = ANY (r.permissions))`,
 	LimitCouriers: `SELECT count(*) FROM employees e JOIN roles r ON r.id = e.role_id
 		WHERE e.network_id = $1 AND e.status = 'active' AND NOT r.is_owner AND 'orders.deliver' = ANY (r.permissions)`,
+	// Фото от Super Market в этом месяце (по Ташкенту); как ai.StoreUsedSQL.
+	LimitAIPhotos: `SELECT count(*) FROM photo_jobs WHERE network_id = $1 AND status IN ('queued', 'processing', 'done')
+		AND created_at >= date_trunc('month', now() AT TIME ZONE 'Asia/Tashkent') AT TIME ZONE 'Asia/Tashkent'`,
 }
 
 // Used — сколько уже использовано по лимиту key (для stores, registers,

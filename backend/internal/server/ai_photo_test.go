@@ -29,6 +29,9 @@ type fakeGemini struct {
 	prompts  []string
 	search   []bool // был ли инструмент googleSearch в запросе
 	noSearch bool   // отвечать 400 на запрос с поиском
+	images   []int  // сколько фото было в запросе
+	fail     bool   // отвечать 500
+	onCall   func() // перед ответом (магазин меняет фото, пока Gemini рисует)
 }
 
 func (f *fakeGemini) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -67,7 +70,7 @@ func (f *fakeGemini) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		parts := body.Contents[0].Parts
-		if len(parts) != 2 || parts[0].InlineData == nil || parts[0].InlineData.Data == "" || body.GenerationConfig.Image.Aspect != "1:1" ||
+		if len(parts) < 2 || parts[0].InlineData == nil || parts[0].InlineData.Data == "" || body.GenerationConfig.Image.Aspect != "1:1" ||
 			!strings.Contains(strings.Join(body.GenerationConfig.Modalities, ","), "IMAGE") {
 			w.WriteHeader(400)
 			_, _ = w.Write([]byte(`{"error":{"message":"bad request"}}`))
@@ -79,9 +82,18 @@ func (f *fakeGemini) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(`{"error":{"message":"Search is not supported"}}`))
 			return
 		}
+		if f.fail {
+			w.WriteHeader(500)
+			_, _ = w.Write([]byte(`{"error":{"message":"internal"}}`))
+			return
+		}
+		if f.onCall != nil {
+			f.onCall()
+		}
 		f.calls++
-		f.prompts = append(f.prompts, parts[1].Text+" | size="+body.GenerationConfig.Image.Size)
+		f.prompts = append(f.prompts, parts[len(parts)-1].Text+" | size="+body.GenerationConfig.Image.Size)
 		f.search = append(f.search, search)
+		f.images = append(f.images, len(parts)-1)
 		// Картинка 64×48 (не квадрат) — сервер вписывает её в квадрат сам.
 		img := image.NewRGBA(image.Rect(0, 0, 64, 48))
 		for i := range img.Pix {

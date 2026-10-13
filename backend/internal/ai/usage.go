@@ -100,12 +100,14 @@ type UsageTotals struct {
 	Invoices int `json:"invoices"`
 	Photos   int `json:"photos"` // фото полок («Начало работы»)
 	// ProductPhotos — фото товаров через «ИИ для фото» (Gemini).
-	ProductPhotos int     `json:"product_photos"`
-	Errors        int     `json:"errors"`
-	Tests         int     `json:"tests"`
-	Input         int64   `json:"input_tokens"`
-	Output        int64   `json:"output_tokens"`
-	CostUZS       float64 `json:"cost_uzs"`
+	ProductPhotos int `json:"product_photos"`
+	// StorePhotos — фото, которые Super Market сделал магазинам сам.
+	StorePhotos int     `json:"store_photos"`
+	Errors      int     `json:"errors"`
+	Tests       int     `json:"tests"`
+	Input       int64   `json:"input_tokens"`
+	Output      int64   `json:"output_tokens"`
+	CostUZS     float64 `json:"cost_uzs"`
 }
 
 type UsageDay struct {
@@ -128,12 +130,14 @@ type UsageItem struct {
 	Invoices  int    `json:"invoices"`
 	Photos    int    `json:"photos"`
 	// ProductPhotos — фото товаров через «ИИ для фото» (Gemini).
-	ProductPhotos int     `json:"product_photos"`
-	Errors        int     `json:"errors"`
-	Input         int64   `json:"input_tokens"`
-	Output        int64   `json:"output_tokens"`
-	CostUZS       float64 `json:"cost_uzs"`
-	Share         float64 `json:"share"`
+	ProductPhotos int `json:"product_photos"`
+	// StorePhotos — фото, которые Super Market сделал магазинам сам.
+	StorePhotos int     `json:"store_photos"`
+	Errors      int     `json:"errors"`
+	Input       int64   `json:"input_tokens"`
+	Output      int64   `json:"output_tokens"`
+	CostUZS     float64 `json:"cost_uzs"`
+	Share       float64 `json:"share"`
 }
 
 type UsageReport struct {
@@ -177,10 +181,10 @@ func (s *Service) Usage(ctx context.Context, f UsageFilter) (UsageReport, error)
 	err = s.pool.QueryRow(ctx, `
 		SELECT count(*)::int, (count(*) FILTER (WHERE u.kind = 'invoice'))::int, (count(*) FILTER (WHERE NOT u.ok))::int,
 		       (count(*) FILTER (WHERE u.kind IN ('test', 'photo_test')))::int, (count(*) FILTER (WHERE u.kind = 'shelf'))::int,
-		       (count(*) FILTER (WHERE u.kind = 'photo'))::int,
+		       (count(*) FILTER (WHERE u.kind = 'photo'))::int, (count(*) FILTER (WHERE u.kind = 'photo_store'))::int,
 		       COALESCE(sum(u.input_tokens), 0)::int8, COALESCE(sum(u.output_tokens), 0)::int8, COALESCE(sum(u.cost_uzs), 0)::float8
 		FROM ai_usage u WHERE `+where, f.From, f.To, nf).
-		Scan(&t.Requests, &t.Invoices, &t.Errors, &t.Tests, &t.Photos, &t.ProductPhotos, &t.Input, &t.Output, &t.CostUZS)
+		Scan(&t.Requests, &t.Invoices, &t.Errors, &t.Tests, &t.Photos, &t.ProductPhotos, &t.StorePhotos, &t.Input, &t.Output, &t.CostUZS)
 	if err != nil {
 		return rep, err
 	}
@@ -225,8 +229,8 @@ func (s *Service) Usage(ctx context.Context, f UsageFilter) (UsageReport, error)
 		SELECT COALESCE(`+key+`::text, ''), min(`+name+`), min(`+sub+`), COALESCE(min(u.network_id::text), ''),
 		       count(DISTINCT u.store_id)::int, count(DISTINCT u.employee_id)::int,
 		       count(*)::int, (count(*) FILTER (WHERE u.kind = 'invoice'))::int, (count(*) FILTER (WHERE u.kind = 'shelf'))::int,
-		       (count(*) FILTER (WHERE u.kind = 'photo'))::int, (count(*) FILTER (WHERE NOT u.ok))::int,
-		       sum(u.input_tokens)::int8, sum(u.output_tokens)::int8, sum(u.cost_uzs)::float8
+		       (count(*) FILTER (WHERE u.kind = 'photo'))::int, (count(*) FILTER (WHERE u.kind = 'photo_store'))::int,
+		       (count(*) FILTER (WHERE NOT u.ok))::int, sum(u.input_tokens)::int8, sum(u.output_tokens)::int8, sum(u.cost_uzs)::float8
 		FROM ai_usage u
 		LEFT JOIN networks n ON n.id = u.network_id
 		LEFT JOIN stores st ON st.id = u.store_id
@@ -239,7 +243,7 @@ func (s *Service) Usage(ctx context.Context, f UsageFilter) (UsageReport, error)
 	}
 	rep.Items, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (UsageItem, error) {
 		var it UsageItem
-		err := r.Scan(&it.ID, &it.Name, &it.Sub, &it.NetworkID, &it.Stores, &it.Employees, &it.Requests, &it.Invoices, &it.Photos, &it.ProductPhotos, &it.Errors,
+		err := r.Scan(&it.ID, &it.Name, &it.Sub, &it.NetworkID, &it.Stores, &it.Employees, &it.Requests, &it.Invoices, &it.Photos, &it.ProductPhotos, &it.StorePhotos, &it.Errors,
 			&it.Input, &it.Output, &it.CostUZS)
 		return it, err
 	})

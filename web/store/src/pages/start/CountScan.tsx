@@ -8,11 +8,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Alert, App, Button, Card, Drawer, Flex, Input, InputNumber, Space, Typography, type InputRef } from 'antd'
-import { PlusOutlined, QrcodeOutlined, SearchOutlined } from '@ant-design/icons'
+import { PlusOutlined, QrcodeOutlined, SearchOutlined, StarFilled } from '@ant-design/icons'
 import { ImageUpload, api, errorText, money, tr, useDebounced } from '@sm/shared'
 import { useStore } from '../../ctx'
 import { Thumb } from './Thumb'
-import { plainNum, type Draft, type Line, type LinesResult, type ScanResult } from './api'
+import { plainNum, quotaOut, usePhotoQuota, type Draft, type Line, type LinesResult, type ScanResult } from './api'
 
 const isBarcode = (s: string) => /^[0-9]{6,14}$/.test(s)
 
@@ -143,7 +143,7 @@ export function ScanCard({ onFound }: { onFound: (l: Line) => void }) {
           <Space direction="vertical" size={6} style={{ width: '100%', marginTop: 8 }}>
             {found.map((l) => (
               <Flex key={l.product_id} gap={10} align="center">
-                <Thumb src={l.image} />
+                <Thumb src={l.image} badge={l.photo} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div>{l.name}</div>
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -173,6 +173,7 @@ export function CountDrawer({ line, onClose, onSaved }: { line: Line | null; onC
   const [photos, setPhotos] = useState<string[]>([])
   const [add, setAdd] = useState(false)
   const [busy, setBusy] = useState(false)
+  const quota = usePhotoQuota(storeId).data
   const filled = !!line && line.qty !== null
   const needPhoto = !!line && !line.image && photos.length === 0
 
@@ -237,7 +238,7 @@ export function CountDrawer({ line, onClose, onSaved }: { line: Line | null; onC
     >
       <Flex gap={16} wrap align="flex-start">
         <Flex gap={12} align="center" style={{ minWidth: 280, flex: 1 }}>
-          <Thumb src={line.image} />
+          <Thumb src={line.image} badge={line.photo} />
           <div>
             <div style={{ fontWeight: 600 }}>{line.name}</div>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -343,6 +344,14 @@ export function CountDrawer({ line, onClose, onSaved }: { line: Line | null; onC
                 )}
               </Typography.Paragraph>
               <ImageUpload multiple max={6} value={photos} onChange={setPhotos} />
+              {photos.length > 0 && quota?.enabled && !quotaOut(quota) && (
+                <Flex gap={8} align="center" style={{ marginTop: 10, background: '#F4F3FF', borderRadius: 10, padding: '8px 12px' }}>
+                  <StarFilled style={{ color: '#6938EF' }} />
+                  <Typography.Text style={{ fontSize: 13, color: '#3E1C96', fontWeight: 500 }}>
+                    {tr('Super Market сделает из снимка чистое фото — сохраняйте, ждать не нужно', 'Super Market suratdan toza rasm tayyorlaydi — saqlang, kutish shart emas')}
+                  </Typography.Text>
+                </Flex>
+              )}
             </div>
           }
         />

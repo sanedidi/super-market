@@ -41,6 +41,7 @@ func (m *Module) Routes(r chi.Router) {
 		if m.photo != nil {
 			r.Get("/admin/ai-photo", m.photoGet)
 			r.Put("/admin/ai-photo", m.photoSave)
+			r.Put("/admin/ai-photo/store", m.photoSaveStore)
 			r.Post("/admin/ai-photo/models", m.photoModels)
 			r.Post("/admin/ai-photo/test", m.photoTest)
 			r.Post("/admin/ai-photo/normalize", m.photoNormalize)
@@ -114,6 +115,13 @@ func (m *Module) photoGet(w http.ResponseWriter, r *http.Request) {
 func (m *Module) photoSave(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in PhotoInput) (PhotoSettings, error) {
 		return m.photo.Save(r.Context(), identity.FromContext(r.Context()).UserID, in)
+	})
+}
+
+// photoSaveStore — блок «Фото для магазинов».
+func (m *Module) photoSaveStore(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in StoreSettingsInput) (PhotoSettings, error) {
+		return m.photo.SaveStore(r.Context(), identity.FromContext(r.Context()).UserID, in)
 	})
 }
 

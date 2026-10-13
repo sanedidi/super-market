@@ -99,6 +99,15 @@ class StartApi {
 
   Future<void> retryNewItem(String id) => api.post('/store/start/new-items/$id/retry');
 
+  /// Одна карточка «Новых» (свежее фото от Super Market).
+  Future<Map<String, dynamic>> newItem(String id) async => await api.get('/store/start/new-items/$id') as Map<String, dynamic>;
+
+  /// «Переделать»: Super Market делает чистое фото карточки ещё раз → карточка.
+  Future<Map<String, dynamic>> redoNewItemPhoto(String id) async => await api.post('/store/start/new-items/$id/photo') as Map<String, dynamic>;
+
+  /// Фото от Super Market в этом месяце: {enabled, used, limit (null — без лимита), resets_on}.
+  Future<Map<String, dynamic>> photoQuota() async => await api.get('/store/start/photo-quota', {'store_id': storeId}) as Map<String, dynamic>;
+
   /// Карточка в «Новых» с этим штрихкодом (null — нет): сканер проверяет её,
   /// прежде чем предлагать «Новый товар» — второй раз тот же товар не заводим.
   Future<Map<String, dynamic>?> newItemByBarcode(String code) async {

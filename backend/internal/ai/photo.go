@@ -26,6 +26,7 @@ import (
 
 	"github.com/sanedidi/super-market/backend/internal/media"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
+	"github.com/sanedidi/super-market/backend/internal/platform/db"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
@@ -82,6 +83,17 @@ type PhotoSettings struct {
 	MonthFailed   int        `json:"month_failed"`
 	MonthCostUSD  float64    `json:"month_cost_usd"`
 	UpdatedAt     time.Time  `json:"updated_at"`
+	// «Фото для магазинов»: Super Market сам делает фото новых товаров и
+	// строк инвентаризации. StoreModel пусто — модель супер-админа.
+	StoreEnabled  bool       `json:"store_enabled"`
+	StoreNewItems bool       `json:"store_new_items"`
+	StoreLines    bool       `json:"store_lines"`
+	StoreModel    string     `json:"store_model"`
+	StorePhotos   int        `json:"store_photos"`
+	StoreFailed   int        `json:"store_failed"`
+	StoreCostUSD  float64    `json:"store_cost_usd"`
+	StoreNetworks int        `json:"store_networks"`
+	StoreTop      []StoreTop `json:"store_top"`
 }
 
 type photoRow struct {
@@ -99,19 +111,30 @@ type PhotoService struct {
 	jobs map[string]*photoJob
 	// Sync — обрабатывать задание сразу в запросе (тесты).
 	Sync bool
+
+	// Фото для магазинов (photo_store.go).
+	worker storeWorker
+	// Limit — лимит тарифа сети «Фото от Super Market» в месяц; nil — без лимита.
+	Limit func(ctx context.Context, q db.Querier, networkID string) (*int, error)
+	// OnStoreDone — положить готовое фото (карточка «Новых» или товар) и
+	// отметить задание done — в одной транзакции.
+	OnStoreDone func(ctx context.Context, d StoreDone) error
 }
 
 func NewPhotoService(ai *Service, m *media.Service, log *slog.Logger) *PhotoService {
 	return &PhotoService{ai: ai, media: m, log: log, jobs: map[string]*photoJob{}}
 }
 
-func (s *PhotoService) load(ctx context.Context) (photoRow, error) {
+func (s *PhotoService) load(ctx context.Context) (photoRow, error) { return s.loadQ(ctx, s.ai.pool) }
+
+func (s *PhotoService) loadQ(ctx context.Context, q db.Querier) (photoRow, error) {
 	var r photoRow
-	err := s.ai.pool.QueryRow(ctx, `
+	err := q.QueryRow(ctx, `
 		SELECT mode, base_url, model, api_key_enc, key_last4, background, size, outpaint, web_search, before_after, prompt,
-		       checked_at, check_ok, check_message, updated_at
+		       checked_at, check_ok, check_message, updated_at, store_enabled, store_new_items, store_lines, store_model
 		FROM ai_photo_settings`).Scan(&r.Mode, &r.BaseURL, &r.Model, &r.keyEnc, &r.KeyLast4, &r.Background, &r.Size,
-		&r.Outpaint, &r.WebSearch, &r.BeforeAfter, &r.Prompt, &r.CheckedAt, &r.CheckOK, &r.CheckMessage, &r.UpdatedAt)
+		&r.Outpaint, &r.WebSearch, &r.BeforeAfter, &r.Prompt, &r.CheckedAt, &r.CheckOK, &r.CheckMessage, &r.UpdatedAt,
+		&r.StoreEnabled, &r.StoreNewItems, &r.StoreLines, &r.StoreModel)
 	r.HasKey = len(r.keyEnc) > 0
 	r.Configured = r.HasKey && r.Model != "" && r.BaseURL != ""
 	r.DefaultPrompt = DefaultPhotoPrompt
@@ -129,6 +152,11 @@ func (s *PhotoService) Get(ctx context.Context) (PhotoSettings, error) {
 		FROM ai_usage
 		WHERE kind = 'photo' AND at >= date_trunc('month', now() AT TIME ZONE 'Asia/Tashkent') AT TIME ZONE 'Asia/Tashkent'`).
 		Scan(&r.MonthPhotos, &r.MonthFailed, &r.MonthCostUSD)
+	if err != nil {
+		return r.PhotoSettings, err
+	}
+	r.StoreTop = []StoreTop{}
+	err = s.storeMonth(ctx, &r.PhotoSettings)
 	return r.PhotoSettings, err
 }
 
@@ -530,17 +558,7 @@ func (s *PhotoService) one(ctx context.Context, t photoTask, i int) (string, flo
 	if err != nil {
 		return "", cost, err
 	}
-	var out []byte
-	outMime := "image/jpeg"
-	switch t.opts.Background {
-	case "transparent":
-		out, err = transparentPhoto(img.Data, t.opts.Size)
-		outMime = "image/png"
-	case "light":
-		out, err = squarePhoto(img.Data, t.opts.Size, color.RGBA{242, 242, 242, 255})
-	default:
-		out, err = squarePhoto(img.Data, t.opts.Size, color.RGBA{255, 255, 255, 255})
-	}
+	out, outMime, err := render(img.Data, t.opts)
 	if err != nil {
 		return "", cost, &ErrService{Msg: err.Error(), MsgUz: "Gemini yuborgan rasmni oʻqib boʻlmadi"}
 	}
@@ -552,6 +570,21 @@ func (s *PhotoService) one(ctx context.Context, t photoTask, i int) (string, flo
 		return "", cost, err
 	}
 	return t.mediaBase + key, cost, nil
+}
+
+// render — фото от Gemini в квадрат на фоне из настроек.
+func render(data []byte, o photoOpts) ([]byte, string, error) {
+	switch o.Background {
+	case "transparent":
+		out, err := transparentPhoto(data, o.Size)
+		return out, "image/png", err
+	case "light":
+		out, err := squarePhoto(data, o.Size, color.RGBA{242, 242, 242, 255})
+		return out, "image/jpeg", err
+	default:
+		out, err := squarePhoto(data, o.Size, color.RGBA{255, 255, 255, 255})
+		return out, "image/jpeg", err
+	}
 }
 
 // photoPrompt — инструкция для Gemini: правила (свои или стандартные) и настройки.

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -85,6 +86,13 @@ class _NewProductScreenState extends State<NewProductScreen> {
   // Д2: похоже, этот товар уже есть в «Новых» — «Это он» объединяет карточки.
   late final Map<String, dynamic>? _dup = widget.review?['duplicate'] as Map<String, dynamic>?;
   bool get _isReview => widget.review != null;
+  // Чистое фото от Super Market (Figma «Нормализация фото для магазина», М2):
+  // главное в карточке; «Оставить моё» — главным снова фото магазина.
+  late Map<String, dynamic>? _photo = widget.review?['photo'] as Map<String, dynamic>?;
+  bool _keepOwn = false;
+  bool _redoing = false;
+  Timer? _photoPoll;
+  String? get _clean => _photo?['status'] == 'done' && _photo?['image'] != null ? '${_photo!['image']}' : null;
   final _price = TextEditingController();
   List<_Option> _categories = const [];
   List<_Option> _brands = const [];
@@ -102,10 +110,138 @@ class _NewProductScreenState extends State<NewProductScreen> {
     final unit = _res?['unit_id'] as String?;
     if (unit != null && unit.isNotEmpty) _unitId = unit;
     _loadDicts();
+    _pollPhoto();
+  }
+
+  /// Пока Super Market делает фото — обновляем карточку.
+  void _pollPhoto() {
+    _photoPoll?.cancel();
+    if (!_isReview || _photo?['status'] != 'processing') return;
+    _photoPoll = Timer.periodic(const Duration(seconds: 3), (_) async {
+      try {
+        final it = await widget.start.newItem('${widget.review!['id']}');
+        if (!mounted) return;
+        setState(() => _photo = it['photo'] as Map<String, dynamic>?);
+        if (_photo?['status'] != 'processing') _photoPoll?.cancel();
+      } catch (_) {
+        // следующая попытка
+      }
+    });
+  }
+
+  /// «Переделать»: Super Market делает фото ещё раз (считается в лимит тарифа).
+  Future<void> _redo() async {
+    setState(() => _redoing = true);
+    try {
+      final it = await widget.start.redoNewItemPhoto('${widget.review!['id']}');
+      if (!mounted) return;
+      setState(() {
+        _photo = it['photo'] as Map<String, dynamic>?;
+        _keepOwn = false;
+      });
+      _pollPhoto();
+    } catch (e) {
+      if (mounted) showMessage(context, e);
+    } finally {
+      if (mounted) setState(() => _redoing = false);
+    }
+  }
+
+  /// М2: до / после — фото Super Market и фото магазина.
+  Widget _photoCompare() {
+    final st = _photo?['status'];
+    final clean = _clean;
+    final main = clean != null && !_keepOwn;
+    const box = 150.0;
+    final Widget big;
+    if (clean != null) {
+      big = Container(
+        width: box,
+        height: box,
+        decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.line)),
+        clipBehavior: Clip.antiAlias,
+        child: Image.network(clean, fit: BoxFit.contain, cacheWidth: 450, errorBuilder: (_, __, ___) => const SizedBox()),
+      );
+    } else {
+      final work = st == 'processing';
+      big = Container(
+        width: box,
+        height: box,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: work ? kPhotoPurpleSoft : AppColors.soft, borderRadius: BorderRadius.circular(16)),
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          if (work)
+            const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: kPhotoPurple))
+          else
+            const Icon(Icons.image_rounded, color: AppColors.muted),
+          const SizedBox(height: 8),
+          Text(
+            work
+                ? tr('Super Market делает фото… ~1 мин', 'Super Market rasm tayyorlamoqda… ~1 daq')
+                : st == 'limit'
+                    ? tr('Фото Super Market на этот месяц закончились', 'Bu oy uchun Super Market rasmlari tugadi')
+                    : tr('Фото не вышло — осталось ваше', 'Rasm chiqmadi — sizniki qoldi'),
+            textAlign: TextAlign.center,
+            style: AppText.small.copyWith(fontSize: 12, color: work ? kPhotoPurple : AppColors.text2),
+          ),
+        ]),
+      );
+    }
+    Widget pill(String text, IconData icon, VoidCallback? onTap, {bool busy = false}) => InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.line)),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              if (busy)
+                const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+              else
+                Icon(icon, size: 16, color: onTap == null ? AppColors.muted : AppColors.ink),
+              const SizedBox(width: 6),
+              Flexible(child: Text(text, style: AppText.bodyStrong.copyWith(fontSize: 13, color: onTap == null ? AppColors.muted : AppColors.ink))),
+            ]),
+          ),
+        );
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20)),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          big,
+          if (clean != null) ...[
+            const SizedBox(height: 8),
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(main ? Icons.check_circle_rounded : Icons.image_rounded, size: 14, color: main ? AppColors.successInk : AppColors.text2),
+              const SizedBox(width: 4),
+              Text(main ? tr('Фото Super Market', 'Super Market rasmi') : tr('Не главное', 'Asosiy emas'),
+                  style: AppText.caption.copyWith(color: main ? AppColors.successInk : AppColors.text2)),
+            ]),
+          ],
+        ]),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(tr('Ваши фото · ${_urls.length}', 'Sizning rasmlaringiz · ${_urls.length}'), style: AppText.caption),
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, runSpacing: 8, children: [for (final u in _urls.take(4)) ProductThumb(u, size: 56)]),
+            const SizedBox(height: 10),
+            if (clean != null)
+              pill(_keepOwn ? tr('Главным — фото Super Market', 'Asosiy — Super Market rasmi') : tr('Оставить моё', 'Oʻzimnikini qoldirish'),
+                  _keepOwn ? Icons.auto_awesome_rounded : Icons.undo_rounded, () => setState(() => _keepOwn = !_keepOwn)),
+            if (st != 'processing') ...[
+              const SizedBox(height: 8),
+              pill(tr('Переделать', 'Qayta tayyorlash'), Icons.refresh_rounded, st == 'limit' || _redoing ? null : _redo, busy: _redoing),
+            ],
+          ]),
+        ),
+      ]),
+    );
   }
 
   @override
   void dispose() {
+    _photoPoll?.cancel();
     _nameRu.dispose();
     _nameUz.dispose();
     _barcode.dispose();
@@ -244,11 +380,14 @@ class _NewProductScreenState extends State<NewProductScreen> {
     final api = context.read<Api>();
     setState(() => _busy = true);
     try {
-      final images = [..._urls];
+      // Фото Super Market — первым; «Оставить моё» — последним.
+      final clean = _clean;
+      final images = [if (clean != null && !_keepOwn) clean, ..._urls];
       for (var i = 0; i < _photos.length; i++) {
         final res = await api.upload('/store/uploads', _photos[i], 'product_${i + 1}.jpg') as Map<String, dynamic>;
         images.add(res['url'] as String);
       }
+      if (clean != null && _keepOwn) images.add(clean);
       final body = productId != null
           ? <String, dynamic>{'product_id': productId}
           : <String, dynamic>{
@@ -259,6 +398,7 @@ class _NewProductScreenState extends State<NewProductScreen> {
               'unit_id': _unitId,
               'barcode': _barcode.text.trim(),
               'images': images,
+              if (clean != null) 'keep_own_photo': _keepOwn,
               'description': (_res?['description'] as String?) ?? '',
             };
       final r = await widget.start.confirmNewItem(id, body);
@@ -397,6 +537,7 @@ class _NewProductScreenState extends State<NewProductScreen> {
         ],
       ),
       body: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
+        if (_isReview && _photo != null) ...[_photoCompare(), const SizedBox(height: 12)],
         SizedBox(
           height: 92,
           child: ListView(scrollDirection: Axis.horizontal, children: [

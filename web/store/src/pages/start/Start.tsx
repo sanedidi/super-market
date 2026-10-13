@@ -30,10 +30,10 @@ import { ApiError, LoadError, PageTitle, api, errorText, money, plural, qty as f
 import { useStore } from '../../ctx'
 import { NeedStore } from '../../ui'
 import { docPaths } from '../StockDocs'
-import { plainNum, useStartApi, useStartRefresh, type Draft, type Line, type LineInput, type LineVariant, type LinesResult, type NewItem, type PostResult, type SearchItem, type Similar } from './api'
+import { photoPoll, plainNum, useStartApi, useStartRefresh, type Draft, type Line, type LineInput, type LineVariant, type LinesResult, type NewItem, type PostResult, type SearchItem, type Similar } from './api'
 import { BarcodeModal, NewProductModal, PhotoModal, SimilarModal, sum } from './Modals'
 import { TasnifBlock, TasnifLink } from './Tasnif'
-import { NEW_PAGE, NewByPhotoModal, NewItemsList, ReviewModal, RightTabs, newItemState, useNewItems, type RightTab } from './NewItems'
+import { NEW_PAGE, NewByPhotoModal, NewItemsList, ReviewModal, RightTabs, newItemBadge, newItemState, newItemThumb, useNewItems, type RightTab } from './NewItems'
 import { OwnVariantsStart, useOwnGroups } from '../OwnVariants'
 import { CountDrawer, ScanCard } from './CountScan'
 import { Thumb } from './Thumb'
@@ -490,7 +490,7 @@ function QueuedCallout({ item, onOpen }: { item: NewItem; onOpen: () => void }) 
           )}
         </Typography.Text>
         <Flex align="center" gap={12} style={{ background: '#fff', borderRadius: 10, padding: '10px 12px' }}>
-          <Thumb src={item.images[0]} size={44} />
+          <Thumb src={newItemThumb(item)} size={44} badge={newItemBadge(item)} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <Typography.Text strong style={{ display: 'block', fontWeight: 600 }}>
               {name}
@@ -527,7 +527,7 @@ function NameCell({ l, note }: { l: Line; note?: { text: string; color?: string 
   const s = note ?? sourceText(l)
   return (
     <Flex align="center" gap={10} style={{ minWidth: 200 }}>
-      <Thumb src={l.image} size={36} />
+      <Thumb src={l.image} size={36} badge={l.photo} />
       <div style={{ minWidth: 0 }}>
         <Typography.Text strong style={{ fontWeight: 600, display: 'block', whiteSpace: 'normal' }}>
           {l.name}
@@ -549,7 +549,7 @@ function MyGoods({ highlight, title }: { highlight: string | null; title?: React
   const [bind, setBind] = useState<Line | null>(null)
   useEffect(() => setPage(1), [storeId])
   const params = { store_id: storeId, limit: PAGE + 1, offset: (page - 1) * PAGE }
-  const draft = useQuery({ queryKey: ['/store/start', params], queryFn: () => api.get<Draft>('/store/start', params), placeholderData: keepPreviousData })
+  const draft = useQuery({ queryKey: ['/store/start', params], queryFn: () => api.get<Draft>('/store/start', params), placeholderData: keepPreviousData, refetchInterval: photoPoll })
   const raw = draft.data?.lines ?? []
   const hasMore = raw.length > PAGE
   const lines = hasMore ? raw.slice(0, PAGE) : raw
@@ -729,7 +729,7 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
   useEffect(() => setPage(1), [only, storeId])
   // Сначала группы вариаций (группа → вес → вариант), потом обычные товары.
   const params = { store_id: storeId, only: only || undefined, order: 'groups', limit: PAGE + 1, offset: (page - 1) * PAGE }
-  const draft = useQuery({ queryKey: ['/store/start', params], queryFn: () => api.get<Draft>('/store/start', params), placeholderData: keepPreviousData })
+  const draft = useQuery({ queryKey: ['/store/start', params], queryFn: () => api.get<Draft>('/store/start', params), placeholderData: keepPreviousData, refetchInterval: photoPoll })
   const t = draft.data?.totals ?? d.totals
   const raw = draft.data?.lines ?? []
   const hasMore = raw.length > PAGE
@@ -1171,7 +1171,7 @@ function LineTables({
               const l = r.line!
               return (
                 <Flex align="center" gap={10} style={{ paddingLeft: 20 }}>
-                  <Thumb src={l.image} size={32} />
+                  <Thumb src={l.image} size={32} badge={l.photo} />
                   <div style={{ minWidth: 0 }}>
                     <Typography.Text style={{ fontWeight: 600 }}>{l.variant?.flavor || l.variant?.weight || l.name}</Typography.Text>
                     <Typography.Text type="secondary" style={{ display: 'block', fontSize: 12 }}>

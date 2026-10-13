@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/sanedidi/super-market/backend/internal/ai"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/media"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
@@ -95,6 +96,7 @@ func (s *Service) SetStep(ctx context.Context, p *identity.Principal, storeID st
 // Фото ставится только товару из черновика и только если его ещё нет.
 func (s *Service) SetPhoto(ctx context.Context, p *identity.Principal, storeID, productID string, images []string) (LinesResult, error) {
 	out := LinesResult{Lines: []Line{}, Skipped: []string{}}
+	var photo string
 	if len(images) == 0 || len(images) > 6 {
 		return out, apperr.Validation("images: от 1 до 6 фото").Uz("images: 1 tadan 6 tagacha rasm")
 	}
@@ -121,8 +123,17 @@ func (s *Service) SetPhoto(ctx context.Context, p *identity.Principal, storeID, 
 		if !exists {
 			return apperr.NotFound("товар не в «Моих товарах»").Uz("mahsulot «Mahsulotlarim»da yoʻq")
 		}
-		if _, err := tx.Exec(ctx, `UPDATE products SET images = $2 WHERE id = $1 AND COALESCE(cardinality(images), 0) = 0`, productID, images); err != nil {
+		tag, err := tx.Exec(ctx, `UPDATE products SET images = $2 WHERE id = $1 AND COALESCE(cardinality(images), 0) = 0`, productID, images)
+		if err != nil {
 			return err
+		}
+		// Фото не было — Super Market делает из снимка чистое фото (в фоне).
+		if tag.RowsAffected() == 1 {
+			keys, base := photoSources(images)
+			if photo, err = s.enqueuePhoto(ctx, tx, ai.StoreJob{NetworkID: p.NetworkID, StoreID: st.ID, EmployeeID: p.EmployeeID,
+				ProductID: &productID, Sources: keys, MediaBase: base, Lines: true}); err != nil {
+				return err
+			}
 		}
 		rows, err := tx.Query(ctx, lineSelect+` WHERE l.draft_id = $1 AND l.product_id = $4::uuid`, draft, st.PriceTypeID, st.ID, productID)
 		if err != nil {
@@ -134,5 +145,8 @@ func (s *Service) SetPhoto(ctx context.Context, p *identity.Principal, storeID, 
 		out.Totals, err = s.totals(ctx, tx, draft, st)
 		return err
 	})
+	if err == nil {
+		s.kickPhotos(photo)
+	}
 	return out, err
 }

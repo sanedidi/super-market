@@ -106,6 +106,24 @@ func (s *Service) PublicURL(key string) string {
 	return s.baseURL + "/api/v1/media/" + key
 }
 
+// BaseOf — начало нашей ссылки на фото (https://host) без /api/v1/media/…;
+// пусто, если это не наша ссылка.
+func BaseOf(raw string) string {
+	if i := strings.LastIndex(raw, "/api/v1/media/"); i > 0 {
+		return raw[:i]
+	}
+	return ""
+}
+
+// URLWithBase — ссылка на фото с тем же началом, что у base (см. BaseOf);
+// base пусто — PublicURL.
+func (s *Service) URLWithBase(base, key string) string {
+	if base != "" && keyRe.MatchString(key) {
+		return base + "/api/v1/media/" + key
+	}
+	return s.PublicURL(key)
+}
+
 // Read — содержимое фото и его тип.
 func (s *Service) Read(ctx context.Context, key string) ([]byte, string, error) {
 	if !keyRe.MatchString(key) {

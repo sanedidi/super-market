@@ -21,6 +21,8 @@ interface Totals {
   invoices: number
   photos: number
   product_photos?: number
+  /** Фото, которые Super Market сделал магазинам сам. */
+  store_photos?: number
   errors: number
   tests: number
   input_tokens: number
@@ -47,6 +49,8 @@ interface Item {
   invoices: number
   photos: number
   product_photos?: number
+  /** Фото, которые Super Market сделал магазинам сам. */
+  store_photos?: number
   errors: number
   input_tokens: number
   output_tokens: number
@@ -270,7 +274,7 @@ function columns(group: Group, prices: Prices, total: number) {
       key: 'invoices',
       width: 180,
       render: (_: unknown, r: Item) =>
-        (r.id ? r.invoices : r.requests) + (r.photos ? ` · фото полок ${r.photos}` : '') + (r.product_photos ? ` · фото товаров ${r.product_photos}` : '') + (r.errors ? ` · ошибок ${r.errors}` : ''),
+        (r.id ? r.invoices : r.requests) + (r.photos ? ` · фото полок ${r.photos}` : '') + (r.product_photos ? ` · фото товаров ${r.product_photos}` : '') + (r.store_photos ? ` · фото магазинов ${r.store_photos}` : '') + (r.errors ? ` · ошибок ${r.errors}` : ''),
     },
     { title: 'Токены вход', dataIndex: 'input_tokens', width: 120, render: tokens },
     { title: 'Токены выход', dataIndex: 'output_tokens', width: 120, render: tokens },
@@ -405,7 +409,7 @@ export function AIUsage() {
             fg="#12B76A"
             title="Накладных прочитано"
             value={t ? money(t.invoices) : '…'}
-            sub={t ? `фото полок ${t.photos} · фото товаров ${t.product_photos ?? 0} · ошибок ${t.errors} · проверок ${t.tests}` : ''}
+            sub={t ? `фото полок ${t.photos} · фото товаров ${t.product_photos ?? 0} · фото магазинов ${t.store_photos ?? 0} · ошибок ${t.errors} · проверок ${t.tests}` : ''}
           />
         </Col>
         <Col xs={24} sm={12} xl={6}>

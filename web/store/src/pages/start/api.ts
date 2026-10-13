@@ -1,5 +1,5 @@
 // «Начало работы»: типы и запросы к /store/start (docs/api.md).
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { App } from 'antd'
 import { api, errorText } from '@sm/shared'
 
@@ -22,6 +22,8 @@ export type Line = {
   added_at: string
   /** Товар в подтверждённой группе вариаций: инвентаризация показывает группу своей таблицей. */
   variant: LineVariant | null
+  /** Фото от Super Market: processing — делается, done — первым стоит его фото. */
+  photo?: '' | 'processing' | 'done'
 }
 
 /** Место товара в группе вариаций (Figma «Вариации своих товаров», В3). */
@@ -177,7 +179,16 @@ export type NewItem = {
   duplicate: NewItemDup | null
   /** Контрольная цифра штрихкода не сходится — скорее всего, опечатка. */
   barcode_invalid?: boolean
+  /** Чистое фото от Super Market (Figma «Нормализация фото для магазина»); null — не делалось. */
+  photo?: NewItemPhoto | null
 }
+
+/** processing — делается, done — готово (image), failed — не вышло (осталось фото
+ * магазина), limit — фото по тарифу на этот месяц закончились. */
+export type NewItemPhoto = { status: 'processing' | 'done' | 'failed' | 'limit'; image: string | null; error: string }
+
+/** Фото от Super Market в этом месяце (GET /store/start/photo-quota). */
+export type PhotoQuota = { enabled: boolean; used: number; limit: number | null; resets_on: string }
 
 export type NewItemConfirmResult = { product_id: string; created: boolean; line: Line; totals: Totals }
 
@@ -254,7 +265,20 @@ export type PostResult = {
 }
 
 /** Все запросы «Начала работы» начинаются с этих ключей — их и обновляем. */
-const KEYS = ['/store/start', '/store/start/search', '/store/start/tasnif/preview', '/store/start/new-items']
+const KEYS = ['/store/start', '/store/start/search', '/store/start/tasnif/preview', '/store/start/new-items', '/store/start/photo-quota']
+
+/** Фото от Super Market в этом месяце: плашка «закончились», подсказка в шторке. */
+export function usePhotoQuota(storeId: string) {
+  return useQuery({
+    queryKey: ['/store/start/photo-quota', storeId],
+    queryFn: () => api.get<PhotoQuota>('/store/start/photo-quota', { store_id: storeId }),
+    enabled: !!storeId,
+    staleTime: 60_000,
+  })
+}
+
+/** Лимит фото Super Market на месяц кончился. */
+export const quotaOut = (q: PhotoQuota | undefined) => !!q && q.enabled && q.limit !== null && q.used >= q.limit
 
 export function useStartRefresh() {
   const qc = useQueryClient()
@@ -284,6 +308,9 @@ export function useStartApi(storeId: string) {
     deleteLine: (productId: string) => run(api.del(`/store/start/lines/${productId}?store_id=${storeId}`)),
   }
 }
+
+/** Черновик обновляется сам, пока Super Market делает фото строк. */
+export const photoPoll = (q: { state: { data?: Draft } }) => (q.state.data?.lines.some((l) => l.photo === 'processing') ? 4000 : false)
 
 /** Количество для отображения без лишних нулей. */
 export const plainNum = (v: string | null | undefined) => (v === null || v === undefined || v === '' ? '' : String(Number(v)))

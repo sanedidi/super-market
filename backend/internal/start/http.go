@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/sanedidi/super-market/backend/internal/ai"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/media"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
@@ -46,6 +47,8 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/new-items/{id}", m.getNewItem)
 		r.Post("/new-items/{id}/merge", m.mergeNewItem)
 		r.Post("/new-items/{id}/retry", m.retryNewItem)
+		r.Post("/new-items/{id}/photo", m.redoNewItemPhoto)
+		r.Get("/photo-quota", m.photoQuota)
 		r.Post("/new-items/{id}/confirm", m.confirmNewItem)
 		r.Delete("/new-items/{id}", m.deleteNewItem)
 		r.Post("/photos", m.createPhoto)
@@ -145,7 +148,26 @@ func (m *Module) newURLs(r *http.Request, it NewItem) NewItem {
 		u := m.media.URL(r, *it.Duplicate.Image)
 		it.Duplicate.Image = &u
 	}
+	if it.Photo != nil && it.Photo.Image != nil {
+		u := m.media.URL(r, *it.Photo.Image)
+		it.Photo.Image = &u
+	}
 	return it
+}
+
+// redoNewItemPhoto — «Переделать»: Super Market делает фото карточки ещё раз.
+func (m *Module) redoNewItemPhoto(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusAccepted, "id", func(id string) (NewItem, error) {
+		it, err := m.svc.RedoNewItemPhoto(r.Context(), pr(r), id)
+		return m.newURLs(r, it), err
+	})
+}
+
+// photoQuota — GET /store/start/photo-quota: фото Super Market в этом месяце.
+func (m *Module) photoQuota(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (ai.StoreQuota, error) {
+		return m.svc.PhotoQuota(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+	})
 }
 
 // NewItemLookup — GET /store/start/new-items/by-barcode: карточка с этим штрихкодом в «Новых» или null.

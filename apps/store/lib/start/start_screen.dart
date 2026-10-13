@@ -545,7 +545,7 @@ class _MineTile extends StatelessWidget {
       color: highlight ? AppColors.errorSoft : null,
       padding: const EdgeInsets.fromLTRB(14, 10, 4, 10),
       child: Row(children: [
-        ProductThumb(l['image'] as String?, size: 44),
+        ProductThumb(l['image'] as String?, size: 44, badge: l['photo']),
         const SizedBox(width: 10),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

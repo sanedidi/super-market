@@ -290,7 +290,7 @@ class QueuedItemCard extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(14)),
       child: Row(children: [
-        ProductThumb(images.isEmpty ? null : '${images.first}', size: 52),
+        ProductThumb(newItemThumb(item), size: 52, badge: newItemPhotoStatus(item)),
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -397,6 +397,57 @@ class NewItemsTab extends StatefulWidget {
 }
 
 class _NewItemsTabState extends State<NewItemsTab> {
+  // Фото от Super Market в этом месяце — плашка «закончились» (М4).
+  Map<String, dynamic>? _quota;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadQuota();
+  }
+
+  @override
+  void didUpdateWidget(NewItemsTab old) {
+    super.didUpdateWidget(old);
+    if (!identical(old.data, widget.data)) _loadQuota();
+  }
+
+  Future<void> _loadQuota() async {
+    try {
+      final q = await widget.start.photoQuota();
+      if (mounted) setState(() => _quota = q);
+    } catch (_) {
+      // Старый сервер — без плашки.
+    }
+  }
+
+  /// М4: фото Super Market на этот месяц закончились — товары остаются с фото магазина.
+  Widget _limitBar(Map<String, dynamic> q) {
+    final reset = DateTime.tryParse('${q['resets_on'] ?? ''}');
+    final next = reset == null ? '' : '${reset.day}.${reset.month.toString().padLeft(2, '0')}';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: const Color(0xFFFFFAEB), borderRadius: BorderRadius.circular(16)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.photo_camera_rounded, size: 18, color: Color(0xFFDC6803)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(tr('Фото Super Market на этот месяц закончились', 'Bu oy uchun Super Market rasmlari tugadi'),
+                style: AppText.bodyStrong.copyWith(fontSize: 13, color: const Color(0xFF93370D))),
+          ),
+        ]),
+        const SizedBox(height: 4),
+        Text(
+          tr('${q['used']} из ${q['limit']}. Новые товары сохраняются с вашими фото. С $next Super Market снова делает фото сам. Больше фото — на другом тарифе.',
+              '${q['limit']} tadan ${q['used']}. Yangi mahsulotlar sizning rasmlaringiz bilan saqlanadi. $next dan Super Market yana rasmni oʻzi tayyorlaydi. Koʻproq rasm — boshqa tarifda.'),
+          style: AppText.small.copyWith(fontSize: 12, color: const Color(0xFF93370D)),
+        ),
+      ]),
+    );
+  }
+
   Future<void> _open(Map<String, dynamic> it) async {
     await Navigator.of(context).push<Object?>(MaterialPageRoute(builder: (_) => NewProductScreen(start: widget.start, review: it)));
     await widget.onChanged();
@@ -599,6 +650,7 @@ class _NewItemsTabState extends State<NewItemsTab> {
                   child: Text(tr('Super Market заполняет карточки по фото — можно работать дальше', 'Super Market rasmlar boʻyicha kartochkalarni toʻldiradi — ishni davom ettirish mumkin'),
                       style: AppText.caption),
                 ),
+                if (photoQuotaOut(_quota)) _limitBar(_quota!),
                 if (bulk > 0 || _bulkDone != null) _bulkBar(bulk, newItemsTotal(widget.data) - bulk),
                 if (failed > 0) _retryBar(failed),
               ]);
@@ -660,6 +712,49 @@ String _plural(int n, String one, String few, String many) {
 String _goodsRu(int n) => '$n ${_plural(n, 'товар', 'товара', 'товаров')}';
 String _cardsRu(int n) => '$n ${_plural(n, 'карточку', 'карточки', 'карточек')}';
 
+/// Лимит фото Super Market на месяц кончился.
+bool photoQuotaOut(Map<String, dynamic>? q) {
+  if (q == null || q['enabled'] != true || q['limit'] == null) return false;
+  return ((q['used'] as num?) ?? 0) >= ((q['limit'] as num?) ?? 0);
+}
+
+/// Фото от Super Market у карточки: processing | done | failed | limit | null.
+String? newItemPhotoStatus(Map<String, dynamic> item) => (item['photo'] as Map<String, dynamic>?)?['status'] as String?;
+
+/// Миниатюра карточки: готовое фото Super Market — оно, иначе фото магазина.
+String? newItemThumb(Map<String, dynamic> item) {
+  final photo = item['photo'] as Map<String, dynamic>?;
+  if (photo?['status'] == 'done' && photo?['image'] != null) return '${photo!['image']}';
+  final images = (item['images'] as List?) ?? const [];
+  return images.isEmpty ? null : '${images.first}';
+}
+
+/// Метка фото от Super Market под названием карточки (М1).
+class NewItemPhotoChip extends StatelessWidget {
+  const NewItemPhotoChip({super.key, required this.status});
+
+  final String? status;
+
+  @override
+  Widget build(BuildContext context) {
+    final (Color bg, Color fg, IconData icon, String text) = switch (status) {
+      'processing' => (kPhotoPurpleSoft, kPhotoPurple, Icons.auto_awesome_rounded, tr('Super Market делает фото… ~1 мин', 'Super Market rasm tayyorlamoqda… ~1 daq')),
+      'done' => (AppColors.successSoft, AppColors.successInk, Icons.check_rounded, tr('Фото Super Market', 'Super Market rasmi')),
+      'limit' => (AppColors.soft, AppColors.text2, Icons.image_rounded, tr('Ваше фото · лимит месяца', 'Sizning rasmingiz · oylik limit')),
+      _ => (AppColors.soft, AppColors.text2, Icons.image_rounded, tr('Фото не вышло — осталось ваше', 'Rasm chiqmadi — sizniki qoldi')),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 12, color: fg),
+        const SizedBox(width: 4),
+        Flexible(child: Text(text, style: AppText.caption.copyWith(fontSize: 11, color: fg), overflow: TextOverflow.ellipsis)),
+      ]),
+    );
+  }
+}
+
 /// Сколько всего в очереди «Новые» (total с сервера; старый сервер — по items).
 int newItemsTotal(Map<String, dynamic>? data) =>
     (data?['total'] as num?)?.toInt() ?? ((data?['items'] as List?) ?? const []).length;
@@ -682,6 +777,9 @@ class _NewTile extends StatelessWidget {
     final res = item['result'] as Map<String, dynamic>?;
     final images = (item['images'] as List?) ?? const [];
     final code = (item['barcode'] as String?) ?? '';
+    final photo = newItemPhotoStatus(item);
+    // Карточка готова, фото ещё делается — так и пишем (М1).
+    final photoWork = status != 'processing' && photo == 'processing';
     final title = status == 'processing'
         ? tr('Распознаётся…', 'Aniqlanmoqda…')
         : status == 'ready'
@@ -690,7 +788,7 @@ class _NewTile extends StatelessWidget {
     final sub = [
       if (code.isNotEmpty) code else tr('без штрихкода', 'shtrix-kodsiz'),
       if (status == 'processing') tr('${images.length} фото', '${images.length} ta rasm'),
-      if (status == 'ready') tr('готово — проверьте', 'tayyor — tekshiring'),
+      if (status == 'ready' && !photoWork) tr('готово — проверьте', 'tayyor — tekshiring'),
       if (status == 'failed') '${item['error'] ?? ''}',
     ].join(' · ');
     Widget pill(String text, Color bg, Color fg, {IconData? icon}) => Container(
@@ -706,12 +804,20 @@ class _NewTile extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(children: [
-          ProductThumb(images.isEmpty ? null : '${images.first}', size: 48),
+          ProductThumb(newItemThumb(item), size: 48, badge: photo),
           const SizedBox(width: 10),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(title, style: AppText.bodyStrong.copyWith(fontSize: 14, color: status == 'processing' ? AppColors.text2 : AppColors.ink)),
-              Text(sub, style: AppText.small.copyWith(fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
+              if (photoWork)
+                Text(tr('Super Market делает фото… ~1 мин', 'Super Market rasm tayyorlamoqda… ~1 daq'),
+                    style: AppText.small.copyWith(fontSize: 12, color: kPhotoPurple), maxLines: 2, overflow: TextOverflow.ellipsis)
+              else
+                Text(sub, style: AppText.small.copyWith(fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
+              if (photo != null && photo != 'processing' && status != 'processing') ...[
+                const SizedBox(height: 4),
+                NewItemPhotoChip(status: photo),
+              ],
               // Д3: похоже, этот товар уже есть в «Новых» — сверить в карточке («Это он»).
               if (item['duplicate'] != null && status != 'processing') ...[
                 const SizedBox(height: 4),
@@ -749,7 +855,9 @@ class NewItemsPoller {
 
   void update(Map<String, dynamic>? data) {
     final processing = ((data?['counts'] as Map<String, dynamic>?)?['processing'] as num?)?.toInt() ?? 0;
-    if (processing > 0) {
+    // И пока Super Market делает фото карточек.
+    final photos = ((data?['items'] as List?) ?? const []).any((it) => it is Map && (it['photo'] as Map?)?['status'] == 'processing');
+    if (processing > 0 || photos) {
       _t ??= Timer.periodic(const Duration(seconds: 3), (_) => load());
     } else {
       _t?.cancel();

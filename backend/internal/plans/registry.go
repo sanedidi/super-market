@@ -47,6 +47,9 @@ const (
 	LimitShelves   = "shelves"
 	LimitPromos    = "promos"
 	LimitAds       = "ads"
+	// LimitAIPhotos — фото, которые Super Market делает магазину сам
+	// (нормализация фото новых товаров и строк инвентаризации), в месяц.
+	LimitAIPhotos = "ai_photos"
 )
 
 // Feature — функция, которую можно включить в тариф.
@@ -128,6 +131,9 @@ var Limits = []Limit{
 	{LimitStaff, GroupStore,
 		i18n.Text{RU: "Сотрудников", UZ: "Xodimlar"},
 		i18n.Text{RU: "Сотрудников, кроме владельца и курьеров", UZ: "Egasi va kuryerlardan tashqari xodimlar"}, 0, nil},
+	{LimitAIPhotos, GroupStore,
+		i18n.Text{RU: "Фото от Super Market в месяц", UZ: "Oyiga Super Market rasmlari"},
+		i18n.Text{RU: "Super Market сам делает чистое фото новых товаров и товаров без фото на инвентаризации", UZ: "Super Market yangi mahsulotlar va inventarizatsiyadagi rasmsiz mahsulotlarning toza rasmini oʻzi tayyorlaydi"}, 0, ptr(300)},
 	{LimitCouriers, GroupDelivery,
 		i18n.Text{RU: "Своих курьеров", UZ: "Oʻz kuryerlari"},
 		i18n.Text{RU: "Сотрудников с правом доставки", UZ: "Yetkazib berish huquqiga ega xodimlar"}, 0, nil},

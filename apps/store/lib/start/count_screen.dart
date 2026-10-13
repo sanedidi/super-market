@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:sm_core/sm_core.dart';
 
@@ -36,6 +38,8 @@ class _StartCountScreenState extends State<StartCountScreen> {
   final _q = TextEditingController();
   // Сохранения полей, которые ещё идут.
   final _pending = <Future<void>>{};
+  // Пока Super Market делает фото строк — обновляем список.
+  Timer? _photoPoll;
 
   @override
   void initState() {
@@ -49,7 +53,21 @@ class _StartCountScreenState extends State<StartCountScreen> {
   @override
   void dispose() {
     _q.dispose();
+    _photoPoll?.cancel();
     super.dispose();
+  }
+
+  void _watchPhotos() {
+    final lines = (_d?['lines'] as List?) ?? const [];
+    final work = lines.any((l) => l is Map && l['photo'] == 'processing');
+    if (work) {
+      _photoPoll ??= Timer.periodic(const Duration(seconds: 5), (_) {
+        if (_pending.isEmpty) _load();
+      });
+    } else {
+      _photoPoll?.cancel();
+      _photoPoll = null;
+    }
   }
 
   /// Сканер поверх камеры: найденный товар открывает шторку количества и цен.
@@ -106,6 +124,7 @@ class _StartCountScreenState extends State<StartCountScreen> {
           _d = d;
           _error = null;
         });
+        _watchPhotos();
       }
     } catch (e) {
       if (mounted) setState(() => _error = e);
@@ -534,7 +553,7 @@ class _CountCardState extends State<_CountCard> {
                   ),
                   child: const Icon(Icons.photo_camera_rounded, size: 20, color: AppColors.primary),
                 )
-              : ProductThumb(l['image'] as String?, size: 44),
+              : ProductThumb(l['image'] as String?, size: 44, badge: l['photo']),
           const SizedBox(width: 10),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
