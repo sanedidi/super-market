@@ -88,11 +88,11 @@ class _NewProductScreenState extends State<NewProductScreen> {
   bool get _isReview => widget.review != null;
   // Чистое фото от Super Market (Figma «Нормализация фото для магазина», М2):
   // главное в карточке; «Оставить моё» — главным снова фото магазина.
-  late Map<String, dynamic>? _photo = widget.review?['photo'] as Map<String, dynamic>?;
+  late Map<String, dynamic>? _cleanJob = widget.review?['photo'] as Map<String, dynamic>?;
   bool _keepOwn = false;
   bool _redoing = false;
   Timer? _photoPoll;
-  String? get _clean => _photo?['status'] == 'done' && _photo?['image'] != null ? '${_photo!['image']}' : null;
+  String? get _clean => _cleanJob?['status'] == 'done' && _cleanJob?['image'] != null ? '${_cleanJob!['image']}' : null;
   final _price = TextEditingController();
   List<_Option> _categories = const [];
   List<_Option> _brands = const [];
@@ -116,13 +116,13 @@ class _NewProductScreenState extends State<NewProductScreen> {
   /// Пока Super Market делает фото — обновляем карточку.
   void _pollPhoto() {
     _photoPoll?.cancel();
-    if (!_isReview || _photo?['status'] != 'processing') return;
+    if (!_isReview || _cleanJob?['status'] != 'processing') return;
     _photoPoll = Timer.periodic(const Duration(seconds: 3), (_) async {
       try {
         final it = await widget.start.newItem('${widget.review!['id']}');
         if (!mounted) return;
-        setState(() => _photo = it['photo'] as Map<String, dynamic>?);
-        if (_photo?['status'] != 'processing') _photoPoll?.cancel();
+        setState(() => _cleanJob = it['photo'] as Map<String, dynamic>?);
+        if (_cleanJob?['status'] != 'processing') _photoPoll?.cancel();
       } catch (_) {
         // следующая попытка
       }
@@ -136,7 +136,7 @@ class _NewProductScreenState extends State<NewProductScreen> {
       final it = await widget.start.redoNewItemPhoto('${widget.review!['id']}');
       if (!mounted) return;
       setState(() {
-        _photo = it['photo'] as Map<String, dynamic>?;
+        _cleanJob = it['photo'] as Map<String, dynamic>?;
         _keepOwn = false;
       });
       _pollPhoto();
@@ -149,7 +149,7 @@ class _NewProductScreenState extends State<NewProductScreen> {
 
   /// М2: до / после — фото Super Market и фото магазина.
   Widget _photoCompare() {
-    final st = _photo?['status'];
+    final st = _cleanJob?['status'];
     final clean = _clean;
     final main = clean != null && !_keepOwn;
     const box = 150.0;
@@ -537,7 +537,7 @@ class _NewProductScreenState extends State<NewProductScreen> {
         ],
       ),
       body: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
-        if (_isReview && _photo != null) ...[_photoCompare(), const SizedBox(height: 12)],
+        if (_isReview && _cleanJob != null) ...[_photoCompare(), const SizedBox(height: 12)],
         SizedBox(
           height: 92,
           child: ListView(scrollDirection: Axis.horizontal, children: [
