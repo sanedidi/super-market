@@ -10,12 +10,13 @@ import 'widgets.dart';
 enum LocationAudience { crowd, staff }
 
 /// Зачем приложению геопозиция — экран до системного запроса (Figma Ц0).
-/// true — «Продолжить» (после этого спрашивает система), false — «Не сейчас» или «назад».
+/// Apple 5.1.1(iv): после пояснения всегда идёт системный запрос — на экране только
+/// «Продолжить», без «Не сейчас» и закрытия жестом. Отказать курьер может в системном окне.
 Future<bool> showLocationDisclosure(BuildContext context, LocationAudience audience) async {
-  final ok = await Navigator.of(context).push<bool>(
+  await Navigator.of(context).push<bool>(
     MaterialPageRoute(fullscreenDialog: true, builder: (_) => LocationDisclosureScreen(audience: audience)),
   );
-  return ok == true;
+  return true;
 }
 
 class LocationDisclosureScreen extends StatelessWidget {
@@ -48,7 +49,9 @@ class LocationDisclosureScreen extends StatelessWidget {
             (Icons.schedule_rounded, tr('Время прибытия', 'Yetib kelish vaqti'), tr('покупатель знает, когда вы приедете', 'xaridor qachon yetib kelishingizni biladi')),
             (Icons.history_rounded, tr('Хранится недолго', 'Uzoq saqlanmaydi'), tr('только последняя точка, без истории перемещений', 'faqat oxirgi nuqta, harakatlar tarixisiz')),
           ];
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
       backgroundColor: AppColors.white,
       body: SafeArea(
         child: Column(children: [
@@ -98,22 +101,11 @@ class LocationDisclosureScreen extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: Column(children: [
-              BigButton(label: tr('Продолжить', 'Davom etish'), onPressed: () => Navigator.pop(context, true)),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: TextButton(
-                  style: TextButton.styleFrom(foregroundColor: AppColors.dark),
-                  onPressed: () => Navigator.pop(context, false),
-                  child: Text(tr('Не сейчас', 'Hozir emas'), style: AppText.bodyStrong.copyWith(fontSize: 16, color: AppColors.dark)),
-                ),
-              ),
-            ]),
+            child: BigButton(label: tr('Продолжить', 'Davom etish'), onPressed: () => Navigator.pop(context, true)),
           ),
         ]),
       ),
+    ),
     );
   }
 }

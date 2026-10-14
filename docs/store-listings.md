@@ -400,7 +400,7 @@ SM Курьер — приложение для доставки заказов 
 • История за сегодня, вчера и неделю с суммой наличных для кассы
 
 ГЕОПОЗИЦИЯ — ТОЛЬКО ПОКА ВЫ РАБОТАЕТЕ
-Приложение получает геопозицию, только пока включено «Ищу заказы», есть активный заказ или идёт смена. В это время на Android видно уведомление, на iPhone — системный индикатор геолокации. Хранится только последняя точка, без истории перемещений. Выключите поиск или завершите смену — передача прекратится.
+Приложение получает геопозицию, только пока включено «Ищу заказы», есть активный заказ или идёт смена. В это время на iPhone виден системный индикатор геолокации. Хранится только последняя точка, без истории перемещений. Выключите поиск или завершите смену — передача прекратится.
 
 Удалить аккаунт: Профиль → Удалить аккаунт.
 
@@ -898,7 +898,11 @@ Android-телефона:
 
 ### 7.1. App Store — App Review Information
 
-Для всех трёх: **Sign-in required — Yes**. Контакт: имя, фамилия, телефон `+998 50 576 47 23`, email `<email поддержки>`.
+Для всех трёх: **Sign-in required — Yes**.
+
+> ⚠ Урок первой отправки (14.10.2026): SM Магазин входит по **логину и паролю** — в поля App Review для него
+> `baraka` / `test123!`, не номер и код. Пароль штатного курьера `review` — `dnn-pCa9-P8j`. В описаниях для
+> App Store не упоминать Android (2.3.10). На экране «зачем геопозиция» нельзя кнопку «Не сейчас» (5.1.1(iv)). Контакт: имя, фамилия, телефон `+998 50 576 47 23`, email `<email поддержки>`.
 Поле «User name» — `900000077` (поле номера в приложениях уже содержит +998), «Password» — `343549`.
 В SM Курьер логин/пароль штатного курьера — в заметках.
 
@@ -942,7 +946,7 @@ The app interface is in Russian.
 SM Магазин is a business app for owners and staff of grocery stores connected to the Super Market platform: online orders, stock, receiving goods by a photo of the supplier's invoice, cash desks, debts and staff.
 
 DEMO ACCOUNT
-The phone field already shows +998, enter 9 digits: 90 000 00 77. Code: 343549 (no message is sent for this demo number; always enter this code). After login the app asks you to create a local 4-digit passcode (any digits, it protects the app on this phone); Face ID is optional. The demo account is an employee with all permissions in the demo network "Baraka Market" (Tashkent, Chilanzar).
+DEMO ACCOUNT (login and password, NOT a phone number): Login: baraka, Password: test123!. After login the app asks you to create a local 4-digit passcode (any digits, it protects the app on this phone); Face ID is optional. The demo account is an employee with all permissions in the demo network "Baraka Market" (Tashkent, Chilanzar).
 
 WHAT TO CHECK
 Главная (summary), Заказы (orders from the customer app), Склад (stock; "Приход" — take a photo of an invoice, it is recognized by an AI service), Финансы (cash desks, profit, balance), Ещё (customer and supplier debts, staff, crowd couriers, brand ads, passcode and Face ID, privacy policy, account deletion). Camera and photos are used only for invoices, shelves and products; location only to put the store on the map.
@@ -983,7 +987,7 @@ The phone field already shows +998, enter 9 digits: 90 000 00 77. Tick the check
 Account deletion: Профиль > Удалить аккаунт — deleted immediately (the app asks to finish active orders first).
 
 2) "Сотрудник магазина" (store courier)
-Switch to "Сотрудник магазина". Login: review, password: <пароль из demo review>. Tap "Выйти на смену" (start shift) to see orders assigned by the store, the order card with the route (opens Yandex Maps) and call buttons, and "Забрал" / "Доставил". History tab shows deliveries and cash to hand over. Store courier accounts are created by the store, so Профиль > Удалить аккаунт sends a deletion request, processed within 30 days. Web form: https://super-market.uz/delete-account
+Switch to "Сотрудник магазина". Login: review, password: dnn-pCa9-P8j. Tap "Выйти на смену" (start shift) to see orders assigned by the store, the order card with the route (opens Yandex Maps) and call buttons, and "Забрал" / "Доставил". History tab shows deliveries and cash to hand over. Store courier accounts are created by the store, so Профиль > Удалить аккаунт sends a deletion request, processed within 30 days. Web form: https://super-market.uz/delete-account
 
 LOCATION
 Location is used only while the courier works: during a shift, while "Ищу заказы" is on, or while the courier has an active order. It is sent every 10-15 seconds so the customer sees the courier on the map with arrival time, and so orders on the courier's way can be offered. The app requests "While Using the App" permission only. Because couriers switch to Yandex Maps or lock the phone during delivery, the app uses the "location" background mode to continue updates that the courier started; iOS shows the blue location indicator all the time. Updates stop when the shift ends or "Ищу заказы" is turned off with no active orders. Only the last point is stored, no route history.

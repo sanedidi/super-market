@@ -19,3 +19,4 @@ apps/*/.dart_tool/
 apps/*/build/
 apps/*/.flutter-plugins
 apps/*/.flutter-plugins-dependencies
+screenshots/
