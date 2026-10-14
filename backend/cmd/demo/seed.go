@@ -178,19 +178,42 @@ func (s *seeder) catalog(tok string) error {
 		s.units[str(u, "short_name")] = str(u, "id")
 	}
 
+	// Бренды и категории берём прямо из базы: список в API постраничный, и seed
+	// не видел записи дальше первой страницы — создавал дубль и получал 409.
+	// Порядок: при совпадении имён выигрывает активная и самая старая запись.
 	brands := map[string]string{}
-	if out, err = s.c.call("GET", "/admin/catalog/brands", tok, nil, http.StatusOK); err != nil {
+	rows, err := s.pool.Query(s.ctx, `SELECT id::text, lower(name) FROM brands ORDER BY is_active, created_at DESC`)
+	if err != nil {
 		return err
 	}
-	for _, b := range items(out) {
-		brands[strings.ToLower(str(b, "name"))] = str(b, "id")
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			rows.Close()
+			return err
+		}
+		brands[name] = id
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
 	}
 	cats := map[string]string{} // parent|name → id
-	if out, err = s.c.call("GET", "/admin/catalog/categories", tok, nil, http.StatusOK); err != nil {
+	rows, err = s.pool.Query(s.ctx, `SELECT id::text, COALESCE(parent_id::text, ''), lower(name) FROM categories ORDER BY is_active, created_at DESC`)
+	if err != nil {
 		return err
 	}
-	for _, c := range items(out) {
-		cats[str(c, "parent_id")+"|"+strings.ToLower(str(c, "name"))] = str(c, "id")
+	for rows.Next() {
+		var id, parent, name string
+		if err := rows.Scan(&id, &parent, &name); err != nil {
+			rows.Close()
+			return err
+		}
+		cats[parent+"|"+name] = id
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
 	}
 
 	brandID := func(name string) (string, error) {
