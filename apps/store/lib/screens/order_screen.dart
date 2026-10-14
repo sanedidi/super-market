@@ -4,8 +4,10 @@ import 'package:sm_core/sm_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../main.dart';
+import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
+import 'courier_picker.dart';
 
 /// Тон плашки статуса заказа.
 ChipTone orderTone(String s) => switch (s) {
@@ -32,6 +34,13 @@ class _OrderScreenState extends State<OrderScreen> {
   Object? _error;
   String? _busy;
 
+  /// Штатный курьер заказа (транспорт, телефон, смена) — из /store/couriers,
+  /// в самом заказе есть только id и имя.
+  Map<String, dynamic>? _courier;
+
+  /// Статусы, при которых можно назначить, сменить или снять штатного курьера (как в панели).
+  static const _assignable = ['accepted', 'picking', 'picked', 'delivering'];
+
   @override
   void initState() {
     super.initState();
@@ -46,9 +55,47 @@ class _OrderScreenState extends State<OrderScreen> {
         _o = o;
         _error = null;
       });
+      await _loadCourier(o);
     } catch (e) {
       if (mounted) setState(() => _error = e);
     }
+  }
+
+  /// Подтягиваем карточку назначенного курьера (транспорт, телефон), если есть право на заказы.
+  Future<void> _loadCourier(Map<String, dynamic> o) async {
+    final id = o['courier_id'] as String?;
+    if (id == null || id == _courier?['employee_id']) return;
+    if (!context.read<StoreState>().can('orders.manage')) return;
+    try {
+      final items = await context.read<Api>().list('/store/couriers', {'store_id': o['store_id']});
+      final c = items.where((c) => c['employee_id'] == id).firstOrNull;
+      if (mounted && c != null) setState(() => _courier = c);
+    } catch (_) {
+      // Не критично: покажем только имя из заказа.
+    }
+  }
+
+  Future<void> _pickCourier() async {
+    final o = _o;
+    if (o == null) return;
+    final c = await pickCourierSheet(context, storeId: o['store_id'] as String, currentId: o['courier_id'] as String?);
+    if (c == null || !mounted) return;
+    if (c['employee_id'] == o['courier_id']) return;
+    await _act('assign-courier', {'courier_id': c['employee_id']}, tr('Курьер назначен: ${c['full_name']}', 'Kuryer tayinlandi: ${c['full_name']}'));
+    if (mounted && _o?['courier_id'] == c['employee_id']) setState(() => _courier = c);
+  }
+
+  Future<void> _unassignCourier() async {
+    final ok = await confirmSheet(
+      context,
+      title: tr('Снять курьера с заказа?', 'Kuryer buyurtmadan olinsinmi?'),
+      text: tr('Заказ останется без курьера — можно назначить другого или отдать курьеру по пути.',
+          'Buyurtma kuryersiz qoladi — boshqasini tayinlash yoki yoʻlakay kuryerga berish mumkin.'),
+      confirm: tr('Снять', 'Olib tashlash'),
+    );
+    if (!ok || !mounted) return;
+    await _act('assign-courier', {'courier_id': null}, tr('Курьер снят с заказа', 'Kuryer buyurtmadan olib tashlandi'));
+    if (mounted && _o?['courier_id'] == null) setState(() => _courier = null);
   }
 
   Future<void> _act(String step, [Object? body, String? done]) async {
@@ -157,6 +204,7 @@ class _OrderScreenState extends State<OrderScreen> {
       if ('${o['apartment'] ?? ''}'.isNotEmpty) tr('кв. ${o['apartment']}', 'xonadon ${o['apartment']}'),
     ].where((e) => e.isNotEmpty).join(', ');
     final actions = _actions(o);
+    final manage = context.watch<StoreState>().can('orders.manage');
     return [
       Wrap(spacing: 8, runSpacing: 8, children: [
         StatusChip('${o['status_title'] ?? s}', tone: orderTone(s)),
@@ -210,15 +258,107 @@ class _OrderScreenState extends State<OrderScreen> {
         Text(address, style: AppText.body),
         if ('${o['address_comment'] ?? ''}'.isNotEmpty) Text('${o['address_comment']}', style: AppText.small),
         if ('${o['comment'] ?? ''}'.isNotEmpty) ...[const SizedBox(height: 6), Text(tr('Комментарий: ${o['comment']}', 'Izoh: ${o['comment']}'), style: AppText.small)],
-        if (o['courier_name'] != null) ...[const SizedBox(height: 6), Text(tr('Курьер: ${o['courier_name']}', 'Kuryer: ${o['courier_name']}'), style: AppText.small)],
         if (phone.isNotEmpty) ...[
           const SizedBox(height: 12),
           SmallButton(label: formatPhone(phone), icon: Icons.call_rounded, onPressed: () => launchUrl(Uri.parse('tel:$phone'))),
         ],
       ]),
       const SizedBox(height: 12),
+      SectionCard(title: tr('Курьер', 'Kuryer'), icon: Icons.delivery_dining_rounded, color: AppColors.white, children: [_courierBlock(o, manage)]),
+      const SizedBox(height: 12),
       Center(child: Text(tr('Создан ${dateTime(o['created_at'])}', 'Yaratilgan: ${dateTime(o['created_at'])}'), style: AppText.small)),
     ];
+  }
+
+  /// Блок «Курьер» (Figma Н1/Н2): кто везёт заказ и кнопки назначить / сменить / снять.
+  Widget _courierBlock(Map<String, dynamic> o, bool manage) {
+    final s = o['status'] as String? ?? '';
+    final name = o['courier_name'] as String?;
+    final canChange = manage && _assignable.contains(s) && _busy == null;
+    final busy = _busy == 'assign-courier';
+
+    // Заказ взял курьер «по пути»: показываем его, менять нельзя, пока не снят (кнопка в действиях).
+    if (o['crowd_courier_id'] != null) {
+      final crowdPhone = o['crowd_courier_phone'] as String?;
+      return Row(children: [
+        CourierAvatar(name ?? '?', tone: ChipTone.blue),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(name ?? tr('Курьер по пути', 'Yoʻlakay kuryer'), style: AppText.bodyStrong),
+            const SizedBox(height: 4),
+            StatusChip(tr('по пути', 'yoʻlakay'), icon: Icons.directions_walk_rounded, tone: ChipTone.blue),
+          ]),
+        ),
+        if (crowdPhone != null && crowdPhone.isNotEmpty) RoundIcon(icon: Icons.call_rounded, onTap: () => launchUrl(Uri.parse('tel:$crowdPhone'))),
+      ]);
+    }
+
+    // Курьер не назначен.
+    if (name == null) {
+      if (!manage || !_assignable.contains(s)) return Text(tr('Не назначен', 'Tayinlanmagan'), style: AppText.small);
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const IconBox(Icons.person_rounded, size: 40, iconSize: 22, radius: 20, fg: AppColors.text2),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(tr('Свой курьер', 'Oʻz kuryeringiz'), style: AppText.bodyStrong),
+              Text(tr('Не назначен', 'Tayinlanmagan'), style: AppText.small),
+            ]),
+          ),
+          busy
+              ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5))
+              : ChipButton(label: tr('Назначить', 'Tayinlash'), color: AppColors.primarySoft, foreground: AppColors.primary, onPressed: canChange ? _pickCourier : null),
+        ]),
+        const SizedBox(height: 10),
+        Text(
+          tr('Заказ отдадим штатному курьеру магазина. Назначьте его сейчас или после сборки — курьер получит push в своём приложении.',
+              'Buyurtma doʻkonning shtatdagi kuryeriga beriladi. Hozir yoki yigʻishdan keyin tayinlang — kuryer oʻz ilovasida push oladi.'),
+          style: AppText.small,
+        ),
+      ]);
+    }
+
+    // Назначен штатный курьер.
+    final c = _courier;
+    final cPhone = c?['phone'] as String?;
+    final sub = [
+      vehicleTitle(c?['vehicle'] as String?),
+      if (c?['on_shift'] == true) tr('на смене', 'smenada'),
+      if (c?['on_shift'] == false) tr('не на смене', 'smenada emas'),
+      if (o['eta_at'] != null && s == 'delivering') tr('прибудет к ${dateTime(o['eta_at']).split(' ').last}', '${dateTime(o['eta_at']).split(' ').last} da yetib keladi'),
+    ].where((e) => e.isNotEmpty).join(' · ');
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        CourierAvatar(name),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(name, style: AppText.bodyStrong),
+            Text(sub.isEmpty ? tr('Штатный курьер', 'Shtatdagi kuryer') : sub, style: AppText.small),
+          ]),
+        ),
+        if (cPhone != null && cPhone.isNotEmpty) RoundIcon(icon: Icons.call_rounded, onTap: () => launchUrl(Uri.parse('tel:$cPhone'))),
+      ]),
+      if (manage && _assignable.contains(s)) ...[
+        const SizedBox(height: 12),
+        Row(children: [
+          ChipButton(label: tr('Сменить курьера', 'Kuryerni almashtirish'), onPressed: canChange ? _pickCourier : null),
+          const SizedBox(width: 8),
+          ChipButton(label: tr('Снять', 'Olib tashlash'), foreground: AppColors.primary, onPressed: canChange ? _unassignCourier : null),
+          if (busy) ...[const SizedBox(width: 12), const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5))],
+        ]),
+        if (s != 'delivering') ...[
+          const SizedBox(height: 10),
+          Text(
+            tr('Курьер получил push. После сборки он отметит «Забрал» в своём приложении — или нажмите «В путь» сами.',
+                'Kuryer push oldi. Yigʻilgach u oʻz ilovasida «Oldim»ni belgilaydi — yoki «Yoʻlga chiqish»ni oʻzingiz bosing.'),
+            style: AppText.small,
+          ),
+        ],
+      ],
+    ]);
   }
 
   Widget _sumRow(String label, String value, {bool strong = false}) => Padding(

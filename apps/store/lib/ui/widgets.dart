@@ -240,3 +240,29 @@ class IconBox extends StatelessWidget {
     );
   }
 }
+
+/// Компактная кнопка-чип внутри карточки: «Назначить», «Сменить курьера», «Снять».
+class ChipButton extends StatelessWidget {
+  const ChipButton({super.key, required this.label, required this.onPressed, this.color = AppColors.soft, this.foreground = AppColors.ink});
+
+  final String label;
+  final VoidCallback? onPressed;
+  final Color color;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: color,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onPressed,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          child: Text(label, style: AppText.bodyStrong.copyWith(fontSize: 14, color: onPressed == null ? AppColors.muted : foreground)),
+        ),
+      ),
+    );
+  }
+}
