@@ -145,8 +145,9 @@ func (s *Service) RedoNewItemPhoto(ctx context.Context, p *identity.Principal, i
 //     встаёт первым.
 func (s *Service) confirmPhoto(ctx context.Context, tx pgx.Tx, id, productID string, created, keepOwn bool) error {
 	if !created || keepOwn {
-		_, err := tx.Exec(ctx, `UPDATE photo_jobs SET status = 'skipped', error = $2 WHERE new_item_id = $1 AND status IN ('queued', 'processing')`,
-			id, ai.SkipCancelled)
+		_, err := tx.Exec(ctx, `UPDATE photo_jobs SET status = 'skipped', error = $2, retry_at = NULL, finished_at = now(),
+			log = log || jsonb_build_array(jsonb_build_object('at', now(), 'kind', 'skipped', 'text', $2::text))
+			WHERE new_item_id = $1 AND status IN ('queued', 'processing')`, id, ai.SkipCancelled)
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE photo_jobs SET product_id = $2 WHERE new_item_id = $1`, id, productID); err != nil {
@@ -162,7 +163,7 @@ func (s *Service) confirmPhoto(ctx context.Context, tx pgx.Tx, id, productID str
 	if err != nil {
 		return err
 	}
-	return s.putClean(ctx, tx, productID, sources, s.media.URLWithBase(base, result))
+	return s.putClean(ctx, tx, productID, sources, s.media.URLWithBase(base, result), "")
 }
 
 // ApplyStorePhoto — готовое фото задания (ai.PhotoService.OnStoreDone):
@@ -187,17 +188,19 @@ func (s *Service) ApplyStorePhoto(ctx context.Context, d ai.StoreDone) error {
 				productID = pid
 			}
 		}
-		tag, err := tx.Exec(ctx, `UPDATE photo_jobs SET status = 'done', result = $2, error = '' WHERE id = $1 AND status = 'processing'`, d.ID, d.Result)
+		tag, err := tx.Exec(ctx, ai.StoreDoneSQL, d.ID, d.Result)
 		if err != nil || tag.RowsAffected() == 0 || productID == nil {
 			return err
 		}
-		return s.putClean(ctx, tx, *productID, d.Sources, s.media.URLWithBase(d.MediaBase, d.Result))
+		return s.putClean(ctx, tx, *productID, d.Sources, s.media.URLWithBase(d.MediaBase, d.Result), d.Replaces)
 	})
 }
 
 // putClean — чистое фото в товар: первым, если первым стоит фото магазина
 // из задания (или фото нет); иначе — вторым (магазин успел поменять фото).
-func (s *Service) putClean(ctx context.Context, tx pgx.Tx, productID string, sources []string, url string) error {
+// «Переделать» (replaces — ключ прежнего фото Super Market) — на место
+// прежнего.
+func (s *Service) putClean(ctx context.Context, tx pgx.Tx, productID string, sources []string, url, replaces string) error {
 	key, ok := media.KeyFromURL(url)
 	if url == "" || !ok {
 		s.log.Warn("фото магазина: нет ссылки на готовое фото (MEDIA_BASE_URL)", "product", productID)
@@ -211,9 +214,15 @@ func (s *Service) putClean(ctx context.Context, tx pgx.Tx, productID string, sou
 	if err != nil {
 		return err
 	}
-	for _, u := range imgs {
-		if k, _ := media.KeyFromURL(u); k == key {
+	for i, u := range imgs {
+		k, _ := media.KeyFromURL(u)
+		if k == key {
 			return nil
+		}
+		if replaces != "" && k == replaces {
+			imgs[i] = url
+			_, err = tx.Exec(ctx, `UPDATE products SET images = $2 WHERE id = $1`, productID, imgs)
+			return err
 		}
 	}
 	first := ""
@@ -257,6 +266,10 @@ func photoSources(images []string) (keys []string, base string) {
 	return keys, base
 }
 
+// skippedBlockedSQL — старое фото не сделали, потому что сеть была
+// заблокирована: такое задание не мешает взять фото снова.
+const skippedBlockedSQL = `(j.backfill AND j.status = 'skipped' AND j.error = 'blocked')`
+
 // backfillSQL — старые фото «Начала работы», снятые до нормализации, по
 // ai.BackfillBatch на сеть (старые — первыми); сети, где пачка ещё
 // делается, пропускаются.
@@ -276,7 +289,7 @@ cards AS (
 	FROM start_new_items n
 	WHERE n.status = 'ready' AND jsonb_typeof(n.result -> 'match') IS DISTINCT FROM 'object'
 	  AND cardinality(n.images) > 0
-	  AND NOT EXISTS (SELECT 1 FROM photo_jobs j WHERE j.new_item_id = n.id)),
+	  AND NOT EXISTS (SELECT 1 FROM photo_jobs j WHERE j.new_item_id = n.id AND NOT ` + skippedBlockedSQL + `)),
 prods AS (
 	SELECT p.network_id, src.store_id, src.employee_id, NULL::uuid AS new_item_id, p.id AS product_id,
 	       p.images, '' AS media_base, src.lines, p.created_at
@@ -292,8 +305,8 @@ prods AS (
 		ORDER BY o LIMIT 1) src ON true
 	WHERE p.network_id IS NOT NULL AND cardinality(p.images) > 0
 	  AND p.images[1] ~ '(^|/api/v1/media/)[0-9]{4}/[0-9]{2}/[0-9a-f]{32}\.(jpg|png|webp|gif)$'
-	  AND NOT EXISTS (SELECT 1 FROM photo_jobs j WHERE j.product_id = p.id)
-	  AND NOT EXISTS (SELECT 1 FROM start_new_items n JOIN photo_jobs j ON j.new_item_id = n.id WHERE n.product_id = p.id))
+	  AND NOT EXISTS (SELECT 1 FROM photo_jobs j WHERE j.product_id = p.id AND NOT ` + skippedBlockedSQL + `)
+	  AND NOT EXISTS (SELECT 1 FROM start_new_items n JOIN photo_jobs j ON j.new_item_id = n.id WHERE n.product_id = p.id AND NOT ` + skippedBlockedSQL + `))
 SELECT network_id, store_id, employee_id, new_item_id, product_id, images, media_base, lines FROM (
 	SELECT x.*, row_number() OVER (PARTITION BY x.network_id ORDER BY x.created_at, x.new_item_id, x.product_id) AS rn
 	FROM (SELECT * FROM cards UNION ALL SELECT * FROM prods) x
@@ -357,6 +370,11 @@ func (s *Service) BackfillPhotos(ctx context.Context) error {
 			}
 			if len(keys) == 0 {
 				continue
+			}
+			// Сеть разблокировали — прежнее «пропущено» больше не нужно.
+			if _, err := tx.Exec(ctx, `DELETE FROM photo_jobs j WHERE `+skippedBlockedSQL+` AND (j.new_item_id = $1 OR j.product_id = $2)`,
+				c.newItemID, c.productID); err != nil {
+				return err
 			}
 			st, err := s.Photos.Enqueue(ctx, tx, ai.StoreJob{NetworkID: c.networkID, StoreID: c.storeID, EmployeeID: c.employeeID,
 				NewItemID: c.newItemID, ProductID: c.productID, Sources: keys, MediaBase: base, Lines: c.lines, Backfill: true})

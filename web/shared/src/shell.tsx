@@ -116,8 +116,15 @@ function toNav(items: MenuItem[]): NavItem[] {
 
 const text = (n: ReactNode) => (typeof n === 'string' || typeof n === 'number' ? String(n) : '')
 
+/**
+ * Подписи вкладок для страниц, которых нет в меню (подстраница пункта меню):
+ * путь → подпись. Без записи такая страница подписывается «Пункт / Документ».
+ */
+export const tabLabels: Record<string, string> = {}
+
 /** Подпись страницы для полосы вкладок: «Группа / Пункт» по самому длинному совпадению пути. */
 function labelFor(nav: NavItem[], path: string): string {
+  if (tabLabels[path]) return tabLabels[path]
   let best: { key: string; label: string } | undefined
   const walk = (items: NavItem[], parent?: string) =>
     items.forEach((i) => {

@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { Shell, type MenuItem } from '@sm/shared'
+import { Shell, tabLabels, type MenuItem } from '@sm/shared'
 import {
   AppstoreOutlined,
   BankOutlined,
@@ -31,6 +31,7 @@ import { Crowd } from './pages/Crowd'
 import { Wishes } from './pages/Wishes'
 import { AISettings } from './pages/AI'
 import { AIPhoto } from './pages/AIPhoto'
+import { StorePhotos } from './pages/StorePhotos'
 import { Translations } from './pages/Translations'
 import { Notifications, PushCampaign, PushNew } from './pages/Push'
 
@@ -85,6 +86,9 @@ const menu: MenuItem[] = [
   { key: '/translations', icon: <TranslationOutlined />, label: 'Переводы' },
 ]
 
+// Подстраницы, которых нет в меню, — подписи вкладок.
+tabLabels['/ai-photo/store'] = 'Фото магазинов'
+
 export function AdminRoutes() {
   return (
     <Routes>
@@ -114,6 +118,7 @@ export function AdminRoutes() {
         <Route path="notifications" element={<Notifications />} />
         <Route path="ai" element={<AISettings />} />
         <Route path="ai-photo" element={<AIPhoto />} />
+        <Route path="ai-photo/store" element={<StorePhotos />} />
         <Route path="translations" element={<Translations />} />
         <Route path="notifications/new" element={<PushNew />} />
         <Route path="notifications/:id" element={<PushCampaign />} />

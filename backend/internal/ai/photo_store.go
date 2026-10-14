@@ -39,6 +39,15 @@ const (
 	SkipLimit     = "limit"
 	SkipOff       = "off"
 	SkipCancelled = "cancelled"
+	// SkipBlocked — сеть заблокировали или магазин выключили, пока задание
+	// ждало; старое фото возьмём снова, когда разблокируют.
+	SkipBlocked = "blocked"
+
+	// Временная ошибка Google (лимит запросов, сбой, нет ответа) — задание
+	// повторяется через retryDelay, пока не кончатся попытки; на лимит
+	// запросов (429) очередь ещё и замирает на ratePause.
+	retryDelay = 2 * time.Minute
+	ratePause  = 2 * time.Minute
 
 	maxStoreSources = 6
 	// Задание «processing» дольше этого — сервер перезапускали: взять снова.
@@ -73,6 +82,8 @@ type StoreJob struct {
 	// только пока в лимите месяца остаётся запас для новых (BackfillReserve);
 	// иначе задания нет ("") — старое фото возьмём в следующем месяце.
 	Backfill bool
+	// Replaces — «Переделать»: ключ прежнего фото Super Market.
+	Replaces string
 }
 
 // StoreDone — готовое задание для OnStoreDone.
@@ -85,6 +96,8 @@ type StoreDone struct {
 	Sources   []string
 	MediaBase string
 	Result    string // ключ готового фото
+	// Replaces — «Переделать»: новое фото встаёт на место этого ключа.
+	Replaces string
 }
 
 // StoreQuota — фото Super Market в этом месяце для сети.
@@ -124,6 +137,40 @@ type storeWorker struct {
 	wake chan struct{}
 	// runMu — один проход очереди за раз (Sync в тестах — тоже).
 	runMu sync.Mutex
+	// pauseUntil — Google ответил «лимит запросов»: новых заданий до этого
+	// времени не берём.
+	pauseMu    sync.Mutex
+	pauseUntil time.Time
+}
+
+func (s *PhotoService) pause(d time.Duration) {
+	s.worker.pauseMu.Lock()
+	defer s.worker.pauseMu.Unlock()
+	if until := time.Now().Add(d); until.After(s.worker.pauseUntil) {
+		s.worker.pauseUntil = until
+	}
+}
+
+// resume — супер-админ сам повторил фото: паузу после «лимита запросов» снять.
+func (s *PhotoService) resume() {
+	s.worker.pauseMu.Lock()
+	defer s.worker.pauseMu.Unlock()
+	s.worker.pauseUntil = time.Time{}
+}
+
+func (s *PhotoService) paused() bool {
+	s.worker.pauseMu.Lock()
+	defer s.worker.pauseMu.Unlock()
+	return time.Now().Before(s.worker.pauseUntil)
+}
+
+// StoreDoneSQL — задание готово ($1 — задание, $2 — ключ фото); для OnStoreDone.
+var StoreDoneSQL = `UPDATE photo_jobs SET status = 'done', result = $2, error = '', error_code = '', retry_at = NULL, finished_at = now(),
+	log = log || ` + logEntrySQL("'done'", "''") + ` WHERE id = $1 AND status = 'processing'`
+
+// logEntrySQL — запись истории задания ($kind, $text — номера параметров).
+func logEntrySQL(kind, text string) string {
+	return `jsonb_build_array(jsonb_build_object('at', now(), 'kind', ` + kind + `::text, 'text', ` + text + `::text))`
 }
 
 // monthStart — начало месяца по Ташкенту (SQL).
@@ -215,9 +262,14 @@ func (s *PhotoService) Enqueue(ctx context.Context, q db.Querier, j StoreJob) (s
 	}
 	var id string
 	err = q.QueryRow(ctx, `
-		INSERT INTO photo_jobs (network_id, store_id, employee_id, new_item_id, product_id, sources, media_base, status, error, backfill)
-		VALUES ($1, NULLIF($2, '')::uuid, NULLIF($3, '')::uuid, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-		j.NetworkID, j.StoreID, j.EmployeeID, j.NewItemID, j.ProductID, j.Sources, trimBase(j.MediaBase), status, reason, j.Backfill).Scan(&id)
+		INSERT INTO photo_jobs (network_id, store_id, employee_id, new_item_id, product_id, sources, media_base, status, error, backfill,
+		                        replaces, finished_at, log)
+		VALUES ($1, NULLIF($2, '')::uuid, NULLIF($3, '')::uuid, $4, $5, $6, $7, $8, $9, $10, $11,
+		        CASE WHEN $8 = 'skipped' THEN now() END,
+		        CASE WHEN $8 = 'skipped' THEN `+logEntrySQL("'skipped'", "$9")+` ELSE `+logEntrySQL("'queued'", "''")+` END)
+		RETURNING id`,
+		j.NetworkID, j.StoreID, j.EmployeeID, j.NewItemID, j.ProductID, j.Sources, trimBase(j.MediaBase), status, reason, j.Backfill,
+		j.Replaces).Scan(&id)
 	if err != nil {
 		return "", err
 	}
@@ -307,7 +359,7 @@ func (s *PhotoService) RunQueued(ctx context.Context) {
 	done := make(chan struct{}, photoParallel)
 	running := 0
 	for {
-		for running < photoParallel && ctx.Err() == nil {
+		for running < photoParallel && ctx.Err() == nil && !s.paused() {
 			jobs, err := s.claim(ctx, 1)
 			if err != nil {
 				s.log.Error("фото магазинов: очередь", "err", err)
@@ -322,7 +374,7 @@ func (s *PhotoService) RunQueued(ctx context.Context) {
 				defer func() {
 					if p := recover(); p != nil {
 						s.log.Error("фото магазинов: паника", "id", j.ID, "panic", p)
-						s.fail(context.Background(), j.ID, "внутренняя ошибка")
+						s.fail(context.Background(), j.ID, CodeOther, "внутренняя ошибка")
 					}
 				}()
 				s.runStore(ctx, j)
@@ -349,48 +401,127 @@ const inactiveJobSQL = `(EXISTS (SELECT 1 FROM networks n WHERE n.id = photo_job
 	OR EXISTS (SELECT 1 FROM stores st WHERE st.id = photo_jobs.store_id AND st.status <> 'active'))`
 
 // claim — взять задания в работу. Зависшие «processing» (сервер
-// перезапускали) берутся снова, пока не кончатся попытки. Сеть заблокировали
-// или магазин выключили, пока задание ждало, — не делаем: старое фото уходит
-// из очереди (разблокируют — возьмём снова), новое — skipped/off.
+// перезапускали) берутся снова, пока не кончатся попытки; задание с
+// временной ошибкой — когда подойдёт retry_at. Сеть заблокировали или магазин
+// выключили, пока задание ждало, — не делаем: skipped/blocked (старое фото
+// возьмём снова, когда разблокируют).
 func (s *PhotoService) claim(ctx context.Context, n int) ([]storeJob, error) {
 	waiting := `(status = 'queued' OR (status = 'processing' AND started_at < now() - $1::interval)) AND ` + inactiveJobSQL
-	if _, err := s.ai.pool.Exec(ctx, `DELETE FROM photo_jobs WHERE backfill AND `+waiting, storeJobStale.String()); err != nil {
-		return nil, err
-	}
-	if _, err := s.ai.pool.Exec(ctx, `UPDATE photo_jobs SET status = 'skipped', error = $2 WHERE `+waiting, storeJobStale.String(), SkipOff); err != nil {
+	if _, err := s.ai.pool.Exec(ctx, `
+		UPDATE photo_jobs SET status = 'skipped', error = $2, error_code = '', retry_at = NULL, finished_at = now(),
+		       log = log || `+logEntrySQL("'skipped'", "$2")+`
+		WHERE `+waiting, storeJobStale.String(), SkipBlocked); err != nil {
 		return nil, err
 	}
 	if _, err := s.ai.pool.Exec(ctx, `
-		UPDATE photo_jobs SET status = 'failed', error = 'не успели сделать фото'
+		UPDATE photo_jobs SET status = 'failed', error = 'не успели сделать фото', error_code = $3, finished_at = now(),
+		       log = log || `+logEntrySQL("'failed'", "'не успели сделать фото'")+`
 		WHERE status = 'processing' AND started_at < now() - $1::interval AND attempts >= $2`,
-		storeJobStale.String(), storeJobAttempts); err != nil {
+		storeJobStale.String(), storeJobAttempts, CodeStale); err != nil {
 		return nil, err
 	}
 	rows, err := s.ai.pool.Query(ctx, `
-		UPDATE photo_jobs SET status = 'processing', started_at = now(), attempts = attempts + 1
+		UPDATE photo_jobs SET status = 'processing', started_at = now(), attempts = attempts + 1, retry_at = NULL
 		WHERE id IN (
 			SELECT id FROM photo_jobs
-			WHERE (status = 'queued' OR (status = 'processing' AND started_at < now() - $1::interval)) AND NOT `+inactiveJobSQL+`
+			WHERE ((status = 'queued' AND (retry_at IS NULL OR retry_at <= now()))
+			       OR (status = 'processing' AND started_at < now() - $1::interval)) AND NOT `+inactiveJobSQL+`
 			ORDER BY backfill, created_at LIMIT $2 FOR UPDATE SKIP LOCKED)
-		RETURNING id, network_id, store_id, employee_id, new_item_id, product_id, sources, media_base, attempts`,
+		RETURNING id, network_id, store_id, employee_id, new_item_id, product_id, sources, media_base, attempts, replaces`,
 		storeJobStale.String(), n)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (storeJob, error) {
 		var j storeJob
-		err := r.Scan(&j.ID, &j.NetworkID, &j.StoreID, &j.employeeID, &j.NewItemID, &j.ProductID, &j.Sources, &j.MediaBase, &j.attempts)
+		err := r.Scan(&j.ID, &j.NetworkID, &j.StoreID, &j.employeeID, &j.NewItemID, &j.ProductID, &j.Sources, &j.MediaBase, &j.attempts, &j.Replaces)
 		return j, err
 	})
 }
 
-func (s *PhotoService) fail(ctx context.Context, id, msg string) {
+func cut(msg string) string {
 	if r := []rune(msg); len(r) > 500 {
-		msg = string(r[:500])
+		return string(r[:500])
 	}
-	if _, err := s.ai.pool.Exec(ctx, `UPDATE photo_jobs SET status = 'failed', error = $2 WHERE id = $1 AND status = 'processing'`, id, msg); err != nil {
+	return msg
+}
+
+// fail — задание не вышло: у товара остаётся фото магазина.
+func (s *PhotoService) fail(ctx context.Context, id, code, msg string) {
+	msg = cut(msg)
+	if _, err := s.ai.pool.Exec(ctx, `
+		UPDATE photo_jobs SET status = 'failed', error = $2, error_code = $3, retry_at = NULL, finished_at = now(),
+		       log = log || `+logEntrySQL("'failed'", "$2")+`
+		WHERE id = $1 AND status = 'processing'`, id, msg, code); err != nil {
 		s.log.Error("фото магазинов: ошибка задания", "id", id, "err", err)
 	}
+}
+
+// retryLater — временная ошибка: задание снова в очереди, после at.
+func (s *PhotoService) retryLater(ctx context.Context, id, code, msg string, at time.Time) {
+	msg = cut(msg)
+	if _, err := s.ai.pool.Exec(ctx, `
+		UPDATE photo_jobs SET status = 'queued', error = $2, error_code = $3, retry_at = $4,
+		       log = log || `+logEntrySQL("'error'", "$2")+`
+		WHERE id = $1 AND status = 'processing'`, id, msg, code, at); err != nil {
+		s.log.Error("фото магазинов: повтор задания", "id", id, "err", err)
+	}
+}
+
+// Причины «Не вышло» (photo_jobs.error_code).
+const (
+	CodeRateLimit   = "rate_limit"  // Google: лимит запросов (429)
+	CodeUnavailable = "unavailable" // Google: сбой (5xx)
+	CodeTimeout     = "timeout"     // Google не ответил, нет связи
+	CodeAuth        = "auth"        // ключ не подходит
+	CodeModel       = "model"       // модель не выбрана или недоступна
+	CodeRefused     = "refused"     // Gemini не нарисовал фото
+	CodeUnreadable  = "unreadable"  // фото магазина не читается
+	CodeNotFound    = "not_found"   // фото нет в хранилище
+	CodeStale       = "stale"       // сервер перезапускали — не успели
+	CodeSave        = "save"        // не удалось сохранить готовое фото
+	CodeOther       = "other"
+)
+
+// errCode — причина ошибки для группировки «Почему не вышло».
+func errCode(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return CodeTimeout
+	}
+	var se *ErrService
+	if !errors.As(err, &se) {
+		return CodeOther
+	}
+	switch {
+	case se.Status == 429:
+		return CodeRateLimit
+	case se.Status >= 500:
+		return CodeUnavailable
+	case se.Status == 408 || se.Temporary:
+		return CodeTimeout
+	case se.Status == 401 || se.Status == 403:
+		return CodeAuth
+	case se.Status == 404:
+		return CodeModel
+	}
+	m := se.Msg
+	switch {
+	case strings.Contains(m, "не читается"):
+		return CodeUnreadable
+	case strings.Contains(m, "не найдено в хранилище"):
+		return CodeNotFound
+	case strings.Contains(m, "не выбрана модель"):
+		return CodeModel
+	case strings.Contains(m, "отказался"), strings.Contains(m, "не нарисовал"), strings.Contains(m, "пустой ответ"),
+		strings.Contains(m, "не вернул фото"), strings.Contains(m, "повреждённую"):
+		return CodeRefused
+	}
+	return CodeOther
+}
+
+// Retryable — временная ошибка Google: задание повторяется само.
+func Retryable(code string) bool {
+	return code == CodeRateLimit || code == CodeUnavailable || code == CodeTimeout
 }
 
 // runStore — одно задание: Gemini, квадрат, хранилище, OnStoreDone.
@@ -401,14 +532,24 @@ func (s *PhotoService) runStore(ctx context.Context, j storeJob) {
 		return
 	}
 	if !r.storeOn() {
-		if _, err := s.ai.pool.Exec(ctx, `UPDATE photo_jobs SET status = 'skipped', error = $2 WHERE id = $1 AND status = 'processing'`, j.ID, SkipOff); err != nil {
+		if _, err := s.ai.pool.Exec(ctx, `
+			UPDATE photo_jobs SET status = 'skipped', error = $2, finished_at = now(), log = log || `+logEntrySQL("'skipped'", "$2")+`
+			WHERE id = $1 AND status = 'processing'`, j.ID, SkipOff); err != nil {
 			s.log.Error("фото магазинов", "id", j.ID, "err", err)
 		}
 		return
 	}
 	key, err := s.storePhoto(ctx, r, j)
 	if err != nil {
-		s.fail(context.WithoutCancel(ctx), j.ID, errText(err, i18n.RU))
+		code, msg := errCode(err), errText(err, i18n.RU)
+		if code == CodeRateLimit {
+			s.pause(ratePause)
+		}
+		if Retryable(code) && j.attempts < storeJobAttempts {
+			s.retryLater(context.WithoutCancel(ctx), j.ID, code, msg, s.ai.now().Add(retryDelay))
+			return
+		}
+		s.fail(context.WithoutCancel(ctx), j.ID, code, msg)
 		return
 	}
 	done := j.StoreDone
@@ -416,11 +557,11 @@ func (s *PhotoService) runStore(ctx context.Context, j storeJob) {
 	if s.OnStoreDone != nil {
 		err = s.OnStoreDone(context.WithoutCancel(ctx), done)
 	} else {
-		_, err = s.ai.pool.Exec(context.WithoutCancel(ctx), `UPDATE photo_jobs SET status = 'done', result = $2, error = '' WHERE id = $1 AND status = 'processing'`, j.ID, key)
+		_, err = s.ai.pool.Exec(context.WithoutCancel(ctx), StoreDoneSQL, j.ID, key)
 	}
 	if err != nil {
 		s.log.Error("фото магазинов: готовое фото", "id", j.ID, "err", err)
-		s.fail(context.WithoutCancel(ctx), j.ID, "не удалось сохранить фото")
+		s.fail(context.WithoutCancel(ctx), j.ID, CodeSave, "не удалось сохранить фото")
 	}
 }
 
@@ -472,6 +613,10 @@ func (s *PhotoService) storePhoto(ctx context.Context, r photoRow, j storeJob) (
 			Provider: c.Provider, Model: c.Model, Usage: u, OK: err == nil, CostUSD: &cost}
 		if rerr := s.ai.Record(context.WithoutCancel(ctx), rec); rerr != nil {
 			s.log.Error("ai usage", "kind", rec.Kind, "err", rerr)
+		}
+		if _, rerr := s.ai.pool.Exec(context.WithoutCancel(ctx), `UPDATE photo_jobs SET cost_usd = COALESCE(cost_usd, 0) + $2, model = $3 WHERE id = $1`,
+			j.ID, cost, c.Model); rerr != nil {
+			s.log.Error("фото магазинов: цена", "id", j.ID, "err", rerr)
 		}
 	}
 	if err != nil {

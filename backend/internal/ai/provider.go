@@ -59,6 +59,8 @@ type ErrService struct {
 	Status int
 	Msg    string
 	MsgUz  string // то же по-узбекски; пусто — Msg
+	// Temporary — сервис не ответил или связи нет: можно повторить позже.
+	Temporary bool
 }
 
 func (e *ErrService) Error() string { return e.Msg }
@@ -95,9 +97,9 @@ func (c Conn) do(ctx context.Context, method, path string, body any, out any) er
 	resp, err := client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return &ErrService{Msg: "сервис не ответил вовремя", MsgUz: "xizmat oʻz vaqtida javob bermadi"}
+			return &ErrService{Msg: "сервис не ответил вовремя", MsgUz: "xizmat oʻz vaqtida javob bermadi", Temporary: true}
 		}
-		return &ErrService{Msg: "не удалось подключиться к сервису: проверьте адрес", MsgUz: "xizmatga ulanib boʻlmadi: manzilni tekshiring"}
+		return &ErrService{Msg: "не удалось подключиться к сервису: проверьте адрес", MsgUz: "xizmatga ulanib boʻlmadi: manzilni tekshiring", Temporary: true}
 	}
 	defer resp.Body.Close()
 	// Ответ с картинкой (Gemini) — до нескольких МБ в base64.

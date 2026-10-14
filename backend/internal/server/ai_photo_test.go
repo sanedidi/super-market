@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -30,7 +31,8 @@ type fakeGemini struct {
 	search   []bool // был ли инструмент googleSearch в запросе
 	noSearch bool   // отвечать 400 на запрос с поиском
 	images   []int  // сколько фото было в запросе
-	fail     bool   // отвечать 500
+	fail     bool   // отвечать ошибкой: failCode, по умолчанию 500
+	failCode int
 	onCall   func() // перед ответом (магазин меняет фото, пока Gemini рисует)
 }
 
@@ -83,7 +85,7 @@ func (f *fakeGemini) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if f.fail {
-			w.WriteHeader(500)
+			w.WriteHeader(cmp.Or(f.failCode, 500))
 			_, _ = w.Write([]byte(`{"error":{"message":"internal"}}`))
 			return
 		}

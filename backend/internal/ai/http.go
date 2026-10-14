@@ -46,6 +46,13 @@ func (m *Module) Routes(r chi.Router) {
 			r.Post("/admin/ai-photo/test", m.photoTest)
 			r.Post("/admin/ai-photo/normalize", m.photoNormalize)
 			r.Get("/admin/ai-photo/jobs/{id}", m.photoJob)
+			// Фото магазинов — результаты.
+			r.Get("/admin/ai-photo/store/summary", m.storeSummary)
+			r.Get("/admin/ai-photo/store/jobs", m.storeJobs)
+			r.Get("/admin/ai-photo/store/jobs/{id}", m.storeJob)
+			r.Post("/admin/ai-photo/store/jobs/{id}/retry", m.storeJobRetry)
+			r.Post("/admin/ai-photo/store/jobs/{id}/redo", m.storeJobRedo)
+			r.Post("/admin/ai-photo/store/retry-failed", m.storeRetryFailed)
 		}
 	})
 	// Автоперевод двуязычных полей: панель и приложение магазина, супер-админ.
@@ -147,4 +154,62 @@ func (m *Module) photoNormalize(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) photoJob(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (PhotoJob, error) { return m.photo.Job(chi.URLParam(r, "id")) })
+}
+
+// ------------------------------------------------------------ Фото магазинов
+
+func (m *Module) storeSummary(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (StoreSummary, error) {
+		return m.photo.StoreSummary(r.Context(), r.URL.Query().Get("month"))
+	})
+}
+
+func (m *Module) storeJobs(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (StoreJobsPage, error) {
+		q := r.URL.Query()
+		p := httpx.PageFrom(r)
+		f := StoreJobsFilter{Month: q.Get("month"), Status: q.Get("status"), NetworkID: q.Get("network_id"), Kind: q.Get("kind"),
+			Code: q.Get("code"), Query: q.Get("q"), Limit: p.Limit, Offset: p.Offset}
+		if f.NetworkID != "" && !httpx.IsUUID(f.NetworkID) {
+			return StoreJobsPage{}, apperr.Validation("network_id: неверный id").Uz("network_id: id notoʻgʻri")
+		}
+		page, err := m.photo.StoreJobs(r.Context(), f)
+		for i := range page.Items {
+			page.Items[i] = m.photo.StoreJobURLs(r, page.Items[i])
+		}
+		return page, err
+	})
+}
+
+func (m *Module) storeJob(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (StoreJobRow, error) {
+		j, err := m.photo.StoreJob(r.Context(), id)
+		return m.photo.StoreJobURLs(r, j), err
+	})
+}
+
+// storeJobRetry — «Повторить»: неудачное фото снова в очередь.
+func (m *Module) storeJobRetry(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (StoreJobRow, error) {
+		j, err := m.photo.RetryStoreJob(r.Context(), id)
+		return m.photo.StoreJobURLs(r, j), err
+	})
+}
+
+// storeJobRedo — «Переделать» готовое фото (новое задание, идёт в лимит сети).
+func (m *Module) storeJobRedo(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusAccepted, "id", func(id string) (StoreJobRow, error) {
+		j, err := m.photo.RedoStoreJob(r.Context(), id)
+		return m.photo.StoreJobURLs(r, j), err
+	})
+}
+
+// storeRetryFailed — «Повторить неудачные» за месяц (по причине, сети).
+func (m *Module) storeRetryFailed(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in RetryFailedInput) (RetryFailedResult, error) {
+		if in.NetworkID != "" && !httpx.IsUUID(in.NetworkID) {
+			return RetryFailedResult{}, apperr.Validation("network_id: неверный id").Uz("network_id: id notoʻgʻri")
+		}
+		return m.photo.RetryFailed(r.Context(), in)
+	})
 }

@@ -184,9 +184,9 @@ func googleToken(ctx context.Context, key string) (string, error) {
 	resp, err := client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return "", &ErrService{Msg: "Google не ответил вовремя", MsgUz: "Google oʻz vaqtida javob bermadi"}
+			return "", &ErrService{Msg: "Google не ответил вовремя", MsgUz: "Google oʻz vaqtida javob bermadi", Temporary: true}
 		}
-		return "", &ErrService{Msg: "не удалось подключиться к Google за токеном", MsgUz: "token olish uchun Googlega ulanib boʻlmadi"}
+		return "", &ErrService{Msg: "не удалось подключиться к Google за токеном", MsgUz: "token olish uchun Googlega ulanib boʻlmadi", Temporary: true}
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))

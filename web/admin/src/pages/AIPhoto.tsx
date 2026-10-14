@@ -25,6 +25,7 @@ import { LoadError, PageTitle, api, dateTime, errorText, useItem, useList } from
 import type { Plan } from './Plans'
 import { Hint, ProviderCard, Step, VERTEX_REGIONS, isGoogleVertexURL, parseServiceAccount, vertexProject, vertexRegion, vertexURL } from './AI'
 import { usePhotoJob, usd } from '../photoJob'
+import { REASONS, type StoreSummary } from './StorePhotos'
 
 type Mode = 'gemini' | 'vertex'
 type Background = 'white' | 'light' | 'transparent'
@@ -171,6 +172,50 @@ function BeforeAfter({ before, after, busy }: { before?: string; after?: string;
 }
 
 /** Н5 (Figma «Нормализация фото для магазина»): блок «Фото для магазинов». */
+/** «Магазины в этом месяце»: счётчики, причины «Не вышло», ссылка на «Фото магазинов». */
+function StoreMonth() {
+  const { data: m } = useItem<StoreSummary>('/admin/ai-photo/store/summary')
+  const tile = (title: string, value: ReactNode, to: string, color?: string) => (
+    <Link to={to} style={{ flex: 1, minWidth: 120 }}>
+      <Card size="small" hoverable style={{ background: '#F9FAFB', borderRadius: 12 }} styles={{ body: { padding: '10px 14px' } }}>
+        <Typography.Text style={{ color: '#667085', fontSize: 12, fontWeight: 600 }}>{title}</Typography.Text>
+        <div style={{ fontSize: 22, fontWeight: 800, color: color ?? '#101828' }}>{value}</div>
+      </Card>
+    </Link>
+  )
+  const base = '/ai-photo/store'
+  return (
+    <>
+      <Flex align="center" gap={12}>
+        <Typography.Text strong style={{ flex: 1 }}>
+          Магазины в этом месяце
+        </Typography.Text>
+        <Link to={base} style={{ fontWeight: 700 }}>
+          Все фото магазинов →
+        </Link>
+      </Flex>
+      <Flex gap={10} wrap>
+        {tile('Сделано', m?.done ?? '—', `${base}?status=done`)}
+        {tile('Не вышло', m?.failed ?? '—', `${base}?status=failed`, m?.failed ? '#D92D20' : undefined)}
+        {tile('В очереди', m?.queued ?? '—', `${base}?status=queued`)}
+        {tile('Пропущено', m?.skipped ?? '—', `${base}?status=skipped`)}
+        {tile('Расход', m ? usd(m.cost_usd) : '—', base)}
+      </Flex>
+      {!!m?.reasons.length && (
+        <Flex align="center" gap={8} style={{ background: '#FEF3F2', borderRadius: 10, padding: '8px 12px' }}>
+          <Typography.Text style={{ flex: 1, color: '#912018', fontWeight: 600, fontSize: 13 }}>
+            Не вышло: {m.reasons.map((r) => `${(REASONS[r.code] ?? REASONS.other)[0].replace(/^Gemini: /, '').toLowerCase()} — ${r.count}`).join(' · ')}
+          </Typography.Text>
+          <Link to={`${base}?status=failed`} style={{ fontWeight: 700 }}>
+            Смотреть →
+          </Link>
+        </Flex>
+      )}
+      <Hint>Каждый счётчик открывает «Фото магазинов» с этим фильтром.</Hint>
+    </>
+  )
+}
+
 function StorePhotosCard({ s, models, onSaved }: { s: PhotoSettings; models: Model[] | null; onSaved: () => void }) {
   const { message } = App.useApp()
   const qc = useQueryClient()
@@ -233,11 +278,6 @@ function StorePhotosCard({ s, models, onSaved }: { s: PhotoSettings; models: Mod
     </Flex>
   )
   const price = PRICES.find(([m]) => (model.trim() || s.model).includes(m))?.[1]
-  const stat = (title: string, value: ReactNode) => (
-    <Card size="small" style={{ background: '#F8FAFC', flex: 1, minWidth: 130 }}>
-      <Statistic title={title} value={value as string} groupSeparator=" " />
-    </Card>
-  )
 
   return (
     <Card style={{ marginTop: 24 }} styles={{ body: { padding: 24 } }}>
@@ -311,13 +351,7 @@ function StorePhotosCard({ s, models, onSaved }: { s: PhotoSettings; models: Mod
         </Space>
 
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
-          <Typography.Text strong>Магазины в этом месяце</Typography.Text>
-          <Flex gap={10} wrap>
-            {stat('Фото', s.store_photos)}
-            {stat('Не вышло', s.store_failed)}
-            {stat('Расход', usd(s.store_cost_usd))}
-            {stat('Сетей', s.store_networks)}
-          </Flex>
+          <StoreMonth />
           {s.store_top.length > 0 && (
             <div>
               {s.store_top.map((t) => (

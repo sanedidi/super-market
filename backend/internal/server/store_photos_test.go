@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -157,8 +158,9 @@ func TestStorePhotos(t *testing.T) {
 		t.Fatalf("quota used = %v", q.Body)
 	}
 
-	// Gemini не справился — осталось фото магазина, карточку можно подтвердить.
-	gem.fail = true
+	// Gemini не справился (ошибка не временная) — осталось фото магазина,
+	// карточку можно подтвердить.
+	gem.fail, gem.failCode = true, 400
 	recognize("Сок Bliss манговый, 1 л")
 	r = a.expect(a.do("POST", "/store/start/new-items", ownerTok, map[string]any{"store_id": storeID, "images": []string{front}}), 202, "gemini fail")
 	gem.fail = false
@@ -549,8 +551,8 @@ func TestStorePhotosBackfill(t *testing.T) {
 		t.Fatalf("unblocked: calls %d, images %v", gem.calls, imgs)
 	}
 
-	// Задание ждало в очереди, а сеть заблокировали: старое фото уходит из
-	// очереди, новое — не делается.
+	// Задание ждало в очереди, а сеть заблокировали: не делается (skipped/blocked),
+	// старое фото возьмём снова, когда разблокируют.
 	var network string
 	if err := pool.QueryRow(ctx, `SELECT network_id FROM stores WHERE id = $1`, storeID).Scan(&network); err != nil {
 		t.Fatal(err)
@@ -568,15 +570,220 @@ func TestStorePhotosBackfill(t *testing.T) {
 	setNetwork(storeID, "blocked")
 	calls = gem.calls
 	app.Start.Photos.Kick()
-	var oldLeft int
-	var newStatus, newErr string
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM photo_jobs WHERE id = $1`, oldJob).Scan(&oldLeft); err != nil {
+	for _, id := range []string{oldJob, newJob} {
+		var status, reason string
+		if err := pool.QueryRow(ctx, `SELECT status, error FROM photo_jobs WHERE id = $1`, id).Scan(&status, &reason); err != nil {
+			t.Fatal(err)
+		}
+		if gem.calls != calls || status != "skipped" || reason != "blocked" {
+			t.Fatalf("blocked queue: calls %d → %d, job %s/%s", calls, gem.calls, status, reason)
+		}
+	}
+}
+
+// TestStorePhotosAdmin — «Фото магазинов» у супер-админа: временные ошибки
+// Google Super Market повторяет сам (на лимит запросов очередь замирает),
+// счётчики и причины за месяц, список с фильтрами, «Повторить»,
+// «Повторить неудачные» и «Переделать».
+func TestStorePhotosAdmin(t *testing.T) {
+	pool := freshDB(t)
+	ctx := context.Background()
+	s3 := &fakeS3{buckets: map[string]bool{}, objects: map[string][]byte{}, types: map[string]string{}}
+	s3srv := httptest.NewServer(s3)
+	t.Cleanup(s3srv.Close)
+	gem := &fakeGemini{key: "AIzaSyTest-Xq7c"}
+	gemsrv := httptest.NewServer(gem)
+	t.Cleanup(gemsrv.Close)
+
+	cfg := testConfig()
+	cfg.DevOTPCode = "111111"
+	cfg.S3Endpoint, cfg.S3AccessKey, cfg.S3SecretKey, cfg.S3Bucket = s3srv.URL, "minio", "secret", "media"
+	server.InvoicesSync = true
+	t.Cleanup(func() { server.InvoicesSync = false })
+	app, err := server.Build(ctx, cfg, pool, &fakeTelegram{}, quietLog())
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := pool.QueryRow(ctx, `SELECT status, error FROM photo_jobs WHERE id = $1`, newJob).Scan(&newStatus, &newErr); err != nil {
+	srv := httptest.NewServer(app.Handler)
+	t.Cleanup(srv.Close)
+	a := api{t: t, srv: srv, pool: pool}
+	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
+	ownerTok, storeID := setupNetwork(t, a, adminTok, "+998900000002")
+	cat := a.expect(a.do("POST", "/admin/catalog/categories", adminTok, map[string]any{"name": "Чай"}), 201, "category").str("id")
+	var pcs string
+	for _, u := range a.expect(a.do("GET", "/admin/catalog/units", adminTok, nil), 200, "units").items() {
+		if u["short_name"] == "шт" {
+			pcs = u["id"].(string)
+		}
+	}
+	a.expect(a.do("PUT", "/admin/ai-photo", adminTok, map[string]any{
+		"mode": "gemini", "base_url": gemsrv.URL, "api_key": gem.key, "model": "gemini-3-pro-image", "web_search": false,
+	}), 200, "photo ai on")
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	fw, _ := mw.CreateFormFile("file", "item.png")
+	_, _ = fw.Write(tinyPNG)
+	_ = mw.Close()
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/v1/store/uploads", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+ownerTok)
+	res, err := srv.Client().Do(req)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if gem.calls != calls || oldLeft != 0 || newStatus != "skipped" || newErr != "off" {
-		t.Fatalf("blocked queue: calls %d → %d, old left %d, new %s/%s", calls, gem.calls, oldLeft, newStatus, newErr)
+	up := map[string]any{}
+	_ = json.NewDecoder(res.Body).Decode(&up)
+	res.Body.Close()
+	label := up["url"].(string)
+
+	// Строка инвентаризации без фото: магазин снял — Super Market делает фото.
+	photo := func(name string) string {
+		t.Helper()
+		id := a.expect(a.do("POST", "/store/products", ownerTok, map[string]any{"name": name, "category_id": cat, "unit_id": pcs, "start_draft": true}), 201, name).str("id")
+		a.expect(a.do("POST", "/store/start/lines", ownerTok, map[string]any{"store_id": storeID, "items": []map[string]any{{"product_id": id, "add": true, "source": "new"}}}), 200, name+" line")
+		a.expect(a.do("POST", "/store/start/lines/"+id+"/photo", ownerTok, map[string]any{"store_id": storeID, "images": []string{label}}), 200, name+" photo")
+		return id
 	}
+	job := func(productID string) (id, status, code string, attempts int) {
+		t.Helper()
+		if err := pool.QueryRow(ctx, `SELECT id, status, error_code, attempts FROM photo_jobs WHERE product_id = $1 ORDER BY created_at DESC LIMIT 1`, productID).
+			Scan(&id, &status, &code, &attempts); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	images := func(productID string) []string {
+		t.Helper()
+		var imgs []string
+		if err := pool.QueryRow(ctx, `SELECT images FROM products WHERE id = $1`, productID).Scan(&imgs); err != nil {
+			t.Fatal(err)
+		}
+		return imgs
+	}
+	summary := func() resp {
+		return a.expect(a.do("GET", "/admin/ai-photo/store/summary", adminTok, nil), 200, "summary")
+	}
+
+	// Google: лимит запросов (429) — фото не вышло, Super Market повторит сам;
+	// очередь замирает, магазин видит «делается».
+	gem.fail, gem.failCode = true, 429
+	tea := photo("Чай зелёный, 100 г")
+	teaJob, st, code, tries := job(tea)
+	if st != "queued" || code != "rate_limit" || tries != 1 {
+		t.Fatalf("429 job = %s %s %d", st, code, tries)
+	}
+	if imgs := images(tea); len(imgs) != 1 {
+		t.Fatalf("429 images = %v", imgs)
+	}
+	s := summary()
+	reasons := s.Body["reasons"].([]any)
+	if s.Body["failed"] != 1.0 || s.Body["retrying"] != 1.0 || s.Body["queued"] != 0.0 || len(reasons) != 1 {
+		t.Fatalf("summary 429 = %v", s.Body)
+	}
+	if r := reasons[0].(map[string]any); r["code"] != "rate_limit" || r["waiting"] != 1.0 || r["retryable"] != true {
+		t.Fatalf("reason = %v", r)
+	}
+	list := a.expect(a.do("GET", "/admin/ai-photo/store/jobs?status=failed", adminTok, nil), 200, "failed list")
+	it := list.items()
+	if list.Body["total"] != 1.0 || len(it) != 1 {
+		t.Fatalf("failed list = %v", list.Body)
+	}
+	row := it[0]
+	logs := row["log"].([]any)
+	if row["status"] != "retry" || row["code"] != "rate_limit" || row["kind"] != "lines" || row["attempts"] != 1.0 || row["max_attempts"] != 3.0 ||
+		row["retry_at"] == nil || row["name"] != "Чай зелёный, 100 г" || row["employee"] == "" || row["store"] == nil ||
+		!strings.HasPrefix(row["sources"].([]any)[0].(string), srv.URL+"/api/v1/media/") || len(logs) != 2 || logs[1].(map[string]any)["kind"] != "error" {
+		t.Fatalf("retry row = %v", row)
+	}
+	// Очередь на паузе: следующее фото ждёт.
+	gem.fail = false
+	coffee := photo("Кофе молотый, 250 г")
+	if _, st, _, _ := job(coffee); st != "queued" || gem.calls != 0 {
+		t.Fatalf("paused: %s, calls %d", st, gem.calls)
+	}
+	// «Повторить» — супер-админ снимает паузу: делаются оба.
+	r := a.expect(a.do("POST", "/admin/ai-photo/store/jobs/"+teaJob+"/retry", adminTok, nil), 200, "retry")
+	if r.str("status") != "done" || r.str("placed") != "product" || !strings.HasPrefix(r.str("result"), srv.URL+"/api/v1/media/") || r.str("model") != "gemini-3-pro-image" || r.Body["cost_usd"] == nil {
+		t.Fatalf("retry = %v", r.Body)
+	}
+	if _, st, _, _ := job(coffee); st != "done" || len(images(tea)) != 2 || len(images(coffee)) != 2 {
+		t.Fatalf("after retry: coffee %s, tea %v", st, images(tea))
+	}
+	a.expect(a.do("POST", "/admin/ai-photo/store/jobs/"+teaJob+"/retry", adminTok, nil), 409, "retry done")
+	a.expect(a.do("GET", "/admin/ai-photo/store/jobs/"+teaJob, ownerTok, nil), 403, "store token")
+
+	// Сбой Google (500) — три попытки, потом «не вышло».
+	gem.fail, gem.failCode = true, 500
+	juice := photo("Сок яблочный, 1 л")
+	juiceJob := ""
+	for i := 1; i <= 3; i++ {
+		id, st, code, tries := job(juice)
+		juiceJob = id
+		want := "queued"
+		if i == 3 {
+			want = "failed"
+		}
+		if st != want || code != "unavailable" || tries != i {
+			t.Fatalf("500 try %d: %s %s %d", i, st, code, tries)
+		}
+		if _, err := pool.Exec(ctx, `UPDATE photo_jobs SET retry_at = now() - interval '1 second' WHERE id = $1 AND retry_at IS NOT NULL`, id); err != nil {
+			t.Fatal(err)
+		}
+		app.Start.Photos.Kick()
+	}
+	// Ошибка не временная — сразу «не вышло».
+	gem.failCode = 400
+	milk := photo("Молоко 3,2%, 1 л")
+	if _, st, code, tries := job(milk); st != "failed" || code != "other" || tries != 1 {
+		t.Fatalf("400 = %s %s %d", st, code, tries)
+	}
+	s = summary()
+	if s.Body["done"] != 2.0 || s.Body["failed"] != 2.0 || s.Body["retrying"] != 0.0 || len(s.Body["reasons"].([]any)) != 2 ||
+		s.Body["networks"].([]any)[0].(map[string]any)["photos"] != 4.0 || s.Body["cost_usd"].(float64) <= 0 {
+		t.Fatalf("summary = %v", s.Body)
+	}
+	if l := a.expect(a.do("GET", "/admin/ai-photo/store/jobs?kind=lines&q="+url.QueryEscape("Молоко"), adminTok, nil), 200, "search"); l.Body["total"] != 1.0 {
+		t.Fatalf("search = %v", l.Body)
+	}
+	if l := a.expect(a.do("GET", "/admin/ai-photo/store/jobs?status=failed&code=unavailable", adminTok, nil), 200, "by code"); l.Body["total"] != 1.0 || l.items()[0]["id"] != juiceJob {
+		t.Fatalf("by code = %v", l.Body)
+	}
+	a.expect(a.do("GET", "/admin/ai-photo/store/jobs?kind=bad", adminTok, nil), 400, "bad kind")
+	a.expect(a.do("GET", "/admin/ai-photo/store/jobs?month=2026-13", adminTok, nil), 400, "bad month")
+	if l := a.expect(a.do("GET", "/admin/ai-photo/store/jobs?month=2020-01", adminTok, nil), 200, "old month"); l.Body["total"] != 0.0 {
+		t.Fatalf("old month = %v", l.Body)
+	}
+
+	// «Повторить неудачные» по причине.
+	gem.fail = false
+	if r := a.expect(a.do("POST", "/admin/ai-photo/store/retry-failed", adminTok, map[string]any{"code": "unavailable"}), 200, "retry failed"); r.Body["queued"] != 1.0 {
+		t.Fatalf("retry failed = %v", r.Body)
+	}
+	if _, st, _, _ := job(juice); st != "done" {
+		t.Fatalf("juice after retry = %s", st)
+	}
+	if _, st, _, _ := job(milk); st != "failed" {
+		t.Fatalf("milk untouched = %s", st)
+	}
+
+	// «Переделать» готовое: новое фото встаёт на место прежнего.
+	before := images(tea)
+	redo := a.expect(a.do("POST", "/admin/ai-photo/store/jobs/"+teaJob+"/redo", adminTok, nil), 202, "redo")
+	if redo.str("status") != "done" || redo.Body["redo"] != true || redo.str("id") == teaJob || redo.str("placed") != "product" {
+		t.Fatalf("redo = %v", redo.Body)
+	}
+	if after := images(tea); len(after) != 2 || after[0] == before[0] || after[1] != label {
+		t.Fatalf("redo images %v → %v", before, after)
+	}
+	// Прежнее фото больше не в товаре.
+	if old := a.expect(a.do("GET", "/admin/ai-photo/store/jobs/"+teaJob, adminTok, nil), 200, "old job"); old.str("placed") != "own" {
+		t.Fatalf("old job placed = %v", old.Body["placed"])
+	}
+	a.expect(a.do("POST", "/admin/ai-photo/store/jobs/"+juiceJob+"/redo", adminTok, nil), 202, "redo juice")
+	_, milkSt, _, _ := job(milk)
+	milkJob, _, _, _ := job(milk)
+	if milkSt == "failed" {
+		a.expect(a.do("POST", "/admin/ai-photo/store/jobs/"+milkJob+"/redo", adminTok, nil), 409, "redo failed")
+	}
+	a.expect(a.do("GET", "/admin/ai-photo/store/jobs/00000000-0000-0000-0000-000000000000", adminTok, nil), 404, "unknown")
 }

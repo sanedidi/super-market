@@ -515,6 +515,8 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
   (`photo.status`, `line.photo`).
   Заблокированные сети и выключенные магазины фото не получают: ни новые, ни старые; задания, которые ждали в очереди,
   снимаются (старые фото вернутся в очередь, когда сеть разблокируют).
+  Временные ошибки Google (лимит запросов 429, сбой 5xx, нет ответа) Super Market повторяет сам: через 2 минуты, до 3
+  попыток; на 429 очередь ещё и замирает на 2 минуты. Магазин в это время видит «делается».
 
 ### Супер-админ
 
@@ -822,8 +824,8 @@ Push (`data.type = family_request`, `data.request_id`): новая просьб�
 
 | Метод | Путь | Описание |
 | --- | --- | --- |
-| GET | `/admin/products/groups?q=&category_id=&status=` | `{brands: [{brand_id, brand_name, count, pending, categories: [{category_id, category_name, count, pending}]}], total}` — бренды по алфавиту, `brand_id: null` («Без бренда») в конце; `pending` — на модерации |
-| GET | `/store/products/groups?q=&category_id=&scope=&store_id=` | то же для сети (общий каталог + свои товары; `scope=mine` — только «Мои товары»); `pending` — свои товары на модерации |
+| GET | `/admin/products/groups?q=&category_id=&status=&limit=&offset=` | `{brands: [{brand_id, brand_name, count, pending, categories: [{category_id, category_name, count, pending}]}], brands_total, total}` — бренды по алфавиту, `brand_id: null` («Без бренда») в конце; `pending` — на модерации. С `limit` (до 200) и `offset` — страница брендов; без `limit` — все бренды. `brands_total` — брендов под фильтром, `total` — товаров во всех брендах |
+| GET | `/store/products/groups?q=&category_id=&scope=&store_id=&limit=&offset=` | то же для сети (общий каталог + свои товары; `scope=mine` — только «Мои товары»); `pending` — свои товары на модерации |
 
 Товары группы — обычный список (`/admin/products`, `/store/products`) с `brand_id` (uuid или `none` — без бренда),
 `leaf_category_id` (ровно эта категория, без подкатегорий) и `sort=name`.
@@ -1159,6 +1161,12 @@ user_id, employee_id, network_id, network_name, created_at, resolved_at}`. `is_o
 | POST | `/admin/ai-photo/normalize` | `{product_id?, images: [ссылки]}` — «Нормализовать фото»: квадрат `size`, однотонный фон, товар целиком; готовые фото кладутся в хранилище → **202** задание. Не подключено — 409 `ai_photo_not_configured` |
 | PUT | `/admin/ai-photo/store` | «Фото для магазинов»: `{store_enabled?, store_new_items?, store_lines?, store_model?}` (пусто — модель супер-админа). В `GET /admin/ai-photo` — эти поля и расход за месяц: `store_photos`, `store_failed`, `store_cost_usd`, `store_networks`, `store_top [{network_id, name, photos, limit, cost_usd}]` |
 | GET | `/admin/ai-photo/jobs/{id}` | задание: `running`, `items[{source, result, error, done, ms}]`, `cost_usd`; у проверки `ok`, `message`, а `result` — `data:image/jpeg;base64,…` |
+| GET | `/admin/ai-photo/store/summary?month=YYYY-MM` | «Фото магазинов» за месяц (пусто — этот, Ташкент): `total`, `done`, `failed` (вместе с `retrying` — ждут автоповтора), `retrying`, `queued` (с «делается»), `processing`, `skipped`, `skipped_by {limit, off, cancelled, blocked}`, `cost_usd`, `networks [{id, name, blocked, photos}]`, `reasons [{code, count, waiting, retryable}]` |
+| GET | `/admin/ai-photo/store/jobs` | список, новые сверху: `?month=&status=done\|failed\|retry\|queued\|processing\|skipped&network_id=&kind=new\|lines\|old&code=&q=` (товар или штрихкод), `limit` (по умолчанию 20) и `offset` → `{items, total}`. Фото: `status` (`retry` — временная ошибка, Super Market повторит сам в `retry_at`), `reason` (текст ошибки или причина skipped), `code` (`rate_limit`, `unavailable`, `timeout`, `auth`, `model`, `refused`, `unreadable`, `not_found`, `stale`, `save`, `other`), `kind`, `network {id, name, blocked}`, `store {id, name, active}`, `employee`, `product_id`, `new_item_id`, `name`, `barcode`, `sources` и `result` (ссылки), `attempts`, `max_attempts`, `cost_usd`, `model`, `redo`, `placed` (`product` — стоит в товаре, `card` — в карточке «Новых», `own` — в товаре его нет), `created_at`, `finished_at`, `log [{at, kind, text}]` |
+| GET | `/admin/ai-photo/store/jobs/{id}` | одно фото (карточка фото) |
+| POST | `/admin/ai-photo/store/jobs/{id}/retry` | «Повторить» неудачное (или ждущее автоповтора) сразу, попытки заново; снимает паузу после 429. 409 `not_failed`, `blocked` (сеть заблокирована, магазин выключен), `own_photo` (магазин подтвердил карточку со своим фото) |
+| POST | `/admin/ai-photo/store/jobs/{id}/redo` | «Переделать» готовое → **202** новое фото из тех же фото магазина, встаёт на место прежнего; идёт в лимит сети. 409 `not_done`, `blocked`, `photo_off` |
+| POST | `/admin/ai-photo/store/retry-failed` | «Повторить неудачные»: `{month?, code?, network_id?}` → `{queued}` |
 
 Gemini рисует 10–60 секунд, а запрос к API живёт 30, поэтому POST сразу
 отвечает заданием, панель опрашивает GET. Расход — `ai_usage.kind` = `photo` /
