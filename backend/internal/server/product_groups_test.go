@@ -60,6 +60,21 @@ func TestProductGroups(t *testing.T) {
 		t.Fatalf("cola = %v", colaGroup)
 	}
 
+	// Пагинация брендов: limit/offset режут список брендов, brands_total и total —
+	// по всему фильтру; без limit — все бренды, как раньше.
+	if g.Body["brands_total"].(float64) != 3 {
+		t.Fatalf("brands_total = %v", g.Body)
+	}
+	p2 := a.expect(a.do("GET", "/admin/products/groups?limit=2&offset=2", adminTok, nil), 200, "groups page 2")
+	pb := p2.Body["brands"].([]any)
+	if len(pb) != 1 || pb[0].(map[string]any)["brand_id"] != nil || p2.Body["brands_total"].(float64) != 3 || p2.Body["total"].(float64) != 6 {
+		t.Fatalf("page 2 = %v", p2.Body)
+	}
+	p1 := a.expect(a.do("GET", "/store/products/groups?limit=1", ownerTok, nil), 200, "store groups page 1")
+	if len(p1.Body["brands"].([]any)) != 1 || p1.Body["brands_total"].(float64) != 3 {
+		t.Fatalf("store page 1 = %v", p1.Body)
+	}
+
 	// Поиск сужает дерево.
 	g = a.expect(a.do("GET", "/admin/products/groups?q=лепёш", adminTok, nil), 200, "search groups")
 	if len(g.Body["brands"].([]any)) != 1 {

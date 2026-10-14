@@ -33,8 +33,13 @@ type GroupBrand struct {
 }
 
 type ProductGroups struct {
+	// Brands — страница брендов (limit/offset), если клиент передал limit;
+	// без limit — все бренды, как раньше.
 	Brands []GroupBrand `json:"brands"`
-	Total  int          `json:"total"`
+	// BrandsTotal — сколько всего брендов под фильтром (для пагинации).
+	BrandsTotal int `json:"brands_total"`
+	// Total — товаров под фильтром во всех брендах, не только на странице.
+	Total int `json:"total"`
 }
 
 func collectGroups(ctx context.Context, rows pgx.Rows) (ProductGroups, error) {
@@ -66,6 +71,7 @@ func collectGroups(ctx context.Context, rows pgx.Rows) (ProductGroups, error) {
 		b.Pending += c.Pending
 		g.Total += c.Count
 	}
+	g.BrandsTotal = len(g.Brands)
 	return g, rows.Err()
 }
 

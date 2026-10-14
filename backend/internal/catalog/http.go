@@ -221,7 +221,9 @@ func (m *Module) storeListProducts(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) adminProductGroups(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (ProductGroups, error) {
-		return m.svc.AdminProductGroups(r.Context(), filterFrom(r))
+		g, err := m.svc.AdminProductGroups(r.Context(), filterFrom(r))
+		g.Brands = httpx.PageSlice(r, g.Brands)
+		return g, err
 	})
 }
 
@@ -229,7 +231,9 @@ func (m *Module) storeProductGroups(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (ProductGroups, error) {
 		f := filterFrom(r)
 		f.Status = ""
-		return m.svc.StoreProductGroups(r.Context(), pr(r), f)
+		g, err := m.svc.StoreProductGroups(r.Context(), pr(r), f)
+		g.Brands = httpx.PageSlice(r, g.Brands)
+		return g, err
 	})
 }
 

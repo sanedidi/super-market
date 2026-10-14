@@ -34,7 +34,10 @@ export type ProductGroupBrand = {
   pending: number
   categories: ProductGroupCategory[]
 }
-export type ProductGroups = { brands: ProductGroupBrand[]; total: number }
+export type ProductGroups = { brands: ProductGroupBrand[]; brands_total?: number; total: number }
+
+/** Брендов на странице дерева — страницы приходят с сервера (limit/offset). */
+const BRANDS_PAGE = 20
 
 type Row<R> = {
   key: string
@@ -127,19 +130,26 @@ export function ProductTree<T extends { id: string }, R extends { id: string } =
   /** Клик по строке товара (без вложенных) — например, открыть его страницу. */
   onItemClick?: (row: R) => void
 }) {
+  // Страница брендов; сменились поиск или фильтры — снова с первой.
+  const paramsKey = JSON.stringify(params ?? {})
+  const [pageAt, setPageAt] = useState({ key: paramsKey, page: 1 })
+  const page = pageAt.key === paramsKey ? pageAt.page : 1
+  const setPage = (p: number) => setPageAt({ key: paramsKey, page: p })
+  const groupParams = { ...params, limit: BRANDS_PAGE, offset: (page - 1) * BRANDS_PAGE }
   const groups = useQuery({
-    queryKey: [groupsPath, params],
-    queryFn: () => api.get<ProductGroups>(groupsPath, params),
+    queryKey: [groupsPath, groupParams],
+    queryFn: () => api.get<ProductGroups>(groupsPath, groupParams),
     placeholderData: (prev) => prev,
   })
   const brands = useMemo(() => groups.data?.brands ?? [], [groups.data])
+  const brandsTotal = groups.data?.brands_total ?? brands.length
   const [expanded, setExpanded] = useState<string[]>([])
   const [limits, setLimits] = useState<Record<string, number>>({})
 
   // Единственный найденный бренд раскрываем сразу.
   useEffect(() => {
-    if (brands.length === 1) setExpanded((e) => (e.includes(brandKey(brands[0])) ? e : [...e, brandKey(brands[0])]))
-  }, [brands])
+    if (brands.length === 1 && brandsTotal === 1) setExpanded((e) => (e.includes(brandKey(brands[0])) ? e : [...e, brandKey(brands[0])]))
+  }, [brands, brandsTotal])
 
   const open = useMemo(() => {
     const out: {
@@ -372,13 +382,17 @@ export function ProductTree<T extends { id: string }, R extends { id: string } =
               : undefined
           }
           pagination={{
-            pageSize: 20,
+            // Страницы брендов — с сервера: на странице только её бренды.
+            current: page,
+            pageSize: BRANDS_PAGE,
+            total: brandsTotal,
+            onChange: (p) => setPage(p),
             hideOnSinglePage: true,
             showSizeChanger: false,
-            showTotal: () => tr(`Брендов: ${brands.length}`, `Brendlar: ${brands.length}`) + ` · ${goods(groups.data?.total ?? 0)}`,
+            showTotal: () => tr(`Брендов: ${brandsTotal}`, `Brendlar: ${brandsTotal}`) + ` · ${goods(groups.data?.total ?? 0)}`,
           }}
           locale={{ emptyText: tr('Товары не найдены', 'Mahsulotlar topilmadi') }}
-          footer={brands.length && brands.length <= 20 ? () => tr(`Брендов: ${brands.length}`, `Brendlar: ${brands.length}`) + ` · ${goods(groups.data?.total ?? 0)}` : undefined}
+          footer={brandsTotal && brandsTotal <= BRANDS_PAGE ? () => tr(`Брендов: ${brandsTotal}`, `Brendlar: ${brandsTotal}`) + ` · ${goods(groups.data?.total ?? 0)}` : undefined}
         />
       </Card>
     </>
