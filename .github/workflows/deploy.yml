@@ -1,9 +1,18 @@
 name: deploy
 
-# Каждый пуш в main: тесты и сборка панелей → копирование кода на сервер → docker compose up.
+# Пуш в main: тесты изменившихся частей (backend — Go, web — сборка панелей) → копирование
+# кода на сервер → docker compose up. Коммиты только в мобильные приложения, документацию
+# и инструменты деплой не запускают — сервер от них не меняется (экономия минут Actions).
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "apps/**"
+      - "docs/**"
+      - "tools/**"
+      - "**/*.md"
+      - ".github/workflows/apps.yml"
+      - ".github/workflows/release.yml"
   workflow_dispatch:
 
 concurrency:
@@ -11,14 +20,34 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ github.event_name == 'workflow_dispatch' || steps.f.outputs.backend == 'true' }}
+      web: ${{ github.event_name == 'workflow_dispatch' || steps.f.outputs.web == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: f
+        with:
+          filters: |
+            backend: ["backend/**", ".github/workflows/backend.yml"]
+            web: ["web/**", ".github/workflows/web.yml"]
+
   test:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     uses: ./.github/workflows/backend.yml
 
   web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     uses: ./.github/workflows/web.yml
 
   deploy:
-    needs: [test, web]
+    needs: [changes, test, web]
+    # Пропущенные (не изменившиеся) проверки не блокируют деплой, упавшие — блокируют.
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-latest
     environment: production
     env:

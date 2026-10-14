@@ -1,11 +1,10 @@
 name: apps
 
-# Проверка Flutter-приложений: анализатор и тесты. Скриншоты экранов
-# приложения покупателя (golden) — в артефакте client-screens.
-# Сборки кассы: pos-windows (sm_pos.exe) и pos-android (APK).
-# Приложение курьера для Android: courier-android (APK).
-# Приложение магазина для Android: store-android (APK).
-# Это проверочные APK (подпись debug-ключом). Сборки для Google Play (AAB) — workflow release.
+# Проверка Flutter-приложений: анализатор и тесты — только тех приложений, что изменились
+# в коммите (изменения в apps/core проверяют все). Экономия минут Actions.
+# Скриншоты экранов приложения покупателя (golden) — в артефакте client-screens.
+# Проверочные APK и касса для Windows собираются ТОЛЬКО вручную:
+# Actions → apps → Run workflow → «builds» = true. Сборки для Google Play (AAB) — workflow release.
 on:
   push:
     branches: [main, "client-*"]
@@ -13,6 +12,16 @@ on:
   pull_request:
     paths: ["apps/**", ".github/workflows/apps.yml"]
   workflow_dispatch:
+    inputs:
+      builds:
+        description: "Собрать APK (касса, курьер, магазин) и кассу для Windows"
+        type: boolean
+        default: false
+
+concurrency:
+  # Новый пуш отменяет незаконченную проверку того же ветки — не платим за устаревшие прогоны.
+  group: apps-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   # Одна версия Flutter для всех сборок: apps/client/pubspec.lock требует Flutter >= 3.44
@@ -20,7 +29,32 @@ env:
   FLUTTER_VERSION: "3.44.x"
 
 jobs:
+  # Какие приложения изменились. Ручной запуск проверяет все.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      client: ${{ github.event_name == 'workflow_dispatch' || steps.f.outputs.client == 'true' }}
+      store: ${{ github.event_name == 'workflow_dispatch' || steps.f.outputs.store == 'true' }}
+      courier: ${{ github.event_name == 'workflow_dispatch' || steps.f.outputs.courier == 'true' }}
+      pos: ${{ github.event_name == 'workflow_dispatch' || steps.f.outputs.pos == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: f
+        with:
+          filters: |
+            shared: &shared
+              - "apps/core/**"
+              - "apps/scripts/**"
+              - ".github/workflows/apps.yml"
+            client: [*shared, "apps/client/**"]
+            store: [*shared, "apps/store/**"]
+            courier: [*shared, "apps/courier/**"]
+            pos: [*shared, "apps/pos/**"]
+
   analyze:
+    needs: changes
+    if: needs.changes.outputs.client == 'true' || needs.changes.outputs.store == 'true' || needs.changes.outputs.courier == 'true' || needs.changes.outputs.pos == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,37 +66,38 @@ jobs:
       - name: Versions
         run: flutter --version
       - name: Client
+        if: needs.changes.outputs.client == 'true'
         working-directory: apps/client
         run: |
           flutter pub get
           flutter analyze --no-fatal-infos
       - name: Client tests and screens
         # Проверять все приложения, даже если предыдущее упало: все ошибки — за один прогон.
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.client == 'true' }}
         working-directory: apps/client
         run: flutter test --update-goldens
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: ${{ always() && needs.changes.outputs.client == 'true' }}
         with:
           name: client-screens
           path: apps/client/test/screens/*.png
           if-no-files-found: ignore
       - name: Courier
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.courier == 'true' }}
         working-directory: apps/courier
         run: |
           flutter pub get
           flutter analyze --no-fatal-infos
           flutter test
       - name: Store
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.store == 'true' }}
         working-directory: apps/store
         run: |
           flutter pub get
           flutter analyze --no-fatal-infos
           flutter test
       - name: POS
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.pos == 'true' }}
         working-directory: apps/pos
         run: |
           flutter pub get
@@ -72,6 +107,7 @@ jobs:
   # Касса для Windows: архив с SuperMarketPOS.exe — в артефакте pos-windows.
   pos-windows:
     needs: analyze
+    if: github.event_name == 'workflow_dispatch' && inputs.builds
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -98,6 +134,7 @@ jobs:
   # Касса для Android: APK — в артефакте pos-android.
   pos-android:
     needs: analyze
+    if: github.event_name == 'workflow_dispatch' && inputs.builds
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -126,6 +163,7 @@ jobs:
   # Приложение курьера для Android: APK — в артефакте courier-android.
   courier-android:
     needs: analyze
+    if: github.event_name == 'workflow_dispatch' && inputs.builds
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -154,6 +192,7 @@ jobs:
   # Приложение магазина для Android: APK — в артефакте store-android.
   store-android:
     needs: analyze
+    if: github.event_name == 'workflow_dispatch' && inputs.builds
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
