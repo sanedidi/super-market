@@ -404,6 +404,7 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 | GET/POST | `/store/pos/devices` | `stores.manage` — список, создать кассу (сразу с кодом) |
 | POST | `/store/pos/devices/{id}/code` | новый код активации |
 | POST | `/store/pos/devices/{id}/revoke` | отключить кассу |
+| POST | `/store/pos/phone` | `sales.pos` — касса в телефоне («SM Магазин» → «Продать»): `{store_id, app_version}` → `{token, device_id, device_name, store_id, store_name, employee_id, employee_name}`. Касса привязана к сотруднику: дальше телефон работает через `/pos/…` с этим токеном, `X-Cashier-ID` не нужен (чужой — 401). Повторный вызов — та же касса, новый токен (старый не действует). В лимит касс тарифа не входит; в списке касс — `phone: true` |
 | GET | `/store/pos/pins?store_id=` | `staff.manage` — сотрудники магазина: есть ли ПИН, права на кассе (`can_pos`, `can_discount`, `can_return`) |
 | PUT | `/store/pos/pins/{employee_id}` | `staff.manage` — `{pin}` 4–6 цифр, уникален в сети |
 | DELETE | `/store/pos/pins/{employee_id}` | `staff.manage` — убрать ПИН (сотрудник пропадёт из списка на кассе) |
@@ -1181,3 +1182,58 @@ Gemini рисует 10–60 секунд, а запрос к API живёт 30, 
 название, переключатели, до 6 других товаров) и `selling` (магазины с товаром:
 `stores`, `networks`, `min_price`, `max_price`, `stock`, `list`). Налоговые поля
 правятся `PUT /admin/pos/products/{id}/tax`.
+
+## Дистрибьюторы и поставщики (приложение «SM Дистрибьютор», заказ поставщику у магазина)
+
+Дистрибьютор — сеть вида `distributor` (`POST /admin/networks` с `"kind": "distributor"`, тариф по умолчанию «Бизнес»).
+У него одна точка (склад) — `POST /store/stores` как у одиночного магазина; покупатели её не видят. Его товары —
+«Мои товары» точки («Начало работы»), отпускная цена — цена типа по умолчанию (точка → сеть). Вход — `/auth/store/login`,
+токен `store`; разделы `/store/supply/*` — только дистрибьютору, `/store/suppliers*` и `/store/supplier-orders*` — только магазину (иначе 403).
+
+Склад: новый вид документа `shipment` (расход магазину) в `/store/inventory/documents` — только у дистрибьютора:
+`{"type": "shipment", "warehouse_id", "to_store_id", "items": [{"product_id", "qty", "price"}]}`. Магазин должен быть
+подключён (иначе 409 `not_linked`), товар — в общей базе (на модерации — 400). Контрагент магазина у дистрибьютора
+заводится сам. Проведение: товар уходит по FIFO, магазин должен дистрибьютору (баланс контрагента −сумма), у магазина
+появляется черновик прихода (`source_shipment_id`, `supply_order_id`) от контрагента-дистрибьютора; когда магазин проводит
+этот приход, у расхода заполняются `received_at` и `received_diff` (принято − отгружено, шт).
+Новые поля документа: `to_store_id`, `to_store_name`, `supply_order_id`, `source_shipment_id`, `received_at`, `received_diff`.
+
+Связь магазин ↔ дистрибьютор (`supply_links`): статус `requested` | `active` | `rejected` | `disconnected`,
+`requested_by` — `store` | `distributor` | `code`, `waits_for_me` — запрос ждёт ответа того, кто смотрит.
+
+Дистрибьютор (`/store/supply`):
+- `GET /summary` — главная: `new_orders`, `requests`, `linked_stores`, `out_stores`, `low_stores`, `no_brand_stores`, `top[]`,
+  `shipped_today`, `shipped_yesterday`, `shipments_today`, `in_transit`, `incomes_today`, `incomes_today_sum`.
+- `GET|PATCH /settings` — `supply_terms` (условия, до 500 символов), `lead_days` (срок поставки 1–30, по нему «мало» и рекомендации). Менять — владелец.
+- `GET /stores?status=&q=` — подключённые и с запросом + неподключённые в 15 км от склада. `status`: `out`, `low`, `ok`, `no_brand`,
+  `not_linked`, `linked`, `requests`. Карточка: `id, name, address, lat, lng, distance_km, link_status, requested_by, link_id, status,
+  out_count, low_count, carried_count, last_order_at, month_sum`.
+- `GET /stores/{id}` — то же + `phone` (только подключённым), `link`, `lines[]` (наши товары в магазине: `qty`, `per_day`, `status`,
+  `recommend`, `price`), `lacking[]` (out/low), `missing[]` (наших товаров нет на полке, `stores_count`), `shipments[]` (10 последних).
+- `POST /stores/{id}/code` → 201 `{code, qr: "smlink:XXXX", expires_at}` — «Договориться на месте», 10 минут, одноразовый.
+- `POST /stores/{id}/request` `{message}` — запрос магазину; если магазин уже просил — связь сразу `active`.
+- `POST /stores/{id}/disconnect` → 204 — отключиться (незакрытые заказы отменяются).
+- `POST /stores/{id}/shipment` → 201 — черновик расхода по рекомендациям (409 `nothing_to_ship`, если всего хватает).
+- `GET /links?status=`, `POST /links/{id}/accept|reject` — запросы магазинов.
+- `GET /orders?status=&store_id=` (`status=open` — new/accepted/assembled), `GET /orders/{id}` (в строках `in_stock` — остаток на складе),
+  `PATCH /orders/{id}` `{"items": [{"product_id", "ship_qty"}]}` — отгрузить меньше (до «Собран»),
+  `POST /orders/{id}/accept`, `/assemble` (создаёт черновик расхода, `shipment_id`), `/deliver` (проводит расход; из «принят» — сразу),
+  `/reject` `{reason}`.
+
+Магазин (право `inventory.manage`):
+- `GET /store/suppliers?store_id=` — подключённые поставщики и запросы: `id, name, phone (после подключения), address, supply_terms,
+  lead_days, distance_km, link_status, link_id, requested_by, message, waits_for_me, products_count, open_orders`.
+- `GET /store/suppliers/search?store_id=&q=` — «Найти поставщика»: дистрибьюторы в 60 км, у которых есть товар q (`matched`, `examples[]`).
+- `GET /store/suppliers/reorder?store_id=` — «Что заказать»: `[{distributor_id|null, distributor_name, total, items[{product_id, name, image, unit,
+  qty, per_day, status, recommend, price}]}]`. Рекомендация = продажи в день × (срок поставки + 7) − остаток, вверх до целого.
+- `POST /store/suppliers/connect` `{store_id, code}` — подключить по коду (можно `smlink:XXXX` из QR).
+- `POST /store/suppliers/links/{id}/accept|reject` — ответ на запрос дистрибьютора.
+- `GET /store/suppliers/{id}?store_id=`, `GET /store/suppliers/{id}/catalog?store_id=&q=` — прайс подключённого: `price` (отпускная),
+  `available` (есть ли у поставщика, без количества), у магазина — `my_qty`, `per_day`, `status`, `recommend`, `carried`.
+- `POST /store/suppliers/{id}/request` `{store_id, message}`, `POST /store/suppliers/{id}/disconnect` `{store_id}` → 204.
+- `GET /store/supplier-orders?store_id=&status=&distributor_id=`, `POST /store/supplier-orders`
+  `{store_id, distributor_id, deliver_by?: "YYYY-MM-DD", note?, items: [{product_id, qty}]}` → 201 (цены — отпускные на сейчас),
+  `GET /store/supplier-orders/{id}`, `POST /store/supplier-orders/{id}/cancel` (до «Собран»).
+
+Уведомления (`notifications_outbox`, app `store`): `supply_link_request`, `supply_link_active`, `supply_link_rejected`,
+`supply_order_new`, `supply_order_accepted`, `supply_order_rejected`, `supply_order_cancelled`, `supply_income`, `supply_received_diff`.

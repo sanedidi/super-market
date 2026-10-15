@@ -61,19 +61,22 @@ type Device struct {
 	ActivationExpires *time.Time `json:"activation_expires,omitempty"`
 	// Открытая смена на этой кассе.
 	OpenShiftID *string `json:"open_shift_id"`
+	// Касса в телефоне сотрудника (приложение «SM Магазин»): в лимит тарифа не входит.
+	Phone bool `json:"phone"`
 }
 
 const deviceSelect = `
 	SELECT d.id, d.store_id, st.name, d.name,
 	       CASE WHEN d.revoked_at IS NOT NULL THEN 'revoked' WHEN d.token_hash IS NOT NULL THEN 'active' ELSE 'waiting' END,
 	       d.activated_at, d.last_seen_at, d.app_version, d.created_at, d.activation_expires,
-	       (SELECT sh.id FROM pos_shifts sh WHERE sh.device_id = d.id AND sh.closed_at IS NULL)
+	       (SELECT sh.id FROM pos_shifts sh WHERE sh.device_id = d.id AND sh.closed_at IS NULL),
+	       d.employee_id IS NOT NULL
 	FROM pos_devices d JOIN stores st ON st.id = d.store_id`
 
 func scanDevice(r pgx.CollectableRow) (Device, error) {
 	var d Device
 	err := r.Scan(&d.ID, &d.StoreID, &d.StoreName, &d.Name, &d.Status, &d.ActivatedAt, &d.LastSeenAt,
-		&d.AppVersion, &d.CreatedAt, &d.ActivationExpires, &d.OpenShiftID)
+		&d.AppVersion, &d.CreatedAt, &d.ActivationExpires, &d.OpenShiftID, &d.Phone)
 	return d, err
 }
 

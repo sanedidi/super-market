@@ -46,11 +46,12 @@ func (s *Service) authenticate(r *http.Request) (*identity.Principal, error) {
 	p := &identity.Principal{App: identity.AppPOS}
 	var storeID string
 	var lastSeen *time.Time
+	var phoneOwner *string
 	err := s.pool.QueryRow(ctx, `
-		SELECT d.id, d.network_id, n.kind, d.store_id, d.last_seen_at
+		SELECT d.id, d.network_id, n.kind, d.store_id, d.last_seen_at, d.employee_id
 		FROM pos_devices d JOIN networks n ON n.id = d.network_id AND n.status = 'active'
 		WHERE d.token_hash = $1 AND d.revoked_at IS NULL`, hashSecret(raw)).Scan(
-		&p.DeviceID, &p.NetworkID, &p.NetworkKind, &storeID, &lastSeen)
+		&p.DeviceID, &p.NetworkID, &p.NetworkKind, &storeID, &lastSeen, &phoneOwner)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, apperr.New(http.StatusUnauthorized, "device_revoked", "касса отключена или активирована заново — введите новый код").Uz("kassa oʻchirilgan yoki qayta faollashtirilgan — yangi kodni kiriting")
 	}
@@ -61,7 +62,15 @@ func (s *Service) authenticate(r *http.Request) (*identity.Principal, error) {
 	if lastSeen == nil || s.now().Sub(*lastSeen) > time.Minute {
 		_, _ = s.pool.Exec(ctx, `UPDATE pos_devices SET last_seen_at = now() WHERE id = $1`, p.DeviceID)
 	}
-	if id := strings.TrimSpace(r.Header.Get(cashierHeader)); id != "" {
+	id := strings.TrimSpace(r.Header.Get(cashierHeader))
+	if phoneOwner != nil {
+		// Касса в телефоне продаёт только от имени своего сотрудника.
+		if id != "" && id != *phoneOwner {
+			return nil, errCashier
+		}
+		id = *phoneOwner
+	}
+	if id != "" {
 		if err := s.loadCashier(ctx, p, id); err != nil {
 			return nil, err
 		}

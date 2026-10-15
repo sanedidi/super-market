@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../dashboard/home_dashboard.dart';
+import '../kassa/kassa_screen.dart';
 import '../receipt/capture_screen.dart';
 import '../setup/setup_screens.dart';
 import '../start/start_screen.dart';
@@ -119,6 +120,27 @@ class _HomeScreenState extends State<HomeScreen> {
                   ]),
                 ),
                 const Icon(Icons.chevron_right_rounded, color: AppColors.white),
+              ]),
+            ),
+            const SizedBox(height: 16),
+          ],
+          // К1 · «Продать» — касса в телефоне: сотрудник с правом «Продажа».
+          if (st.can('sales.pos') && st.storeId != null) ...[
+            AppCard(
+              color: AppColors.primary,
+              padding: const EdgeInsets.all(18),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const KassaScreen())),
+              child: Row(children: [
+                IconBox(Icons.qr_code_scanner_rounded, bg: AppColors.white.withValues(alpha: 0.18), fg: AppColors.white, size: 56, iconSize: 30, radius: 16),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(tr('Продать', 'Sotish'), style: AppText.h3.copyWith(color: AppColors.white)),
+                    Text(tr('Сканируйте товары камерой — как на кассе', 'Mahsulotlarni kamera bilan skanerlang — kassadagidek'),
+                        style: AppText.small.copyWith(color: AppColors.white)),
+                  ]),
+                ),
+                const Icon(Icons.chevron_right_rounded, color: AppColors.white, size: 26),
               ]),
             ),
             const SizedBox(height: 16),

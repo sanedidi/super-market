@@ -57,6 +57,8 @@ func (m *Module) Routes(r chi.Router) {
 	r.Group(func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppStore))
 		r.With(m.auth.Allow(identity.PermStoresManage)).Get("/store/pos/devices", m.listDevices)
+		// Касса в телефоне: «SM Магазин» получает токен кассы своего сотрудника.
+		r.Post("/store/pos/phone", m.phone)
 		r.Post("/store/pos/devices", m.createDevice)
 		r.Post("/store/pos/devices/{id}/code", m.newCode)
 		r.Post("/store/pos/devices/{id}/revoke", m.revoke)
@@ -387,4 +389,10 @@ func (m *Module) debtPayment(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusCreated
 	}
 	httpx.WriteJSON(w, status, pay)
+}
+
+func (m *Module) phone(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in PhoneInput) (PhoneKassa, error) {
+		return m.svc.Phone(r.Context(), pr(r), in)
+	})
 }
