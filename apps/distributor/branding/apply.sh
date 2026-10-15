@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-NAME="SM Дистрибьютор"
+NAME="SM Агент"
 
 if [ -d android ]; then
   python3 - "$NAME" <<'PY'

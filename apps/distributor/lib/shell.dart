@@ -8,7 +8,7 @@ import 'orders_screen.dart';
 import 'stores_screen.dart';
 import 'warehouse_screen.dart';
 
-/// Пять вкладок (Figma «SM Дистрибьютор»): Главная · Магазины · Заказы · Склад · Ещё.
+/// Пять вкладок (Figma «SM Агент»): Главная · Магазины · Заказы · Склад · Ещё.
 class Shell extends StatefulWidget {
   const Shell({super.key});
 

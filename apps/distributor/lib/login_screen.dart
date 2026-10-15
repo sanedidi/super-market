@@ -70,7 +70,7 @@ class _LoginScreenState extends State<DistributorLoginScreen> {
                     LangSwitch(),
                   ]),
                   const SizedBox(height: 24),
-                  Text(tr('Вход для дистрибьютора', 'Distribyutor uchun kirish'), style: AppText.h2),
+                  Text(tr('Вход для агента', 'Agent uchun kirish'), style: AppText.h2),
                   const SizedBox(height: 6),
                   Text(tr('Логин и пароль выдаёт Super Market при подключении.', 'Login va parolni Super Market ulanishda beradi.'), style: AppText.small),
                   const SizedBox(height: 24),

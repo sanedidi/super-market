@@ -71,7 +71,7 @@ class MoreScreen extends StatelessWidget {
           ]),
         ),
         const SizedBox(height: 16),
-        Center(child: Text('SM Дистрибьютор $appVersion', style: AppText.small)),
+        Center(child: Text('SM Агент $appVersion', style: AppText.small)),
       ]),
     );
   }

@@ -104,7 +104,7 @@ class _DistributorAppState extends State<DistributorApp> with WidgetsBindingObse
       listenable: Lang.instance,
       builder: (context, _) => MaterialApp(
         navigatorKey: navigatorKey,
-        title: tr('Super Market Дистрибьютор', 'Super Market Distribyutor'),
+        title: tr('Super Market Агент', 'Super Market Agent'),
         debugShowCheckedModeBanner: false,
         theme: buildTheme(),
         locale: Lang.instance.locale,
@@ -157,8 +157,8 @@ class _Gate extends StatelessWidget {
             child: EmptyState(
               icon: Icons.storefront_outlined,
               title: tr('Это аккаунт магазина', 'Bu doʻkon akkaunti'),
-              text: tr('Войдите в приложение «SM Магазин». «SM Дистрибьютор» — для поставщиков, которые возят товар в магазины.',
-                  '«SM Doʻkon» ilovasiga kiring. «SM Distribyutor» — doʻkonlarga mahsulot yetkazuvchilar uchun.'),
+              text: tr('Войдите в приложение «SM Магазин». «SM Агент» — для поставщиков, которые возят товар в магазины.',
+                  '«SM Doʻkon» ilovasiga kiring. «SM Agent» — doʻkonlarga mahsulot yetkazuvchilar uchun.'),
               action: tr('Выйти', 'Chiqish'),
               onAction: () => signOut(context),
             ),

@@ -1,4 +1,4 @@
-// Подписи и цвета статусов «SM Дистрибьютор» — без Flutter-виджетов,
+// Подписи и цвета статусов «SM Агент» — без Flutter-виджетов,
 // покрыто тестами test/logic_test.dart.
 
 import 'package:sm_core/sm_core.dart';
