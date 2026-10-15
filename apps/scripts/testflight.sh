@@ -62,13 +62,18 @@ for app in "${apps[@]}"; do
     fi
     flutter pub get
     flutter analyze --no-fatal-infos
+    # Старый архив убираем: если сборка упадёт, нельзя загрузить вчерашний.
+    rm -rf build/ios/archive build/ios/upload
     flutter build ipa --release --build-number="$build"
     xcodebuild -exportArchive \
       -archivePath build/ios/archive/Runner.xcarchive \
       -exportPath build/ios/upload \
       -exportOptionsPlist "$opts" \
       -allowProvisioningUpdates ${auth[@]+"${auth[@]}"}
-  ) && ok+=("$app") || failed+=("$app")
+  )
+  # Не «( … ) && ok || failed»: в таком списке bash не выполняет set -e внутри скобок,
+  # и после ошибки сборки скрипт шёл дальше и загружал старый архив.
+  if [ $? -eq 0 ]; then ok+=("$app"); else failed+=("$app"); fi
 done
 
 echo
