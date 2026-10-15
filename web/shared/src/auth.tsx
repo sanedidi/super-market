@@ -57,7 +57,7 @@ function OtpLoginPage({ app, title }: { app: AppName; title: string }) {
     setBusy(true)
     setError(null)
     try {
-      await api.post('/auth/otp/request', { phone: values.phone })
+      await api.post('/auth/otp/request', { phone: values.phone, app: 'admin' })
       setPhone(values.phone)
       setStep('code')
     } catch (e) {

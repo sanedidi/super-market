@@ -7,8 +7,10 @@ import 'package:sm_store/state.dart';
 import 'package:sm_store/ui/theme.dart';
 import 'package:sm_store/ui/widgets.dart';
 
+import 'brands.dart';
 import 'document_screen.dart';
 import 'logic.dart';
+import 'payments.dart';
 import 'requests_screen.dart';
 import 'store_screen.dart';
 import 'ui.dart';
@@ -25,6 +27,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic>? _sum;
+  Map<String, dynamic>? _brands;
   Object? _error;
 
   @override
@@ -35,10 +38,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _load() async {
     try {
-      final s = await context.read<Api>().get('/store/supply/summary') as Map<String, dynamic>;
+      final api = context.read<Api>();
+      final s = await api.get('/store/supply/summary') as Map<String, dynamic>;
+      // Магазины закрыты, пока у агента нет бренда: показываем статус заявки.
+      final b = s['verified'] == false ? await api.get('/store/supply/brands') as Map<String, dynamic> : null;
       if (mounted) {
         setState(() {
           _sum = s;
+          _brands = b;
           _error = null;
         });
       }
@@ -106,7 +113,18 @@ class _HomeScreenState extends State<HomeScreen> {
             LoadError(_error!, onRetry: _load)
           else if (s == null)
             const Padding(padding: EdgeInsets.only(top: 60), child: Center(child: CircularProgressIndicator()))
+          else if (s['verified'] == false && _brands != null)
+            BrandPendingHome(brands: _brands!, onChanged: _load)
           else ...[
+            if ((s['pending_payments'] as num? ?? 0) > 0) ...[
+              _Banner(
+                icon: Icons.payments_rounded,
+                title: tr('${s['pending_payments']} оплаты ждут подтверждения', '${s['pending_payments']} ta toʻlov tasdiqlashni kutmoqda'),
+                text: tr('Магазины отдали ${money(s['pending_payments_sum'])}', 'Doʻkonlar ${money(s['pending_payments_sum'])} berdi'),
+                onTap: () => _open(const PaymentsScreen()),
+              ),
+              const SizedBox(height: 12),
+            ],
             if ((s['new_orders'] as num? ?? 0) > 0) ...[
               _Banner(
                 icon: Icons.receipt_long_rounded,
@@ -128,6 +146,10 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
             _Lacking(sum: s, onTab: widget.onTab, onOpen: (id) => _open(StoreScreen(storeId: id))),
             const SizedBox(height: 12),
+            if ((s['owed_stores'] as num? ?? 0) > 0 || (s['pending_payments'] as num? ?? 0) > 0) ...[
+              _Owed(sum: s, onTap: () => _open(const PaymentsScreen())),
+              const SizedBox(height: 12),
+            ],
             _Today(sum: s),
             const SizedBox(height: 20),
             Text(tr('Быстрые действия', 'Tezkor amallar'), style: AppText.h3),
@@ -251,6 +273,42 @@ class _Lacking extends StatelessWidget {
         ],
         const SizedBox(height: 12),
         BigButton(label: tr('Все магазины · $linked', 'Barcha doʻkonlar · $linked'), color: AppColors.ink, height: 44, onPressed: () => onTab(1)),
+      ]),
+    );
+  }
+}
+
+/// «Вам должны»: долг магазинов и сколько из него магазины уже отдали.
+class _Owed extends StatelessWidget {
+  const _Owed({required this.sum, required this.onTap});
+
+  final Map<String, dynamic> sum;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final pending = (sum['pending_payments'] as num? ?? 0) > 0;
+    return AppCard(
+      onTap: onTap,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(child: Text(tr('Вам должны', 'Sizga qarzdor'), style: AppText.bodyStrong)),
+          Text(tr('${sum['owed_stores']} магазинов', '${sum['owed_stores']} ta doʻkon'), style: AppText.small),
+        ]),
+        const SizedBox(height: 4),
+        Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          Text(money(sum['owed_total'], suffix: false), style: AppText.h2),
+          const SizedBox(width: 6),
+          Padding(padding: const EdgeInsets.only(bottom: 3), child: Text(tr('сум', 'soʻm'), style: AppText.body.copyWith(color: AppColors.text2))),
+        ]),
+        if (pending)
+          Text(
+            tr('из них ${money(sum['pending_payments_sum'])} магазины уже отдали — ждёт вашего подтверждения',
+                'shundan ${money(sum['pending_payments_sum'])} ni doʻkonlar allaqachon berdi — tasdiqlashingizni kutmoqda'),
+            style: AppText.small.copyWith(color: AppColors.primary),
+          ),
+        const SizedBox(height: 10),
+        BigButton(label: tr('Все оплаты', 'Barcha toʻlovlar'), color: AppColors.ink, height: 44, onPressed: onTap),
       ]),
     );
   }

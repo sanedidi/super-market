@@ -8,7 +8,9 @@ import 'package:sm_store/state.dart';
 import 'package:sm_store/ui/theme.dart';
 import 'package:sm_store/ui/widgets.dart';
 
+import 'brands.dart';
 import 'main.dart' show appVersion;
+import 'payments.dart';
 import 'requests_screen.dart';
 
 /// Ещё: ввод товаров («Начало работы» как у магазина), условия для
@@ -42,6 +44,12 @@ class MoreScreen extends StatelessWidget {
           child: Column(children: [
             _Item(icon: Icons.add_box_rounded, title: tr('Мои товары · Начало работы', 'Mahsulotlarim · Ishni boshlash'),
                 sub: tr('Ввод товаров как в «SM Магазин»: база, штрихкод, фото', '«SM Doʻkon»dagidek: baza, shtrix-kod, foto'), onTap: () => open(const StartScreen())),
+            const Divider(height: 1),
+            _Item(icon: Icons.sell_rounded, title: tr('Мои бренды', 'Brendlarim'),
+                sub: tr('Бренды из каталога и заявки на новые', 'Katalogdagi brendlar va yangilariga arizalar'), onTap: () => open(const MyBrandsScreen())),
+            const Divider(height: 1),
+            _Item(icon: Icons.payments_rounded, title: tr('Оплаты от магазинов', 'Doʻkonlardan toʻlovlar'),
+                sub: tr('Подтвердите, что получили деньги', 'Pulni olganingizni tasdiqlang'), onTap: () => open(const PaymentsScreen())),
             const Divider(height: 1),
             _Item(icon: Icons.person_add_alt_rounded, title: tr('Запросы от магазинов', 'Doʻkonlardan soʻrovlar'), onTap: () => open(const RequestsScreen())),
             if (st.me?['is_owner'] == true) ...[

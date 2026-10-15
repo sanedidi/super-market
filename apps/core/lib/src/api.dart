@@ -67,7 +67,7 @@ class Api extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Запросить код входа в Telegram-боте.
+  /// Запросить код входа (по SMS; в панель супер-админа — в Telegram-бот).
   Future<void> requestCode(String phone) => post('/auth/otp/request', {'phone': phone});
 
   /// Проверить код и войти.
@@ -81,6 +81,10 @@ class Api extends ChangeNotifier {
     final tokens = await post(path, body);
     await _save(tokens as Map<String, dynamic>);
   }
+
+  /// Сохранить токены из ответа, где они не на верхнем уровне
+  /// (вход и регистрация в «SM Агент»: {status, tokens}).
+  Future<void> setTokens(Map<String, dynamic> tokens) => _save(tokens);
 
   /// Забыть токены без запроса к серверу (например, после удаления аккаунта).
   Future<void> forget() => _save(null);

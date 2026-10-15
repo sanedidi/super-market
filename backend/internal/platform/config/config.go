@@ -87,6 +87,10 @@ type Config struct {
 	// Работает в приложениях покупателя, магазина (номер должен быть у
 	// активного сотрудника) и курьера «по пути»; в панель супер-админа — нет.
 	ReviewLogin string
+	// ReviewAgentLogin — «+998XXXXXXXXX:123456»: тестовый номер и код для
+	// «SM Агент» (проверка в App Store / Google Play). Номер должен отличаться
+	// от REVIEW_LOGIN. SMS на него не отправляется.
+	ReviewAgentLogin string
 
 	// Хранилище фото (MinIO / S3). Пустой S3Endpoint — загрузка фото выключена.
 	S3Endpoint  string
@@ -135,13 +139,14 @@ func Load(getenv func(string) string) (Config, error) {
 		ClickSecretKey:   getenv("CLICK_SECRET_KEY"),
 		PaymentReturnURL: getenv("PAYMENT_RETURN_URL"),
 
-		FCMCredentials:  getenv("FCM_CREDENTIALS"),
-		ReviewLogin:     strings.TrimSpace(getenv("REVIEW_LOGIN")),
-		SupportURL:      getenv("SUPPORT_URL"),
-		PrivacyURL:      getenv("PRIVACY_URL"),
-		OfferURL:        getenv("OFFER_URL"),
-		CourierTermsURL: getenv("COURIER_TERMS_URL"),
-		CourierAppURL:   getenv("COURIER_APP_URL"),
+		FCMCredentials:   getenv("FCM_CREDENTIALS"),
+		ReviewLogin:      strings.TrimSpace(getenv("REVIEW_LOGIN")),
+		ReviewAgentLogin: strings.TrimSpace(getenv("REVIEW_AGENT_LOGIN")),
+		SupportURL:       getenv("SUPPORT_URL"),
+		PrivacyURL:       getenv("PRIVACY_URL"),
+		OfferURL:         getenv("OFFER_URL"),
+		CourierTermsURL:  getenv("COURIER_TERMS_URL"),
+		CourierAppURL:    getenv("COURIER_APP_URL"),
 
 		S3Endpoint:   strings.TrimRight(getenv("S3_ENDPOINT"), "/"),
 		S3AccessKey:  getenv("S3_ACCESS_KEY"),
@@ -216,6 +221,14 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, err)
 		}
 	}
+	if cfg.ReviewAgentLogin != "" {
+		aph, _, err := cfg.ReviewAgent()
+		if err != nil {
+			errs = append(errs, err)
+		} else if rph, _, _ := cfg.Review(); rph == aph {
+			errs = append(errs, errors.New("REVIEW_AGENT_LOGIN: номер должен отличаться от REVIEW_LOGIN"))
+		}
+	}
 
 	if len(errs) > 0 {
 		return Config{}, errors.Join(errs...)
@@ -261,16 +274,25 @@ func durationOr(v string, def time.Duration) (time.Duration, error) {
 
 // Review разбирает REVIEW_LOGIN на номер и код.
 func (c Config) Review() (phoneNumber, code string, err error) {
-	if c.ReviewLogin == "" {
+	return parseReview("REVIEW_LOGIN", c.ReviewLogin)
+}
+
+// ReviewAgent разбирает REVIEW_AGENT_LOGIN на номер и код.
+func (c Config) ReviewAgent() (phoneNumber, code string, err error) {
+	return parseReview("REVIEW_AGENT_LOGIN", c.ReviewAgentLogin)
+}
+
+func parseReview(name, v string) (phoneNumber, code string, err error) {
+	if v == "" {
 		return "", "", nil
 	}
-	ph, code, ok := strings.Cut(c.ReviewLogin, ":")
+	ph, code, ok := strings.Cut(v, ":")
 	if !ok || len(code) != 6 || strings.Trim(code, "0123456789") != "" {
-		return "", "", errors.New("REVIEW_LOGIN: ожидается «номер:6 цифр»")
+		return "", "", errors.New(name + ": ожидается «номер:6 цифр»")
 	}
 	ph, err = phone.Normalize(ph)
 	if err != nil {
-		return "", "", errors.New("REVIEW_LOGIN: неверный номер")
+		return "", "", errors.New(name + ": неверный номер")
 	}
 	return ph, code, nil
 }

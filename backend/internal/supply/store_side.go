@@ -33,6 +33,13 @@ type Supplier struct {
 	Matched       int      `json:"matched"`
 	Examples      []string `json:"examples"`
 	OpenOrders    int      `json:"open_orders"`
+	// Бренды агента.
+	Brands []string `json:"brands"`
+	// Долг поставщику (плюс — мы должны) и оплаты, которые ждут его ответа
+	// (disputed — агент получил другую сумму).
+	Debt             string `json:"debt"`
+	PendingPayments  int    `json:"pending_payments"`
+	DisputedPayments int    `json:"disputed_payments"`
 }
 
 func (s *Service) suppliers(ctx context.Context, storeID, where, query string, extra []any, page httpx.Page) ([]Supplier, error) {
@@ -59,15 +66,22 @@ func (s *Service) suppliers(ctx context.Context, storeID, where, query string, e
 			       %s AS matched, %s AS examples,
 			       (SELECT count(*)::int FROM supply_orders o WHERE o.store_id = $1 AND o.network_id = n.id
 			        AND o.status IN ('new', 'accepted', 'assembled')) AS open_orders,
+			       ARRAY(SELECT b.name FROM distributor_brands db JOIN brands b ON b.id = db.brand_id
+			             WHERE db.network_id = n.id ORDER BY b.name) AS brands,
+			       COALESCE((SELECT sum(e.amount) FROM counterparties c JOIN counterparty_entries e ON e.counterparty_id = c.id
+			                 WHERE c.distributor_id = n.id AND c.network_id = (SELECT network_id FROM stores WHERE id = $1)), 0)::numeric(18,2)::text AS debt,
+			       (SELECT count(*)::int FROM supply_payments sp WHERE sp.distributor_id = n.id AND sp.store_id = $1 AND sp.status = 'pending') AS pending_payments,
+			       (SELECT count(*)::int FROM supply_payments sp WHERE sp.distributor_id = n.id AND sp.store_id = $1 AND sp.status = 'disputed') AS disputed_payments,
 			       pt.location
 			FROM networks n
 			JOIN LATERAL (SELECT * FROM stores x WHERE x.network_id = n.id AND x.status = 'active' ORDER BY x.created_at LIMIT 1) pt ON true
 			CROSS JOIN me
 			LEFT JOIN supply_links l ON l.distributor_id = n.id AND l.store_id = $1
 			WHERE n.kind = 'distributor' AND n.status = 'active'
+			  AND (NOT n.self_registered OR EXISTS (SELECT 1 FROM distributor_brands db WHERE db.network_id = n.id))
 		)
 		SELECT id, name, phone, address, supply_terms, lead_days, km, link_status, link_id, requested_by, message,
-		       products, matched, examples, open_orders
+		       products, matched, examples, open_orders, brands, debt, pending_payments, disputed_payments
 		FROM d WHERE %s
 		ORDER BY (link_status = 'active') DESC, matched DESC, km NULLS LAST, name
 		LIMIT $2 OFFSET $3`, matchExpr, examples, where), productsearch.Args(args)...)
@@ -77,7 +91,8 @@ func (s *Service) suppliers(ctx context.Context, storeID, where, query string, e
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Supplier, error) {
 		var x Supplier
 		err := row.Scan(&x.ID, &x.Name, &x.Phone, &x.Address, &x.SupplyTerms, &x.LeadDays, &x.DistanceKm, &x.LinkStatus, &x.LinkID,
-			&x.RequestedBy, &x.Message, &x.ProductsCount, &x.Matched, &x.Examples, &x.OpenOrders)
+			&x.RequestedBy, &x.Message, &x.ProductsCount, &x.Matched, &x.Examples, &x.OpenOrders,
+			&x.Brands, &x.Debt, &x.PendingPayments, &x.DisputedPayments)
 		x.WaitsForMe = x.LinkStatus == LinkRequested && x.RequestedBy != SideStore
 		if x.LinkStatus != LinkActive {
 			x.Phone = "" // телефон — после подключения

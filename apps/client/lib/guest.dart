@@ -123,7 +123,7 @@ class _LoginSheetState extends State<LoginSheet> {
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       SheetHeader(
           title: widget.reason.title,
-          text: tr('${widget.reason.text} Код придёт по SMS или в Telegram.', '${widget.reason.text} Kod SMS yoki Telegram orqali keladi.')),
+          text: tr('${widget.reason.text} Код придёт по SMS.', '${widget.reason.text} Kod SMS orqali keladi.')),
       const SizedBox(height: 20),
       PhoneField(
         controller: _phone,

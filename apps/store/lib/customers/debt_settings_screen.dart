@@ -154,7 +154,7 @@ class _DebtSettingsScreenState extends State<DebtSettingsScreen> {
                   const Divider(height: 1, indent: 16, endIndent: 16),
                   SwitchListTile(
                     title: Text(tr('Код при первом долге', 'Birinchi qarzda kod'), style: AppText.bodyStrong),
-                    subtitle: Text(tr('Telegram или приложение на номер покупателя', 'Xaridor raqamiga Telegram yoki ilova orqali'), style: AppText.small),
+                    subtitle: Text(tr('В приложение покупателя или по SMS', 'Xaridor ilovasiga yoki SMS orqali'), style: AppText.small),
                     value: s['require_code'] == true,
                     onChanged: _busy ? null : (v) => _save((api) => api.put('/store/debt-settings', {'require_code': v})),
                   ),

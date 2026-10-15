@@ -20,6 +20,7 @@ import { Networks } from './pages/Networks'
 import { Products, Dictionary } from './pages/Catalog'
 import { ProductPage } from './pages/Product'
 import { Variants } from './pages/Variants'
+import { BrandRequests } from './pages/BrandRequests'
 import { Banners } from './pages/Banners'
 import { AppHome } from './pages/AppHome'
 import { Ads } from './pages/Ads'
@@ -48,6 +49,7 @@ const menu: MenuItem[] = [
       { key: '/moderation', label: 'Модерация' },
       { key: '/catalog/categories', label: 'Категории' },
       { key: '/catalog/brands', label: 'Бренды' },
+      { key: '/catalog/brand-requests', label: 'Заявки на бренды' },
       { key: '/catalog/colors', label: 'Цвета' },
       { key: '/catalog/units', label: 'Единицы измерения' },
       { key: '/banners', label: 'Баннеры в приложении' },
@@ -99,6 +101,7 @@ export function AdminRoutes() {
         <Route path="products/:id" element={<ProductPage />} />
         <Route path="moderation" element={<Products key="moderation" moderation />} />
         <Route path="catalog/variants" element={<Variants />} />
+        <Route path="catalog/brand-requests" element={<BrandRequests />} />
         <Route path="catalog/:kind" element={<Dictionary />} />
         <Route path="banners" element={<Banners />} />
         <Route path="app-home" element={<AppHome />} />

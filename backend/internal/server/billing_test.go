@@ -3,7 +3,6 @@ package server_test
 import (
 	"context"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -90,6 +89,11 @@ func TestBillingPayoutsReports(t *testing.T) {
 		t.Fatalf("invoices for new network: %d, %v", n, err)
 	}
 	a.expect(a.do("PATCH", "/admin/billing/networks/"+network, adminTok, map[string]any{"billing_from": "2026-01-01"}), 200, "billing from")
+	// У владельца приложение магазина — счёт придёт push-уведомлением.
+	if _, err := pool.Exec(ctx, `INSERT INTO devices (user_id, token, platform, app)
+		SELECT e.user_id, 'owner-device-' || e.id, 'android', 'store' FROM employees e JOIN roles r ON r.id = e.role_id WHERE r.is_owner`); err != nil {
+		t.Fatal(err)
+	}
 	if n, err := app.Billing.GenerateInvoices(ctx, time.Now()); err != nil || n != 1 {
 		t.Fatalf("generate: %d, %v", n, err)
 	}
@@ -101,11 +105,16 @@ func TestBillingPayoutsReports(t *testing.T) {
 		t.Fatalf("invoices = %v", invs)
 	}
 	invoice := invs[0]["id"].(string)
+	// Владельцу — push в приложение магазина (Telegram — только супер-админам).
 	tg.mu.Lock()
-	notified := len(tg.sent) > 0 && tg.sent[len(tg.sent)-1].chatID == 2002 && strings.Contains(tg.sent[len(tg.sent)-1].text, "Счёт за подписку")
+	for _, m := range tg.sent {
+		if m.chatID == 2002 {
+			t.Errorf("owner got telegram: %v", m.text)
+		}
+	}
 	tg.mu.Unlock()
-	if !notified {
-		t.Fatal("owner not notified about invoice")
+	if n := sqlStr(t, pool, `SELECT count(*)::text FROM notifications_outbox WHERE kind = 'staff_notice' AND body LIKE '%Счёт за подписку%'`); n != "1" {
+		t.Fatalf("owner not notified about invoice: %s", n)
 	}
 
 	// Денег на балансе нет — автосписание ничего не делает, ручная оплата — 409.

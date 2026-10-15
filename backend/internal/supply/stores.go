@@ -333,6 +333,14 @@ type Summary struct {
 	IncomesToday     int    `json:"incomes_today"`
 	IncomesTodaySum  string `json:"incomes_today_sum"`
 	ShippedYesterday string `json:"shipped_yesterday"`
+	// Магазины открыты (у сам зарегистрированного агента есть бренд).
+	Verified bool `json:"verified"`
+	// «Вам должны»: долг магазинов агенту и сколько магазинов должны.
+	OwedTotal  string `json:"owed_total"`
+	OwedStores int    `json:"owed_stores"`
+	// Оплаты, которые магазины отдали и ждут подтверждения агента.
+	PendingPayments    int    `json:"pending_payments"`
+	PendingPaymentsSum string `json:"pending_payments_sum"`
 }
 
 // Summary — счётчики главной.
@@ -340,12 +348,23 @@ func (s *Service) Summary(ctx context.Context, p *identity.Principal) (Summary, 
 	if err := requireDistributor(p); err != nil {
 		return Summary{}, err
 	}
+	var out Summary
+	out.Top = []StoreCard{}
+	var err error
+	if out.Verified, err = verified(ctx, s.pool, p.NetworkID); err != nil {
+		return out, err
+	}
+	if out.OwedTotal, out.OwedStores, out.PendingPayments, out.PendingPaymentsSum, err = agentMoney(ctx, s.pool, p.NetworkID); err != nil {
+		return out, err
+	}
+	out.ShippedToday, out.IncomesTodaySum, out.ShippedYesterday = "0.00", "0.00", "0.00"
+	if !out.Verified {
+		return out, nil
+	}
 	cards, err := s.Stores(ctx, p, StoresFilter{Status: "linked", Page: httpx.Page{Limit: 1000}})
 	if err != nil {
 		return Summary{}, err
 	}
-	var out Summary
-	out.Top = []StoreCard{}
 	for _, c := range cards {
 		out.LinkedStores++
 		switch c.Status {

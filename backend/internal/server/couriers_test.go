@@ -3,7 +3,6 @@ package server_test
 import (
 	"context"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -81,16 +80,21 @@ func TestCouriers(t *testing.T) {
 	a.expect(a.do("POST", "/store/orders/"+id+"/accept", tok, nil), 200, "accept")
 
 	a.expect(a.do("POST", "/store/orders/"+id+"/assign-courier", tok, map[string]any{"courier_id": cashier}), 400, "assign cashier")
+	// Курьер с приложением на телефоне — о назначении ему придёт push.
+	if _, err := pool.Exec(context.Background(), `INSERT INTO devices (user_id, token, platform, app)
+		SELECT user_id, 'courier-device-token-0001', 'android', 'store' FROM employees WHERE id = $1`, courier); err != nil {
+		t.Fatal(err)
+	}
 	as := a.expect(a.do("POST", "/store/orders/"+id+"/assign-courier", tok, map[string]any{"courier_id": courier}), 200, "assign")
 	if as.str("courier_name") != "Жасур" {
 		t.Fatalf("assigned = %v", as.Body)
 	}
-	if n := sqlStr(t, pool, `SELECT count(*)::text FROM notifications_outbox`); n != "2" { // оплачен, принят — назначение без push
+	if n := sqlStr(t, pool, `SELECT count(*)::text FROM notifications_outbox WHERE kind <> 'staff_notice'`); n != "2" { // оплачен, принят
 		t.Fatalf("outbox = %s", n)
 	}
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		if m := tg.last(); m.chatID == 7070 && strings.Contains(m.text, "назначен заказ") {
+		if n := sqlStr(t, pool, `SELECT count(*)::text FROM notifications_outbox WHERE kind = 'staff_notice' AND title LIKE '%назначен заказ%'`); n == "1" {
 			break
 		}
 		if time.Now().After(deadline) {

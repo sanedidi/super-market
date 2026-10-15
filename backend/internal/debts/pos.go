@@ -134,14 +134,18 @@ type CodeInput struct {
 }
 
 type CodeSent struct {
-	Channel   string `json:"channel"` // telegram, push, dev
+	Channel   string `json:"channel"` // sms, push, dev
 	ExpiresIn int    `json:"expires_in"`
 }
 
-var errNoChannel = apperr.Conflict("no_channel", "некуда отправить код: у номера нет Telegram-бота и приложения — запишите без кода").Uz("kodni yuborishning iloji yoʻq: raqamda Telegram-bot ham, ilova ham yoʻq — kodsiz yozib qoʻying")
+var errNoChannel = apperr.Conflict("no_channel", "некуда отправить код: SMS не настроены и у номера нет приложения — запишите без кода").Uz("kodni yuborishning iloji yoʻq: SMS sozlanmagan va raqamda ilova yoʻq — kodsiz yozib qoʻying")
 
-// SendCode отправляет покупателю код подтверждения номера: в Telegram-бот,
-// если номер привязан, иначе push в приложение.
+// DebtSMSText — SMS с кодом долга (%s — магазин, %s — код). Как и код входа,
+// должен совпадать с шаблоном, одобренным в кабинете Eskiz.
+const DebtSMSText = "Super Market: %s doʻkoni xaridlarni raqamingizga qarzga yozmoqda. Tasdiqlash kodi: %s. Xarid qilmagan boʻlsangiz, kodni hech kimga bermang."
+
+// SendCode отправляет покупателю код подтверждения номера: push в приложение,
+// если оно есть, иначе SMS (Eskiz).
 func (s *Service) SendCode(ctx context.Context, p *identity.Principal, in CodeInput) (CodeSent, error) {
 	var out CodeSent
 	if err := p.RequireAny(identity.PermDebtsGive, identity.PermDebtsManage); err != nil {
@@ -176,31 +180,13 @@ func (s *Service) SendCode(ctx context.Context, p *identity.Principal, in CodeIn
 			RU: fmt.Sprintf("Код %s — подтверждение, что %s записывает покупки в долг на ваш номер. Если вы ничего не покупали, никому не сообщайте код.", code, storeName),
 			UZ: fmt.Sprintf("Kod %s — %s xaridlarni raqamingizga qarzga yozayotganini tasdiqlash uchun. Agar hech narsa sotib olmagan boʻlsangiz, kodni hech kimga aytmang.", code, storeName),
 		}
-		// Язык покупателя: из приложения покупателя, иначе язык аккаунта, иначе узбекский.
-		var chatID int64
-		var lang string
-		err := s.pool.QueryRow(ctx, `
-			SELECT tl.chat_id, COALESCE((SELECT COALESCE(c.language, u.language) FROM users u
-			                             LEFT JOIN customers c ON c.user_id = u.id AND c.deleted_at IS NULL
-			                             WHERE u.phone = tl.phone LIMIT 1), 'uz')
-			FROM telegram_links tl WHERE tl.phone = $1`, ph).Scan(&chatID, &lang)
-		switch {
-		case err == nil && s.tg != nil:
-			if err := s.tg.SendMessage(ctx, chatID, text.In(lang), nil); err != nil {
-				s.log.Error("код долга: не отправлен в Telegram", "err", err)
-				return out, apperr.New(http.StatusBadGateway, "telegram_send_failed", "не удалось отправить код, попробуйте ещё раз").Uz("kodni yuborib boʻlmadi, qayta urinib koʻring")
-			}
-			out.Channel = "telegram"
-		case err != nil && !errors.Is(err, pgx.ErrNoRows):
+		// Покупатель с приложением — push (бесплатно), иначе SMS через Eskiz.
+		app, err := hasApp(ctx, s.pool, ph)
+		if err != nil {
 			return out, err
-		default:
-			app, err := hasApp(ctx, s.pool, ph)
-			if err != nil {
-				return out, err
-			}
-			if !app {
-				return out, errNoChannel
-			}
+		}
+		switch {
+		case app:
 			if _, err := s.pool.Exec(ctx, `
 				INSERT INTO notifications_outbox (user_id, kind, title, body, data)
 				SELECT c.user_id, 'debt_code',
@@ -211,6 +197,14 @@ func (s *Service) SendCode(ctx context.Context, p *identity.Principal, in CodeIn
 				return out, err
 			}
 			out.Channel = "push"
+		case s.sms != nil:
+			if err := s.sms.Send(ctx, ph, fmt.Sprintf(DebtSMSText, storeName, code)); err != nil {
+				s.log.Error("код долга: SMS не отправлено", "err", err)
+				return out, apperr.New(http.StatusBadGateway, "sms_send_failed", "не удалось отправить SMS, попробуйте ещё раз").Uz("SMS yuborib boʻlmadi, qayta urinib koʻring")
+			}
+			out.Channel = "sms"
+		default:
+			return out, errNoChannel
 		}
 	}
 	if _, err := s.pool.Exec(ctx, `

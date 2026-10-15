@@ -12,7 +12,7 @@ import 'package:sm_store/state.dart';
 import 'package:sm_store/ui/theme.dart';
 import 'package:sm_store/ui/widgets.dart';
 
-import 'login_screen.dart';
+import 'auth.dart';
 import 'point_setup.dart';
 import 'shell.dart';
 
@@ -89,7 +89,7 @@ class _DistributorAppState extends State<DistributorApp> with WidgetsBindingObse
     final meReady = context.select<StoreState, bool>((s) => s.me != null);
     final Widget home;
     if (!loggedIn) {
-      home = const DistributorLoginScreen();
+      home = const AgentLoginScreen();
     } else if (mustChange) {
       home = const ChangePasswordScreen();
     } else if (!hasPin && !meReady) {
@@ -126,7 +126,7 @@ class _DistributorAppState extends State<DistributorApp> with WidgetsBindingObse
   }
 }
 
-/// После входа: профиль, проверка, что это дистрибьютор, точка склада.
+/// После входа: профиль, проверка, что это агент, точка склада.
 class _Gate extends StatelessWidget {
   const _Gate();
 

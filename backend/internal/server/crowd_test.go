@@ -36,10 +36,12 @@ func TestCrowdSMSCode(t *testing.T) {
 	t.Cleanup(func() { server.SMSOverride = nil })
 	a := newAPI(t, testConfig(), pool, nil)
 
-	// Покупателю без привязки к боту код уходит по SMS с одобренным текстом;
-	// SMS не ушло — как раньше, просим привязать номер к боту.
+	// Покупателю код уходит по SMS с одобренным текстом (Telegram — только
+	// для супер-админа); SMS не ушло — 502 sms_send_failed.
 	sms.fail = true
-	a.expect(a.do("POST", "/auth/otp/request", "", map[string]any{"phone": "+998900000091"}), 409, "client sms failed")
+	if r := a.expect(a.do("POST", "/auth/otp/request", "", map[string]any{"phone": "+998900000091"}), 502, "client sms failed"); r.str("error", "code") != "sms_send_failed" {
+		t.Fatalf("body = %v", r.Body)
+	}
 	sms.fail = false
 	if r := a.expect(a.do("POST", "/auth/otp/request", "", map[string]any{"phone": "+998900000091"}), 200, "client sms"); r.str("channel") != "sms" ||
 		len(sms.sent) != 1 || !strings.HasPrefix(sms.sent[0], "+998900000091|Super Market ilovasiga kirish uchun kod: ") {

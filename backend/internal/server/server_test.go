@@ -424,7 +424,7 @@ func TestTelegramLoginFlow(t *testing.T) {
 	ctx := context.Background()
 
 	// Номер ещё не привязан — клиент получает ссылку на бота.
-	r := a.expect(a.do("POST", "/auth/otp/request", "", map[string]string{"phone": "+998901112233"}),
+	r := a.expect(a.do("POST", "/auth/otp/request", "", map[string]string{"phone": "+998901112233", "app": "admin"}),
 		409, "not linked")
 	if r.str("error", "code") != "telegram_not_linked" ||
 		r.Body["error"].(map[string]any)["details"].(map[string]any)["bot_url"] != "https://t.me/market_test_bot" {
@@ -452,14 +452,14 @@ func TestTelegramLoginFlow(t *testing.T) {
 	if err := bot.Handle(ctx, msg(555, &telegram.Contact{PhoneNumber: "998901112233", UserID: 777}, "")); err != nil {
 		t.Fatal(err)
 	}
-	a.expect(a.do("POST", "/auth/otp/request", "", map[string]string{"phone": "+998901112233"}),
+	a.expect(a.do("POST", "/auth/otp/request", "", map[string]string{"phone": "+998901112233", "app": "admin"}),
 		409, "foreign contact must not link")
 
 	// Свой контакт — номер привязан, код приходит в этот чат.
 	if err := bot.Handle(ctx, msg(555, &telegram.Contact{PhoneNumber: "998901112233", UserID: 555}, "")); err != nil {
 		t.Fatal(err)
 	}
-	a.expect(a.do("POST", "/auth/otp/request", "", map[string]string{"phone": "+998901112233"}), 200, "request code")
+	a.expect(a.do("POST", "/auth/otp/request", "", map[string]string{"phone": "+998901112233", "app": "admin"}), 200, "request code")
 	sent := tg.last()
 	if sent.chatID != 555 {
 		t.Fatalf("code sent to chat %d, want 555", sent.chatID)
@@ -545,6 +545,8 @@ func TestReviewLogin(t *testing.T) {
 	if len(tg.sent) != 0 {
 		t.Fatalf("коды демо-номера не отправляются: %v", tg.sent)
 	}
-	// Другие номера по-прежнему требуют Telegram.
-	a.expect(a.do("POST", "/auth/otp/request", "", map[string]string{"phone": "+998900000078"}), 409, "not linked")
+	// Другие номера получают настоящий код по SMS; SMS не настроены — 503.
+	a.expect(a.do("POST", "/auth/otp/request", "", map[string]string{"phone": "+998900000078"}), 503, "no sms")
+	// Панель супер-админа — по-прежнему через Telegram-бот.
+	a.expect(a.do("POST", "/auth/otp/request", "", map[string]string{"phone": "+998900000079", "app": "admin"}), 409, "not linked")
 }

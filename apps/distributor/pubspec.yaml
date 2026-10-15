@@ -1,5 +1,5 @@
 name: sm_distributor
-description: Super Market Дистрибьютор — магазины и чего им не хватает, заказы от магазинов, склад (приход, расход, инвентаризация, списание), ввод товаров как в «SM Магазин».
+description: Super Market Агент — магазины и чего им не хватает, заказы от магазинов, склад (приход, расход, инвентаризация, списание), ввод товаров как в «SM Магазин».
 publish_to: none
 version: 0.1.0+1
 
@@ -25,6 +25,8 @@ dependencies:
   flutter_map: ^8.1.1
   latlong2: ^0.9.1
   qr_flutter: ^4.1.0
+  # Логотип бренда в заявке на новый бренд.
+  image_picker: ^1.1.2
 
 # Как в apps/store: latlong2 и flutter_localizations должны сойтись на intl из Flutter SDK.
 dependency_overrides:

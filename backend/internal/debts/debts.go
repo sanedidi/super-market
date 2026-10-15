@@ -46,7 +46,7 @@ type ShiftChecker func(ctx context.Context, q db.Querier, shiftID, deviceID stri
 
 type Service struct {
 	pool       *pgxpool.Pool
-	tg         identity.Sender
+	sms        identity.SMSSender // nil — SMS не настроены: код только push в приложение
 	devCode    string
 	secret     string
 	checkShift ShiftChecker
@@ -54,8 +54,8 @@ type Service struct {
 	now        func() time.Time
 }
 
-func NewService(pool *pgxpool.Pool, tg identity.Sender, devCode, secret string, checkShift ShiftChecker, log *slog.Logger) *Service {
-	return &Service{pool: pool, tg: tg, devCode: devCode, secret: secret, checkShift: checkShift, log: log, now: time.Now}
+func NewService(pool *pgxpool.Pool, sms identity.SMSSender, devCode, secret string, checkShift ShiftChecker, log *slog.Logger) *Service {
+	return &Service{pool: pool, sms: sms, devCode: devCode, secret: secret, checkShift: checkShift, log: log, now: time.Now}
 }
 
 // ------------------------------------------------------------- настройки

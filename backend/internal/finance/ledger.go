@@ -26,6 +26,10 @@ const (
 	DocSale           = "sale"
 	DocCustomerReturn = "customer_return"
 	DocPayout         = "payout"
+	// Оплата магазина агенту, подтверждённая агентом (журнал агента).
+	DocSupplyPayment = "supply_payment"
+	// Магазин исправил сумму оплаты агенту (журнал и касса магазина).
+	DocSupplyPaymentFix = "supply_payment_fix"
 )
 
 // CreateMainCashbox создаёт главную кассу новой сети.

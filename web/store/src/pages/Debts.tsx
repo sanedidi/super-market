@@ -660,7 +660,7 @@ export function DebtSettingsPage() {
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item name="require_code" valuePropName="checked" label={tr('Код при первом долге (Telegram или push на номер покупателя)', 'Birinchi qarzda kod (Telegram yoki xaridor raqamiga push)')}>
+          <Form.Item name="require_code" valuePropName="checked" label={tr('Код при первом долге (push в приложение покупателя или SMS)', 'Birinchi qarzda kod (xaridor ilovasiga push yoki SMS)')}>
             <Switch />
           </Form.Item>
           <Form.Item

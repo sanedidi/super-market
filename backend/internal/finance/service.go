@@ -19,9 +19,26 @@ import (
 
 type Service struct {
 	pool *pgxpool.Pool
+	// Payments — что сделать после оплаты контрагенту (оплата агенту ждёт
+	// его подтверждения — пакет supply). nil — ничего.
+	Payments PaymentHook
 }
 
 func NewService(pool *pgxpool.Pool) *Service { return &Service{pool: pool} }
+
+// PaymentEvent — расход из кассы контрагенту (оплата поставщику).
+type PaymentEvent struct {
+	OperationID    string
+	CounterpartyID string
+	CashboxStoreID *string
+	AmountUZS      string
+	Note           string
+}
+
+// PaymentHook вызывается в транзакции кассовой операции.
+type PaymentHook interface {
+	AfterCounterpartyPayment(ctx context.Context, tx pgx.Tx, p *identity.Principal, ev PaymentEvent) error
+}
 
 func trim(p *string) *string {
 	if p == nil {

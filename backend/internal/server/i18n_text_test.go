@@ -109,16 +109,25 @@ func TestI18nNotificationTexts(t *testing.T) {
 		a.expect(a.do("PUT", "/me/language", owner, map[string]string{"language": lang}), 204, "language "+lang)
 	}
 
-	// Telegram сотрудникам магазина.
+	// Сотрудникам — push в приложение магазина на их языке; Telegram — только
+	// супер-админам.
 	n := notify.New(pool, tg, quietLog())
-	msg := i18n.Text{RU: "Новый заказ №5", UZ: "Yangi buyurtma №5"}
+	networkID := sqlStr(t, pool, `SELECT network_id::text FROM stores WHERE id = $1`, storeID)
+	msg := i18n.Text{RU: "Счёт за подписку\nК оплате 149 000 сум", UZ: "Obuna hisobi\nToʻlash uchun 149 000 soʻm"}
 	setLang("uz")
-	if sent := n.StoreStaff(ctx, storeID, identity.PermOrdersManage, msg); sent != 1 || tg.last() != (sentMsg{2002, "Yangi buyurtma №5"}) {
-		t.Fatalf("telegram uz: %d %v", sent, tg.last())
+	if sent := n.NetworkOwners(ctx, networkID, identity.PermPayoutsManage, msg); sent != 1 {
+		t.Fatalf("owners uz: %d", sent)
+	}
+	if got := sqlStr(t, pool, `SELECT title || '|' || body FROM notifications_outbox WHERE kind = 'staff_notice' ORDER BY id DESC LIMIT 1`); got != "Obuna hisobi|Toʻlash uchun 149 000 soʻm" {
+		t.Fatalf("staff push uz: %q", got)
 	}
 	setLang("ru")
-	if n.StoreStaff(ctx, storeID, identity.PermOrdersManage, msg); tg.last() != (sentMsg{2002, "Новый заказ №5"}) {
-		t.Fatalf("telegram ru: %v", tg.last())
+	n.NetworkOwners(ctx, networkID, identity.PermPayoutsManage, msg)
+	if got := sqlStr(t, pool, `SELECT title || '|' || body FROM notifications_outbox WHERE kind = 'staff_notice' ORDER BY id DESC LIMIT 1`); got != "Счёт за подписку|К оплате 149 000 сум" {
+		t.Fatalf("staff push ru: %q", got)
+	}
+	if n.StoreStaff(ctx, storeID, identity.PermOrdersManage, i18n.Text{RU: "Новый заказ №5"}) != 0 || len(tg.sent) != 0 {
+		t.Fatalf("staff telegram: %v", tg.sent)
 	}
 
 	// Push сотрудникам — в очередь на языке получателя.

@@ -198,7 +198,8 @@ func TestDeletionRequests(t *testing.T) {
 	if again := a.expect(a.do("POST", "/store/me/deletion-request", empTok, nil), 200, "again"); again.str("id") != r.str("id") {
 		t.Fatalf("again = %v", again.Body)
 	}
-	if sentTo(1001) != 1 || sentTo(2002) != 1 {
+	// Telegram — только супер-админам; владелец получает push в приложение (если оно есть).
+	if sentTo(1001) != 1 || sentTo(2002) != 0 {
 		t.Fatalf("telegram = %v", tg.sent)
 	}
 
@@ -217,7 +218,7 @@ func TestDeletionRequests(t *testing.T) {
 
 	// Владелец: удаление — закрытие сети, владельцу самому не пишем.
 	ow := a.expect(a.do("POST", "/store/me/deletion-request", ownerTok, map[string]any{"reason": "Закрываемся"}), 201, "owner request")
-	if ow.Body["is_owner"] != true || sentTo(1001) != 3 || sentTo(2002) != 2 {
+	if ow.Body["is_owner"] != true || sentTo(1001) != 3 || sentTo(2002) != 0 {
 		t.Fatalf("owner request = %v, telegram = %v", ow.Body, tg.sent)
 	}
 	if !strings.Contains(tg.last().text, "закрытие сети") {

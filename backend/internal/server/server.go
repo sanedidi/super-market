@@ -87,10 +87,16 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		}
 	}
 	idSvc := identity.NewService(pool, tg, IdentityConfig(cfg), log)
+	// SMS (Eskiz) — коды входа во все приложения и коды долга; Telegram-бот —
+	// только супер-админам.
+	var smsSender identity.SMSSender
 	if SMSOverride != nil {
-		idSvc.WithSMS(SMSOverride)
+		smsSender = SMSOverride
 	} else if cfg.EskizEmail != "" {
-		idSvc.WithSMS(sms.NewEskiz(cfg.EskizAPIURL, cfg.EskizEmail, cfg.EskizPassword, cfg.EskizFrom))
+		smsSender = sms.NewEskiz(cfg.EskizAPIURL, cfg.EskizEmail, cfg.EskizPassword, cfg.EskizFrom)
+	}
+	if smsSender != nil {
+		idSvc.WithSMS(smsSender)
 	}
 	if err := idSvc.EnsureSuperAdmins(ctx, cfg.SuperAdminPhones); err != nil {
 		return nil, err
@@ -102,10 +108,11 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 	bill.OnPlanChange(ord.ForgetHomes)
 
 	salesSvc := sales.NewService(pool)
-	debtSvc := debts.NewService(pool, tg, cfg.DevOTPCode, cfg.JWTSecret, sales.CheckShiftTime, log)
+	debtSvc := debts.NewService(pool, smsSender, cfg.DevOTPCode, cfg.JWTSecret, sales.CheckShiftTime, log)
 	fcm := PushSender(cfg, log)
 	invSvc := inventory.NewService(pool)
-	supplySvc := supply.NewService(pool, invSvc, log)
+	finSvc := finance.NewService(pool)
+	supplySvc := supply.NewService(pool, invSvc, log).WithFinance(finSvc).WithNotifier(notify.New(pool, tg, log))
 	mediaSvc := MediaService(cfg)
 	aiSvc := ai.NewService(pool, cfg.JWTSecret)
 	aiPhoto := ai.NewPhotoService(aiSvc, mediaSvc, log)
@@ -144,9 +151,9 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		setup.NewModule(setup.NewService(pool, tenantSvc, dlv), auth, log),
 		catalog.NewModule(catSvc, auth, log),
 		variants.NewModule(varSvc, auth, log),
-		finance.NewModule(finance.NewService(pool), auth, log),
+		finance.NewModule(finSvc, auth, log),
 		inventory.NewModule(invSvc, auth, log),
-		supply.NewModule(supplySvc, auth, log),
+		supply.NewModule(supplySvc, idSvc, auth, log),
 		sales.NewModule(salesSvc, auth, log),
 		pos.NewModule(pos.NewService(pool, salesSvc).WithDebts(debtSvc), auth, log),
 		debts.NewModule(debtSvc, auth, log),
@@ -265,14 +272,17 @@ func PaymentsConfig(cfg config.Config) payments.Config {
 // IdentityConfig переводит общий конфиг в настройки входа.
 func IdentityConfig(cfg config.Config) identity.Config {
 	reviewPhone, reviewCode, _ := cfg.Review()
+	agentPhone, agentCode, _ := cfg.ReviewAgent()
 	return identity.Config{
-		ReviewPhone: reviewPhone,
-		ReviewCode:  reviewCode,
-		Secret:      cfg.JWTSecret,
-		AccessTTL:   cfg.AccessTTL,
-		RefreshTTL:  cfg.RefreshTTL,
-		OTPTTL:      cfg.OTPTTL,
-		DevOTPCode:  cfg.DevOTPCode,
-		BotUsername: cfg.TelegramBotUsername,
+		ReviewPhone:      reviewPhone,
+		ReviewCode:       reviewCode,
+		AgentReviewPhone: agentPhone,
+		AgentReviewCode:  agentCode,
+		Secret:           cfg.JWTSecret,
+		AccessTTL:        cfg.AccessTTL,
+		RefreshTTL:       cfg.RefreshTTL,
+		OTPTTL:           cfg.OTPTTL,
+		DevOTPCode:       cfg.DevOTPCode,
+		BotUsername:      cfg.TelegramBotUsername,
 	}
 }

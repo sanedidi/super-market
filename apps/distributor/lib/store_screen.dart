@@ -10,6 +10,7 @@ import 'package:sm_store/ui/widgets.dart';
 
 import 'document_screen.dart';
 import 'logic.dart';
+import 'payments.dart';
 import 'ui.dart';
 
 /// Д3 · Магазин: чего не хватает и чего нет на полке → расход одной кнопкой.
@@ -25,6 +26,7 @@ class StoreScreen extends StatefulWidget {
 
 class _StoreScreenState extends State<StoreScreen> {
   Map<String, dynamic>? _s;
+  Map<String, dynamic>? _money;
   Object? _error;
   bool _busy = false;
 
@@ -36,10 +38,21 @@ class _StoreScreenState extends State<StoreScreen> {
 
   Future<void> _load() async {
     try {
-      final s = await context.read<Api>().get('/store/supply/stores/${widget.storeId}') as Map<String, dynamic>;
+      final api = context.read<Api>();
+      final s = await api.get('/store/supply/stores/${widget.storeId}') as Map<String, dynamic>;
+      // Долг и оплаты — для подключённого магазина (и бывшего: долг остаётся).
+      Map<String, dynamic>? stmt;
+      if (s['link_status'] == 'active') {
+        try {
+          stmt = await api.get('/store/supply/stores/${widget.storeId}/statement') as Map<String, dynamic>;
+        } catch (_) {
+          stmt = null;
+        }
+      }
       if (mounted) {
         setState(() {
           _s = s;
+          _money = stmt;
           _error = null;
         });
       }
@@ -232,6 +245,43 @@ class _StoreScreenState extends State<StoreScreen> {
     ];
   }
 
+  /// Долг магазина, оплаты, которые ждут ответа, и акт сверки.
+  Widget _debtCard(Map<String, dynamic> s, Map<String, dynamic> m) {
+    final open = (m['open'] as List? ?? const []).cast<Map<String, dynamic>>();
+    final pendingSum = double.tryParse('${m['pending_sum']}') ?? 0;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      AppCard(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(tr('Долг магазина', 'Doʻkon qarzi'), style: AppText.small),
+          Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text(money(m['debt'], suffix: false), style: AppText.h2),
+            const SizedBox(width: 6),
+            Padding(padding: const EdgeInsets.only(bottom: 3), child: Text(tr('сум', 'soʻm'), style: AppText.body.copyWith(color: AppColors.text2))),
+          ]),
+          if (pendingSum > 0)
+            Text(tr('${money(m['pending_sum'])} магазин отдал — ждёт вашего подтверждения', '${money(m['pending_sum'])} ni doʻkon berdi — tasdiqlashingizni kutmoqda'),
+                style: AppText.small.copyWith(color: AppColors.warningInk)),
+          const SizedBox(height: 10),
+          BigButton(
+            label: tr('Акт сверки', 'Solishtirma dalolatnoma'),
+            icon: Icons.description_outlined,
+            color: AppColors.soft,
+            foreground: AppColors.ink,
+            height: 44,
+            onPressed: () async {
+              await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => StatementScreen(storeId: widget.storeId, storeName: '${s['name']}')));
+              if (mounted) _load();
+            },
+          ),
+        ]),
+      ),
+      for (final p in open) ...[
+        const SizedBox(height: 10),
+        PaymentCard(payment: p, onChanged: _load, showStore: false),
+      ],
+    ]);
+  }
+
   List<Widget> _linked(Map<String, dynamic> s) {
     final lacking = (s['lacking'] as List? ?? const []).cast<Map<String, dynamic>>();
     final missing = (s['missing'] as List? ?? const []).cast<Map<String, dynamic>>();
@@ -245,6 +295,10 @@ class _StoreScreenState extends State<StoreScreen> {
         Expanded(child: StatTile(label: tr('За 30 дней', '30 kunda'), value: money(s['month_sum'], suffix: false), bg: AppColors.white)),
       ]),
       const SizedBox(height: 12),
+      if (_money != null) ...[
+        _debtCard(s, _money!),
+        const SizedBox(height: 12),
+      ],
       AppCard(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           SectionTitle(tr('Не хватает', 'Yetishmaydi'), count: lacking.length),

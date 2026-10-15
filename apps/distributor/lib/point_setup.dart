@@ -81,7 +81,9 @@ class _PointSetupScreenState extends State<PointSetupScreen> {
     final p = _point;
     return Scaffold(
       body: SafeArea(
-        child: ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 24), children: [
+        child: Column(children: [
+          Expanded(
+            child: ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 16), children: [
           const IconBox(Icons.warehouse_rounded, bg: AppColors.primarySoft, fg: AppColors.primary, size: 56, iconSize: 30, radius: 18),
           const SizedBox(height: 16),
           Text(tr('Где ваш склад?', 'Omboringiz qayerda?'), style: AppText.h2),
@@ -110,8 +112,12 @@ class _PointSetupScreenState extends State<PointSetupScreen> {
           TextField(controller: _address, decoration: InputDecoration(labelText: tr('Адрес', 'Manzil'))),
           const SizedBox(height: 12),
           TextField(controller: _phone, keyboardType: TextInputType.phone, decoration: InputDecoration(labelText: tr('Телефон для магазинов', 'Doʻkonlar uchun telefon'))),
-          const SizedBox(height: 24),
-          BigButton(label: tr('Готово', 'Tayyor'), icon: Icons.check_rounded, busy: _busy, onPressed: _save),
+            ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: BigButton(label: tr('Готово — войти в приложение', 'Tayyor — ilovaga kirish'), icon: Icons.check_rounded, busy: _busy, onPressed: _save),
+          ),
         ]),
       ),
     );

@@ -662,7 +662,7 @@ class PosController extends ChangeNotifier {
   }
 
   /// Отправить покупателю код подтверждения номера (нужен интернет).
-  /// Возвращает канал: telegram, push или dev.
+  /// Возвращает канал: push, sms или dev.
   Future<String> sendDebtCode(String phone) async {
     final res = await api.post('/pos/debtors/code', {'phone': phone}, cashier: cashier?.id) as Map<String, dynamic>;
     return res['channel'] as String? ?? '';

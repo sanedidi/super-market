@@ -29,12 +29,13 @@
 
 ## Вход (этап 1)
 
-Код входа приходит в Telegram-бот. Перед первым входом человек открывает бота
-и нажимает «Поделиться номером» — так бот узнаёт, в какой чат слать коды.
+Код входа приходит по SMS (Eskiz) — во все приложения: покупатель, курьер «по пути», «SM Агент».
+Telegram-бот остался только для панели супер-админа (`app: "admin"`): перед первым входом
+супер-админ открывает бота и нажимает «Поделиться номером».
 
 | Метод | Путь | Тело | Ответ |
 | --- | --- | --- | --- |
-| POST | `/auth/otp/request` | `{"phone"}` | `{"sent": true, "expires_in": 300, "channel": "telegram"\|"sms"}` — код в Telegram, если номер привязан к боту, иначе по SMS (Eskiz, текст — одобренный шаблон `identity.SMSCodeText`) · 409 `telegram_not_linked` с `details.bot_url`, если нет ни бота, ни SMS · 429 `too_many_requests` с `details.retry_after` |
+| POST | `/auth/otp/request` | `{"phone", "app"?}` | `{"sent": true, "expires_in": 300, "channel": "sms"\|"telegram"}` — по SMS (Eskiz, текст — одобренный шаблон `identity.SMSCodeText`); `app: "admin"` — в Telegram-бот (409 `telegram_not_linked` с `details.bot_url`, если номер не привязан) · 502 `sms_send_failed` · 503 `sms_unavailable` — Eskiz не настроен · 429 `too_many_requests` с `details.retry_after` |
 | POST | `/auth/otp/verify` | `{"phone", "code", "app"}` | `{"access_token", "refresh_token", "token_type", "expires_in"}` · 403 — нет доступа к приложению |
 | POST | `/auth/refresh` | `{"refresh_token"}` | новая пара токенов; старый refresh больше не действует |
 | POST | `/auth/{client,store,admin}/logout` | — | 204 |
@@ -45,7 +46,7 @@
 Access-токен живёт 15 минут, refresh — 30 дней. После 5 неверных кодов код сгорает.
 
 **Демо-вход для проверки в App Store / Google Play** — env `REVIEW_LOGIN=+998XXXXXXXXX:123456`. Для этого
-номера код не отправляется (ни Telegram, ни SMS) и всегда равен указанному. Работает в приложениях
+номера код не отправляется (ни SMS, ни Telegram) и всегда равен указанному. Работает в приложениях
 `client` и `crowd` с обычными проверками: в `crowd` — регистрация с `terms_accepted: true` (иначе 422
 `terms_required`). В `admin` демо-номер не входит никогда (400). Для проверки «SM Магазин» проверяющим
 дают логин и пароль сотрудника демо-сети.
@@ -658,7 +659,7 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 При смене статуса заказа (`paid`, `accepted`, `picked`, `delivering`, `delivered`, `cancelled`, `expired`)
 в той же транзакции создаётся запись в `notifications_outbox` — на языке покупателя, если он не выключил
 `notifications.orders`. Воркер каждые 3 секунды отправляет очередь: push через FCM на все устройства.
-В Telegram уведомления не дублируются (бот — только для кодов входа). Нет устройств — `skipped` с причиной.
+В Telegram уведомления не дублируются (бот — только для супер-админа). Нет устройств — `skipped` с причиной.
 При временной ошибке — до 6 попыток с паузой от 30 секунд. Недействительные токены удаляются.
 
 Данные push: `{"type": "order", "order_id": "…", "status": "…"}` — приложение открывает экран заказа.
@@ -706,7 +707,7 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 | Метод | Путь | Описание |
 |---|---|---|
 | GET | `/store/couriers?store_id=` | Курьеры магазина: `employee_id, full_name, phone, vehicle, on_shift, lat, lng, located_at, active_orders`; сначала на смене |
-| POST | `/store/orders/{id}/assign-courier` | `{courier_id}` или `{courier_id: null}` — назначить или снять. Статусы: принят, сборка, собран, в пути. Курьеру уходит сообщение в Telegram |
+| POST | `/store/orders/{id}/assign-courier` | `{courier_id}` или `{courier_id: null}` — назначить или снять. Статусы: принят, сборка, собран, в пути. Курьеру — push в приложение (если оно установлено) |
 
 В заказе: `courier_id`, `courier_name`, `eta_at`.
 
@@ -1067,7 +1068,7 @@ options: [{product_id, weight, flavor, image, price, old_price, discount_percent
 | GET | `/pos/catalog` | дополнительно `settings.debt_enabled` и `debtors [{phone, full_name, debt, limit, blocked, verified, qr_id}]` — для работы без связи (`qr_id` — номер QR покупателя из приложения, пусто — нет приложения) |
 | GET | `/pos/debtors?phone=` | `{found, phone, debtor: Balance\|null, purchases, unverified_limit, default_limit, require_code, debt_enabled}` |
 | GET | `/pos/debtors/qr?code=` | покупатель по QR из приложения (`99` + `qr_id` 10 цифр + код 8 цифр): ответ как `GET /pos/debtors` + `qr_id`; покупатель заводится в сети сразу подтверждённым. Нужно `debts.give`. 400 `not_client_qr` — не QR покупателя, `qr_expired` — код устарел (фото/скриншот) |
-| POST | `/pos/debtors/code` | `{phone}` → `{channel: telegram\|push\|dev, expires_in}`; 409 `no_channel` — некуда отправить, записать без кода |
+| POST | `/pos/debtors/code` | `{phone}` → `{channel: push\|sms\|dev, expires_in}`: push, если у покупателя есть приложение, иначе SMS (шаблон `debts.DebtSMSText` должен быть одобрен в Eskiz); 409 `no_channel` — некуда отправить, записать без кода |
 | POST | `/pos/debtors/verify` | `{phone, code, full_name}` → как `GET /pos/debtors`, номер подтверждён (лимит — `default_limit`) |
 | POST | `/pos/sales` | `debt: {phone, full_name, amount}` — часть итога в долг; `payments` — остаток (может быть пустым). Сверх лимита касса не останавливается: продажа сохраняется с `debt_over_limit` |
 | POST | `/pos/returns` | возврат чека с долгом сначала уменьшает долг: в ответе `debt_amount`, деньгами отдаётся остальное |
@@ -1118,7 +1119,7 @@ options: [{product_id, weight, flavor, image, price, old_price, discount_percent
 
 | Метод | Путь | Кто | Описание |
 | --- | --- | --- | --- |
-| POST | `/store/me/deletion-request` | `app=store` | Тело необязательно: `{reason?}` (до 500 символов). 201 — запрос создан, 200 — уже есть открытый (тот же). Ответ — запрос (ниже). Супер-админам и владельцу сети (если просит не он) — сообщение в Telegram-бот |
+| POST | `/store/me/deletion-request` | `app=store` | Тело необязательно: `{reason?}` (до 500 символов). 201 — запрос создан, 200 — уже есть открытый (тот же). Ответ — запрос (ниже). Супер-админам — сообщение в Telegram-бот, владельцу сети (если просит не он) — push в приложение |
 | POST | `/courier/me/deletion-request` | `app=courier` (и `store`) | То же для приложения курьера (вход по логину и паролю), `app: "courier"` |
 | GET | `/admin/account-deletion-requests?status=pending\|done\|rejected&limit=&offset=` | `app=admin` | Запросы, открытые сверху |
 | POST | `/admin/account-deletion-requests/{id}/done` | `app=admin` | `{note?}` — выполнено. 409 `already_resolved` — уже обработан |
@@ -1132,7 +1133,7 @@ user_id, employee_id, network_id, network_name, created_at, resolved_at}`. `is_o
 
 | Метод | Путь | Тело | Ответ |
 | --- | --- | --- | --- |
-| POST | `/public/account-deletion/request` | `{phone}` | Код как при входе (`/auth/otp/request`: Telegram, если номер привязан к боту, иначе SMS; пауза 60 с — 429 `too_many_requests`). `{"sent": true, "expires_in", "resend_in", "channel"}` · 404 `account_not_found` — у номера нет аккаунта (покупателя, курьера «по пути» или сотрудника) |
+| POST | `/public/account-deletion/request` | `{phone}` | Код как при входе (`/auth/otp/request`: по SMS; пауза 60 с — 429 `too_many_requests`). `{"sent": true, "expires_in", "resend_in", "channel"}` · 404 `account_not_found` — у номера нет аккаунта (покупателя, курьера «по пути» или сотрудника) |
 | POST | `/public/account-deletion/confirm` | `{phone, code}` | `{"deleted": ["crowd", "client"], "requested": ["store"\|"courier"]}` · 400 — код неверный (5 попыток, потом код сгорает) |
 
 `confirm` удаляет аккаунт покупателя и курьера «по пути» по тем же правилам, что `DELETE /client/me` и `DELETE /crowd/me`,
@@ -1245,3 +1246,47 @@ Gemini рисует 10–60 секунд, а запрос к API живёт 30, 
 
 Уведомления (`notifications_outbox`, app `store`): `supply_link_request`, `supply_link_active`, `supply_link_rejected`,
 `supply_order_new`, `supply_order_accepted`, `supply_order_rejected`, `supply_order_cancelled`, `supply_income`, `supply_received_diff`.
+
+
+## «SM Агент»: регистрация, бренды, оплаты
+
+Агент — сеть вида `distributor` (см. выше). Входит по номеру и коду из SMS; работает с токеном
+`store`. Сам зарегистрированный агент (`networks.self_registered`) видит магазины, когда у него есть
+бренд: существующий бренд каталога выбирается сразу, новый — заявкой, её рассматривает супер-админ.
+Агенты, которых завёл супер-админ, работают как раньше. Тестовый номер для App Store / Google Play —
+env `REVIEW_AGENT_LOGIN=+998XXXXXXXXX:123456` (SMS не отправляется, номер должен отличаться от `REVIEW_LOGIN`).
+
+| Метод | Путь | Тело / параметры | Ответ |
+| --- | --- | --- | --- |
+| POST | `/auth/agent/otp/request` | `{phone}` | как `/auth/otp/request` (`channel: "sms"`) |
+| POST | `/auth/agent/otp/verify` | `{phone, code}` | `{status: "login", tokens}` — номер уже агент; `{status: "register", ticket, phone}` — новый номер (билет на 30 минут) · 409 `store_employee` — номер сотрудника магазина |
+| GET | `/auth/agent/brands?q=&ticket=` | билет в `?ticket=` или `X-Agent-Ticket` | бренды каталога: `id, name, category, products, agents` |
+| GET | `/auth/agent/categories?ticket=` | | категории первого уровня `{id, name}` |
+| POST | `/auth/agent/register` | `{ticket, full_name, company?, brand_ids[]}` | 201 — токены `store`; создаётся сеть (тариф «Бизнес» с пробным периодом), владелец, бренды · 409 `already_registered` |
+| GET | `/store/supply/brands` | | `{verified, self_registered, brands[], requests[]}` |
+| POST | `/store/supply/brands` | `{brand_ids[]}` | добавить бренды каталога (владелец, до 20) |
+| GET | `/store/supply/brands/search?q=` | | поиск брендов каталога |
+| GET | `/store/supply/categories` | | категории для заявки |
+| POST | `/store/supply/brand-requests` | `{name, category_id?, manufacturer?, comment?, logo_url?}` | 201 — заявка `pending`; бренд с таким названием уже есть — сразу `approved` с `linked_existing: true` |
+| PUT | `/store/supply/brand-requests/{id}` | то же | исправить заявку (ждёт или отклонена) — снова `pending` |
+| GET | `/store/supply/summary` | | плюс `verified`, `owed_total`, `owed_stores`, `pending_payments`, `pending_payments_sum`. Пока `verified = false`, магазины (`/store/supply/stores…`) — 403 |
+| GET | `/admin/brand-requests?status=pending\|approved\|rejected&q=` | супер-админ | `{items, pending, approved, rejected}` |
+| GET | `/admin/brand-requests/{id}` | | заявка + `similar` — похожие бренды каталога |
+| POST | `/admin/brand-requests/{id}/approve` | `{name?, category_id?}` | бренд создаётся (или берётся с тем же названием) и добавляется агенту; push агенту |
+| POST | `/admin/brand-requests/{id}/link` | `{brand_id}` | «Это существующий бренд» |
+| POST | `/admin/brand-requests/{id}/reject` | `{reason}` | причина обязательна, её видит агент |
+
+**Оплаты.** Деньги вносит магазин — расход из кассы контрагенту-агенту (`POST /store/suppliers/{id}/pay`
+или обычная операция в «Финансах»). У магазина касса и долг меняются сразу; у агента долг магазина
+уменьшается после «Получил». Ответ агента «Другая сумма» / «Не получал» — расхождение: магазин
+соглашается или исправляет сумму (разница возвращается в кассу и в долг).
+
+| Метод | Путь | Тело | Ответ |
+| --- | --- | --- | --- |
+| POST | `/store/suppliers/{distributor_id}/pay` | `{amount, cashbox_id, method: cash\|transfer\|card, note?, photo_url?, store_id?}` | 201 — оплата `pending` |
+| GET | `/store/suppliers/{distributor_id}/payments` | | оплаты и статусы (`pending`, `confirmed`, `disputed`) |
+| POST | `/store/suppliers/payments/{id}/resolve` | `{amount}` | исправить сумму (не больше прежней); совпала с ответом агента — `confirmed`, иначе снова `pending` |
+| GET | `/store/supply/payments?status=pending\|confirmed\|disputed\|open&store_id=` | агент | оплаты магазинов |
+| POST | `/store/supply/payments/{id}/confirm` | | «Получил» |
+| POST | `/store/supply/payments/{id}/dispute` | `{received, comment?}` | «Другая сумма» (`received` < суммы) или «Не получал» (`received: 0`) |
+| GET | `/store/supply/stores/{id}/statement?from=&to=` | | акт сверки агента: `{statement, debt, open[], pending_sum}` |

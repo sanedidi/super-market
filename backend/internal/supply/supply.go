@@ -18,8 +18,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/sanedidi/super-market/backend/internal/finance"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/inventory"
+	"github.com/sanedidi/super-market/backend/internal/notify"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
 )
@@ -64,14 +66,30 @@ const nearbyRadiusM = 15000
 const searchRadiusM = 60000
 
 type Service struct {
-	pool *pgxpool.Pool
-	inv  *inventory.Service
-	log  *slog.Logger
+	pool     *pgxpool.Pool
+	inv      *inventory.Service
+	fin      *finance.Service
+	notifier *notify.Notifier
+	log      *slog.Logger
 }
 
 func NewService(pool *pgxpool.Pool, inv *inventory.Service, log *slog.Logger) *Service {
 	s := &Service{pool: pool, inv: inv, log: log}
 	inv.Shipments = hooks{s}
+	return s
+}
+
+// WithFinance подключает кассы: «Оплатить» агенту из «SM Магазин» и акт
+// сверки агента; оплаты контрагенту-агенту ждут его подтверждения.
+func (s *Service) WithFinance(fin *finance.Service) *Service {
+	s.fin = fin
+	fin.Payments = s.PaymentHook()
+	return s
+}
+
+// WithNotifier — заявки на бренды супер-админам в Telegram.
+func (s *Service) WithNotifier(n *notify.Notifier) *Service {
+	s.notifier = n
 	return s
 }
 

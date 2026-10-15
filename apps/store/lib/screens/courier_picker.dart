@@ -99,8 +99,8 @@ class _CourierPickerState extends State<_CourierPicker> {
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       SheetHeader(
         title: tr('Назначить курьера', 'Kuryerni tayinlash'),
-        text: tr('Сначала те, кто на смене. Заказ появится у курьера в приложении, а в Telegram придёт сообщение с адресом.',
-            'Avval smenadagilar. Buyurtma kuryer ilovasida paydo boʻladi, Telegramga esa manzil bilan xabar keladi.'),
+        text: tr('Сначала те, кто на смене. Заказ с адресом появится у курьера в приложении.',
+            'Avval smenadagilar. Buyurtma manzili bilan kuryer ilovasida paydo boʻladi.'),
       ),
       const SizedBox(height: 16),
       Container(

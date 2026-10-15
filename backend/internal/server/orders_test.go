@@ -238,25 +238,16 @@ func TestOnlineOrdersFlow(t *testing.T) {
 	if s := sqlStr(t, pool, `SELECT status || ':' || amount::text FROM balance_entries WHERE order_id = $1`, order1); s != "pending:70000.00" {
 		t.Fatalf("balance after payment = %s", s)
 	}
-	// Магазину пришло уведомление о новом заказе (отправляется асинхронно).
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		tg.mu.Lock()
-		got := false
-		for _, m := range tg.sent {
-			if m.chatID == 1002 && strings.Contains(m.text, "Новый заказ") {
-				got = true
-			}
+	// О новом заказе магазин узнаёт push-уведомлением из очереди заказов;
+	// в Telegram сотрудникам больше ничего не уходит (только супер-админам).
+	time.Sleep(100 * time.Millisecond)
+	tg.mu.Lock()
+	for _, m := range tg.sent {
+		if m.chatID == 1002 {
+			t.Errorf("store got telegram: %q", m.text)
 		}
-		tg.mu.Unlock()
-		if got {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("store was not notified about the new order")
-		}
-		time.Sleep(20 * time.Millisecond)
 	}
+	tg.mu.Unlock()
 
 	// Магазин: принять → собрать (колу со склада 2) → в путь → чек → доставлен.
 	list := a.expect(a.do("GET", "/store/orders", tok, nil), 200, "store orders").items()

@@ -47,9 +47,14 @@ type Config struct {
 	// магазин входит по логину и паролю).
 	ReviewPhone string
 	ReviewCode  string
+	// AgentReviewPhone/AgentReviewCode — то же для «SM Агент» (отдельный
+	// номер: один номер — один сотрудник, а номер ReviewPhone уже сотрудник
+	// демо-магазина).
+	AgentReviewPhone string
+	AgentReviewCode  string
 }
 
-// SMSSender отправляет SMS с кодами входа (курьерам «по пути» и тем, у кого нет Telegram).
+// SMSSender отправляет SMS с кодами входа (Eskiz).
 type SMSSender interface {
 	Send(ctx context.Context, phone, text string) error
 }
@@ -59,7 +64,7 @@ type Service struct {
 	pool   *pgxpool.Pool
 	signer *token.Signer
 	tg     Sender    // nil, если бот не настроен
-	sms    SMSSender // nil — коды курьерам «по пути» тоже уходят в Telegram
+	sms    SMSSender // nil — SMS не настроены (коды только с DevOTPCode / ReviewCode)
 	cfg    Config
 	log    *slog.Logger
 	now    func() time.Time
@@ -76,7 +81,7 @@ func NewService(pool *pgxpool.Pool, tg Sender, cfg Config, log *slog.Logger) *Se
 	}
 }
 
-// WithSMS включает отправку кодов курьерам «по пути» по SMS.
+// WithSMS включает отправку кодов входа по SMS.
 func (s *Service) WithSMS(sms SMSSender) *Service {
 	s.sms = sms
 	return s
@@ -111,8 +116,8 @@ func (s *Service) botURL() string {
 	return "https://t.me/" + s.cfg.BotUsername
 }
 
-// RequestCode создаёт код входа и отправляет его в Telegram (курьеру «по
-// пути» — по SMS, если SMS настроены). Возвращает, через сколько секунд код истечёт.
+// RequestCode создаёт код входа и отправляет его по SMS (Eskiz); в панель
+// супер-админа — в Telegram-бот. Возвращает, через сколько секунд код истечёт.
 func (s *Service) RequestCode(ctx context.Context, rawPhone, app string) (int, error) {
 	n, _, err := s.RequestCodeVia(ctx, rawPhone, app)
 	return n, err
@@ -122,10 +127,15 @@ func (s *Service) RequestCode(ctx context.Context, rawPhone, app string) (int, e
 // одобренным в кабинете Eskiz (меняются только цифры кода).
 const SMSCodeText = "Super Market ilovasiga kirish uchun kod: %s. Kodni hech kimga bermang."
 
-// RequestCodeVia — то же, что RequestCode, и куда ушёл код: "telegram" или "sms".
-// Курьерам «по пути» код идёт по SMS. Остальным — в Telegram, если номер
-// привязан к боту, иначе по SMS (если SMS настроены). Не удалось отправить SMS
-// без Telegram — та же ошибка telegram_not_linked с ссылкой на бота, что и раньше.
+var (
+	errSMSUnavailable = apperr.New(http.StatusServiceUnavailable, "sms_unavailable", "отправка кодов временно недоступна").Uz("kod yuborish vaqtincha ishlamayapti")
+	errSMSFailed      = apperr.New(http.StatusBadGateway, "sms_send_failed", "не удалось отправить SMS, попробуйте ещё раз").Uz("SMS yuborib boʻlmadi, qayta urinib koʻring")
+)
+
+// RequestCodeVia — то же, что RequestCode, и куда ушёл код: "sms" или "telegram".
+// Все приложения (покупатель, курьер, агент) получают код по SMS через Eskiz.
+// Telegram-бот остался только для панели супер-админа (app = admin): номер
+// должен быть привязан к боту.
 func (s *Service) RequestCodeVia(ctx context.Context, rawPhone, app string) (int, string, error) {
 	ph, err := phone.Normalize(rawPhone)
 	if err != nil {
@@ -145,27 +155,24 @@ func (s *Service) RequestCodeVia(ctx context.Context, rawPhone, app string) (int
 		return 0, "", err
 	}
 
-	notLinked := apperr.Conflict("telegram_not_linked",
-		"откройте бота в Telegram и поделитесь номером, чтобы получать коды").Uz("kodlarni olish uchun Telegramda botni oching va raqamingizni ulashing").
-		WithDetails(map[string]any{"bot_url": s.botURL()})
-
 	code := s.cfg.DevOTPCode
-	review := s.cfg.ReviewPhone != "" && ph == s.cfg.ReviewPhone
-	if review {
+	if s.cfg.ReviewPhone != "" && ph == s.cfg.ReviewPhone {
 		code = s.cfg.ReviewCode
 	}
-	channel := "telegram"
+	if s.cfg.AgentReviewPhone != "" && ph == s.cfg.AgentReviewPhone {
+		code = s.cfg.AgentReviewCode
+	}
+	channel := "sms"
 	var chatID int64
-	if app == AppCrowd && s.sms != nil {
-		channel = "sms"
-	} else {
+	if app == AppAdmin {
+		channel = "telegram"
 		err := s.pool.QueryRow(ctx, `SELECT chat_id FROM telegram_links WHERE phone = $1`, ph).Scan(&chatID)
 		switch {
-		case errors.Is(err, pgx.ErrNoRows) && s.sms != nil:
-			channel = "sms"
 		case errors.Is(err, pgx.ErrNoRows):
 			if code == "" {
-				return 0, "", notLinked
+				return 0, "", apperr.Conflict("telegram_not_linked",
+					"откройте бота в Telegram и поделитесь номером, чтобы получать коды").Uz("kodlarni olish uchun Telegramda botni oching va raqamingizni ulashing").
+					WithDetails(map[string]any{"bot_url": s.botURL()})
 			}
 		case err != nil:
 			return 0, "", err
@@ -173,8 +180,11 @@ func (s *Service) RequestCodeVia(ctx context.Context, rawPhone, app string) (int
 	}
 	send := code == ""
 	if send {
-		if channel == "telegram" && s.tg == nil {
+		switch {
+		case channel == "telegram" && s.tg == nil:
 			return 0, "", apperr.New(http.StatusServiceUnavailable, "telegram_unavailable", "отправка кодов временно недоступна").Uz("kod yuborish vaqtincha ishlamayapti")
+		case channel == "sms" && s.sms == nil:
+			return 0, "", errSMSUnavailable
 		}
 		if code, err = randomCode(); err != nil {
 			return 0, "", err
@@ -195,11 +205,7 @@ func (s *Service) RequestCodeVia(ctx context.Context, rawPhone, app string) (int
 		if err := s.sms.Send(ctx, ph, fmt.Sprintf(SMSCodeText, code)); err != nil {
 			_, _ = s.pool.Exec(ctx, `DELETE FROM auth_codes WHERE phone = $1`, ph)
 			s.log.Error("не удалось отправить SMS с кодом", "err", err, "app", app)
-			if app != AppCrowd {
-				// Без Telegram и без SMS — по-старому: привязать номер к боту.
-				return 0, "", notLinked
-			}
-			return 0, "", apperr.New(http.StatusBadGateway, "sms_send_failed", "не удалось отправить SMS, попробуйте ещё раз").Uz("SMS yuborib boʻlmadi, qayta urinib koʻring")
+			return 0, "", errSMSFailed
 		}
 	} else if send {
 		// Язык — приложения, из которого просят код (Accept-Language).
@@ -236,7 +242,7 @@ func (s *Service) VerifyCodeTerms(ctx context.Context, rawPhone, code, app, user
 	}
 	// Демо-номер для проверки в магазинах приложений не открывает панель
 	// супер-админа; в приложении курьера — обычная регистрация с согласием.
-	if s.cfg.ReviewPhone != "" && ph == s.cfg.ReviewPhone && app == AppAdmin {
+	if app == AppAdmin && ((s.cfg.ReviewPhone != "" && ph == s.cfg.ReviewPhone) || (s.cfg.AgentReviewPhone != "" && ph == s.cfg.AgentReviewPhone)) {
 		return Tokens{}, errCodeInvalid
 	}
 

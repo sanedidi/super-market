@@ -12,9 +12,8 @@ import '../ui/person_form.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 
-const _telegramBlue = Color(0xFF2AABEE);
 
-/// Код входа отправлен: на какой номер, куда (telegram | sms; пусто — не
+/// Код входа отправлен: на какой номер, куда (sms; пусто — не
 /// знаем) и через сколько секунд можно отправить ещё раз.
 class OtpSent {
   const OtpSent({required this.phone, required this.channel, required this.resendIn, this.botUrl = ''});
@@ -25,9 +24,9 @@ class OtpSent {
 }
 
 /// Запросить код входа: POST /auth/otp/request → {channel, resend_in, bot_url}.
-/// Сервер шлёт код в Telegram, если номер привязан к боту, иначе по SMS.
+/// Сервер шлёт код по SMS.
 /// too_many_requests — код уже отправлен недавно, просто ждём его.
-/// Остальные ошибки (в том числе telegram_not_linked — SMS тоже не ушло) — ApiError.
+/// Остальные ошибки (sms_send_failed — SMS не ушло) — ApiError.
 Future<OtpSent> requestOtp(Api api, String phone) async {
   try {
     final r = await api.post('/auth/otp/request', {'phone': phone});
@@ -45,7 +44,7 @@ Future<OtpSent> requestOtp(Api api, String phone) async {
 }
 
 /// Вход (Figma «Т3», «Т4»): шаг 1 — номер и согласие с офертой и политикой,
-/// шаг 2 — код из SMS или Telegram, шаг 3 — «Как вас зовут?», если имя не указано.
+/// шаг 2 — код из SMS, шаг 3 — «Как вас зовут?», если имя не указано.
 ///
 /// Открывается поверх приложения (openLogin в guest.dart) и закрывается
 /// с true после входа; «Посмотреть магазины без входа» закрывает с false.
@@ -68,7 +67,6 @@ class _AuthScreenState extends State<AuthScreen> {
 
   /// Шаг 2: куда отправлен код.
   late OtpSent? _sent = widget.sent;
-  late String _botUrl = widget.sent?.botUrl ?? '';
 
   /// Шаг 3 после входа: имя ещё не указано.
   bool _needName = false;
@@ -112,15 +110,10 @@ class _AuthScreenState extends State<AuthScreen> {
         _sent = sent.channel.isEmpty && prev?.phone == sent.phone
             ? OtpSent(phone: sent.phone, channel: prev!.channel, resendIn: sent.resendIn, botUrl: sent.botUrl)
             : sent;
-        if (sent.botUrl.isNotEmpty) _botUrl = sent.botUrl;
       });
     } on ApiError catch (e) {
       if (!mounted) return;
-      if (e.code == 'telegram_not_linked') {
-        final bot = '${e.details['bot_url'] ?? ''}';
-        if (bot.isNotEmpty) _botUrl = bot;
-        await _linkTelegram();
-      } else if (resend) {
+      if (resend) {
         showError(context, e);
       } else {
         setState(() => _error = e.message);
@@ -128,40 +121,6 @@ class _AuthScreenState extends State<AuthScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
-  }
-
-  String get _bot => _botUrl.isNotEmpty ? _botUrl : context.read<AppState>().link('bot_url');
-
-  /// SMS не ушло, а номер не привязан к боту: открыть бота, поделиться номером и вернуться.
-  Future<void> _linkTelegram() async {
-    final bot = _bot;
-    final again = await showModalBottomSheet<bool>(
-      context: context,
-      showDragHandle: true,
-      backgroundColor: AppColors.white,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            const FaGlyph('telegram', size: 48, color: _telegramBlue),
-            const SizedBox(height: 16),
-            Text(tr('Подключите Telegram-бот', 'Telegram-botni ulang'), textAlign: TextAlign.center, style: AppText.h3),
-            const SizedBox(height: 8),
-            Text(
-                tr('Не удалось отправить SMS. Откройте бота Super Market, нажмите «Поделиться номером» и возвращайтесь — код придёт туда.',
-                    'SMS yuborib boʻlmadi. Super Market botini oching, «Raqamni ulashish» tugmasini bosing va qayting — kod oʻsha yerga keladi.'),
-                textAlign: TextAlign.center, style: AppText.body.copyWith(color: AppColors.text2)),
-            const SizedBox(height: 20),
-            if (bot.isNotEmpty) ...[
-              _TelegramButton(onTap: () => openUrl(bot)),
-              const SizedBox(height: 10),
-            ],
-            StepButton(label: tr('Я поделился номером', 'Raqamni ulashdim'), onPressed: () => Navigator.pop(ctx, true)),
-          ]),
-        ),
-      ),
-    );
-    if (again == true && mounted) await _request();
   }
 
   /// Код подошёл: спросить имя, если его ещё нет, иначе закрыть вход.
@@ -206,7 +165,6 @@ class _AuthScreenState extends State<AuthScreen> {
         phone: sent.phone,
         channel: sent.channel,
         resendIn: sent.resendIn,
-        botUrl: _bot,
         onBack: () => setState(() => _sent = null),
         onResend: () => _request(resend: true),
         onVerified: _afterLogin,
@@ -244,7 +202,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   Text(tr('Вход', 'Kirish'), style: AppText.h1),
                   const SizedBox(height: 6),
-                  Text(tr('Пришлём код по SMS или в Telegram', 'Kodni SMS yoki Telegram orqali yuboramiz'), style: AppText.body.copyWith(color: AppColors.text2)),
+                  Text(tr('Пришлём код по SMS', 'Kodni SMS orqali yuboramiz'), style: AppText.body.copyWith(color: AppColors.text2)),
                   const SizedBox(height: 24),
                   PhoneField(controller: _phone, error: _error != null, onChanged: () => setState(() => _error = null), onSubmit: _canSend ? _request : null),
                   if (_error != null) ...[
@@ -424,30 +382,24 @@ class StepProgress extends StatelessWidget {
   final number = '+998 ${UzPhoneFormatter.format(phone.substring(4))}';
   return switch (channel) {
     'sms' => (tr('Код из SMS', 'SMS dagi kod'), tr('Отправили SMS с 6 цифрами на номер $number. ', '$number raqamiga 6 xonali kod bilan SMS yubordik. ')),
-    'telegram' => (
-        tr('Код из Telegram', 'Telegramdagi kod'),
-        tr('Бот Super Market прислал 6 цифр на номер $number. ', 'Super Market boti $number raqamiga 6 xonali kod yubordi. ')
-      ),
-    _ => (tr('Введите код', 'Kodni kiriting'), tr('Отправили 6 цифр на номер $number по SMS или в Telegram. ', '$number raqamiga SMS yoki Telegram orqali 6 xonali kod yubordik. ')),
+    _ => (tr('Введите код', 'Kodni kiriting'), tr('Отправили 6 цифр на номер $number по SMS. ', '$number raqamiga SMS orqali 6 xonali kod yubordik. ')),
   };
 }
 
 /// Шаг 2: шесть цифр кода (3 + 3), кнопка бота и таймер повторной отправки.
-/// [channel] — куда ушёл код: telegram, sms или пусто (не знаем).
+/// [channel] — куда ушёл код: sms или пусто (не знаем).
 class CodeStep extends StatefulWidget {
   const CodeStep({
     super.key,
     required this.phone,
     required this.resendIn,
-    required this.botUrl,
     required this.onBack,
     required this.onResend,
-    this.channel = 'telegram',
+    this.channel = 'sms',
     this.onVerified,
   });
   final String phone;
   final int resendIn;
-  final String botUrl;
   final VoidCallback onBack;
   final Future<void> Function() onResend;
   final String channel;
@@ -631,13 +583,6 @@ class _CodeStepState extends State<CodeStep> {
               const Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5))),
             ],
             const SizedBox(height: 36),
-            if (widget.botUrl.isNotEmpty)
-              _TelegramButton(
-                label: widget.channel == 'telegram'
-                    ? tr('Открыть бота в Telegram', 'Botni Telegramda ochish')
-                    : tr('Не пришло? Получить код в Telegram', 'Kelmadimi? Kodni Telegramda oling'),
-                onTap: () => openUrl(widget.botUrl),
-              ),
             const SizedBox(height: 16),
             if (_left > 0)
               Text(tr('Отправить код ещё раз через $_mmss', 'Kodni $_mmss dan keyin qayta yuborish mumkin'), style: AppText.small.copyWith(fontSize: 14))
@@ -650,39 +595,6 @@ class _CodeStepState extends State<CodeStep> {
                 ),
               ),
           ]),
-        ),
-      ),
-    );
-  }
-}
-
-/// Голубая кнопка «Открыть бота в Telegram».
-class _TelegramButton extends StatelessWidget {
-  const _TelegramButton({required this.onTap, this.label});
-  final VoidCallback onTap;
-  final String? label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFFE8F5FC),
-      borderRadius: BorderRadius.circular(AppRadius.lg),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        onTap: onTap,
-        child: SizedBox(
-          height: 56,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              const FaGlyph('telegram', size: 22, color: _telegramBlue),
-              const SizedBox(width: 10),
-              Flexible(
-                child: Text(label ?? tr('Открыть бота в Telegram', 'Botni Telegramda ochish'),
-                    maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong.copyWith(color: const Color(0xFF1E88C8), fontSize: 16)),
-              ),
-            ]),
-          ),
         ),
       ),
     );

@@ -1595,7 +1595,7 @@ class _DebtDialogState extends State<_DebtDialog> {
   }
 
   static String _channelName(String ch) => switch (ch) {
-        'telegram' => tr('отправлен в Telegram', 'Telegramga yuborildi'),
+        'sms' => tr('отправлен по SMS', 'SMS orqali yuborildi'),
         'push' => tr('отправлен в приложение', 'ilovaga yuborildi'),
         'dev' => tr('тестовый режим сервера', 'server test rejimi'),
         _ => tr('код отправлен', 'kod yuborildi'),

@@ -313,8 +313,8 @@ class _OrderScreenState extends State<OrderScreen> {
         ]),
         const SizedBox(height: 10),
         Text(
-          tr('Заказ отдадим штатному курьеру магазина. Назначьте его сейчас или после сборки — заказ появится у курьера в приложении и придёт сообщением в Telegram.',
-              'Buyurtma doʻkonning shtatdagi kuryeriga beriladi. Hozir yoki yigʻishdan keyin tayinlang — buyurtma kuryer ilovasida paydo boʻladi va Telegramga xabar keladi.'),
+          tr('Заказ отдадим штатному курьеру магазина. Назначьте его сейчас или после сборки — заказ появится у курьера в приложении.',
+              'Buyurtma doʻkonning shtatdagi kuryeriga beriladi. Hozir yoki yigʻishdan keyin tayinlang — buyurtma kuryer ilovasida paydo boʻladi.'),
           style: AppText.small,
         ),
       ]);

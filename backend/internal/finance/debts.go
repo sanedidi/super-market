@@ -143,10 +143,11 @@ func (s *Service) CounterpartyStatement(ctx context.Context, p *identity.Princip
 		SELECT e.created_at, e.amount::text, e.doc_type, e.doc_id::text,
 		       COALESCE(d.type, ''), COALESCE(d.number, o.number, 0), COALESCE(d.reason, ''),
 		       COALESCE((SELECT count(*) FROM stock_document_items i WHERE i.document_id = d.id), 0)::int,
-		       COALESCE(cb.name, ''), COALESCE(o.note, '')
+		       COALESCE(cb.name, ''), COALESCE(o.note, sp.note, '')
 		FROM counterparty_entries e
 		LEFT JOIN stock_documents d ON e.doc_type = 'stock_document' AND d.id = e.doc_id
-		LEFT JOIN cash_operations o ON e.doc_type = 'cash_operation' AND o.id = e.doc_id
+		LEFT JOIN supply_payments sp ON e.doc_type IN ('supply_payment', 'supply_payment_fix') AND sp.id = e.doc_id
+		LEFT JOIN cash_operations o ON (e.doc_type = 'cash_operation' AND o.id = e.doc_id) OR (e.doc_type = 'supply_payment_fix' AND o.id = sp.cash_operation_id)
 		LEFT JOIN cashboxes cb ON cb.id = o.cashbox_id
 		WHERE e.counterparty_id = $1 AND e.created_at >= $2 AND e.created_at < $3
 		ORDER BY e.created_at, e.id`, id, st.From, st.To)
@@ -194,6 +195,12 @@ func statementText(lang, docType, dType string, number int64, reason string, ite
 			reason = positions
 		}
 		return i18n.Pick(lang, "Возврат", "Qaytarish") + n, reason, "supplier_return"
+	case docType == DocStockDocument && dType == "shipment":
+		return i18n.Pick(lang, "Отгрузка", "Joʻnatma") + n, positions, "shipment"
+	case docType == DocSupplyPayment:
+		return i18n.Pick(lang, "Оплата получена", "Toʻlov olindi"), note, "payment"
+	case docType == DocSupplyPaymentFix:
+		return i18n.Pick(lang, "Исправление суммы оплаты", "Toʻlov summasi tuzatildi"), note, "payment_fix"
 	case docType == DocCashOperation && sign < 0:
 		return i18n.Pick(lang, "Оплата", "Toʻlov"), joinNonEmpty(cashbox, note), "payment"
 	case docType == DocCashOperation:

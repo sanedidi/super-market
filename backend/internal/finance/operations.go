@@ -164,7 +164,15 @@ func (s *Service) CreateCashOperation(ctx context.Context, p *identity.Principal
 			if in.Kind == "income" {
 				sign = ""
 			}
-			return AddCounterparty(ctx, tx, p.NetworkID, *in.CounterpartyID, sign+amountUZS, DocCashOperation, id)
+			if err := AddCounterparty(ctx, tx, p.NetworkID, *in.CounterpartyID, sign+amountUZS, DocCashOperation, id); err != nil {
+				return err
+			}
+			if in.Kind == "expense" && s.Payments != nil {
+				return s.Payments.AfterCounterpartyPayment(ctx, tx, p, PaymentEvent{
+					OperationID: id, CounterpartyID: *in.CounterpartyID, CashboxStoreID: cb.StoreID,
+					AmountUZS: amountUZS, Note: strings.TrimSpace(in.Note),
+				})
+			}
 		}
 		return nil
 	})

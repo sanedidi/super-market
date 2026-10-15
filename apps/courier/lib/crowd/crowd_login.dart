@@ -130,11 +130,6 @@ class _CrowdLoginFormState extends State<CrowdLoginForm> {
         await Navigator.of(context).push(MaterialPageRoute<void>(
           builder: (_) => CrowdCodeScreen(phone: phone, channel: 'sms', botUrl: '', resendIn: (e.details['retry_after'] as num?)?.toInt() ?? 60),
         ));
-      } else if (e.code == 'telegram_not_linked') {
-        setState(() => _error = tr('Откройте нашего бота в Telegram и поделитесь номером — код придёт туда.',
-            'Telegramda botimizni ochib, raqamingizni ulashing — kod oʻsha yerga keladi.'));
-        final url = '${e.details['bot_url'] ?? ''}';
-        if (url.isNotEmpty) await openLink(context, url);
       } else {
         setState(() => _error = e.message);
       }
@@ -317,7 +312,7 @@ class _CrowdCodeScreenState extends State<CrowdCodeScreen> {
       backgroundColor: AppColors.bg,
       appBar: AppBar(backgroundColor: AppColors.bg),
       body: ListView(padding: const EdgeInsets.fromLTRB(20, 8, 20, 24), children: [
-        Text(sms ? tr('Введите код из SMS', 'SMSdagi kodni kiriting') : tr('Введите код из Telegram', 'Telegramdagi kodni kiriting'), style: AppText.h1.copyWith(fontSize: 30)),
+        Text(tr('Введите код из SMS', 'SMSdagi kodni kiriting'), style: AppText.h1.copyWith(fontSize: 30)),
         const SizedBox(height: 8),
         Text(tr('Отправили 6 цифр на ${widget.phone}', '${widget.phone} raqamiga 6 xonali kod yubordik'), style: AppText.body.copyWith(color: AppColors.text2, fontSize: 16)),
         const SizedBox(height: 4),
