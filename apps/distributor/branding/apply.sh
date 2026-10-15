@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Папки платформ приложения дистрибьютора: название, камера (штрихкоды и фото
 # товаров в «Начале работы»), геолокация (точка склада на карте), звонки,
-# Face ID, подпись release для Google Play. Иконка пока стандартная Flutter.
+# Face ID, подпись release для Google Play, иконка (Figma: «Иконка SM Агент» —
+# вариант 5 «Лист», красный фон + чёрный бейдж «агент»).
 # Запускать из apps/distributor после
 #   flutter create --platforms=android,ios --org uz.supermarket --project-name sm_distributor .
 set -euo pipefail
@@ -10,6 +11,9 @@ cd "$(dirname "$0")/.."
 NAME="SM Агент"
 
 if [ -d android ]; then
+  for d in branding/android/mipmap-*; do
+    cp "$d/ic_launcher.png" "android/app/src/main/res/$(basename "$d")/ic_launcher.png"
+  done
   python3 - "$NAME" <<'PY'
 import re, sys
 name = sys.argv[1]
@@ -49,6 +53,8 @@ PY
 fi
 
 if [ -d ios ]; then
+  rm -rf ios/Runner/Assets.xcassets/AppIcon.appiconset
+  cp -r branding/ios/AppIcon.appiconset ios/Runner/Assets.xcassets/
   python3 - "$NAME" <<'PY'
 import plistlib, sys
 p = 'ios/Runner/Info.plist'
