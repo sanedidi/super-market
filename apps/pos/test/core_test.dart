@@ -468,4 +468,30 @@ void main() {
       expect(back.byId('p2')!.variantFlavorLabel, '');
     });
   });
+
+  group('QR покупателя', () {
+    test('скан QR и обычные коды', () {
+      final qr = sm_i18n.parseClientQr('99123456789062793923\n');
+      expect(qr?.qrId, '1234567890');
+      expect(qr?.code, '62793923');
+      expect(sm_i18n.parseClientQr('4601234567893'), isNull); // штрихкод
+      expect(sm_i18n.parseClientQr('9912345678906279392'), isNull); // короткий
+    });
+
+    test('покупатель по QR: подтверждён, номер QR в каталоге', () {
+      final w = DebtorView.fromLookup({
+        'found': true,
+        'phone': '+998905764723',
+        'qr_id': '1234567890',
+        'debtor': {'full_name': 'Шахзод', 'amount': '85000.00', 'limit': '500000.00', 'verified': true},
+      });
+      expect(w.viaQr, isTrue);
+      expect(w.verified, isTrue);
+      expect(w.available, 41500000);
+      expect(DebtorView.fromLookup({'found': false, 'phone': '+998905764723'}).viaQr, isFalse);
+      final d = Debtor.fromJson({'phone': '+998905764723', 'qr_id': '1234567890'});
+      expect(Debtor.fromJson(d.toJson()).qrId, '1234567890');
+      expect(Debtor.fromJson({'phone': '+998905764723'}).qrId, '');
+    });
+  });
 }

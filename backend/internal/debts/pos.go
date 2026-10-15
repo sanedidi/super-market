@@ -31,6 +31,8 @@ type Lookup struct {
 	DefaultLimit    string `json:"default_limit"`
 	RequireCode     bool   `json:"require_code"`
 	DebtEnabled     bool   `json:"debt_enabled"`
+	// Покупатель найден по QR из приложения (номер QR; пусто — по номеру).
+	QRID string `json:"qr_id,omitempty"`
 }
 
 func (s *Service) Lookup(ctx context.Context, p *identity.Principal, rawPhone string) (Lookup, error) {
@@ -93,6 +95,8 @@ type CatalogDebtor struct {
 	Limit    string `json:"limit"`
 	Blocked  bool   `json:"blocked"`
 	Verified bool   `json:"verified"`
+	// Номер QR покупателя из приложения: касса без связи находит его по скану.
+	QRID string `json:"qr_id"`
 }
 
 // CatalogDebtors — покупатели сети с их долгом в магазине кассы (до 5000).
@@ -102,7 +106,10 @@ func CatalogDebtors(ctx context.Context, q db.Querier, networkID, storeID string
 		       COALESCE((SELECT sum(e.amount) FROM debt_entries e WHERE e.debtor_id = d.id AND e.store_id = $2), 0)::numeric(18,2)::text,
 		       COALESCE(d.credit_limit, CASE WHEN d.verified_at IS NULL THEN ds.unverified_limit ELSE ds.default_limit END,
 		                CASE WHEN d.verified_at IS NULL THEN 100000 ELSE 500000 END)::numeric(18,2)::text,
-		       d.blocked, d.verified_at IS NOT NULL
+		       d.blocked, d.verified_at IS NOT NULL,
+		       COALESCE((SELECT q.qr_id FROM users u JOIN client_qr q ON q.user_id = u.id
+		                 JOIN customers c ON c.user_id = u.id AND c.deleted_at IS NULL
+		                 WHERE u.phone = d.phone), '')
 		FROM debtors d LEFT JOIN debt_settings ds ON ds.network_id = d.network_id
 		WHERE d.network_id = $1
 		ORDER BY d.updated_at DESC LIMIT 5000`, networkID, storeID)

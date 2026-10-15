@@ -361,6 +361,7 @@ func DeleteClient(ctx context.Context, tx pgx.Tx, userID string) error {
 	for _, q := range []string{
 		`DELETE FROM devices WHERE user_id = $1 AND app = 'client'`,
 		`DELETE FROM favorites WHERE user_id = $1`,
+		`DELETE FROM client_qr WHERE user_id = $1`, // старый QR покупателя больше не подходит
 		`DELETE FROM customer_addresses WHERE user_id = $1`,
 		`DELETE FROM notifications_outbox WHERE user_id = $1`,
 		`UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND app = 'client' AND revoked_at IS NULL`,

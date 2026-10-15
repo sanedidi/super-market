@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:sm_core/sm_core.dart' show tr;
+import 'package:sm_core/sm_core.dart' show parseClientQr, tr;
 
 import '../core/cart.dart';
 import '../core/debts.dart';
@@ -23,7 +23,10 @@ Future<void> showPayFlow(BuildContext context, SaleController sale) async {
     case 'mixed':
       await showDialog<void>(context: context, builder: (_) => _CashDialog(sale: sale, mixed: true));
     case 'debt':
-      await showDialog<void>(context: context, builder: (_) => _DebtDialog(sale: sale));
+      await showDebtDialog(context, sale);
+    case final k when k.startsWith('debt:'):
+      // В окне способа оплаты отсканировали QR покупателя.
+      await showDebtDialog(context, sale, qr: k.substring(5));
     default:
       final err = await sale.pay(kind);
       if (err != null && context.mounted) _toast(context, err);
@@ -255,17 +258,29 @@ KeyEventResult _keys(KeyEvent e, {required VoidCallback onEnter, required void F
 
 // ------------------------------------------------------------ способ оплаты
 
-class _MethodDialog extends StatelessWidget {
+class _MethodDialog extends StatefulWidget {
   const _MethodDialog({required this.sale});
 
   final SaleController sale;
+
+  @override
+  State<_MethodDialog> createState() => _MethodDialogState();
+}
+
+class _MethodDialogState extends State<_MethodDialog> {
+  SaleController get sale => widget.sale;
+
+  /// Сканер печатает QR покупателя («99…») — копим до Enter, чтобы цифры
+  /// внутри QR не выбрали способ оплаты.
+  String _scan = '';
+  Duration? _scanAt;
 
   static List<(String, String, String, String)> get _items => [
     ('1', 'cash', tr('Наличные', 'Naqd pul'), tr('клавиатура на экране, «Ровно» — без сдачи', 'ekrandagi klaviatura, «Aniq» — qaytimsiz')),
     ('2', 'card', tr('Карта', 'Karta'), tr('терминал Uzcard · Humo', 'Uzcard · Humo terminali')),
     ('3', 'qr', 'Payme · Click', tr('QR на экране покупателя', 'xaridor ekranidagi QR')),
     ('4', 'mixed', tr('Смешанная', 'Aralash'), tr('часть наличными, остаток картой', 'bir qismi naqd, qolgani kartadan')),
-    ('5', 'debt', tr('В долг', 'Qarzga'), tr('покупатель по номеру телефона · долг и свободный лимит видны до подтверждения', 'xaridor telefon raqami boʻyicha · qarz va boʻsh limit tasdiqlashdan oldin koʻrinadi')),
+    ('5', 'debt', tr('В долг', 'Qarzga'), tr('QR покупателя из приложения или номер телефона · долг и свободный лимит видны до записи', 'ilovadagi xaridor QR kodi yoki telefon raqami · qarz va boʻsh limit yozishdan oldin koʻrinadi')),
   ];
 
   /// «В долг» показываем, только если магазин даёт в долг и у кассира есть право.
@@ -314,11 +329,30 @@ class _MethodDialog extends StatelessWidget {
       autofocus: true,
       onKeyEvent: (_, e) {
         if (e is KeyUpEvent) return KeyEventResult.ignored;
+        // Сканер печатает без пауз; «9», нажатая рукой, через полсекунды забывается.
+        final at = _scanAt;
+        if (_scan.isNotEmpty && at != null && e.timeStamp - at > const Duration(milliseconds: 500)) _scan = '';
+        _scanAt = e.timeStamp;
+        final ch = printable(e);
         if (isEnter(e)) {
-          pick('cash');
+          if (_scan.isEmpty) {
+            pick('cash');
+          } else {
+            final qr = parseClientQr(_scan);
+            _scan = '';
+            if (qr != null && _available('debt')) Navigator.of(context).pop('debt:${qr.payload}');
+          }
           return KeyEventResult.handled;
         }
-        final ch = printable(e);
+        if (e.logicalKey == LogicalKeyboardKey.escape && _scan.isNotEmpty) {
+          _scan = '';
+          return KeyEventResult.handled;
+        }
+        // «9» способом оплаты не бывает — с неё начинается QR покупателя.
+        if (ch != null && (_scan.isNotEmpty || ch == '9')) {
+          _scan += ch;
+          return KeyEventResult.handled;
+        }
         for (final it in _shown) {
           if (ch == it.$1) {
             pick(it.$2);
@@ -875,13 +909,20 @@ class _ItemDialogState extends State<_ItemDialog> {
 
 // ------------------------------------------------------------------ в долг
 
-/// Продажа в долг (Figma Д2–Д4): номер покупателя → карточка с долгом и
-/// свободным лимитом → (новый номер: имя и код) → пробить. Если лимита не
-/// хватает на весь чек — остаток наличными или картой.
+/// Окно «В долг». [qr] — QR покупателя, отсканированный в чеке или в окне
+/// способа оплаты: окно сразу ищет покупателя по нему.
+Future<void> showDebtDialog(BuildContext context, SaleController sale, {String? qr}) =>
+    showDialog<void>(context: context, builder: (_) => _DebtDialog(sale: sale, qr: qr));
+
+/// Продажа в долг (Figma «ДQ1–ДQ3», Д2–Д4): QR покупателя из приложения
+/// (или номер, F2) → карточка с долгом и свободным лимитом → (новый номер:
+/// имя и код) → пробить. По QR номер уже подтверждён — без кода. Если лимита
+/// не хватает на весь чек — остаток наличными или картой.
 class _DebtDialog extends StatefulWidget {
-  const _DebtDialog({required this.sale});
+  const _DebtDialog({required this.sale, this.qr});
 
   final SaleController sale;
+  final String? qr;
 
   @override
   State<_DebtDialog> createState() => _DebtDialogState();
@@ -897,10 +938,27 @@ class _DebtDialogState extends State<_DebtDialog> {
   final _keysFocus = FocusNode();
 
   DebtorView? _who;
+
+  /// Ввод номера (F2) вместо QR.
+  bool _byPhone = false;
+
+  /// Символы с клавиатуры/сканера с последнего Enter: сканер «печатает» QR,
+  /// и если это QR покупателя, набранное им в поле не считается.
+  String _burst = '';
+  String _phoneBefore = '';
+  String _amountBefore = '';
+
   String _restKind = 'cash';
   String? _channel;
   bool _busy = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final qr = widget.qr;
+    if (qr != null) WidgetsBinding.instance.addPostFrameCallback((_) => _lookupQr(qr));
+  }
 
   SaleController get sale => widget.sale;
 
@@ -973,6 +1031,84 @@ class _DebtDialogState extends State<_DebtDialog> {
     } catch (e) {
       _fail(e);
     }
+  }
+
+  /// Покупатель по QR из приложения: проверяет сервер, без связи — каталог.
+  Future<void> _lookupQr(String code) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final w = await sale.pos.lookupDebtorQr(code);
+      if (!mounted) return;
+      setState(() {
+        _who = w;
+        _byPhone = false;
+        _busy = false;
+        _name.text = w.name;
+        _amount.value = '';
+        _channel = null;
+        _code.clear();
+        if (sale.method('cash') == null) _restKind = 'card';
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _keysFocus.requestFocus();
+      });
+    } catch (e) {
+      _fail(e);
+    }
+  }
+
+  /// F2 — ввести номер вместо QR (у покупателя нет приложения).
+  void _toPhone() {
+    setState(() {
+      _who = null;
+      _byPhone = true;
+      _phone.value = '';
+      _amount.value = '';
+      _channel = null;
+      _code.clear();
+      _error = null;
+      _burst = '';
+    });
+    _keysFocus.requestFocus();
+  }
+
+  void _track(String ch) {
+    if (_burst.isEmpty) {
+      _phoneBefore = _phone.value;
+      _amountBefore = _amount.value;
+    }
+    _burst += ch;
+  }
+
+  /// Enter: если с прошлого Enter сканер напечатал QR покупателя — ищем по
+  /// нему, а цифры, попавшие в номер или сумму, откатываем. true — это был QR.
+  bool _scannedQr() {
+    final raw = _burst;
+    _burst = '';
+    final qr = parseClientQr(raw);
+    if (qr == null) return false;
+    _phone.value = _phoneBefore;
+    _amount.value = _amountBefore;
+    _lookupQr(qr.payload);
+    return true;
+  }
+
+  /// Enter на шаге «Отсканируйте QR»: QR — ищем; 9 цифр, набранные руками, —
+  /// ищем по номеру.
+  void _enterQr() {
+    final raw = _burst.trim();
+    if (_scannedQr() || raw.isEmpty || _busy) return;
+    final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.length == 9 && uzPhone(digits) != null) {
+      _phone.value = digits;
+      _lookup();
+      return;
+    }
+    setState(() => _error = tr('Это не QR покупателя Super Market — сканируйте «Мой QR-код» из приложения или введите номер (F2)',
+        'Bu Super Market xaridorining QR kodi emas — ilovadagi «Mening QR kodim»ni skanerlang yoki raqamni kiriting (F2)'));
   }
 
   Future<void> _sendCode() async {
@@ -1048,6 +1184,7 @@ class _DebtDialogState extends State<_DebtDialog> {
   }
 
   void _enter() {
+    if (_scannedQr()) return;
     if (_who == null) {
       _lookup();
     } else if (_codeFocus.hasFocus && _code.text.trim().isNotEmpty) {
@@ -1065,17 +1202,21 @@ class _DebtDialogState extends State<_DebtDialog> {
     if (input.key(k)) setState(() => _error = null);
   }
 
+  /// Esc / «Другой покупатель»: назад к шагу «Отсканируйте QR».
   void _back() {
-    if (_who == null) {
+    if (_who == null && !_byPhone) {
       Navigator.of(context).pop();
       return;
     }
     setState(() {
       _who = null;
+      _byPhone = false;
+      _phone.value = '';
       _amount.value = '';
       _channel = null;
       _code.clear();
       _error = null;
+      _burst = '';
     });
     _keysFocus.requestFocus();
   }
@@ -1083,13 +1224,27 @@ class _DebtDialogState extends State<_DebtDialog> {
   @override
   Widget build(BuildContext context) {
     final w = _who;
+    final qrStage = w == null && !_byPhone;
     return Focus(
       focusNode: _keysFocus,
       autofocus: true,
       onKeyEvent: (_, e) {
         if (e is KeyUpEvent) return KeyEventResult.ignored;
-        if (e.logicalKey == LogicalKeyboardKey.escape && w != null) {
-          _back();
+        if (e.logicalKey == LogicalKeyboardKey.escape) {
+          _burst = '';
+          if (!qrStage) {
+            _back();
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored; // окно закрывается само
+        }
+        // F2: на шаге QR — ввести номер; на карточке — другой покупатель.
+        if (e.logicalKey == LogicalKeyboardKey.f2 && !_typing) {
+          if (qrStage) {
+            _toPhone();
+          } else if (w != null) {
+            _back();
+          }
           return KeyEventResult.handled;
         }
         if (_typing) {
@@ -1100,15 +1255,123 @@ class _DebtDialogState extends State<_DebtDialog> {
           }
           return KeyEventResult.ignored;
         }
+        final ch = printable(e);
+        if (ch != null && ch != ' ') _track(ch);
+        if (qrStage) {
+          if (isEnter(e)) {
+            _enterQr();
+          } else if (e.logicalKey == LogicalKeyboardKey.backspace) {
+            _burst = '';
+          } else if (ch == null) {
+            return KeyEventResult.ignored;
+          }
+          return KeyEventResult.handled;
+        }
         return _keys(e, onEnter: _enter, onChar: _key);
       },
       child: _Shell(
         title: tr('В долг', 'Qarzga'),
-        subtitle: w == null ? tr('Номер телефона покупателя — по нему он увидит долг в приложении', 'Xaridorning telefon raqami — u qarzini ilovada shu raqam orqali koʻradi') : fmtUzPhone(w.phone),
+        subtitle: w != null
+            ? fmtUzPhone(w.phone)
+            : _byPhone
+                ? tr('Номер телефона покупателя — по нему он увидит долг в приложении · Esc — к QR',
+                    'Xaridorning telefon raqami — u qarzini ilovada shu raqam orqali koʻradi · Esc — QR ga')
+                : tr('QR покупателя — сканером · F2 — ввести номер · Esc — назад', 'Xaridor QR kodi — skaner bilan · F2 — raqam kiritish · Esc — orqaga'),
         right: fmtMoney(sale.due),
-        children: w == null ? _phoneStage() : _cardStage(w),
+        children: w != null
+            ? _cardStage(w)
+            : _byPhone
+                ? _phoneStage()
+                : _qrStage(),
       ),
     );
+  }
+
+  /// ДQ1 / ДQ3 · ждём QR покупателя; ошибка — красная рамка и пояснение.
+  List<Widget> _qrStage() {
+    final err = _error;
+    return [
+      Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: C.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: err != null ? Border.all(color: C.brand, width: 2) : null,
+        ),
+        child: Row(children: [
+          Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(color: err != null ? C.brandSoft : const Color(0xFFEEF4FF), borderRadius: BorderRadius.circular(24)),
+            child: Icon(Icons.qr_code_scanner_rounded, size: 72, color: err != null ? C.brand : const Color(0xFF155EEF)),
+          ),
+          const SizedBox(width: 24),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(tr('Отсканируйте QR покупателя', 'Xaridor QR kodini skanerlang'), style: t(26, w: FontWeight.w700)),
+              const SizedBox(height: 8),
+              Text(
+                  tr('Покупатель открывает приложение Super Market → Профиль → «Мой QR-код». Сканер читает его как штрихкод.',
+                      'Xaridor Super Market ilovasini ochadi → Profil → «Mening QR kodim». Skaner uni shtrix-kod kabi oʻqiydi.'),
+                  style: t(15, c: C.ts)),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: err != null ? C.brandSoft : C.page, borderRadius: BorderRadius.circular(20)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (_busy)
+                    const SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 2))
+                  else
+                    Icon(Icons.circle, size: 8, color: err != null ? C.brand : const Color(0xFF155EEF)),
+                  const SizedBox(width: 8),
+                  Text(
+                      _busy
+                          ? tr('Проверяем QR…', 'QR tekshirilmoqda…')
+                          : err != null
+                              ? tr('Попробуйте ещё раз', 'Yana urinib koʻring')
+                              : tr('Ждём QR…', 'QR kutilmoqda…'),
+                      style: t(13, w: FontWeight.w600, c: err != null ? C.brand : const Color(0xFF155EEF))),
+                ]),
+              ),
+            ]),
+          ),
+        ]),
+      ),
+      if (err != null) ...[
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          decoration: BoxDecoration(color: C.errorSoft, borderRadius: BorderRadius.circular(14)),
+          child: Row(children: [
+            const Icon(Icons.error_rounded, color: C.error),
+            const SizedBox(width: 10),
+            Expanded(child: Text(err, style: t(15, w: FontWeight.w600, c: C.error))),
+          ]),
+        ),
+      ],
+      const SizedBox(height: 12),
+      _Btn(
+        onTap: _toPhone,
+        color: C.surface,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        child: Row(children: [
+          const Icon(Icons.dialpad_rounded, color: C.ts),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(tr('Нет приложения — ввести номер телефона', 'Ilova yoʻq — telefon raqamini kiritish'), style: t(16, w: FontWeight.w600)),
+              Text(tr('как раньше: номер, для нового покупателя — код', 'avvalgidek: raqam, yangi xaridorga — kod'), style: t(13, c: C.ts)),
+            ]),
+          ),
+          const KeyBadge('F2', size: 40),
+        ]),
+      ),
+      const SizedBox(height: 12),
+      _Footer(back: tr('Назад к чеку', 'Chekka qaytish'), primary: tr('В долг', 'Qarzga'), onPrimary: null, busy: false),
+      const SizedBox(height: 10),
+      Text(tr('QR можно сканировать и прямо в чеке — касса сама откроет «В долг».', 'QR kodni chekda ham skanerlash mumkin — kassa «Qarzga»ni oʻzi ochadi.'),
+          style: t(12, c: C.ts)),
+    ];
   }
 
   List<Widget> _phoneStage() => [
@@ -1127,7 +1390,7 @@ class _DebtDialogState extends State<_DebtDialog> {
         const SizedBox(height: 12),
         _Pad(onKey: _key, extra: ''),
         const SizedBox(height: 12),
-        _Footer(back: tr('Назад', 'Orqaga'), primary: _busy ? tr('Ищем…', 'Qidirilmoqda…') : tr('Найти покупателя', 'Xaridorni topish'), onPrimary: _phone.value.length == 9 ? _lookup : null, busy: _busy),
+        _Footer(back: tr('К QR', 'QR ga'), onBack: _back, primary: _busy ? tr('Ищем…', 'Qidirilmoqda…') : tr('Найти покупателя', 'Xaridorni topish'), onPrimary: _phone.value.length == 9 ? _lookup : null, busy: _busy),
         const SizedBox(height: 10),
         Text(_error ?? tr('Ищем только по номеру. Нет связи — касса возьмёт долг из своего каталога.', 'Faqat raqam boʻyicha qidiramiz. Aloqa yoʻq boʻlsa — kassa qarzni oʻz katalogidan oladi.'),
             style: t(12, c: _error != null ? C.error : C.ts)),
@@ -1141,7 +1404,7 @@ class _DebtDialogState extends State<_DebtDialog> {
             : !w.found
                 ? (tr('Новый покупатель', 'Yangi xaridor'), C.ts, C.subtle)
                 : w.verified
-                    ? (tr('Номер подтверждён', 'Raqam tasdiqlangan'), C.success, C.successSoft)
+                    ? (w.viaQr ? tr('Подтверждён в приложении', 'Ilovada tasdiqlangan') : tr('Номер подтверждён', 'Raqam tasdiqlangan'), C.success, C.successSoft)
                     : (tr('Номер не подтверждён', 'Raqam tasdiqlanmagan'), C.warning, C.warningSoft);
     Widget fact(String label, String value, {Color c = C.tp}) => Expanded(
           child: Container(
@@ -1175,6 +1438,39 @@ class _DebtDialogState extends State<_DebtDialog> {
     final rest = _rest;
     final problem = _problem;
     return [
+      if (w.viaQr) ...[
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: w.online ? C.successSoft : C.warningSoft,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: w.online ? const Color(0xFFA6E0BA) : const Color(0xFFFEDF89), width: 2),
+          ),
+          child: Row(children: [
+            Icon(Icons.qr_code_2_rounded, size: 34, color: w.online ? C.success : C.warning),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(
+                    w.online
+                        ? tr('QR из приложения Super Market · проверен', 'Super Market ilovasidan QR · tekshirildi')
+                        : tr('QR из приложения · нет связи, покупатель из каталога кассы', 'Ilovadan QR · aloqa yoʻq, xaridor kassa katalogidan'),
+                    style: t(13, w: FontWeight.w600, c: w.online ? C.success : C.warning)),
+                Text(fmtUzPhone(w.phone), style: t(24, w: FontWeight.w800)),
+              ]),
+            ),
+            _Btn(
+              onTap: _back,
+              color: C.surface,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text(tr('Другой покупатель', 'Boshqa xaridor'), style: t(13, w: FontWeight.w600, c: C.ts)),
+              ]),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 12),
+      ],
       Row(children: [
         Expanded(
           child: w.found && w.name.isNotEmpty
@@ -1286,7 +1582,7 @@ class _DebtDialogState extends State<_DebtDialog> {
       _Pad(onKey: _key),
       const SizedBox(height: 12),
       _Footer(
-        back: tr('Другой номер', 'Boshqa raqam'),
+        back: w.viaQr ? tr('Другой покупатель', 'Boshqa xaridor') : tr('Другой номер', 'Boshqa raqam'),
         onBack: _back,
         primary: rest > 0 && debt > 0 ? tr('Пробить · ${fmtMoney(debt)} в долг + ${fmtMoney(rest)}', 'Chiqarish · ${fmtMoney(debt)} qarzga + ${fmtMoney(rest)}') : tr('Пробить в долг · ${fmtMoney(debt)}', 'Qarzga chiqarish · ${fmtMoney(debt)}'),
         onPrimary: problem == null ? _pay : null,

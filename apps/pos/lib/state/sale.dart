@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:sm_core/sm_core.dart' show Lang, tr;
+import 'package:sm_core/sm_core.dart' show Lang, parseClientQr, tr;
 
 import '../core/cart.dart';
 import '../core/catalog.dart';
@@ -11,7 +11,7 @@ import '../core/quick.dart';
 import 'pos.dart';
 
 /// Команды быстрого режима — клавиши, которые не печатают символ.
-enum Cmd { enter, esc, del, backspace, up, down, star, pay, qty, item, search, discountLine, discountAll, hold, returns, orders, shiftMenu }
+enum Cmd { enter, esc, del, backspace, up, down, star, pay, qty, item, search, discountLine, discountAll, hold, returns, orders, shiftMenu, debtQr }
 
 enum SaleMode { sale, paid, held }
 
@@ -62,6 +62,16 @@ class SaleController extends ChangeNotifier {
 
   /// Окна и экраны: оплата, количество, скидка, поиск, возврат, смена.
   void Function(Cmd cmd)? onNavigate;
+
+  /// QR покупателя, отсканированный прямо в чеке: окно «В долг» откроется
+  /// с ним (Cmd.debtQr) и заберёт его через [takeDebtQr].
+  String? _debtQr;
+
+  String? takeDebtQr() {
+    final q = _debtQr;
+    _debtQr = null;
+    return q;
+  }
 
   Catalog get catalog => pos.catalog;
 
@@ -303,6 +313,8 @@ class SaleController extends ChangeNotifier {
         } else {
           openSearch();
         }
+      case Cmd.debtQr:
+        break; // только навигация: окно «В долг» открывает экран продажи
       case Cmd.returns:
       case Cmd.shiftMenu:
         if (cart.isEmpty || mode == SaleMode.paid) {
@@ -355,6 +367,11 @@ class SaleController extends ChangeNotifier {
       return;
     }
     rowFocused = false;
+    final qr = parseClientQr(fixLayout(raw));
+    if (qr != null) {
+      _clientQr(qr.payload);
+      return;
+    }
     final digits = RegExp(r'^[0-9]+$').hasMatch(raw);
     // Сканер, длинный код или буквы — штрихкод/марка; короткие цифры — код товара.
     if (scanned || !digits || raw.length >= 8) {
@@ -371,6 +388,23 @@ class SaleController extends ChangeNotifier {
 
   void _openPay() {
     if (canPay) onNavigate?.call(Cmd.pay);
+  }
+
+  /// QR покупателя в чеке (Figma «ДQ1»): сразу окно «В долг» с его карточкой.
+  void _clientQr(String payload) {
+    if (mode == SaleMode.held) return;
+    if (!pos.canDebt) {
+      _error(tr('QR покупателя — для продажи в долг, а на этой кассе в долг не дают', 'Xaridor QR kodi — qarzga sotish uchun, bu kassada esa qarzga berilmaydi'),
+          note: tr('Нужно «Даёт в долг» у магазина и право кассира', 'Doʻkonda «Qarzga beradi» va kassir huquqi kerak'));
+      return;
+    }
+    if (!canPay) {
+      _error(tr('Сначала товары, потом QR покупателя', 'Avval mahsulotlar, keyin xaridor QR kodi'), note: tr('QR покупателя — продажа в долг', 'Xaridor QR kodi — qarzga sotish'));
+      return;
+    }
+    onSound?.call(true);
+    _debtQr = payload;
+    onNavigate?.call(Cmd.debtQr);
   }
 
   /// Штрихкод, этикетка весов или DataMatrix. false — не нашли (сообщение уже показано).

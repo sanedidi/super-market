@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sm_core/sm_core.dart';
 
 import 'catalog.dart';
+import 'my_qr.dart';
 
 /// id точки гостя: адрес не сохранён на сервере, это только координаты
 /// (геолокация или точка на карте), чтобы показать магазины рядом.
@@ -202,6 +203,7 @@ class AppState extends ChangeNotifier {
         profile = null;
         stats = null;
         debts = null;
+        forgetQrKey().ignore(); // QR прежнего покупателя на телефоне не оставляем
         family = null;
         familyRequestId = null;
         unread = 0;

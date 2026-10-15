@@ -73,7 +73,7 @@ Future<String?> methodSheet(BuildContext context, Kassa kassa, {required bool ca
       Row(children: [
         tile('qr', Icons.qr_code_2_rounded, 'Payme · Click', tr('по QR магазина', 'doʻkon QR kodi orqali'), AppColors.primary, AppColors.primarySoft),
         const SizedBox(width: 10),
-        tile('debt', Icons.menu_book_rounded, tr('В долг', 'Qarzga'), tr('по номеру покупателя', 'xaridor raqami boʻyicha'), AppColors.warningInk, AppColors.warningSoft),
+        tile('debt', Icons.menu_book_rounded, tr('В долг', 'Qarzga'), tr('по QR покупателя', 'xaridor QR kodi orqali'), AppColors.warningInk, AppColors.warningSoft),
       ]),
       const SizedBox(height: 10),
       Opacity(

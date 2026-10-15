@@ -172,7 +172,7 @@ class Perm {
 
 /// Покупатель с долгом в магазине кассы (для продажи в долг без связи).
 class Debtor {
-  Debtor({required this.phone, this.fullName = '', this.debt = 0, this.limit = 0, this.blocked = false, this.verified = false});
+  Debtor({required this.phone, this.fullName = '', this.debt = 0, this.limit = 0, this.blocked = false, this.verified = false, this.qrId = ''});
 
   /// +998XXXXXXXXX.
   final String phone;
@@ -184,6 +184,9 @@ class Debtor {
   final bool blocked;
   final bool verified;
 
+  /// Номер QR покупателя из приложения (пусто — приложения нет).
+  final String qrId;
+
   factory Debtor.fromJson(Map<String, dynamic> j) => Debtor(
         phone: j['phone'] as String? ?? '',
         fullName: j['full_name'] as String? ?? '',
@@ -191,6 +194,7 @@ class Debtor {
         limit: parseMoney(j['limit']),
         blocked: j['blocked'] == true,
         verified: j['verified'] == true,
+        qrId: j['qr_id'] as String? ?? '',
       );
 
   Map<String, dynamic> toJson() => {
@@ -200,6 +204,7 @@ class Debtor {
         'limit': moneyApi(limit),
         'blocked': blocked,
         'verified': verified,
+        'qr_id': qrId,
       };
 }
 

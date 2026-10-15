@@ -10,6 +10,7 @@ import '../start/scanner.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
+import 'debt_qr.dart';
 import 'kassa.dart';
 import 'pay.dart';
 import 'quick_screen.dart';
@@ -90,6 +91,20 @@ class _KassaScreenState extends State<KassaScreen> {
 
   Future<void> _handle(String code) async {
     if (!kassa.ready) return;
+    // QR покупателя из приложения (Figma «КQ2–КQ3»): сразу «В долг».
+    final qr = parseClientQr(code);
+    if (qr != null) {
+      if (!(_canDebt && kassa.catalog.settings.debtEnabled)) {
+        HapticFeedback.heavyImpact();
+        _showToast(tr('QR покупателя — для продажи в долг, а здесь в долг не дают', 'Xaridor QR kodi — qarzga sotish uchun, bu yerda esa qarzga berilmaydi'), ok: false);
+      } else if (kassa.cart.isEmpty) {
+        HapticFeedback.heavyImpact();
+        _showToast(tr('Сначала товары, потом QR покупателя', 'Avval mahsulotlar, keyin xaridor QR kodi'), ok: false);
+      } else {
+        await _pay(debtQr: qr.payload);
+      }
+      return;
+    }
     final r = kassa.scan(code);
     if (r is Scanned) {
       HapticFeedback.mediumImpact();
@@ -184,12 +199,13 @@ class _KassaScreenState extends State<KassaScreen> {
 
   // -------------------------------------------------------------- оплата
 
-  Future<void> _pay() async {
+  /// Оплата. [debtQr] — камера кассы прочитала QR покупателя: сразу «В долг».
+  Future<void> _pay({String? debtQr}) async {
     if (kassa.cart.isEmpty || _paying) return;
     await _idle(() async {
       final total = kassa.cart.total;
       final canDebt = _canDebt && kassa.catalog.settings.debtEnabled;
-      final kind = await methodSheet(context, kassa, canDebt: canDebt);
+      final kind = debtQr != null ? 'debt' : await methodSheet(context, kassa, canDebt: canDebt);
       if (kind == null || !mounted) return;
       List<Pay> pays = const [];
       DebtPay? debt;
@@ -219,7 +235,7 @@ class _KassaScreenState extends State<KassaScreen> {
           if (cash == null) return;
           pays = [Pay(kassa.method('cash')!, cash), Pay(kassa.method('card')!, total - cash)];
         case 'debt':
-          debt = await debtSheet(context, kassa);
+          debt = await Navigator.of(context).push<DebtPay>(MaterialPageRoute(builder: (_) => DebtQrScreen(kassa: kassa, qr: debtQr)));
           if (debt == null) return;
         default:
           return;

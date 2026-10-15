@@ -383,6 +383,26 @@ class Kassa extends ChangeNotifier {
   Future<DebtorView> lookupDebtor(String phone) async =>
       DebtorView.fromLookup(await _send('GET', '/pos/debtors', query: {'phone': phone}) as Map<String, dynamic>);
 
+  /// Покупатель по QR из приложения (Figma «КQ2–КQ3»). Без связи — номер QR
+  /// ищем в каталоге кассы (код не проверить).
+  Future<DebtorView> lookupDebtorQr(String code) async {
+    final qr = parseClientQr(code);
+    if (qr == null) throw ApiError(400, 'not_client_qr', tr('Это не QR покупателя Super Market', 'Bu Super Market xaridorining QR kodi emas'));
+    try {
+      return DebtorView.fromLookup(await _send('GET', '/pos/debtors/qr', query: {'code': qr.payload}) as Map<String, dynamic>);
+    } on ApiError catch (e) {
+      if (!e.isNetwork) rethrow;
+      for (final d in catalog.debtors.values) {
+        if (d.qrId == qr.qrId) {
+          return DebtorView(
+              phone: d.phone, found: true, name: d.fullName, debt: d.debt, limit: d.limit, blocked: d.blocked, verified: d.verified, qrId: qr.qrId);
+        }
+      }
+      throw ApiError(0, 'network', tr('Нет связи, а этого покупателя ещё нет в каталоге кассы — введите номер телефона',
+          'Aloqa yoʻq, bu xaridor esa hali kassa katalogida yoʻq — telefon raqamini kiriting'));
+    }
+  }
+
   Future<void> sendDebtCode(String phone) => _send('POST', '/pos/debtors/code', body: {'phone': phone});
 
   Future<DebtorView> verifyDebtCode(String phone, String code, String name) async => DebtorView.fromLookup(

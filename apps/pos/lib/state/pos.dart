@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:sm_core/sm_core.dart' show Lang, tr;
+import 'package:sm_core/sm_core.dart' show Lang, parseClientQr, tr;
 import 'package:uuid/uuid.dart';
 
 import '../core/cart.dart';
@@ -604,7 +604,7 @@ class PosController extends ChangeNotifier {
 
   /// Покупатель из каталога кассы — когда нет связи. К долгу из каталога
   /// добавляем чеки и погашения этой смены после его загрузки.
-  DebtorView localDebtor(String phone) {
+  DebtorView localDebtor(String phone, {String qrId = ''}) {
     final d = catalog.debtors[phone];
     var debt = d?.debt ?? 0;
     final since = catalogAt;
@@ -613,7 +613,7 @@ class PosController extends ChangeNotifier {
       if (e is DebtPaymentRecord && e.phone == phone && (since == null || e.at.isAfter(since))) debt -= e.amount;
     }
     if (d == null) {
-      return DebtorView(phone: phone, debt: debt, limit: 10000000, unverifiedLimit: 10000000);
+      return DebtorView(phone: phone, debt: debt, limit: 10000000, unverifiedLimit: 10000000, qrId: qrId);
     }
     return DebtorView(
       phone: phone,
@@ -623,6 +623,7 @@ class PosController extends ChangeNotifier {
       limit: d.limit,
       blocked: d.blocked,
       verified: d.verified,
+      qrId: qrId,
     );
   }
 
@@ -636,6 +637,27 @@ class PosController extends ChangeNotifier {
       if (e.status != 0) rethrow;
       _netError(e);
       return localDebtor(phone);
+    }
+  }
+
+  /// Покупатель по QR из приложения (Figma «ДQ1–ДQ3»): QR проверяет сервер,
+  /// номер подтверждён входом в приложение. Без связи — ищем номер QR в
+  /// каталоге кассы (код проверить нельзя).
+  Future<DebtorView> lookupDebtorQr(String code) async {
+    final qr = parseClientQr(code);
+    if (qr == null) throw CartError(tr('Это не QR покупателя Super Market', 'Bu Super Market xaridorining QR kodi emas'));
+    try {
+      final res = await api.get('/pos/debtors/qr', query: {'code': qr.payload}, cashier: cashier?.id) as Map<String, dynamic>;
+      online = true;
+      return DebtorView.fromLookup(res, pending: _pendingDebt(res['phone'] as String? ?? ''));
+    } on ApiError catch (e) {
+      if (e.status != 0) rethrow;
+      _netError(e);
+      for (final d in catalog.debtors.values) {
+        if (d.qrId == qr.qrId) return localDebtor(d.phone, qrId: qr.qrId);
+      }
+      throw CartError(tr('Нет связи, а этого покупателя ещё нет в каталоге кассы — введите номер телефона (F2)',
+          'Aloqa yoʻq, bu xaridor esa hali kassa katalogida yoʻq — telefon raqamini kiriting (F2)'));
     }
   }
 

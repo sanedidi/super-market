@@ -13,6 +13,7 @@ import 'debts_screen.dart';
 import 'family_screen.dart';
 import 'favorites_screen.dart';
 import 'help_screen.dart';
+import 'my_qr_screen.dart';
 import 'order_screen.dart';
 import 'orders_screen.dart';
 import 'profile_details_screen.dart';
@@ -201,6 +202,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ]),
               ),
             ),
+            const MyQrProfileCard(),
             const DebtsProfileCard(),
             if (active != null) ...[
               const SizedBox(height: 16),

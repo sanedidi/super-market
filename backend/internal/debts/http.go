@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -38,6 +39,11 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/store/debt-settings", m.getSettings)
 		r.Put("/store/debt-settings", m.saveSettings)
 		r.Put("/store/debt-settings/stores/{id}", m.setStore)
+	})
+	r.Route("/client/qr", func(r chi.Router) {
+		r.Use(m.auth.Require(identity.AppClient))
+		r.Get("/", m.clientQR)
+		r.Get("/recent", m.clientQRRecent)
 	})
 	r.Route("/client/debts", func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppClient))
@@ -162,4 +168,18 @@ func (m *Module) clientDispute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, out)
+}
+
+func (m *Module) clientQR(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (ClientQR, error) { return m.svc.ClientQR(r.Context(), pr(r)) })
+}
+
+func (m *Module) clientQRRecent(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (QRRecent, error) {
+		since, err := time.Parse(time.RFC3339, r.URL.Query().Get("since"))
+		if err != nil {
+			return QRRecent{}, apperr.Validation("since: время в формате RFC 3339").Uz("since: vaqt RFC 3339 formatida")
+		}
+		return m.svc.ClientQRRecent(r.Context(), pr(r), since)
+	})
 }

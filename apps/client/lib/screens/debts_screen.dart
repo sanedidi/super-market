@@ -326,14 +326,8 @@ class _StoreDebtScreenState extends State<StoreDebtScreen> {
   }
 
   Future<void> _dispute(Map<String, dynamic> e) async {
-    final sent = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: AppColors.white,
-      builder: (_) => _DisputeSheet(entry: e, storeName: '${_d?['name'] ?? ''}'),
-    );
-    if (sent == true) {
+    final sent = await showDebtDispute(context, e, '${_d?['name'] ?? ''}');
+    if (sent) {
       await _load();
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Отправили владельцу магазина — он проверит запись', 'Doʻkon egasiga yuborildi — u yozuvni tekshiradi'))));
     }
@@ -522,6 +516,19 @@ class _EntryTile extends StatelessWidget {
       ]),
     );
   }
+}
+
+/// К4 · «Это не я»: шторка жалобы на запись [entry] ({id, number, created_at,
+/// amount}). true — отправили.
+Future<bool> showDebtDispute(BuildContext context, Map<String, dynamic> entry, String storeName) async {
+  final sent = await showModalBottomSheet<bool>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    backgroundColor: AppColors.white,
+    builder: (_) => _DisputeSheet(entry: entry, storeName: storeName),
+  );
+  return sent == true;
 }
 
 /// К4 · «Это не я»: жалоба владельцу магазина.

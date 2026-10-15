@@ -47,6 +47,7 @@ class DebtorView {
     this.defaultLimit = 50000000,
     this.requireCode = true,
     this.online = false,
+    this.qrId = '',
   });
 
   final String phone;
@@ -72,6 +73,11 @@ class DebtorView {
   /// Данные с сервера (false — из каталога, касса без связи).
   final bool online;
 
+  /// Покупатель найден по QR из приложения (номер QR).
+  final String qrId;
+
+  bool get viaQr => qrId.isNotEmpty;
+
   int get available => limit > debt ? limit - debt : 0;
 
   /// Ответ GET /pos/debtors; [pending] — долг из чеков в очереди кассы.
@@ -88,6 +94,7 @@ class DebtorView {
         defaultLimit: parseMoney(j['default_limit']),
         requireCode: j['require_code'] != false,
         online: true,
+        qrId: j['qr_id'] as String? ?? '',
       );
     }
     return DebtorView(
@@ -105,6 +112,7 @@ class DebtorView {
       defaultLimit: parseMoney(j['default_limit']),
       requireCode: j['require_code'] != false,
       online: true,
+      qrId: j['qr_id'] as String? ?? '',
     );
   }
 }

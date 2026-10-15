@@ -48,6 +48,7 @@ func (m *Module) Routes(r chi.Router) {
 		// Долги покупателей: покупатель по номеру, код подтверждения, погашение.
 		debtsOn := identity.RequireFeature(m.svc.pool, m.log, plans.FeatureDebts)
 		r.With(debtsOn).Get("/pos/debtors", m.debtorLookup)
+		r.With(debtsOn).Get("/pos/debtors/qr", m.debtorQR)
 		r.With(debtsOn).Post("/pos/debtors/code", m.debtorCode)
 		r.With(debtsOn).Post("/pos/debtors/verify", m.debtorVerify)
 		r.With(debtsOn).Post("/pos/debt-payments", m.debtPayment)
@@ -348,6 +349,16 @@ func (m *Module) debtorLookup(w http.ResponseWriter, r *http.Request) {
 			return debts.Lookup{}, err
 		}
 		return m.svc.debts.Lookup(r.Context(), pr(r), r.URL.Query().Get("phone"))
+	})
+}
+
+// debtorQR — покупатель по QR из приложения (?code=99…).
+func (m *Module) debtorQR(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (debts.Lookup, error) {
+		if err := requireCashier(pr(r)); err != nil {
+			return debts.Lookup{}, err
+		}
+		return m.svc.debts.LookupQR(r.Context(), pr(r), r.URL.Query().Get("code"))
 	})
 }
 

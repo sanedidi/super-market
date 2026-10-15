@@ -1064,8 +1064,9 @@ options: [{product_id, weight, flavor, image, price, old_price, discount_percent
 
 | Метод | Путь | Описание |
 |---|---|---|
-| GET | `/pos/catalog` | дополнительно `settings.debt_enabled` и `debtors [{phone, full_name, debt, limit, blocked, verified}]` — для работы без связи |
+| GET | `/pos/catalog` | дополнительно `settings.debt_enabled` и `debtors [{phone, full_name, debt, limit, blocked, verified, qr_id}]` — для работы без связи (`qr_id` — номер QR покупателя из приложения, пусто — нет приложения) |
 | GET | `/pos/debtors?phone=` | `{found, phone, debtor: Balance\|null, purchases, unverified_limit, default_limit, require_code, debt_enabled}` |
+| GET | `/pos/debtors/qr?code=` | покупатель по QR из приложения (`99` + `qr_id` 10 цифр + код 8 цифр): ответ как `GET /pos/debtors` + `qr_id`; покупатель заводится в сети сразу подтверждённым. Нужно `debts.give`. 400 `not_client_qr` — не QR покупателя, `qr_expired` — код устарел (фото/скриншот) |
 | POST | `/pos/debtors/code` | `{phone}` → `{channel: telegram\|push\|dev, expires_in}`; 409 `no_channel` — некуда отправить, записать без кода |
 | POST | `/pos/debtors/verify` | `{phone, code, full_name}` → как `GET /pos/debtors`, номер подтверждён (лимит — `default_limit`) |
 | POST | `/pos/sales` | `debt: {phone, full_name, amount}` — часть итога в долг; `payments` — остаток (может быть пустым). Сверх лимита касса не останавливается: продажа сохраняется с `debt_over_limit` |
@@ -1097,6 +1098,13 @@ options: [{product_id, weight, flavor, image, price, old_price, discount_percent
 | GET | `/client/debts` | долги по номеру аккаунта во всех сетях: `{total, next_due, stores [{store_id, name, address, phone, logo_url, lat, lng, amount, since, due_date, overdue_days}]}` |
 | GET | `/client/debts/{store_id}` | то же по магазину + `entries [{id, doc_type, number, amount, balance, detail, dispute_status, created_at, sale?: {total, paid, debt, items [{name, qty, unit, total}]}}]` |
 | POST | `/client/debts/entries/{id}/dispute` | `{comment}` — «Это не я» по покупке в долг; владельцу push `{type: debt_dispute, entry_id}`; 409 `already_disputed` |
+| GET | `/client/qr` | «Мой QR-код»: `{qr_id, secret (hex), prefix: "99", step: 30, digits: 8, server_time (unix мс)}`. Секрет выдаётся при первом запросе, приложение хранит его и считает QR без интернета |
+| GET | `/client/qr/recent?since=<RFC 3339>` | покупка в долг после `since` (не раньше 10 минут назад) — экран QR показывает «Записано в долг»: `{entry: {id, store_id, store_name, number, amount, created_at, balance, due_date} \| null}` |
+
+**QR покупателя.** Содержимое — только цифры: `99` + `qr_id` + код. Код — TOTP: HMAC-SHA256(секрет, номер шага
+`unix/30` как 8 байт big-endian), динамическое усечение (`offset = mac[31] & 0x0f`, 31 бит с `offset`), `% 10^8`,
+8 цифр с нулями слева. Касса принимает шаги от −2 до +1 (~1,5 минуты). Без связи касса ищет `qr_id` в `debtors`
+каталога, код не проверяется.
 
 Уведомления покупателю — `data {type: debt, store_id}`: `debt_added` (записали в долг), `debt_paid` (оплата принята),
 `debt_reminder` (день оплаты — всегда в 10:00 по Ташкенту; за 3 дня и после просрочки — если `extra_reminders`;
