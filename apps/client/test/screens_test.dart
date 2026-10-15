@@ -324,7 +324,7 @@ void main() {
   testWidgets('02 код', (t) async {
     await _shot(
       t,
-      CodeStep(phone: '+998905764723', resendIn: 54, botUrl: 'https://t.me/bot', onBack: () {}, onResend: () async {}),
+      CodeStep(phone: '+998905764723', resendIn: 54, onBack: () {}, onResend: () async {}),
       '02_code',
     );
   });
@@ -332,7 +332,7 @@ void main() {
   testWidgets('02б код по SMS', (t) async {
     await _shot(
       t,
-      CodeStep(phone: '+998905764723', channel: 'sms', resendIn: 54, botUrl: 'https://t.me/bot', onBack: () {}, onResend: () async {}),
+      CodeStep(phone: '+998905764723', channel: 'sms', resendIn: 54, onBack: () {}, onResend: () async {}),
       '02b_code_sms',
       guest: true,
     );

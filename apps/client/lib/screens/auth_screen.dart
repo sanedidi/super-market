@@ -10,7 +10,6 @@ import '../main.dart';
 import '../state.dart';
 import '../ui/person_form.dart';
 import '../ui/theme.dart';
-import '../ui/widgets.dart';
 
 
 /// Код входа отправлен: на какой номер, куда (sms; пусто — не

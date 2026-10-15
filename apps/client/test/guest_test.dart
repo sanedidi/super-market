@@ -45,7 +45,8 @@ void main() {
   test('шаг с кодом: текст по каналу из ответа', () {
     expect(codeStepText('sms', '+998905764723').$1, 'Код из SMS');
     expect(codeStepText('sms', '+998905764723').$2, 'Отправили SMS с 6 цифрами на номер +998 90 576 47 23. ');
-    expect(codeStepText('telegram', '+998905764723').$1, 'Код из Telegram');
+    // Telegram у покупателя больше нет: неизвестный канал — общий текст.
+    expect(codeStepText('telegram', '+998905764723').$1, 'Введите код');
     expect(codeStepText('', '+998905764723').$1, 'Введите код');
   });
 
