@@ -76,7 +76,7 @@ func (d *Dispatcher) send(ctx context.Context) (int, error) {
 	defer tx.Rollback(ctx) //nolint:errcheck
 
 	rows, err := tx.Query(ctx, `
-		SELECT id, user_id, app, title, body, data, attempts
+		SELECT id, user_id, app, kind, title, body, data, attempts
 		FROM notifications_outbox
 		WHERE status = 'pending' AND send_after <= now()
 		ORDER BY id LIMIT 100
@@ -87,9 +87,18 @@ func (d *Dispatcher) send(ctx context.Context) (int, error) {
 	var batch []queued
 	for rows.Next() {
 		var q queued
-		if err := rows.Scan(&q.id, &q.userID, &q.app, &q.title, &q.body, &q.data, &q.attempts); err != nil {
+		var kind string
+		if err := rows.Scan(&q.id, &q.userID, &q.app, &kind, &q.title, &q.body, &q.data, &q.attempts); err != nil {
 			rows.Close()
 			return 0, err
+		}
+		// Вид уведомления — приложению, чтобы открыть нужный экран
+		// (оплата, заявка на бренд, заказ поставщику…), если в данных нет своего type.
+		if q.data == nil {
+			q.data = map[string]any{}
+		}
+		if _, ok := q.data["kind"]; !ok && kind != "" {
+			q.data["kind"] = kind
 		}
 		batch = append(batch, q)
 	}

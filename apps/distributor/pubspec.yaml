@@ -27,6 +27,8 @@ dependencies:
   qr_flutter: ^4.1.0
   # Логотип бренда в заявке на новый бренд.
   image_picker: ^1.1.2
+  # Пуши: Firebase своего приложения (firebase_messaging приходит из sm_store).
+  firebase_core: ^4.0.0
 
 # Как в apps/store: latlong2 и flutter_localizations должны сойтись на intl из Flutter SDK.
 dependency_overrides:

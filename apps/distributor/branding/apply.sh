@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Папки платформ приложения дистрибьютора: название, камера (штрихкоды и фото
 # товаров в «Начале работы»), геолокация (точка склада на карте), звонки,
-# Face ID, подпись release для Google Play, иконка (Figma: «Иконка SM Агент» —
+# Face ID, пуши (entitlement + фоновый режим), подпись release для Google Play, иконка (Figma: «Иконка SM Агент» —
 # вариант 5 «Лист», красный фон + чёрный бейдж «агент»).
 # Запускать из apps/distributor после
 #   flutter create --platforms=android,ios --org uz.supermarket --project-name sm_distributor .
@@ -70,9 +70,23 @@ schemes.update(['https', 'tg', 'tel'])
 d['LSApplicationQueriesSchemes'] = sorted(schemes)
 d['UISupportedInterfaceOrientations'] = ['UIInterfaceOrientationPortrait']
 d['ITSAppUsesNonExemptEncryption'] = False
+# Пуши (Firebase Cloud Messaging): доставка в фоне.
+modes = set(d.get('UIBackgroundModes', []))
+modes.add('remote-notification')
+d['UIBackgroundModes'] = sorted(modes)
 with open(p, 'wb') as f:
     plistlib.dump(d, f)
 PY
+  cat > ios/Runner/Runner.entitlements <<'ENT'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>
+ENT
   python3 - <<'PY2'
 import re
 p = 'ios/Runner.xcodeproj/project.pbxproj'
@@ -81,6 +95,10 @@ s = open(p, encoding='utf-8').read()
 if 'DEVELOPMENT_TEAM' not in s:
     s = re.sub(r'(\n(\t+)PRODUCT_BUNDLE_IDENTIFIER = uz\.supermarket\.smDistributor;)',
                r'\n\2DEVELOPMENT_TEAM = Z5984ANP34;\1', s)
+# Пуши: entitlement aps-environment (Xcode при автоподписи включит Push Notifications у App ID).
+if 'CODE_SIGN_ENTITLEMENTS' not in s:
+    s = re.sub(r'(\n(\t+)PRODUCT_BUNDLE_IDENTIFIER = uz\.supermarket\.smDistributor;)',
+               r'\n\2CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;\1', s)
 # Только iPhone: iPad не поддерживаем.
 s = s.replace('TARGETED_DEVICE_FAMILY = "1,2";', 'TARGETED_DEVICE_FAMILY = 1;')
 open(p, 'w', encoding='utf-8').write(s)

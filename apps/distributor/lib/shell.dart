@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
+import 'package:sm_store/push.dart' show Push;
 import 'package:sm_store/ui/theme.dart';
 
 import 'home_screen.dart';
@@ -21,6 +23,13 @@ class _ShellState extends State<Shell> {
 
   /// Вкладка «Магазины» открывается с фильтром (с главной: «Закончилось» и т. п.).
   String _storesFilter = '';
+
+  @override
+  void initState() {
+    super.initState();
+    // После входа — разрешение на уведомления и токен устройства на сервер.
+    WidgetsBinding.instance.addPostFrameCallback((_) => Push.register(context.read<Api>()));
+  }
 
   void _go(int i, {String filter = ''}) => setState(() {
         _tab = i;

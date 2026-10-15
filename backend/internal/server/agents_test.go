@@ -71,8 +71,27 @@ func TestAgentRegistration(t *testing.T) {
 	}
 	// Без склада магазины ещё не посчитать — сначала точка склада.
 	a.expect(a.do("GET", "/store/supply/stores", tok, nil), 409, "no point yet")
-	if n := sqlStr(t, pool, `SELECT name || '|' || kind || '|' || plan_key FROM networks WHERE self_registered`); n != "Fayz Distribution|distributor|business" {
+	if n := sqlStr(t, pool, `SELECT name || '|' || kind || '|' || plan_key FROM networks WHERE self_registered`); n != "Fayz Distribution|distributor|agent" {
 		t.Fatalf("network = %s", n)
+	}
+
+	// Отдельная подписка агента: тариф агентов, бесплатный срок, только тарифы агентов.
+	plan := a.expect(a.do("GET", "/store/plan", tok, nil), 200, "agent plan")
+	if plan.str("chosen", "key") != "agent" || plan.str("trial_until") == "" || plan.Body["in_trial"] != false {
+		t.Fatalf("agent plan = %v", plan.Body)
+	}
+	if ps := plan.Body["plans"].([]any); len(ps) != 1 || ps[0].(map[string]any)["key"] != "agent" {
+		t.Fatalf("agent plans = %v", ps)
+	}
+	a.expect(a.do("POST", "/store/plan", tok, map[string]string{"plan": "business"}), 404, "agent cannot take store plan")
+	a.expect(a.do("PUT", "/admin/billing/settings", adminTok, map[string]any{"agent_plan": "business"}), 400, "store plan for agents")
+	if st := a.expect(a.do("PUT", "/admin/billing/settings", adminTok, map[string]any{"agent_trial_days": 7}), 200, "agent trial"); st.Body["agent_trial_days"].(float64) != 7 || st.str("agent_plan") != "agent" {
+		t.Fatalf("settings = %v", st.Body)
+	}
+	a.expect(a.do("PATCH", "/admin/plans/agent", adminTok, map[string]any{"is_active": false}), 409, "archive agent plan")
+	// У агента не бывает сотрудников.
+	if r := a.expect(a.do("POST", "/store/employees", tok, map[string]any{"phone": "+998900000250", "full_name": "Помощник", "role_id": "x"}), 409, "agent staff"); r.str("error", "code") != "agent_no_staff" {
+		t.Fatalf("agent staff = %v", r.Body)
 	}
 
 	// Повторный вход — по коду сразу в приложение.
@@ -287,6 +306,14 @@ func TestAgentPayments(t *testing.T) {
 		t.Fatalf("fix = %v", r3.Body)
 	}
 	a.expect(a.do("POST", "/store/supply/payments/"+p3+"/confirm", distTok, nil), 200, "confirm 3")
+
+	// 4) «Не получал» → магазин согласен: оплата отменена, деньги вернулись в кассу.
+	p4 := a.expect(a.do("POST", "/store/suppliers/"+distID+"/pay", storeTok, map[string]any{"amount": 20000, "cashbox_id": box}), 201, "pay 4").str("id")
+	a.expect(a.do("POST", "/store/suppliers/payments/"+p4+"/resolve", storeTok, map[string]any{"amount": 0}), 400, "cancel without dispute")
+	a.expect(a.do("POST", "/store/supply/payments/"+p4+"/dispute", distTok, map[string]any{"received": 0}), 200, "not received 4")
+	if r4 := a.expect(a.do("POST", "/store/suppliers/payments/"+p4+"/resolve", storeTok, map[string]any{"amount": 0}), 200, "agree not received"); r4.str("status") != "cancelled" {
+		t.Fatalf("cancel = %v", r4.Body)
+	}
 
 	// Итог у агента: 240 000 − 100 000 − 40 000 − 25 000 = 75 000.
 	st = a.expect(a.do("GET", "/store/supply/stores/"+store1+"/statement", distTok, nil), 200, "statement after")

@@ -56,9 +56,12 @@ type Settings struct {
 	GraceDays         int  `json:"grace_days"`
 	AutoChargeBalance bool `json:"auto_charge_balance"`
 	// Пробный период новых сетей: тариф и сколько дней (0 — без пробного).
-	TrialPlan string    `json:"trial_plan"`
-	TrialDays int       `json:"trial_days"`
-	UpdatedAt time.Time `json:"updated_at"`
+	TrialPlan string `json:"trial_plan"`
+	TrialDays int    `json:"trial_days"`
+	// Агенты («SM Агент»): тариф новых агентов и бесплатный срок на нём.
+	AgentPlan      string    `json:"agent_plan"`
+	AgentTrialDays int       `json:"agent_trial_days"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type SettingsInput struct {
@@ -66,13 +69,15 @@ type SettingsInput struct {
 	AutoChargeBalance *bool   `json:"auto_charge_balance"`
 	TrialPlan         *string `json:"trial_plan"`
 	TrialDays         *int    `json:"trial_days"`
+	AgentPlan         *string `json:"agent_plan"`
+	AgentTrialDays    *int    `json:"agent_trial_days"`
 }
 
 func (s *Service) GetSettings(ctx context.Context) (Settings, error) {
 	var st Settings
-	err := s.pool.QueryRow(ctx, `SELECT grace_days, auto_charge_balance, trial_plan, trial_days, updated_at
+	err := s.pool.QueryRow(ctx, `SELECT grace_days, auto_charge_balance, trial_plan, trial_days, agent_plan, agent_trial_days, updated_at
 		FROM billing_settings WHERE id = 1`).
-		Scan(&st.GraceDays, &st.AutoChargeBalance, &st.TrialPlan, &st.TrialDays, &st.UpdatedAt)
+		Scan(&st.GraceDays, &st.AutoChargeBalance, &st.TrialPlan, &st.TrialDays, &st.AgentPlan, &st.AgentTrialDays, &st.UpdatedAt)
 	return st, err
 }
 
@@ -91,11 +96,30 @@ func (s *Service) SaveSettings(ctx context.Context, in SettingsInput) (Settings,
 		if !p.IsActive {
 			return Settings{}, apperr.Validation("trial_plan: тариф в архиве").Uz("trial_plan: tarif arxivda")
 		}
+		if p.Audience != plans.AudienceStore {
+			return Settings{}, apperr.Validation("trial_plan: нужен тариф магазинов").Uz("trial_plan: doʻkonlar tarifi kerak")
+		}
+	}
+	if in.AgentTrialDays != nil && (*in.AgentTrialDays < 0 || *in.AgentTrialDays > 365) {
+		return Settings{}, apperr.Validation("agent_trial_days: от 0 до 365 дней").Uz("agent_trial_days: 0 dan 365 kungacha")
+	}
+	if in.AgentPlan != nil {
+		p, err := plans.Get(ctx, s.pool, *in.AgentPlan)
+		if err != nil {
+			return Settings{}, apperr.Validation("agent_plan: тариф не найден").Uz("agent_plan: tarif topilmadi")
+		}
+		if !p.IsActive {
+			return Settings{}, apperr.Validation("agent_plan: тариф в архиве").Uz("agent_plan: tarif arxivda")
+		}
+		if p.Audience != plans.AudienceAgent {
+			return Settings{}, apperr.Validation("agent_plan: нужен тариф агентов").Uz("agent_plan: agentlar tarifi kerak")
+		}
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE billing_settings SET
 		grace_days = COALESCE($1, grace_days), auto_charge_balance = COALESCE($2, auto_charge_balance),
-		trial_plan = COALESCE($3, trial_plan), trial_days = COALESCE($4, trial_days), updated_at = now()
-		WHERE id = 1`, in.GraceDays, in.AutoChargeBalance, in.TrialPlan, in.TrialDays); err != nil {
+		trial_plan = COALESCE($3, trial_plan), trial_days = COALESCE($4, trial_days),
+		agent_plan = COALESCE($5, agent_plan), agent_trial_days = COALESCE($6, agent_trial_days), updated_at = now()
+		WHERE id = 1`, in.GraceDays, in.AutoChargeBalance, in.TrialPlan, in.TrialDays, in.AgentPlan, in.AgentTrialDays); err != nil {
 		return Settings{}, err
 	}
 	return s.GetSettings(ctx)
@@ -105,8 +129,9 @@ func (s *Service) SaveSettings(ctx context.Context, in SettingsInput) (Settings,
 
 // priceSQL — цена за магазин для сети n: индивидуальная или по тарифу.
 // Пока идёт пробный период (и пробный тариф выше выбранного), тариф не
-// оплачивается.
-const priceSQL = `CASE WHEN n.plan_trial_until >= $period::date
+// оплачивается. У агента пробный период — просто бесплатный срок.
+const priceSQL = `CASE WHEN n.plan_trial_until >= $period::date AND n.kind = 'distributor' THEN 0
+	WHEN n.plan_trial_until >= $period::date
 	          AND (SELECT tp.sort FROM plans tp JOIN billing_settings bs ON bs.trial_plan = tp.key)
 	            > (SELECT cp.sort FROM plans cp WHERE cp.key = n.plan_key) THEN 0
 	ELSE COALESCE(n.custom_price_uzs, (SELECT pl.price_uzs FROM plans pl WHERE pl.key = n.plan_key), 0) END`

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -40,6 +41,24 @@ type Supplier struct {
 	Debt             string `json:"debt"`
 	PendingPayments  int    `json:"pending_payments"`
 	DisputedPayments int    `json:"disputed_payments"`
+	// Сколько отдали, а агент ещё не подтвердил; контрагент в «Долгах» (акт сверки).
+	PendingSum     string  `json:"pending_sum"`
+	CounterpartyID *string `json:"counterparty_id"`
+	// Агент — владелец сети дистрибьютора («агент Алишер»).
+	AgentName string `json:"agent_name"`
+	// Только в карточке: последние приходы от поставщика (черновик — принять товар).
+	Incomes []SupplierIncome `json:"incomes,omitempty"`
+}
+
+// SupplierIncome — приход магазина по отгрузке поставщика.
+type SupplierIncome struct {
+	ID         string    `json:"id"`
+	Number     int64     `json:"number"`
+	Status     string    `json:"status"`
+	Total      string    `json:"total"`
+	ItemsCount int       `json:"items_count"`
+	OrderID    *string   `json:"supply_order_id"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 func (s *Service) suppliers(ctx context.Context, storeID, where, query string, extra []any, page httpx.Page) ([]Supplier, error) {
@@ -72,6 +91,9 @@ func (s *Service) suppliers(ctx context.Context, storeID, where, query string, e
 			                 WHERE c.distributor_id = n.id AND c.network_id = (SELECT network_id FROM stores WHERE id = $1)), 0)::numeric(18,2)::text AS debt,
 			       (SELECT count(*)::int FROM supply_payments sp WHERE sp.distributor_id = n.id AND sp.store_id = $1 AND sp.status = 'pending') AS pending_payments,
 			       (SELECT count(*)::int FROM supply_payments sp WHERE sp.distributor_id = n.id AND sp.store_id = $1 AND sp.status = 'disputed') AS disputed_payments,
+			       COALESCE((SELECT sum(sp.amount) FROM supply_payments sp WHERE sp.distributor_id = n.id AND sp.store_id = $1 AND sp.status IN ('pending', 'disputed')), 0)::numeric(18,2)::text AS pending_sum,
+			       (SELECT c.id FROM counterparties c WHERE c.distributor_id = n.id AND c.network_id = (SELECT network_id FROM stores WHERE id = $1)) AS counterparty_id,
+			       COALESCE((SELECT e.full_name FROM employees e JOIN roles r ON r.id = e.role_id WHERE e.network_id = n.id AND r.is_owner ORDER BY e.created_at LIMIT 1), '') AS agent_name,
 			       pt.location
 			FROM networks n
 			JOIN LATERAL (SELECT * FROM stores x WHERE x.network_id = n.id AND x.status = 'active' ORDER BY x.created_at LIMIT 1) pt ON true
@@ -81,7 +103,8 @@ func (s *Service) suppliers(ctx context.Context, storeID, where, query string, e
 			  AND (NOT n.self_registered OR EXISTS (SELECT 1 FROM distributor_brands db WHERE db.network_id = n.id))
 		)
 		SELECT id, name, phone, address, supply_terms, lead_days, km, link_status, link_id, requested_by, message,
-		       products, matched, examples, open_orders, brands, debt, pending_payments, disputed_payments
+		       products, matched, examples, open_orders, brands, debt, pending_payments, disputed_payments,
+		       pending_sum, counterparty_id, agent_name
 		FROM d WHERE %s
 		ORDER BY (link_status = 'active') DESC, matched DESC, km NULLS LAST, name
 		LIMIT $2 OFFSET $3`, matchExpr, examples, where), productsearch.Args(args)...)
@@ -92,7 +115,7 @@ func (s *Service) suppliers(ctx context.Context, storeID, where, query string, e
 		var x Supplier
 		err := row.Scan(&x.ID, &x.Name, &x.Phone, &x.Address, &x.SupplyTerms, &x.LeadDays, &x.DistanceKm, &x.LinkStatus, &x.LinkID,
 			&x.RequestedBy, &x.Message, &x.ProductsCount, &x.Matched, &x.Examples, &x.OpenOrders,
-			&x.Brands, &x.Debt, &x.PendingPayments, &x.DisputedPayments)
+			&x.Brands, &x.Debt, &x.PendingPayments, &x.DisputedPayments, &x.PendingSum, &x.CounterpartyID, &x.AgentName)
 		x.WaitsForMe = x.LinkStatus == LinkRequested && x.RequestedBy != SideStore
 		if x.LinkStatus != LinkActive {
 			x.Phone = "" // телефон — после подключения
@@ -155,7 +178,32 @@ func (s *Service) SupplierDetail(ctx context.Context, p *identity.Principal, sto
 	if len(out) == 0 {
 		return Supplier{}, apperr.NotFound("дистрибьютор не найден").Uz("distribyutor topilmadi")
 	}
-	return out[0], nil
+	sup := out[0]
+	sup.Incomes = []SupplierIncome{}
+	if sup.CounterpartyID != nil {
+		// Приходы по отгрузкам этого поставщика на склады магазина: черновики — первыми.
+		rows, err := s.pool.Query(ctx, `
+			SELECT d.id, d.number, d.status,
+			       CASE WHEN d.status = 'draft' THEN COALESCE((SELECT sum(i.qty * i.price) FROM stock_document_items i WHERE i.document_id = d.id), 0)::numeric(18,2)
+			            ELSE d.total END::text,
+			       (SELECT count(*)::int FROM stock_document_items i WHERE i.document_id = d.id), d.supply_order_id, d.created_at
+			FROM stock_documents d JOIN warehouses w ON w.id = d.warehouse_id
+			WHERE d.counterparty_id = $1 AND d.type = 'income' AND d.source_shipment_id IS NOT NULL AND w.store_id = $2
+			  AND d.status <> 'cancelled'
+			ORDER BY (d.status = 'draft') DESC, d.created_at DESC LIMIT 10`, *sup.CounterpartyID, storeID)
+		if err != nil {
+			return Supplier{}, err
+		}
+		sup.Incomes, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (SupplierIncome, error) {
+			var x SupplierIncome
+			err := row.Scan(&x.ID, &x.Number, &x.Status, &x.Total, &x.ItemsCount, &x.OrderID, &x.CreatedAt)
+			return x, err
+		})
+		if err != nil {
+			return Supplier{}, err
+		}
+	}
+	return sup, nil
 }
 
 // PriceItem — строка прайса дистрибьютора для магазина.

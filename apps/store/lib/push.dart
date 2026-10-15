@@ -13,6 +13,8 @@ import 'firebase_options.dart';
 import 'receipt/review_screen.dart';
 import 'screens/order_screen.dart';
 import 'summary/summary_screen.dart';
+import 'suppliers/order_screen.dart';
+import 'suppliers/suppliers_screen.dart';
 
 /// Навигатор приложения — чтобы открыть заказ или накладную из уведомления.
 final navigatorKey = GlobalKey<NavigatorState>();
@@ -25,8 +27,12 @@ class Push {
   static StreamSubscription<String>? _refresh;
   static bool _listening = false;
 
-  static Future<void> init() async {
-    final options = DefaultFirebaseOptions.currentPlatform;
+  /// Своя обработка перехода из уведомления (приложение «SM Агент»): true — обработано.
+  static bool Function(NavigatorState nav, Map<String, dynamic> data)? onOpen;
+
+  /// [options] — Firebase другого приложения на той же основе («SM Агент»).
+  static Future<void> init({FirebaseOptions? options}) async {
+    options ??= DefaultFirebaseOptions.currentPlatform;
     if (options == null) return;
     try {
       await Firebase.initializeApp(options: options);
@@ -114,6 +120,7 @@ class Push {
     final nav = navigatorKey.currentState;
     if (nav == null) return;
     final d = m.data;
+    if (onOpen?.call(nav, d) ?? false) return;
     switch (d['type']) {
       case 'order':
         final id = d['order_id'];
@@ -126,6 +133,15 @@ class Push {
       case 'summary':
         final date = d['date'];
         nav.push(MaterialPageRoute(builder: (_) => SummaryScreen(date: date is String ? date : null)));
+      default:
+        // Поставщики-агенты: вид уведомления — в data.kind.
+        final kind = '${d['kind'] ?? ''}';
+        final order = d['supply_order_id'];
+        if (kind.startsWith('supply_order') || kind == 'supply_received_diff') {
+          if (order is String && order.isNotEmpty) nav.push(MaterialPageRoute(builder: (_) => SupplyOrderDetailScreen(id: order)));
+        } else if (kind.startsWith('supply_')) {
+          nav.push(MaterialPageRoute(builder: (_) => const SuppliersScreen()));
+        }
     }
   }
 }

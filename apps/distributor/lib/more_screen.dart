@@ -33,7 +33,8 @@ class MoreScreen extends StatelessWidget {
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(st.networkName, style: AppText.bodyStrong),
-                Text('${st.me?['full_name'] ?? ''} · ${st.me?['role_name'] ?? ''}', style: AppText.small),
+                // У агента сотрудников нет — работает сам владелец, роль не показываем.
+                Text('${st.me?['full_name'] ?? ''}', style: AppText.small),
               ]),
             ),
           ]),

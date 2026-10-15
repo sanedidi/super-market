@@ -497,7 +497,7 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 | GET | `/store/plan` | «мой тариф»: `chosen`, `effective` (пробный, если идёт), `in_trial`, `trial_until`, `current` (карточка действующего, у лимитов `used`), `plans` (открытые для смены), `stores_count`, `can_change` |
 | POST | `/store/plan` | `{"plan"}` — сменить тариф (право `payouts.manage`); только открытый, `min_stores` ≤ магазинов (иначе 409 `plan_min_stores`) |
 | GET | `/admin/plans/registry` | группы, функции и лимиты (ru/uz, подсказки, `max`, `default`) — для экрана настройки |
-| GET/POST | `/admin/plans` | список (с `networks_count`) / создать `{"key","name",…}` |
+| GET/POST | `/admin/plans` | список (с `networks_count`, `audience`: сначала тарифы магазинов, потом агентов) / создать `{"key","name","audience"?: "store"\|"agent",…}` |
 | GET/PATCH/DELETE | `/admin/plans/{key}` | `name`, `name_uz`, `description(_uz)`, `price_uzs`, `min_stores`, `order_commission` (%), `features` (весь список), `limits` (вся карта, `null` — без лимита), `is_public`, `is_active`, `recommended`, `sort`. Удалить можно тариф без сетей и не пробный (иначе 409 `plan_in_use` — убрать в архив) |
 
 Ошибки тарифа:
@@ -524,7 +524,7 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 
 | Метод | Путь | Описание |
 | --- | --- | --- |
-| GET/PUT | `/admin/billing/settings` | `grace_days` (дней на оплату), `auto_charge_balance`, `trial_plan` и `trial_days` — пробный период новых сетей |
+| GET/PUT | `/admin/billing/settings` | `grace_days` (дней на оплату), `auto_charge_balance`, `trial_plan` и `trial_days` — пробный период новых сетей (тариф магазинов); `agent_plan` (тариф агентов) и `agent_trial_days` — тариф и бесплатный срок новых агентов |
 | GET | `/admin/billing/networks?overdue=true` | сети: тариф (`plan_key`, `effective_plan_key`, `trial_until`), магазины, цена в сумах, баланс, долг |
 | GET/PATCH | `/admin/billing/networks/{id}` | `{"plan_key"}` (любой действующий тариф, в т.ч. скрытый), `{"trial_until":"YYYY-MM-DD"}` / `{"clear_trial":true}`, `{"custom_price_uzs"}` / `{"clear_custom_price":true}`, `{"billing_from":"YYYY-MM-01"}` |
 | GET | `/admin/billing/invoices?network_id=&status=` | счета |
@@ -1290,3 +1290,26 @@ env `REVIEW_AGENT_LOGIN=+998XXXXXXXXX:123456` (SMS не отправляется
 | POST | `/store/supply/payments/{id}/confirm` | | «Получил» |
 | POST | `/store/supply/payments/{id}/dispute` | `{received, comment?}` | «Другая сумма» (`received` < суммы) или «Не получал» (`received: 0`) |
 | GET | `/store/supply/stores/{id}/statement?from=&to=` | | акт сверки агента: `{statement, debt, open[], pending_sum}` |
+
+
+### Подписка агента
+
+У агентов свои тарифы (`plans.audience = 'agent'`, по умолчанию `agent`): магазинам на сайте и в панели они не видны,
+агенту в `GET /store/plan` приходят только они, `POST /store/plan` с тарифом магазинов — 404. Новый агент получает
+`billing_settings.agent_plan` и бесплатный срок `agent_trial_days` (пока он идёт — цена 0, тариф тот же). Счета — как у магазинов.
+У агента не бывает сотрудников: `POST /store/employees` → 409 `agent_no_staff`.
+
+### Магазин: карточка поставщика, оплаты
+
+`GET /store/suppliers/{id}?store_id=` дополнительно отдаёт `pending_sum` (отдали, агент не подтвердил), `counterparty_id`
+(контрагент в «Долгах» — акт сверки `/store/finance/counterparties/{id}/statement`), `agent_name` и `incomes` — последние
+приходы по отгрузкам поставщика (`id`, `number`, `status` draft|posted, `total`, `items_count`, `supply_order_id`, `created_at`).
+Приход принимают как обычный документ: `PATCH /store/inventory/documents/{id}` (количество) и `POST …/post`.
+
+`POST /store/suppliers/payments/{id}/resolve {"amount": 0}` — только если агент ответил «Не получал» (`received = 0`):
+оплата `cancelled`, деньги возвращаются в кассу, долг — обратно.
+
+### Пуши: вид уведомления
+
+Сервер добавляет к данным каждого пуша `kind` (`supply_payment`, `brand_approved`, `supply_order_new`, `supply_income`…),
+если в данных нет своего; приложения открывают по нему нужный экран.

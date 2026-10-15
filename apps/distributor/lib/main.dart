@@ -6,13 +6,15 @@ import 'package:sm_core/sm_core.dart';
 import 'package:sm_store/lock/app_lock.dart';
 import 'package:sm_store/lock/pin_screens.dart';
 import 'package:sm_store/login/password_login.dart' show ChangePasswordScreen;
-import 'package:sm_store/push.dart' show navigatorKey;
+import 'package:sm_store/push.dart' show Push, navigatorKey;
 import 'package:sm_store/start/start_logic.dart' show sellPriceWord;
 import 'package:sm_store/state.dart';
 import 'package:sm_store/ui/theme.dart';
 import 'package:sm_store/ui/widgets.dart';
 
+import 'agent_push.dart';
 import 'auth.dart';
+import 'firebase_options.dart';
 import 'point_setup.dart';
 import 'shell.dart';
 
@@ -31,6 +33,10 @@ Future<void> main() async {
   // Вход тем же логином, что и в панель: токен приложения магазина (/store/*).
   final api = Api(baseUrl: apiUrl, app: 'store');
   await api.init();
+  // Пуши: своё приложение Firebase и свои переходы (оплаты, бренды, заказы).
+  Push.onOpen = openAgentPush;
+  final firebase = AgentFirebaseOptions.currentPlatform;
+  if (firebase != null) await Push.init(options: firebase);
   final lock = AppLock();
   await lock.init();
   if (!api.loggedIn && lock.hasPin) await lock.clear();

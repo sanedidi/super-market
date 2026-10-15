@@ -397,7 +397,7 @@ func TestStoreShowcase(t *testing.T) {
 
 	// Тарифы правит супер-админ: лимит полок «Бизнеса» снят — витрина видит сразу.
 	plans := a.expect(a.do("GET", "/admin/plans", adminTok, nil), 200, "plans").items()
-	if len(plans) != 4 || plans[2]["key"] != "business" || plans[2]["limits"].(map[string]any)["shelves"].(float64) != 2 {
+	if len(plans) != 5 || plans[2]["key"] != "business" || plans[2]["limits"].(map[string]any)["shelves"].(float64) != 2 {
 		t.Fatalf("plans = %v", plans)
 	}
 	p := a.expect(a.do("PATCH", "/admin/plans/business", adminTok, map[string]any{

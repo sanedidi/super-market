@@ -51,7 +51,9 @@ func TestBillingPayoutsReports(t *testing.T) {
 
 	// ---- Тарифы и настройки.
 	plans := a.expect(a.do("GET", "/admin/plans", adminTok, nil), 200, "plans").items()
-	if len(plans) != 4 || plans[0]["key"] != "free" || plans[1]["price_uzs"] != "149000.00" || plans[3]["min_stores"].(float64) != 3 {
+	// Тарифы магазинов, затем отдельный тариф агентов.
+	if len(plans) != 5 || plans[0]["key"] != "free" || plans[1]["price_uzs"] != "149000.00" || plans[3]["min_stores"].(float64) != 3 ||
+		plans[4]["key"] != "agent" || plans[4]["audience"] != "agent" {
 		t.Fatalf("plans = %v", plans)
 	}
 	// Тарифы для сайта — без входа, только действующие и открытые, функции полным списком.

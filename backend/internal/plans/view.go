@@ -60,9 +60,14 @@ func (p Plan) View(ctx context.Context) View {
 	return v
 }
 
-// Views — открытые тарифы карточками.
+// Views — открытые тарифы магазинов карточками.
 func Views(ctx context.Context, q db.Querier) ([]View, error) {
-	list, err := List(ctx, q, true)
+	return ViewsFor(ctx, q, AudienceStore)
+}
+
+// ViewsFor — открытые тарифы аудитории карточками.
+func ViewsFor(ctx context.Context, q db.Querier, audience string) ([]View, error) {
+	list, err := ListFor(ctx, q, audience)
 	if err != nil {
 		return nil, err
 	}
@@ -140,6 +145,7 @@ func ForStore(ctx context.Context, q db.Querier, networkID string, canChange boo
 			out.StoresCount = n
 		}
 	}
-	out.Plans, err = Views(ctx, q)
+	// Агенту — тарифы агентов, магазину — магазинов.
+	out.Plans, err = ViewsFor(ctx, q, out.Chosen.Audience)
 	return out, err
 }

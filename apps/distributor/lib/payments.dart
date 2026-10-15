@@ -20,12 +20,14 @@ String payMethod(Object? m) => switch ('$m') {
 ChipTone payTone(Object? s) => switch ('$s') {
       'confirmed' => ChipTone.green,
       'disputed' => ChipTone.red,
+      'cancelled' => ChipTone.gray,
       _ => ChipTone.amber,
     };
 
 String payStatus(Object? s) => switch ('$s') {
       'confirmed' => tr('Получено', 'Olindi'),
       'disputed' => tr('Расхождение', 'Farq bor'),
+      'cancelled' => tr('Отменена', 'Bekor qilindi'),
       _ => tr('Ждёт вас', 'Sizni kutmoqda'),
     };
 

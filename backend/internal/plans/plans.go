@@ -34,7 +34,9 @@ type Plan struct {
 	IsActive        bool           `json:"is_active"`
 	Recommended     bool           `json:"recommended"`
 	Sort            int            `json:"sort"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+	// Для кого тариф: store — магазины, agent — агенты («SM Агент»).
+	Audience  string    `json:"audience"`
+	UpdatedAt time.Time `json:"updated_at"`
 	// Сколько сетей на этом тарифе (выбран, не пробный).
 	NetworksCount int `json:"networks_count"`
 }
@@ -67,14 +69,14 @@ func (p Plan) Allowed(key string) int {
 func (p Plan) Title(ctx context.Context) string { return i18n.T(ctx, p.Name, p.NameUz) }
 
 const planSelect = `SELECT p.key, p.name, p.name_uz, p.description, p.description_uz, p.price_uzs::text, p.min_stores,
-	p.order_commission::text, p.features, p.limits, p.is_public, p.is_active, p.recommended, p.sort, p.updated_at,
+	p.order_commission::text, p.features, p.limits, p.is_public, p.is_active, p.recommended, p.sort, p.audience, p.updated_at,
 	(SELECT count(*) FROM networks n WHERE n.plan_key = p.key)::int
 	FROM plans p`
 
 func scan(r pgx.CollectableRow) (Plan, error) {
 	var p Plan
 	err := r.Scan(&p.Key, &p.Name, &p.NameUz, &p.Description, &p.DescriptionUz, &p.PriceUZS, &p.MinStores,
-		&p.OrderCommission, &p.Features, &p.Limits, &p.IsPublic, &p.IsActive, &p.Recommended, &p.Sort, &p.UpdatedAt,
+		&p.OrderCommission, &p.Features, &p.Limits, &p.IsPublic, &p.IsActive, &p.Recommended, &p.Sort, &p.Audience, &p.UpdatedAt,
 		&p.NetworksCount)
 	if p.Features == nil {
 		p.Features = []string{}
@@ -85,14 +87,58 @@ func scan(r pgx.CollectableRow) (Plan, error) {
 	return p, err
 }
 
+// Аудитории тарифов.
+const (
+	AudienceStore = "store"
+	AudienceAgent = "agent"
+)
+
+// AudienceOf — чьи тарифы может выбрать сеть такого вида.
+func AudienceOf(networkKind string) string {
+	if networkKind == "distributor" {
+		return AudienceAgent
+	}
+	return AudienceStore
+}
+
 // List — тарифы по порядку; public — только действующие и открытые
-// (сайт и панель магазина).
+// тарифы магазинов (сайт и панель магазина).
 func List(ctx context.Context, q db.Querier, public bool) ([]Plan, error) {
-	rows, err := q.Query(ctx, planSelect+` WHERE NOT $1 OR (p.is_active AND p.is_public) ORDER BY p.sort, p.key`, public)
+	if public {
+		return ListFor(ctx, q, AudienceStore)
+	}
+	rows, err := q.Query(ctx, planSelect+` ORDER BY p.audience DESC, p.sort, p.key`)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, scan)
+}
+
+// ListFor — действующие открытые тарифы аудитории.
+func ListFor(ctx context.Context, q db.Querier, audience string) ([]Plan, error) {
+	rows, err := q.Query(ctx, planSelect+` WHERE p.is_active AND p.is_public AND p.audience = $1 ORDER BY p.sort, p.key`, audience)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, scan)
+}
+
+// networkAudience — аудитория тарифов сети.
+func networkAudience(ctx context.Context, q db.Querier, networkID string) (string, error) {
+	var kind string
+	if err := q.QueryRow(ctx, `SELECT kind FROM networks WHERE id = $1`, networkID).Scan(&kind); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", apperr.NotFound("сеть не найдена").Uz("tarmoq topilmadi")
+		}
+		return "", err
+	}
+	return AudienceOf(kind), nil
+}
+
+// wrongAudience — тариф не для этой сети (агенту — тарифы магазинов и наоборот).
+func wrongAudience() error {
+	return apperr.Validation("plan_key: тариф для другого вида сетей (магазины / агенты)").
+		Uz("plan_key: tarif boshqa turdagi tarmoqlar uchun (doʻkonlar / agentlar)")
 }
 
 // Get — тариф по ключу.
@@ -127,6 +173,8 @@ type Input struct {
 	IsActive        *bool            `json:"is_active"`
 	Recommended     *bool            `json:"recommended"`
 	Sort            *int             `json:"sort"`
+	// Только при создании: store (по умолчанию) или agent.
+	Audience *string `json:"audience"`
 }
 
 func trimPtr(p *string) *string {
@@ -203,8 +251,15 @@ func Create(ctx context.Context, q db.Querier, in Input) (Plan, error) {
 	if _, _, err := in.validate(); err != nil {
 		return Plan{}, err
 	}
-	_, err := q.Exec(ctx, `INSERT INTO plans (key, name, sort) VALUES ($1, $2, COALESCE((SELECT max(sort) + 1 FROM plans), 0))`,
-		key, strings.TrimSpace(*in.Name))
+	audience := AudienceStore
+	if in.Audience != nil && *in.Audience != "" {
+		audience = *in.Audience
+	}
+	if audience != AudienceStore && audience != AudienceAgent {
+		return Plan{}, apperr.Validation("audience: store или agent").Uz("audience: store yoki agent")
+	}
+	_, err := q.Exec(ctx, `INSERT INTO plans (key, name, sort, audience) VALUES ($1, $2, COALESCE((SELECT max(sort) + 1 FROM plans), 0), $3)`,
+		key, strings.TrimSpace(*in.Name), audience)
 	if db.IsUniqueViolation(err, "plans_pkey") {
 		return Plan{}, apperr.Conflict("plan_exists", "тариф с таким ключом уже есть").Uz("bunday kalitli tarif allaqachon bor")
 	}
@@ -239,16 +294,20 @@ func Update(ctx context.Context, q db.Querier, key string, in Input) (Plan, erro
 		return Plan{}, err
 	}
 	if in.IsActive != nil && !*in.IsActive && cur.IsActive {
-		var trial bool
-		if err := q.QueryRow(ctx, `SELECT trial_plan = $1 FROM billing_settings WHERE id = 1`, key).Scan(&trial); err != nil {
+		var trial, agent bool
+		if err := q.QueryRow(ctx, `SELECT trial_plan = $1, agent_plan = $1 FROM billing_settings WHERE id = 1`, key).Scan(&trial, &agent); err != nil {
 			return Plan{}, err
 		}
 		if trial {
 			return Plan{}, apperr.Conflict("trial_plan", "это тариф пробного периода — сначала выберите другой в настройках биллинга").Uz("bu sinov davri tarifi — avval biling sozlamalarida boshqasini tanlang")
 		}
+		if agent {
+			return Plan{}, apperr.Conflict("agent_plan", "это тариф новых агентов — сначала выберите другой в настройках биллинга").Uz("bu yangi agentlar tarifi — avval biling sozlamalarida boshqasini tanlang")
+		}
 	}
 	if in.Recommended != nil && *in.Recommended {
-		if _, err := q.Exec(ctx, `UPDATE plans SET recommended = false WHERE key <> $1`, key); err != nil {
+		// «Рекомендуем» — один на аудиторию (магазины и агенты отдельно).
+		if _, err := q.Exec(ctx, `UPDATE plans SET recommended = false WHERE key <> $1 AND audience = $2`, key, cur.Audience); err != nil {
 			return Plan{}, err
 		}
 	}
@@ -282,7 +341,7 @@ func Delete(ctx context.Context, q db.Querier, key string) error {
 		return err
 	}
 	var trial bool
-	if err := q.QueryRow(ctx, `SELECT trial_plan = $1 FROM billing_settings WHERE id = 1`, key).Scan(&trial); err != nil {
+	if err := q.QueryRow(ctx, `SELECT trial_plan = $1 OR agent_plan = $1 FROM billing_settings WHERE id = 1`, key).Scan(&trial); err != nil {
 		return err
 	}
 	if p.NetworksCount > 0 || trial {
@@ -361,10 +420,18 @@ func isUUID(s string) bool { return httpx.IsUUID(s) }
 // StartTrial начинает пробный период новой сети, если он включён и
 // пробный тариф выше выбранного.
 func StartTrial(ctx context.Context, q db.Querier, networkID string) error {
+	// Агент: бесплатный срок на своём тарифе (дни — «Пробный период агентов»).
 	_, err := q.Exec(ctx, `
+		UPDATE networks n SET plan_trial_until = (now() AT TIME ZONE 'Asia/Tashkent')::date + bs.agent_trial_days - 1
+		FROM billing_settings bs
+		WHERE n.id = $1 AND n.kind = 'distributor' AND n.plan_trial_until IS NULL AND bs.agent_trial_days > 0`, networkID)
+	if err != nil {
+		return err
+	}
+	_, err = q.Exec(ctx, `
 		UPDATE networks n SET plan_trial_until = (now() AT TIME ZONE 'Asia/Tashkent')::date + bs.trial_days - 1
 		FROM billing_settings bs
-		WHERE n.id = $1 AND n.plan_trial_until IS NULL AND bs.trial_days > 0
+		WHERE n.id = $1 AND n.kind <> 'distributor' AND n.plan_trial_until IS NULL AND bs.trial_days > 0
 		  AND (SELECT sort FROM plans WHERE key = bs.trial_plan) > (SELECT sort FROM plans WHERE key = n.plan_key)`, networkID)
 	return err
 }
@@ -378,6 +445,11 @@ func Choose(ctx context.Context, q db.Querier, networkID, key string) (Network, 
 		return Network{}, err
 	}
 	if !p.IsActive || !p.IsPublic {
+		return Network{}, apperr.NotFound("тариф не найден").Uz("tarif topilmadi")
+	}
+	if aud, err := networkAudience(ctx, q, networkID); err != nil {
+		return Network{}, err
+	} else if aud != p.Audience {
 		return Network{}, apperr.NotFound("тариф не найден").Uz("tarif topilmadi")
 	}
 	var stores int
@@ -416,6 +488,13 @@ func Assign(ctx context.Context, q db.Querier, networkID string, in AssignInput)
 		if !p.IsActive {
 			return apperr.Validation("plan_key: тариф в архиве").Uz("plan_key: tarif arxivda")
 		}
+		aud, err := networkAudience(ctx, q, networkID)
+		if err != nil {
+			return err
+		}
+		if aud != p.Audience {
+			return wrongAudience()
+		}
 	}
 	var until *time.Time
 	if in.TrialUntil != nil {
@@ -440,13 +519,16 @@ func Assign(ctx context.Context, q db.Querier, networkID string, in AssignInput)
 
 // Cheapest — первый по порядку открытый тариф, где есть функция или
 // лимит больше used; подсказка «доступно на тарифе …».
-func Cheapest(ctx context.Context, q db.Querier, feature, limit string, used int) (key, name string) {
+func Cheapest(ctx context.Context, q db.Querier, audience, feature, limit string, used int) (key, name string) {
+	if audience == "" {
+		audience = AudienceStore
+	}
 	_ = q.QueryRow(ctx, `
 		SELECT key, loc(name, name_uz) FROM plans
-		WHERE is_active AND is_public
+		WHERE is_active AND is_public AND audience = $4
 		  AND ($1 = '' OR $1 = ANY (features))
 		  AND ($2 = '' OR NOT limits ? $2 OR (limits ->> $2)::int > $3)
-		ORDER BY sort, key LIMIT 1`, feature, limit, used).Scan(&key, &name)
+		ORDER BY sort, key LIMIT 1`, feature, limit, used, audience).Scan(&key, &name)
 	return key, name
 }
 
@@ -466,7 +548,7 @@ func FeatureError(ctx context.Context, q db.Querier, p Plan, feature string) err
 		return nil
 	}
 	f, _ := featureInfo(feature)
-	needKey, needName := Cheapest(ctx, q, feature, "", 0)
+	needKey, needName := Cheapest(ctx, q, p.Audience, feature, "", 0)
 	ru := fmt.Sprintf("«%s» нет на тарифе «%s»", f.Name.RU, p.Name)
 	uz := fmt.Sprintf("«%s» «%s» tarifida yoʻq", f.Name.UZ, orRU(p.NameUz, p.Name))
 	if needName != "" {
@@ -485,7 +567,7 @@ func FeatureError(ctx context.Context, q db.Querier, p Plan, feature string) err
 func LimitError(ctx context.Context, q db.Querier, p Plan, key string, used int) error {
 	l, _ := limitInfo(key)
 	limit := p.Allowed(key)
-	needKey, needName := Cheapest(ctx, q, "", key, used)
+	needKey, needName := Cheapest(ctx, q, p.Audience, "", key, used)
 	ru := fmt.Sprintf("лимит тарифа «%s»: %s — не больше %d", p.Name, strings.ToLower(l.Name.RU), limit)
 	uz := fmt.Sprintf("«%s» tarifi limiti: %s — %d tadan koʻp emas", orRU(p.NameUz, p.Name), strings.ToLower(l.Name.UZ), limit)
 	return apperr.Conflict("tariff_limit", ru).Uz(uz).WithDetails(map[string]any{

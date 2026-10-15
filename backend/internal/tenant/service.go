@@ -98,11 +98,19 @@ func (s *Service) CreateNetwork(ctx context.Context, in CreateNetworkInput) (Net
 	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		var id string
 		planKey := strings.TrimSpace(in.PlanKey)
+		if planKey == "" && in.Kind == "distributor" {
+			// Агенту — тариф новых агентов из настроек биллинга.
+			if err := tx.QueryRow(ctx, `SELECT agent_plan FROM billing_settings WHERE id = 1`).Scan(&planKey); err != nil {
+				return err
+			}
+		}
 		if planKey == "" {
-			planKey = map[string]string{"single": "free", "chain": "network", "distributor": "business"}[in.Kind]
+			planKey = map[string]string{"single": "free", "chain": "network"}[in.Kind]
 		}
 		if p, err := plans.Get(ctx, tx, planKey); err != nil || !p.IsActive {
 			return apperr.Validation("plan_key: тариф не найден").Uz("plan_key: tarif topilmadi")
+		} else if p.Audience != plans.AudienceOf(in.Kind) {
+			return apperr.Validation("plan_key: тариф для другого вида сетей (магазины / агенты)").Uz("plan_key: tarif boshqa turdagi tarmoqlar uchun (doʻkonlar / agentlar)")
 		}
 		if err := tx.QueryRow(ctx, `INSERT INTO networks (name, kind, plan_key) VALUES ($1, $2, $3) RETURNING id`,
 			name, in.Kind, planKey).Scan(&id); err != nil {

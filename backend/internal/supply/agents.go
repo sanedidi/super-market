@@ -117,7 +117,11 @@ func (s *Service) RegisterAgent(ctx context.Context, ph string, in RegisterInput
 		if exists {
 			return identity.ErrAgentRegistered()
 		}
-		const planKey = "business"
+		// Тариф новых агентов — в настройках биллинга (супер-админ).
+		var planKey string
+		if err := tx.QueryRow(ctx, `SELECT agent_plan FROM billing_settings WHERE id = 1`).Scan(&planKey); err != nil {
+			return err
+		}
 		if p, err := plans.Get(ctx, tx, planKey); err != nil || !p.IsActive {
 			return apperr.Conflict("plan_missing", "тариф для агентов не найден — обратитесь в поддержку").Uz("agentlar uchun tarif topilmadi — qoʻllab-quvvatlash xizmatiga murojaat qiling")
 		}

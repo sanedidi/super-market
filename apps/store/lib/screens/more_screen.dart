@@ -15,6 +15,7 @@ import '../main.dart';
 import '../returns/return_screen.dart';
 import '../staff/staff_screen.dart';
 import '../summary/summary_screen.dart';
+import '../suppliers/suppliers_screen.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -31,6 +32,8 @@ class MoreScreen extends StatelessWidget {
       if (st.can('reports.view')) (Icons.insights_rounded, tr('Итоги дня', 'Kun yakunlari'), tr('Выручка, прибыль, что требует внимания', 'Tushum, foyda, eʼtibor talab qiladigan ishlar'), const SummaryScreen()),
       if (st.can('reports.view') || st.can('finance.manage'))
         (Icons.point_of_sale_rounded, tr('Контроль кассиров', 'Kassirlar nazorati'), tr('Недостачи, возвраты, скидки', 'Kamomadlar, qaytarishlar, chegirmalar'), const CashiersScreen()),
+      if (st.can('inventory.manage'))
+        (Icons.handshake_outlined, tr('Поставщики', 'Yetkazib beruvchilar'), tr('Агенты: подключить, заказать, оплатить', 'Agentlar: ulash, buyurtma, toʻlov'), const SuppliersScreen()),
       if (st.can('counterparties.manage') || st.can('inventory.manage') || st.can('finance.manage'))
         (Icons.local_shipping_outlined, tr('Долги поставщикам', 'Yetkazib beruvchilarga qarzlar'), tr('Кому должны, акт сверки, оплата', 'Kimga qarzmiz, solishtirma dalolatnoma, toʻlov'), const DebtsScreen()),
       if (st.can('debts.manage'))

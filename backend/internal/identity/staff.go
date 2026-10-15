@@ -241,6 +241,11 @@ func (s *Service) CreateEmployee(ctx context.Context, p *Principal, in EmployeeI
 	if err := p.Require(PermStaffManage); err != nil {
 		return Employee{}, err
 	}
+	// У агента («SM Агент») сотрудников не бывает: работает сам владелец.
+	if p.NetworkKind == "distributor" {
+		return Employee{}, apperr.Conflict("agent_no_staff", "у агента не бывает сотрудников").
+			Uz("agentda xodimlar boʻlmaydi")
+	}
 	if in.Phone == nil {
 		return Employee{}, apperr.Validation("phone: обязательное поле").Uz("phone: majburiy maydon")
 	}

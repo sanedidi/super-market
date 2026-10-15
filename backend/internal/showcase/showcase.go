@@ -138,7 +138,7 @@ var featureKeys = map[string]string{
 // Locked — функции витрины нет на тарифе: ошибка tariff_limit с
 // подсказкой, на каком тарифе она есть («своя витрина — на тарифе «Бизнес»»).
 func Locked(ctx context.Context, q db.Querier, plan Plan, feature string, what i18n.Text) error {
-	key, name := plans.Cheapest(ctx, q, featureKeys[feature], "", 0)
+	key, name := plans.Cheapest(ctx, q, plans.AudienceStore, featureKeys[feature], "", 0)
 	ru, uz := what.RU+" недоступно на тарифе «"+plan.Name+"»", what.UZ+" «"+plan.Name+"» tarifida mavjud emas"
 	if name != "" {
 		ru, uz = what.RU+" — на тарифе «"+name+"»", what.UZ+" — «"+name+"» tarifida"
@@ -151,7 +151,7 @@ func Locked(ctx context.Context, q db.Querier, plan Plan, feature string, what i
 
 // LimitNeed — Limit с подсказкой, на каком тарифе лимит больше.
 func LimitNeed(ctx context.Context, q db.Querier, feature string, plan Plan, limit, used int, text i18n.Text) error {
-	key, name := plans.Cheapest(ctx, q, "", feature, used)
+	key, name := plans.Cheapest(ctx, q, plans.AudienceStore, "", feature, used)
 	err := Limit(feature, plan, limit, used, text).(*apperr.Error)
 	err.Details["need_plan"] = key
 	err.Details["need_plan_name"] = name

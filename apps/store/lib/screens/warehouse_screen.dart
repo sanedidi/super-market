@@ -7,6 +7,8 @@ import '../receipt/receipt_logic.dart';
 import '../receipt/review_screen.dart';
 import '../returns/return_screen.dart';
 import '../state.dart';
+import '../suppliers/reorder_screen.dart';
+import '../suppliers/suppliers_screen.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 
@@ -107,6 +109,32 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
               const Icon(Icons.chevron_right_rounded, color: AppColors.white),
             ]),
           ),
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(
+              child: AppCard(
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ReorderScreen())),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const IconBox(Icons.playlist_add_check_rounded, bg: AppColors.primarySoft, fg: AppColors.primary),
+                  const SizedBox(height: 10),
+                  Text(tr('Что заказать', 'Nimani buyurtma qilish'), style: AppText.bodyStrong),
+                  Text(tr('Закончилось или скоро', 'Tugadi yoki tez orada'), style: AppText.small),
+                ]),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: AppCard(
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SuppliersScreen())),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const IconBox(Icons.handshake_rounded, bg: AppColors.successSoft, fg: AppColors.successInk),
+                  const SizedBox(height: 10),
+                  Text(tr('Поставщики', 'Yetkazib beruvchilar'), style: AppText.bodyStrong),
+                  Text(tr('Заказ и оплата агентам', 'Agentlarga buyurtma va toʻlov'), style: AppText.small),
+                ]),
+              ),
+            ),
+          ]),
           const SizedBox(height: 10),
           AppCard(
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SupplierReturnsScreen())),

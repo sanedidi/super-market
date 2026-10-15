@@ -170,7 +170,7 @@ func (s *Service) AgentPayments(ctx context.Context, p *identity.Principal, f Pa
 	}
 	rows, err := s.pool.Query(ctx, paymentSelect+`
 		WHERE sp.distributor_id = $1
-		  AND ($2 = '' OR sp.status = $2 OR ($2 = 'open' AND sp.status <> 'confirmed'))
+		  AND ($2 = '' OR sp.status = $2 OR ($2 = 'open' AND sp.status IN ('pending', 'disputed')))
 		  AND ($3 = '' OR sp.store_id::text = $3)
 		ORDER BY (sp.status = 'pending') DESC, sp.created_at DESC LIMIT $4 OFFSET $5`,
 		p.NetworkID, f.Status, f.StoreID, f.Page.Limit, f.Page.Offset)
@@ -396,7 +396,9 @@ func (s *Service) ResolvePayment(ctx context.Context, p *identity.Principal, id 
 		}
 		next := money.D(string(in.Amount))
 		cur := money.D(amount)
-		if next.Sign() <= 0 || next.Cmp(cur) > 0 {
+		// «Не получал» и магазин согласен: оплаты не было — деньги в кассу, долг обратно.
+		cancel := next.Sign() == 0 && status == PayDisputed && received != nil && money.D(*received).Sign() == 0
+		if !cancel && (next.Sign() <= 0 || next.Cmp(cur) > 0) {
 			return apperr.Validation(fmt.Sprintf("amount: от 1 до %s сум — чтобы доплатить, создайте новую оплату", money.Group(amount))).
 				Uz(fmt.Sprintf("amount: 1 dan %s soʻmgacha — qoʻshimcha toʻlash uchun yangi toʻlov yarating", money.Group(amount)))
 		}
@@ -415,6 +417,10 @@ func (s *Service) ResolvePayment(ctx context.Context, p *identity.Principal, id 
 			if err := finance.AddCounterparty(ctx, tx, p.NetworkID, cp, delta.Money(), finance.DocSupplyPaymentFix, id); err != nil {
 				return err
 			}
+		}
+		if cancel {
+			_, err := tx.Exec(ctx, `UPDATE supply_payments SET status = 'cancelled', answered_at = COALESCE(answered_at, now()) WHERE id = $1`, id)
+			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE supply_payments SET amount = $2::numeric WHERE id = $1`, id, next.Money()); err != nil {
 			return err
@@ -493,7 +499,7 @@ func (s *Service) AgentStoreStatement(ctx context.Context, p *identity.Principal
 		return out, err
 	}
 	err = s.pool.QueryRow(ctx, `SELECT COALESCE(sum(amount), 0)::numeric(18,2)::text FROM supply_payments
-		WHERE distributor_id = $1 AND store_id = $2 AND status <> 'confirmed'`, p.NetworkID, storeID).Scan(&out.PendingSum)
+		WHERE distributor_id = $1 AND store_id = $2 AND status IN ('pending', 'disputed')`, p.NetworkID, storeID).Scan(&out.PendingSum)
 	return out, err
 }
 

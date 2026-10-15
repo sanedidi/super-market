@@ -170,6 +170,12 @@ func TestSupplyFlow(t *testing.T) {
 		t.Fatalf("store incomes = %v", incs)
 	}
 	storeInc := incs[0]["id"].(string)
+	// Карточка поставщика: приход-черновик, контрагент для акта сверки, имя агента.
+	card := a.expect(a.do("GET", "/store/suppliers/"+distID+"?store_id="+store1, storeTok, nil), 200, "supplier card")
+	if inc := card.Body["incomes"].([]any); len(inc) != 1 || inc[0].(map[string]any)["id"] != storeInc || inc[0].(map[string]any)["status"] != "draft" ||
+		card.str("counterparty_id") == "" || card.str("agent_name") == "" || card.str("pending_sum") != "0.00" {
+		t.Fatalf("supplier card = %v", card.Body)
+	}
 	a.expect(a.do("PATCH", "/store/inventory/documents/"+storeInc, storeTok, map[string]any{
 		"items": []map[string]any{{"product_id": cola, "qty": 19, "price": 11200}},
 	}), 200, "store edits income")
