@@ -43,6 +43,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/setup"
 	"github.com/sanedidi/super-market/backend/internal/start"
 	"github.com/sanedidi/super-market/backend/internal/summary"
+	"github.com/sanedidi/super-market/backend/internal/supply"
 	"github.com/sanedidi/super-market/backend/internal/tenant"
 	"github.com/sanedidi/super-market/backend/internal/variants"
 )
@@ -104,6 +105,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 	debtSvc := debts.NewService(pool, tg, cfg.DevOTPCode, cfg.JWTSecret, sales.CheckShiftTime, log)
 	fcm := PushSender(cfg, log)
 	invSvc := inventory.NewService(pool)
+	supplySvc := supply.NewService(pool, invSvc, log)
 	mediaSvc := MediaService(cfg)
 	aiSvc := ai.NewService(pool, cfg.JWTSecret)
 	aiPhoto := ai.NewPhotoService(aiSvc, mediaSvc, log)
@@ -144,6 +146,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		variants.NewModule(varSvc, auth, log),
 		finance.NewModule(finance.NewService(pool), auth, log),
 		inventory.NewModule(invSvc, auth, log),
+		supply.NewModule(supplySvc, auth, log),
 		sales.NewModule(salesSvc, auth, log),
 		pos.NewModule(pos.NewService(pool, salesSvc).WithDebts(debtSvc), auth, log),
 		debts.NewModule(debtSvc, auth, log),

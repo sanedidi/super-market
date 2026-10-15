@@ -3,6 +3,11 @@
 
 import 'package:sm_core/sm_core.dart';
 
+/// Как в «Начале работы» называется цена продажи. «SM Дистрибьютор»
+/// использует те же экраны и ставит сюда «Отпускная цена» — по ней
+/// магазины видят его товар.
+String Function() sellPriceWord = () => tr('Цена продажи', 'Sotish narxi');
+
 /// Склонение: 1 товар, 2 товара, 5 товаров.
 String plural(int n, String one, String few, String many) {
   final m10 = n % 10;

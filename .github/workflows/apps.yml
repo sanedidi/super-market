@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       builds:
-        description: "Собрать APK (касса, курьер, магазин) и кассу для Windows"
+        description: "Собрать APK (касса, курьер, магазин, дистрибьютор) и кассу для Windows"
         type: boolean
         default: false
 
@@ -37,6 +37,7 @@ jobs:
       store: ${{ github.event_name == 'workflow_dispatch' || steps.f.outputs.store == 'true' }}
       courier: ${{ github.event_name == 'workflow_dispatch' || steps.f.outputs.courier == 'true' }}
       pos: ${{ github.event_name == 'workflow_dispatch' || steps.f.outputs.pos == 'true' }}
+      distributor: ${{ github.event_name == 'workflow_dispatch' || steps.f.outputs.distributor == 'true' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -51,10 +52,12 @@ jobs:
             store: [*shared, "apps/store/**"]
             courier: [*shared, "apps/courier/**"]
             pos: [*shared, "apps/pos/**"]
+            # Дистрибьютор берёт экраны «Начала работы» и склада из apps/store.
+            distributor: [*shared, "apps/store/**", "apps/distributor/**"]
 
   analyze:
     needs: changes
-    if: needs.changes.outputs.client == 'true' || needs.changes.outputs.store == 'true' || needs.changes.outputs.courier == 'true' || needs.changes.outputs.pos == 'true'
+    if: needs.changes.outputs.client == 'true' || needs.changes.outputs.store == 'true' || needs.changes.outputs.courier == 'true' || needs.changes.outputs.pos == 'true' || needs.changes.outputs.distributor == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -99,6 +102,13 @@ jobs:
       - name: POS
         if: ${{ !cancelled() && needs.changes.outputs.pos == 'true' }}
         working-directory: apps/pos
+        run: |
+          flutter pub get
+          flutter analyze --no-fatal-infos
+          flutter test
+      - name: Distributor
+        if: ${{ !cancelled() && needs.changes.outputs.distributor == 'true' }}
+        working-directory: apps/distributor
         run: |
           flutter pub get
           flutter analyze --no-fatal-infos
@@ -217,3 +227,32 @@ jobs:
         with:
           name: store-android
           path: apps/store/build/app/outputs/flutter-apk/app-release.apk
+
+  # Приложение дистрибьютора для Android: APK — в артефакте distributor-android.
+  distributor-android:
+    needs: analyze
+    if: github.event_name == 'workflow_dispatch' && inputs.builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Build
+        working-directory: apps/distributor
+        run: |
+          flutter create --platforms=android --org uz.supermarket --project-name sm_distributor .
+          rm -f test/widget_test.dart
+          bash branding/apply.sh
+          flutter pub get
+          flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributor-android
+          path: apps/distributor/build/app/outputs/flutter-apk/app-release.apk

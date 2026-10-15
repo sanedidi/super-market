@@ -87,8 +87,8 @@ func (s *Service) CreateNetwork(ctx context.Context, in CreateNetworkInput) (Net
 	if name == "" {
 		return Network{}, apperr.Validation("name: обязательное поле").Uz("name: majburiy maydon")
 	}
-	if in.Kind != "chain" && in.Kind != "single" {
-		return Network{}, apperr.Validation("kind: ожидается chain или single").Uz("kind: chain yoki single boʻlishi kerak")
+	if in.Kind != "chain" && in.Kind != "single" && in.Kind != "distributor" {
+		return Network{}, apperr.Validation("kind: ожидается chain, single или distributor").Uz("kind: chain, single yoki distributor boʻlishi kerak")
 	}
 	login, hash, err := identity.PrepareOwnerLogin(identity.LoginInput{Login: in.OwnerLogin, Password: in.OwnerPassword})
 	if err != nil {
@@ -99,7 +99,7 @@ func (s *Service) CreateNetwork(ctx context.Context, in CreateNetworkInput) (Net
 		var id string
 		planKey := strings.TrimSpace(in.PlanKey)
 		if planKey == "" {
-			planKey = map[string]string{"single": "free", "chain": "network"}[in.Kind]
+			planKey = map[string]string{"single": "free", "chain": "network", "distributor": "business"}[in.Kind]
 		}
 		if p, err := plans.Get(ctx, tx, planKey); err != nil || !p.IsActive {
 			return apperr.Validation("plan_key: тариф не найден").Uz("plan_key: tarif topilmadi")
@@ -349,7 +349,8 @@ func (s *Service) CreateStore(ctx context.Context, p *identity.Principal, in Sto
 		if err := tx.QueryRow(ctx, `SELECT kind FROM networks WHERE id = $1 FOR UPDATE`, p.NetworkID).Scan(&kind); err != nil {
 			return err
 		}
-		if kind == "single" {
+		// У дистрибьютора, как у одиночного магазина, одна точка (его склад).
+		if kind == "single" || kind == "distributor" {
 			var n int
 			if err := tx.QueryRow(ctx, `SELECT count(*) FROM stores WHERE network_id = $1`, p.NetworkID).Scan(&n); err != nil {
 				return err

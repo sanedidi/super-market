@@ -185,7 +185,7 @@ func (s *Service) clientStore(ctx context.Context, q db.Querier, storeID string,
 		FROM stores s
 		JOIN networks n ON n.id = s.network_id
 		JOIN price_types pt ON pt.network_id = s.network_id AND pt.is_default
-		WHERE s.id = $1 AND (s.accepts_online OR NOT $2) AND s.status = 'active' AND n.status = 'active'
+		WHERE s.id = $1 AND (s.accepts_online OR NOT $2) AND s.status = 'active' AND n.status = 'active' AND n.kind <> 'distributor'
 		  AND s.default_warehouse_id IS NOT NULL
 		  AND `+delivery.ActiveSubscriptionSQL, storeID, online).
 		Scan(&st.NetworkID, &st.WarehouseID, &st.PriceTypeID, &st.Name, &st.AcceptsOnline)

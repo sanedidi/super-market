@@ -28,6 +28,8 @@ const (
 	TypeWriteOff       = "write_off"
 	TypePosting        = "posting"
 	TypeInventory      = "inventory"
+	// TypeShipment — расход дистрибьютора магазину (отгрузка по отпускным ценам).
+	TypeShipment = "shipment"
 )
 
 var typeTitles = map[string]i18n.Text{
@@ -37,15 +39,30 @@ var typeTitles = map[string]i18n.Text{
 	TypeWriteOff:       {RU: "Списание", UZ: "Hisobdan chiqarish"},
 	TypePosting:        {RU: "Оприходование", UZ: "Kirim qilish"},
 	TypeInventory:      {RU: "Инвентаризация", UZ: "Inventarizatsiya"},
+	TypeShipment:       {RU: "Расход", UZ: "Chiqim"},
 }
 
 // У каких документов в строках есть цена.
 func hasPrice(t string) bool {
-	return t == TypeIncome || t == TypeSupplierReturn || t == TypePosting
+	return t == TypeIncome || t == TypeSupplierReturn || t == TypePosting || t == TypeShipment
 }
 
 type Service struct {
 	pool *pgxpool.Pool
+	// Shipments — правила расхода дистрибьютора (пакет supply): проверка
+	// магазина и контрагента при создании и что сделать после проведения
+	// (приход у магазина, статус заказа). nil — расход недоступен.
+	Shipments ShipmentHooks
+}
+
+// ShipmentHooks — то, что знает о связях магазин ↔ дистрибьютор пакет supply.
+type ShipmentHooks interface {
+	// Counterparty — контрагент магазина у дистрибьютора; ошибка, если связи нет.
+	Counterparty(ctx context.Context, tx pgx.Tx, p *identity.Principal, storeID string) (string, error)
+	// AfterPost — расход проведён: приход у магазина, статус заказа.
+	AfterPost(ctx context.Context, tx pgx.Tx, p *identity.Principal, d Document) error
+	// AfterIncome — магазин провёл приход, созданный по расходу.
+	AfterIncome(ctx context.Context, tx pgx.Tx, p *identity.Principal, d Document) error
 }
 
 func NewService(pool *pgxpool.Pool) *Service { return &Service{pool: pool} }
@@ -61,36 +78,47 @@ type Item struct {
 }
 
 type Document struct {
-	ID               string     `json:"id"`
-	Type             string     `json:"type"`
-	TypeTitle        string     `json:"type_title"`
-	Number           int64      `json:"number"`
-	Status           string     `json:"status"`
-	WarehouseID      string     `json:"warehouse_id"`
-	WarehouseName    string     `json:"warehouse_name"`
-	StoreID          string     `json:"store_id"`
-	ToWarehouseID    *string    `json:"to_warehouse_id"`
-	ToWarehouseName  *string    `json:"to_warehouse_name"`
-	CounterpartyID   *string    `json:"counterparty_id"`
-	CounterpartyName *string    `json:"counterparty_name"`
-	Currency         string     `json:"currency"`
-	Rate             *string    `json:"rate"`
-	Reason           string     `json:"reason"`
-	Note             string     `json:"note"`
-	Total            string     `json:"total"`
-	CreatedBy        string     `json:"created_by"`
-	PostedAt         *time.Time `json:"posted_at"`
-	CreatedAt        time.Time  `json:"created_at"`
-	ItemsCount       int        `json:"items_count"`
-	Items            []Item     `json:"items,omitempty"`
+	ID               string  `json:"id"`
+	Type             string  `json:"type"`
+	TypeTitle        string  `json:"type_title"`
+	Number           int64   `json:"number"`
+	Status           string  `json:"status"`
+	WarehouseID      string  `json:"warehouse_id"`
+	WarehouseName    string  `json:"warehouse_name"`
+	StoreID          string  `json:"store_id"`
+	ToWarehouseID    *string `json:"to_warehouse_id"`
+	ToWarehouseName  *string `json:"to_warehouse_name"`
+	CounterpartyID   *string `json:"counterparty_id"`
+	CounterpartyName *string `json:"counterparty_name"`
+	// Расход: магазин-получатель и заказ, по которому отгружено.
+	ToStoreID     *string `json:"to_store_id"`
+	ToStoreName   *string `json:"to_store_name"`
+	SupplyOrderID *string `json:"supply_order_id"`
+	// Приход магазина, созданный по расходу дистрибьютора.
+	SourceShipmentID *string `json:"source_shipment_id"`
+	// Расход: магазин провёл приход (когда и расхождение в штуках).
+	ReceivedAt   *time.Time `json:"received_at"`
+	ReceivedDiff *string    `json:"received_diff"`
+	Currency     string     `json:"currency"`
+	Rate         *string    `json:"rate"`
+	Reason       string     `json:"reason"`
+	Note         string     `json:"note"`
+	Total        string     `json:"total"`
+	CreatedBy    string     `json:"created_by"`
+	PostedAt     *time.Time `json:"posted_at"`
+	CreatedAt    time.Time  `json:"created_at"`
+	ItemsCount   int        `json:"items_count"`
+	Items        []Item     `json:"items,omitempty"`
 }
 
 const docSelect = `
 	SELECT d.id, d.type, d.number, d.status, d.warehouse_id, w.name, w.store_id, d.to_warehouse_id, tw.name,
 	       d.counterparty_id, c.name, d.currency, d.rate::text, d.reason, d.note, CASE WHEN d.status = 'draft' THEN COALESCE((SELECT sum(i.qty * i.price) FROM stock_document_items i WHERE i.document_id = d.id), 0)::numeric(18,2) ELSE d.total END::text,
 	       e.full_name, d.posted_at, d.created_at,
-	       (SELECT count(*) FROM stock_document_items i WHERE i.document_id = d.id)::int
+	       (SELECT count(*) FROM stock_document_items i WHERE i.document_id = d.id)::int,
+	       d.to_store_id, ts.name, d.supply_order_id, d.source_shipment_id, d.received_at, d.received_diff::text
 	FROM stock_documents d
+	LEFT JOIN stores ts     ON ts.id = d.to_store_id
 	JOIN warehouses w       ON w.id = d.warehouse_id
 	LEFT JOIN warehouses tw ON tw.id = d.to_warehouse_id
 	LEFT JOIN counterparties c ON c.id = d.counterparty_id
@@ -100,7 +128,8 @@ func scanDoc(row pgx.CollectableRow) (Document, error) {
 	var d Document
 	err := row.Scan(&d.ID, &d.Type, &d.Number, &d.Status, &d.WarehouseID, &d.WarehouseName, &d.StoreID,
 		&d.ToWarehouseID, &d.ToWarehouseName, &d.CounterpartyID, &d.CounterpartyName, &d.Currency, &d.Rate,
-		&d.Reason, &d.Note, &d.Total, &d.CreatedBy, &d.PostedAt, &d.CreatedAt, &d.ItemsCount)
+		&d.Reason, &d.Note, &d.Total, &d.CreatedBy, &d.PostedAt, &d.CreatedAt, &d.ItemsCount,
+		&d.ToStoreID, &d.ToStoreName, &d.SupplyOrderID, &d.SourceShipmentID, &d.ReceivedAt, &d.ReceivedDiff)
 	d.TypeTitle = typeTitles[d.Type].RU
 	return d, err
 }
@@ -187,66 +216,25 @@ type ItemInput struct {
 }
 
 type Input struct {
-	Type           string       `json:"type"`
-	WarehouseID    *string      `json:"warehouse_id"`
-	ToWarehouseID  *string      `json:"to_warehouse_id"`
-	CounterpartyID *string      `json:"counterparty_id"`
-	Currency       *string      `json:"currency"`
-	Reason         *string      `json:"reason"`
-	Note           *string      `json:"note"`
-	Items          *[]ItemInput `json:"items"`
+	Type           string  `json:"type"`
+	WarehouseID    *string `json:"warehouse_id"`
+	ToWarehouseID  *string `json:"to_warehouse_id"`
+	CounterpartyID *string `json:"counterparty_id"`
+	// ToStoreID — магазин для расхода (shipment); контрагент подставляется сам.
+	ToStoreID *string      `json:"to_store_id"`
+	Currency  *string      `json:"currency"`
+	Reason    *string      `json:"reason"`
+	Note      *string      `json:"note"`
+	Items     *[]ItemInput `json:"items"`
 }
 
 // Create создаёт черновик документа.
 func (s *Service) Create(ctx context.Context, p *identity.Principal, in Input) (Document, error) {
-	if err := p.Require(identity.PermInventoryManage); err != nil {
-		return Document{}, err
-	}
-	if typeTitles[in.Type].RU == "" {
-		return Document{}, apperr.Validation("type: ожидается income, supplier_return, transfer, write_off, posting или inventory").Uz("type: income, supplier_return, transfer, write_off, posting yoki inventory boʻlishi kerak")
-	}
-	if in.WarehouseID == nil || !httpx.IsUUID(*in.WarehouseID) {
-		return Document{}, apperr.Validation("warehouse_id: обязательное поле").Uz("warehouse_id: majburiy maydon")
-	}
-	currency := "UZS"
-	if in.Currency != nil {
-		currency = *in.Currency
-	}
-	if currency != "UZS" && currency != "USD" {
-		return Document{}, apperr.Validation("currency: ожидается UZS или USD").Uz("currency: UZS yoki USD boʻlishi kerak")
-	}
-
 	var id string
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		if err := s.checkWarehouse(ctx, tx, p, *in.WarehouseID, true); err != nil {
-			return err
-		}
-		if err := s.checkHeader(ctx, tx, p, in); err != nil {
-			return err
-		}
-		n, err := db.NextNumber(ctx, tx, "stock_documents", p.NetworkID, "type = $2", in.Type)
-		if err != nil {
-			return err
-		}
-		reason, note := "", ""
-		if in.Reason != nil {
-			reason = strings.TrimSpace(*in.Reason)
-		}
-		if in.Note != nil {
-			note = strings.TrimSpace(*in.Note)
-		}
-		if err := tx.QueryRow(ctx, `
-			INSERT INTO stock_documents (network_id, type, number, warehouse_id, to_warehouse_id, counterparty_id,
-			                             currency, reason, note, created_by)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-			p.NetworkID, in.Type, n, *in.WarehouseID, in.ToWarehouseID, in.CounterpartyID,
-			currency, reason, note, p.EmployeeID).Scan(&id); err != nil {
-			return err
-		}
-		if in.Items != nil {
-			return s.replaceItems(ctx, tx, p, id, in.Type, *in.Items)
-		}
-		return nil
+		var err error
+		id, err = s.CreateTx(ctx, tx, p, in, nil)
+		return err
 	})
 	if err != nil {
 		return Document{}, err
@@ -254,10 +242,85 @@ func (s *Service) Create(ctx context.Context, p *identity.Principal, in Input) (
 	return s.Get(ctx, p, id)
 }
 
+// CreateTx создаёт черновик в транзакции tx; supplyOrderID — заказ
+// магазина, по которому создаётся расход (только для shipment).
+func (s *Service) CreateTx(ctx context.Context, tx pgx.Tx, p *identity.Principal, in Input, supplyOrderID *string) (string, error) {
+	if err := p.Require(identity.PermInventoryManage); err != nil {
+		return "", err
+	}
+	if typeTitles[in.Type].RU == "" {
+		return "", apperr.Validation("type: ожидается income, supplier_return, transfer, write_off, posting, inventory или shipment").Uz("type: income, supplier_return, transfer, write_off, posting, inventory yoki shipment boʻlishi kerak")
+	}
+	if in.WarehouseID == nil || !httpx.IsUUID(*in.WarehouseID) {
+		return "", apperr.Validation("warehouse_id: обязательное поле").Uz("warehouse_id: majburiy maydon")
+	}
+	currency := "UZS"
+	if in.Currency != nil {
+		currency = *in.Currency
+	}
+	if currency != "UZS" && currency != "USD" {
+		return "", apperr.Validation("currency: ожидается UZS или USD").Uz("currency: UZS yoki USD boʻlishi kerak")
+	}
+	if in.Type == TypeShipment {
+		if currency != "UZS" {
+			return "", apperr.Validation("currency: расход — только в сумах").Uz("currency: chiqim faqat soʻmda")
+		}
+		if in.CounterpartyID != nil {
+			return "", apperr.Validation("counterparty_id: у расхода контрагент — сам магазин, укажите to_store_id").Uz("counterparty_id: chiqimda kontragent — doʻkonning oʻzi, to_store_id ni kiriting")
+		}
+		if s.Shipments == nil || p.NetworkKind != "distributor" {
+			return "", apperr.Validation("type: расход магазину есть только у дистрибьютора").Uz("type: doʻkonga chiqim faqat distribyutorda bor")
+		}
+		if in.ToStoreID == nil || !httpx.IsUUID(*in.ToStoreID) {
+			return "", apperr.Validation("to_store_id: укажите магазин").Uz("to_store_id: doʻkonni tanlang")
+		}
+		cp, err := s.Shipments.Counterparty(ctx, tx, p, *in.ToStoreID)
+		if err != nil {
+			return "", err
+		}
+		in.CounterpartyID = &cp
+	} else if in.ToStoreID != nil {
+		return "", apperr.Validation("to_store_id: только для расхода").Uz("to_store_id: faqat chiqim uchun")
+	}
+
+	if err := s.checkWarehouse(ctx, tx, p, *in.WarehouseID, true); err != nil {
+		return "", err
+	}
+	if err := s.checkHeader(ctx, tx, p, in); err != nil {
+		return "", err
+	}
+	n, err := db.NextNumber(ctx, tx, "stock_documents", p.NetworkID, "type = $2", in.Type)
+	if err != nil {
+		return "", err
+	}
+	reason, note := "", ""
+	if in.Reason != nil {
+		reason = strings.TrimSpace(*in.Reason)
+	}
+	if in.Note != nil {
+		note = strings.TrimSpace(*in.Note)
+	}
+	var id string
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO stock_documents (network_id, type, number, warehouse_id, to_warehouse_id, counterparty_id,
+		                             currency, reason, note, created_by, to_store_id, supply_order_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+		p.NetworkID, in.Type, n, *in.WarehouseID, in.ToWarehouseID, in.CounterpartyID,
+		currency, reason, note, p.EmployeeID, in.ToStoreID, supplyOrderID).Scan(&id); err != nil {
+		return "", err
+	}
+	if in.Items != nil {
+		if err := s.replaceItems(ctx, tx, p, id, in.Type, *in.Items); err != nil {
+			return "", err
+		}
+	}
+	return id, nil
+}
+
 // checkHeader — поля, обязательные для вида документа.
 func (s *Service) checkHeader(ctx context.Context, tx pgx.Tx, p *identity.Principal, in Input) error {
 	switch in.Type {
-	case TypeIncome, TypeSupplierReturn:
+	case TypeIncome, TypeSupplierReturn, TypeShipment:
 		if in.CounterpartyID == nil || !httpx.IsUUID(*in.CounterpartyID) {
 			return apperr.Validation("counterparty_id: укажите поставщика").Uz("counterparty_id: yetkazib beruvchini tanlang")
 		}
@@ -283,7 +346,7 @@ func (s *Service) checkHeader(ctx context.Context, tx pgx.Tx, p *identity.Princi
 	if in.Type != TypeTransfer && in.ToWarehouseID != nil {
 		return apperr.Validation("to_warehouse_id: только для перемещения").Uz("to_warehouse_id: faqat koʻchirish uchun")
 	}
-	if in.Type != TypeIncome && in.Type != TypeSupplierReturn && in.CounterpartyID != nil {
+	if in.Type != TypeIncome && in.Type != TypeSupplierReturn && in.Type != TypeShipment && in.CounterpartyID != nil {
 		return apperr.Validation("counterparty_id: только для прихода и возврата поставщику").Uz("counterparty_id: faqat kirim va yetkazib beruvchiga qaytarish uchun")
 	}
 	if in.Currency != nil && *in.Currency != "UZS" && !hasPrice(in.Type) {
@@ -326,6 +389,14 @@ func (s *Service) replaceItems(ctx context.Context, tx pgx.Tx, p *identity.Princ
 		if docType != TypeInventory && strings.Trim(string(it.Qty), "0.") == "" {
 			return apperr.Validation("items: количество должно быть больше нуля в строке " + line).Uz("items: " + line + "-qatorda miqdor noldan katta boʻlishi kerak")
 		}
+		if docType == TypeShipment {
+			// Магазин получит товар приходом — товар должен быть в общей базе.
+			var own bool
+			var name string
+			if err := tx.QueryRow(ctx, `SELECT network_id IS NOT NULL, loc(name, name_uz) FROM products WHERE id = $1`, it.ProductID).Scan(&own, &name); err == nil && own {
+				return apperr.Validation("items: «" + name + "» ещё на модерации — его нельзя отгрузить магазину (строка " + line + ")").Uz("items: «" + name + "» hali moderatsiyada — uni doʻkonga joʻnatib boʻlmaydi (" + line + "-qator)")
+			}
+		}
 		var price *string
 		if hasPrice(docType) {
 			if docType != TypeSupplierReturn && (it.Price == nil || !it.Price.Valid()) {
@@ -360,7 +431,7 @@ func (s *Service) Update(ctx context.Context, p *identity.Principal, id string, 
 	if err := p.Require(identity.PermInventoryManage); err != nil {
 		return Document{}, err
 	}
-	if in.Type != "" || in.WarehouseID != nil || in.ToWarehouseID != nil {
+	if in.Type != "" || in.WarehouseID != nil || in.ToWarehouseID != nil || in.ToStoreID != nil {
 		return Document{}, apperr.Validation("вид документа и склады не меняются — создайте новый документ").Uz("hujjat turi va omborlar oʻzgarmaydi — yangi hujjat yarating")
 	}
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -370,6 +441,12 @@ func (s *Service) Update(ctx context.Context, p *identity.Principal, id string, 
 		}
 		merged := Input{Type: d.Type, WarehouseID: &d.WarehouseID, ToWarehouseID: d.ToWarehouseID,
 			CounterpartyID: d.CounterpartyID, Currency: &d.Currency, Reason: &d.Reason}
+		if d.Type == TypeShipment && (in.CounterpartyID != nil || (in.Currency != nil && *in.Currency != "UZS")) {
+			return apperr.Validation("у расхода меняются только строки и примечание").Uz("chiqimda faqat qatorlar va izoh oʻzgaradi")
+		}
+		if d.SourceShipmentID != nil && in.CounterpartyID != nil {
+			return apperr.Validation("counterparty_id: приход от дистрибьютора — поставщик не меняется").Uz("counterparty_id: distribyutordan kirim — yetkazib beruvchi oʻzgarmaydi")
+		}
 		if in.CounterpartyID != nil {
 			merged.CounterpartyID = in.CounterpartyID
 		}
@@ -496,6 +573,12 @@ func (s *Service) Post(ctx context.Context, p *identity.Principal, id string) (D
 					}
 				}
 
+			case TypeShipment:
+				if _, err := TakeFIFO(ctx, tx, p.NetworkID, d.WarehouseID, it.ProductID, it.Qty, DocStock, d.ID); err != nil {
+					return err
+				}
+				lineTotal = mul(ctx, tx, it.Qty, *it.Price)
+
 			case TypeTransfer:
 				taken, err := TakeFIFO(ctx, tx, p.NetworkID, d.WarehouseID, it.ProductID, it.Qty, DocStock, d.ID)
 				if err != nil {
@@ -574,6 +657,22 @@ func (s *Service) Post(ctx context.Context, p *identity.Principal, id string) (D
 			if err := finance.AddCounterparty(ctx, tx, p.NetworkID, *d.CounterpartyID, totalUZS, finance.DocStockDocument, d.ID); err != nil {
 				return err
 			}
+		}
+		// Расход: магазин теперь должен дистрибьютору (минус — нам должны).
+		if d.Type == TypeShipment {
+			if err := finance.AddCounterparty(ctx, tx, p.NetworkID, *d.CounterpartyID, "-"+total, finance.DocStockDocument, d.ID); err != nil {
+				return err
+			}
+		}
+		if (d.Type == TypeShipment || d.SourceShipmentID != nil) && s.Shipments != nil {
+			posted, err := s.get(ctx, tx, p, d.ID)
+			if err != nil {
+				return err
+			}
+			if d.Type == TypeShipment {
+				return s.Shipments.AfterPost(ctx, tx, p, posted)
+			}
+			return s.Shipments.AfterIncome(ctx, tx, p, posted)
 		}
 		return nil
 	})

@@ -564,7 +564,7 @@ class _CountSheetState extends State<_CountSheet> {
     final priceText = _price.text.trim();
     final price = priceText.isEmpty ? null : parseNum(priceText);
     if (price == null) {
-      showMessage(context, tr('Цена продажи обязательна — можно 0', 'Sotish narxi majburiy — 0 boʻlishi mumkin'));
+      showMessage(context, tr('${sellPriceWord()} обязательна — можно 0', '${sellPriceWord()} majburiy — 0 boʻlishi mumkin'));
       return;
     }
     final costText = _cost.text.trim();
@@ -692,7 +692,7 @@ class _CountSheetState extends State<_CountSheet> {
       ),
       const SizedBox(height: 12),
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(child: NumField(label: tr('Цена продажи *', 'Sotish narxi *'), controller: _price, hint: tr('обязательно', 'majburiy'))),
+        Expanded(child: NumField(label: '${sellPriceWord()} *', controller: _price, hint: tr('обязательно', 'majburiy'))),
         const SizedBox(width: 10),
         Expanded(child: NumField(label: tr('Цена закупки', 'Xarid narxi'), controller: _cost, hint: tr('по желанию', 'ixtiyoriy'))),
       ]),

@@ -456,7 +456,7 @@ func (s *Service) QuoteFor(ctx context.Context, q db.Querier, storeID string, la
 	var zonePrice *string
 	err := q.QueryRow(ctx, `
 		WITH pt AS (SELECT ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography AS g)
-		SELECT s.accepts_online AND s.status = 'active' AND n.status = 'active' AND s.location IS NOT NULL,
+		SELECT s.accepts_online AND s.status = 'active' AND n.status = 'active' AND n.kind <> 'distributor' AND s.location IS NOT NULL,
 		       s.min_order_amount::text, s.delivery_radius_m,
 		       COALESCE(ST_Distance(s.location, pt.g), 0),
 		       EXISTS (SELECT 1 FROM delivery_zones z WHERE z.store_id = s.id AND z.is_active),
@@ -589,6 +589,7 @@ func (s *Service) Nearby(ctx context.Context, lat, lng float64) ([]NearbyStore, 
 		       s.logo_url, s.eta_min, s.eta_max
 		FROM stores s JOIN networks n ON n.id = s.network_id, pt
 		WHERE s.accepts_online AND s.status = 'active' AND n.status = 'active' AND s.location IS NOT NULL
+		  AND n.kind <> 'distributor' -- точки дистрибьюторов покупателям не видны
 		  AND `+ActiveSubscriptionSQL+`
 		  AND (EXISTS (SELECT 1 FROM delivery_zones z WHERE z.store_id = s.id AND z.is_active AND ST_Covers(z.area, pt.g))
 		       OR (NOT EXISTS (SELECT 1 FROM delivery_zones z WHERE z.store_id = s.id AND z.is_active)

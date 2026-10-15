@@ -8,8 +8,15 @@ import { planPrice, type Plan } from './Plans'
 import { NetworkPlanModal, PlanCell, type NetworkBilling } from './NetworkPlan'
 import { CredentialsModal, OwnerLoginFields, OwnerModal, OwnerPasswordState, type Credentials, type OwnerInfo } from './NetworkOwner'
 
+/** Тип сети: сеть магазинов, одиночный магазин или дистрибьютор. */
+function kindTitle(k: string, long = false): string {
+  if (k === 'distributor') return 'Дистрибьютор'
+  if (k === 'chain') return long ? 'Сеть магазинов' : 'Сеть'
+  return 'Одиночный магазин'
+}
+
 interface Network extends OwnerInfo {
-  kind: 'chain' | 'single'
+  kind: 'chain' | 'single' | 'distributor'
   status: 'active' | 'blocked'
   stores_count: number
   created_at: string
@@ -40,7 +47,7 @@ export function Networks() {
             dataIndex: 'name',
             render: (n, row) => <Typography.Link onClick={() => setOpenId(row.id)}>{n}</Typography.Link>,
           },
-          { title: 'Тип', dataIndex: 'kind', render: (k) => (k === 'chain' ? 'Сеть' : 'Одиночный магазин') },
+          { title: 'Тип', dataIndex: 'kind', render: (k) => kindTitle(k) },
           { title: 'Магазинов', dataIndex: 'stores_count' },
           {
             title: 'Тариф',
@@ -107,6 +114,7 @@ export function Networks() {
                     options={[
                       { value: 'chain', label: 'Сеть магазинов' },
                       { value: 'single', label: 'Одиночный магазин' },
+                      { value: 'distributor', label: 'Дистрибьютор (приложение «SM Дистрибьютор»)' },
                     ]}
                   />
                 </Form.Item>
@@ -194,7 +202,7 @@ function NetworkCard({ id, onClose }: { id: string | null; onClose: () => void }
       {n && id && (
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
           <Descriptions column={1} size="small" bordered>
-            <Descriptions.Item label="Тип">{n.kind === 'chain' ? 'Сеть магазинов' : 'Одиночный магазин'}</Descriptions.Item>
+            <Descriptions.Item label="Тип">{kindTitle(n.kind, true)}</Descriptions.Item>
             <Descriptions.Item label="Статус">
               <StatusTag status={n.status} />
             </Descriptions.Item>

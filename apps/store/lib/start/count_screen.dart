@@ -186,7 +186,7 @@ class _StartCountScreenState extends State<StartCountScreen> {
     if (!mounted || _d == null) return;
     final unfilled = _n('unfilled');
     if (unfilled > 0) {
-      showMessage(context, tr('Заполните строк: $unfilled — количество и цена продажи обязательны', 'Toʻldiring: $unfilled ta qator — miqdor va sotish narxi majburiy'));
+      showMessage(context, tr('Заполните строк: $unfilled — количество и ${sellPriceWord().toLowerCase()} обязательны', 'Toʻldiring: $unfilled ta qator — miqdor va ${sellPriceWord().toLowerCase()} majburiy'));
       _filter('unfilled');
       return;
     }
@@ -340,7 +340,7 @@ class _StartCountScreenState extends State<StartCountScreen> {
                           const Icon(Icons.error_outline_rounded, color: AppColors.primary, size: 20),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Text(tr('Заполните строк: $unfilled — количество и цена продажи обязательны (можно 0)', 'Toʻldiring: $unfilled ta qator — miqdor va sotish narxi majburiy (0 boʻlishi mumkin)'),
+                            child: Text(tr('Заполните строк: $unfilled — количество и ${sellPriceWord().toLowerCase()} обязательны (можно 0)', 'Toʻldiring: $unfilled ta qator — miqdor va ${sellPriceWord().toLowerCase()} majburiy (0 boʻlishi mumkin)'),
                                 style: AppText.small.copyWith(color: AppColors.error, fontWeight: FontWeight.w500)),
                           ),
                         ]),
@@ -579,7 +579,7 @@ class _CountCardState extends State<_CountCard> {
             const SizedBox(width: 8),
             _field('cost', tr('Цена закупки', 'Xarid narxi'), required: false),
             const SizedBox(width: 8),
-            _field('price', tr('Цена продажи *', 'Sotish narxi *'), required: true),
+            _field('price', '${sellPriceWord()} *', required: true),
           ]),
         ),
       ]),

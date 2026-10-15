@@ -45,6 +45,7 @@ func (s *Service) Others(ctx context.Context, lat, lng float64, exclude []string
 		       CASE WHEN s.accepts_online THEN 'out_of_zone' ELSE 'not_online' END
 		FROM stores s JOIN networks n ON n.id = s.network_id, pt
 		WHERE s.status = 'active' AND n.status = 'active' AND s.location IS NOT NULL
+		  AND n.kind <> 'distributor' -- точки дистрибьюторов покупателям не видны
 		  AND s.default_warehouse_id IS NOT NULL
 		  AND `+ActiveSubscriptionSQL+`
 		  AND ST_DWithin(s.location, pt.g, $3)

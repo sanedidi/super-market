@@ -291,7 +291,7 @@ class _StartScreenState extends State<StartScreen> {
                     onPressed: products == 0 ? null : _next,
                   ),
                   const SizedBox(height: 6),
-                  Text(tr('Количество, цена продажи и цена закупки — на шаге 2', 'Miqdor, sotish narxi va xarid narxi — 2-qadamda'), style: AppText.small),
+                  Text(tr('Количество, ${sellPriceWord().toLowerCase()} и цена закупки — на шаге 2', 'Miqdor, ${sellPriceWord().toLowerCase()} va xarid narxi — 2-qadamda'), style: AppText.small),
                 ]),
               ),
             ),
