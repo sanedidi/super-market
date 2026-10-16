@@ -85,6 +85,7 @@ class Push {
       if (initial != null) _open(initial);
       // Android не показывает уведомление, пока приложение открыто, — покажем сами.
       FirebaseMessaging.onMessage.listen((m) {
+        onData?.call(); // статус заказа сменился — обновить главную
         if (defaultTargetPlatform != TargetPlatform.android) return;
         final ctx = navigatorKey.currentContext;
         final n = m.notification;
@@ -101,5 +102,11 @@ class Push {
     }
   }
 
-  static void _open(RemoteMessage m) => openNotification(m.data);
+  static void _open(RemoteMessage m) {
+    onData?.call();
+    openNotification(m.data);
+  }
+
+  /// Пуш пришёл, пока приложение открыто (или по нему открыли приложение).
+  static VoidCallback? onData;
 }

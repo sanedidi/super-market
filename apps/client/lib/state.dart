@@ -530,6 +530,13 @@ class AppState extends ChangeNotifier {
     syncLanguage();
   }
 
+  /// Только статистика (в ней текущий заказ) — для частого обновления главной.
+  Future<void> loadStats() async {
+    if (isGuest) return;
+    stats = await api.get('/client/me/stats') as Map<String, dynamic>;
+    notifyListeners();
+  }
+
   /// Язык приложения — главный: если в профиле на сервере другой (сменили
   /// до входа или на другом устройстве), записываем туда язык приложения —
   /// на нём сервер шлёт уведомления.

@@ -105,7 +105,11 @@ class _OrderScreenState extends State<OrderScreen> {
     }
 
     return Scaffold(
+      // Серый фон: белые карточки шагов (К4′) на нём различимы.
+      backgroundColor: AppColors.bg,
       appBar: AppBar(
+        backgroundColor: AppColors.bg,
+        surfaceTintColor: AppColors.bg,
         leading: Padding(
           padding: const EdgeInsets.only(left: 12),
           child: Center(child: RoundIcon(icon: Icons.arrow_back_rounded, tooltip: tr('Назад', 'Orqaga'), onTap: () => Navigator.of(context).pop())),
@@ -232,15 +236,24 @@ class _StoreCard extends StatelessWidget {
         ]),
       );
     }
-    return SectionCard(title: tr('Забрать в магазине', 'Doʻkondan olish'), icon: Icons.storefront_rounded, children: [
+    final (fg, soft, _) = StepAccent.blue.colors;
+    return StepCard(step: 1, title: tr('Забрать в магазине', 'Doʻkondan olish'), icon: Icons.storefront_rounded, accent: StepAccent.blue, children: [
       Text('${s['name'] ?? ''}', style: AppText.title),
       const SizedBox(height: 2),
       Text('${s['address'] ?? ''}', style: AppText.body.copyWith(color: AppColors.text2)),
       const SizedBox(height: 12),
       Row(children: [
-        Expanded(child: SmallButton(label: tr('Позвонить', 'Qoʻngʻiroq'), icon: Icons.call_rounded, onPressed: phone.isEmpty ? null : () => call(context, phone))),
+        Expanded(
+            child: SmallButton(
+                label: tr('Позвонить', 'Qoʻngʻiroq'), icon: Icons.call_rounded, bg: soft, fg: fg, onPressed: phone.isEmpty ? null : () => call(context, phone))),
         const SizedBox(width: 8),
-        Expanded(child: SmallButton(label: tr('Маршрут', 'Yoʻnalish'), icon: Icons.near_me_rounded, onPressed: lat == null || lng == null ? null : () => route(context, lat, lng))),
+        Expanded(
+            child: SmallButton(
+                label: tr('Маршрут', 'Yoʻnalish'),
+                icon: Icons.near_me_rounded,
+                bg: soft,
+                fg: fg,
+                onPressed: lat == null || lng == null ? null : () => route(context, lat, lng))),
       ]),
     ]);
   }
@@ -260,11 +273,12 @@ class _CustomerCard extends StatelessWidget {
     final note = '${o['address_comment'] ?? ''}'.trim();
     final lat = o['lat'] as num?, lng = o['lng'] as num?;
     final status = statusOf(c);
-    return SectionCard(
-      title: status == 'delivering' ? tr('Везу покупателю', 'Xaridorga yetkazyapman') : tr('Покупатель', 'Xaridor'),
+    final (fg, soft, _) = StepAccent.red.colors;
+    return StepCard(
+      step: 2,
+      title: status == 'delivering' ? tr('Везу покупателю', 'Xaridorga yetkazyapman') : tr('Отвезти покупателю', 'Xaridorga olib borish'),
       icon: status == 'delivering' ? Icons.location_on_rounded : Icons.person_rounded,
-      color: prominent ? AppColors.white : AppColors.soft,
-      border: prominent ? AppColors.line : null,
+      accent: StepAccent.red,
       children: [
         Text('${o['address'] ?? ''}', style: prominent ? AppText.h3 : AppText.title),
         if (flat.isNotEmpty) ...[const SizedBox(height: 2), Text(flat, style: AppText.body.copyWith(color: AppColors.text2))],
@@ -275,7 +289,7 @@ class _CustomerCard extends StatelessWidget {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(color: prominent ? AppColors.soft : AppColors.white, borderRadius: BorderRadius.circular(12)),
+            decoration: BoxDecoration(color: AppColors.soft, borderRadius: BorderRadius.circular(12)),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const Icon(Icons.chat_rounded, size: 18, color: AppColors.text2),
               const SizedBox(width: 8),
@@ -286,10 +300,22 @@ class _CustomerCard extends StatelessWidget {
         const SizedBox(height: 12),
         Row(children: [
           Expanded(
-            child: SmallButton(label: tr('Позвонить', 'Qoʻngʻiroq'), icon: Icons.call_rounded, primary: prominent, onPressed: phone.isEmpty ? null : () => call(context, phone)),
+            child: SmallButton(
+                label: tr('Позвонить', 'Qoʻngʻiroq'),
+                icon: Icons.call_rounded,
+                primary: prominent,
+                bg: prominent ? null : soft,
+                fg: prominent ? null : fg,
+                onPressed: phone.isEmpty ? null : () => call(context, phone)),
           ),
           const SizedBox(width: 8),
-          Expanded(child: SmallButton(label: tr('Маршрут', 'Yoʻnalish'), icon: Icons.near_me_rounded, onPressed: lat == null || lng == null ? null : () => route(context, lat, lng))),
+          Expanded(
+              child: SmallButton(
+                  label: tr('Маршрут', 'Yoʻnalish'),
+                  icon: Icons.near_me_rounded,
+                  bg: soft,
+                  fg: fg,
+                  onPressed: lat == null || lng == null ? null : () => route(context, lat, lng))),
         ]),
         const SizedBox(height: 10),
         Row(children: [

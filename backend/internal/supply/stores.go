@@ -73,12 +73,11 @@ func (s *Service) Stores(ctx context.Context, p *identity.Principal, f StoresFil
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx, `
-		WITH me AS (SELECT location FROM stores WHERE id = $2),
+		WITH me AS (`+whPointsSQL+`),
 		cards AS (
 			SELECT s.id, s.name, s.address,
 			       ST_Y(s.location::geometry) AS lat, ST_X(s.location::geometry) AS lng,
-			       CASE WHEN s.location IS NOT NULL AND me.location IS NOT NULL
-			            THEN round((ST_Distance(s.location, me.location) / 1000)::numeric, 1)::float8 END AS km,
+			       (SELECT round((min(ST_Distance(s.location, me.location)) / 1000)::numeric, 1)::float8 FROM me) AS km,
 			       COALESCE(l.status, 'none') AS link_status, COALESCE(l.requested_by, '') AS requested_by, COALESCE(l.id::text, '') AS link_id,
 			       COALESCE(agg.out_n, 0) AS out_n, COALESCE(agg.low_n, 0) AS low_n, COALESCE(agg.carried_n, 0) AS carried_n,
 			       (SELECT max(o.created_at) FROM supply_orders o WHERE o.store_id = s.id AND o.network_id = $1) AS last_order_at,
@@ -86,12 +85,11 @@ func (s *Service) Stores(ctx context.Context, p *identity.Principal, f StoresFil
 			                 AND d.to_store_id = s.id AND d.status = 'posted' AND d.posted_at > now() - interval '30 days'), 0)::numeric(18,2)::text AS month_sum
 			FROM stores s
 			JOIN networks n ON n.id = s.network_id AND n.kind <> 'distributor' AND n.status = 'active'
-			CROSS JOIN me
 			LEFT JOIN supply_links l ON l.store_id = s.id AND l.distributor_id = $1
 			LEFT JOIN LATERAL (`+linesAggSQL+`) agg ON l.status = 'active'
 			WHERE s.status = 'active'
 			  AND (l.status IN ('active', 'requested')
-			       OR (s.location IS NOT NULL AND me.location IS NOT NULL AND ST_DWithin(s.location, me.location, $4)))
+			       OR EXISTS (SELECT 1 FROM me WHERE ST_DWithin(s.location, me.location, $4)))
 			  AND ($5 = '' OR s.name ILIKE '%' || $5 || '%' OR s.address ILIKE '%' || $5 || '%')
 		)
 		SELECT id, name, address, lat, lng, km, link_status, requested_by, link_id,
@@ -191,14 +189,12 @@ func (s *Service) StoreDetail(ctx context.Context, p *identity.Principal, storeI
 	var linkID *string
 	err = s.pool.QueryRow(ctx, `
 		SELECT s.id, s.name, s.address, s.phone, ST_Y(s.location::geometry), ST_X(s.location::geometry),
-		       CASE WHEN s.location IS NOT NULL AND me.location IS NOT NULL
-		            THEN round((ST_Distance(s.location, me.location) / 1000)::numeric, 1)::float8 END,
+		       (SELECT round((min(ST_Distance(s.location, me.location)) / 1000)::numeric, 1)::float8 FROM (`+whPointsSQL+`) me),
 		       COALESCE(l.status, 'none'), COALESCE(l.requested_by, ''), l.id::text,
 		       (SELECT max(o.created_at) FROM supply_orders o WHERE o.store_id = s.id AND o.network_id = $1),
 		       COALESCE((SELECT sum(d.total) FROM stock_documents d WHERE d.network_id = $1 AND d.type = 'shipment'
 		                 AND d.to_store_id = s.id AND d.status = 'posted' AND d.posted_at > now() - interval '30 days'), 0)::numeric(18,2)::text
 		FROM stores s
-		CROSS JOIN (SELECT location FROM stores WHERE id = $2) me
 		LEFT JOIN supply_links l ON l.store_id = s.id AND l.distributor_id = $1
 		WHERE s.id = $3`, p.NetworkID, pt.StoreID, storeID).
 		Scan(&out.ID, &out.Name, &out.Address, &out.Phone, &out.Lat, &out.Lng, &out.DistanceKm,
@@ -312,7 +308,14 @@ func (s *Service) ShipmentForStore(ctx context.Context, p *identity.Principal, s
 	if len(items) == 0 {
 		return inventory.Document{}, apperr.Conflict("nothing_to_ship", "магазину сейчас всего хватает").Uz("doʻkonda hozir hamma narsa yetarli")
 	}
-	wh := pt.WarehouseID
+	ids := make([]string, len(items))
+	for i, it := range items {
+		ids[i] = it.ProductID
+	}
+	wh, err := bestWarehouse(ctx, s.pool, pt, storeID, ids)
+	if err != nil {
+		return inventory.Document{}, err
+	}
 	return s.inv.Create(ctx, p, inventory.Input{Type: inventory.TypeShipment, WarehouseID: &wh, ToStoreID: &storeID, Items: &items})
 }
 

@@ -129,6 +129,18 @@ Access-токен живёт 15 минут, refresh — 30 дней. После 
 Заказ курьера — ещё `customer_name`, `items_count`, `picked_up_at`, `cash` (брать наличные).
 `GET /courier/history?period=today|yesterday|week` (по Ташкенту) → `items [{id, number, store_name, address, total, cash, picked_up_at, delivered_at}]`, `delivered`, `cash_total`, `avg_minutes`.
 
+**Наличные у курьера и сдача в кассу** (К10, К11, М33, М34). Доставленный заказ «наличными курьеру» кладёт сумму на штатного
+курьера (журнал `courier_cash_entries`; заказы, доставленные до миграции 0063, не считаются).
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/courier/cash` | `on_hand`, `pending` (отмечено «Сдал», ждёт кассира — входит в `on_hand`), `stores [{store_id, store_name, on_hand, pending}]`, `handovers` — последние 20 сдач |
+| POST | `/courier/cash/handovers` | `{store_id, amount, comment?}` → 201 сдача `pending`; можно часть; больше, чем на руках минус ждущие, — 409 `too_much`. Пуш сотрудникам магазина с `finance.manage` |
+| GET | `/store/courier-cash?store_id=` | `total`, `couriers [{courier_id, name, on_hand, pending, orders, since}]`, `pending` — сдачи, которые ждут кассира. Права: `finance.manage`, `sales.pos` или `orders.manage` |
+| POST | `/store/courier-cash/handovers/{id}/receive` | `{received?, comment?}`: без `received` — «Получил» всю сумму; меньше — «Другая сумма», разница остаётся на курьере. Полученное — приход в кассу магазина (`cash_entries.doc_type = courier_cash`, касса в сумах, куда идут «Наличные»). Повтор — 409 `already_answered` |
+
+Сдача: `{id, store_id, store_name, courier_id, courier_name, amount, received, status: pending|received, comment, answered_by_name, created_at, answered_at, orders}`.
+
 ### Push-рассылки
 
 Рассылка = заголовок (до 65), текст (до 240), переход `target` и аудитория `audience`. Отправляет воркер в `send_at`:
@@ -317,7 +329,7 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 | --- | --- | --- |
 | GET/POST | `/rates` | курс: `{"rate": 12700}` — сумов за 1 USD; действует последний |
 | GET/POST/PATCH | `/counterparty-types`, `/counterparty-types/{id}` | `{"name", "is_active"?}` |
-| GET/POST | `/counterparties?q=` | `{"name", "type_id"?, "phone"?, "inn"?, "note"?}`; в ответе `balance` (UZS): плюс — мы должны, минус — нам |
+| GET/POST | `/counterparties?q=&role=supplier` | `role=supplier` — без магазинов-клиентов агента (для выбора поставщика в приходе); `{"name", "type_id"?, "phone"?, "inn"?, "note"?}`; в ответе `balance` (UZS): плюс — мы должны, минус — нам |
 | GET/PATCH | `/counterparties/{id}` | |
 | GET | `/counterparties/{id}/entries` | акт сверки |
 | GET/POST/PATCH | `/reasons`, `/reasons/{id}` | финансовые причины `{"name", "kind": "income"\|"expense"}` |
@@ -1287,6 +1299,12 @@ env `REVIEW_AGENT_LOGIN=+998XXXXXXXXX:123456` (SMS не отправляется
 | GET | `/store/suppliers/{distributor_id}/payments` | | оплаты и статусы (`pending`, `confirmed`, `disputed`) |
 | POST | `/store/suppliers/payments/{id}/resolve` | `{amount}` | исправить сумму (не больше прежней); совпала с ответом агента — `confirmed`, иначе снова `pending` |
 | GET | `/store/supply/payments?status=pending\|confirmed\|disputed\|open&store_id=` | агент | оплаты магазинов |
+| GET | `/store/supply/dashboard?period=today\|week\|month` | | главная агента (А1): `shipped`, `prev`, `change_pct` (null — в прошлом периоде отгрузок не было), `shipments`, `shipments_today`, `stores`, `linked_stores`, `avg_shipment`, `owed_total`, `owed_stores`, `overdue_stores` (долг есть, оплат нет дольше 14 дней), `bucket: hour\|day`, `points [{at, shipped, prev}]` (сегодня — 24 часа, неделя — 7 дней, месяц — 30 дней, по Ташкенту), `top_stores [{store_id, name, sum}]`, `top_products [{product_id, name, image, unit, qty, sum}]` (до 5). Отгрузка — проведённые расходы магазинам |
+| GET | `/store/supply/warehouses` | | склады агента (А2): `[{id, name, address, lat, lng, is_default, is_active, stores_in_zone, products, stock_cost}]`, основной первым. Склад без своей точки — основной, его место — точка агента |
+| POST | `/store/supply/warehouses` | `{name, address, lat, lng, is_default?}` | новый склад (А3), всё кроме `is_default` обязательно; 409 `warehouse_exists` |
+| PATCH | `/store/supply/warehouses/{id}` | `{name?, address?, lat?, lng?, is_default?, is_active?}` | «основной» переносит туда точку агента (её адрес и место видят магазины); снять «основной» или отключить основной — 409 `default_warehouse` |
+| GET | `/store/supply/stores/{id}/warehouses?products=id,id` | | «Со склада» для расхода магазину (А4): активные склады с `distance_km` до магазина и `missing` — сколько товаров из `products` на складе нет; подходящий (всё есть, ближе всех) — первым. Расход из заказа и «Сформировать расход» берут его сами |
+| GET | `/store/supply/debtors` | | магазины с долгом агенту, больший долг сверху: `[{store_id, name, address, debt, pending_sum}]` (`pending_sum` — отдано, но ещё не подтверждено) |
 | POST | `/store/supply/payments/{id}/confirm` | | «Получил» |
 | POST | `/store/supply/payments/{id}/dispute` | `{received, comment?}` | «Другая сумма» (`received` < суммы) или «Не получал» (`received: 0`) |
 | GET | `/store/supply/stores/{id}/statement?from=&to=` | | акт сверки агента: `{statement, debt, open[], pending_sum}` |

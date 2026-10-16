@@ -428,6 +428,10 @@ func markDelivered(ctx context.Context, tx pgx.Tx, id, actor string, from ...str
 	if _, err := tx.Exec(ctx, `UPDATE balance_entries SET status = 'available' WHERE order_id = $1 AND kind IN ('order', 'commission')`, id); err != nil {
 		return err
 	}
+	// Наличные заказа — на курьере, пока он не сдаст их в кассу.
+	if err := addCourierCash(ctx, tx, id); err != nil {
+		return err
+	}
 	return addHistory(ctx, tx, id, StatusDelivered, actor, "")
 }
 

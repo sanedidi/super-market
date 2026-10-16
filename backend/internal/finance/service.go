@@ -154,10 +154,13 @@ const counterpartySelect = `
 	       COALESCE((SELECT sum(e.amount) FROM counterparty_entries e WHERE e.counterparty_id = c.id), 0)::text
 	FROM counterparties c LEFT JOIN counterparty_types t ON t.id = c.type_id`
 
-func (s *Service) ListCounterparties(ctx context.Context, p *identity.Principal, q string, page httpx.Page) ([]Counterparty, error) {
+// ListCounterparties — контрагенты сети. suppliersOnly — только те, от кого
+// приходит товар: без магазинов-клиентов агента (им товар отгружают).
+func (s *Service) ListCounterparties(ctx context.Context, p *identity.Principal, q string, suppliersOnly bool, page httpx.Page) ([]Counterparty, error) {
 	rows, err := s.pool.Query(ctx, counterpartySelect+`
 		WHERE c.network_id = $1 AND ($2 = '' OR c.name ILIKE '%' || $2 || '%' OR c.phone LIKE '%' || $2 || '%')
-		ORDER BY c.name LIMIT $3 OFFSET $4`, p.NetworkID, strings.TrimSpace(q), page.Limit, page.Offset)
+		  AND (NOT $5 OR c.store_id IS NULL)
+		ORDER BY c.name LIMIT $3 OFFSET $4`, p.NetworkID, strings.TrimSpace(q), page.Limit, page.Offset, suppliersOnly)
 	return many[Counterparty](rows, err)
 }
 

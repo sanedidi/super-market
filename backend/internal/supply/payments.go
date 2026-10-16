@@ -503,6 +503,36 @@ func (s *Service) AgentStoreStatement(ctx context.Context, p *identity.Principal
 	return out, err
 }
 
+// Debtor — магазин, который должен агенту (вкладка «Все» в «Оплатах от магазинов»).
+type Debtor struct {
+	StoreID string `json:"store_id"`
+	Name    string `json:"name"`
+	Address string `json:"address"`
+	// Долг магазина агенту (плюс — магазин должен).
+	Debt string `json:"debt"`
+	// Сколько из долга магазин уже отдал, а агент ещё не подтвердил.
+	PendingSum string `json:"pending_sum"`
+}
+
+// AgentDebtors — магазины с долгом агенту, самый большой долг сверху.
+// Тот же расчёт, что «Вам должны» на главной (agentMoney).
+func (s *Service) AgentDebtors(ctx context.Context, p *identity.Principal) ([]Debtor, error) {
+	if err := requireDistributor(p); err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, `
+		WITH b AS (SELECT c.store_id, -COALESCE(sum(e.amount), 0) AS v FROM counterparties c
+		           LEFT JOIN counterparty_entries e ON e.counterparty_id = c.id
+		           WHERE c.network_id = $1 AND c.store_id IS NOT NULL GROUP BY c.store_id)
+		SELECT s.id::text, s.name, COALESCE(s.address, ''), b.v::numeric(18,2)::text,
+		       COALESCE((SELECT sum(sp.amount) FROM supply_payments sp
+		                 WHERE sp.distributor_id = $1 AND sp.store_id = s.id AND sp.status IN ('pending', 'disputed')), 0)::numeric(18,2)::text
+		FROM b JOIN stores s ON s.id = b.store_id
+		WHERE b.v > 0
+		ORDER BY b.v DESC, s.name LIMIT 500`, p.NetworkID)
+	return collect[Debtor](rows, err)
+}
+
 // agentMoney — «Вам должны» и оплаты, которые ждут подтверждения (Главная агента).
 func agentMoney(ctx context.Context, q db.Querier, networkID string) (owed string, owedStores, pending int, pendingSum string, err error) {
 	err = q.QueryRow(ctx, `

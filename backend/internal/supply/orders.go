@@ -470,7 +470,16 @@ func (s *Service) assemble(ctx context.Context, tx pgx.Tx, p *identity.Principal
 		return apperr.Conflict("nothing_to_ship", "нечего отгружать — во всех строках 0; отклоните заказ").Uz("joʻnatadigan narsa yoʻq — barcha qatorlarda 0; buyurtmani rad eting")
 	}
 	note := "Заказ № " + strconv.FormatInt(o.Number, 10)
-	wh, store := pt.WarehouseID, o.StoreID
+	ids := make([]string, len(items))
+	for i, it := range items {
+		ids[i] = it.ProductID
+	}
+	// Склад — ближайший к магазину, где есть весь заказ (А4).
+	wh, err := bestWarehouse(ctx, tx, pt, o.StoreID, ids)
+	if err != nil {
+		return err
+	}
+	store := o.StoreID
 	docID, err := s.inv.CreateTx(ctx, tx, p, inventory.Input{Type: inventory.TypeShipment, WarehouseID: &wh, ToStoreID: &store,
 		Note: &note, Items: &items}, &o.ID)
 	if err != nil {

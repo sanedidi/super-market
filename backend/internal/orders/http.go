@@ -105,6 +105,8 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/store/orders/{id}/fiscal", m.fiscal)
 		r.Post("/store/orders/{id}/assign-courier", m.assignCourier)
 		r.Get("/store/couriers", m.storeCouriers)
+		r.Get("/store/courier-cash", m.storeCourierCash)
+		r.Post("/store/courier-cash/handovers/{id}/receive", m.receiveHandover)
 		r.Get("/store/stores/{id}/wishes", m.storeWishes)
 	})
 
@@ -117,6 +119,8 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/courier/orders", m.courierOrders)
 		r.Get("/courier/orders/{id}", m.courierOrder)
 		r.Get("/courier/history", m.courierHistory)
+		r.Get("/courier/cash", m.courierCash)
+		r.Post("/courier/cash/handovers", m.createHandover)
 		r.Post("/courier/orders/{id}/picked-up", m.courierAct(m.svc.PickUp))
 		r.Post("/courier/orders/{id}/delivered", m.courierAct(m.svc.CourierDelivered))
 	})
@@ -775,5 +779,29 @@ func (m *Module) storeWishes(w http.ResponseWriter, r *http.Request) {
 func (m *Module) adminWishes(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (WishReport, error) {
 		return m.svc.AdminWishes(r.Context(), httpx.PageFrom(r))
+	})
+}
+
+func (m *Module) courierCash(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (CourierCash, error) {
+		return m.svc.CourierCash(r.Context(), pr(r))
+	})
+}
+
+func (m *Module) createHandover(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusCreated, "", func(_ string, in HandoverInput) (Handover, error) {
+		return m.svc.CreateHandover(r.Context(), pr(r), in)
+	})
+}
+
+func (m *Module) storeCourierCash(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (StoreCourierCash, error) {
+		return m.svc.StoreCourierCash(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+	})
+}
+
+func (m *Module) receiveHandover(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in ReceiveInput) (Handover, error) {
+		return m.svc.ReceiveHandover(r.Context(), pr(r), id, in)
 	})
 }

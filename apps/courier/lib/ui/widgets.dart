@@ -42,17 +42,19 @@ class BigButton extends StatelessWidget {
 
 /// Кнопка поменьше: «Позвонить», «Маршрут».
 class SmallButton extends StatelessWidget {
-  const SmallButton({super.key, required this.label, required this.icon, required this.onPressed, this.primary = false});
+  const SmallButton({super.key, required this.label, required this.icon, required this.onPressed, this.primary = false, this.bg, this.fg});
 
   final String label;
   final IconData icon;
   final VoidCallback? onPressed;
   final bool primary;
+  final Color? bg;
+  final Color? fg;
 
   @override
   Widget build(BuildContext context) {
-    final bg = primary ? AppColors.primary : AppColors.white;
-    final fg = primary ? AppColors.white : AppColors.ink;
+    final bg = this.bg ?? (primary ? AppColors.primary : AppColors.white);
+    final fg = this.fg ?? (primary ? AppColors.white : AppColors.ink);
     return SizedBox(
       height: 44,
       child: Material(
@@ -136,6 +138,56 @@ class SectionCard extends StatelessWidget {
       ]),
     );
   }
+}
+
+/// Карточка шага заказа (Figma К4′): белая, рамка и заголовок цвета шага,
+/// номер шага в кружке — «1 Забрать» синяя, «2 Покупатель» красная.
+class StepCard extends StatelessWidget {
+  const StepCard({super.key, required this.step, required this.title, required this.icon, required this.accent, required this.children});
+
+  final int step;
+  final String title;
+  final IconData icon;
+  final StepAccent accent;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final (fg, _, border) = accent.colors;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: border, width: 1.5)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            width: 20,
+            height: 20,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: fg, shape: BoxShape.circle),
+            child: Text('$step', style: AppText.caption.copyWith(color: AppColors.white, fontWeight: FontWeight.w700)),
+          ),
+          const SizedBox(width: 8),
+          Icon(icon, size: 16, color: fg),
+          const SizedBox(width: 6),
+          Expanded(child: Text(title.toUpperCase(), style: AppText.caption.copyWith(color: fg, fontWeight: FontWeight.w700))),
+        ]),
+        const SizedBox(height: 10),
+        ...children,
+      ]),
+    );
+  }
+}
+
+/// Цвета шага: (текст и иконки, фон кнопок, рамка).
+enum StepAccent {
+  blue,
+  red;
+
+  (Color, Color, Color) get colors => switch (this) {
+        StepAccent.blue => (AppColors.blue, AppColors.blueSoft, const Color(0xFFC7D7FE)),
+        StepAccent.red => (AppColors.primary, AppColors.primarySoft, const Color(0xFFF49097)),
+      };
 }
 
 /// Круглая иконка-кнопка (обновить, позвонить).

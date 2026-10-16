@@ -94,12 +94,11 @@ String _prevTo(Period p) {
 
 double? _change(double cur, double prev) => prev > 0 ? (cur - prev) / prev * 100 : null;
 
-/// Секции главной. [actions] — быстрые действия, они идут сразу после выручки.
+/// Секции главной с графиками (быстрые действия — на главной, под «Продать»).
 class HomeDashboard extends StatefulWidget {
-  const HomeDashboard({super.key, required this.storeId, required this.actions, required this.canOrders, required this.canBalance});
+  const HomeDashboard({super.key, required this.storeId, required this.canOrders, required this.canBalance});
 
   final String storeId;
-  final Widget actions;
   final bool canOrders;
   final bool canBalance;
 
@@ -208,8 +207,6 @@ class _HomeDashboardState extends State<HomeDashboard> {
       ),
       const SizedBox(height: 12),
       _revenueCard(),
-      const SizedBox(height: 16),
-      widget.actions,
       const SizedBox(height: 20),
       Text(tr('Динамика · 14 дней', 'Dinamika · 14 kun'), style: AppText.h3),
       const SizedBox(height: 12),

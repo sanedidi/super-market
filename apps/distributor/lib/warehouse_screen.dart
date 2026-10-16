@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
+import 'package:sm_store/dashboard/home_dashboard.dart' show plural;
 import 'package:sm_store/state.dart';
 import 'package:sm_store/ui/theme.dart';
 import 'package:sm_store/ui/widgets.dart';
@@ -8,8 +9,10 @@ import 'package:sm_store/ui/widgets.dart';
 import 'document_screen.dart';
 import 'logic.dart';
 import 'ui.dart';
+import 'warehouses.dart';
 
 /// Д6 · Склад дистрибьютора — как у магазина: приход, расход, инвентаризация, списание.
+/// А2 · складов может быть несколько: сверху выбор склада, ниже «Склады».
 class WarehouseScreen extends StatefulWidget {
   const WarehouseScreen({super.key});
 
@@ -21,6 +24,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   Map<String, dynamic>? _summary;
   List<Map<String, dynamic>>? _low;
   List<Map<String, dynamic>>? _docs;
+  List<Map<String, dynamic>> _warehouses = const [];
   Object? _error;
 
   @override
@@ -33,12 +37,19 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     final st = context.read<StoreState>();
     final api = context.read<Api>();
     try {
+      final whs = await loadWarehouses(api);
+      // Выбранный склад удалили или отключили — вернуться к основному.
+      final sel = selectedWarehouse.value;
+      if (sel != null && (sel['point'] != st.storeId || !whs.any((w) => w['id'] == sel['id'] && w['is_active'] != false))) selectedWarehouse.value = null;
+      final wh = selectedWarehouse.value?['id'] ?? whs.where((w) => w['is_default'] == true).firstOrNull?['id'];
+      final q = {'store_id': st.storeId, if (wh != null) 'warehouse_id': wh};
       final r = await Future.wait([
-        api.get('/store/inventory/stock/summary', {'store_id': st.storeId}),
-        api.list('/store/inventory/stock', {'store_id': st.storeId, 'limit': 200}),
-        api.list('/store/inventory/documents', {'store_id': st.storeId, 'limit': 20}),
+        api.get('/store/inventory/stock/summary', q),
+        api.list('/store/inventory/stock', {...q, 'limit': 200}),
+        api.list('/store/inventory/documents', {...q, 'limit': 20}),
       ]);
       if (!mounted) return;
+      _warehouses = whs;
       final stock = (r[1] as List<Map<String, dynamic>>)..sort((a, b) => (num.tryParse('${a['qty']}') ?? 0).compareTo(num.tryParse('${b['qty']}') ?? 0));
       setState(() {
         _summary = r[0] as Map<String, dynamic>;
@@ -49,6 +60,45 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     } catch (e) {
       if (mounted) setState(() => _error = e);
     }
+  }
+
+  Map<String, dynamic>? get _current =>
+      selectedWarehouse.value ?? _warehouses.where((w) => w['is_default'] == true).firstOrNull ?? _warehouses.firstOrNull;
+
+  Future<void> _choose() async {
+    final active = _warehouses.where((w) => w['is_active'] != false).toList();
+    final w = await pickWarehouse(context, title: tr('Склад', 'Ombor'), items: active, selectedId: _current?['id'] as String?);
+    if (w == null || !mounted) return;
+    selectedWarehouse.value = w['is_default'] == true ? null : {...w, 'point': context.read<StoreState>().storeId};
+    setState(() {
+      _summary = null;
+      _docs = null;
+    });
+    _load();
+  }
+
+  /// Какой склад смотрим: приходы, инвентаризации и списания — на него.
+  Widget _switcher() {
+    final w = _current;
+    final active = _warehouses.where((x) => x['is_active'] != false).length;
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      onTap: active > 1 ? _choose : null,
+      child: Row(children: [
+        const IconBox(Icons.warehouse_rounded, bg: AppColors.primarySoft, fg: AppColors.primary, size: 40, iconSize: 20, radius: 12),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(tr('Склад', 'Ombor'), style: AppText.small.copyWith(fontSize: 12)),
+            Text(w == null ? '' : whName(w), style: AppText.bodyStrong, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ]),
+        ),
+        if (active > 1) ...[
+          StatusChip(tr('$active ${plural(active, 'склад', 'склада', 'складов')}', '$active ta ombor')),
+          const Icon(Icons.expand_more_rounded),
+        ],
+      ]),
+    );
   }
 
   Future<void> _open(Widget screen) async {
@@ -64,8 +114,8 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
         onRefresh: _load,
         child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
           Text(tr('Склад', 'Ombor'), style: AppText.h1),
-          Text('${context.watch<StoreState>().store?['name'] ?? ''}', style: AppText.small),
           const SizedBox(height: 12),
+          if (_warehouses.isNotEmpty) ...[_switcher(), const SizedBox(height: 12)],
           if (_error != null && s == null)
             LoadError(_error!, onRetry: _load)
           else if (s == null)
@@ -127,6 +177,8 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                 ],
               ]),
             ),
+            const SizedBox(height: 20),
+            WarehousesSection(items: _warehouses, onChanged: _load),
           ],
         ]),
       ),

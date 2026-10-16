@@ -8,6 +8,7 @@ import 'package:sm_store/ui/theme.dart';
 import 'package:sm_store/ui/widgets.dart';
 
 import 'brands.dart';
+import 'dashboard.dart';
 import 'document_screen.dart';
 import 'logic.dart';
 import 'payments.dart';
@@ -28,6 +29,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic>? _sum;
   Map<String, dynamic>? _brands;
+  final _dash = GlobalKey<AgentDashboardState>();
   Object? _error;
 
   @override
@@ -37,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _load() async {
+    _dash.currentState?.load();
     try {
       final api = context.read<Api>();
       final s = await api.get('/store/supply/summary') as Map<String, dynamic>;
@@ -116,6 +119,19 @@ class _HomeScreenState extends State<HomeScreen> {
           else if (s['verified'] == false && _brands != null)
             BrandPendingHome(brands: _brands!, onChanged: _load)
           else ...[
+            // Быстрые действия — самым верхом главной, одним рядом одной высоты (А1).
+            IntrinsicHeight(
+              child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Expanded(child: _Tile(icon: Icons.move_to_inbox_rounded, title: tr('Приход', 'Kirim'), text: tr('от завода', 'zavoddan'), onTap: () => _open(const DocumentScreen.create(type: 'income')))),
+                const SizedBox(width: 8),
+                Expanded(child: _Tile(icon: Icons.local_shipping_rounded, title: tr('Расход', 'Chiqim'), text: tr('магазину', 'doʻkonga'), onTap: () => _open(const DocumentScreen.create(type: 'shipment')))),
+                const SizedBox(width: 8),
+                Expanded(child: _Tile(icon: Icons.qr_code_scanner_rounded, title: tr('Штрихкод', 'Shtrix-kod'), text: tr('найти', 'topish'), onTap: _scan)),
+                const SizedBox(width: 8),
+                Expanded(child: _Tile(icon: Icons.add_box_rounded, title: tr('Товар', 'Mahsulot'), text: tr('добавить', 'qoʻshish'), onTap: () => _open(const StartScreen()))),
+              ]),
+            ),
+            const SizedBox(height: 16),
             if ((s['pending_payments'] as num? ?? 0) > 0) ...[
               _Banner(
                 icon: Icons.payments_rounded,
@@ -144,27 +160,12 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 12),
             ],
-            _Lacking(sum: s, onTab: widget.onTab, onOpen: (id) => _open(StoreScreen(storeId: id))),
-            const SizedBox(height: 12),
-            if ((s['owed_stores'] as num? ?? 0) > 0 || (s['pending_payments'] as num? ?? 0) > 0) ...[
-              _Owed(sum: s, onTap: () => _open(const PaymentsScreen())),
-              const SizedBox(height: 12),
-            ],
-            _Today(sum: s),
-            const SizedBox(height: 20),
-            Text(tr('Быстрые действия', 'Tezkor amallar'), style: AppText.h3),
-            const SizedBox(height: 12),
-            Row(children: [
-              Expanded(child: _Tile(icon: Icons.move_to_inbox_rounded, title: tr('Приход', 'Kirim'), text: tr('от производителя', 'ishlab chiqaruvchidan'), onTap: () => _open(const DocumentScreen.create(type: 'income')))),
-              const SizedBox(width: 12),
-              Expanded(child: _Tile(icon: Icons.local_shipping_rounded, title: tr('Расход', 'Chiqim'), text: tr('отгрузка магазину', 'doʻkonga joʻnatish'), onTap: () => _open(const DocumentScreen.create(type: 'shipment')))),
-            ]),
-            const SizedBox(height: 12),
-            Row(children: [
-              Expanded(child: _Tile(icon: Icons.qr_code_scanner_rounded, title: tr('Штрихкод', 'Shtrix-kod'), text: tr('найти товар', 'mahsulotni topish'), onTap: _scan)),
-              const SizedBox(width: 12),
-              Expanded(child: _Tile(icon: Icons.add_box_rounded, title: tr('Товар', 'Mahsulot'), text: tr('добавить в свой склад', 'omboringizga qoʻshish'), onTap: () => _open(const StartScreen()))),
-            ]),
+            // А1 · дашборд: период, отгружено, долги, «не хватает», топы.
+            AgentDashboard(
+              key: _dash,
+              onOwed: () => _open(const PaymentsScreen()),
+              middle: _Lacking(sum: s, onTab: widget.onTab, onOpen: (id) => _open(StoreScreen(storeId: id))),
+            ),
           ],
         ]),
       ),
@@ -278,75 +279,6 @@ class _Lacking extends StatelessWidget {
   }
 }
 
-/// «Вам должны»: долг магазинов и сколько из него магазины уже отдали.
-class _Owed extends StatelessWidget {
-  const _Owed({required this.sum, required this.onTap});
-
-  final Map<String, dynamic> sum;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final pending = (sum['pending_payments'] as num? ?? 0) > 0;
-    return AppCard(
-      onTap: onTap,
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Expanded(child: Text(tr('Вам должны', 'Sizga qarzdor'), style: AppText.bodyStrong)),
-          Text(tr('${sum['owed_stores']} магазинов', '${sum['owed_stores']} ta doʻkon'), style: AppText.small),
-        ]),
-        const SizedBox(height: 4),
-        Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Text(money(sum['owed_total'], suffix: false), style: AppText.h2),
-          const SizedBox(width: 6),
-          Padding(padding: const EdgeInsets.only(bottom: 3), child: Text(tr('сум', 'soʻm'), style: AppText.body.copyWith(color: AppColors.text2))),
-        ]),
-        if (pending)
-          Text(
-            tr('из них ${money(sum['pending_payments_sum'])} магазины уже отдали — ждёт вашего подтверждения',
-                'shundan ${money(sum['pending_payments_sum'])} ni doʻkonlar allaqachon berdi — tasdiqlashingizni kutmoqda'),
-            style: AppText.small.copyWith(color: AppColors.primary),
-          ),
-        const SizedBox(height: 10),
-        BigButton(label: tr('Все оплаты', 'Barcha toʻlovlar'), color: AppColors.ink, height: 44, onPressed: onTap),
-      ]),
-    );
-  }
-}
-
-class _Today extends StatelessWidget {
-  const _Today({required this.sum});
-
-  final Map<String, dynamic> sum;
-
-  @override
-  Widget build(BuildContext context) {
-    final pct = changePct(sum['shipped_today'], sum['shipped_yesterday']);
-    return AppCard(
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(tr('Сегодня', 'Bugun'), style: AppText.bodyStrong),
-        const SizedBox(height: 8),
-        Text(tr('Отгружено', 'Joʻnatildi'), style: AppText.small),
-        Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Text(money(sum['shipped_today'], suffix: false), style: AppText.h2),
-          const SizedBox(width: 6),
-          Padding(padding: const EdgeInsets.only(bottom: 3), child: Text(tr('сум', 'soʻm'), style: AppText.body.copyWith(color: AppColors.text2))),
-          const SizedBox(width: 8),
-          if (pct.isNotEmpty) StatusChip(pct, tone: pct.startsWith('▲') ? ChipTone.green : ChipTone.red),
-        ]),
-        const SizedBox(height: 12),
-        Row(children: [
-          Expanded(child: StatTile(label: tr('Расходов', 'Chiqimlar'), value: '${sum['shipments_today']}', note: tr('${sum['in_transit']} собрано', '${sum['in_transit']} yigʻilgan'))),
-          const SizedBox(width: 8),
-          Expanded(child: StatTile(label: tr('Приходов', 'Kirimlar'), value: '${sum['incomes_today']}', note: money(sum['incomes_today_sum']))),
-          const SizedBox(width: 8),
-          Expanded(child: StatTile(label: tr('Заказов', 'Buyurtmalar'), value: '${sum['new_orders']}', note: tr('новых', 'yangi'))),
-        ]),
-      ]),
-    );
-  }
-}
-
 class _Tile extends StatelessWidget {
   const _Tile({required this.icon, required this.title, required this.text, required this.onTap});
 
@@ -359,12 +291,12 @@ class _Tile extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppCard(
       onTap: onTap,
-      padding: const EdgeInsets.all(14),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+      child: Column(children: [
         IconBox(icon, bg: AppColors.primarySoft, fg: AppColors.primary, size: 40, iconSize: 20, radius: 12),
-        const SizedBox(height: 10),
-        Text(title, style: AppText.bodyStrong),
-        Text(text, style: AppText.small),
+        const SizedBox(height: 8),
+        Text(title, style: AppText.bodyStrong.copyWith(fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis),
+        Text(text, style: AppText.small.copyWith(fontSize: 12), textAlign: TextAlign.center, maxLines: 2),
       ]),
     );
   }

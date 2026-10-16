@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -46,6 +47,10 @@ func (m *Module) Routes(r chi.Router) {
 	r.Route("/store/supply", func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppStore))
 		r.Get("/summary", m.summary)
+		r.Get("/dashboard", m.dashboard)
+		r.Get("/warehouses", m.agentWarehouses)
+		r.Post("/warehouses", m.createAgentWarehouse)
+		r.Patch("/warehouses/{id}", m.updateAgentWarehouse)
 		r.Get("/settings", m.getSettings)
 		r.Patch("/settings", m.updateSettings)
 		r.Get("/brands", m.myBrands)
@@ -55,6 +60,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/brand-requests", m.createBrandRequest)
 		r.Put("/brand-requests/{id}", m.updateBrandRequest)
 		r.Get("/payments", m.agentPayments)
+		r.Get("/debtors", m.agentDebtors)
 		r.Post("/payments/{id}/confirm", m.confirmPayment)
 		r.Post("/payments/{id}/dispute", m.disputePayment)
 		// Магазины — когда у сам зарегистрированного агента есть бренд.
@@ -63,6 +69,7 @@ func (m *Module) Routes(r chi.Router) {
 			r.Get("/stores", m.stores)
 			r.Get("/stores/{id}", m.storeDetail)
 			r.Get("/stores/{id}/statement", m.storeStatement)
+			r.Get("/stores/{id}/warehouses", m.storeWarehouses)
 			r.Post("/stores/{id}/code", m.code)
 			r.Post("/stores/{id}/request", m.requestStore)
 			r.Post("/stores/{id}/shipment", m.shipment)
@@ -432,6 +439,50 @@ func (m *Module) agentPayments(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Payment], error) {
 		items, err := m.svc.AgentPayments(r.Context(), pr(r), PaymentsFilter{Status: q.Get("status"), StoreID: q.Get("store_id"), Page: httpx.PageFrom(r)})
 		return httpx.List[Payment]{Items: items}, err
+	})
+}
+
+func (m *Module) agentWarehouses(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[AgentWarehouse], error) {
+		items, err := m.svc.AgentWarehouses(r.Context(), pr(r))
+		return httpx.List[AgentWarehouse]{Items: items}, err
+	})
+}
+
+func (m *Module) createAgentWarehouse(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusCreated, "", func(_ string, in WarehouseInput) (AgentWarehouse, error) {
+		return m.svc.CreateAgentWarehouse(r.Context(), pr(r), in)
+	})
+}
+
+func (m *Module) updateAgentWarehouse(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in WarehouseInput) (AgentWarehouse, error) {
+		return m.svc.UpdateAgentWarehouse(r.Context(), pr(r), id, in)
+	})
+}
+
+// storeWarehouses — ?products=id,id: склады для расхода магазину {id}.
+func (m *Module) storeWarehouses(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (httpx.List[AgentWarehouse], error) {
+		var products []string
+		if v := strings.TrimSpace(r.URL.Query().Get("products")); v != "" {
+			products = strings.Split(v, ",")
+		}
+		items, err := m.svc.WarehousesForStore(r.Context(), pr(r), id, products)
+		return httpx.List[AgentWarehouse]{Items: items}, err
+	})
+}
+
+func (m *Module) dashboard(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (Dashboard, error) {
+		return m.svc.AgentDashboard(r.Context(), pr(r), r.URL.Query().Get("period"))
+	})
+}
+
+func (m *Module) agentDebtors(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Debtor], error) {
+		items, err := m.svc.AgentDebtors(r.Context(), pr(r))
+		return httpx.List[Debtor]{Items: items}, err
 	})
 }
 

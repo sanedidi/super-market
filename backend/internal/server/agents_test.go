@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"context"
+	"strconv"
 	"testing"
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
@@ -232,6 +233,25 @@ func TestAgentPayments(t *testing.T) {
 	if s := a.expect(a.do("GET", "/store/supply/summary", distTok, nil), 200, "summary"); s.str("owed_total") != "240000.00" || s.Body["owed_stores"].(float64) != 1 {
 		t.Fatalf("summary = %v", s.Body)
 	}
+	if d := a.expect(a.do("GET", "/store/supply/debtors", distTok, nil), 200, "debtors").items(); len(d) != 1 || d[0]["store_id"] != store1 || d[0]["debt"] != "240000.00" {
+		t.Fatalf("debtors = %v", d)
+	}
+	for _, period := range []string{"today", "week", "month"} {
+		dash := a.expect(a.do("GET", "/store/supply/dashboard?period="+period, distTok, nil), 200, "dashboard "+period)
+		pts := dash.Body["points"].([]any)
+		var sum float64
+		for _, x := range pts {
+			v, _ := strconv.ParseFloat(x.(map[string]any)["shipped"].(string), 64)
+			sum += v
+		}
+		want := map[string]int{"today": 24, "week": 7, "month": 30}[period]
+		if dash.str("shipped") != "240000.00" || dash.Body["shipments"].(float64) != 1 || dash.Body["stores"].(float64) != 1 ||
+			len(pts) != want || sum != 240000 || dash.str("owed_total") != "240000.00" || len(dash.Body["top_products"].([]any)) != 1 ||
+			dash.Body["change_pct"] != nil {
+			t.Fatalf("dashboard %s = %v", period, dash.Body)
+		}
+	}
+	a.expect(a.do("GET", "/store/supply/dashboard?period=year", distTok, nil), 400, "bad period")
 
 	// Деньги в кассе магазина.
 	var box string

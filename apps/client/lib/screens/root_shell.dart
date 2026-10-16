@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
@@ -25,7 +27,10 @@ class RootShell extends StatefulWidget {
   State<RootShell> createState() => _RootShellState();
 }
 
-class _RootShellState extends State<RootShell> {
+class _RootShellState extends State<RootShell> with WidgetsBindingObserver {
+  /// Пока есть текущий заказ — его статус на главной обновляется сам.
+  Timer? _poll;
+
   /// Вкладки создаются при первом открытии и дальше живут в IndexedStack.
   final _visited = <int>{0};
 
@@ -37,13 +42,33 @@ class _RootShellState extends State<RootShell> {
     super.initState();
     _loggedIn = _api.loggedIn;
     _api.addListener(_onAuth);
+    WidgetsBinding.instance.addObserver(this);
+    Push.onData = _refreshOrder;
+    _poll = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (context.read<AppState>().stats?['active_order'] != null) _refreshOrder();
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) => _start());
   }
 
   @override
   void dispose() {
     _api.removeListener(_onAuth);
+    WidgetsBinding.instance.removeObserver(this);
+    if (Push.onData == _refreshOrder) Push.onData = null;
+    _poll?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState s) {
+    if (s == AppLifecycleState.resumed) _refreshOrder();
+  }
+
+  /// Текущий заказ на главной (/client/me/stats) — без перезагрузки страницы.
+  void _refreshOrder() {
+    if (!mounted) return;
+    final state = context.read<AppState>();
+    if (!state.isGuest) state.loadStats().catchError((_) {});
   }
 
   /// Вошли или вышли (в том числе токен не обновился) — перезапуск данных.

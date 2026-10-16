@@ -115,7 +115,8 @@ func (m *Module) updateCounterpartyType(w http.ResponseWriter, r *http.Request) 
 
 func (m *Module) listCounterparties(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Counterparty], error) {
-		return list(m.svc.ListCounterparties(r.Context(), pr(r), r.URL.Query().Get("q"), httpx.PageFrom(r)))
+		q := r.URL.Query()
+		return list(m.svc.ListCounterparties(r.Context(), pr(r), q.Get("q"), q.Get("role") == "supplier", httpx.PageFrom(r)))
 	})
 }
 

@@ -206,7 +206,7 @@ class _OtherAmountSheetState extends State<_OtherAmountSheet> {
   }
 }
 
-/// Оплаты от магазинов: ждут подтверждения · с расхождением · все.
+/// Оплаты от магазинов: все (с должниками сверху) · ждут подтверждения · с расхождением.
 class PaymentsScreen extends StatefulWidget {
   const PaymentsScreen({super.key});
 
@@ -215,8 +215,10 @@ class PaymentsScreen extends StatefulWidget {
 }
 
 class _PaymentsScreenState extends State<PaymentsScreen> {
-  String _status = 'pending';
+  String _status = '';
   List<Map<String, dynamic>>? _items;
+  // Магазины с долгом — только во вкладке «Все».
+  List<Map<String, dynamic>> _debtors = const [];
   Object? _error;
 
   @override
@@ -227,10 +229,16 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
 
   Future<void> _load() async {
     try {
-      final items = await context.read<Api>().list('/store/supply/payments', {'status': _status, 'limit': 100});
-      if (mounted) {
+      final api = context.read<Api>();
+      final status = _status;
+      final res = await Future.wait([
+        api.list('/store/supply/payments', {'status': status, 'limit': 100}),
+        if (status == '') api.list('/store/supply/debtors'),
+      ]);
+      if (mounted && status == _status) {
         setState(() {
-          _items = items;
+          _items = res[0];
+          _debtors = res.length > 1 ? res[1] : const [];
           _error = null;
         });
       }
@@ -264,9 +272,9 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(children: [
+              chip('', tr('Все', 'Hammasi')),
               chip('pending', tr('Ждут вас', 'Sizni kutmoqda')),
               chip('disputed', tr('Расхождение', 'Farq bor')),
-              chip('', tr('Все', 'Hammasi')),
             ]),
           ),
           const SizedBox(height: 12),
@@ -274,18 +282,94 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
             LoadError(_error!, onRetry: _load)
           else if (items == null)
             const Padding(padding: EdgeInsets.only(top: 60), child: Center(child: CircularProgressIndicator()))
-          else if (items.isEmpty)
-            EmptyState(
-              icon: Icons.payments_outlined,
-              title: _status == 'pending' ? tr('Нечего подтверждать', 'Tasdiqlash uchun hech narsa yoʻq') : tr('Оплат нет', 'Toʻlovlar yoʻq'),
-              text: tr('Когда магазин отдаст вам деньги и отметит это в «SM Магазин», оплата появится здесь.',
-                  'Doʻkon sizga pul berib, buni «SM Doʻkon»da belgilaganda, toʻlov shu yerda chiqadi.'),
-            )
-          else
+          else ...[
+            if (_status == '' && _debtors.isNotEmpty) ...[
+              _Debtors(debtors: _debtors, onChanged: _load),
+              const SizedBox(height: 16),
+              if (items.isNotEmpty) ...[
+                Text(tr('Оплаты', 'Toʻlovlar'), style: AppText.title),
+                const SizedBox(height: 10),
+              ],
+            ],
+            if (items.isEmpty && !(_status == '' && _debtors.isNotEmpty))
+              EmptyState(
+                icon: Icons.payments_outlined,
+                title: _status == 'pending' ? tr('Нечего подтверждать', 'Tasdiqlash uchun hech narsa yoʻq') : tr('Оплат нет', 'Toʻlovlar yoʻq'),
+                text: tr('Когда магазин отдаст вам деньги и отметит это в «SM Магазин», оплата появится здесь.',
+                    'Doʻkon sizga pul berib, buni «SM Doʻkon»da belgilaganda, toʻlov shu yerda chiqadi.'),
+              ),
             for (final p in items) ...[
               PaymentCard(payment: p, onChanged: _load),
               const SizedBox(height: 10),
             ],
+          ],
+        ]),
+      ),
+    );
+  }
+}
+
+/// «Должники»: магазины с долгом агенту, больший долг сверху; нажатие — акт сверки.
+class _Debtors extends StatelessWidget {
+  const _Debtors({required this.debtors, required this.onChanged});
+
+  final List<Map<String, dynamic>> debtors;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = debtors.fold<double>(0, (a, d) => a + (double.tryParse('${d['debt']}') ?? 0));
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(children: [
+        Expanded(child: Text(tr('Должники · ${debtors.length}', 'Qarzdorlar · ${debtors.length}'), style: AppText.title)),
+        Text(money(total.toStringAsFixed(2)), style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
+      ]),
+      const SizedBox(height: 10),
+      AppCard(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        child: Column(children: [
+          for (var i = 0; i < debtors.length; i++) ...[
+            if (i > 0) const Divider(height: 1),
+            _DebtorRow(d: debtors[i], onChanged: onChanged),
+          ],
+        ]),
+      ),
+    ]);
+  }
+}
+
+class _DebtorRow extends StatelessWidget {
+  const _DebtorRow({required this.d, required this.onChanged});
+
+  final Map<String, dynamic> d;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final pending = (double.tryParse('${d['pending_sum']}') ?? 0) > 0;
+    return InkWell(
+      onTap: () async {
+        await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => StatementScreen(storeId: '${d['store_id']}', storeName: '${d['name']}')));
+        onChanged();
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(children: [
+          const IconBox(Icons.storefront_rounded, bg: AppColors.primarySoft, fg: AppColors.primary, size: 40, iconSize: 20, radius: 12),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${d['name']}', style: AppText.bodyStrong, maxLines: 1, overflow: TextOverflow.ellipsis),
+              if (pending)
+                Text(tr('отдал ${money(d['pending_sum'])} — ждёт вас', '${money(d['pending_sum'])} berdi — sizni kutmoqda'),
+                    style: AppText.small.copyWith(color: AppColors.warningInk))
+              else if ('${d['address'] ?? ''}'.isNotEmpty)
+                Text('${d['address']}', style: AppText.small, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ]),
+          ),
+          const SizedBox(width: 8),
+          Text(money(d['debt'], suffix: false), style: AppText.bodyStrong),
+          const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
         ]),
       ),
     );

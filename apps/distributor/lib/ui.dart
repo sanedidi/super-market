@@ -138,6 +138,13 @@ Future<void> callPhone(Object? phone) async {
   await launchUrl(Uri.parse('tel:$p'));
 }
 
+/// Точка магазина в Яндекс Картах (приложение, если установлено, иначе браузер).
+Future<void> openYandexMap(Object? lat, Object? lng) async {
+  final la = num.tryParse('${lat ?? ''}'), lo = num.tryParse('${lng ?? ''}');
+  if (la == null || lo == null) return;
+  await launchUrl(Uri.parse('https://yandex.uz/maps/?ll=$lo,$la&z=17&pt=$lo,$la'), mode: LaunchMode.externalApplication);
+}
+
 /// Сканер штрихкода на весь экран: возвращает первый распознанный код.
 class ScanScreen extends StatefulWidget {
   const ScanScreen({super.key, this.title});

@@ -130,6 +130,12 @@ class _StoreScreenState extends State<StoreScreen> {
             Text([if ('${s['address']}'.isNotEmpty) '${s['address']}', if (s['distance_km'] != null) '${qty(s['distance_km'])} км'].join(' · '), style: AppText.small),
         ]),
         actions: [
+          if (linked && s?['lat'] != null)
+            IconButton(
+              icon: const Icon(Icons.map_outlined),
+              tooltip: tr('Открыть в Яндекс Картах', 'Yandex Xaritada ochish'),
+              onPressed: () => openYandexMap(s?['lat'], s?['lng']),
+            ),
           if (linked && '${s?['phone'] ?? ''}'.isNotEmpty) IconButton(icon: const Icon(Icons.call_rounded), onPressed: () => callPhone(s?['phone'])),
           if (linked)
             PopupMenuButton<String>(
@@ -230,6 +236,23 @@ class _StoreScreenState extends State<StoreScreen> {
           ),
         ]),
       ),
+      if (s['lat'] != null) ...[
+        const SizedBox(height: 12),
+        AppCard(
+          onTap: () => openYandexMap(s['lat'], s['lng']),
+          child: Row(children: [
+            const IconBox(Icons.location_on_rounded, bg: AppColors.primarySoft, fg: AppColors.primary, size: 40, iconSize: 20, radius: 12),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(tr('Открыть в Яндекс Картах', 'Yandex Xaritada ochish'), style: AppText.bodyStrong),
+                Text(tr('Где магазин и как доехать', 'Doʻkon qayerda va qanday borish'), style: AppText.small),
+              ]),
+            ),
+            const Icon(Icons.open_in_new_rounded, color: AppColors.muted, size: 20),
+          ]),
+        ),
+      ],
       const SizedBox(height: 12),
       AppCard(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

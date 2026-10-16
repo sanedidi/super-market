@@ -455,6 +455,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final url = res['payment_url'] as String?;
       final requestId = s.familyRequestId;
       s.clearCart();
+      s.loadStats().catchError((_) {}); // карточка заказа на главной — сразу
       if (requestId != null) {
         // Просьба семьи выполнена заказом — автору уйдёт уведомление.
         api.post('/client/family/requests/$requestId/ordered', {'order_id': order['id']}).catchError((_) => null);

@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"context"
+	"strconv"
 	"testing"
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
@@ -110,6 +111,49 @@ func TestCourierLogin(t *testing.T) {
 		t.Fatalf("yesterday = %v", y.Body)
 	}
 	a.expect(a.do("GET", "/courier/history?period=month", cTok, nil), 400, "bad period")
+
+	// Сдача наличных в кассу магазина (К10, К11, М33, М34).
+	total := o.str("order", "total")
+	totalF, _ := strconv.ParseFloat(total, 64)
+	cash := a.expect(a.do("GET", "/courier/cash", cTok, nil), 200, "courier cash")
+	if cash.str("on_hand") != total || len(cash.Body["stores"].([]any)) != 1 {
+		t.Fatalf("cash = %v", cash.Body)
+	}
+	a.expect(a.do("POST", "/courier/cash/handovers", cTok, map[string]any{"store_id": shop.store, "amount": totalF + 1}), 409, "too much")
+	a.expect(a.do("POST", "/courier/cash/handovers", cTok, map[string]any{"store_id": shop.store, "amount": 0}), 400, "zero")
+	hv := a.expect(a.do("POST", "/courier/cash/handovers", cTok, map[string]any{"store_id": shop.store, "amount": total}), 201, "handover")
+	if hv.str("status") != "pending" || hv.str("courier_name") != "Азиз Каримов" || hv.Body["orders"].(float64) != 1 {
+		t.Fatalf("handover = %v", hv.Body)
+	}
+	a.expect(a.do("POST", "/courier/cash/handovers", cTok, map[string]any{"store_id": shop.store, "amount": 1000}), 409, "already pending all")
+	sc := a.expect(a.do("GET", "/store/courier-cash?store_id="+shop.store, tok, nil), 200, "store courier cash")
+	if sc.str("total") != total || len(sc.Body["pending"].([]any)) != 1 || len(sc.Body["couriers"].([]any)) != 1 {
+		t.Fatalf("store cash = %v", sc.Body)
+	}
+	a.expect(a.do("POST", "/store/courier-cash/handovers/"+hv.str("id")+"/receive", tok, map[string]any{"received": totalF + 1}), 400, "received > amount")
+	got := a.expect(a.do("POST", "/store/courier-cash/handovers/"+hv.str("id")+"/receive", tok, map[string]any{"received": totalF - 5000, "comment": "не хватает купюры"}), 200, "receive less")
+	if got.str("status") != "received" || got.str("received") != strconv.FormatFloat(totalF-5000, 'f', 2, 64) || got.str("comment") != "не хватает купюры" {
+		t.Fatalf("received = %v", got.Body)
+	}
+	a.expect(a.do("POST", "/store/courier-cash/handovers/"+hv.str("id")+"/receive", tok, map[string]any{}), 409, "twice")
+	var inBox string
+	if err := pool.QueryRow(ctx, `SELECT COALESCE(sum(amount), 0)::numeric(18,2)::text FROM cash_entries WHERE doc_type = 'courier_cash'`).Scan(&inBox); err != nil {
+		t.Fatal(err)
+	}
+	if inBox != got.str("received") {
+		t.Fatalf("в кассе %s, получено %s", inBox, got.str("received"))
+	}
+	if c := a.expect(a.do("GET", "/courier/cash", cTok, nil), 200, "cash after"); c.str("on_hand") != "5000.00" || c.str("pending") != "0.00" {
+		t.Fatalf("cash after = %v", c.Body)
+	}
+	rest := a.expect(a.do("POST", "/courier/cash/handovers", cTok, map[string]any{"store_id": shop.store, "amount": 5000}), 201, "rest")
+	a.expect(a.do("POST", "/store/courier-cash/handovers/"+rest.str("id")+"/receive", tok, map[string]any{}), 200, "receive all")
+	if c := a.expect(a.do("GET", "/courier/cash", cTok, nil), 200, "cash zero"); c.str("on_hand") != "0.00" || len(c.Body["stores"].([]any)) != 0 || len(c.Body["handovers"].([]any)) != 2 {
+		t.Fatalf("cash zero = %v", c.Body)
+	}
+	if sc := a.expect(a.do("GET", "/store/courier-cash?store_id="+shop.store, tok, nil), 200, "store cash zero"); sc.str("total") != "0.00" {
+		t.Fatalf("store cash zero = %v", sc.Body)
+	}
 
 	// Новый пароль — старая сессия закрыта, старый пароль не подходит.
 	a.expect(set(courier, "aziz.baraka", "new-secret-1"), 200, "new password")

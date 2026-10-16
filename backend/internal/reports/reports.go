@@ -108,6 +108,7 @@ var flowTitles = map[string]i18n.Text{
 	"transfer:transfer": {RU: "Из кассы в кассу", UZ: "Kassadan kassaga"},
 	"transfer:handover": {RU: "Сдача кассы", UZ: "Kassani topshirish"},
 	"counterparty":      {RU: "Расчёты с контрагентами", UZ: "Kontragentlar bilan hisob-kitob"},
+	"courier_cash":      {RU: "Наличные от курьеров", UZ: "Kuryerlardan naqd pul"},
 }
 
 // cashboxesCTE — кассы в области отчёта ($1 — сеть, $2 — магазины или NULL, $3 — касса или ”).

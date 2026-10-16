@@ -11,6 +11,7 @@ import '../state.dart';
 import '../summary/summary_screen.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
+import 'courier_cash.dart';
 import 'store_picker.dart';
 
 /// М1 · Главная: новые заказы, выручка за сегодня, быстрые действия.
@@ -29,6 +30,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic>? _sales;
   int? _newOrders;
   Map<String, dynamic>? _balance;
+  // М33 · наличные у курьеров и сдачи, которые ждут кассира.
+  Map<String, dynamic>? _cash;
   String? _loadedFor;
   // Растёт при «потянуть вниз» — дашборд пересоздаётся и загружается заново.
   int _gen = 0;
@@ -63,6 +66,11 @@ class _HomeScreenState extends State<HomeScreen> {
         safe(() async {
           final items = await api.list('/store/orders', {'store_id': storeId, 'status': 'paid', 'limit': 100});
           if (mounted) setState(() => _newOrders = items.length);
+        }),
+      if (st.can('finance.manage') || st.can('sales.pos') || st.can('orders.manage'))
+        safe(() async {
+          final c = await api.get('/store/courier-cash', {'store_id': storeId}) as Map<String, dynamic>;
+          if (mounted) setState(() => _cash = c);
         }),
       if (st.can('payouts.manage') && !st.can('reports.view'))
         safe(() async {
@@ -124,6 +132,11 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 16),
           ],
+          // М33 · курьер сдаёт наличные — «Получил» / «Другая сумма».
+          for (final h in ((_cash?['pending'] as List?) ?? const []).whereType<Map>()) ...[
+            CourierHandoverCard(key: ValueKey('ho-${h['id']}'), h: h.cast<String, dynamic>(), onDone: _load),
+            const SizedBox(height: 16),
+          ],
           // К1 · «Продать» — касса в телефоне: сотрудник с правом «Продажа».
           if (st.can('sales.pos') && st.storeId != null) ...[
             AppCard(
@@ -145,20 +158,31 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 16),
           ],
-          if (st.can('reports.view') && st.storeId != null)
+          if (st.can('reports.view') && st.storeId != null) ...[
+            // Приход, Склад, Итоги дня — сразу под «Продать», над графиками.
+            _actions(canIncome),
+            const SizedBox(height: 16),
+            if (_courierCash != null) ...[_courierCash!, const SizedBox(height: 16)],
             HomeDashboard(
               key: ValueKey('dash-${st.storeId}-$_gen'),
               storeId: st.storeId!,
               canOrders: st.can('orders.manage'),
               canBalance: st.can('payouts.manage'),
-              actions: _actions(canIncome),
-            )
-          else ...[
+            ),
+          ] else ...[
+            if (_courierCash != null) ...[_courierCash!, const SizedBox(height: 16)],
             ..._plain(canIncome),
           ],
         ]),
       ),
     );
+  }
+
+  /// «Наличные у курьеров» — когда у кого-то на руках есть деньги магазина.
+  Widget? get _courierCash {
+    final c = _cash;
+    if (c == null || (num.tryParse('${c['total']}') ?? 0) <= 0) return null;
+    return CourierCashCard(data: c);
   }
 
   /// Быстрые действия одним рядом — на главной с графиками.

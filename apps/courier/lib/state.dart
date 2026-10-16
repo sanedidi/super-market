@@ -139,6 +139,12 @@ class CourierState extends ChangeNotifier {
 
   Future<Map<String, dynamic>> history(String period) async => await api.get('/courier/history', {'period': period}) as Map<String, dynamic>;
 
+  /// Наличные на руках по магазинам и последние сдачи в кассу (К10, К11).
+  Future<Map<String, dynamic>> cash() async => await api.get('/courier/cash') as Map<String, dynamic>;
+
+  /// «Сдал N» в кассу магазина — ждёт подтверждения кассира.
+  Future<void> handOver(String storeId, String amount) => api.post('/courier/cash/handovers', {'store_id': storeId, 'amount': amount});
+
   /// Запрос на удаление аккаунта (Figma К8а): аккаунт создал магазин, удаляет
   /// поддержка в течение 30 дней. 201 — создан, 200 — уже есть открытый.
   Future<void> requestDeletion(String? reason) async {
