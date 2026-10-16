@@ -147,8 +147,8 @@ class _OtherAmountSheetState extends State<_OtherAmountSheet> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                tr('Разница ${money(_amount - v!)} останется на курьере — он увидит это у себя',
-                    'Farq ${money(_amount - v!)} kuryerda qoladi — u buni oʻzida koʻradi'),
+                tr('Разница ${money(_amount - v)} останется на курьере — он увидит это у себя',
+                    'Farq ${money(_amount - v)} kuryerda qoladi — u buni oʻzida koʻradi'),
                 style: AppText.small.copyWith(color: AppColors.primary),
               ),
             ),
@@ -160,7 +160,7 @@ class _OtherAmountSheetState extends State<_OtherAmountSheet> {
       const SizedBox(height: 16),
       SheetButton(
         label: tr('Получил ${money(v ?? 0)}', '${money(v ?? 0)} oldim'),
-        onPressed: ok ? () => Navigator.of(context).pop({'received': _plain(v!), 'comment': _comment.text.trim()}) : null,
+        onPressed: ok ? () => Navigator.of(context).pop({'received': _plain(v), 'comment': _comment.text.trim()}) : null,
       ),
     ]);
   }
