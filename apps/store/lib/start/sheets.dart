@@ -422,13 +422,16 @@ class _PickSheetState extends State<_PickSheet> {
 
 /// Шаги «Начала работы»: «1 · Выбор товаров › 2 · Инвентаризация».
 class StartSteps extends StatelessWidget {
-  const StartSteps({super.key, required this.step});
+  const StartSteps({super.key, required this.step, this.prices = false});
 
   final int step;
 
+  /// «Только товары и цены»: шаг 2 — «Цены».
+  final bool prices;
+
   @override
   Widget build(BuildContext context) {
-    final labels = [tr('Выбор товаров', 'Mahsulotlarni tanlash'), tr('Инвентаризация', 'Inventarizatsiya')];
+    final labels = [tr('Выбор товаров', 'Mahsulotlarni tanlash'), prices ? tr('Цены', 'Narxlar') : tr('Инвентаризация', 'Inventarizatsiya')];
     Widget chip(int n) {
       final on = n == step;
       final done = n < step;
@@ -517,6 +520,9 @@ class _CountSheetState extends State<_CountSheet> {
 
   bool get _hasPhoto => _hadPhoto || _photos.isNotEmpty;
 
+  /// «Только товары и цены» (v5, Н3): без количества, фото — по желанию.
+  bool get _prices => widget.start.prices;
+
   @override
   void dispose() {
     _qty.dispose();
@@ -557,7 +563,7 @@ class _CountSheetState extends State<_CountSheet> {
 
   Future<void> _save() async {
     final total = _total();
-    if (total == null) {
+    if (total == null && !_prices) {
       showMessage(context, tr('Количество обязательно — можно 0', 'Miqdor majburiy — 0 boʻlishi mumkin'));
       return;
     }
@@ -573,7 +579,7 @@ class _CountSheetState extends State<_CountSheet> {
       showMessage(context, tr('Цена закупки: неверное число', 'Xarid narxi: notoʻgʻri son'));
       return;
     }
-    if (!_hasPhoto) {
+    if (!_hasPhoto && !_prices) {
       showMessage(context, tr('Сначала сфотографируйте товар', 'Avval mahsulotni suratga oling'));
       return;
     }
@@ -583,7 +589,7 @@ class _CountSheetState extends State<_CountSheet> {
         await widget.start.setPhoto('${widget.line['product_id']}', _photos);
       }
       await widget.start.setLines([
-        {'product_id': widget.line['product_id'], 'qty': total, 'price': price, 'cost': cost},
+        {'product_id': widget.line['product_id'], if (!_prices) 'qty': total, 'price': price, 'cost': cost},
       ]);
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -600,7 +606,7 @@ class _CountSheetState extends State<_CountSheet> {
     final filled = l['qty'] != null;
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       SheetHeader(
-        title: tr('Количество и цены', 'Miqdor va narxlar'),
+        title: _prices ? tr('Цена товара', 'Mahsulot narxi') : tr('Количество и цены', 'Miqdor va narxlar'),
         text: filled
             ? tr('Этот товар уже заполняли', 'Bu mahsulot allaqachon toʻldirilgan')
             : tr('Нашли в ваших товарах', '«Mahsulotlarim» ichidan topildi'),
@@ -616,16 +622,20 @@ class _CountSheetState extends State<_CountSheet> {
         const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(color: _photos.isEmpty ? AppColors.errorSoft : AppColors.bg, borderRadius: BorderRadius.circular(16)),
+          decoration: BoxDecoration(color: _photos.isEmpty && !_prices ? AppColors.errorSoft : AppColors.bg, borderRadius: BorderRadius.circular(16)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             if (_photos.isEmpty) ...[
               const Icon(Icons.photo_camera_rounded, color: AppColors.primary, size: 28),
               const SizedBox(height: 8),
               Text(tr('Сфотографируйте товар', 'Mahsulotni suratga oling'), style: AppText.bodyStrong.copyWith(color: AppColors.error), textAlign: TextAlign.center),
               const SizedBox(height: 4),
-              Text(tr('Без фото покупатель не увидит товар. Можно снять несколько: лицевая сторона, этикетка, состав',
-                  'Rasmsiz xaridor mahsulotni koʻrmaydi. Bir nechta olish mumkin: old tomoni, yorligʻi, tarkibi'),
-                  style: AppText.small.copyWith(color: AppColors.error), textAlign: TextAlign.center),
+              Text(
+                  _prices
+                      ? tr('Продавать можно и без фото — оно нужно, чтобы покупатель увидел товар в приложении',
+                          'Rasmsiz ham sotish mumkin — rasm xaridor mahsulotni ilovada koʻrishi uchun kerak')
+                      : tr('Без фото покупатель не увидит товар. Можно снять несколько: лицевая сторона, этикетка, состав',
+                          'Rasmsiz xaridor mahsulotni koʻrmaydi. Bir nechta olish mumkin: old tomoni, yorligʻi, tarkibi'),
+                  style: AppText.small.copyWith(color: _prices ? AppColors.text2 : AppColors.error), textAlign: TextAlign.center),
             ] else ...[
               Align(
                 alignment: Alignment.centerLeft,
@@ -675,7 +685,7 @@ class _CountSheetState extends State<_CountSheet> {
               label: _photos.isEmpty
                   ? tr('Сделать фото', 'Rasmga olish')
                   : tr('Добавить ещё фото', 'Yana rasm qoʻshish'),
-              primary: _photos.isEmpty,
+              primary: _photos.isEmpty && !_prices,
               busy: _busy,
               onPressed: _photos.length >= _maxPhotos ? null : _takePhoto,
             ),
@@ -683,24 +693,31 @@ class _CountSheetState extends State<_CountSheet> {
         ),
       ],
       const SizedBox(height: 14),
-      NumField(
-        label: tr('Количество, $unit *', 'Miqdor, $unit *'),
-        controller: _qty,
-        hint: tr('обязательно', 'majburiy'),
-        decimal: l['is_fractional'] == true,
-        onChanged: (_) => setState(() {}),
-      ),
-      const SizedBox(height: 12),
+      if (!_prices) ...[
+        NumField(
+          label: tr('Количество, $unit *', 'Miqdor, $unit *'),
+          controller: _qty,
+          hint: tr('обязательно', 'majburiy'),
+          decimal: l['is_fractional'] == true,
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 12),
+      ],
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Expanded(child: NumField(label: '${sellPriceWord()} *', controller: _price, hint: tr('обязательно', 'majburiy'))),
         const SizedBox(width: 10),
         Expanded(child: NumField(label: tr('Цена закупки', 'Xarid narxi'), controller: _cost, hint: tr('по желанию', 'ixtiyoriy'))),
       ]),
       const SizedBox(height: 8),
-      Text(tr('Цена закупки нужна только для расчёта прибыли — можно не заполнять', 'Xarid narxi faqat foydani hisoblash uchun kerak — toʻldirmasa ham boʻladi'), style: AppText.small),
+      Text(
+          _prices
+              ? tr('Количество не нужно — у товара будет «Остаток не посчитан». Цена закупки — только для прибыли.',
+                  'Miqdor shart emas — mahsulotda «Qoldiq sanalmagan» belgisi boʻladi. Xarid narxi — faqat foyda uchun.')
+              : tr('Цена закупки нужна только для расчёта прибыли — можно не заполнять', 'Xarid narxi faqat foydani hisoblash uchun kerak — toʻldirmasa ham boʻladi'),
+          style: AppText.small),
       const SizedBox(height: 16),
-      SheetButton(label: tr('Сохранить и сканировать дальше', 'Saqlash va skanerlashni davom ettirish'), busy: _busy, onPressed: _hasPhoto ? _save : null),
-      if (!_hasPhoto) ...[
+      SheetButton(label: tr('Сохранить и сканировать дальше', 'Saqlash va skanerlashni davom ettirish'), busy: _busy, onPressed: _hasPhoto || _prices ? _save : null),
+      if (!_hasPhoto && !_prices) ...[
         const SizedBox(height: 6),
         Text(tr('Кнопка включится, когда появится фото', 'Rasm paydo boʻlgach tugma ishlaydi'), style: AppText.small, textAlign: TextAlign.center),
       ],

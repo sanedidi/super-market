@@ -19,6 +19,7 @@ String stockLine(Map<String, dynamic> it) {
   final qty = n(it['my_qty'] ?? it['qty']);
   final perDay = n(it['per_day']);
   if (it['carried'] == false) return tr('Нет в магазине · ${money(it['price'])}', 'Doʻkonda yoʻq · ${money(it['price'])}');
+  if (it['status'] == 'unknown') return tr('Остаток не посчитан', 'Qoldiq sanalmagan');
   if (qty <= 0) {
     return perDay > 0
         ? tr('У вас 0 · продаётся ${_q(perDay.ceil())} в день', 'Sizda 0 · kuniga ${_q(perDay.ceil())} ta sotiladi')

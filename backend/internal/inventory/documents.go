@@ -645,6 +645,18 @@ func (s *Service) Post(ctx context.Context, p *identity.Principal, id string) (D
 			return err
 		}
 
+		// Инвентаризация — товары посчитаны: снять «Остаток не посчитан»
+		// (Figma «начало работы v5»).
+		if d.Type == TypeInventory {
+			if _, err := tx.Exec(ctx, `
+				UPDATE store_products sp SET uncounted_since = NULL, counted_at = now()
+				FROM stock_document_items i, warehouses w
+				WHERE i.document_id = $1 AND w.id = $2 AND sp.store_id = w.store_id AND sp.product_id = i.product_id`,
+				d.ID, d.WarehouseID); err != nil {
+				return err
+			}
+		}
+
 		// Взаиморасчёты с поставщиком — в UZS.
 		if d.Type == TypeIncome || d.Type == TypeSupplierReturn {
 			totalUZS := total

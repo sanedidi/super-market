@@ -17,6 +17,9 @@ import 'start_logic.dart';
 /// себестоимость — по желанию. Значения сохраняются при уходе из поля.
 /// «Сохранить» — черновик; «Записать и закрыть» — остатки и цены магазина,
 /// после этого «Начало работы» больше не показывается.
+/// В режиме «Только товары и цены» (v5, Н2) — «Товары и цены»: количество не
+/// нужно (у товаров «Остаток не посчитан»), кнопка «Начать продавать».
+/// В «Сразу с остатками» — ещё «Остальное посчитаю потом» (Н4).
 class StartCountScreen extends StatefulWidget {
   const StartCountScreen({super.key, required this.start, this.initialScan = false});
 
@@ -46,8 +49,10 @@ class _StartCountScreenState extends State<StartCountScreen> {
     super.initState();
     // Магазин на шаге 2: теперь «Штрихкод» на главной открывает инвентаризацию.
     widget.start.setStep(2).catchError((_) {});
-    _load();
-    if (widget.initialScan) WidgetsBinding.instance.addPostFrameCallback((_) => _scan());
+    // Сканер — после черновика: шторке нужно знать режим (спрашивать ли количество).
+    _load().then((_) {
+      if (widget.initialScan && mounted) _scan();
+    });
   }
 
   @override
@@ -132,6 +137,7 @@ class _StartCountScreenState extends State<StartCountScreen> {
   }
 
   Map<String, dynamic> get _t => (_d?['totals'] as Map<String, dynamic>?) ?? const {};
+  bool get _prices => pricesMode(_d);
   int _n(String k) => (_t[k] as num?)?.toInt() ?? 0;
 
   Future<void> _filter(String? only) async {
@@ -186,12 +192,26 @@ class _StartCountScreenState extends State<StartCountScreen> {
     if (!mounted || _d == null) return;
     final unfilled = _n('unfilled');
     if (unfilled > 0) {
-      showMessage(context, tr('Заполните строк: $unfilled — количество и ${sellPriceWord().toLowerCase()} обязательны', 'Toʻldiring: $unfilled ta qator — miqdor va ${sellPriceWord().toLowerCase()} majburiy'));
+      showMessage(
+          context,
+          _prices
+              ? tr('Укажите ${sellPriceWord().toLowerCase()}: без неё ${goods(unfilled)}', '${sellPriceWord()}ni kiriting: usiz ${goods(unfilled)}')
+              : tr('Заполните строк: $unfilled — количество и ${sellPriceWord().toLowerCase()} обязательны', 'Toʻldiring: $unfilled ta qator — miqdor va ${sellPriceWord().toLowerCase()} majburiy'));
       _filter('unfilled');
       return;
     }
     final d = _d!;
-    final ok = await confirmSheet(
+    final ok = _prices
+        ? await confirmSheet(
+            context,
+            title: tr('Начать продавать?', 'Sotishni boshlaymizmi?'),
+            text: tr(
+                'Цены встанут в магазин, товары — в «Мои товары». У ${goods(_n('no_qty'))} — «Остаток не посчитан»: продавать можно, посчитаете потом с главной или при приходе.',
+                'Narxlar doʻkonga, mahsulotlar «Mahsulotlarim»ga tushadi. ${goods(_n('no_qty'))}da — «Qoldiq sanalmagan»: sotish mumkin, keyin bosh sahifadan yoki kirimda sanaysiz.'),
+            confirm: tr('Начать продавать', 'Sotishni boshlash'),
+            icon: Icons.storefront_rounded,
+          )
+        : await confirmSheet(
       context,
       title: tr('Записать и закрыть?', 'Yozib, yopilsinmi?'),
       text: tr(
@@ -203,9 +223,13 @@ class _StartCountScreenState extends State<StartCountScreen> {
       icon: Icons.check_circle_outline_rounded,
     );
     if (!ok || !mounted) return;
+    await _send(d);
+  }
+
+  Future<void> _send(Map<String, dynamic> d, {bool restLater = false}) async {
     setState(() => _busy = true);
     try {
-      final r = await widget.start.post();
+      final r = await widget.start.post(restLater: restLater);
       if (!mounted) return;
       await Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => StartDoneScreen(result: r, warehouse: '${d['warehouse_name']}')));
     } on ApiError catch (e) {
@@ -220,9 +244,63 @@ class _StartCountScreenState extends State<StartCountScreen> {
     }
   }
 
+  /// Н4 · «Остальное посчитать потом?»: посчитанное сохранится, остальное —
+  /// «Остаток не посчитан». Без цены и без фото не записать.
+  Future<void> _later() async {
+    await _flush();
+    await _load();
+    if (!mounted || _d == null) return;
+    final d = _d!;
+    final noQty = _n('no_qty');
+    final noPrice = _n('no_price');
+    final noPhoto = _n('no_photo');
+    final counted = _n('products') - noQty;
+    Widget row(IconData icon, Color color, String text) => Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: 10),
+            Expanded(child: Text(text, style: AppText.small.copyWith(color: AppColors.ink, fontWeight: FontWeight.w500))),
+          ]),
+        );
+    final blocked = noPrice > 0 || noPhoto > 0;
+    final ok = await showSheet<bool>(
+      context,
+      (ctx) => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        SheetHeader(
+          icon: Icons.schedule_rounded,
+          title: tr('Остальное посчитать потом?', 'Qolganini keyin sanaymizmi?'),
+          text: tr('Посчитанное сохранится, документ закроется. Остальные товары досчитаете по одному — без нового документа.',
+              'Sanalgani saqlanadi, hujjat yopiladi. Qolgan mahsulotlarni bittadan, yangi hujjatsiz sanaysiz.'),
+        ),
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+          decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(14)),
+          child: Column(children: [
+            row(Icons.check_circle_rounded, AppColors.successInk, tr('${goods(counted)} — остаток и цена сохранятся', '${goods(counted)} — qoldiq va narx saqlanadi')),
+            if (noQty > 0) row(Icons.help_outline_rounded, AppColors.text2, tr('${goods(noQty)} — «Остаток не посчитан», продавать можно', '${goods(noQty)} — «Qoldiq sanalmagan», sotish mumkin')),
+            if (noPrice > 0) row(Icons.error_outline_rounded, AppColors.error, tr('${goods(noPrice)} без цены — укажите цену, без неё не записать', '${goods(noPrice)} narxsiz — narx kiriting, usiz yozib boʻlmaydi')),
+            if (noPhoto > 0) row(Icons.error_outline_rounded, AppColors.error, tr('${goods(noPhoto)} без фото — сделайте снимок', '${goods(noPhoto)} rasmsiz — rasmga oling')),
+          ]),
+        ),
+        const SizedBox(height: 16),
+        SheetButton(label: tr('Сохранить и начать продавать', 'Saqlash va sotishni boshlash'), onPressed: blocked ? null : () => Navigator.pop(ctx, true)),
+        const SizedBox(height: 10),
+        SheetButton(label: tr('Продолжить считать', 'Sanashni davom ettirish'), primary: false, onPressed: () => Navigator.pop(ctx, false)),
+      ]),
+    );
+    if (ok != true || !mounted) {
+      if (mounted && blocked) _filter(noPrice > 0 ? 'unfilled' : 'no_photo');
+      return;
+    }
+    await _send(d, restLater: true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final d = _d;
+    final prices = _prices;
     final lines = ((d?['lines'] as List?) ?? const []).cast<Map<String, dynamic>>();
     final products = _n('products');
     final unfilled = _n('unfilled');
@@ -230,9 +308,13 @@ class _StartCountScreenState extends State<StartCountScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.bg,
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(tr('Инвентаризация: Начало работы', 'Inventarizatsiya: Ishni boshlash'), maxLines: 2),
+          Text(prices ? tr('Товары и цены', 'Mahsulotlar va narxlar') : tr('Инвентаризация: Начало работы', 'Inventarizatsiya: Ishni boshlash'), maxLines: 2),
           if (d != null)
-            Text(tr('Шаг 2 из 2 · заполнено ${products - unfilled} из $products', '2-qadam · toʻldirilgan ${products - unfilled} / $products'), style: AppText.small),
+            Text(
+                prices
+                    ? tr('Шаг 2 из 2 · с ценой ${products - unfilled} из $products', '2-qadam · narx bilan ${products - unfilled} / $products')
+                    : tr('Шаг 2 из 2 · заполнено ${products - unfilled} из $products', '2-qadam · toʻldirilgan ${products - unfilled} / $products'),
+                style: AppText.small),
         ]),
       ),
       body: _error != null && d == null
@@ -255,6 +337,7 @@ class _StartCountScreenState extends State<StartCountScreen> {
                               key: ValueKey(l['product_id']),
                               line: l,
                               start: widget.start,
+                              prices: prices,
                               onSaved: _saved,
                               onPending: _track,
                               onRemove: () => _remove(l),
@@ -262,7 +345,7 @@ class _StartCountScreenState extends State<StartCountScreen> {
                         );
                       }
                       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                    const StartSteps(step: 2),
+                    StartSteps(step: 2, prices: prices),
                     const SizedBox(height: 12),
                     // И1 · тот же поиск и сканер, что при добавлении товара.
                     Row(children: [
@@ -309,13 +392,16 @@ class _StartCountScreenState extends State<StartCountScreen> {
                         const Icon(Icons.qr_code_scanner_rounded, size: 20, color: AppColors.successInk),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(tr('Сканируйте штрихкод — снизу откроется ввод количества и цен', 'Shtrix-kodni skanerlang — pastdan miqdor va narx kiritish ochiladi'),
+                          child: Text(
+                              prices
+                                  ? tr('Сканируйте штрихкод — снизу откроется ввод цены. Количество не нужно', 'Shtrix-kodni skanerlang — pastdan narx kiritish ochiladi. Miqdor shart emas')
+                                  : tr('Сканируйте штрихкод — снизу откроется ввод количества и цен', 'Shtrix-kodni skanerlang — pastdan miqdor va narx kiritish ochiladi'),
                               style: AppText.small.copyWith(color: AppColors.successInk, fontWeight: FontWeight.w500)),
                         ),
                       ]),
                     ),
                     const SizedBox(height: 12),
-                    if (_n('no_photo') > 0) ...[
+                    if (_n('no_photo') > 0 && !prices) ...[
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(color: AppColors.errorSoft, borderRadius: BorderRadius.circular(14)),
@@ -340,7 +426,10 @@ class _StartCountScreenState extends State<StartCountScreen> {
                           const Icon(Icons.error_outline_rounded, color: AppColors.primary, size: 20),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Text(tr('Заполните строк: $unfilled — количество и ${sellPriceWord().toLowerCase()} обязательны (можно 0)', 'Toʻldiring: $unfilled ta qator — miqdor va ${sellPriceWord().toLowerCase()} majburiy (0 boʻlishi mumkin)'),
+                            child: Text(
+                                prices
+                                    ? tr('Укажите цену у ${goods(unfilled)} — количество не нужно', '${goods(unfilled)}ga narx kiriting — miqdor shart emas')
+                                    : tr('Заполните строк: $unfilled — количество и ${sellPriceWord().toLowerCase()} обязательны (можно 0)', 'Toʻldiring: $unfilled ta qator — miqdor va ${sellPriceWord().toLowerCase()} majburiy (0 boʻlishi mumkin)'),
                                 style: AppText.small.copyWith(color: AppColors.error, fontWeight: FontWeight.w500)),
                           ),
                         ]),
@@ -352,11 +441,14 @@ class _StartCountScreenState extends State<StartCountScreen> {
                       child: Row(children: [
                         _Chip(tr('Все · $products', 'Hammasi · $products'), on: _only == null, onTap: () => _filter(null)),
                         const SizedBox(width: 6),
-                        _Chip(tr('Не заполнено · $unfilled', 'Toʻldirilmagan · $unfilled'), on: _only == 'unfilled', tone: AppColors.error, onTap: () => _filter('unfilled')),
+                        _Chip(prices ? tr('Без цены · $unfilled', 'Narxsiz · $unfilled') : tr('Не заполнено · $unfilled', 'Toʻldirilmagan · $unfilled'),
+                            on: _only == 'unfilled', tone: AppColors.error, onTap: () => _filter('unfilled')),
                         const SizedBox(width: 6),
                         _Chip(tr('Без закупки · ${_n('no_cost')}', 'Xarid narxisiz · ${_n('no_cost')}'), on: _only == 'no_cost', tone: AppColors.warningInk, onTap: () => _filter('no_cost')),
-                        const SizedBox(width: 6),
-                        _Chip(tr('Без фото · ${_n('no_photo')}', 'Rasmsiz · ${_n('no_photo')}'), on: _only == 'no_photo', tone: AppColors.error, onTap: () => _filter('no_photo')),
+                        if (!prices) ...[
+                          const SizedBox(width: 6),
+                          _Chip(tr('Без фото · ${_n('no_photo')}', 'Rasmsiz · ${_n('no_photo')}'), on: _only == 'no_photo', tone: AppColors.error, onTap: () => _filter('no_photo')),
+                        ],
                       ]),
                     ),
                     const SizedBox(height: 12),
@@ -380,11 +472,21 @@ class _StartCountScreenState extends State<StartCountScreen> {
                     const SizedBox(width: 10),
                     Expanded(
                       flex: 3,
-                      child: BigButton(label: tr('Записать и закрыть', 'Yozish va yopish'), height: 52, busy: _busy, onPressed: products == 0 ? null : _post),
+                      child: BigButton(
+                          label: prices ? tr('Начать продавать', 'Sotishni boshlash') : tr('Записать и закрыть', 'Yozish va yopish'),
+                          height: 52,
+                          busy: _busy,
+                          onPressed: products == 0 ? null : _post),
                     ),
                   ]),
                   const SizedBox(height: 6),
-                  Text(tr('После записи документ больше не появится', 'Yozilgandan soʻng hujjat boshqa chiqmaydi'), style: AppText.small),
+                  if (prices)
+                    Text(tr('Остатки посчитаете потом — это не обязательно сейчас', 'Qoldiqlarni keyin sanaysiz — hozir shart emas'), style: AppText.small)
+                  else
+                    TextButton(
+                      onPressed: products == 0 || _busy ? null : _later,
+                      child: Text(tr('Остальное посчитаю потом', 'Qolganini keyin sanayman'), style: AppText.bodyStrong.copyWith(fontSize: 14, color: AppColors.primary)),
+                    ),
                 ]),
               ),
             ),
@@ -420,10 +522,14 @@ class _Chip extends StatelessWidget {
 /// Карточка товара: название целиком, штрихкод; поля «Кол-во *», «Себестоимость»,
 /// «Цена продажи *». Поле сохраняется, когда из него уходят.
 class _CountCard extends StatefulWidget {
-  const _CountCard({super.key, required this.line, required this.start, required this.onSaved, required this.onPending, required this.onRemove, required this.onOpen});
+  const _CountCard(
+      {super.key, required this.line, required this.start, this.prices = false, required this.onSaved, required this.onPending, required this.onRemove, required this.onOpen});
 
   final Map<String, dynamic> line;
   final StartApi start;
+
+  /// «Только товары и цены»: «Остаток» необязателен — пусто значит «не посчитан».
+  final bool prices;
   final ValueChanged<Map<String, dynamic>> onSaved;
 
   /// Открыть шторку количества и цен (там же — фото, если его нет).
@@ -498,7 +604,7 @@ class _CountCardState extends State<_CountCard> {
     }
   }
 
-  Widget _field(String f, String label, {required bool required}) {
+  Widget _field(String f, String label, {required bool required, String? hint}) {
     final empty = _c[f]!.text.trim().isEmpty;
     final err = required && empty;
     return Expanded(
@@ -516,7 +622,7 @@ class _CountCardState extends State<_CountCard> {
             isDense: true,
             filled: true,
             fillColor: err ? AppColors.errorSoft : AppColors.bg,
-            hintText: required ? tr('обязательно', 'majburiy') : tr('по желанию', 'ixtiyoriy'),
+            hintText: hint ?? (required ? tr('обязательно', 'majburiy') : tr('по желанию', 'ixtiyoriy')),
             hintStyle: AppText.small.copyWith(fontSize: 13, color: err ? AppColors.error : AppColors.muted),
             contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
@@ -536,7 +642,8 @@ class _CountCardState extends State<_CountCard> {
     final l = widget.line;
     final unit = (l['unit_short'] as String?) ?? tr('шт', 'dona');
     final img = l['image'];
-    final noPhoto = img == null || '$img'.isEmpty;
+    // Без фото продавать можно в режиме цен — фото только для витрины.
+    final noPhoto = (img == null || '$img'.isEmpty) && !widget.prices;
     return AppCard(
       padding: const EdgeInsets.fromLTRB(14, 12, 4, 14),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -575,7 +682,9 @@ class _CountCardState extends State<_CountCard> {
         Padding(
           padding: const EdgeInsets.only(right: 10),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            _field('qty', tr('Кол-во, $unit *', 'Miqdor, $unit *'), required: true),
+            widget.prices
+                ? _field('qty', tr('Остаток, $unit', 'Qoldiq, $unit'), required: false, hint: tr('не посчитан', 'sanalmagan'))
+                : _field('qty', tr('Кол-во, $unit *', 'Miqdor, $unit *'), required: true),
             const SizedBox(width: 8),
             _field('cost', tr('Цена закупки', 'Xarid narxi'), required: false),
             const SizedBox(width: 8),
@@ -616,7 +725,10 @@ class StartDoneScreen extends StatelessWidget {
           Text(tr('Магазин готов к работе', 'Doʻkon ishga tayyor'), style: AppText.h2, textAlign: TextAlign.center),
           const SizedBox(height: 8),
           Text(
-            tr(
+            n('uncounted') > 0
+                ? tr('${goods(n('products'))} в товарах магазина. У ${n('uncounted')} — «Остаток не посчитан»: продавать можно, посчитаете потом с главной.',
+                    'Doʻkon mahsulotlarida ${goods(n('products'))}. ${n('uncounted')} tasida — «Qoldiq sanalmagan»: sotish mumkin, keyin bosh sahifadan sanaysiz.')
+                : tr(
                 '${goods(n('products'))} в товарах магазина, остатки — на складе «$warehouse». ${n('visible')} уже видят покупатели'
                     '${n('pending') > 0 ? ', ${n('pending')} новых — после модерации' : ''}.',
                 'Doʻkon mahsulotlarida ${goods(n('products'))}, qoldiqlar — «$warehouse» omborida. Ulardan ${n('visible')} tasini xaridorlar allaqachon koʻrmoqda'

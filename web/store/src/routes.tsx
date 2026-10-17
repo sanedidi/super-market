@@ -26,6 +26,7 @@ import { Shell, tr, type MenuItem } from '@sm/shared'
 import { useStore } from './ctx'
 import { DashboardPage } from './pages/Dashboard'
 import { StartPage } from './pages/start/Start'
+import { StockCountPage } from './pages/start/Count'
 import { SetupGate, SetupPage } from './pages/setup/Setup'
 import { OrdersPage } from './pages/Orders'
 import { ReturnsPage, SalesPage } from './pages/Sales'
@@ -253,6 +254,7 @@ export function StoreRoutes() {
        <Route element={<Guard />}>
         <Route index element={<DashboardPage />} />
         <Route path="start" element={<StartPage />} />
+        <Route path="start/count" element={<StockCountPage />} />
         <Route path="orders" element={<OrdersPage />} />
         <Route path="couriers" element={<CouriersPage />} />
         <Route path="crowd" element={<CrowdPage />} />

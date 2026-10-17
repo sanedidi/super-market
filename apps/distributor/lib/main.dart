@@ -7,7 +7,7 @@ import 'package:sm_store/lock/app_lock.dart';
 import 'package:sm_store/lock/pin_screens.dart';
 import 'package:sm_store/login/password_login.dart' show ChangePasswordScreen;
 import 'package:sm_store/push.dart' show Push, navigatorKey;
-import 'package:sm_store/start/start_logic.dart' show sellPriceWord;
+import 'package:sm_store/start/start_logic.dart' show sellPriceWord, startModeChoice;
 import 'package:sm_store/state.dart';
 import 'package:sm_store/ui/theme.dart';
 import 'package:sm_store/ui/widgets.dart';
@@ -30,6 +30,8 @@ Future<void> main() async {
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   // В «Начале работы» цена продажи дистрибьютора — отпускная цена для магазинов.
   sellPriceWord = () => tr('Отпускная цена', 'Ulgurji narx');
+  // Агент вводит товары сразу с остатками — «Как начнём?» ему не показываем.
+  startModeChoice = () => false;
   // Вход тем же логином, что и в панель: токен приложения магазина (/store/*).
   final api = Api(baseUrl: apiUrl, app: 'store');
   await api.init();

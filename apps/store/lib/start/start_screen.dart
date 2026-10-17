@@ -10,6 +10,7 @@ import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'camera_screen.dart';
 import 'count_screen.dart';
+import 'mode_screen.dart';
 import 'new_items.dart';
 import 'sheets.dart';
 import 'start_api.dart';
@@ -33,7 +34,8 @@ Future<void> openStartMethod(BuildContext context, StartApi start, StartMethod m
 /// М-Т2); нашлось не то — ссылка «Поискать в каталоге ИКПУ».
 /// Вкладка «Новые» — фото новых товаров, карточки заполняет Super Market (Р3).
 /// Дальше — «Инвентаризация: Начало работы» (М5).
-/// Черновик общий с веб-панелью.
+/// Черновик общий с веб-панелью. Перед шагом 1 — «Как начнём?» (v5, Н1):
+/// «Только товары и цены» или «Сразу с остатками».
 class StartScreen extends StatefulWidget {
   const StartScreen({super.key, this.initial});
 
@@ -56,6 +58,8 @@ class _StartScreenState extends State<StartScreen> {
   List<Map<String, dynamic>> _results = const [];
   bool _searching = false;
   String? _busyId;
+  // «Сменить» — снова «Как начнём?».
+  bool _choosing = false;
   // Запрос, по которому уже есть ответ центральной базы.
   String _searchedQ = '';
   // Варианты из каталога ИКПУ: сами — когда в базе пусто, по ссылке — когда не то.
@@ -242,6 +246,18 @@ class _StartScreenState extends State<StartScreen> {
     final freshCount = newItemsTotal(_new);
     final freshReady = (((_new?['counts'] as Map<String, dynamic>?)?['ready'] as num?)?.toInt() ?? 0) > 0;
     if (d != null && d['closed'] == true && d['id'] == null) return const StartClosedScreen();
+    // Режим ещё не выбран (или меняют выбор) — «Как начнём?».
+    if (d != null && startModeChoice() && (d['mode'] == null || _choosing)) {
+      return StartModeScreen(
+        start: _start,
+        current: d['mode'] as String?,
+        onChosen: () {
+          setState(() => _choosing = false);
+          _load();
+        },
+      );
+    }
+    final prices = pricesMode(d);
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppColors.bg,
@@ -259,7 +275,7 @@ class _StartScreenState extends State<StartScreen> {
           : d == null
               ? const Center(child: CircularProgressIndicator())
               : Column(children: [
-                  const Padding(padding: EdgeInsets.fromLTRB(16, 4, 16, 10), child: StartSteps(step: 1)),
+                  Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 10), child: StartSteps(step: 1, prices: prices)),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: _Tabs(
@@ -286,12 +302,28 @@ class _StartScreenState extends State<StartScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
                   BigButton(
-                    label: tr('Дальше: инвентаризация · $products', 'Keyingi: inventarizatsiya · $products'),
+                    label: prices ? tr('Дальше: цены · $products', 'Keyingi: narxlar · $products') : tr('Дальше: инвентаризация · $products', 'Keyingi: inventarizatsiya · $products'),
                     icon: Icons.arrow_forward_rounded,
                     onPressed: products == 0 ? null : _next,
                   ),
                   const SizedBox(height: 6),
-                  Text(tr('Количество, ${sellPriceWord().toLowerCase()} и цена закупки — на шаге 2', 'Miqdor, ${sellPriceWord().toLowerCase()} va xarid narxi — 2-qadamda'), style: AppText.small),
+                  Text(
+                      prices
+                          ? tr('${sellPriceWord()} и цена закупки — на шаге 2, количество не нужно', '${sellPriceWord()} va xarid narxi — 2-qadamda, miqdor shart emas')
+                          : tr('Количество, ${sellPriceWord().toLowerCase()} и цена закупки — на шаге 2', 'Miqdor, ${sellPriceWord().toLowerCase()} va xarid narxi — 2-qadamda'),
+                      style: AppText.small),
+                  if (startModeChoice())
+                    GestureDetector(
+                      onTap: () => setState(() => _choosing = true),
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                            prices
+                                ? tr('Вариант «Только товары и цены» · сменить', '«Faqat mahsulotlar va narxlar» · oʻzgartirish')
+                                : tr('Вариант «Сразу с остатками» · сменить', '«Darhol qoldiqlar bilan» · oʻzgartirish'),
+                            style: AppText.small.copyWith(color: AppColors.primary, fontWeight: FontWeight.w600)),
+                      ),
+                    ),
                 ]),
               ),
             ),
@@ -634,7 +666,7 @@ class _StartHomeBlockState extends State<StartHomeBlock> {
 
   /// Н1 (шаг 2) · «Шаг 2 · Инвентаризация»: заполнено столько-то, «Штрихкод» —
   /// основная кнопка, она открывает ввод количества и цен.
-  Widget _countBlock(int products, int unfilled) {
+  Widget _countBlock(int products, int unfilled, {bool prices = false}) {
     Widget btn(IconData icon, String label, VoidCallback onTap, {bool primary = false}) => Expanded(
           child: Material(
             color: primary ? AppColors.primary : AppColors.soft,
@@ -664,15 +696,22 @@ class _StartHomeBlockState extends State<StartHomeBlock> {
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(tr('Шаг 2 · Инвентаризация', '2-qadam · Inventarizatsiya'), style: AppText.title),
-                Text(tr('Впишите количество и цены — можно сканером', 'Miqdor va narxlarni kiriting — skaner bilan ham boʻladi'), style: AppText.small),
+                Text(prices ? tr('Шаг 2 · Цены', '2-qadam · Narxlar') : tr('Шаг 2 · Инвентаризация', '2-qadam · Inventarizatsiya'), style: AppText.title),
+                Text(
+                    prices
+                        ? tr('Впишите цены — количество не нужно', 'Narxlarni kiriting — miqdor shart emas')
+                        : tr('Впишите количество и цены — можно сканером', 'Miqdor va narxlarni kiriting — skaner bilan ham boʻladi'),
+                    style: AppText.small),
               ]),
             ),
           ]),
           const SizedBox(height: 12),
           Row(children: [
             Expanded(
-              child: Text(tr('Заполнено ${products - unfilled} из $products', 'Toʻldirilgan ${products - unfilled} / $products'),
+              child: Text(
+                  prices
+                      ? tr('С ценой ${products - unfilled} из $products', 'Narx bilan ${products - unfilled} / $products')
+                      : tr('Заполнено ${products - unfilled} из $products', 'Toʻldirilgan ${products - unfilled} / $products'),
                   style: AppText.bodyStrong.copyWith(fontSize: 14)),
             ),
             Text(tr('черновик сохраняется', 'qoralama saqlanadi'), style: AppText.small),
@@ -693,8 +732,10 @@ class _StartHomeBlockState extends State<StartHomeBlock> {
               const Icon(Icons.info_outline_rounded, size: 16, color: AppColors.successInk),
               const SizedBox(width: 6),
               Expanded(
-                child: Text(tr('Теперь штрихкод открывает количество и цены, а не добавление товара',
-                    'Endi shtrix-kod mahsulot qoʻshishni emas, miqdor va narxlarni ochadi'),
+                child: Text(
+                    prices
+                        ? tr('Теперь штрихкод открывает цену, а не добавление товара', 'Endi shtrix-kod mahsulot qoʻshishni emas, narxni ochadi')
+                        : tr('Теперь штрихкод открывает количество и цены, а не добавление товара', 'Endi shtrix-kod mahsulot qoʻshishni emas, miqdor va narxlarni ochadi'),
                     style: AppText.small.copyWith(fontSize: 12, color: AppColors.successInk)),
               ),
             ]),
@@ -713,7 +754,7 @@ class _StartHomeBlockState extends State<StartHomeBlock> {
     final unfilled = (totals['unfilled'] as num?)?.toInt() ?? 0;
     // Шаг черновика общий с веб-панелью: на шаге 2 сканер — это инвентаризация.
     final count = ((d['step'] as num?)?.toInt() ?? 1) == 2 && products > 0;
-    if (count) return _countBlock(products, unfilled);
+    if (count) return _countBlock(products, unfilled, prices: pricesMode(d));
     Widget btn(StartMethod m, IconData icon, String label, {bool primary = false}) => Expanded(
           child: Material(
             color: primary ? AppColors.primary : AppColors.soft,

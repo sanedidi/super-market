@@ -56,6 +56,14 @@ void main() {
     expect(lineSummary({'qty': null, 'unit_short': 'шт', 'cost': null, 'price': null}, fmt), 'кол-во: не заполнено · цена: не заполнено');
     expect(lineUnfilled({'qty': '3', 'price': null}), isTrue);
     expect(lineUnfilled({'qty': '0', 'price': '0.00'}), isFalse);
+    // «Только товары и цены»: количество не нужно.
+    expect(lineUnfilled({'qty': null, 'price': '9000'}), isTrue);
+    expect(lineUnfilled({'qty': null, 'price': '9000'}, prices: true), isFalse);
+    expect(lineUnfilled({'qty': null, 'price': null}, prices: true), isTrue);
+    expect(pricesMode({'mode': 'prices'}), isTrue);
+    expect(pricesMode({'mode': 'stock'}), isFalse);
+    expect(pricesMode({'mode': null}), isFalse);
+    expect(pricesMode(null), isFalse);
     expect(isBarcode('4780012345678'), isTrue);
     expect(isBarcode('cola'), isFalse);
   });

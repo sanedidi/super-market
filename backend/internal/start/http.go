@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -36,6 +37,11 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/search", m.search)
 		r.Get("/scan", m.scan)
 		r.Post("/step", m.setStep)
+		r.Post("/mode", m.setMode)
+		r.Get("/count", m.countSummary)
+		r.Get("/count/items", m.countItems)
+		r.Get("/count/categories", m.countCategories)
+		r.Post("/count", m.count)
 		r.Post("/lines/{product_id}/photo", m.linePhoto)
 		r.Post("/tasnif/preview", m.tasnifPreview)
 		r.Post("/tasnif", m.tasnifAdd)
@@ -95,8 +101,19 @@ type storeInput struct {
 }
 
 func (m *Module) post(w http.ResponseWriter, r *http.Request) {
-	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in storeInput) (PostResult, error) {
-		return m.svc.Post(r.Context(), pr(r), in.StoreID)
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in PostInput) (PostResult, error) {
+		return m.svc.Post(r.Context(), pr(r), in)
+	})
+}
+
+type modeInput struct {
+	StoreID string `json:"store_id"`
+	Mode    string `json:"mode"`
+}
+
+func (m *Module) setMode(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in modeInput) (Draft, error) {
+		return m.svc.SetMode(r.Context(), pr(r), in.StoreID, in.Mode)
 	})
 }
 
@@ -292,5 +309,43 @@ func (m *Module) ownPrice(w http.ResponseWriter, r *http.Request) {
 func (m *Module) retryAllNewItems(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusAccepted, "", func(_ string, in RetryAllInput) (RetryAllResult, error) {
 		return m.svc.RetryAllNewItems(r.Context(), pr(r), in)
+	})
+}
+
+func (m *Module) countSummary(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (CountSummary, error) {
+		return m.svc.CountSummary(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+	})
+}
+
+func (m *Module) countItems(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (CountItems, error) {
+		q := r.URL.Query()
+		f := CountFilter{Set: q.Get("set"), CategoryID: q.Get("category_id"), ProductID: q.Get("product_id"), Query: q.Get("q")}
+		for _, id := range strings.Split(q.Get("product_ids"), ",") {
+			if id = strings.TrimSpace(id); id != "" {
+				f.ProductIDs = append(f.ProductIDs, id)
+			}
+		}
+		f.Limit, _ = strconv.Atoi(q.Get("limit"))
+		f.Offset, _ = strconv.Atoi(q.Get("offset"))
+		return m.svc.CountItems(r.Context(), pr(r), q.Get("store_id"), f)
+	})
+}
+
+type countCategoriesOut struct {
+	Items []CountCategory `json:"items"`
+}
+
+func (m *Module) countCategories(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (countCategoriesOut, error) {
+		items, err := m.svc.CountCategories(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+		return countCategoriesOut{Items: items}, err
+	})
+}
+
+func (m *Module) count(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in CountInput) (CountResult, error) {
+		return m.svc.Count(r.Context(), pr(r), in)
 	})
 }

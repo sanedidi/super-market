@@ -423,7 +423,16 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 			}
 			var taken []inventory.Taken
 			short := "0"
-			if pos {
+			// Остаток не посчитан («Только товары и цены»): сколько товара на
+			// полке, учёт не знает — продаём, недостачу фиксируем, как с кассы.
+			var uncounted bool
+			if !pos {
+				if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM store_products WHERE store_id = $1 AND product_id = $2 AND uncounted_since IS NOT NULL)`,
+					in.StoreID, it.ProductID).Scan(&uncounted); err != nil {
+					return err
+				}
+			}
+			if pos || uncounted {
 				// С кассы — продажа уже случилась: недостачу фиксируем, а не отклоняем.
 				taken, short, err = inventory.TakeUpTo(ctx, tx, p.NetworkID, warehouseID, it.ProductID, qty.Fixed(3), inventory.DocSale, id)
 			} else {

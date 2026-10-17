@@ -4,12 +4,14 @@
 import 'package:sm_core/sm_core.dart';
 
 /// Статус магазина или товара в магазине для дистрибьютора (Д2, Д3).
-enum StockStatus { out, low, ok, noBrand, notLinked }
+/// unknown — товар в магазине «Остаток не посчитан»: сколько его, неизвестно.
+enum StockStatus { out, low, ok, unknown, noBrand, notLinked }
 
 StockStatus stockStatus(Object? s) => switch ('$s') {
       'out' => StockStatus.out,
       'low' => StockStatus.low,
       'ok' => StockStatus.ok,
+      'unknown' => StockStatus.unknown,
       'no_brand' => StockStatus.noBrand,
       _ => StockStatus.notLinked,
     };
@@ -19,6 +21,7 @@ String stockLabel(StockStatus s, {int count = 0}) => switch (s) {
       StockStatus.out => count > 0 ? tr('Нет · $count', 'Yoʻq · $count') : tr('Закончилось', 'Tugadi'),
       StockStatus.low => count > 0 ? tr('Мало · $count', 'Kam · $count') : tr('Мало', 'Kam'),
       StockStatus.ok => tr('Всё есть', 'Hammasi bor'),
+      StockStatus.unknown => tr('Не посчитан', 'Sanalmagan'),
       StockStatus.noBrand => tr('Нет бренда', 'Brend yoʻq'),
       StockStatus.notLinked => tr('Не подключён', 'Ulanmagan'),
     };

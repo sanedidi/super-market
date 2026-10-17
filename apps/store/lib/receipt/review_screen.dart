@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../main.dart';
+import '../start/stock_count.dart' show askShelfCounts, receivedOf;
+import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'done_screen.dart';
@@ -79,6 +81,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
     try {
       final s = await context.read<Api>().post('/store/invoice-scans/${widget.id}/document', {'post': post}) as Map<String, dynamic>;
       if (!mounted) return;
+      // Н6 · приход проведён: у непосчитанных товаров спросить «Сколько на полке?».
+      final storeId = context.read<StoreState>().storeId;
+      if (post && s['document_status'] == 'posted' && storeId != null) {
+        await askShelfCounts(context, storeId, receivedOf((s['lines'] as List?) ?? const []));
+        if (!mounted) return;
+      }
       await Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => DoneScreen(scan: s)));
     } on ApiError catch (e) {
       if (!mounted) return;

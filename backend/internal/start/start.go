@@ -1,10 +1,18 @@
 // Package start — «Начало работы»: магазин заводит товары, которые у него
-// уже есть. Черновик общий для панели и «SM Магазин» и идёт в два шага:
+// уже есть. Сначала магазин выбирает, как начать («Как начнём?», mode):
+//   - stock — «Сразу с остатками»: количество и цена продажи по каждому товару;
+//     можно остановиться — «Остальное посчитаю потом» (rest_later);
+//   - prices — «Только товары и цены»: только цена продажи, у товаров
+//     «Остаток не посчитан» (store_products.uncounted_since), посчитать потом
+//     (count.go).
+//
+// Черновик общий для панели и «SM Магазин» и идёт в два шага:
 //  1. «Мои товары» — магазин находит свои товары в центральной базе (поиск по
 //     названию и штрихкоду, сканер, фото полок) или создаёт свой. Тот же товар
 //     второй раз не добавляется; на похожий — предупреждение.
 //  2. «Инвентаризация: Начало работы» — количество и цена продажи по каждому
-//     товару (обязательны, можно 0) и, по желанию, себестоимость.
+//     товару (обязательны, можно 0) и, по желанию, себестоимость. В режиме
+//     prices — «Цены»: обязательна только цена продажи.
 //
 // «Записать и закрыть» проводит черновик: оприходование на склад, установка
 // цен магазина, товары — в ассортименте магазина. После этого «Начало работы»
@@ -34,6 +42,12 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 	"github.com/sanedidi/super-market/backend/internal/productsearch"
+)
+
+// Режимы «Начала работы» («Как начнём?»).
+const (
+	ModeStock  = "stock"
+	ModePrices = "prices"
 )
 
 const (
@@ -158,9 +172,13 @@ type Totals struct {
 	PriceTotal string `json:"price_total"`
 	NoCost     int    `json:"no_cost"`
 	Pending    int    `json:"pending"`
-	// Unfilled — строк без количества или цены продажи: пока они есть,
-	// «Записать и закрыть» не проходит.
+	// Unfilled — незаполненных строк: без количества или цены продажи (в
+	// режиме prices и при «Остальное посчитаю потом» — только без цены).
+	// Пока они есть, «Записать и закрыть» не проходит.
 	Unfilled int `json:"unfilled"`
+	// NoQty и NoPrice — строк без количества и без цены продажи.
+	NoQty   int `json:"no_qty"`
+	NoPrice int `json:"no_price"`
 	// NoPhoto — строк без фото товара: пока они есть, «Записать и закрыть»
 	// не проходит — без фото покупатель не увидит товар в каталоге.
 	NoPhoto int `json:"no_photo"`
@@ -173,6 +191,10 @@ type Draft struct {
 	WarehouseID   string  `json:"warehouse_id"`
 	WarehouseName string  `json:"warehouse_name"`
 	Status        string  `json:"status"`
+	// Mode — как магазин начинает: stock — «Сразу с остатками», prices —
+	// «Только товары и цены», null — ещё не выбрал (показать «Как начнём?»).
+	// Черновики, начатые до выбора режима, — stock.
+	Mode *string `json:"mode"`
 	// Step — на каком шаге магазин: 1 — выбор товаров, 2 — инвентаризация.
 	// Общий для панели и «SM Магазин»: от него зависит, что делает сканер.
 	Step          int        `json:"step"`
@@ -252,14 +274,17 @@ func (s *Service) totals(ctx context.Context, q db.Querier, draftID string, st s
 		       round(COALESCE(sum(l.qty * COALESCE(l.price, sp.price, np.price, p.base_price)), 0), 2)::text,
 		       (count(*) FILTER (WHERE l.cost IS NULL))::int,
 		       (count(*) FILTER (WHERE p.network_id IS NOT NULL AND p.moderation_status <> 'approved'))::int,
-		       (count(*) FILTER (WHERE l.qty IS NULL OR l.price IS NULL))::int,
-		       (count(*) FILTER (WHERE COALESCE(cardinality(p.images), 0) = 0))::int
+		       (count(*) FILTER (WHERE l.price IS NULL OR (l.qty IS NULL AND d.mode IS DISTINCT FROM 'prices')))::int,
+		       (count(*) FILTER (WHERE COALESCE(cardinality(p.images), 0) = 0))::int,
+		       (count(*) FILTER (WHERE l.qty IS NULL))::int,
+		       (count(*) FILTER (WHERE l.price IS NULL))::int
 		FROM start_lines l
+		JOIN start_drafts d ON d.id = l.draft_id
 		JOIN products p ON p.id = l.product_id
 		LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = $2 AND sp.store_id = $3
 		LEFT JOIN prices np ON np.product_id = p.id AND np.price_type_id = $2 AND np.store_id IS NULL
 		WHERE l.draft_id = $1`, draftID, st.PriceTypeID, st.ID).
-		Scan(&t.Products, &t.Qty, &t.CostTotal, &t.PriceTotal, &t.NoCost, &t.Pending, &t.Unfilled, &t.NoPhoto)
+		Scan(&t.Products, &t.Qty, &t.CostTotal, &t.PriceTotal, &t.NoCost, &t.Pending, &t.Unfilled, &t.NoPhoto, &t.NoQty, &t.NoPrice)
 	return t, err
 }
 
@@ -283,7 +308,7 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, storeID string
 		return d, err
 	}
 	d.ID, d.Status = id, status
-	if err := s.pool.QueryRow(ctx, `SELECT step FROM start_drafts WHERE id = $1`, *id).Scan(&d.Step); err != nil {
+	if err := s.pool.QueryRow(ctx, `SELECT step, mode FROM start_drafts WHERE id = $1`, *id).Scan(&d.Step, &d.Mode); err != nil {
 		return d, err
 	}
 	if d.Totals, err = s.totals(ctx, s.pool, *id, st); err != nil {
@@ -297,7 +322,13 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, storeID string
 	switch f.Only {
 	case "":
 	case "unfilled":
-		where += ` AND (l.qty IS NULL OR l.price IS NULL)`
+		if d.Mode != nil && *d.Mode == ModePrices {
+			where += ` AND l.price IS NULL`
+		} else {
+			where += ` AND (l.qty IS NULL OR l.price IS NULL)`
+		}
+	case "no_qty":
+		where += ` AND l.qty IS NULL`
 	case "no_cost":
 		where += ` AND l.cost IS NULL`
 	case "new":
@@ -305,7 +336,7 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, storeID string
 	case "no_photo":
 		where += ` AND COALESCE(cardinality(p.images), 0) = 0`
 	default:
-		return d, apperr.Validation("only: ожидается unfilled, no_cost, no_photo или new").Uz("only: unfilled, no_cost, no_photo yoki new boʻlishi kerak")
+		return d, apperr.Validation("only: ожидается unfilled, no_qty, no_cost, no_photo или new").Uz("only: unfilled, no_qty, no_cost, no_photo yoki new boʻlishi kerak")
 	}
 	limit := f.Limit
 	if limit <= 0 {
@@ -689,8 +720,10 @@ type DocRef struct {
 }
 
 type PostResult struct {
-	DraftID       string   `json:"draft_id"`
-	Products      int      `json:"products"`
+	DraftID  string `json:"draft_id"`
+	Products int    `json:"products"`
+	// Uncounted — товаров с пометкой «Остаток не посчитан» (без количества).
+	Uncounted     int      `json:"uncounted"`
 	Qty           string   `json:"qty"`
 	CostTotal     string   `json:"cost_total"`
 	Documents     []DocRef `json:"documents"`
@@ -711,13 +744,22 @@ type postLine struct {
 	NoPhoto   bool
 }
 
+// PostInput — «Записать и закрыть». RestLater — «Остальное посчитаю потом»:
+// строки без количества записываются с пометкой «Остаток не посчитан».
+type PostInput struct {
+	StoreID   string `json:"store_id"`
+	RestLater bool   `json:"rest_later"`
+}
+
 // Post — «Записать и закрыть»: у каждой строки должны быть количество и цена
-// продажи (можно 0). Создаёт установку цен магазина (где цена отличается от
+// продажи (можно 0). В режиме prices и с RestLater количество не обязательно:
+// строки без него — «Остаток не посчитан»; фото обязательно только в режиме
+// stock. Создаёт установку цен магазина (где цена отличается от
 // действующей) и оприходование на основной склад по себестоимости (строки с
 // количеством больше нуля), товары попадают в ассортимент магазина. Проведённые
 // строки отмечаются — повторный вызов после сбоя доделывает оставшееся.
-func (s *Service) Post(ctx context.Context, p *identity.Principal, storeID string) (PostResult, error) {
-	st, err := s.store(ctx, s.pool, p, storeID)
+func (s *Service) Post(ctx context.Context, p *identity.Principal, in PostInput) (PostResult, error) {
+	st, err := s.store(ctx, s.pool, p, in.StoreID)
 	if err != nil {
 		return PostResult{}, err
 	}
@@ -734,7 +776,7 @@ func (s *Service) Post(ctx context.Context, p *identity.Principal, storeID strin
 	if err != nil {
 		return PostResult{}, err
 	}
-	res, err := s.post(ctx, p, st, draftID)
+	res, err := s.post(ctx, p, st, draftID, in.RestLater)
 	if err != nil {
 		if _, rerr := s.pool.Exec(context.WithoutCancel(ctx), `UPDATE start_drafts SET status = 'open' WHERE id = $1 AND status = 'posting'`, draftID); rerr != nil {
 			s.log.Error("start: вернуть черновик", "id", draftID, "err", rerr)
@@ -743,8 +785,15 @@ func (s *Service) Post(ctx context.Context, p *identity.Principal, storeID strin
 	return res, err
 }
 
-func (s *Service) post(ctx context.Context, p *identity.Principal, st store, draftID string) (PostResult, error) {
+func (s *Service) post(ctx context.Context, p *identity.Principal, st store, draftID string, restLater bool) (PostResult, error) {
 	res := PostResult{DraftID: draftID, Documents: []DocRef{}}
+	var mode *string
+	if err := s.pool.QueryRow(ctx, `SELECT mode FROM start_drafts WHERE id = $1`, draftID).Scan(&mode); err != nil {
+		return res, err
+	}
+	pricesMode := mode != nil && *mode == ModePrices
+	// Количество обязательно только «Сразу с остатками» без «посчитаю потом».
+	needQty := !pricesMode && !restLater
 	rows, err := s.pool.Query(ctx, `
 		SELECT l.product_id, trim_scale(l.qty)::text, l.cost::text, l.price::text,
 		       COALESCE(sp.price, np.price, p.base_price)::text, l.document_id IS NOT NULL,
@@ -770,9 +819,14 @@ func (s *Service) post(ctx context.Context, p *identity.Principal, st store, dra
 	}
 	unfilled := 0
 	for _, l := range lines {
-		if l.Qty == nil || l.Price == nil {
+		if l.Price == nil || (needQty && l.Qty == nil) {
 			unfilled++
 		}
+	}
+	if unfilled > 0 && !needQty {
+		return res, apperr.Conflict("lines_unfilled", fmt.Sprintf("укажите цену продажи — без цены строк: %d", unfilled)).
+			Uz(fmt.Sprintf("sotish narxini kiriting — narxsiz qatorlar: %d", unfilled)).
+			WithDetails(map[string]any{"count": unfilled})
 	}
 	if unfilled > 0 {
 		return res, apperr.Conflict("lines_unfilled", fmt.Sprintf("заполните количество и цену продажи — не заполнено строк: %d", unfilled)).
@@ -781,7 +835,7 @@ func (s *Service) post(ctx context.Context, p *identity.Principal, st store, dra
 	}
 	noPhoto := 0
 	for _, l := range lines {
-		if l.NoPhoto {
+		if l.NoPhoto && !pricesMode {
 			noPhoto++
 		}
 	}
@@ -827,7 +881,7 @@ func (s *Service) post(ctx context.Context, p *identity.Principal, st store, dra
 	// 2. Оприходование по 1000 строк; каждая порция отмечается сразу.
 	var todo []postLine
 	for _, l := range lines {
-		if !l.Posted && money.D(*l.Qty).Sign() > 0 {
+		if !l.Posted && l.Qty != nil && money.D(*l.Qty).Sign() > 0 {
 			todo = append(todo, l)
 		}
 	}
@@ -872,10 +926,14 @@ func (s *Service) post(ctx context.Context, p *identity.Principal, st store, dra
 	}
 
 	// 4. Все товары черновика — в ассортимент магазина (и с нулевым остатком).
+	// Без количества — «Остаток не посчитан», с количеством — посчитан.
 	if _, err := s.pool.Exec(ctx, `
-		INSERT INTO store_products (network_id, store_id, product_id)
-		SELECT $2, $3, product_id FROM start_lines WHERE draft_id = $1
-		ON CONFLICT DO NOTHING`, draftID, p.NetworkID, st.ID); err != nil {
+		INSERT INTO store_products AS sp (network_id, store_id, product_id, uncounted_since, counted_at)
+		SELECT $2, $3, product_id, CASE WHEN qty IS NULL THEN now() END, CASE WHEN qty IS NOT NULL THEN now() END
+		FROM start_lines WHERE draft_id = $1
+		ON CONFLICT (store_id, product_id) DO UPDATE
+		SET uncounted_since = CASE WHEN EXCLUDED.counted_at IS NULL THEN COALESCE(sp.uncounted_since, EXCLUDED.uncounted_since) END,
+		    counted_at = COALESCE(EXCLUDED.counted_at, sp.counted_at)`, draftID, p.NetworkID, st.ID); err != nil {
 		return res, err
 	}
 
@@ -883,11 +941,12 @@ func (s *Service) post(ctx context.Context, p *identity.Principal, st store, dra
 		WITH d AS (
 			UPDATE start_drafts SET status = 'posted', posted_by = $2, posted_at = now() WHERE id = $1 RETURNING id
 		)
-		SELECT count(*)::int, trim_scale(COALESCE(sum(l.qty), 0))::text, round(COALESCE(sum(l.qty * l.cost), 0), 2)::text,
+		SELECT count(*)::int, (count(*) FILTER (WHERE l.qty IS NULL))::int,
+		       trim_scale(COALESCE(sum(l.qty), 0))::text, round(COALESCE(sum(l.qty * l.cost), 0), 2)::text,
 		       (count(*) FILTER (WHERE p.network_id IS NULL AND p.is_active))::int,
 		       (count(*) FILTER (WHERE p.network_id IS NOT NULL))::int
 		FROM start_lines l JOIN products p ON p.id = l.product_id
 		WHERE l.draft_id = (SELECT id FROM d)`, draftID, p.EmployeeID).
-		Scan(&res.Products, &res.Qty, &res.CostTotal, &res.Visible, &res.Pending)
+		Scan(&res.Products, &res.Uncounted, &res.Qty, &res.CostTotal, &res.Visible, &res.Pending)
 	return res, err
 }

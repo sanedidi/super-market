@@ -5,6 +5,8 @@
 // «Добавить и заполнить»; нет и в центральной базе — как на шаге 1, через
 // каталог ИКПУ или «Новый товар по фото». У товара без фото шторка требует
 // снимок: без фото покупатель не увидит товар, и документ не записывается.
+// В режиме «Только товары и цены» (v5, Н-W3) в шторке только цены: количества
+// нет (остаток «не посчитан»), фото — по желанию, только для витрины.
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Alert, App, Button, Card, Drawer, Flex, Input, InputNumber, Space, Typography, type InputRef } from 'antd'
@@ -20,7 +22,7 @@ const isBarcode = (s: string) => /^[0-9]{6,14}$/.test(s)
  * Поиск и сканер документа: штрихкод — сразу шторка, название — список строк.
  * USB-сканер «печатает» штрихкод и Enter, поле остаётся в фокусе.
  */
-export function ScanCard({ onFound }: { onFound: (l: Line) => void }) {
+export function ScanCard({ onFound, prices }: { onFound: (l: Line) => void; prices?: boolean }) {
   const { storeId } = useStore()
   const { message, modal } = App.useApp()
   const nav = useNavigate()
@@ -132,7 +134,11 @@ export function ScanCard({ onFound }: { onFound: (l: Line) => void }) {
           type="success"
           showIcon
           style={{ flex: 1, minWidth: 280 }}
-          message={tr('Сканируйте — снизу откроется ввод количества и цен', 'Skanerlang — pastdan miqdor va narx kiritish ochiladi')}
+          message={
+            prices
+              ? tr('Сканируйте — снизу откроется ввод цены. Количество не нужно', 'Skanerlang — pastdan narx kiritish ochiladi. Miqdor shart emas')
+              : tr('Сканируйте — снизу откроется ввод количества и цен', 'Skanerlang — pastdan miqdor va narx kiritish ochiladi')
+          }
         />
       </Flex>
       {found.length > 0 && (
@@ -164,7 +170,18 @@ export function ScanCard({ onFound }: { onFound: (l: Line) => void }) {
 }
 
 /** Шторка снизу: количество, цена продажи, цена закупки и фото, если его нет. */
-export function CountDrawer({ line, onClose, onSaved }: { line: Line | null; onClose: () => void; onSaved: () => Promise<void> | void }) {
+export function CountDrawer({
+  line,
+  prices,
+  onClose,
+  onSaved,
+}: {
+  line: Line | null
+  /** «Только товары и цены»: без количества, фото не обязательно. */
+  prices?: boolean
+  onClose: () => void
+  onSaved: () => Promise<void> | void
+}) {
   const { storeId } = useStore()
   const { message } = App.useApp()
   const [qty, setQty] = useState<string | null>(null)
@@ -174,7 +191,7 @@ export function CountDrawer({ line, onClose, onSaved }: { line: Line | null; onC
   const [busy, setBusy] = useState(false)
   const quota = usePhotoQuota(storeId).data
   const filled = !!line && line.qty !== null
-  const needPhoto = !!line && !line.image && photos.length === 0
+  const needPhoto = !prices && !!line && !line.image && photos.length === 0
 
   useEffect(() => {
     if (!line) return
@@ -188,7 +205,7 @@ export function CountDrawer({ line, onClose, onSaved }: { line: Line | null; onC
   if (!line) return null
 
   const save = async () => {
-    if (qty === null || qty === '') {
+    if (!prices && (qty === null || qty === '')) {
       message.error(tr('Количество обязательно — можно 0', 'Miqdor majburiy — 0 boʻlishi mumkin'))
       return
     }
@@ -207,7 +224,7 @@ export function CountDrawer({ line, onClose, onSaved }: { line: Line | null; onC
       }
       await api.post<LinesResult>('/store/start/lines', {
         store_id: storeId,
-        items: [{ product_id: line.product_id, qty, price, cost: cost === '' ? null : cost }],
+        items: [prices ? { product_id: line.product_id, price, cost: cost === '' ? null : cost } : { product_id: line.product_id, qty, price, cost: cost === '' ? null : cost }],
       })
       message.success(tr(`${line.name} — записано`, `${line.name} — yozildi`))
       await onSaved()
@@ -225,7 +242,7 @@ export function CountDrawer({ line, onClose, onSaved }: { line: Line | null; onC
       height="auto"
       onClose={onClose}
       destroyOnClose
-      title={tr('Количество и цены', 'Miqdor va narxlar')}
+      title={prices ? tr('Цена товара', 'Mahsulot narxi') : tr('Количество и цены', 'Miqdor va narxlar')}
       extra={
         <Button type="primary" size="large" icon={<PlusOutlined />} loading={busy} disabled={needPhoto} onClick={save}>
           {tr('Сохранить и сканировать дальше', 'Saqlash va skanerlashni davom ettirish')}
@@ -250,6 +267,7 @@ export function CountDrawer({ line, onClose, onSaved }: { line: Line | null; onC
             </Typography.Text>
           </div>
         )}
+        {!prices && (
         <div>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {tr('Количество', 'Miqdor')} *
@@ -269,12 +287,14 @@ export function CountDrawer({ line, onClose, onSaved }: { line: Line | null; onC
             />
           </div>
         </div>
+        )}
         <div>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {tr('Цена продажи', 'Sotish narxi')} *
           </Typography.Text>
           <div>
             <InputNumber
+              autoFocus={prices}
               size="large"
               style={{ width: 200 }}
               min="0"
@@ -310,19 +330,32 @@ export function CountDrawer({ line, onClose, onSaved }: { line: Line | null; onC
           </Typography.Text>
         </div>
       </Flex>
+      {prices && (
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: '12px 0 0' }}>
+          {tr(
+            'Количество не нужно — у товара будет «Остаток не посчитан». Цена закупки — только для прибыли.',
+            'Miqdor shart emas — mahsulotda «Qoldiq sanalmagan» belgisi boʻladi. Xarid narxi — faqat foyda uchun.',
+          )}
+        </Typography.Paragraph>
+      )}
       {!line.image && (
         <Alert
-          type="error"
+          type={prices ? 'info' : 'error'}
           showIcon
           style={{ marginTop: 14 }}
-          message={tr('У товара нет фото', 'Mahsulotning rasmi yoʻq')}
+          message={prices ? tr('У товара нет фото — можно добавить сейчас или потом', 'Mahsulotning rasmi yoʻq — hozir yoki keyin qoʻshish mumkin') : tr('У товара нет фото', 'Mahsulotning rasmi yoʻq')}
           description={
             <div>
               <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-                {tr(
-                  'Без фото покупатель не увидит товар в каталоге, и «Записать и закрыть» не пройдёт. Загрузите снимок — можно несколько: лицевая сторона, этикетка, состав (до 6).',
-                  'Rasmsiz xaridor mahsulotni katalogda koʻrmaydi va «Yozish va yopish» oʻtmaydi. Rasm yuklang — bir nechta boʻlishi mumkin: old tomoni, yorligʻi, tarkibi (6 tagacha).',
-                )}
+                {prices
+                  ? tr(
+                      'Продавать на кассе можно и без фото. Фото нужно, чтобы покупатель увидел товар в приложении (до 6 снимков).',
+                      'Kassada rasmsiz ham sotish mumkin. Rasm xaridor mahsulotni ilovada koʻrishi uchun kerak (6 tagacha).',
+                    )
+                  : tr(
+                      'Без фото покупатель не увидит товар в каталоге, и «Записать и закрыть» не пройдёт. Загрузите снимок — можно несколько: лицевая сторона, этикетка, состав (до 6).',
+                      'Rasmsiz xaridor mahsulotni katalogda koʻrmaydi va «Yozish va yopish» oʻtmaydi. Rasm yuklang — bir nechta boʻlishi mumkin: old tomoni, yorligʻi, tarkibi (6 tagacha).',
+                    )}
               </Typography.Paragraph>
               <ImageUpload multiple max={6} value={photos} onChange={setPhotos} />
               {photos.length > 0 && quota?.enabled && !quotaOut(quota) && (

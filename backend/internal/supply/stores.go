@@ -49,12 +49,12 @@ var linesAggSQL = fmt.Sprintf(`
 	FROM (
 		SELECT %s AS st
 		FROM (
-			SELECT %s AS qty, %s AS per_day
+			SELECT %s AS qty, %s AS per_day, sp.uncounted_since IS NOT NULL AS uncounted
 			FROM store_products sp
 			WHERE sp.store_id = s.id AND sp.product_id IN (SELECT product_id FROM store_products WHERE store_id = $2)
 		) y
 	) x`,
-	statusSQL("y.qty", "y.per_day", "$3"), stockSQL("s.id", "sp.product_id"), perDaySQL("s.id", "sp.product_id"))
+	knownStatusSQL("y.uncounted", statusSQL("y.qty", "y.per_day", "$3")), stockSQL("s.id", "sp.product_id"), perDaySQL("s.id", "sp.product_id"))
 
 // StoresFilter — фильтр списка магазинов дистрибьютора.
 type StoresFilter struct {
@@ -154,17 +154,17 @@ type StoreDetail struct {
 func (s *Service) storeLines(ctx context.Context, q db.Querier, pt point, storeID string) ([]Line, error) {
 	rows, err := q.Query(ctx, fmt.Sprintf(`
 		SELECT y.id, y.name, y.image, y.unit, y.qty::text, round(y.per_day, 1)::text,
-		       %s, %s::text, y.price::text
+		       %s, (CASE WHEN y.uncounted THEN 0 ELSE %s END)::text, y.price::text
 		FROM (
 			SELECT p.id, loc(p.name, p.name_uz) AS name, COALESCE(p.images[1], '') AS image, loc(u.short_name, u.short_name_uz) AS unit,
-			       %s AS qty, %s AS per_day, %s AS price
+			       %s AS qty, %s AS per_day, %s AS price, sp.uncounted_since IS NOT NULL AS uncounted
 			FROM store_products sp
 			JOIN products p ON p.id = sp.product_id
 			JOIN units u    ON u.id = p.unit_id
 			WHERE sp.store_id = $1 AND sp.product_id IN (SELECT product_id FROM store_products WHERE store_id = $2)
 		) y
 		ORDER BY CASE %[1]s WHEN 'out' THEN 0 WHEN 'low' THEN 1 ELSE 2 END, y.per_day DESC, y.name`,
-		statusSQL("y.qty", "y.per_day", "$3"), recommendSQL("y.qty", "y.per_day", "$3"),
+		knownStatusSQL("y.uncounted", statusSQL("y.qty", "y.per_day", "$3")), recommendSQL("y.qty", "y.per_day", "$3"),
 		stockSQL("$1", "sp.product_id"), perDaySQL("$1", "sp.product_id"), priceSQL("p", "$4", "$2")),
 		storeID, pt.StoreID, pt.LeadDays, pt.PriceTypeID)
 	if err != nil {

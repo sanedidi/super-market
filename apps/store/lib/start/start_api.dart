@@ -10,8 +10,26 @@ class StartApi {
   final Api api;
   final String storeId;
 
-  Future<Map<String, dynamic>> draft({String? only, String? q, int limit = 200, int offset = 0}) async =>
-      await api.get('/store/start', {'store_id': storeId, 'only': only, 'q': q, 'limit': limit, 'offset': offset}) as Map<String, dynamic>;
+  /// Режим черновика из последнего ответа: stock — «Сразу с остатками»,
+  /// prices — «Только товары и цены», null — ещё не выбран. Шторки и сканер
+  /// смотрят сюда, чтобы не спрашивать количество.
+  String? mode;
+
+  /// «Только товары и цены».
+  bool get prices => mode == 'prices';
+
+  Future<Map<String, dynamic>> draft({String? only, String? q, int limit = 200, int offset = 0}) async {
+    final d = await api.get('/store/start', {'store_id': storeId, 'only': only, 'q': q, 'limit': limit, 'offset': offset}) as Map<String, dynamic>;
+    mode = d['mode'] as String?;
+    return d;
+  }
+
+  /// «Как начнём?»: stock — «Сразу с остатками», prices — «Только товары и цены».
+  Future<Map<String, dynamic>> setMode(String m) async {
+    final d = await api.post('/store/start/mode', {'store_id': storeId, 'mode': m}) as Map<String, dynamic>;
+    mode = d['mode'] as String?;
+    return d;
+  }
 
   /// Добавить или изменить строки (add — в «Мои товары»; то, что уже там, в
   /// пакете пропускается — ответ skipped).
@@ -27,7 +45,36 @@ class StartApi {
 
   Future<void> deleteLine(String productId) => api.delete('/store/start/lines/$productId?store_id=$storeId');
 
-  Future<Map<String, dynamic>> post() async => await api.post('/store/start/post', {'store_id': storeId}) as Map<String, dynamic>;
+  /// «Записать и закрыть»; restLater — «Остальное посчитаю потом»: строки без
+  /// количества — «Остаток не посчитан».
+  Future<Map<String, dynamic>> post({bool restLater = false}) async =>
+      await api.post('/store/start/post', {'store_id': storeId, if (restLater) 'rest_later': true}) as Map<String, dynamic>;
+
+  /// «Посчитано N из M»: {products, uncounted, counted, negative, percent}.
+  Future<Map<String, dynamic>> countSummary() async => await api.get('/store/start/count', {'store_id': storeId}) as Map<String, dynamic>;
+
+  /// Что посчитать: set — top (самые продаваемые), negative (в минусе),
+  /// uncounted (все, categoryId — одна полка); productIds — только эти товары.
+  Future<Map<String, dynamic>> countItems({String set = 'uncounted', String? categoryId, String? q, List<String>? productIds, int limit = 100}) async =>
+      await api.get('/store/start/count/items', {
+        'store_id': storeId,
+        'set': set,
+        'category_id': categoryId,
+        'q': q,
+        if (productIds != null) 'product_ids': productIds.join(','),
+        'limit': limit,
+      }) as Map<String, dynamic>;
+
+  /// Полки (категории) с непосчитанными товарами.
+  Future<List<Map<String, dynamic>>> countCategories() => api.list('/store/start/count/categories', {'store_id': storeId});
+
+  /// Записать подсчёт: product_id → сколько сейчас на полке.
+  Future<Map<String, dynamic>> count(Map<String, String> qty) async => await api.post('/store/start/count', {
+        'store_id': storeId,
+        'items': [
+          for (final e in qty.entries) {'product_id': e.key, 'qty': e.value},
+        ],
+      }) as Map<String, dynamic>;
 
   /// Добавить один товар в «Мои товары». Повтор и похожий товар — не ошибка,
   /// а исход (сервер отвечает 409 already_added / similar_exists).

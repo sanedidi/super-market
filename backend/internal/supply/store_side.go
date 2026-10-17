@@ -249,11 +249,12 @@ func (s *Service) Catalog(ctx context.Context, p *identity.Principal, storeID, d
 	search := productsearch.Filter("p", q, &args)
 	rows, err := s.pool.Query(ctx, fmt.Sprintf(`
 		SELECT y.id, y.name, y.image, y.unit, y.price::text, y.available, y.qty::text, round(y.per_day, 1)::text,
-		       CASE WHEN y.carried THEN %s ELSE '' END, CASE WHEN y.carried THEN (%s)::text ELSE '' END, y.carried
+		       CASE WHEN y.carried THEN %s ELSE '' END, CASE WHEN y.carried AND NOT y.uncounted THEN (%s)::text WHEN y.carried THEN '0' ELSE '' END, y.carried
 		FROM (
 			SELECT p.id, loc(p.name, p.name_uz) AS name, COALESCE(p.images[1], '') AS image, loc(u.short_name, u.short_name_uz) AS unit,
 			       %s AS price, %s > 0 AS available, %s AS qty, %s AS per_day,
-			       EXISTS (SELECT 1 FROM store_products my WHERE my.store_id = $1 AND my.product_id = p.id) AS carried
+			       EXISTS (SELECT 1 FROM store_products my WHERE my.store_id = $1 AND my.product_id = p.id) AS carried,
+			       EXISTS (SELECT 1 FROM store_products my WHERE my.store_id = $1 AND my.product_id = p.id AND my.uncounted_since IS NOT NULL) AS uncounted
 			FROM store_products sp
 			JOIN products p ON p.id = sp.product_id AND p.network_id IS NULL AND p.is_active
 			JOIN units u    ON u.id = p.unit_id
@@ -262,7 +263,7 @@ func (s *Service) Catalog(ctx context.Context, p *identity.Principal, storeID, d
 		WHERE y.price IS NOT NULL
 		ORDER BY y.carried DESC, CASE WHEN y.carried THEN CASE %[1]s WHEN 'out' THEN 0 WHEN 'low' THEN 1 ELSE 2 END ELSE 3 END, y.name
 		LIMIT $5 OFFSET $6`,
-		statusSQL("y.qty", "y.per_day", "$4"), recommendSQL("y.qty", "y.per_day", "$4"),
+		knownStatusSQL("y.uncounted", statusSQL("y.qty", "y.per_day", "$4")), recommendSQL("y.qty", "y.per_day", "$4"),
 		priceSQL("p", "$3", "$2"), stockSQL("$2", "p.id"), stockSQL("$1", "p.id"), perDaySQL("$1", "p.id"), search),
 		productsearch.Args(args)...)
 	if err != nil {
@@ -327,7 +328,7 @@ func (s *Service) Reorder(ctx context.Context, p *identity.Principal, storeID st
 				  AND %[3]s IS NOT NULL
 				ORDER BY d.accepted_at LIMIT 1
 			) sup ON true
-			WHERE sp.store_id = $1
+			WHERE sp.store_id = $1 AND sp.uncounted_since IS NULL -- непосчитанное: сколько заказать, неизвестно
 		)
 		SELECT id, name, image, unit, qty::text, round(per_day, 1)::text, %s, (%s)::text, price::text, distributor_id, dist_name
 		FROM lines

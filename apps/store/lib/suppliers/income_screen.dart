@@ -8,6 +8,7 @@ import 'package:sm_core/sm_core.dart';
 import '../finance/finance_logic.dart' show n, plainAmount;
 import '../kassa/widgets.dart' show PickChip, ProductThumb, QtyStepper;
 import '../main.dart' show showMessage;
+import '../start/stock_count.dart' show askShelfCounts;
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -147,6 +148,14 @@ class _SupplyIncomeScreenState extends State<SupplyIncomeScreen> {
         });
       }
       if (!mounted) return;
+      // Н6 · у непосчитанных товаров из прихода — «Сколько сейчас на полке?».
+      if (st.storeId != null) {
+        await askShelfCounts(context, st.storeId!, {
+          for (final it in _items)
+            if ((_qty[(it['line'] as num).toInt()] ?? 0) > 0) '${it['product_id']}': _qty[(it['line'] as num).toInt()]!,
+        });
+        if (!mounted) return;
+      }
       final messenger = ScaffoldMessenger.of(context);
       Navigator.of(context).pop(true);
       messenger.showSnackBar(SnackBar(

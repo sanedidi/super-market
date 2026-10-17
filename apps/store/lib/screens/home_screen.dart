@@ -7,6 +7,7 @@ import '../kassa/kassa_screen.dart';
 import '../receipt/capture_screen.dart';
 import '../setup/setup_screens.dart';
 import '../start/start_screen.dart';
+import '../start/stock_count.dart';
 import '../state.dart';
 import '../summary/summary_screen.dart';
 import '../ui/theme.dart';
@@ -114,6 +115,8 @@ class _HomeScreenState extends State<HomeScreen> {
           if (st.can('stores.manage') && st.storeId != null) SetupHomeBlock(key: ValueKey('setup-${st.storeId}'), storeId: st.storeId!),
           // Н1 · «Начало работы» — пока товары магазина не заведены.
           if (canIncome && st.storeId != null) StartHomeBlock(key: ValueKey(st.storeId), storeId: st.storeId!),
+          // Н5 · «Посчитано N из M» — пока есть товары «Остаток не посчитан».
+          if (canIncome && st.storeId != null) StockCountHomeCard(key: ValueKey('count-${st.storeId}'), storeId: st.storeId!),
           if ((_newOrders ?? 0) > 0) ...[
             AppCard(
               color: AppColors.primary,

@@ -91,6 +91,31 @@ func (s *Service) SetStep(ctx context.Context, p *identity.Principal, storeID st
 	return s.Get(ctx, p, storeID, Filter{Limit: 1})
 }
 
+// SetMode — «Как начнём?»: stock — «Сразу с остатками», prices — «Только
+// товары и цены». Черновик создаётся сам; режим можно поменять, пока
+// «Начало работы» не записано — введённое не теряется.
+func (s *Service) SetMode(ctx context.Context, p *identity.Principal, storeID, mode string) (Draft, error) {
+	if mode != ModeStock && mode != ModePrices {
+		return Draft{}, apperr.Validation("mode: stock или prices").Uz("mode: stock yoki prices")
+	}
+	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		st, err := s.store(ctx, tx, p, storeID)
+		if err != nil {
+			return err
+		}
+		id, err := s.ensureDraft(ctx, tx, p, st)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE start_drafts SET mode = $2 WHERE id = $1`, id, mode)
+		return err
+	})
+	if err != nil {
+		return Draft{}, err
+	}
+	return s.Get(ctx, p, storeID, Filter{Limit: 1})
+}
+
 // SetPhoto — фото товара прямо из инвентаризации. Без фото покупатель не
 // увидит товар, поэтому «Записать и закрыть» с такими строками не проходит.
 // Фото ставится только товару из черновика и только если его ещё нет.

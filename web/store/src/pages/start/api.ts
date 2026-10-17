@@ -48,9 +48,15 @@ export type Totals = {
   pending: number
   /** Строк без количества или цены продажи. */
   unfilled: number
-  /** Строк без фото товара: пока они есть, «Записать и закрыть» не проходит. */
+  /** Строк без фото товара: пока они есть, «Записать и закрыть» не проходит (только «Сразу с остатками»). */
   no_photo: number
+  /** Строк без количества и без цены продажи. */
+  no_qty: number
+  no_price: number
 }
+
+/** «Как начнём?»: stock — «Сразу с остатками», prices — «Только товары и цены». */
+export type StartMode = 'stock' | 'prices'
 
 export type Draft = {
   id: string | null
@@ -59,6 +65,8 @@ export type Draft = {
   warehouse_id: string
   warehouse_name: string
   status: 'open' | 'posting' | 'posted'
+  /** null — магазин ещё не выбрал, как начать (экран «Как начнём?»). */
+  mode: StartMode | null
   /** 1 — выбор товаров, 2 — инвентаризация; общий с «SM Магазин». */
   step: 1 | 2
   lines: Line[]
@@ -256,6 +264,8 @@ export type Photo = {
 export type PostResult = {
   draft_id: string
   products: number
+  /** Товаров с пометкой «Остаток не посчитан». */
+  uncounted: number
   qty: string
   cost_total: string
   documents: { id: string; number: number }[]
@@ -314,3 +324,34 @@ export const photoPoll = (q: { state: { data?: Draft } }) => (q.state.data?.line
 
 /** Количество для отображения без лишних нулей. */
 export const plainNum = (v: string | null | undefined) => (v === null || v === undefined || v === '' ? '' : String(Number(v)))
+
+/** «Только товары и цены»: количество не вводится. */
+export const pricesMode = (d: Pick<Draft, 'mode'> | undefined) => d?.mode === 'prices'
+
+// ---------------------------------------------------- подсчёт остатков потом
+
+/** Карточка «Посчитано N из M» на главной (GET /store/start/count). */
+export type CountSummary = { products: number; uncounted: number; counted: number; negative: number; percent: number }
+
+/** Товар в списке «Посчитать» (GET /store/start/count/items). */
+export type CountItem = {
+  product_id: string
+  name: string
+  image: string | null
+  unit_short: string
+  is_fractional: boolean
+  barcode: string | null
+  category: string
+  /** Остаток по учёту. */
+  stock: string
+  uncounted: boolean
+  sold_30d: string
+  /** Продано сверх остатка после подсчёта. */
+  short: string
+}
+
+export type CountSet = 'top' | 'negative' | 'uncounted'
+
+export type CountCategory = { id: string; name: string; section: string; uncounted: number; products: number }
+
+export type CountResult = { document: { id: string; number: number }; counted: number; summary: CountSummary }

@@ -8,6 +8,14 @@ import 'package:sm_core/sm_core.dart';
 /// магазины видят его товар.
 String Function() sellPriceWord = () => tr('Цена продажи', 'Sotish narxi');
 
+/// Показывать ли «Как начнём?» (Figma «начало работы v5»). «SM Агент» вводит
+/// товары теми же экранами, но без выбора — черновик без режима у него
+/// «Сразу с остатками».
+bool Function() startModeChoice = () => true;
+
+/// «Только товары и цены»: количество не вводится, у товаров «Остаток не посчитан».
+bool pricesMode(Map<String, dynamic>? d) => d?['mode'] == 'prices';
+
 /// Склонение: 1 товар, 2 товара, 5 товаров.
 String plural(int n, String one, String few, String many) {
   final m10 = n % 10;
@@ -115,8 +123,9 @@ List<Map<String, dynamic>> photoLines(Iterable<PhotoPick> picks) {
   ];
 }
 
-/// Строка ещё не заполнена: нет количества или цены продажи.
-bool lineUnfilled(Map<String, dynamic> l) => l['qty'] == null || l['price'] == null;
+/// Строка ещё не заполнена: нет количества или цены продажи (в режиме
+/// «Только товары и цены» — только цены).
+bool lineUnfilled(Map<String, dynamic> l, {bool prices = false}) => l['price'] == null || (!prices && l['qty'] == null);
 
 /// Подпись строки: «24 шт · себестоимость 11 200 · продажа 15 000»;
 /// не введённое — «не заполнено».

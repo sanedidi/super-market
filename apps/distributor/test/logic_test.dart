@@ -6,6 +6,7 @@ void main() {
     expect(stockStatus('out'), StockStatus.out);
     expect(stockStatus('low'), StockStatus.low);
     expect(stockStatus('ok'), StockStatus.ok);
+    expect(stockStatus('unknown'), StockStatus.unknown);
     expect(stockStatus('no_brand'), StockStatus.noBrand);
     expect(stockStatus('not_linked'), StockStatus.notLinked);
     expect(stockStatus(null), StockStatus.notLinked);

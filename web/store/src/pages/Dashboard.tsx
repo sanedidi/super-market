@@ -1,15 +1,16 @@
 // Главная: с правом «Отчёты» — выручка, прибыль, графики и ABC/XYZ (dashboard/Analytics),
 // без него — продажи сегодня, новые заказы, баланс и контроль чеков.
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Alert, Button, Card, Col, Flex, Row, Segmented, Statistic, Table, Typography } from 'antd'
-import { EnvironmentOutlined, RocketOutlined, ShoppingOutlined } from '@ant-design/icons'
-import { PageTitle, StatusTag, dateTime, money, periodParams, tr, useItem } from '@sm/shared'
+import { Alert, Button, Card, Col, Flex, Progress, Row, Segmented, Statistic, Table, Typography } from 'antd'
+import { ContainerOutlined, EnvironmentOutlined, ExclamationCircleOutlined, FireOutlined, ImportOutlined, RocketOutlined, ShoppingOutlined, UnorderedListOutlined } from '@ant-design/icons'
+import { PageTitle, StatusTag, dateTime, money, periodParams, plural, tr, useItem } from '@sm/shared'
 import { useStore } from '../ctx'
 import { usePaidOrders } from '../notify'
 import { NeedStore, today } from '../ui'
 import type { Balance, FiscalSummary, Order, SalesSummary } from '../types'
 import type { Draft } from './start/api'
+import { useCountSummary } from './start/Count'
 import { SetupChecklist, useSetupState } from './setup/Setup'
 import { Analytics, PERIODS, PeriodNote, type Period } from './dashboard/Analytics'
 
@@ -62,6 +63,7 @@ function Blocks({ analytics }: { analytics: boolean }) {
     <>
       {setup && <SetupChecklist s={setup} />}
       <StartBlock />
+      <StockCountBlock />
       {!(checklist && !setup.steps.delivery) && <WishesBlock />}
       {/* С аналитикой долги — карточкой внизу главной. */}
       {!analytics && <DebtsBlock />}
@@ -228,7 +230,12 @@ function StartBlock() {
               {tr('Начало работы', 'Ishni boshlash')}
             </Typography.Title>
             <Typography.Text type="secondary">
-              {n > 0
+              {n > 0 && d.data.mode === 'prices'
+                ? tr(
+                    `В «Моих товарах» ${n} — укажите цены продажи и нажмите «Начать продавать». Количество не нужно — остатки посчитаете потом.`,
+                    `«Mahsulotlarim»da ${n} ta — sotish narxlarini kiriting va «Sotishni boshlash»ni bosing. Miqdor shart emas — qoldiqlarni keyin sanaysiz.`,
+                  )
+                : n > 0
                 ? tr(
                     `В «Моих товарах» ${n} — введите количество и цены и нажмите «Записать и закрыть», чтобы товары появились на складе и у покупателей.`,
                     `«Mahsulotlarim»da ${n} ta — miqdor va narxlarni kiriting va «Yozish va yopish»ni bosing, shunda mahsulotlar omborda va xaridorlarda paydo boʻladi.`,
@@ -244,6 +251,102 @@ function StartBlock() {
           {n > 0 ? tr('Продолжить', 'Davom etish') : tr('Начать', 'Boshlash')}
         </Button>
       </Flex>
+    </Card>
+  )
+}
+
+/**
+ * «Остатки: посчитано N из M» (Figma «начало работы v5», Н-W5): после «Только
+ * товары и цены» или «Остальное посчитаю потом». Первыми — товары в минусе,
+ * дальше три способа досчитать. Исчезает, когда всё посчитано.
+ */
+function StockCountBlock() {
+  const { storeId, can } = useStore()
+  const nav = useNavigate()
+  const s = useCountSummary(storeId, can('inventory.manage')).data
+  if (!s || (s.uncounted === 0 && s.negative === 0)) return null
+  const goods = (n: number) => tr(`${n} ${plural(n, 'товар', 'товара', 'товаров')}`, `${n} ta mahsulot`)
+  const way = (icon: ReactNode, title: string, desc: string, btn: string, to: string, primary?: boolean) => (
+    <Col xs={24} md={8}>
+      <Card
+        size="small"
+        style={{ height: '100%', borderColor: primary ? '#E11D2A' : undefined, background: primary ? '#FFFBFA' : '#F9FAFB' }}
+        styles={{ body: { padding: 16, height: '100%', display: 'flex', flexDirection: 'column', gap: 10 } }}
+      >
+        <Flex align="center" gap={10}>
+          <span style={{ fontSize: 18, color: primary ? '#E11D2A' : '#475467' }}>{icon}</span>
+          <Typography.Text strong>{title}</Typography.Text>
+        </Flex>
+        <Typography.Text type="secondary" style={{ fontSize: 13, flex: 1 }}>
+          {desc}
+        </Typography.Text>
+        <div>
+          <Button size="small" type={primary ? 'primary' : 'default'} onClick={() => nav(to)}>
+            {btn}
+          </Button>
+        </div>
+      </Card>
+    </Col>
+  )
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <Flex align="center" gap={14} wrap>
+        <Flex align="center" justify="center" style={{ width: 44, height: 44, borderRadius: 10, background: '#FFFAEB', color: '#B54708', fontSize: 22, flex: 'none' }}>
+          <ContainerOutlined />
+        </Flex>
+        <div style={{ flex: 1, minWidth: 260 }}>
+          <Typography.Title level={5} style={{ margin: 0 }}>
+            {tr(`Остатки: посчитано ${s.counted} из ${s.products}`, `Qoldiqlar: ${s.products} tadan ${s.counted} tasi sanalgan`)}
+          </Typography.Title>
+          <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+            {tr(
+              'Продажи идут и без этого. Посчитайте остатки — склад и прибыль станут точными, а агенты увидят, что вам привезти.',
+              'Sotuvlar busiz ham ketyapti. Qoldiqlarni sanang — ombor va foyda aniq boʻladi, agentlar esa sizga nima olib kelishni koʻradi.',
+            )}
+          </Typography.Text>
+        </div>
+        <Progress percent={s.percent} strokeColor="#F79009" style={{ width: 200, margin: 0 }} />
+      </Flex>
+      {s.negative > 0 && (
+        <Alert
+          type="error"
+          showIcon
+          icon={<ExclamationCircleOutlined />}
+          style={{ marginTop: 14 }}
+          message={tr(`${goods(s.negative)} ушли в минус: продали больше, чем было посчитано. Посчитайте их первыми.`, `${goods(s.negative)} minusga ketdi: sanalganidan koʻp sotildi. Ularni birinchi sanang.`)}
+          action={
+            <Button size="small" danger onClick={() => nav('/start/count?set=negative')}>
+              {tr(`Посчитать ${s.negative}`, `${s.negative} tasini sanash`)}
+            </Button>
+          }
+        />
+      )}
+      {s.uncounted > 0 && (
+        <Row gutter={[16, 16]} style={{ marginTop: 14 }}>
+          {way(
+            <FireOutlined />,
+            tr('Сегодня — 15 самых продаваемых', 'Bugun — eng koʻp sotiladigan 15 ta'),
+            tr('Самые ходовые товары — первыми. Займёт 10–15 минут.', 'Eng xaridorgir mahsulotlar — birinchi. 10–15 daqiqa oladi.'),
+            tr('Посчитать 15 товаров', '15 ta mahsulotni sanash'),
+            '/start/count?set=top',
+            true,
+          )}
+          {way(
+            <UnorderedListOutlined />,
+            tr('По одной полке', 'Bitta javon boʻyicha'),
+            tr('Выберите категорию, например «Напитки», и посчитайте только её.', 'Kategoriyani tanlang, masalan «Ichimliklar», va faqat uni sanang.'),
+            tr('Выбрать полку', 'Javonni tanlash'),
+            '/start/count?set=shelf',
+          )}
+          {way(
+            <ImportOutlined />,
+            tr('При приходе товара', 'Mahsulot kirimida'),
+            tr('В приложении «SM Магазин» приход спросит «Сколько сейчас на полке?» — одно число вместо полной инвентаризации.', '«SM Магазин» ilovasida kirim «Hozir javonda qancha?» deb soʻraydi — toʻliq inventarizatsiya oʻrniga bitta son.'),
+            tr('Все непосчитанные', 'Barcha sanalmaganlar'),
+            '/start/count?set=uncounted',
+          )}
+        </Row>
+      )}
     </Card>
   )
 }

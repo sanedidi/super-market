@@ -8,6 +8,9 @@
 //  2. «Инвентаризация: Начало работы» — количество и цена продажи (обязательны,
 //     можно 0), себестоимость — по желанию. «Записать и закрыть» проводит
 //     черновик, после этого «Начало работы» больше не показывается.
+// Перед шагом 1 — «Как начнём?» (Figma «начало работы v5», ChooseMode): в
+// режиме «Только товары и цены» шаг 2 — «Цены» без количества (у товаров
+// «Остаток не посчитан»), в «Сразу с остатками» можно «Остальное посчитаю потом».
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -15,28 +18,33 @@ import { Alert, App, Button, Card, Col, Flex, Input, InputNumber, Modal, Paginat
 import {
   ArrowRightOutlined,
   CameraOutlined,
+  CheckCircleFilled,
   CheckCircleOutlined,
   CheckOutlined,
+  ClockCircleOutlined,
   CopyOutlined,
   DeleteOutlined,
   ExclamationCircleFilled,
   PlusOutlined,
+  QuestionCircleOutlined,
   RightOutlined,
   SaveOutlined,
   ScanOutlined,
   SearchOutlined,
+  ShopOutlined,
 } from '@ant-design/icons'
 import { ApiError, LoadError, PageTitle, api, errorText, money, plural, qty as fmtQty, tr, useDebounced, useList } from '@sm/shared'
 import { useStore } from '../../ctx'
 import { NeedStore } from '../../ui'
 import { docPaths } from '../StockDocs'
-import { photoPoll, plainNum, useStartApi, useStartRefresh, type Draft, type Line, type LineInput, type LineVariant, type LinesResult, type NewItem, type PostResult, type SearchItem, type Similar } from './api'
+import { photoPoll, plainNum, pricesMode, useStartApi, useStartRefresh, type Draft, type Line, type LineInput, type LineVariant, type LinesResult, type NewItem, type PostResult, type SearchItem, type Similar, type Totals } from './api'
 import { BarcodeModal, NewProductModal, PhotoModal, SimilarModal, sum } from './Modals'
 import { TasnifBlock, TasnifLink } from './Tasnif'
 import { NEW_PAGE, NewByPhotoModal, NewItemsList, ReviewModal, RightTabs, newItemBadge, newItemState, newItemThumb, useNewItems, type RightTab } from './NewItems'
 import { OwnVariantsStart, useOwnGroups } from '../OwnVariants'
 import { CountDrawer, ScanCard } from './CountScan'
 import { Thumb } from './Thumb'
+import { ChooseMode } from './ChooseMode'
 
 const PAGE = 50
 const RED = '#E11D2A'
@@ -61,6 +69,8 @@ function Start() {
     api.post('/store/start/step', { store_id: storeId, step: s }).catch(() => {})
   }
   const [result, setResult] = useState<PostResult | null>(null)
+  // «Сменить» в шапке шага 1 — снова «Как начнём?».
+  const [choosing, setChoosing] = useState(false)
 
   // Шапка черновика: закрыт ли, итоги, склад.
   const head = useQuery({
@@ -77,10 +87,16 @@ function Start() {
   if (d.closed && !d.id) return <Closed d={d} />
   if (d.status === 'posting')
     return <Alert type="info" showIcon message={tr('«Начало работы» записывается — подождите несколько секунд', '«Ishni boshlash» yozilmoqda — bir necha soniya kuting')} />
+  // Магазин ещё не выбрал, как начать (черновики, начатые раньше, — «Сразу с остатками»).
+  if (d.mode === null || choosing) return <ChooseMode d={d} onChosen={() => setChoosing(false)} />
   return (
     <>
       <style>{rowStyles}</style>
-      {step === 1 ? <StepGoods d={d} next={() => setStep(2)} /> : <StepCount d={d} back={() => setStep(1)} onPosted={setResult} />}
+      {step === 1 ? (
+        <StepGoods d={d} next={() => setStep(2)} onMode={() => setChoosing(true)} />
+      ) : (
+        <StepCount d={d} back={() => setStep(1)} onPosted={setResult} />
+      )}
     </>
   )
 }
@@ -92,9 +108,9 @@ const rowStyles = `
 .sm-start-unfilled > td { background: #FFFBFA !important; }
 `
 
-/** Шаги «1 · Выбор товаров › 2 · Инвентаризация». */
-function Steps({ step, go }: { step: 1 | 2; go?: (s: 1 | 2) => void }) {
-  const items = [tr('Выбор товаров', 'Mahsulotlarni tanlash'), tr('Инвентаризация: Начало работы', 'Inventarizatsiya: Ishni boshlash')]
+/** Шаги «1 · Выбор товаров › 2 · Инвентаризация» («2 · Цены» — без количества). */
+function Steps({ step, go, prices }: { step: 1 | 2; go?: (s: 1 | 2) => void; prices?: boolean }) {
+  const items = [tr('Выбор товаров', 'Mahsulotlarni tanlash'), prices ? tr('Цены', 'Narxlar') : tr('Инвентаризация: Начало работы', 'Inventarizatsiya: Ishni boshlash')]
   return (
     <Flex align="center" gap={8} wrap style={{ marginBottom: 16 }}>
       {items.map((label, i) => {
@@ -145,7 +161,8 @@ function Steps({ step, go }: { step: 1 | 2; go?: (s: 1 | 2) => void }) {
 
 // ================================================================ шаг 1
 
-function StepGoods({ d, next }: { d: Draft; next: () => void }) {
+function StepGoods({ d, next, onMode }: { d: Draft; next: () => void; onMode: () => void }) {
+  const prices = pricesMode(d)
   const { can, storeId } = useStore()
   const [photoOpen, setPhotoOpen] = useState(false)
   const [newOpen, setNewOpen] = useState(false)
@@ -201,18 +218,27 @@ function StepGoods({ d, next }: { d: Draft; next: () => void }) {
               </Button>
             )}
             <Button type="primary" disabled={n === 0} onClick={next}>
-              {tr('Дальше: инвентаризация', 'Keyingi: inventarizatsiya')} <ArrowRightOutlined />
+              {prices ? tr('Дальше: цены', 'Keyingi: narxlar') : tr('Дальше: инвентаризация', 'Keyingi: inventarizatsiya')} <ArrowRightOutlined />
             </Button>
           </Space>
         }
       />
       <Typography.Paragraph type="secondary" style={{ marginTop: -4 }}>
-        {tr(
-          `Шаг 1 из 2 — найдите в центральной базе товары, которые есть в магазине «${d.store_name}». Количество и цены — на шаге 2. Список общий с приложением «SM Магазин».`,
-          `1-qadam (2 tadan) — «${d.store_name}» doʻkonida bor mahsulotlarni markaziy bazadan toping. Miqdor va narxlar — 2-qadamda. Roʻyxat «SM Магазин» ilovasi bilan umumiy.`,
-        )}
+        {prices
+          ? tr(
+              `Шаг 1 из 2 — найдите в центральной базе товары, которые есть в магазине «${d.store_name}». Цены — на шаге 2, количество не нужно. Список общий с приложением «SM Магазин».`,
+              `1-qadam (2 tadan) — «${d.store_name}» doʻkonida bor mahsulotlarni markaziy bazadan toping. Narxlar — 2-qadamda, miqdor shart emas. Roʻyxat «SM Магазин» ilovasi bilan umumiy.`,
+            )
+          : tr(
+              `Шаг 1 из 2 — найдите в центральной базе товары, которые есть в магазине «${d.store_name}». Количество и цены — на шаге 2. Список общий с приложением «SM Магазин».`,
+              `1-qadam (2 tadan) — «${d.store_name}» doʻkonida bor mahsulotlarni markaziy bazadan toping. Miqdor va narxlar — 2-qadamda. Roʻyxat «SM Магазин» ilovasi bilan umumiy.`,
+            )}{' '}
+        <Typography.Text type="secondary">
+          {prices ? tr('Вариант «Только товары и цены»', '«Faqat mahsulotlar va narxlar» varianti') : tr('Вариант «Сразу с остатками»', '«Darhol qoldiqlar bilan» varianti')} ·{' '}
+          <a onClick={onMode}>{tr('сменить', 'oʻzgartirish')}</a>
+        </Typography.Text>
       </Typography.Paragraph>
-      <Steps step={1} />
+      <Steps step={1} prices={prices} />
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={10}>
           <SearchCard onDuplicate={setHighlight} onNew={() => setByPhoto(true)} onQueued={showQueued} />
@@ -717,15 +743,22 @@ function NumCell({
 
 type Only = '' | 'unfilled' | 'no_cost' | 'no_photo'
 
-/** V4: документ «Инвентаризация: Начало работы». */
+/**
+ * V4: документ «Инвентаризация: Начало работы». В режиме «Только товары и
+ * цены» (v5, Н-W2) — «Начало работы: товары и цены»: количество не нужно,
+ * у строк «не посчитан», кнопка «Начать продавать». В «Сразу с остатками» —
+ * ещё «Остальное посчитаю потом» (Н-W4).
+ */
 function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted: (r: PostResult) => void }) {
   const { storeId } = useStore()
   const { modal, message } = App.useApp()
   const { setLines, deleteLine, refresh } = useStartApi(storeId)
+  const prices = pricesMode(d)
   const [only, setOnly] = useState<Only>('')
   const [page, setPage] = useState(1)
   // Товар, который открыт в шторке ввода (скан или поиск по названию).
   const [sheet, setSheet] = useState<Line | null>(null)
+  const [later, setLater] = useState(false)
   useEffect(() => setPage(1), [only, storeId])
   // Сначала группы вариаций (группа → вес → вариант), потом обычные товары.
   const params = { store_id: storeId, only: only || undefined, order: 'groups', limit: PAGE + 1, offset: (page - 1) * PAGE }
@@ -736,6 +769,7 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
   const lines = hasMore ? raw.slice(0, PAGE) : raw
   const save = (l: Line, patch: Omit<LineInput, 'product_id'>) => setLines([{ ...patch, product_id: l.product_id }])
   const filled = t.products - t.unfilled
+  const noCostLabel = (n: number) => tr(`Без цены закупки: ${goods(n)}`, `Xarid narxisiz: ${goods(n)}`)
 
   // «Сохранить»: значения сохраняются при уходе из поля — дождаться и сказать об этом.
   const saveAll = async () => {
@@ -745,16 +779,63 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
     message.success(tr('Черновик сохранён — можно вернуться к нему позже', 'Qoralama saqlandi — keyinroq unga qaytish mumkin'))
   }
 
+  const doPost = async (restLater: boolean) => {
+    try {
+      const r = await api.post<PostResult>('/store/start/post', { store_id: storeId, rest_later: restLater || undefined })
+      onPosted(r)
+      await refresh()
+    } catch (e) {
+      message.error(errorText(e))
+      if (e instanceof ApiError && e.code === 'lines_unfilled') setOnly('unfilled')
+      if (e instanceof ApiError && e.code === 'lines_no_photo') setOnly('no_photo')
+      await refresh()
+      throw e
+    }
+  }
+
   const post = () => {
     ;(document.activeElement as HTMLElement | null)?.blur()
-    if (t.no_photo > 0) {
+    if (!prices && t.no_photo > 0) {
       setOnly('no_photo')
       message.error(tr(`Добавьте фото: товаров без фото — ${t.no_photo}`, `Rasm qoʻshing: rasmsiz mahsulotlar — ${t.no_photo}`))
       return
     }
     if (t.unfilled > 0) {
       setOnly('unfilled')
-      message.error(tr(`Заполните ${rows(t.unfilled)}: количество и цена продажи обязательны`, `${rows(t.unfilled)}ni toʻldiring: miqdor va sotish narxi majburiy`))
+      message.error(
+        prices
+          ? tr(`Укажите цену продажи у ${goods(t.unfilled)}`, `${goods(t.unfilled)}ga sotish narxini kiriting`)
+          : tr(`Заполните ${rows(t.unfilled)}: количество и цена продажи обязательны`, `${rows(t.unfilled)}ni toʻldiring: miqdor va sotish narxi majburiy`),
+      )
+      return
+    }
+    if (prices) {
+      modal.confirm({
+        title: tr('Начать продавать?', 'Sotishni boshlaymizmi?'),
+        width: 540,
+        okText: tr('Начать продавать', 'Sotishni boshlash'),
+        cancelText: tr('Отмена', 'Bekor qilish'),
+        content: (
+          <div>
+            <Typography.Paragraph>
+              {tr(
+                `Цены продажи встанут в магазин «${d.store_name}», товары — в «Мои товары». После этого документ больше не появится: новые товары добавляйте приходом или установкой цен.`,
+                `Sotish narxlari «${d.store_name}» doʻkoniga, mahsulotlar «Mahsulotlarim»ga tushadi. Shundan soʻng hujjat boshqa chiqmaydi: yangi mahsulotlarni kirim yoki narx belgilash orqali qoʻshing.`,
+              )}
+            </Typography.Paragraph>
+            <Alert
+              type="info"
+              showIcon
+              message={tr(`«Остаток не посчитан»: ${goods(t.no_qty)}`, `«Qoldiq sanalmagan»: ${goods(t.no_qty)}`)}
+              description={tr(
+                'Продавать их можно. Посчитать остатки — потом, с главной: по одной полке или при приходе товара.',
+                'Ularni sotish mumkin. Qoldiqlarni keyin, bosh sahifadan sanaysiz: bitta javon boʻyicha yoki mahsulot kirimida.',
+              )}
+            />
+          </div>
+        ),
+        onOk: () => doPost(false),
+      })
       return
     }
     modal.confirm({
@@ -772,8 +853,8 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
           </Typography.Paragraph>
           <Typography.Paragraph style={{ marginBottom: 0 }}>
             {tr(
-              `${goods(t.products)} · ${fmtQty(t.qty)} шт · по себестоимости ${sum(t.cost_total)} · по цене продажи ${sum(t.price_total)}`,
-              `${goods(t.products)} · ${fmtQty(t.qty)} dona · tannarxda ${sum(t.cost_total)} · sotish narxida ${sum(t.price_total)}`,
+              `${goods(t.products)} · ${fmtQty(t.qty)} шт · по цене закупки ${sum(t.cost_total)} · по цене продажи ${sum(t.price_total)}`,
+              `${goods(t.products)} · ${fmtQty(t.qty)} dona · xarid narxida ${sum(t.cost_total)} · sotish narxida ${sum(t.price_total)}`,
             )}
           </Typography.Paragraph>
           {t.no_cost > 0 && (
@@ -781,32 +862,20 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
               style={{ marginTop: 12 }}
               type="warning"
               showIcon
-              message={tr(`Без себестоимости: ${goods(t.no_cost)}`, `Tannarxsiz: ${goods(t.no_cost)}`)}
-              description={tr('Их себестоимость будет 0 — прибыль по ним в отчётах будет завышена.', 'Ularning tannarxi 0 boʻladi — hisobotlarda ular boʻyicha foyda oshirib koʻrsatiladi.')}
+              message={noCostLabel(t.no_cost)}
+              description={tr('Их цена закупки будет 0 — прибыль по ним в отчётах будет завышена.', 'Ularning xarid narxi 0 boʻladi — hisobotlarda ular boʻyicha foyda oshirib koʻrsatiladi.')}
             />
           )}
         </div>
       ),
-      onOk: async () => {
-        try {
-          const r = await api.post<PostResult>('/store/start/post', { store_id: storeId })
-          onPosted(r)
-          await refresh()
-        } catch (e) {
-          message.error(errorText(e))
-          if (e instanceof ApiError && e.code === 'lines_unfilled') setOnly('unfilled')
-          if (e instanceof ApiError && e.code === 'lines_no_photo') setOnly('no_photo')
-          await refresh()
-          throw e
-        }
-      },
+      onOk: () => doPost(false),
     })
   }
 
   return (
     <>
       <PageTitle
-        title={tr('Инвентаризация: Начало работы', 'Inventarizatsiya: Ishni boshlash')}
+        title={prices ? tr('Начало работы: товары и цены', 'Ishni boshlash: mahsulotlar va narxlar') : tr('Инвентаризация: Начало работы', 'Inventarizatsiya: Ishni boshlash')}
         extra={
           <Space wrap>
             <Button icon={<PlusOutlined />} onClick={back}>
@@ -815,29 +884,49 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
             <Button icon={<SaveOutlined />} onClick={saveAll}>
               {tr('Сохранить', 'Saqlash')}
             </Button>
-            <Button type="primary" icon={<CheckCircleOutlined />} disabled={t.products === 0} onClick={post}>
-              {tr('Записать и закрыть', 'Yozish va yopish')}
+            {!prices && (
+              <Button danger icon={<ClockCircleOutlined />} disabled={t.products === 0} onClick={() => setLater(true)}>
+                {tr('Остальное посчитаю потом', 'Qolganini keyin sanayman')}
+              </Button>
+            )}
+            <Button type="primary" icon={prices ? <ShopOutlined /> : <CheckCircleOutlined />} disabled={t.products === 0} onClick={post}>
+              {prices ? tr('Начать продавать', 'Sotishni boshlash') : tr('Записать и закрыть', 'Yozish va yopish')}
             </Button>
           </Space>
         }
       />
       <Typography.Paragraph type="secondary" style={{ marginTop: -4 }}>
-        {tr(
-          `Шаг 2 из 2 · склад «${d.warehouse_name}». Документ виден, пока вы не нажмёте «Записать и закрыть».`,
-          `2-qadam (2 tadan) · «${d.warehouse_name}» ombori. Hujjat «Yozish va yopish» tugmasini bosmaguningizcha koʻrinadi.`,
-        )}
+        {prices
+          ? tr(
+              'Шаг 2 из 2 · вариант «Только товары и цены». Обязательна только цена продажи — остатки посчитаете потом.',
+              '2-qadam (2 tadan) · «Faqat mahsulotlar va narxlar» varianti. Faqat sotish narxi majburiy — qoldiqlarni keyin sanaysiz.',
+            )
+          : tr(
+              `Шаг 2 из 2 · склад «${d.warehouse_name}». Документ виден, пока вы не нажмёте «Записать и закрыть».`,
+              `2-qadam (2 tadan) · «${d.warehouse_name}» ombori. Hujjat «Yozish va yopish» tugmasini bosmaguningizcha koʻrinadi.`,
+            )}
       </Typography.Paragraph>
-      <Steps step={2} go={back} />
+      <Steps step={2} go={back} prices={prices} />
       <div style={{ marginBottom: 16 }}>
-        <ScanCard onFound={setSheet} />
+        <ScanCard onFound={setSheet} prices={prices} />
       </div>
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Stat title={tr('Товаров', 'Mahsulotlar')} value={String(t.products)} />
-        <Stat title={tr('Заполнено', 'Toʻldirilgan')} value={tr(`${filled} из ${t.products}`, `${filled} / ${t.products}`)} warn={t.unfilled > 0} />
-        <Stat title={tr('По себестоимости', 'Tannarxda')} value={sum(t.cost_total)} />
-        <Stat title={tr('По цене продажи', 'Sotish narxida')} value={sum(t.price_total)} />
+        {prices ? (
+          <>
+            <Stat title={tr('С ценой продажи', 'Sotish narxi bilan')} value={tr(`${filled} из ${t.products}`, `${filled} / ${t.products}`)} warn={t.unfilled > 0} />
+            <Stat title={tr('С ценой закупки', 'Xarid narxi bilan')} value={tr(`${t.products - t.no_cost} из ${t.products}`, `${t.products - t.no_cost} / ${t.products}`)} />
+            <Stat title={tr('Остатки', 'Qoldiqlar')} value={tr('посчитаете потом', 'keyin sanaysiz')} muted />
+          </>
+        ) : (
+          <>
+            <Stat title={tr('Заполнено', 'Toʻldirilgan')} value={tr(`${filled} из ${t.products}`, `${filled} / ${t.products}`)} warn={t.unfilled > 0} />
+            <Stat title={tr('По цене закупки', 'Xarid narxida')} value={sum(t.cost_total)} />
+            <Stat title={tr('По цене продажи', 'Sotish narxida')} value={sum(t.price_total)} />
+          </>
+        )}
       </Row>
-      {t.no_photo > 0 && (
+      {!prices && t.no_photo > 0 && (
         <Alert
           type="error"
           showIcon
@@ -859,13 +948,22 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
           <Flex gap={10} align="start">
             <ExclamationCircleFilled style={{ color: RED, fontSize: 20, marginTop: 2 }} />
             <div>
-              <Typography.Text strong>{tr(`Заполните ${rows(t.unfilled)}, чтобы записать и закрыть`, `Yozib, yopish uchun ${rows(t.unfilled)}ni toʻldiring`)}</Typography.Text>
+              <Typography.Text strong>
+                {prices
+                  ? tr(`Укажите цену у ${goods(t.unfilled)}, чтобы начать продавать`, `Sotishni boshlash uchun ${goods(t.unfilled)}ga narx kiriting`)
+                  : tr(`Заполните ${rows(t.unfilled)}, чтобы записать и закрыть`, `Yozib, yopish uchun ${rows(t.unfilled)}ni toʻldiring`)}
+              </Typography.Text>
               <div>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {tr(
-                    'Количество и цена продажи обязательны в каждой строке — можно 0. Себестоимость — по желанию: без неё прибыль по товару будет считаться неточно.',
-                    'Har bir qatorda miqdor va sotish narxi majburiy — 0 boʻlishi mumkin. Tannarx — ixtiyoriy: usiz mahsulot boʻyicha foyda notoʻgʻri hisoblanadi.',
-                  )}
+                  {prices
+                    ? tr(
+                        'Обязательна только цена продажи. Остаток вводить не нужно — у товаров будет пометка «не посчитан», посчитаете потом.',
+                        'Faqat sotish narxi majburiy. Qoldiqni kiritish shart emas — mahsulotlarda «sanalmagan» belgisi boʻladi, keyin sanaysiz.',
+                      )
+                    : tr(
+                        'Количество и цена продажи обязательны в каждой строке — можно 0. Не хотите считать всё сейчас — «Остальное посчитаю потом».',
+                        'Har bir qatorda miqdor va sotish narxi majburiy — 0 boʻlishi mumkin. Hammasini hozir sanashni istamasangiz — «Qolganini keyin sanayman».',
+                      )}
                 </Typography.Text>
               </div>
             </div>
@@ -881,9 +979,9 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
             onChange={setOnly}
             options={[
               { value: '', label: `${tr('Все', 'Hammasi')} · ${t.products}` },
-              { value: 'unfilled', label: `${tr('Не заполнено', 'Toʻldirilmagan')} · ${t.unfilled}` },
+              { value: 'unfilled', label: `${prices ? tr('Без цены', 'Narxsiz') : tr('Не заполнено', 'Toʻldirilmagan')} · ${t.unfilled}` },
               { value: 'no_cost', label: `${tr('Без цены закупки', 'Xarid narxisiz')} · ${t.no_cost}` },
-              { value: 'no_photo', label: `${tr('Без фото', 'Rasmsiz')} · ${t.no_photo}` },
+              ...(prices ? [] : [{ value: 'no_photo' as Only, label: `${tr('Без фото', 'Rasmsiz')} · ${t.no_photo}` }]),
             ]}
           />
         }
@@ -893,6 +991,7 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
         <LineTables
           lines={lines}
           loading={draft.isLoading}
+          prices={prices}
           empty={only ? tr('Таких товаров нет', 'Bunday mahsulotlar yoʻq') : tr('Нет товаров — добавьте их на шаге 1', 'Mahsulotlar yoʻq — ularni 1-qadamda qoʻshing')}
           save={save}
           onSheet={setSheet}
@@ -908,13 +1007,16 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
               <Pagination size="small" current={page} pageSize={PAGE} total={(page - 1) * PAGE + lines.length + (hasMore ? 1 : 0)} onChange={setPage} showSizeChanger={false} />
             )}
             <Typography.Text strong>
-              {tr(`Итого: себестоимость ${sum(t.cost_total)} · продажа ${sum(t.price_total)}`, `Jami: tannarx ${sum(t.cost_total)} · sotish ${sum(t.price_total)}`)}
+              {prices
+                ? tr(`Итого: ${goods(t.products)} · остатки посчитаете потом — с главной или при приходе товара`, `Jami: ${goods(t.products)} · qoldiqlarni keyin — bosh sahifadan yoki kirimda sanaysiz`)
+                : tr(`Итого: закупка ${sum(t.cost_total)} · продажа ${sum(t.price_total)}`, `Jami: xarid ${sum(t.cost_total)} · sotish ${sum(t.price_total)}`)}
             </Typography.Text>
           </Flex>
         )}
       </Card>
       <CountDrawer
         line={sheet}
+        prices={prices}
         onClose={() => setSheet(null)}
         onSaved={async () => {
           setSheet(null)
@@ -922,7 +1024,120 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
           await draft.refetch()
         }}
       />
+      <RestLaterModal
+        open={later}
+        t={t}
+        onClose={() => setLater(false)}
+        onShow={(o) => {
+          setLater(false)
+          setOnly(o)
+        }}
+        onOk={async () => {
+          await doPost(true)
+          setLater(false)
+        }}
+      />
     </>
+  )
+}
+
+/**
+ * «Остальное посчитать потом?» (Figma v5, Н-W4): посчитанное сохраняется,
+ * остальные — «Остаток не посчитан», документ закрывается. Без цены продажи и
+ * без фото не записать — их надо заполнить сначала.
+ */
+function RestLaterModal({
+  open,
+  t,
+  onClose,
+  onShow,
+  onOk,
+}: {
+  open: boolean
+  t: Totals
+  onClose: () => void
+  onShow: (only: Only) => void
+  onOk: () => Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
+  const counted = t.products - t.no_qty
+  const blocked = t.no_price > 0 || t.no_photo > 0
+  const row = (icon: ReactNode, text: ReactNode) => (
+    <Flex gap={10} align="flex-start">
+      {icon}
+      <Typography.Text style={{ fontSize: 13, fontWeight: 600, color: '#344054' }}>{text}</Typography.Text>
+    </Flex>
+  )
+  return (
+    <Modal
+      open={open}
+      width={540}
+      onCancel={onClose}
+      title={
+        <Flex gap={12} align="center">
+          <Flex align="center" justify="center" style={{ width: 44, height: 44, borderRadius: 22, background: '#FFFAEB', color: '#B54708', fontSize: 22 }}>
+            <ClockCircleOutlined />
+          </Flex>
+          {tr('Остальное посчитать потом?', 'Qolganini keyin sanaymizmi?')}
+        </Flex>
+      }
+      footer={
+        <Space>
+          <Button onClick={onClose}>{tr('Продолжить считать', 'Sanashni davom ettirish')}</Button>
+          <Button
+            type="primary"
+            icon={<ShopOutlined />}
+            loading={busy}
+            disabled={blocked}
+            onClick={async () => {
+              setBusy(true)
+              try {
+                await onOk()
+              } catch {
+                /* сообщение уже показано */
+              } finally {
+                setBusy(false)
+              }
+            }}
+          >
+            {tr('Сохранить и начать продавать', 'Saqlash va sotishni boshlash')}
+          </Button>
+        </Space>
+      }
+    >
+      <Typography.Paragraph type="secondary">
+        {tr(
+          'Посчитанное сохранится. Документ закроется — дальше остатки досчитываются по одному товару, без нового документа.',
+          'Sanalgani saqlanadi. Hujjat yopiladi — qolgan qoldiqlar yangi hujjatsiz, bittadan sanaladi.',
+        )}
+      </Typography.Paragraph>
+      <Flex vertical gap={10} style={{ background: '#F9FAFB', borderRadius: 12, padding: '14px 16px' }}>
+        {row(<CheckCircleFilled style={{ color: '#027A48', marginTop: 3 }} />, tr(`${goods(counted)} — остаток и цена сохранятся`, `${goods(counted)} — qoldiq va narx saqlanadi`))}
+        {t.no_qty > 0 &&
+          row(<QuestionCircleOutlined style={{ color: '#667085', marginTop: 3 }} />, tr(`${goods(t.no_qty)} — «Остаток не посчитан», продавать можно`, `${goods(t.no_qty)} — «Qoldiq sanalmagan», sotish mumkin`))}
+        {t.no_price > 0 &&
+          row(
+            <ExclamationCircleFilled style={{ color: '#B42318', marginTop: 3 }} />,
+            <>
+              {tr(`${goods(t.no_price)} без цены продажи — укажите цену, без неё не записать`, `${goods(t.no_price)} sotish narxisiz — narx kiriting, usiz yozib boʻlmaydi`)} ·{' '}
+              <a onClick={() => onShow('unfilled')}>{tr('показать', 'koʻrsatish')}</a>
+            </>,
+          )}
+        {t.no_photo > 0 &&
+          row(
+            <ExclamationCircleFilled style={{ color: '#B42318', marginTop: 3 }} />,
+            <>
+              {tr(`${goods(t.no_photo)} без фото — добавьте снимок`, `${goods(t.no_photo)} rasmsiz — rasm qoʻshing`)} · <a onClick={() => onShow('no_photo')}>{tr('показать', 'koʻrsatish')}</a>
+            </>,
+          )}
+      </Flex>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: '12px 0 0' }}>
+        {tr(
+          'Досчитать можно в любой момент: на главной — «Посчитать остатки» или при приходе товара.',
+          'Istalgan vaqtda sanash mumkin: bosh sahifada — «Qoldiqlarni sanash» yoki mahsulot kirimida.',
+        )}
+      </Typography.Paragraph>
+    </Modal>
   )
 }
 
@@ -992,6 +1207,7 @@ type GRow = { key: string; head?: { label: string; lines: Line[] }; line?: Line 
 function LineTables({
   lines,
   loading,
+  prices,
   empty,
   save,
   onSheet,
@@ -1000,6 +1216,8 @@ function LineTables({
 }: {
   lines: Line[]
   loading: boolean
+  /** «Только товары и цены»: количество не обязательно, пусто — «не посчитан». */
+  prices?: boolean
   empty: string
   save: (l: Line, patch: Omit<LineInput, 'product_id'>) => Promise<unknown>
   onSheet: (l: Line) => void
@@ -1024,7 +1242,7 @@ function LineTables({
   const ownPrice = (l: Line, own: boolean, price?: string | null) =>
     call(api.post(`/store/start/lines/${l.product_id}/own-price`, { store_id: storeId, own, price: price ?? undefined }))
 
-  const unfilled = (l: Line) => l.qty === null || l.price === null
+  const unfilled = (l: Line) => l.price === null || (!prices && l.qty === null)
   const tail: TableColumnsType<GRow> = [
     {
       title: tr('Штрихкод', 'Shtrix-kod'),
@@ -1037,12 +1255,27 @@ function LineTables({
           </Typography.Text>
         ),
     },
-    {
-      title: `${tr('Кол-во', 'Miqdor')} *`,
-      key: 'qty',
-      width: 130,
-      render: (_, r) => r.line && <NumCell value={r.line.qty} required placeholder={tr('обязательно', 'majburiy')} onSave={(v) => save(r.line!, { qty: v })} />,
-    },
+    prices
+      ? {
+          title: tr('Остаток', 'Qoldiq'),
+          key: 'qty',
+          width: 130,
+          render: (_, r) =>
+            r.line && (
+              <NumCell
+                value={r.line.qty}
+                placeholder={tr('не посчитан', 'sanalmagan')}
+                title={tr('Необязательно: можно посчитать потом', 'Ixtiyoriy: keyin sanash mumkin')}
+                onSave={(v) => save(r.line!, { qty: v })}
+              />
+            ),
+        }
+      : {
+          title: `${tr('Кол-во', 'Miqdor')} *`,
+          key: 'qty',
+          width: 130,
+          render: (_, r) => r.line && <NumCell value={r.line.qty} required placeholder={tr('обязательно', 'majburiy')} onSave={(v) => save(r.line!, { qty: v })} />,
+        },
     {
       title: tr('Цена закупки', 'Xarid narxi'),
       key: 'cost',
@@ -1056,8 +1289,8 @@ function LineTables({
       width: 44,
       render: (_, r) =>
         r.line && (
-          <Tooltip title={r.line.image ? tr('Количество и цены', 'Miqdor va narxlar') : tr('Нужно фото товара', 'Mahsulot rasmi kerak')}>
-            <Button type="text" size="small" danger={!r.line.image} icon={r.line.image ? <RightOutlined /> : <CameraOutlined />} onClick={() => onSheet(r.line!)} />
+          <Tooltip title={r.line.image || prices ? (prices ? tr('Цены', 'Narxlar') : tr('Количество и цены', 'Miqdor va narxlar')) : tr('Нужно фото товара', 'Mahsulot rasmi kerak')}>
+            <Button type="text" size="small" danger={!r.line.image && !prices} icon={r.line.image || prices ? <RightOutlined /> : <CameraOutlined />} onClick={() => onSheet(r.line!)} />
           </Tooltip>
         ),
     },
@@ -1268,14 +1501,14 @@ function LineTables({
   )
 }
 
-function Stat({ title, value, warn }: { title: string; value: string; warn?: boolean }) {
+function Stat({ title, value, warn, muted }: { title: string; value: string; warn?: boolean; muted?: boolean }) {
   return (
     <Col xs={12} lg={6}>
       <Card styles={{ body: { padding: '12px 16px' } }}>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {title}
         </Typography.Text>
-        <div style={{ fontSize: 18, fontWeight: 800, color: warn ? '#B42318' : undefined }}>{value}</div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: warn ? '#B42318' : muted ? '#98A2B3' : undefined }}>{value}</div>
       </Card>
     </Col>
   )
@@ -1290,10 +1523,17 @@ function Posted({ r }: { r: PostResult }) {
       <Result
         status="success"
         title={tr('Магазин готов к работе', 'Doʻkon ishga tayyor')}
-        subTitle={tr(
-          `${goods(r.products)} · ${fmtQty(r.qty)} шт на складе · по себестоимости ${sum(r.cost_total)}`,
-          `${goods(r.products)} · omborda ${fmtQty(r.qty)} dona · tannarxda ${sum(r.cost_total)}`,
-        )}
+        subTitle={
+          r.uncounted > 0
+            ? tr(
+                `${goods(r.products)} · у ${r.uncounted} — «Остаток не посчитан»: продавать можно, посчитаете потом с главной`,
+                `${goods(r.products)} · ${r.uncounted} tasida — «Qoldiq sanalmagan»: sotish mumkin, keyin bosh sahifadan sanaysiz`,
+              )
+            : tr(
+                `${goods(r.products)} · ${fmtQty(r.qty)} шт на складе · по цене закупки ${sum(r.cost_total)}`,
+                `${goods(r.products)} · omborda ${fmtQty(r.qty)} dona · xarid narxida ${sum(r.cost_total)}`,
+              )
+        }
         extra={
           <Space wrap>
             <Button type="primary" onClick={() => nav('/')}>

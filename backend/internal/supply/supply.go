@@ -46,9 +46,12 @@ const (
 
 // Статусы товара/магазина для дистрибьютора.
 const (
-	StatusOut       = "out"        // закончилось
-	StatusLow       = "low"        // мало: не хватит до следующей поставки
-	StatusOK        = "ok"         // есть
+	StatusOut = "out" // закончилось
+	StatusLow = "low" // мало: не хватит до следующей поставки
+	StatusOK  = "ok"  // есть
+	// StatusUnknown — остаток в магазине не посчитан («Только товары и цены»
+	// или «Остальное посчитаю потом»): сколько товара, неизвестно.
+	StatusUnknown   = "unknown"
 	StatusNoBrand   = "no_brand"   // подключён, но ни одного нашего товара
 	StatusNotLinked = "not_linked" // не подключён — данных нет
 )
@@ -164,6 +167,12 @@ func perDaySQL(store, product string) string {
 func statusSQL(qty, perDay, lead string) string {
 	return fmt.Sprintf(`CASE WHEN %[1]s <= 0 THEN 'out'
 		WHEN %[2]s > 0 AND %[1]s < %[2]s * (%[3]s + 1) THEN 'low' ELSE 'ok' END`, qty, perDay, lead)
+}
+
+// knownStatusSQL — статус товара, если его остаток посчитан (uncounted —
+// условие «не посчитан»), иначе unknown.
+func knownStatusSQL(uncounted, status string) string {
+	return fmt.Sprintf(`CASE WHEN %s THEN 'unknown' ELSE %s END`, uncounted, status)
 }
 
 // recommendSQL — сколько привезти: продажи в день × (срок поставки + запас) − остаток,
