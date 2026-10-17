@@ -1,0 +1,640 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head><body>
+<title>Окупаемость Super Market</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Unbounded:wght@500;600&display=swap">
+<style>
+/* Layout: редактор допущений слева (списки тарифов, доходов, расходов — добавляются и удаляются), итоги, графики и таблицы справа; на телефоне одной колонкой */
+:root{
+  --bg:#F4F6FB; --surface:#FFFFFF; --field:#F7F9FD; --fg:#111827; --muted:#5A6378; --line:#DCE2EE;
+  --accent:#155EEF; --accent-soft:#E7EEFE; --good:#0F7B55; --good-soft:#E3F4EC;
+  --bad:#D0302A; --bad-soft:#FCE9E7; --warn:#A55A08; --on-accent:#FFFFFF;
+  --font-display:"Unbounded","Onest",system-ui,sans-serif;
+  --font-body:"Onest",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0B101B; --surface:#131A29; --field:#0F1522; --fg:#E6EBF4; --muted:#97A1B6; --line:#253048;
+  --accent:#5D8EFF; --accent-soft:#18264A; --good:#3CC98E; --good-soft:#12302A;
+  --bad:#FF6E62; --bad-soft:#3A1A1C; --warn:#F2A33A; --on-accent:#0B101B; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0B101B; --surface:#131A29; --field:#0F1522; --fg:#E6EBF4; --muted:#97A1B6; --line:#253048;
+  --accent:#5D8EFF; --accent-soft:#18264A; --good:#3CC98E; --good-soft:#12302A;
+  --bad:#FF6E62; --bad-soft:#3A1A1C; --warn:#F2A33A; --on-accent:#0B101B; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:14px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 48px}
+.wrap{max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+h1{font-family:var(--font-display);font-weight:600;font-size:clamp(22px,3vw,30px);margin:0;letter-spacing:-.01em;text-wrap:balance}
+h2{font-family:var(--font-display);font-weight:500;font-size:16px;margin:0;text-wrap:balance}
+.sub{color:var(--muted);margin:6px 0 0;max-width:72ch}
+header{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;justify-content:space-between}
+button{font:inherit;cursor:pointer;color:inherit}
+.btn{border:1px solid var(--line);background:var(--surface);padding:7px 12px;border-radius:8px;font-weight:500}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.small{padding:4px 9px;font-size:12.5px}
+.btn.link{border:0;background:none;color:var(--accent);padding:4px 0}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input,select{font:inherit;color:var(--fg);background:var(--field);border:1px solid var(--line);border-radius:7px;padding:5px 8px;min-width:0;width:100%}
+input[type=number]{font-variant-numeric:tabular-nums}
+input[type=range]{padding:0;border:0;background:none;accent-color:var(--accent)}
+
+.scen{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.scen label{color:var(--muted);font-size:12.5px}
+.scen select{width:auto;max-width:240px}
+.scen input{width:200px}
+.scen .msg{font-size:12.5px;color:var(--muted)}
+
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:10px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:13px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.kpi .lab{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+.kpi .val{font-family:var(--font-display);font-weight:600;font-size:21px;font-variant-numeric:tabular-nums;line-height:1.2}
+.kpi .note{font-size:12.5px;color:var(--muted)}
+.kpi.good .val{color:var(--good)}
+.kpi.bad{border-color:color-mix(in srgb,var(--bad) 50%,var(--line));background:var(--bad-soft)}
+.kpi.bad .val{color:var(--bad)}
+
+.layout{display:grid;grid-template-columns:430px minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:980px){.layout{grid-template-columns:minmax(0,1fr)}}
+aside{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:4px 14px 14px;position:sticky;top:max(12px,env(safe-area-inset-top,0px));max-height:calc(100vh - 24px);overflow:auto}
+@media (max-width:980px){aside{position:static;max-height:none}}
+details{border-bottom:1px solid var(--line);padding-block:10px}
+details:last-of-type{border-bottom:0}
+summary{cursor:pointer;font-weight:600;list-style:none;display:flex;justify-content:space-between;align-items:center;padding-block:4px;gap:8px}
+summary::-webkit-details-marker{display:none}
+summary .cnt{color:var(--muted);font-weight:500;font-size:12.5px;margin-left:auto}
+summary::after{content:"+";color:var(--muted);font-weight:500;width:12px;text-align:center}
+details[open] summary::after{content:"–"}
+.list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.item{border:1px solid var(--line);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:6px;background:var(--bg)}
+.item-top{display:flex;gap:6px;align-items:center}
+.item-top input{font-weight:600;background:transparent;border-color:transparent;padding-inline:4px}
+.item-top input:hover,.item-top input:focus{border-color:var(--line);background:var(--field)}
+.del{border:0;background:none;color:var(--muted);font-size:18px;line-height:1;padding:2px 6px;border-radius:6px}
+.del:hover{color:var(--bad);background:var(--bad-soft)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:6px}
+.grid label,.fld{display:flex;flex-direction:column;gap:2px;font-size:11.5px;color:var(--muted);min-width:0}
+.grid label.wide{grid-column:span 2}
+.hint{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.hint b{color:var(--fg);font-weight:600}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;margin-top:8px}
+.fld .row{display:flex;gap:6px;align-items:center}
+.fld .row input[type=number]{width:84px;flex:none}
+.fld.full{grid-column:1/-1}
+.derived{margin-top:8px;background:var(--accent-soft);border-radius:8px;padding:8px 10px;font-size:12.5px;font-variant-numeric:tabular-nums}
+.derived.bad{background:var(--bad-soft)}
+.addrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+
+main{display:flex;flex-direction:column;gap:18px;min-width:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;min-width:0}
+.card-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px 16px;align-items:baseline;margin-bottom:10px}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.chart{position:relative;width:100%}
+.chart svg{display:block;width:100%;height:auto;overflow:visible;touch-action:pan-y}
+.chart svg text{fill:var(--muted);font-size:11px;font-family:var(--font-body)}
+.tip{position:absolute;pointer-events:none;background:var(--fg);color:var(--bg);border-radius:8px;padding:7px 9px;font-size:12px;line-height:1.4;white-space:nowrap;font-variant-numeric:tabular-nums;z-index:2}
+
+.split{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:640px){.split{grid-template-columns:1fr}}
+.lines{display:flex;flex-direction:column;gap:7px}
+.line{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;font-size:13px;font-variant-numeric:tabular-nums}
+.line .bar{grid-column:1/-1;height:6px;border-radius:99px;background:var(--line);overflow:hidden}
+.line .bar span{display:block;height:100%;border-radius:99px}
+.line.total{font-weight:700;border-top:1px solid var(--line);padding-top:7px}
+.monthpick{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.monthpick input[type=range]{width:220px;max-width:100%}
+
+.compare{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
+.compare .item2{display:flex;flex-direction:column;gap:2px}
+.compare .big{font-family:var(--font-display);font-weight:600;font-size:20px;font-variant-numeric:tabular-nums}
+.compare .muted{color:var(--muted);font-size:12.5px}
+.meter{height:8px;border-radius:99px;background:var(--line);overflow:hidden;margin-top:6px}
+.meter span{display:block;height:100%;background:var(--accent);border-radius:99px}
+
+.tablewrap{overflow:auto;border:1px solid var(--line);border-radius:10px}
+.tablewrap.tall{max-height:520px}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:13px}
+th,td{padding:7px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+#tbl th:nth-child(2),#tbl td:nth-child(2){text-align:left}
+thead th{position:sticky;top:0;background:var(--surface);color:var(--muted);font-weight:600;font-size:12px;z-index:1}
+tr.year td{border-bottom:2px solid var(--line)}
+tr.mark td{background:var(--accent-soft)}
+tr.cur td{font-weight:600}
+td.neg{color:var(--bad)} td.pos{color:var(--good)}
+.notes{color:var(--muted);font-size:12.5px;max-width:92ch;display:flex;flex-direction:column;gap:6px}
+.notes p{margin:0}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Окупаемость Super Market</h1>
+      <p class="sub">Добавляйте и удаляйте тарифы, доходы и расходы, меняйте агентов и транши инвестора — всё пересчитывается сразу. Суммы в долларах в месяц, если не сказано иное.</p>
+    </div>
+  </header>
+
+  <section class="scen" aria-label="Сценарии">
+    <label for="scen-pick">Сценарий</label>
+    <select id="scen-pick"><option value="">— текущий черновик —</option></select>
+    <button class="btn small" id="scen-load">Открыть</button>
+    <button class="btn small" id="scen-del">Удалить</button>
+    <span style="flex:1"></span>
+    <input id="scen-name" placeholder="Название сценария" aria-label="Название сценария">
+    <button class="btn small primary" id="scen-save">Сохранить сценарий</button>
+    <button class="btn small" id="reset">Сбросить к примеру</button>
+    <span class="msg" id="scen-msg"></span>
+  </section>
+
+  <section class="kpis" id="kpis" aria-live="polite"></section>
+
+  <div class="layout">
+    <aside id="editor" aria-label="Допущения"></aside>
+    <main>
+      <section class="card">
+        <div class="card-head">
+          <h2>Прибыль в месяц и деньги</h2>
+          <div class="legend"><span><i style="background:var(--good)"></i>прибыль</span><span><i style="background:var(--bad)"></i>убыток</span><span><i style="background:var(--accent);height:3px"></i>накопленный итог</span><span><i style="background:var(--warn);height:3px"></i>деньги на счёте (с траншами)</span></div>
+        </div>
+        <div class="chart" id="chart1"></div>
+      </section>
+      <section class="card">
+        <div class="card-head">
+          <h2>Платящие магазины</h2>
+          <div class="legend"><span><i style="background:var(--accent)"></i>платящих</span><span><i style="background:var(--muted);height:2px"></i>потолок при текущих агентах</span><span><i style="background:var(--warn);height:2px"></i>безубыточность</span></div>
+        </div>
+        <div class="chart" id="chart2"></div>
+      </section>
+      <section class="card">
+        <div class="card-head">
+          <h2>Разбор месяца</h2>
+          <div class="monthpick"><label for="mpick" class="legend">Месяц</label><input type="range" id="mpick" min="1" max="48" value="12"><b id="mlabel"></b></div>
+        </div>
+        <div class="split"><div><div class="legend" style="margin-bottom:8px">Доходы</div><div class="lines" id="inc-lines"></div></div><div><div class="legend" style="margin-bottom:8px">Расходы</div><div class="lines" id="exp-lines"></div></div></div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h2>Тарифы</h2><span class="legend">платящих магазинов и выручка подписок в месяц</span></div>
+        <div class="tablewrap"><table id="ttbl"></table></div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h2>Сравнение сценариев</h2><span class="legend">сохранённые сценарии и текущий черновик</span></div>
+        <div class="tablewrap"><table id="stbl"></table></div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h2>Темп против BILLZ</h2></div>
+        <div class="compare" id="compare"></div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h2>По месяцам</h2><span class="legend">подсвечены выход в плюс и возврат инвестору</span></div>
+        <div class="tablewrap tall"><table id="tbl"></table></div>
+      </section>
+      <section class="notes">
+        <p>Как считается. Агенты подключают магазины на пробный период; первые 2 месяца разгоняются. После пробного платит заданная доля; если средний чек выше опорного, доля падает по «чувствительности к цене» (1,0: цена +10% → платящих −10%). Каждый месяц часть платящих уходит.</p>
+        <p>Прибыль делится, только когда компания закрыла свой минус: до возврата вложений инвестору идёт «доля прибыли до возврата», потом — его доля в компании. Транши инвестора пополняют счёт; если деньги на счёте уходят ниже нуля, вложений не хватает.</p>
+        <p>Сценарии сохраняются в этом браузере: на другом устройстве их не будет. Темп BILLZ — 7 000+ магазинов за 8+ лет, это ~73 в месяц в среднем.</p>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script>
+/* ---------- defaults ---------- */
+const uid = () => Math.random().toString(36).slice(2,9);
+function example(){
+  return {
+    fx:12012, horizon:48, start:"2026-11",
+    tariffs:[
+      {id:uid(), name:"Магазин · 1 касса", price:18, share:80},
+      {id:uid(), name:"Сеть · за точку", price:30, share:20},
+    ],
+    growth:{perAgent:14, conv:65, ref:23, elast:1, churn:3.5, trial:0, ramp1:50, ramp2:75},
+    agents:[{id:uid(), from:1, count:4},{id:uid(), from:13, count:6},{id:uid(), from:25, count:8}],
+    incomes:[
+      {id:uid(), name:"Ввод товаров", type:"per_new", amount:75, share:30, from:1, to:0},
+      {id:uid(), name:"Подписки «SM Агент»", type:"fixed", amount:0, share:100, from:7, to:0},
+      {id:uid(), name:"Реклама брендов", type:"per_store", amount:0, share:100, from:12, to:0},
+    ],
+    expenses:[
+      {id:uid(), name:"Зарплата агентов", type:"per_agent", amount:400, from:1, to:0},
+      {id:uid(), name:"Транспорт и связь агентов", type:"per_agent", amount:100, from:1, to:0},
+      {id:uid(), name:"Зарплата основателя", type:"fixed", amount:1000, from:1, to:0},
+      {id:uid(), name:"Серверы, SMS, ИИ", type:"fixed", amount:200, from:1, to:0},
+      {id:uid(), name:"Бухгалтерия и отчёты", type:"fixed", amount:100, from:1, to:0},
+      {id:uid(), name:"Юрист: договоры", type:"once", amount:200, from:1, to:0},
+      {id:uid(), name:"Налог с выручки", type:"pct", amount:0, from:1, to:0},
+    ],
+    investor:{equity:15, pre:70, reserve:0,
+      tranches:[[1,4000],[2,3500],[3,3500],[4,3500],[5,3500],[6,3500],[7,3500]].map(([month,amount])=>({id:uid(), month, amount}))},
+  };
+}
+const TARIFF_SETS = {
+  two:[["Магазин · 1 касса",18,80],["Сеть · за точку",30,20]],
+  three:[["Старт",15,70],["Бизнес",35,25],["Сеть · за точку",30,5]],
+  now:[["Старт",20,60],["Бизнес",27,35],["Сеть · за точку",30,5]],
+};
+const INC_TYPES = {per_store:"с платящего магазина в мес", per_new:"разово с нового магазина", fixed:"фиксированно в мес", pct:"% от подписок"};
+const EXP_TYPES = {fixed:"фиксированно в мес", per_agent:"на агента в мес", per_store:"на платящий магазин в мес", per_new:"на новый магазин", pct:"% от выручки", once:"разово"};
+
+function normalize(st){
+  const d = example(), s = {...d, ...(st||{})};
+  s.growth = {...d.growth, ...(st&&st.growth||{})};
+  s.investor = {...d.investor, ...(st&&st.investor||{})};
+  ["tariffs","agents","incomes","expenses"].forEach(k=>{ if(!Array.isArray(s[k])) s[k]=d[k]; s[k]=s[k].map(x=>({id:x.id||uid(), ...x})); });
+  if(!Array.isArray(s.investor.tranches)) s.investor.tranches = d.investor.tranches;
+  return s;
+}
+let S;
+try{ S = normalize(JSON.parse(localStorage.getItem("sm-calc-v2")||"null")); }catch(e){ S = normalize(null); }
+const saveLocal = ()=>{ try{ localStorage.setItem("sm-calc-v2", JSON.stringify(S)); }catch(e){} };
+
+/* ---------- format ---------- */
+const nf = new Intl.NumberFormat("ru-RU",{maximumFractionDigits:0});
+const usd = n => (n<-0.5?"−$":"$") + nf.format(Math.abs(Math.round(n)));
+const sum = n => { const a=Math.abs(n); if(a>=1e6) return (n/1e6).toLocaleString("ru-RU",{maximumFractionDigits:1})+" млн сум"; return nf.format(Math.round(n/1000)*1000)+" сум"; };
+const MONTHS = ["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек"];
+function monthLabel(m, st=S){ const [y,mo] = (st.start||"2026-11").split("-").map(Number); const d=(mo-1)+(m-1); return MONTHS[((d%12)+12)%12]+" "+(y+Math.floor(d/12)); }
+const esc = s => String(s??"").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ---------- model ---------- */
+function model(st){
+  const H = Number(st.horizon)||48, g = st.growth;
+  const tariffs = st.tariffs.filter(t=>Number(t.share)>0);
+  const totShare = tariffs.reduce((a,t)=>a+Number(t.share),0) || 1;
+  const arpu = tariffs.reduce((a,t)=>a+Number(t.price)*Number(t.share),0)/totShare;
+  const conv = Math.min(0.98, Math.max(0, (g.conv/100) * Math.pow(Math.max(arpu,0.01)/Math.max(g.ref,0.01), -g.elast)));
+  const churn = g.churn/100;
+  const sched = [...st.agents].sort((a,b)=>a.from-b.from);
+  const agentsAt = m => { let c=0; for(const a of sched) if(m>=a.from) c=Number(a.count); return c; };
+  const on = (x,m) => x.type==="once" ? m===Number(x.from) : (m>=Number(x.from||1) && (!Number(x.to) || m<=Number(x.to)));
+  const totalInvest = st.investor.tranches.reduce((a,t)=>a+Number(t.amount||0),0);
+  let paid=0, prevNew=0, cum=0, dist=0, invested=0, invGot=0, fGot=0, minCum=0, minCash=Infinity, rows=[];
+  let posMonth=null, paybackMonth=null, cumZero=null, shortMonth=null;
+  for(let m=1;m<=H;m++){
+    const ramp = m===1 ? g.ramp1/100 : m===2 ? g.ramp2/100 : 1;
+    const agents = agentsAt(m), nw = agents*g.perAgent*ramp;
+    const conversions = (Number(g.trial)===1 ? prevNew : nw)*conv; prevNew = nw;
+    paid = paid*(1-churn) + conversions;
+    const sub = paid*arpu;
+    const inc = st.incomes.map(x=>{ if(!on(x,m)) return 0; const a=Number(x.amount)||0;
+      return x.type==="per_store" ? a*paid : x.type==="per_new" ? a*nw*(Number(x.share)||0)/100 : x.type==="pct" ? sub*a/100 : a; });
+    const rev = sub + inc.reduce((a,b)=>a+b,0);
+    const exp = st.expenses.map(x=>{ if(!on(x,m)) return 0; const a=Number(x.amount)||0;
+      return x.type==="per_agent" ? a*agents : x.type==="per_store" ? a*paid : x.type==="per_new" ? a*nw : x.type==="pct" ? rev*a/100 : a; });
+    const cost = exp.reduce((a,b)=>a+b,0);
+    const profit = rev - cost;
+    cum += profit; minCum = Math.min(minCum, cum);
+    invested += st.investor.tranches.filter(t=>Number(t.month)===m).reduce((a,t)=>a+Number(t.amount||0),0);
+    let toInv=0;
+    const retained = cum - dist;
+    if(profit>0 && retained>0){
+      const d = Math.min(profit, retained)*(1-st.investor.reserve/100);
+      if(invGot < totalInvest){
+        const pre = st.investor.pre/100, need = totalInvest - invGot;
+        if(d*pre <= need) toInv = d*pre; else { const base = need/pre; toInv = need + (d-base)*st.investor.equity/100; }
+      } else toInv = d*st.investor.equity/100;
+      dist += d; invGot += toInv; fGot += d - toInv;
+    }
+    const cash = invested + cum - dist;
+    minCash = Math.min(minCash, cash);
+    if(shortMonth===null && cash < -0.5) shortMonth = m;
+    if(posMonth===null && profit>0) posMonth = m;
+    if(cumZero===null && minCum<0 && cum>=0) cumZero = m;
+    if(paybackMonth===null && totalInvest>0 && invGot >= totalInvest-0.5) paybackMonth = m;
+    const byTariff = tariffs.map(t=>({paid:paid*t.share/totShare, rev:paid*t.share/totShare*t.price}));
+    rows.push({m, agents, nw, paid, sub, inc, rev, exp, cost, profit, cum, cash, invested, invGot, fGot, byTariff});
+  }
+  // безубыточность на 12-м месяце (или последнем)
+  const mb = Math.min(12,H), ag = agentsAt(mb), nwb = ag*g.perAgent;
+  let fixedNet=0, perStore=arpu, expPct=0, incPct=0;
+  st.incomes.forEach(x=>{ if(!on(x,mb)) return; const a=Number(x.amount)||0;
+    if(x.type==="per_store") perStore+=a; else if(x.type==="per_new") fixedNet-=a*nwb*(Number(x.share)||0)/100; else if(x.type==="pct") incPct+=a; else fixedNet-=a; });
+  perStore += arpu*incPct/100;
+  let expStore=0;
+  st.expenses.forEach(x=>{ if(!on(x,mb) || x.type==="once") return; const a=Number(x.amount)||0;
+    if(x.type==="per_agent") fixedNet+=a*ag; else if(x.type==="per_new") fixedNet+=a*nwb; else if(x.type==="per_store") expStore+=a; else if(x.type==="pct") expPct+=a; else fixedNet+=a; });
+  const margin = perStore*(1-expPct/100) - expStore;
+  const beStores = margin>0 ? Math.max(0, Math.ceil(fixedNet/margin)) : Infinity;
+  const ceilingAt = m => agentsAt(m)*g.perAgent*conv/Math.max(churn,0.0001);
+  const agentsFor7000 = Math.ceil(7000*churn/Math.max(g.perAgent*conv,0.0001));
+  return {H, arpu, conv, tariffs, totShare, rows, posMonth, paybackMonth, cumZero, shortMonth, minCum, minCash, beStores, ceilingAt, agentsFor7000, totalInvest, invGot, fGot, agentsAt};
+}
+
+/* ---------- editor ---------- */
+const ed = document.getElementById("editor");
+function getRef(path){ // "tariffs#id.price" | "growth.conv" | "investor.tranches#id.amount"
+  const parts = path.split("."); let o = S;
+  for(let i=0;i<parts.length-1;i++){ const [k,id] = parts[i].split("#"); o = o[k]; if(id) o = o.find(x=>x.id===id); }
+  return [o, parts[parts.length-1]];
+}
+function num(path, val, attrs=""){ return `<input type="number" data-path="${path}" id="f-${path.replace(/[#.]/g,"-")}" value="${esc(val)}" ${attrs}>`; }
+function fieldRange(label, path, val, min, max, step, hint=""){
+  const id = "f-"+path.replace(/[#.]/g,"-");
+  return `<div class="fld"><label for="${id}">${label}</label><div class="row"><input type="range" data-path="${path}" data-twin="1" min="${min}" max="${max}" step="${step}" value="${val}" aria-label="${esc(label)}"><input type="number" data-path="${path}" id="${id}" min="${min}" step="${step}" value="${val}"></div>${hint?`<span class="hint">${hint}</span>`:""}</div>`;
+}
+function renderEditor(){
+  const t = S.tariffs.map(x=>`
+    <div class="item">
+      <div class="item-top"><input data-path="tariffs#${x.id}.name" value="${esc(x.name)}" aria-label="Название тарифа"><button class="del" data-action="del:tariffs#${x.id}" aria-label="Удалить тариф">×</button></div>
+      <div class="grid">
+        <label>Цена, $ в мес${num(`tariffs#${x.id}.price`, x.price, 'min="0" step="1"')}</label>
+        <label>Выбирают, % магазинов${num(`tariffs#${x.id}.share`, x.share, 'min="0" max="100" step="5"')}</label>
+      </div>
+      <input type="range" data-path="tariffs#${x.id}.price" data-twin="1" min="0" max="100" step="1" value="${x.price}" aria-label="Цена тарифа ${esc(x.name)}">
+      <span class="hint" data-hint="t-${x.id}"></span>
+    </div>`).join("");
+  const item = (kind, x, types) => {
+    const pct = x.type==="pct", once = x.type==="once";
+    return `<div class="item">
+      <div class="item-top"><input data-path="${kind}#${x.id}.name" value="${esc(x.name)}" aria-label="Название"><button class="del" data-action="del:${kind}#${x.id}" aria-label="Удалить">×</button></div>
+      <div class="grid">
+        <label class="wide">Как считается<select data-path="${kind}#${x.id}.type" data-rerender="1">${Object.entries(types).map(([k,v])=>`<option value="${k}" ${k===x.type?"selected":""}>${v}</option>`).join("")}</select></label>
+        <label>${pct?"Процент, %":"Сумма, $"}${num(`${kind}#${x.id}.amount`, x.amount, `min="0" step="${pct?0.5:10}"`)}</label>
+        ${x.type==="per_new"&&kind==="incomes"?`<label>Заказывают, % новых${num(`${kind}#${x.id}.share`, x.share??100, 'min="0" max="100" step="5"')}</label>`:""}
+        <label>${once?"В месяц":"С месяца"}${num(`${kind}#${x.id}.from`, x.from||1, 'min="1" step="1"')}</label>
+        ${once?"":`<label>По месяц${num(`${kind}#${x.id}.to`, x.to||"", 'min="0" step="1" placeholder="до конца"')}</label>`}
+      </div>
+      <span class="hint" data-hint="${kind}-${x.id}"></span>
+    </div>`;
+  };
+  const g = S.growth, inv = S.investor;
+  ed.innerHTML = `
+  <details open><summary>Тарифы<span class="cnt">${S.tariffs.length}</span></summary>
+    <div class="addrow"><button class="btn small" data-action="set:two">2 тарифа 18 / 30</button><button class="btn small" data-action="set:three">3 тарифа 15 / 35 / 30</button><button class="btn small" data-action="set:now">Сейчас 20 / 27 / 30</button></div>
+    <div class="list">${t}</div>
+    <div class="addrow"><button class="btn small" data-action="add:tariffs">+ Добавить тариф</button></div>
+    <div class="derived" id="d-tariff"></div>
+  </details>
+  <details open><summary>Агенты и рост<span class="cnt">${S.agents.length} этапа</span></summary>
+    <div class="list">${[...S.agents].map(a=>`<div class="item"><div class="grid" style="align-items:end">
+      <label>С месяца${num(`agents#${a.id}.from`, a.from, 'min="1" step="1"')}</label>
+      <label>Агентов${num(`agents#${a.id}.count`, a.count, 'min="0" step="1"')}</label>
+      <button class="del" style="justify-self:end" data-action="del:agents#${a.id}" aria-label="Удалить этап">×</button></div></div>`).join("")}</div>
+    <div class="addrow"><button class="btn small" data-action="add:agents">+ Добавить этап найма</button></div>
+    <div class="fields">
+      ${fieldRange("Магазинов на агента в мес","growth.perAgent",g.perAgent,1,40,1,"подключение и ввод товаров")}
+      ${fieldRange("Начинают платить, %","growth.conv",g.conv,5,98,1,"после пробного, при опорном чеке")}
+      ${fieldRange("Опорный чек, $","growth.ref",g.ref,1,100,1,"цена, при которой платит доля выше")}
+      ${fieldRange("Чувствительность к цене","growth.elast",g.elast,0,2.5,0.1,"0 — цена не влияет")}
+      ${fieldRange("Уходят в месяц, %","growth.churn",g.churn,0,15,0.5)}
+      <div class="fld"><label for="f-growth-trial">Пробный период</label><select id="f-growth-trial" data-path="growth.trial" data-num="1"><option value="0" ${+g.trial===0?"selected":""}>14 дней</option><option value="1" ${+g.trial===1?"selected":""}>1 месяц</option></select></div>
+      ${fieldRange("Темп в 1-й месяц, %","growth.ramp1",g.ramp1,0,100,5)}
+      ${fieldRange("Темп во 2-й месяц, %","growth.ramp2",g.ramp2,0,100,5)}
+    </div>
+  </details>
+  <details open><summary>Доходы, кроме подписок<span class="cnt">${S.incomes.length}</span></summary>
+    <div class="list">${S.incomes.map(x=>item("incomes",x,INC_TYPES)).join("")}</div>
+    <div class="addrow"><button class="btn small" data-action="add:incomes">+ Добавить доход</button></div>
+  </details>
+  <details open><summary>Расходы<span class="cnt">${S.expenses.length}</span></summary>
+    <div class="list">${S.expenses.map(x=>item("expenses",x,EXP_TYPES)).join("")}</div>
+    <div class="addrow"><button class="btn small" data-action="add:expenses">+ Добавить расход</button></div>
+  </details>
+  <details open><summary>Инвестор<span class="cnt">${S.investor.tranches.length} траншей</span></summary>
+    <div class="list">${S.investor.tranches.map(x=>`<div class="item"><div class="grid" style="align-items:end">
+      <label>Месяц${num(`investor.tranches#${x.id}.month`, x.month, 'min="1" step="1"')}</label>
+      <label>Сумма, $${num(`investor.tranches#${x.id}.amount`, x.amount, 'min="0" step="500"')}</label>
+      <button class="del" style="justify-self:end" data-action="del:investor.tranches#${x.id}" aria-label="Удалить транш">×</button></div></div>`).join("")}</div>
+    <div class="addrow"><button class="btn small" data-action="add:investor.tranches">+ Добавить транш</button></div>
+    <div class="fields">
+      ${fieldRange("Доля в компании, %","investor.equity",inv.equity,0,60,1,"после возврата вложений")}
+      ${fieldRange("Доля прибыли до возврата, %","investor.pre",inv.pre,5,100,5)}
+      ${fieldRange("Оставлять в компании, %","investor.reserve",inv.reserve,0,80,5,"часть прибыли, которую не делят")}
+    </div>
+    <div class="derived" id="d-deal"></div>
+  </details>
+  <details><summary>Прочее</summary>
+    <div class="fields">
+      <div class="fld"><label for="f-fx">Курс, сум за $1</label><input type="number" id="f-fx" data-path="fx" value="${S.fx}" min="1" step="1"></div>
+      <div class="fld"><label for="f-horizon">Горизонт</label><select id="f-horizon" data-path="horizon" data-num="1" data-rerender="1">${[[24,"2 года"],[36,"3 года"],[48,"4 года"],[60,"5 лет"],[72,"6 лет"]].map(([v,l])=>`<option value="${v}" ${+S.horizon===v?"selected":""}>${l}</option>`).join("")}</select></div>
+      <div class="fld full"><label for="f-start">Первый месяц работы агентов</label><input type="month" id="f-start" data-path="start" value="${S.start}"></div>
+    </div>
+  </details>`;
+}
+let tmr=null;
+const schedule = () => { clearTimeout(tmr); tmr = setTimeout(update, 60); };
+ed.addEventListener("input", e=>{
+  const el = e.target, path = el.dataset.path; if(!path) return;
+  const [o,k] = getRef(path); if(!o) return;
+  const isNum = el.type==="number"||el.type==="range"||el.dataset.num;
+  if(isNum){ if(el.value==="" ) { o[k] = 0; } else { const v = Number(el.value); if(!Number.isFinite(v)) return; o[k]=v; } }
+  else o[k] = el.type==="month" ? (el.value||"2026-11") : el.value;
+  ed.querySelectorAll(`[data-path="${CSS.escape(path)}"]`).forEach(t=>{ if(t!==el && t.type!=="select-one") t.value = o[k]; });
+  if(el.dataset.rerender){ renderEditor(); }
+  schedule();
+});
+ed.addEventListener("click", e=>{
+  const b = e.target.closest("[data-action]"); if(!b) return;
+  const [act, arg] = b.dataset.action.split(":");
+  if(act==="set"){ S.tariffs = TARIFF_SETS[arg].map(([name,price,share])=>({id:uid(),name,price,share})); }
+  if(act==="add"){
+    const [o,k] = arg.includes(".") ? getRef(arg) : [S,arg];
+    const add = {
+      tariffs:{id:uid(), name:"Новый тариф", price:25, share:10},
+      agents:{id:uid(), from:(Math.max(0,...S.agents.map(a=>+a.from))+12), count:(S.agents.length?+S.agents[S.agents.length-1].count+2:4)},
+      incomes:{id:uid(), name:"Новый доход", type:"fixed", amount:100, share:100, from:1, to:0},
+      expenses:{id:uid(), name:"Новый расход", type:"fixed", amount:100, from:1, to:0},
+      tranches:{id:uid(), month:(Math.max(0,...S.investor.tranches.map(t=>+t.month))+1), amount:3500},
+    }[k];
+    o[k].push(add);
+  }
+  if(act==="del"){
+    const parts = arg.split("."); let o=S;
+    for(let i=0;i<parts.length-1;i++) o=o[parts[i]];
+    const [k,id] = parts[parts.length-1].split("#"); o[k] = o[k].filter(x=>x.id!==id);
+  }
+  renderEditor(); update();
+});
+
+/* ---------- render results ---------- */
+function kpi(lab,val,note,cls=""){ return `<div class="kpi ${cls}"><span class="lab">${lab}</span><span class="val">${val}</span><span class="note">${note}</span></div>`; }
+let R = null, monthSel = 12;
+function update(){
+  saveLocal();
+  R = model(S); const r=R, rows=r.rows, H=r.H, at = m => rows[Math.min(m,H)-1];
+  // derived
+  const shareSum = S.tariffs.reduce((a,t)=>a+Number(t.share||0),0);
+  const dt = document.getElementById("d-tariff");
+  dt.className = "derived" + (Math.abs(shareSum-100)>0.5 ? " bad":"");
+  dt.innerHTML = `Средний чек <b>${usd(r.arpu)}</b> (${sum(r.arpu*S.fx)}) · платить начинают <b>${Math.round(r.conv*100)}%</b>` + (Math.abs(shareSum-100)>0.5 ? `<br>Доли тарифов в сумме ${nf.format(shareSum)}% — считаю пропорционально` : "");
+  document.getElementById("d-deal").innerHTML = `Вложения <b>${usd(r.totalInvest)}</b> · оценка компании <b>${S.investor.equity>0?usd(r.totalInvest/(S.investor.equity/100)):"—"}</b> · ${S.investor.pre}% прибыли до возврата, потом ${S.investor.equity}%`;
+  S.tariffs.forEach(t=>{ const h=ed.querySelector(`[data-hint="t-${t.id}"]`); if(h) h.innerHTML = `${sum(t.price*S.fx)} в мес`; });
+  const m12 = Math.min(12,H)-1;
+  S.incomes.forEach((x,i)=>{ const h=ed.querySelector(`[data-hint="incomes-${x.id}"]`); if(h) h.innerHTML = `${x.type==="per_new"||x.type==="per_store"?`≈ ${sum(x.amount*S.fx)} · `:""}в ${m12+1}-й мес: <b>${usd(rows[m12].inc[i])}</b>`; });
+  S.expenses.forEach((x,i)=>{ const h=ed.querySelector(`[data-hint="expenses-${x.id}"]`); if(h){ const m = x.type==="once" ? Math.min(Math.max(1,+x.from),H)-1 : m12; h.innerHTML = `в ${m+1}-й мес: <b>${usd(rows[m].exp[i])}</b>`; } });
+
+  const p = m => m<=H ? usd(at(m).profit) : "—";
+  const pbStores = r.paybackMonth ? Math.round(at(r.paybackMonth).paid) : 0;
+  const posStores = r.posMonth ? Math.round(at(r.posMonth).paid) : 0;
+  document.getElementById("kpis").innerHTML = [
+    kpi("Средний чек", usd(r.arpu), `${sum(r.arpu*S.fx)} · платят ${Math.round(r.conv*100)}%`),
+    kpi("Безубыточность", Number.isFinite(r.beStores)?`${nf.format(r.beStores)} маг.`:"нет", Number.isFinite(r.beStores)?`платящих, при расходах ${Math.min(12,H)}-го месяца`:"магазин не покрывает свои расходы", Number.isFinite(r.beStores)?"":"bad"),
+    kpi("Выход в плюс", r.posMonth?`${r.posMonth}-й мес`:"нет", r.posMonth?`${monthLabel(r.posMonth)}, ~${nf.format(posStores)} платящих`:`за ${H} мес`, r.posMonth?"good":"bad"),
+    kpi("Деньги инвестора", r.shortMonth?`не хватит`:`хватает`, r.shortMonth?`с ${r.shortMonth}-го мес счёт уходит в минус (${usd(r.minCash)})`:`макс. минус ${usd(-r.minCum)}, на счёте не меньше ${usd(r.minCash)}`, r.shortMonth?"bad":"good"),
+    kpi("Минус закрыт", r.cumZero?`${r.cumZero}-й мес`:"нет", r.cumZero?`${monthLabel(r.cumZero)}: итог снова 0`:`за ${H} мес`),
+    kpi("Возврат инвестору", r.paybackMonth?`${r.paybackMonth}-й мес`:"нет", r.paybackMonth?`${monthLabel(r.paybackMonth)}, ~${nf.format(pbStores)} платящих`:`вернул ${usd(r.invGot)} из ${usd(r.totalInvest)}`, r.paybackMonth?"good":"bad"),
+    kpi("Прибыль в месяц", p(12), `через 2 года ${p(24)} · через 3 ${p(36)}`),
+    kpi(`Итог за ${H} мес`, usd(r.invGot+r.fGot), `инвестору ${usd(r.invGot)} (${r.totalInvest?(r.invGot/r.totalInvest).toLocaleString("ru-RU",{maximumFractionDigits:1}):0}×) · вам ${usd(r.fGot)} + зарплата`),
+  ].join("");
+
+  const avg = rows[H-1].paid/H, lastAg = r.agentsAt(H);
+  document.getElementById("compare").innerHTML = `
+    <div class="item2"><span class="muted">Ваш темп, платящих в месяц в среднем</span><span class="big">${nf.format(Math.round(avg))}</span><div class="meter"><span style="width:${Math.min(100,avg/73*100)}%"></span></div><span class="muted">${Math.round(avg/73*100)}% от среднего темпа BILLZ</span></div>
+    <div class="item2"><span class="muted">BILLZ: 7 000+ магазинов за 8+ лет</span><span class="big">~73</span><div class="meter"><span style="width:100%;background:var(--muted)"></span></div><span class="muted">магазина в месяц в среднем</span></div>
+    <div class="item2"><span class="muted">Платящих к ${H}-му месяцу</span><span class="big">${nf.format(Math.round(rows[H-1].paid))}</span><span class="muted">потолок при ${lastAg} агентах ~${nf.format(Math.round(r.ceilingAt(H)))}: дальше отток съедает рост</span></div>
+    <div class="item2"><span class="muted">Чтобы держать 7 000 магазинов</span><span class="big">~${nf.format(r.agentsFor7000)} агентов</span><span class="muted">при текущем темпе и оттоке</span></div>`;
+
+  const mp = document.getElementById("mpick"); mp.max = H; monthSel = Math.min(monthSel,H); mp.value = monthSel;
+  drawProfit(r); drawStores(r); drawMonth(r); drawTariffs(r); drawTable(r); drawScenarios();
+}
+document.getElementById("mpick").addEventListener("input", e=>{ monthSel = Number(e.target.value); drawMonth(R); });
+
+function drawMonth(r){
+  const x = r.rows[monthSel-1];
+  document.getElementById("mlabel").textContent = `${monthSel}-й · ${monthLabel(monthSel)} · платящих ${nf.format(Math.round(x.paid))}`;
+  const incL = r.tariffs.map((t,i)=>[`Подписки: ${t.name}`, x.byTariff[i].rev]).concat(S.incomes.map((it,i)=>[it.name, x.inc[i]])).filter(l=>Math.abs(l[1])>0.5);
+  const expL = S.expenses.map((it,i)=>[it.name, x.exp[i]]).filter(l=>Math.abs(l[1])>0.5);
+  const mx = Math.max(1, ...incL.map(l=>l[1]), ...expL.map(l=>l[1]));
+  const lines = (L,color) => L.sort((a,b)=>b[1]-a[1]).map(([n,v])=>`<div class="line"><span>${esc(n)}</span><span>${usd(v)}</span><div class="bar"><span style="width:${v/mx*100}%;background:${color}"></span></div></div>`).join("");
+  document.getElementById("inc-lines").innerHTML = (lines(incL,"var(--good)")||`<span class="hint">Доходов нет</span>`) + `<div class="line total"><span>Выручка</span><span>${usd(x.rev)}</span></div>`;
+  document.getElementById("exp-lines").innerHTML = (lines(expL,"var(--bad)")||`<span class="hint">Расходов нет</span>`) + `<div class="line total"><span>Расходы</span><span>${usd(x.cost)}</span></div><div class="line total" style="border:0;padding-top:0;color:${x.profit>=0?"var(--good)":"var(--bad)"}"><span>Прибыль</span><span>${usd(x.profit)}</span></div>`;
+}
+function drawTariffs(r){
+  const ms = [12,24,36,48,60,72].filter(m=>m<=r.H);
+  let h = `<thead><tr><th>Тариф</th><th>Цена</th><th>Доля</th>${ms.map(m=>`<th>${m} мес</th>`).join("")}</tr></thead><tbody>`;
+  r.tariffs.forEach((t,i)=>{ h += `<tr><td>${esc(t.name)}</td><td>${usd(t.price)}</td><td>${Math.round(t.share/r.totShare*100)}%</td>${ms.map(m=>{ const b=r.rows[m-1].byTariff[i]; return `<td>${nf.format(Math.round(b.paid))} маг. · ${usd(b.rev)}</td>`; }).join("")}</tr>`; });
+  h += `<tr class="cur"><td>Всего</td><td>${usd(r.arpu)}</td><td>100%</td>${ms.map(m=>{ const x=r.rows[m-1]; return `<td>${nf.format(Math.round(x.paid))} маг. · ${usd(x.sub)}</td>`; }).join("")}</tr></tbody>`;
+  document.getElementById("ttbl").innerHTML = h;
+}
+
+/* ---------- charts ---------- */
+function niceTicks(min,max,n=5){
+  if(min===max) max=min+1;
+  const raw=(max-min)/n, mag=Math.pow(10,Math.floor(Math.log10(raw))), nm=raw/mag;
+  const step=(nm<1.5?1:nm<3?2:nm<7?5:10)*mag, lo=Math.floor(min/step)*step, hi=Math.ceil(max/step)*step, t=[];
+  for(let v=lo; v<=hi+step/2; v+=step) t.push(Math.round(v*1e6)/1e6);
+  return t;
+}
+const kfmt = v => { const a=Math.abs(v); const s = a>=1000 ? (a/1000).toLocaleString("ru-RU",{maximumFractionDigits:a>=10000?0:1})+" тыс" : nf.format(a); return (v<0?"−":"")+s; };
+const frame = (el,h) => { const W=Math.max(320, el.clientWidth||700); return {W,H:h,padL:58,padR:14,padT:16,padB:28,iw:W-72,ih:h-44}; };
+function xLabels(f,n){ let s=""; const step=n<=24?3:n<=48?6:12; for(let m=step;m<=n;m+=step){ s+=`<text x="${f.padL+(m-1)/(n-1)*f.iw}" y="${f.H-8}" text-anchor="middle">${m}</text>`; } return s+`<text x="${f.padL}" y="${f.H-8}">мес</text>`; }
+function vmark(f,n,m,label,color,row=0){
+  if(!m) return ""; const x=f.padL+(m-1)/(n-1)*f.iw, end = x>f.padL+f.iw*0.75;
+  return `<line x1="${x}" x2="${x}" y1="${f.padT}" y2="${f.padT+f.ih}" stroke="${color}" stroke-dasharray="4 3" stroke-width="1.2"/><text x="${x+(end?-4:4)}" y="${f.padT+11+row*13}" text-anchor="${end?"end":"start"}" style="fill:${color};font-weight:600">${label}</text>`;
+}
+function attachTip(el,f,n,html){
+  let tip=el.querySelector(".tip"); if(!tip){ tip=document.createElement("div"); tip.className="tip"; tip.hidden=true; el.appendChild(tip); }
+  const svg=el.querySelector("svg"), guide=svg.querySelector(".guide");
+  const move=ev=>{ const rect=svg.getBoundingClientRect(), sx=f.W/rect.width, x=(ev.clientX-rect.left)*sx, i=Math.round((x-f.padL)/f.iw*(n-1));
+    if(i<0||i>=n){ tip.hidden=true; guide.setAttribute("opacity",0); return; }
+    const gx=f.padL+i/(n-1)*f.iw; guide.setAttribute("x1",gx); guide.setAttribute("x2",gx); guide.setAttribute("opacity",.5);
+    tip.innerHTML=html(i); tip.hidden=false; const left=gx/sx, w=tip.offsetWidth||160;
+    tip.style.left=Math.min(Math.max(left-w/2,0), rect.width-w)+"px"; tip.style.top=(f.padT/sx+4)+"px"; };
+  svg.onpointermove=move; svg.onpointerdown=move; svg.onpointerleave=()=>{ tip.hidden=true; guide.setAttribute("opacity",0); };
+}
+function drawProfit(r){
+  const el=document.getElementById("chart1"), R=r.rows, n=R.length, f=frame(el,300);
+  const vals=R.flatMap(x=>[x.profit,x.cum,x.cash]); const ticks=niceTicks(Math.min(0,...vals),Math.max(0,...vals));
+  const y0=ticks[0], y1=ticks[ticks.length-1], Y=v=>f.padT+f.ih-(v-y0)/(y1-y0)*f.ih, X=i=>f.padL+i/(n-1)*f.iw, bw=Math.max(1.5,f.iw/n*0.62);
+  let s=`<svg viewBox="0 0 ${f.W} ${f.H}" role="img" aria-label="Прибыль по месяцам">`;
+  ticks.forEach(t=>{ s+=`<line x1="${f.padL}" x2="${f.W-f.padR}" y1="${Y(t)}" y2="${Y(t)}" stroke="var(--line)" stroke-width="${t===0?1.6:1}"/><text x="${f.padL-8}" y="${Y(t)+4}" text-anchor="end">${kfmt(t)}</text>`; });
+  R.forEach((x,i)=>{ const a=Y(Math.max(0,x.profit)), b=Y(Math.min(0,x.profit)); s+=`<rect x="${X(i)-bw/2}" y="${a}" width="${bw}" height="${Math.max(.5,b-a)}" rx="1.5" fill="${x.profit>=0?"var(--good)":"var(--bad)"}" opacity=".85"/>`; });
+  const path = key => R.map((x,i)=>(i?"L":"M")+X(i).toFixed(1)+","+Y(x[key]).toFixed(1)).join("");
+  s+=`<path d="${path("cash")}" fill="none" stroke="var(--warn)" stroke-width="2" stroke-dasharray="6 3"/><path d="${path("cum")}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>`;
+  s+=vmark(f,n,r.posMonth,"в плюс","var(--good)",0)+vmark(f,n,r.paybackMonth,"возврат инвестору","var(--accent)",r.posMonth&&r.paybackMonth&&Math.abs(r.paybackMonth-r.posMonth)<n/6?1:0);
+  if(r.shortMonth) s+=vmark(f,n,r.shortMonth,"не хватает денег","var(--bad)",2);
+  s+=xLabels(f,n)+`<line class="guide" y1="${f.padT}" y2="${f.padT+f.ih}" stroke="var(--fg)" opacity="0"/></svg>`;
+  el.innerHTML=s;
+  attachTip(el,f,n,i=>{ const x=R[i]; return `<b>${x.m}-й мес · ${monthLabel(x.m)}</b><br>Выручка ${usd(x.rev)} · расходы ${usd(x.cost)}<br>Прибыль ${usd(x.profit)}<br>Накопленный итог ${usd(x.cum)}<br>На счёте ${usd(x.cash)} · инвестор получил ${usd(x.invGot)}`; });
+}
+function drawStores(r){
+  const el=document.getElementById("chart2"), R=r.rows, n=R.length, f=frame(el,260);
+  const ceil=R.map(x=>r.ceilingAt(x.m)), be=Number.isFinite(r.beStores)?r.beStores:0;
+  const ticks=niceTicks(0,Math.max(be*1.1,...R.map(x=>x.paid),...ceil)), y1=ticks[ticks.length-1], Y=v=>f.padT+f.ih-v/y1*f.ih, X=i=>f.padL+i/(n-1)*f.iw;
+  let s=`<svg viewBox="0 0 ${f.W} ${f.H}" role="img" aria-label="Платящие магазины по месяцам">`;
+  ticks.forEach(t=>{ s+=`<line x1="${f.padL}" x2="${f.W-f.padR}" y1="${Y(t)}" y2="${Y(t)}" stroke="var(--line)"/><text x="${f.padL-8}" y="${Y(t)+4}" text-anchor="end">${nf.format(t)}</text>`; });
+  const line=R.map((x,i)=>(i?"L":"M")+X(i).toFixed(1)+","+Y(x.paid).toFixed(1)).join("");
+  s+=`<path d="${line}L${X(n-1)},${Y(0)}L${X(0)},${Y(0)}Z" fill="var(--accent)" opacity=".14"/><path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>`;
+  s+=`<path d="${ceil.map((v,i)=>(i?"L":"M")+X(i).toFixed(1)+","+Y(v).toFixed(1)).join("")}" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="5 4"/>`;
+  if(be){ s+=`<line x1="${f.padL}" x2="${f.W-f.padR}" y1="${Y(be)}" y2="${Y(be)}" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="2 3"/><text x="${f.W-f.padR}" y="${Y(be)-5}" text-anchor="end" style="fill:var(--warn);font-weight:600">безубыточность ${nf.format(be)}</text>`; }
+  s+=`<circle cx="${X(n-1)}" cy="${Y(R[n-1].paid)}" r="4" fill="var(--accent)"/>`+vmark(f,n,r.paybackMonth,"возврат инвестору","var(--accent)");
+  s+=xLabels(f,n)+`<line class="guide" y1="${f.padT}" y2="${f.padT+f.ih}" stroke="var(--fg)" opacity="0"/></svg>`;
+  el.innerHTML=s;
+  attachTip(el,f,n,i=>{ const x=R[i]; return `<b>${x.m}-й мес · ${monthLabel(x.m)}</b><br>Платящих ${nf.format(Math.round(x.paid))}<br>Агентов ${x.agents}, подключили ${nf.format(Math.round(x.nw))}`; });
+}
+function drawTable(r){
+  const c=v=>`<td class="${v<-0.5?"neg":v>0.5?"pos":""}">${usd(v)}</td>`;
+  let h=`<thead><tr><th>Мес</th><th>Когда</th><th>Агентов</th><th>Подключили</th><th>Платящих</th><th>Подписки</th><th>Другие доходы</th><th>Расходы</th><th>Прибыль</th><th>Накопленный итог</th><th>На счёте</th><th>Инвестору, всего</th><th>Вам, всего</th></tr></thead><tbody>`;
+  r.rows.forEach(x=>{ const mark=x.m===r.posMonth||x.m===r.paybackMonth;
+    h+=`<tr class="${mark?"mark":""} ${x.m%12===0?"year":""}"><td>${x.m}</td><td>${monthLabel(x.m)}</td><td>${x.agents}</td><td>${nf.format(Math.round(x.nw))}</td><td>${nf.format(Math.round(x.paid))}</td><td>${usd(x.sub)}</td><td>${usd(x.rev-x.sub)}</td><td>${usd(x.cost)}</td>${c(x.profit)}${c(x.cum)}${c(x.cash)}<td>${usd(x.invGot)}</td><td>${usd(x.fGot)}</td></tr>`; });
+  document.getElementById("tbl").innerHTML=h+"</tbody>";
+}
+
+/* ---------- scenarios ---------- */
+let scenarios = [], db = null, canWrite = true;
+const msg = t => { document.getElementById("scen-msg").textContent = t||""; };
+function readLocalScen(){ try{ return JSON.parse(localStorage.getItem("sm-scenarios")||"[]"); }catch(e){ return []; } }
+function writeLocalScen(){ try{ localStorage.setItem("sm-scenarios", JSON.stringify(scenarios)); }catch(e){} }
+function fillPick(){
+  const pick=document.getElementById("scen-pick"), cur=pick.value;
+  pick.innerHTML = `<option value="">— текущий черновик —</option>` + scenarios.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("");
+  if(scenarios.some(s=>s.id===cur)) pick.value=cur;
+}
+function drawScenarios(){
+  const list = [{name:"Текущий черновик", state:S, cur:true}, ...scenarios];
+  let h=`<thead><tr><th>Сценарий</th><th>Тарифы</th><th>Средний чек</th><th>В плюс</th><th>Нужно денег</th><th>Возврат</th><th>Прибыль 12 / 24 / 36 мес</th><th>Платящих к концу</th></tr></thead><tbody>`;
+  list.forEach(sc=>{ let st; try{ st = sc.cur?S:normalize(sc.state); }catch(e){ return; }
+    const r = sc.cur ? R : model(st), pr=m=>m<=r.H?kfmt(Math.round(r.rows[m-1].profit)):"—";
+    h+=`<tr class="${sc.cur?"cur":""}"><td>${esc(sc.name)}</td><td>${st.tariffs.map(t=>"$"+t.price).join(" / ")}</td><td>${usd(r.arpu)}</td><td>${r.posMonth?r.posMonth+"-й":"нет"}</td><td>${usd(-r.minCum)}${r.shortMonth?" · не хватит":""}</td><td>${r.paybackMonth?r.paybackMonth+"-й мес":"нет"}</td><td>${pr(12)} / ${pr(24)} / ${pr(36)}</td><td>${nf.format(Math.round(r.rows[r.H-1].paid))} за ${r.H} мес</td></tr>`; });
+  if(!scenarios.length) h+=`<tr><td colspan="8" style="text-align:left;color:var(--muted)">Сохранённых сценариев пока нет. Введите название вверху и нажмите «Сохранить сценарий» — он появится здесь для сравнения.</td></tr>`;
+  document.getElementById("stbl").innerHTML=h+"</tbody>";
+}
+document.getElementById("scen-save").addEventListener("click", async ()=>{
+  const nameEl=document.getElementById("scen-name"); const name=nameEl.value.trim() || `Сценарий ${scenarios.length+1}`;
+  const existing = scenarios.find(s=>s.name===name);
+  const doc = {id: existing?existing.id:uid(), name, state: JSON.parse(JSON.stringify(S)), updatedAt: Date.now()};
+  if(db){
+    if(!canWrite){ msg("Сохранять сценарии могут только редакторы страницы"); return; }
+    try{ await db.collection("scenarios").doc(doc.id).set({name:doc.name, state:doc.state, updatedAt:doc.updatedAt}); msg(existing?"Сценарий обновлён":"Сценарий сохранён"); }
+    catch(e){ if(e&&e.code==="invalid_argument"){ canWrite=false; msg("Сохранять сценарии могут только редакторы страницы"); } else if(e&&e.code==="quota_exceeded"){ msg("Хранилище заполнено — удалите старые сценарии"); } else msg("Не удалось сохранить, попробуйте ещё раз"); return; }
+  } else {
+    scenarios = scenarios.filter(s=>s.id!==doc.id).concat(doc); writeLocalScen(); fillPick(); drawScenarios(); msg("Сохранено в этом браузере");
+  }
+  nameEl.value=""; document.getElementById("scen-pick").value = doc.id;
+});
+document.getElementById("scen-load").addEventListener("click", ()=>{
+  const id=document.getElementById("scen-pick").value, sc=scenarios.find(s=>s.id===id); if(!sc){ msg("Выберите сценарий в списке"); return; }
+  S = normalize(JSON.parse(JSON.stringify(sc.state))); renderEditor(); update(); msg(`Открыт «${sc.name}»`); document.getElementById("scen-name").value = sc.name;
+});
+document.getElementById("scen-del").addEventListener("click", async ()=>{
+  const id=document.getElementById("scen-pick").value, sc=scenarios.find(s=>s.id===id); if(!sc){ msg("Выберите сценарий в списке"); return; }
+  const btn=document.getElementById("scen-del");
+  if(btn.dataset.confirm!==id){ btn.dataset.confirm=id; btn.textContent="Точно удалить?"; setTimeout(()=>{ btn.dataset.confirm=""; btn.textContent="Удалить"; },3000); return; }
+  btn.dataset.confirm=""; btn.textContent="Удалить";
+  if(db){ try{ await db.collection("scenarios").doc(id).delete(); msg("Сценарий удалён"); }catch(e){ msg(e&&e.code==="invalid_argument"?"Удалять могут только редакторы страницы":"Не удалось удалить"); } }
+  else { scenarios=scenarios.filter(s=>s.id!==id); writeLocalScen(); fillPick(); drawScenarios(); msg("Сценарий удалён"); }
+});
+document.getElementById("reset").addEventListener("click", ()=>{ S = normalize(null); renderEditor(); update(); msg("Вернул пример"); });
+
+scenarios = readLocalScen(); fillPick();
+renderEditor(); update();
+(async ()=>{
+  try{
+    const c = window.claude; if(!c || !c.use) return;
+    const d = await c.use("db"); if(!d) return;
+    db = d;
+    db.collection("scenarios").orderBy("updatedAt","desc").onSnapshot(snap=>{
+      scenarios = snap.docs.map(doc=>({id:doc.id, ...doc.data()})); fillPick(); drawScenarios();
+    }, ()=>{ db=null; scenarios=readLocalScen(); fillPick(); drawScenarios(); });
+  }catch(e){}
+})();
+let rz; window.addEventListener("resize",()=>{ clearTimeout(rz); rz=setTimeout(()=>{ if(R){ drawProfit(R); drawStores(R); } },120); });
+</script>
+
+</body></html>
