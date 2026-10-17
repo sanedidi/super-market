@@ -7,12 +7,13 @@ import '../receipt/receipt_logic.dart';
 import '../receipt/review_screen.dart';
 import '../returns/return_screen.dart';
 import '../state.dart';
+import '../stock/my_products.dart';
 import '../suppliers/reorder_screen.dart';
 import '../suppliers/suppliers_screen.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 
-/// М4 · Склад: остатки, приход по фото накладной, последние накладные.
+/// М4 · Склад: «Мои товары и остатки» (О1), приход по фото накладной, последние накладные.
 class WarehouseScreen extends StatefulWidget {
   const WarehouseScreen({super.key});
 
@@ -21,7 +22,6 @@ class WarehouseScreen extends StatefulWidget {
 }
 
 class _WarehouseScreenState extends State<WarehouseScreen> {
-  Map<String, dynamic>? _summary;
   List<Map<String, dynamic>>? _scans;
   Object? _error;
   String? _loadedFor;
@@ -33,14 +33,10 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     if (storeId == null || !st.can('inventory.manage')) return;
     _loadedFor = storeId;
     try {
-      final res = await Future.wait([
-        api.get('/store/inventory/stock/summary', {'store_id': storeId}),
-        api.list('/store/invoice-scans', {'store_id': storeId, 'limit': 30}),
-      ]);
+      final scans = await api.list('/store/invoice-scans', {'store_id': storeId, 'limit': 30});
       if (!mounted) return;
       setState(() {
-        _summary = res[0] as Map<String, dynamic>;
-        _scans = res[1] as List<Map<String, dynamic>>;
+        _scans = scans;
         _error = null;
       });
     } catch (e) {
@@ -71,24 +67,9 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
         child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
           Text(tr('Склад', 'Ombor'), style: AppText.h1),
           const SizedBox(height: 16),
-          if (_summary != null) ...[
-            AppCard(
-              child: Row(children: [
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(tr('Товаров на складе', 'Ombordagi mahsulotlar'), style: AppText.small),
-                    Text('${_summary!['products'] ?? 0}', style: AppText.h3),
-                  ]),
-                ),
-                if (_summary!['cost_value'] != null)
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(tr('По себестоимости', 'Tannarx boʻyicha'), style: AppText.small),
-                      Text(money(_summary!['cost_value']), style: AppText.h3),
-                    ]),
-                  ),
-              ]),
-            ),
+          // О1 · что есть в магазине и сколько осталось.
+          if (st.storeId != null) ...[
+            MyProductsCard(key: ValueKey('my-${st.storeId}'), storeId: st.storeId!),
             const SizedBox(height: 16),
           ],
           AppCard(

@@ -26,6 +26,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppStore))
 		r.Get("/stock", m.stock)
 		r.Get("/stock/summary", m.stockSummary)
+		r.Get("/my-products", m.myProducts)
 		r.Get("/movements", m.movements)
 		docs := m.auth.Allow(identity.PermInventoryManage)
 		r.With(docs).Get("/documents", m.list)
@@ -47,6 +48,16 @@ func (m *Module) stock(w http.ResponseWriter, r *http.Request) {
 			Query: q.Get("q"), Page: httpx.PageFrom(r),
 		})
 		return httpx.List[StockRow]{Items: items}, err
+	})
+}
+
+func (m *Module) myProducts(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (MyProducts, error) {
+		return m.svc.MyProducts(r.Context(), pr(r), MyProductsFilter{
+			StoreID: q.Get("store_id"), Status: q.Get("status"), CategoryID: q.Get("category_id"), ProductID: q.Get("product_id"),
+			Query: q.Get("q"), Order: q.Get("order"), Page: httpx.PageFrom(r),
+		})
 	})
 }
 

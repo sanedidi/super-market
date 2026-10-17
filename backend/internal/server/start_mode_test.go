@@ -149,6 +149,20 @@ func TestStartMode(t *testing.T) {
 		t.Fatalf("top after sale = %v", top)
 	}
 
+	// «Мои товары и остатки» в «SM Магазин»: все товары магазина и их остаток.
+	my := a.expect(a.do("GET", "/store/inventory/my-products?store_id="+storeID, ownerTok, nil), 200, "my products")
+	if c := my.Body["counts"].(map[string]any); c["all"] != 3.0 || c["ok"] != 2.0 || c["uncounted"] != 1.0 || c["out"] != 0.0 || my.str("warehouse_id") == "" || my.Body["stock_cost"] == nil || len(my.Body["categories"].([]any)) != 1 {
+		t.Fatalf("my products = %v", my.Body)
+	}
+	if un := a.expect(a.do("GET", "/store/inventory/my-products?store_id="+storeID+"&status=unknown", ownerTok, nil), 200, "my unknown").items(); len(un) != 1 || un[0]["product_id"] != fanta || un[0]["uncounted"] != true || un[0]["days_left"] != nil {
+		t.Fatalf("my unknown = %v", un)
+	}
+	if one := a.expect(a.do("GET", "/store/inventory/my-products?store_id="+storeID+"&product_id="+cola, ownerTok, nil), 200, "my cola").items(); len(one) != 1 || one[0]["qty"] != "6" || one[0]["status"] != "ok" || one[0]["price"] != "12000.00" {
+		t.Fatalf("my cola = %v", one)
+	}
+	a.expect(a.do("GET", "/store/inventory/my-products?store_id="+storeID+"&status=bad", ownerTok, nil), 400, "my bad status")
+	a.expect(a.do("GET", "/store/inventory/my-products?store_id="+stockStore, ownerTok, nil), 404, "my foreign")
+
 	// «Сразу с остатками» и «Остальное посчитаю потом»: черновик начат до
 	// выбора режима (старое приложение) — он stock, ничего не теряется.
 	a.expect(lines(stockTok, stockStore, map[string]any{"product_id": cola, "add": true}), 200, "stock add cola")
