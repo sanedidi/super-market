@@ -670,4 +670,23 @@ renderEditor(); update();
 let rz; window.addEventListener("resize",()=>{ clearTimeout(rz); rz=setTimeout(()=>{ if(R){ drawProfit(R); drawInvestor(R); drawStores(R); } },120); });
 </script>
 
+<script>
+/* Посещения для супер-админа (экран «Инвест-страница»): случайный номер браузера,
+   сигнал при открытии и каждые 15 с, пока вкладка видна. ?notrack — не считать этот
+   браузер, ?track — снова считать. */
+(function(){try{
+  var q=new URLSearchParams(location.search);
+  if(q.has('notrack'))localStorage.setItem('sm-notrack','1');
+  if(q.has('track'))localStorage.removeItem('sm-notrack');
+  if(localStorage.getItem('sm-notrack')==='1')return;
+  var vid=localStorage.getItem('sm-vid');
+  if(!vid||!/^[A-Za-z0-9]{8,64}$/.test(vid)){vid=(window.crypto&&crypto.randomUUID)?crypto.randomUUID().replace(/-/g,''):(Math.random().toString(36).slice(2)+Date.now().toString(36)).replace(/[^a-z0-9]/g,'');localStorage.setItem('sm-vid',vid);}
+  var src=q.get('utm_source')||'';
+  if(!src&&document.referrer){try{var h=new URL(document.referrer).hostname;if(h!==location.hostname)src=h;}catch(e){}}
+  var send=function(){if(document.visibilityState!=='visible')return;
+    fetch('/api/v1/public/invest/ping',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vid:vid,src:src}),keepalive:true}).catch(function(){});};
+  send();setInterval(send,15000);
+  document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')send();});
+}catch(e){}})();
+</script>
 </body></html>

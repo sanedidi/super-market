@@ -10,6 +10,7 @@ import {
   DashboardOutlined,
   DollarOutlined,
   PictureOutlined,
+  RiseOutlined,
   ShopOutlined,
   ShoppingCartOutlined,
   TranslationOutlined,
@@ -35,6 +36,7 @@ import { AIPhoto } from './pages/AIPhoto'
 import { StorePhotos } from './pages/StorePhotos'
 import { Translations } from './pages/Translations'
 import { Notifications, PushCampaign, PushNew } from './pages/Push'
+import { InvestNowBadge, InvestVisitors } from './pages/InvestVisitors'
 
 const menu: MenuItem[] = [
   { key: '/', icon: <DashboardOutlined />, label: 'Главная' },
@@ -85,6 +87,7 @@ const menu: MenuItem[] = [
   { key: '/notifications', icon: <BellOutlined />, label: 'Уведомления' },
   { key: '/ai', icon: <BulbOutlined />, label: 'ИИ-сервис' },
   { key: '/ai-photo', icon: <PictureOutlined />, label: 'ИИ для фото' },
+  { key: '/invest', icon: <RiseOutlined />, label: 'Инвест-страница', extra: <InvestNowBadge /> },
   { key: '/translations', icon: <TranslationOutlined />, label: 'Переводы' },
 ]
 
@@ -123,6 +126,7 @@ export function AdminRoutes() {
         <Route path="ai-photo" element={<AIPhoto />} />
         <Route path="ai-photo/store" element={<StorePhotos />} />
         <Route path="translations" element={<Translations />} />
+        <Route path="invest" element={<InvestVisitors />} />
         <Route path="notifications/new" element={<PushNew />} />
         <Route path="notifications/:id" element={<PushCampaign />} />
         <Route path="*" element={<Navigate to="/" replace />} />
