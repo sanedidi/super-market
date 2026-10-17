@@ -167,6 +167,14 @@ td.neg{color:var(--bad)} td.pos{color:var(--good)}
       </section>
       <section class="card">
         <div class="card-head">
+          <h2>Выплаты инвестору</h2>
+          <div class="legend"><span><i style="background:var(--accent)"></i>получает за месяц (шкала слева)</span><span><i style="background:var(--good);height:3px"></i>всего получил (шкала справа)</span></div>
+        </div>
+        <div class="chart" id="chart3"></div>
+        <div class="tablewrap" style="margin-top:12px"><table id="itbl"></table></div>
+      </section>
+      <section class="card">
+        <div class="card-head">
           <h2>Платящие магазины</h2>
           <div class="legend"><span><i style="background:var(--accent)"></i>платящих</span><span><i style="background:var(--muted);height:2px"></i>потолок при текущих агентах</span><span><i style="background:var(--warn);height:2px"></i>безубыточность</span></div>
         </div>
@@ -211,8 +219,8 @@ function example(){
   return {
     fx:12012, horizon:48, start:"2026-11",
     tariffs:[
-      {id:uid(), name:"Магазин · 1 касса", price:18, share:80},
-      {id:uid(), name:"Сеть · за точку", price:30, share:20},
+      {id:uid(), name:"Магазин · 1 касса", price:27, share:80},
+      {id:uid(), name:"Сеть · за точку", price:21, share:20},
     ],
     growth:{perAgent:14, conv:65, ref:23, elast:1, churn:3.5, trial:0, ramp1:50, ramp2:75},
     agents:[{id:uid(), from:1, count:4},{id:uid(), from:13, count:6},{id:uid(), from:25, count:8}],
@@ -235,7 +243,7 @@ function example(){
   };
 }
 const TARIFF_SETS = {
-  two:[["Магазин · 1 касса",18,80],["Сеть · за точку",30,20]],
+  two:[["Магазин · 1 касса",27,80],["Сеть · за точку",21,20]],
   three:[["Старт",15,70],["Бизнес",35,25],["Сеть · за точку",30,5]],
   now:[["Старт",20,60],["Бизнес",27,35],["Сеть · за точку",30,5]],
 };
@@ -251,8 +259,8 @@ function normalize(st){
   return s;
 }
 let S;
-try{ S = normalize(JSON.parse(localStorage.getItem("sm-calc-v2")||"null")); }catch(e){ S = normalize(null); }
-const saveLocal = ()=>{ try{ localStorage.setItem("sm-calc-v2", JSON.stringify(S)); }catch(e){} };
+try{ S = normalize(JSON.parse(localStorage.getItem("sm-calc-v3")||"null")); }catch(e){ S = normalize(null); }
+const saveLocal = ()=>{ try{ localStorage.setItem("sm-calc-v3", JSON.stringify(S)); }catch(e){} };
 
 /* ---------- format ---------- */
 const nf = new Intl.NumberFormat("ru-RU",{maximumFractionDigits:0});
@@ -291,7 +299,7 @@ function model(st){
     const profit = rev - cost;
     cum += profit; minCum = Math.min(minCum, cum);
     invested += st.investor.tranches.filter(t=>Number(t.month)===m).reduce((a,t)=>a+Number(t.amount||0),0);
-    let toInv=0;
+    let toInv=0, toF=0;
     const retained = cum - dist;
     if(profit>0 && retained>0){
       const d = Math.min(profit, retained)*(1-st.investor.reserve/100);
@@ -299,8 +307,9 @@ function model(st){
         const pre = st.investor.pre/100, need = totalInvest - invGot;
         if(d*pre <= need) toInv = d*pre; else { const base = need/pre; toInv = need + (d-base)*st.investor.equity/100; }
       } else toInv = d*st.investor.equity/100;
-      dist += d; invGot += toInv; fGot += d - toInv;
+      toF = d - toInv; dist += d; invGot += toInv; fGot += toF;
     }
+    const kept = profit>0 ? profit - toInv - toF : 0;
     const cash = invested + cum - dist;
     minCash = Math.min(minCash, cash);
     if(shortMonth===null && cash < -0.5) shortMonth = m;
@@ -308,7 +317,7 @@ function model(st){
     if(cumZero===null && minCum<0 && cum>=0) cumZero = m;
     if(paybackMonth===null && totalInvest>0 && invGot >= totalInvest-0.5) paybackMonth = m;
     const byTariff = tariffs.map(t=>({paid:paid*t.share/totShare, rev:paid*t.share/totShare*t.price}));
-    rows.push({m, agents, nw, paid, sub, inc, rev, exp, cost, profit, cum, cash, invested, invGot, fGot, byTariff});
+    rows.push({m, agents, nw, paid, sub, inc, rev, exp, cost, profit, cum, cash, invested, invGot, fGot, toInv, toF, kept, byTariff});
   }
   // безубыточность на 12-м месяце (или последнем)
   const mb = Math.min(12,H), ag = agentsAt(mb), nwb = ag*g.perAgent;
@@ -366,7 +375,7 @@ function renderEditor(){
   const g = S.growth, inv = S.investor;
   ed.innerHTML = `
   <details open><summary>Тарифы<span class="cnt">${S.tariffs.length}</span></summary>
-    <div class="addrow"><button class="btn small" data-action="set:two">2 тарифа 18 / 30</button><button class="btn small" data-action="set:three">3 тарифа 15 / 35 / 30</button><button class="btn small" data-action="set:now">Сейчас 20 / 27 / 30</button></div>
+    <div class="addrow"><button class="btn small" data-action="set:two">2 тарифа 27 / 21</button><button class="btn small" data-action="set:three">3 тарифа 15 / 35 / 30</button><button class="btn small" data-action="set:now">Сейчас 20 / 27 / 30</button></div>
     <div class="list">${t}</div>
     <div class="addrow"><button class="btn small" data-action="add:tariffs">+ Добавить тариф</button></div>
     <div class="derived" id="d-tariff"></div>
@@ -470,6 +479,7 @@ function update(){
   S.expenses.forEach((x,i)=>{ const h=ed.querySelector(`[data-hint="expenses-${x.id}"]`); if(h){ const m = x.type==="once" ? Math.min(Math.max(1,+x.from),H)-1 : m12; h.innerHTML = `в ${m+1}-й мес: <b>${usd(rows[m].exp[i])}</b>`; } });
 
   const p = m => m<=H ? usd(at(m).profit) : "—";
+  const m2 = m => m<=H ? usd(at(m).toInv) : "—";
   const pbStores = r.paybackMonth ? Math.round(at(r.paybackMonth).paid) : 0;
   const posStores = r.posMonth ? Math.round(at(r.posMonth).paid) : 0;
   document.getElementById("kpis").innerHTML = [
@@ -479,6 +489,7 @@ function update(){
     kpi("Деньги инвестора", r.shortMonth?`не хватит`:`хватает`, r.shortMonth?`с ${r.shortMonth}-го мес счёт уходит в минус (${usd(r.minCash)})`:`макс. минус ${usd(-r.minCum)}, на счёте не меньше ${usd(r.minCash)}`, r.shortMonth?"bad":"good"),
     kpi("Минус закрыт", r.cumZero?`${r.cumZero}-й мес`:"нет", r.cumZero?`${monthLabel(r.cumZero)}: итог снова 0`:`за ${H} мес`),
     kpi("Возврат инвестору", r.paybackMonth?`${r.paybackMonth}-й мес`:"нет", r.paybackMonth?`${monthLabel(r.paybackMonth)}, ~${nf.format(pbStores)} платящих`:`вернул ${usd(r.invGot)} из ${usd(r.totalInvest)}`, r.paybackMonth?"good":"bad"),
+    kpi("Инвестору в месяц", m2(12), `через 2 года ${m2(24)} · через 3 ${m2(36)}`),
     kpi("Прибыль в месяц", p(12), `через 2 года ${p(24)} · через 3 ${p(36)}`),
     kpi(`Итог за ${H} мес`, usd(r.invGot+r.fGot), `инвестору ${usd(r.invGot)} (${r.totalInvest?(r.invGot/r.totalInvest).toLocaleString("ru-RU",{maximumFractionDigits:1}):0}×) · вам ${usd(r.fGot)} + зарплата`),
   ].join("");
@@ -491,7 +502,7 @@ function update(){
     <div class="item2"><span class="muted">Чтобы держать 7 000 магазинов</span><span class="big">~${nf.format(r.agentsFor7000)} агентов</span><span class="muted">при текущем темпе и оттоке</span></div>`;
 
   const mp = document.getElementById("mpick"); mp.max = H; monthSel = Math.min(monthSel,H); mp.value = monthSel;
-  drawProfit(r); drawStores(r); drawMonth(r); drawTariffs(r); drawTable(r); drawScenarios();
+  drawProfit(r); drawInvestor(r); drawStores(r); drawMonth(r); drawTariffs(r); drawTable(r); drawScenarios();
 }
 document.getElementById("mpick").addEventListener("input", e=>{ monthSel = Number(e.target.value); drawMonth(R); });
 
@@ -503,7 +514,7 @@ function drawMonth(r){
   const mx = Math.max(1, ...incL.map(l=>l[1]), ...expL.map(l=>l[1]));
   const lines = (L,color) => L.sort((a,b)=>b[1]-a[1]).map(([n,v])=>`<div class="line"><span>${esc(n)}</span><span>${usd(v)}</span><div class="bar"><span style="width:${v/mx*100}%;background:${color}"></span></div></div>`).join("");
   document.getElementById("inc-lines").innerHTML = (lines(incL,"var(--good)")||`<span class="hint">Доходов нет</span>`) + `<div class="line total"><span>Выручка</span><span>${usd(x.rev)}</span></div>`;
-  document.getElementById("exp-lines").innerHTML = (lines(expL,"var(--bad)")||`<span class="hint">Расходов нет</span>`) + `<div class="line total"><span>Расходы</span><span>${usd(x.cost)}</span></div><div class="line total" style="border:0;padding-top:0;color:${x.profit>=0?"var(--good)":"var(--bad)"}"><span>Прибыль</span><span>${usd(x.profit)}</span></div>`;
+  document.getElementById("exp-lines").innerHTML = (lines(expL,"var(--bad)")||`<span class="hint">Расходов нет</span>`) + `<div class="line total"><span>Расходы</span><span>${usd(x.cost)}</span></div><div class="line total" style="border:0;padding-top:0;color:${x.profit>=0?"var(--good)":"var(--bad)"}"><span>Прибыль</span><span>${usd(x.profit)}</span></div>${x.profit>0.5?`<div class="line"><span>Инвестору</span><span>${usd(x.toInv)}</span></div><div class="line"><span>Вам (дивиденды)</span><span>${usd(x.toF)}</span></div>${x.kept>0.5?`<div class="line"><span>Остаётся в компании (минус, резерв)</span><span>${usd(x.kept)}</span></div>`:""}`:""}`;
 }
 function drawTariffs(r){
   const ms = [12,24,36,48,60,72].filter(m=>m<=r.H);
@@ -568,11 +579,33 @@ function drawStores(r){
   el.innerHTML=s;
   attachTip(el,f,n,i=>{ const x=R[i]; return `<b>${x.m}-й мес · ${monthLabel(x.m)}</b><br>Платящих ${nf.format(Math.round(x.paid))}<br>Агентов ${x.agents}, подключили ${nf.format(Math.round(x.nw))}`; });
 }
+function drawInvestor(r){
+  const el=document.getElementById("chart3"), R=r.rows, n=R.length, W=Math.max(320, el.clientWidth||700), H=240;
+  const f={W,H,padL:58,padR:62,padT:16,padB:28}; f.iw=W-f.padL-f.padR; f.ih=H-f.padT-f.padB;
+  const tL=niceTicks(0,Math.max(1,...R.map(x=>x.toInv))), yl=tL[tL.length-1];
+  const tR=niceTicks(0,Math.max(1,r.totalInvest,...R.map(x=>x.invGot))), yr=tR[tR.length-1];
+  const YL=v=>f.padT+f.ih-v/yl*f.ih, YR=v=>f.padT+f.ih-v/yr*f.ih, X=i=>f.padL+i/(n-1)*f.iw, bw=Math.max(1.5,f.iw/n*0.62);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Выплаты инвестору по месяцам">`;
+  tL.forEach(t=>{ s+=`<line x1="${f.padL}" x2="${W-f.padR}" y1="${YL(t)}" y2="${YL(t)}" stroke="var(--line)"/><text x="${f.padL-8}" y="${YL(t)+4}" text-anchor="end">${kfmt(t)}</text>`; });
+  tR.forEach(t=>{ s+=`<text x="${W-f.padR+8}" y="${YR(t)+4}" style="fill:var(--good)">${kfmt(t)}</text>`; });
+  R.forEach((x,i)=>{ if(x.toInv>0.5) s+=`<rect x="${X(i)-bw/2}" y="${YL(x.toInv)}" width="${bw}" height="${Math.max(.5,YL(0)-YL(x.toInv))}" rx="1.5" fill="var(--accent)" opacity=".85"/>`; });
+  if(r.totalInvest>0) s+=`<line x1="${f.padL}" x2="${W-f.padR}" y1="${YR(r.totalInvest)}" y2="${YR(r.totalInvest)}" stroke="var(--good)" stroke-dasharray="3 3" opacity=".7"/><text x="${f.padL+4}" y="${YR(r.totalInvest)-5}" style="fill:var(--good);font-weight:600">вложения ${usd(r.totalInvest)}</text>`;
+  s+=`<path d="${R.map((x,i)=>(i?"L":"M")+X(i).toFixed(1)+","+YR(x.invGot).toFixed(1)).join("")}" fill="none" stroke="var(--good)" stroke-width="2.5"/>`;
+  s+=vmark(f,n,r.paybackMonth,"вложения вернулись","var(--accent)");
+  s+=xLabels(f,n)+`<line class="guide" y1="${f.padT}" y2="${f.padT+f.ih}" stroke="var(--fg)" opacity="0"/></svg>`;
+  el.innerHTML=s;
+  attachTip(el,f,n,i=>{ const x=R[i]; return `<b>${x.m}-й мес · ${monthLabel(x.m)}</b><br>Инвестору за месяц ${usd(x.toInv)}<br>Всего получил ${usd(x.invGot)}${r.totalInvest?` (${Math.round(x.invGot/r.totalInvest*100)}% вложений)`:""}`; });
+  const years=Math.ceil(n/12);
+  let h=`<thead><tr><th>Год</th><th>Инвестору за год</th><th>В среднем в месяц</th><th>В конце года, в месяц</th><th>Всего получил</th><th>От вложений</th><th>Вам за год (дивиденды)</th></tr></thead><tbody>`;
+  for(let y=1;y<=years;y++){ const sl=R.slice((y-1)*12, y*12), inv=sl.reduce((a,x)=>a+x.toInv,0), fo=sl.reduce((a,x)=>a+x.toF,0), last=sl[sl.length-1];
+    h+=`<tr><td>${y}-й · ${monthLabel(sl[0].m)} – ${monthLabel(last.m)}</td><td>${usd(inv)}</td><td>${usd(inv/sl.length)}</td><td>${usd(last.toInv)}</td><td>${usd(last.invGot)}</td><td>${r.totalInvest?Math.round(last.invGot/r.totalInvest*100)+"%":"—"}</td><td>${usd(fo)}</td></tr>`; }
+  document.getElementById("itbl").innerHTML=h+"</tbody>";
+}
 function drawTable(r){
   const c=v=>`<td class="${v<-0.5?"neg":v>0.5?"pos":""}">${usd(v)}</td>`;
-  let h=`<thead><tr><th>Мес</th><th>Когда</th><th>Агентов</th><th>Подключили</th><th>Платящих</th><th>Подписки</th><th>Другие доходы</th><th>Расходы</th><th>Прибыль</th><th>Накопленный итог</th><th>На счёте</th><th>Инвестору, всего</th><th>Вам, всего</th></tr></thead><tbody>`;
+  let h=`<thead><tr><th>Мес</th><th>Когда</th><th>Агентов</th><th>Подключили</th><th>Платящих</th><th>Подписки</th><th>Другие доходы</th><th>Расходы</th><th>Прибыль</th><th>Накопленный итог</th><th>На счёте</th><th>Инвестору за мес</th><th>Инвестору, всего</th><th>Вам, всего</th></tr></thead><tbody>`;
   r.rows.forEach(x=>{ const mark=x.m===r.posMonth||x.m===r.paybackMonth;
-    h+=`<tr class="${mark?"mark":""} ${x.m%12===0?"year":""}"><td>${x.m}</td><td>${monthLabel(x.m)}</td><td>${x.agents}</td><td>${nf.format(Math.round(x.nw))}</td><td>${nf.format(Math.round(x.paid))}</td><td>${usd(x.sub)}</td><td>${usd(x.rev-x.sub)}</td><td>${usd(x.cost)}</td>${c(x.profit)}${c(x.cum)}${c(x.cash)}<td>${usd(x.invGot)}</td><td>${usd(x.fGot)}</td></tr>`; });
+    h+=`<tr class="${mark?"mark":""} ${x.m%12===0?"year":""}"><td>${x.m}</td><td>${monthLabel(x.m)}</td><td>${x.agents}</td><td>${nf.format(Math.round(x.nw))}</td><td>${nf.format(Math.round(x.paid))}</td><td>${usd(x.sub)}</td><td>${usd(x.rev-x.sub)}</td><td>${usd(x.cost)}</td>${c(x.profit)}${c(x.cum)}${c(x.cash)}<td>${usd(x.toInv)}</td><td>${usd(x.invGot)}</td><td>${usd(x.fGot)}</td></tr>`; });
   document.getElementById("tbl").innerHTML=h+"</tbody>";
 }
 
@@ -634,7 +667,7 @@ renderEditor(); update();
     }, ()=>{ db=null; scenarios=readLocalScen(); fillPick(); drawScenarios(); });
   }catch(e){}
 })();
-let rz; window.addEventListener("resize",()=>{ clearTimeout(rz); rz=setTimeout(()=>{ if(R){ drawProfit(R); drawStores(R); } },120); });
+let rz; window.addEventListener("resize",()=>{ clearTimeout(rz); rz=setTimeout(()=>{ if(R){ drawProfit(R); drawInvestor(R); drawStores(R); } },120); });
 </script>
 
 </body></html>
