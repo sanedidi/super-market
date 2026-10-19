@@ -207,7 +207,7 @@ class _WarehouseEditScreenState extends State<WarehouseEditScreen> {
   late final _w = widget.warehouse;
   late final _name = TextEditingController(text: '${_w?['name'] ?? ''}');
   late final _address = TextEditingController(text: '${_w?['address'] ?? ''}');
-  late LatLng? _point = _w?['lat'] is num ? LatLng((_w!['lat'] as num).toDouble(), (_w!['lng'] as num).toDouble()) : null;
+  late LatLng? _point = _w?['lat'] is num ? LatLng((_w!['lat'] as num).toDouble(), (_w['lng'] as num).toDouble()) : null;
   late bool _main = _w?['is_default'] == true;
   late bool _active = _w?['is_active'] != false;
   bool _busy = false;

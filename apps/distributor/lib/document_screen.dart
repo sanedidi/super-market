@@ -502,7 +502,7 @@ class _DocumentScreenState extends State<DocumentScreen> {
       final w = _fromWh;
       add(Icons.warehouse_rounded, tr('Со склада', 'Ombordan'),
           w != null ? whName(w) : '${_doc?['warehouse_name'] ?? tr('основной', 'asosiy')}', _pickWarehouse,
-          note: w?['distance_km'] == null ? null : tr('${qty(w!['distance_km'])} км до магазина', 'doʻkongacha ${qty(w!['distance_km'])} km'));
+          note: w?['distance_km'] == null ? null : tr('${qty(w!['distance_km'])} км до магазина', 'doʻkongacha ${qty(w['distance_km'])} km'));
     } else {
       add(Icons.warehouse_rounded, tr('Склад', 'Ombor'),
           '${_doc?['warehouse_name'] ?? (selectedWarehouse.value != null ? whName(selectedWarehouse.value!) : context.watch<StoreState>().store?['name'] ?? '')}', null);
