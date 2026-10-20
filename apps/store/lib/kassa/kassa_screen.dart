@@ -105,7 +105,10 @@ class _KassaScreenState extends State<KassaScreen> {
       }
       return;
     }
-    final r = kassa.scan(code);
+    await _result(kassa.scan(code));
+  }
+
+  Future<void> _result(ScanResult r) async {
     if (r is Scanned) {
       HapticFeedback.mediumImpact();
       SystemSound.play(SystemSoundType.click);
@@ -113,12 +116,27 @@ class _KassaScreenState extends State<KassaScreen> {
       _showToast(p.fractional ? '${p.name} · ${fmtQty(r.added)} ${p.unit}' : '${p.name} · +${fmtQty(r.added)}', ok: true);
     } else if (r is NeedWeight) {
       await _idle(() => weightSheet(context, kassa, r.product));
+    } else if (r is NeedPrice) {
+      HapticFeedback.heavyImpact();
+      await _needPrice(r);
     } else if (r is NotFound) {
       HapticFeedback.heavyImpact();
       await _unknown(r.code);
     } else if (r is ScanFail) {
       HapticFeedback.heavyImpact();
       _showToast(r.message, ok: false);
+    }
+  }
+
+  /// Товар без цены: цена → сохраняем в магазине → тот же товар в чек.
+  Future<void> _needPrice(NeedPrice r) async {
+    final p = await _idle(() => priceSheet(context, kassa, r.product, canPrice: _canPrice));
+    if (!mounted || p == null) return;
+    final qty = r.qty;
+    if (qty == null) {
+      await _idle(() => weightSheet(context, kassa, p));
+    } else {
+      await _result(kassa.add(p, qty: qty, mark: r.mark));
     }
   }
 

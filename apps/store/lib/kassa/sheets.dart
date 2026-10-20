@@ -316,6 +316,125 @@ class _UnknownBodyState extends State<_UnknownBody> {
   }
 }
 
+// ------------------------------------------------- товар без цены
+
+/// У товара нет цены (0) — спрашиваем цену и сразу записываем её в цены
+/// магазина. Возвращает товар уже с ценой или null (закрыли, нет права).
+Future<Product?> priceSheet(BuildContext context, Kassa kassa, Product p, {required bool canPrice}) {
+  return showSheet<Product>(context, (ctx) => _PriceBody(kassa: kassa, product: p, canPrice: canPrice));
+}
+
+class _PriceBody extends StatefulWidget {
+  const _PriceBody({required this.kassa, required this.product, required this.canPrice});
+
+  final Kassa kassa;
+  final Product product;
+  final bool canPrice;
+
+  @override
+  State<_PriceBody> createState() => _PriceBodyState();
+}
+
+class _PriceBodyState extends State<_PriceBody> {
+  final _price = TextEditingController();
+  bool _busy = false;
+  String? _err;
+
+  @override
+  void dispose() {
+    _price.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_busy) return;
+    final price = parseMoney(_price.text);
+    if (price <= 0) {
+      setState(() => _err = tr('Введите цену продажи', 'Sotish narxini kiriting'));
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _err = null;
+    });
+    try {
+      final p = await widget.kassa.setPrice(widget.product.id, price);
+      if (!mounted) return;
+      if (p == null || p.price <= 0) {
+        setState(() => _err = tr('Цена записана, но касса её пока не видит — попробуйте ещё раз', 'Narx yozildi, lekin kassa uni hali koʻrmayapti — qayta urinib koʻring'));
+        return;
+      }
+      HapticFeedback.mediumImpact();
+      Navigator.pop(context, p);
+    } catch (e) {
+      if (mounted) setState(() => _err = '$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.product;
+    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const IconBox(Icons.sell_outlined, bg: AppColors.warningSoft, fg: AppColors.warningInk, size: 40, iconSize: 22, radius: 12),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(tr('У товара нет цены', 'Mahsulot narxi yoʻq'), style: AppText.title),
+            const SizedBox(height: 2),
+            Text(tr('Поставьте цену — она сохранится в магазине, и товар попадёт в чек', 'Narx qoʻying — u doʻkonda saqlanadi va mahsulot chekka tushadi'), style: AppText.small),
+          ]),
+        ),
+      ]),
+      const SizedBox(height: 14),
+      Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(16)),
+        child: Row(children: [
+          ProductThumb(p.image, size: 56, color: AppColors.white),
+          const SizedBox(width: 12),
+          Expanded(child: Text(p.name, style: AppText.bodyStrong, maxLines: 3, overflow: TextOverflow.ellipsis)),
+        ]),
+      ),
+      const SizedBox(height: 14),
+      if (widget.canPrice) ...[
+        Text(
+          p.fractional ? tr('Цена продажи за ${p.unit}, сум *', 'Sotish narxi, ${p.unit} uchun, soʻm *') : tr('Цена продажи, сум *', 'Sotish narxi, soʻm *'),
+          style: AppText.small.copyWith(fontWeight: FontWeight.w500),
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: _price,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          style: AppText.h3,
+          decoration: InputDecoration(hintText: '0', suffixText: _sum()),
+          onSubmitted: (_) => _save(),
+        ),
+        if (_err != null) ...[
+          const SizedBox(height: 8),
+          Text(_err!, style: AppText.small.copyWith(color: AppColors.error)),
+        ],
+        const SizedBox(height: 14),
+        BigButton(label: tr('Сохранить цену и добавить в чек', 'Narxni saqlash va chekka qoʻshish'), icon: Icons.add_shopping_cart_rounded, busy: _busy, onPressed: _save),
+      ] else
+        Text(
+          tr('Цену товару может поставить владелец или сотрудник с правом «Установка цен». Без цены товар продать нельзя.',
+              'Mahsulot narxini egasi yoki «Narxlarni belgilash» huquqi bor xodim qoʻya oladi. Narxsiz mahsulotni sotib boʻlmaydi.'),
+          style: AppText.body.copyWith(color: AppColors.text2),
+        ),
+      const SizedBox(height: 6),
+      TextButton(
+        onPressed: _busy ? null : () => Navigator.pop(context),
+        child: Text(tr('Отмена', 'Bekor qilish'), style: AppText.bodyStrong.copyWith(color: AppColors.text2)),
+      ),
+    ]);
+  }
+}
+
 // ---------------------------------------------------- К6 · строка чека
 
 /// К6 · Строка чека: количество, скидка, удалить. Возвращает 'weight', если

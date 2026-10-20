@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../main.dart' show showMessage;
+import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'kassa.dart';
@@ -44,6 +46,12 @@ class _QuickScreenState extends State<QuickScreen> {
     if (p.marked) {
       showMessage(context, tr('Маркированный товар — сканируйте DataMatrix на упаковке', 'Markirovkali mahsulot — qadoqdagi DataMatrix kodini skanerlang'));
       return;
+    }
+    if (p.price <= 0) {
+      final canPrice = context.read<StoreState>().can('prices.manage');
+      final priced = await priceSheet(context, kassa, p, canPrice: canPrice);
+      if (priced == null || !mounted) return;
+      p = priced;
     }
     if (p.fractional) {
       await weightSheet(context, kassa, p);

@@ -240,12 +240,12 @@ class Kassa extends ChangeNotifier {
         if (marked != null) break;
       }
       if (marked == null) return NotFound(mark.gtin);
-      return _add(marked, mark: marked.marked ? mark.raw : null);
+      return add(marked, mark: marked.marked ? mark.raw : null);
     }
     final w = parseWeight(code, catalog.settings.weightPrefixes);
     if (w != null) {
       final weighed = catalog.byPlu(w.plu);
-      if (weighed != null) return _add(weighed, qty: w.grams);
+      if (weighed != null) return add(weighed, qty: w.grams);
     }
     final p = catalog.byBarcode(code);
     if (p == null) {
@@ -258,11 +258,14 @@ class Kassa extends ChangeNotifier {
     if (p.marked) {
       return ScanFail(tr('Маркированный товар: сканируйте код DataMatrix на упаковке', 'Markirovkali mahsulot: qadoqdagi DataMatrix kodini skanerlang'));
     }
+    if (p.price <= 0) return NeedPrice(p, qty: p.fractional ? null : 1000);
     if (p.fractional) return NeedWeight(p);
-    return _add(p);
+    return add(p);
   }
 
-  ScanResult _add(Product p, {int qty = 1000, String? mark}) {
+  /// Товар со штрихкода в чек. Цены нет — [NeedPrice]: в чек за 0 не кладём.
+  ScanResult add(Product p, {int qty = 1000, String? mark}) {
+    if (p.price <= 0) return NeedPrice(p, qty: qty, mark: mark);
     try {
       final line = cart.add(p, qty: qty, mark: mark);
       _changed(line);
@@ -274,6 +277,7 @@ class Kassa extends ChangeNotifier {
 
   /// Плитка или поиск: штучный товар +1. Весовой — через [putQty].
   CartLine addOne(Product p) {
+    _priced(p);
     final line = cart.add(p);
     _changed(line);
     return line;
@@ -281,6 +285,7 @@ class Kassa extends ChangeNotifier {
 
   /// Весовой товар: вес в чеке — ровно [qty] (тысячные).
   void putQty(Product p, int qty) {
+    _priced(p);
     final line = cart.lineOf(p.id);
     if (line == null) {
       _changed(cart.add(p, qty: qty));
@@ -288,6 +293,11 @@ class Kassa extends ChangeNotifier {
       cart.setQty(line, qty);
       _changed(line);
     }
+  }
+
+  /// За 0 сум не продаём: цену сначала ставят ([NeedPrice], priceSheet).
+  void _priced(Product p) {
+    if (p.price <= 0) throw CartError(tr('У «${p.name}» нет цены — сначала поставьте цену', '«${p.name}» narxi yoʻq — avval narx qoʻying'));
   }
 
   void setQty(CartLine line, int qty) {
@@ -466,6 +476,16 @@ class Scanned extends ScanResult {
 class NeedWeight extends ScanResult {
   NeedWeight(this.product);
   final Product product;
+}
+
+/// У товара нет цены (0): кассир ставит её, потом товар идёт в чек.
+class NeedPrice extends ScanResult {
+  NeedPrice(this.product, {this.qty, this.mark});
+  final Product product;
+
+  /// Сколько положить в чек (тысячные); null — весовой, вес ещё не введён.
+  final int? qty;
+  final String? mark;
 }
 
 class NotFound extends ScanResult {
