@@ -381,7 +381,8 @@ func TestStart(t *testing.T) {
 		body["store_id"] = storeID
 		return a.do("POST", "/store/start/fill", ownerTok, body)
 	}
-	a.expect(fill(map[string]any{"product_id": pepsi, "qty": 1}), 404, "fill not in store")
+	bread := product("Хлеб Бородинский", pcs, 0, "")
+	a.expect(fill(map[string]any{"product_id": bread, "qty": 1}), 404, "fill not in store")
 	a.expect(fill(map[string]any{"product_id": tea, "qty": 1.5}), 400, "fill fractional")
 	a.expect(fill(map[string]any{"product_id": tea, "price": 12000, "qty": 4, "cost": 9000}), 200, "fill")
 	if p := priceOf("Ахмад"); p != "12000.00" {
