@@ -3,12 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/sanedidi/super-market/backend/internal/platform/db"
+	"github.com/sanedidi/super-market/backend/internal/platform/purge"
 )
 
 // clean удаляет всё, что создал seed: сети целиком (магазины, склады,
@@ -41,8 +40,8 @@ func clean(ctx context.Context, pool *pgxpool.Pool) error {
 		return err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	d := &deleter{ctx: ctx, tx: tx}
-	if err := d.loadFKs(); err != nil {
+	d, err := newDeleter(ctx, tx)
+	if err != nil {
 		return err
 	}
 
@@ -54,9 +53,25 @@ func clean(ctx context.Context, pool *pgxpool.Pool) error {
 		WHERE verified_store_id IN (SELECT id FROM stores WHERE network_id::text = ANY($1))`, ids["network"]); err != nil {
 		return err
 	}
-	// 1. Сети со всеми зависимыми данными.
-	if err := d.remove("networks", []string{"id"}, ids["network"], nil); err != nil {
-		return fmt.Errorf("сети: %w", err)
+	// 1. Сети со всеми зависимыми данными — как удаление сети супер-админом:
+	// одобренные товары центральной базы, данные других сетей и курьеры «по
+	// пути» остаются.
+	for _, id := range ids["network"] {
+		rows, err := tx.Query(ctx, `SELECT id::text FROM stores WHERE network_id::text = $1`, id)
+		if err != nil {
+			return err
+		}
+		stores, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return err
+		}
+		p, err := purge.New(ctx, tx, purge.NetworkScope(id, stores))
+		if err != nil {
+			return err
+		}
+		if err := p.Remove("networks", []string{"id"}, []string{id}); err != nil {
+			return fmt.Errorf("сеть %s: %w", id, err)
+		}
 	}
 	// 1б. Что добавил review (сотрудники, роли и логин курьера обычно уже
 	// удалены вместе с сетью).
@@ -178,134 +193,24 @@ func (d *deleter) cleanReview(ids map[string][]string) error {
 	return nil
 }
 
-type fk struct {
-	child, parent        string
-	childCols, parentCol []string
-	nullable             []bool
-}
-
+// deleter — обёртка над purge: демо-данные изолированы, поэтому «свои» все
+// строки, кроме курьеров «по пути» (их убирает cleanReview, если их создал review).
 type deleter struct {
 	ctx context.Context
 	tx  pgx.Tx
-	fks []fk // только без ON DELETE CASCADE / SET NULL — остальное сделает сама база
-	sp  int
+	p   *purge.Deleter
 }
 
-func (d *deleter) loadFKs() error {
-	rows, err := d.tx.Query(d.ctx, `
-		SELECT c.conrelid::regclass::text, c.confrelid::regclass::text,
-		       array(SELECT a.attname::text FROM unnest(c.conkey) WITH ORDINALITY k(n, i)
-		             JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.n ORDER BY k.i),
-		       array(SELECT a.attname::text FROM unnest(c.confkey) WITH ORDINALITY k(n, i)
-		             JOIN pg_attribute a ON a.attrelid = c.confrelid AND a.attnum = k.n ORDER BY k.i),
-		       array(SELECT NOT a.attnotnull FROM unnest(c.conkey) WITH ORDINALITY k(n, i)
-		             JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.n ORDER BY k.i)
-		FROM pg_constraint c
-		JOIN pg_namespace ns ON ns.oid = c.connamespace AND ns.nspname = 'public'
-		WHERE c.contype = 'f' AND c.confdeltype IN ('a', 'r')`)
+func newDeleter(ctx context.Context, tx pgx.Tx) (*deleter, error) {
+	p, err := purge.New(ctx, tx, purge.Scope{Keep: map[string]bool{"crowd_couriers": true}})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var f fk
-		if err := rows.Scan(&f.child, &f.parent, &f.childCols, &f.parentCol, &f.nullable); err != nil {
-			return err
-		}
-		d.fks = append(d.fks, f)
-	}
-	return rows.Err()
+	return &deleter{ctx: ctx, tx: tx, p: p}, nil
 }
 
-// key — выражение «ключ строки» из нескольких колонок, одинаковое для
-// родителя и потомка.
-func key(cols []string) string {
-	if len(cols) == 1 {
-		return cols[0] + "::text"
-	}
-	parts := make([]string, len(cols))
-	for i, c := range cols {
-		parts[i] = c + "::text"
-	}
-	return "concat_ws('|', " + strings.Join(parts, ", ") + ")"
+func (d *deleter) remove(table string, cols, vals []string, _ []string) error {
+	return d.p.Remove(table, cols, vals)
 }
 
-// remove удаляет строки table, у которых key(cols) ∈ vals, вместе со всем,
-// что на них ссылается. Циклы (магазин ↔ склад по умолчанию) разрываются
-// обнулением ссылки.
-func (d *deleter) remove(table string, cols, vals []string, path []string) error {
-	if len(vals) == 0 {
-		return nil
-	}
-	path = append(path, table)
-	for _, f := range d.fks {
-		if f.parent != table {
-			continue
-		}
-		var parentVals []string
-		rows, err := d.tx.Query(d.ctx, fmt.Sprintf(`SELECT DISTINCT %s FROM %s WHERE %s = ANY($1)`, key(f.parentCol), table, key(cols)), vals)
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var v string
-			if err := rows.Scan(&v); err != nil {
-				rows.Close()
-				return err
-			}
-			parentVals = append(parentVals, v)
-		}
-		rows.Close()
-		if len(parentVals) == 0 {
-			continue
-		}
-		onPath := false
-		for _, t := range path {
-			if t == f.child {
-				onPath = true
-			}
-		}
-		if onPath {
-			var sets []string
-			for i, c := range f.childCols {
-				if f.nullable[i] {
-					sets = append(sets, c+" = NULL")
-				}
-			}
-			if len(sets) == 0 {
-				return fmt.Errorf("цикл %s → %s без обнуляемой колонки", f.child, table)
-			}
-			if _, err := d.tx.Exec(d.ctx, fmt.Sprintf(`UPDATE %s SET %s WHERE %s = ANY($1)`,
-				f.child, strings.Join(sets, ", "), key(f.childCols)), parentVals); err != nil {
-				return err
-			}
-			continue
-		}
-		if err := d.remove(f.child, f.childCols, parentVals, path); err != nil {
-			return err
-		}
-	}
-	_, err := d.tx.Exec(d.ctx, fmt.Sprintf(`DELETE FROM %s WHERE %s = ANY($1)`, table, key(cols)), vals)
-	return err
-}
-
-// try выполняет удаление в точке сохранения; при нарушении внешнего ключа
-// откатывает только его и возвращает false.
-func (d *deleter) try(sql string, args ...any) (bool, error) {
-	d.sp++
-	name := fmt.Sprintf("sp%d", d.sp)
-	if _, err := d.tx.Exec(d.ctx, "SAVEPOINT "+name); err != nil {
-		return false, err
-	}
-	if _, err := d.tx.Exec(d.ctx, sql, args...); err != nil {
-		if !db.IsForeignKeyViolation(err) {
-			return false, err
-		}
-		if _, rerr := d.tx.Exec(d.ctx, "ROLLBACK TO SAVEPOINT "+name); rerr != nil {
-			return false, rerr
-		}
-		return false, nil
-	}
-	_, err := d.tx.Exec(d.ctx, "RELEASE SAVEPOINT "+name)
-	return err == nil, err
-}
+func (d *deleter) try(sql string, args ...any) (bool, error) { return d.p.Try(sql, args...) }

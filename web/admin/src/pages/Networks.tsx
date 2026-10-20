@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Alert, Button, Descriptions, Drawer, Form, Input, Popconfirm, Select, Space, Spin, Table, Tag, Typography } from 'antd'
-import { KeyOutlined } from '@ant-design/icons'
+import { DeleteOutlined, KeyOutlined, WarningOutlined } from '@ant-design/icons'
 import { CrudPage, PhoneInput, StatusTag, api, date, dateTime, errorText, formatPhone, money, phoneRule, useAction, useItem, useList } from '@sm/shared'
 import { useUrlState } from '../hooks'
 import { planPrice, type Plan } from './Plans'
 import { NetworkPlanModal, PlanCell, type NetworkBilling } from './NetworkPlan'
 import { CredentialsModal, OwnerLoginFields, OwnerModal, OwnerPasswordState, type Credentials, type OwnerInfo } from './NetworkOwner'
+import { DeleteTenantModal, type DeleteTarget } from './DeleteTenant'
 
 /** Тип сети: сеть магазинов, одиночный магазин или дистрибьютор. */
 function kindTitle(k: string, long = false): string {
@@ -174,6 +175,8 @@ function NetworkCard({ id, onClose }: { id: string | null; onClose: () => void }
   const b = billing.data
   const [owner, setOwner] = useState<Network | null>(null)
   const [planOpen, setPlanOpen] = useState(false)
+  const [del, setDel] = useState<DeleteTarget | null>(null)
+  const setStatus = useAction((status: string) => api.patch(`/admin/networks/${id}`, { status }), { success: 'Статус изменён' })
   const error = net.error ?? stores.error ?? billing.error
   return (
     <Drawer open={id !== null} onClose={onClose} width={720} title={n ? n.name : 'Сеть'}>
@@ -271,12 +274,28 @@ function NetworkCard({ id, onClose }: { id: string | null; onClose: () => void }
                 { title: 'Адрес', dataIndex: 'address', render: (v) => v || '—' },
                 { title: 'Телефон', dataIndex: 'phone', render: (v) => formatPhone(v) || '—' },
                 { title: 'Статус', dataIndex: 'status', render: (s) => (s === 'active' ? <Tag color="green">Работает</Tag> : <Tag>Выключен</Tag>) },
+                {
+                  key: 'delete',
+                  width: 100,
+                  render: (_, s) => (
+                    <Button size="small" danger icon={<DeleteOutlined />} onClick={() => setDel({ kind: 'store', id: s.id, name: s.name })}>
+                      Удалить
+                    </Button>
+                  ),
+                },
               ]}
             />
           </div>
+          <DangerZone
+            n={n}
+            blocking={setStatus.isPending}
+            onToggleBlock={() => setStatus.mutateAsync(n.status === 'active' ? 'blocked' : 'active').catch(() => undefined)}
+            onDelete={() => setDel({ kind: 'network', id: n.id, name: n.name, networkKind: n.kind })}
+          />
         </Space>
       )}
       <OwnerModal network={owner} onClose={() => setOwner(null)} />
+      <DeleteTenantModal target={del} onClose={() => setDel(null)} onDeleted={del?.kind === 'network' ? onClose : undefined} />
       <NetworkPlanModal
         networkId={planOpen ? id : null}
         onClose={() => {
@@ -286,5 +305,42 @@ function NetworkCard({ id, onClose }: { id: string | null; onClose: () => void }
         }}
       />
     </Drawer>
+  )
+}
+
+/**
+ * «Опасная зона» карточки сети (Figma УС1): заблокировать — для неплательщиков
+ * и нарушителей, удалить — навсегда, с подтверждением названием.
+ */
+function DangerZone({ n, blocking, onToggleBlock, onDelete }: { n: Network; blocking: boolean; onToggleBlock: () => void; onDelete: () => void }) {
+  const what = n.kind === 'single' ? 'магазин' : n.kind === 'distributor' ? 'агента' : 'сеть'
+  return (
+    <div style={{ border: '1px solid #FECDCA', background: '#FFFBFA', borderRadius: 10, padding: 16 }}>
+      <Space direction="vertical" size={8} style={{ width: '100%' }}>
+        <Space size={8}>
+          <WarningOutlined style={{ color: '#D92D20' }} />
+          <Typography.Text strong style={{ color: '#D92D20' }}>
+            Опасная зона
+          </Typography.Text>
+        </Space>
+        <Typography.Text type="secondary">
+          Удалить {what} «{n.name}» целиком
+          {n.kind === 'chain' ? `: ${n.stores_count} маг., сотрудники, товары сети, остатки, документы, продажи и заказы` : ' со всеми данными'}. Вернуть
+          будет нельзя. Одобренные товары останутся в центральной базе. Если {n.kind === 'chain' ? 'сеть' : 'магазин'} просто не платит или нарушает
+          правила — лучше «Заблокировать».
+        </Typography.Text>
+        <Space wrap style={{ marginTop: 4 }}>
+          <Popconfirm
+            title={n.status === 'active' ? 'Заблокировать? Сотрудники сразу потеряют доступ.' : 'Разблокировать?'}
+            onConfirm={onToggleBlock}
+          >
+            <Button loading={blocking}>{n.status === 'active' ? 'Заблокировать' : 'Разблокировать'}</Button>
+          </Popconfirm>
+          <Button type="primary" danger icon={<DeleteOutlined />} onClick={onDelete}>
+            Удалить {what}…
+          </Button>
+        </Space>
+      </Space>
+    </div>
   )
 }

@@ -31,6 +31,12 @@ func (m *Module) Routes(r chi.Router) {
 		// Владелец: имя и телефон меняет только супер-админ; логин и сброс пароля.
 		r.Patch("/admin/networks/{id}/owner", m.updateOwner)
 		r.Put("/admin/networks/{id}/owner/login", m.setOwnerLogin)
+		// Удаление сети или магазина: превью «что удалится» и само удаление
+		// с подтверждением названием (internal/tenant/purge.go).
+		r.Get("/admin/networks/{id}/delete-preview", m.previewNetworkDelete)
+		r.Delete("/admin/networks/{id}", m.deleteNetwork)
+		r.Get("/admin/stores/{id}/delete-preview", m.previewStoreDelete)
+		r.Delete("/admin/stores/{id}", m.deleteStore)
 	})
 
 	// /store/me открыт и с временным паролем: по нему панель понимает,
