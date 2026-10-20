@@ -8,6 +8,7 @@ import '../core/codes.dart';
 import '../core/money.dart';
 import '../data/api.dart';
 import '../state/pos.dart';
+import 'kit.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -220,6 +221,99 @@ class _ReturnScreenState extends State<ReturnScreen> {
   @override
   Widget build(BuildContext context) {
     final sale = _sale;
+    final d = densityOf(context);
+    final g = d == Density.l ? 8.0 : 6.0;
+    final side = switch (d) { Density.l => 300.0, Density.m => 272.0, Density.s => 248.0 };
+    final hint = _input.isNotEmpty && sale != null
+        ? tr('Количество: $_input · Enter — применить к строке', 'Miqdor: $_input · Enter — qatorga qoʻllash')
+        : sale == null
+            ? tr('Возврат проводится только онлайн: касса берёт чек с сервера', 'Qaytarish faqat onlayn: kassa chekni serverdan oladi')
+            : tr('↑↓ строка · пробел — вернуть всё · цифры + Enter — сколько вернуть. Вернуть можно только то, что есть в чеке.',
+                '↑↓ qator · probel — hammasini qaytarish · raqamlar + Enter — qanchasini qaytarish. Faqat chekdagi mahsulotni qaytarish mumkin.');
+    final doc = Container(
+      decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: C.border)),
+      clipBehavior: Clip.antiAlias,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Container(
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          color: C.errorSoft,
+          child: Row(children: [
+            Text(tr('ВОЗВРАТ', 'QAYTARISH'), style: t(12.5, w: FontWeight.w700, c: C.error)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FitText(
+                sale == null
+                    ? tr('·  отсканируйте QR с чека или наберите номер и Enter', '·  chekdagi QR kodni skanerlang yoki raqamni tering va Enter')
+                    : tr('·  ПО ЧЕКУ №${sale['number']}  ·  ${sale['cashier'] ?? ''}', '·  CHEK №${sale['number']} BOʻYICHA  ·  ${sale['cashier'] ?? ''}'),
+                style: t(12.5, w: FontWeight.w600, c: C.t2),
+              ),
+            ),
+          ]),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(children: [
+              Expanded(
+                child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  FitText(
+                    sale == null
+                        ? (_input.isEmpty ? (_busy ? tr('Ищем чек…', 'Chek qidirilmoqda…') : tr('Чек №…', 'Chek №…')) : _input)
+                        : tr('Итог чека ${fmtMoney(parseMoney(sale['total']))}', 'Chek jami ${fmtMoney(parseMoney(sale['total']))}'),
+                    style: t(d == Density.s ? 20 : 24, w: FontWeight.w700),
+                  ),
+                  if (_done != null) FitText(_done!, maxLines: 2, style: t(14, w: FontWeight.w600, c: C.success)),
+                ]),
+              ),
+              const SizedBox(width: 12),
+              Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
+                Text(tr('К возврату:', 'Qaytarishga:'), style: t(14, w: FontWeight.w600, c: C.error)),
+                Text(fmtMoney(sale == null ? 0 : _total), style: tb(d == Density.s ? 40 : 48, c: C.brandDark, h: 1.05)),
+              ]),
+            ]),
+          ),
+        ),
+      ]),
+    );
+    final table = Container(
+      decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: C.border)),
+      clipBehavior: Clip.antiAlias,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Container(
+          height: 30,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: const BoxDecoration(color: C.subtle, border: Border(bottom: BorderSide(color: C.border))),
+          child: Row(children: [
+            SizedBox(width: 36, child: Text('#', style: t(11, w: FontWeight.w700, c: C.td))),
+            Expanded(child: Text(tr('НАИМЕНОВАНИЕ', 'NOMI'), style: t(11, w: FontWeight.w700, c: C.td))),
+            SizedBox(width: d == Density.s ? 150 : 190, child: Text(tr('ВЕРНУТЬ', 'QAYTARISH'), textAlign: TextAlign.center, style: t(11, w: FontWeight.w700, c: C.td))),
+            if (d != Density.s) SizedBox(width: 100, child: Text(tr('ЦЕНА', 'NARX'), textAlign: TextAlign.right, style: t(11, w: FontWeight.w700, c: C.td))),
+            SizedBox(width: 110, child: Text(tr('СУММА', 'SUMMA'), textAlign: TextAlign.right, style: t(11, w: FontWeight.w700, c: C.td))),
+          ]),
+        ),
+        Expanded(
+          child: sale == null
+              ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(hint, textAlign: TextAlign.center, style: t(15, c: C.td))))
+              : SnapList(
+                  count: _items.length,
+                  extent: 52,
+                  focus: _row,
+                  itemBuilder: (_, i) => _line(i, _row == i, d),
+                  above: (n) => tr('Ещё $n выше', 'Yana $n yuqorida'),
+                  below: (n) => tr('Ещё $n ниже', 'Yana $n pastda'),
+                  startLabel: tr('Начало чека', 'Chek boshi'),
+                  endLabel: tr('Конец чека', 'Chek oxiri'),
+                ),
+        ),
+        if (sale != null)
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+            decoration: const BoxDecoration(color: C.subtle, border: Border(top: BorderSide(color: C.border))),
+            child: FitText(hint, maxLines: 2, style: t(12.5, c: C.ts)),
+          ),
+      ]),
+    );
     return Scaffold(
       body: KeyCatcher(
         onKey: _onKey,
@@ -227,74 +321,17 @@ class _ReturnScreenState extends State<ReturnScreen> {
           const TopBar(),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.all(g),
               child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                    Container(
-                      height: 96,
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      decoration: BoxDecoration(
-                        color: C.surface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: C.brand, width: 2),
-                      ),
-                      child: Row(children: [
-                        Expanded(
-                          child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text(tr('Возврат · отсканируйте QR с чека или наберите номер и Enter', 'Qaytarish · chekdagi QR kodni skanerlang yoki raqamni tering va Enter'), style: t(13, c: C.brand)),
-                            const SizedBox(height: 4),
-                            Text(
-                              sale == null
-                                  ? (_input.isEmpty ? (_busy ? tr('Ищем чек…', 'Chek qidirilmoqda…') : tr('Чек №…', 'Chek №…')) : _input)
-                                  : tr('Чек №${sale['number']} · ${sale['cashier'] ?? ''}', 'Chek №${sale['number']} · ${sale['cashier'] ?? ''}'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: t(26, w: FontWeight.w700),
-                            ),
-                          ]),
-                        ),
-                        if (sale != null)
-                          Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
-                            Text(tr('итог чека', 'chek jami'), style: t(14, c: C.ts)),
-                            Text(fmtMoney(parseMoney(sale['total'])), style: t(30, w: FontWeight.w700)),
-                          ]),
-                      ]),
-                    ),
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(12)),
-                        clipBehavior: Clip.antiAlias,
-                        child: sale == null
-                            ? Center(
-                                child: Text(_done ?? tr('Возврат проводится только онлайн: касса берёт чек с сервера', 'Qaytarish faqat onlayn: kassa chekni serverdan oladi'),
-                                    style: t(16, c: _done != null ? C.success : C.td)))
-                            : ListView(children: [
-                                Container(
-                                  color: C.subtle,
-                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                                  child: Text(tr('↑↓ строка · пробел — вернуть всё · цифры + Enter — сколько вернуть', '↑↓ qator · probel — hammasini qaytarish · raqamlar + Enter — qanchasini qaytarish'),
-                                      style: t(12, c: C.ts)),
-                                ),
-                                for (var i = 0; i < _items.length; i++) _line(i, _row == i),
-                              ]),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Panel(
-                      padding: const EdgeInsets.all(14),
-                      child: Text(
-                        _input.isNotEmpty && sale != null
-                            ? tr('Количество: $_input · Enter — применить к строке', 'Miqdor: $_input · Enter — qatorga qoʻllash')
-                            : tr('Вернуть можно только то, что есть в чеке, и не больше купленного. Товар вернётся на склад.', 'Faqat chekdagi mahsulotni va sotib olingandan koʻp boʻlmagan miqdorda qaytarish mumkin. Mahsulot omborga qaytadi.'),
-                        style: t(13, c: C.ts),
-                      ),
-                    ),
+                    SizedBox(height: d == Density.s ? 112 : 132, child: doc),
+                    SizedBox(height: g),
+                    Expanded(child: table),
                   ]),
                 ),
-                const SizedBox(width: 16),
-                SizedBox(width: 480, child: _right()),
+                SizedBox(width: g),
+                SizedBox(width: side, child: _right(d, g)),
               ]),
             ),
           ),
@@ -303,60 +340,89 @@ class _ReturnScreenState extends State<ReturnScreen> {
     );
   }
 
-  Widget _line(int i, bool selected) {
+  Widget _line(int i, bool selected, Density d) {
     final it = _items[i];
     final left = _left(it);
     final r = _ret[i];
-    return Container(
-      height: 52,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: BoxDecoration(
-        color: selected ? C.subtle : null,
-        border: Border(
-          bottom: const BorderSide(color: C.border),
-          left: BorderSide(color: selected ? C.brand : Colors.transparent, width: 3),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => setState(() => _row = i),
+      child: Container(
+        padding: EdgeInsets.only(left: selected ? 10 : 14, right: 14),
+        decoration: BoxDecoration(
+          color: selected ? C.errorSoft : C.surface,
+          border: Border(
+            bottom: const BorderSide(color: C.border),
+            left: selected ? const BorderSide(color: C.error, width: 4) : BorderSide.none,
+          ),
         ),
+        child: Row(children: [
+          SizedBox(width: 36, child: Text('${it['line']}', style: t(14, c: C.td))),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: FitText('${it['product_name']}', maxLines: 2, style: t(15, w: FontWeight.w500, c: left == 0 ? C.td : C.tp)),
+            ),
+          ),
+          SizedBox(
+            width: d == Density.s ? 150 : 190,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(color: r > 0 ? C.brandSoft : C.keyBg, borderRadius: BorderRadius.circular(6)),
+                child: FitText(
+                  left == 0 ? tr('уже возвращено', 'allaqachon qaytarilgan') : tr('${fmtQty(r)} из ${fmtQty(left)}', '${fmtQty(left)} dan ${fmtQty(r)}'),
+                  textAlign: TextAlign.center,
+                  style: t(13, w: FontWeight.w600, c: r > 0 ? C.brand : C.ts),
+                ),
+              ),
+            ),
+          ),
+          if (d != Density.s) SizedBox(width: 100, child: Text(fmtMoney(parseMoney(it['price'])), textAlign: TextAlign.right, style: t(15, c: C.ts))),
+          SizedBox(
+            width: 110,
+            child: Text(r > 0 ? fmtMoney(_lineReturn(i)) : '—', textAlign: TextAlign.right, style: t(16, w: FontWeight.w700)),
+          ),
+        ]),
       ),
-      child: Row(children: [
-        SizedBox(width: 36, child: Text('${it['line']}', style: t(14, c: C.td))),
-        Expanded(
-          child: Text('${it['product_name']}', maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: t(17, w: FontWeight.w500, c: left == 0 ? C.td : C.tp)),
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(color: r > 0 ? C.brandSoft : C.keyBg, borderRadius: BorderRadius.circular(6)),
-          child: Text(left == 0 ? tr('уже возвращено', 'allaqachon qaytarilgan') : tr('вернуть ${fmtQty(r)} из ${fmtQty(left)}', '${fmtQty(left)} dan ${fmtQty(r)} qaytarish'),
-              style: t(13, w: FontWeight.w600, c: r > 0 ? C.brand : C.ts)),
-        ),
-        SizedBox(width: 110, child: Text(fmtMoney(parseMoney(it['price'])), textAlign: TextAlign.right, style: t(15, c: C.ts))),
-        SizedBox(
-          width: 120,
-          child: Text(r > 0 ? fmtMoney(_lineReturn(i)) : '—', textAlign: TextAlign.right, style: t(18, w: FontWeight.w700)),
-        ),
-      ]),
     );
   }
 
-  Widget _right() {
+  Widget _right(Density d, double g) {
     final ready = _sale != null && !_busy;
+    Widget big(String label, String hint, IconData icon, Color bg, Color fg, VoidCallback? onTap, {Color? border}) => Opacity(
+          opacity: onTap == null ? 0.45 : 1,
+          child: Material(
+            color: bg,
+            borderRadius: BorderRadius.circular(10),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: onTap,
+              child: Container(
+                height: d == Density.l ? 72 : 62,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: border == null ? null : BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: border)),
+                child: Row(children: [
+                  Icon(icon, color: fg, size: 26),
+                  const SizedBox(width: 12),
+                  Expanded(child: FitText(label, style: tb(d == Density.l ? 22 : 19, c: fg))),
+                  Text(hint, style: t(13, w: FontWeight.w700, c: fg.withValues(alpha: 0.7))),
+                ]),
+              ),
+            ),
+          ),
+        );
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Panel(
-        color: C.dark,
-        padding: const EdgeInsets.all(24),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(tr('Вернуть покупателю', 'Xaridorga qaytarish'), style: t(15, c: Colors.white70)),
-          Text(fmtMoney(_sale == null ? 0 : _total), style: t(64, w: FontWeight.w800, c: Colors.white)),
-          Text(tr('точную сумму посчитает сервер по оплаченному', 'aniq summani server toʻlangan summa boʻyicha hisoblaydi'), style: t(12, c: Colors.white60)),
-        ]),
-      ),
-      const SizedBox(height: 12),
-      if (_sale != null && _needSenior)
-        Panel(
-          color: C.warningSoft,
-          padding: const EdgeInsets.all(16),
+      big(tr('Вернуть наличными', 'Naqd qaytarish'), 'Enter', Icons.payments_outlined, C.brandDark, Colors.white, ready ? () => _submit('cash') : null),
+      SizedBox(height: g),
+      big(tr('На карту', 'Kartaga'), '*', Icons.credit_card_rounded, C.surface, C.tp, ready ? () => _submit('card') : null, border: C.borderStrong),
+      if (_sale != null && _needSenior) ...[
+        SizedBox(height: g),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: C.warningSoft, borderRadius: BorderRadius.circular(10)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(tr('Подтверждение старшего: ПИН кассира с правом на возврат', 'Katta kassir tasdigʻi: qaytarish huquqiga ega kassir PIN-kodi'), style: t(14, w: FontWeight.w600, c: C.warning)),
+            FitText(tr('ПИН старшего с правом на возврат', 'Qaytarish huquqiga ega katta kassir PIN-kodi'), maxLines: 2, style: t(13, w: FontWeight.w600, c: C.warning)),
             const SizedBox(height: 8),
             Row(children: [
               for (var i = 0; i < 4 || i < _pin.length; i++)
@@ -372,36 +438,43 @@ class _ReturnScreenState extends State<ReturnScreen> {
                 ),
             ]),
             const SizedBox(height: 6),
-            Text(_pinMode ? tr('Наберите ПИН, затем Enter (наличными) или * (на карту)', 'PIN-kodni tering, keyin Enter (naqd) yoki * (kartaga)') : tr('Касса попросит ПИН при подтверждении', 'Tasdiqlashda kassa PIN-kod soʻraydi'),
-                style: t(12, c: C.warning)),
+            FitText(
+              _pinMode ? tr('Наберите ПИН, затем Enter или *', 'PIN-kodni tering, keyin Enter yoki *') : tr('Касса попросит ПИН при подтверждении', 'Tasdiqlashda kassa PIN-kod soʻraydi'),
+              maxLines: 2,
+              style: t(12, c: C.warning),
+            ),
           ]),
         ),
-      const SizedBox(height: 12),
-      KeyCard(
-        keyLabel: 'Enter',
-        title: tr('Наличными', 'Naqd pulda'),
-        subtitle: tr('выдать из ящика', 'gʻaladondan berish'),
-        style: ready ? KeyCardStyle.primary : KeyCardStyle.dim,
-        onTap: ready ? () => _submit('cash') : null,
-      ),
-      const SizedBox(height: 10),
-      KeyCard(
-        keyLabel: '*',
-        title: tr('На карту', 'Kartaga'),
-        subtitle: tr('деньги вернутся на карту покупателя', 'pul xaridorning kartasiga qaytadi'),
-        style: ready ? KeyCardStyle.normal : KeyCardStyle.dim,
-        onTap: ready ? () => _submit('card') : null,
-      ),
-      const SizedBox(height: 10),
-      KeyCard(keyLabel: 'Esc', title: tr('Назад к продаже', 'Sotuvga qaytish'), onTap: () => Navigator.of(context).pop()),
-      if (_error != null) ...[
-        const SizedBox(height: 12),
-        Text(_error!, style: t(14, c: C.error)),
       ],
+      SizedBox(height: g),
+      Text(tr('ПРИЧИНА', 'SABAB'), style: t(11.5, w: FontWeight.w700, c: C.td)),
+      const SizedBox(height: 4),
+      for (var i = 0; i < 3; i++)
+        Padding(
+          padding: EdgeInsets.only(bottom: g),
+          child: PosButton(
+            label: _reasonText[i],
+            hint: _reasonKeys[i],
+            height: 46,
+            bg: i == _reason ? C.brandSoft : C.surface,
+            fg: i == _reason ? C.brand : C.tp,
+            border: i == _reason ? C.brand : C.borderStrong,
+            onTap: () => setState(() => _reason = i),
+          ),
+        ),
+      if (_error != null)
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: C.errorSoft, borderRadius: BorderRadius.circular(8)),
+          child: FitText(_error!, maxLines: 3, style: t(13, w: FontWeight.w600, c: C.error)),
+        ),
       const Spacer(),
-      Text(
-        '${tr('Причина', 'Sabab')}: ${[for (var i = 0; i < 3; i++) '${_reasonKeys[i]} — ${_reasonText[i]}${i == _reason ? ' ✓' : ''}'].join(' · ')}',
-        style: t(12, c: C.ts),
+      PosButton(
+        label: tr('К продаже', 'Sotuvga'),
+        hint: 'Esc',
+        icon: Icons.undo_rounded,
+        height: 56,
+        onTap: () => Navigator.of(context).pop(),
       ),
     ]);
   }

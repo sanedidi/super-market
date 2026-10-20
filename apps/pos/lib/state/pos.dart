@@ -160,11 +160,20 @@ class PosController extends ChangeNotifier {
     unawaited(sync(catalog: true));
   }
 
+  bool _disposed = false;
+
   @override
   void dispose() {
+    _disposed = true;
     _timer?.cancel();
     Lang.instance.removeListener(_langChanged);
     super.dispose();
+  }
+
+  /// Обмен с сервером может закончиться уже после закрытия кассы — тогда молчим.
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
   }
 
   Future<void> _saveState() => store.writeJson('state.json', {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -5,6 +7,7 @@ import 'package:sm_core/sm_core.dart' show tr;
 
 import '../core/limits.dart';
 import '../state/pos.dart';
+import 'kit.dart';
 import 'theme.dart';
 
 /// Логотип Super Market (тот же, что у приложения покупателя).
@@ -120,44 +123,45 @@ class KeyCard extends StatelessWidget {
   }
 }
 
-/// Верхняя строка: касса, смена, кассир, связь, фискальный модуль, очередь.
+/// Красная шапка V1: логотип, касса и кассир, связь, ФМ, очередь, часы.
+/// На узком экране (1024) — только касса и кассир; ничего не обрезается.
 class TopBar extends StatelessWidget {
   const TopBar({super.key});
 
   @override
   Widget build(BuildContext context) {
     final pos = context.watch<PosController>();
+    final d = densityOf(context);
     final s = pos.catalog.settings;
     final shift = pos.shift;
-    final shiftText = [
-      if (shift != null) tr('Смена ${shift.number ?? '·'}', 'Smena ${shift.number ?? '·'}'),
+    final info = [
+      if (d != Density.s) s.storeName,
+      s.deviceName,
+      if (d != Density.s && shift != null) tr('Смена №${shift.number ?? '·'}', 'Smena №${shift.number ?? '·'}'),
       if (pos.cashier != null) pos.cashier!.name,
-    ].join(' · ');
+    ].where((x) => x.isNotEmpty).join('  ·  ');
+    final items = <Widget>[
+      if (pos.revoked) _Pill(tr('Касса отключена', 'Kassa oʻchirilgan'), C.error),
+      if (pos.printError != null) Tooltip(message: pos.printError!, child: _Pill(tr('Принтер', 'Printer'), C.error)),
+      _connection(pos),
+      pos.fiscalMode ? _Lamp(tr('ФМ', 'FM')) : _Pill(tr('Тестовый режим', 'Test rejimi'), C.warning),
+      if (pos.queue > 0)
+        _Pill(tr('Очередь ${pos.queue}', 'Navbat ${pos.queue}'), C.warning)
+      else if (d != Density.s)
+        Text(tr('Очередь 0', 'Navbat 0'), style: t(12, w: FontWeight.w600, c: C.brandLine)),
+      if (pos.failed > 0) _Pill(tr('Не принято ${pos.failed}', 'Qabul qilinmagan ${pos.failed}'), C.error),
+    ];
     return Container(
-      height: 48,
-      color: C.surface,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      height: d == Density.l ? 52 : 44,
+      color: C.brand,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Row(children: [
-        const Logo(size: 28),
-        const SizedBox(width: 12),
-        Text('${s.deviceName} · ${s.storeName}', style: t(15, w: FontWeight.w700)),
-        const SizedBox(width: 16),
-        Text(shiftText, style: t(13, c: C.ts)),
-        const Spacer(),
-        if (pos.revoked) _Dot(tr('Касса отключена в панели', 'Kassa panelda oʻchirilgan'), C.error),
-        if (pos.printError != null) ...[
-          Tooltip(message: pos.printError!, child: _Dot(tr('Принтер', 'Printer'), C.error)),
-          const SizedBox(width: 16),
-        ],
-        _connection(pos),
-        const SizedBox(width: 16),
-        _Dot(pos.fiscalMode ? tr('ФМ', 'FM') : tr('Тестовый режим', 'Test rejimi'), pos.fiscalMode ? C.success : C.warning),
-        const SizedBox(width: 16),
-        _Dot(tr('Очередь ${pos.queue}', 'Navbat ${pos.queue}'), pos.queue == 0 ? C.td : C.warning),
-        if (pos.failed > 0) ...[
-          const SizedBox(width: 16),
-          _Dot(tr('Не принято ${pos.failed}', 'Qabul qilinmagan ${pos.failed}'), C.error),
-        ],
+        Wordmark(size: d == Density.l ? 20 : 18),
+        Container(width: 1, height: 18, margin: const EdgeInsets.symmetric(horizontal: 12), color: C.brandLine),
+        Expanded(child: FitText(info, style: t(13, w: FontWeight.w500, c: C.brandLine))),
+        for (final w in items) ...[const SizedBox(width: 12), w],
+        const SizedBox(width: 14),
+        _Clock(full: d != Density.s),
       ]),
     );
   }
@@ -165,9 +169,71 @@ class TopBar extends StatelessWidget {
 
 Widget _connection(PosController pos) {
   final off = pos.offlineLimit;
-  if (pos.online && off.state != LimitState.warn) return _Dot(tr('Онлайн', 'Onlayn'), C.success);
-  if (off.state == LimitState.ok) return _Dot(tr('Нет связи', 'Aloqa yoʻq'), C.warning);
-  return _Dot(tr('Нет связи ${fmtDuration(off.age)}', 'Aloqa yoʻq ${fmtDuration(off.age)}'), C.error);
+  if (pos.online && off.state != LimitState.warn) return _Lamp(tr('Онлайн', 'Onlayn'));
+  if (off.state == LimitState.ok) return _Pill(tr('Нет связи', 'Aloqa yoʻq'), C.warning);
+  return _Pill(tr('Нет связи ${fmtDuration(off.age)}', 'Aloqa yoʻq ${fmtDuration(off.age)}'), C.error);
+}
+
+/// Всё в порядке: белая точка и подпись на красной шапке.
+class _Lamp extends StatelessWidget {
+  const _Lamp(this.label);
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 8, height: 8, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Text(label, style: t(12, w: FontWeight.w600, c: Colors.white)),
+      ]);
+}
+
+/// Нужно внимание: белая плашка с цветной подписью — видна на красном.
+class _Pill extends StatelessWidget {
+  const _Pill(this.label, this.color);
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(999)),
+        child: Text(label, style: t(12, w: FontWeight.w700, c: color)),
+      );
+}
+
+/// Часы в шапке: «20.10  11:05», на узком экране — «11:05».
+class _Clock extends StatefulWidget {
+  const _Clock({required this.full});
+  final bool full;
+
+  @override
+  State<_Clock> createState() => _ClockState();
+}
+
+class _ClockState extends State<_Clock> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final n = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    final time = '${two(n.hour)}:${two(n.minute)}';
+    return Text(widget.full ? '${two(n.day)}.${two(n.month)}  $time' : time, style: t(13, w: FontWeight.w700, c: Colors.white));
+  }
 }
 
 /// Полоса под верхней строкой: смена скоро 24 часа или касса давно без связи
@@ -380,19 +446,6 @@ class _LockButton extends StatelessWidget {
           ),
         ),
       );
-}
-
-class _Dot extends StatelessWidget {
-  const _Dot(this.label, this.color);
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-        const SizedBox(width: 6),
-        Text(label, style: t(13, w: FontWeight.w500, c: color == C.td ? C.ts : color)),
-      ]);
 }
 
 /// Ловит клавиатуру и сканер для всего экрана. [onKey] получает событие

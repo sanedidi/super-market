@@ -179,9 +179,12 @@ class SaleController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Клавиша экранной цифровой клавиатуры: цифры, «00», «,», ⌫, ×, «Код», «Ввод».
+  /// Клавиша экранной цифровой клавиатуры: цифры, «00», «,», C, ⌫, ×, «Код», «Ввод».
   Future<void> pad(String k) async {
     switch (k) {
+      case 'C':
+        _clearInput();
+        notifyListeners();
       case '⌫':
         await command(Cmd.backspace);
       case '×':
@@ -319,11 +322,12 @@ class SaleController extends ChangeNotifier {
         _scan.reset();
       case Cmd.del:
         _delete();
+      // Новые строки — внизу чека (как в REGOS): ↑ — к более старой.
       case Cmd.up:
-        cart.move(up: true);
+        cart.move(up: false);
         rowFocused = mode == SaleMode.sale && cart.selected != null;
       case Cmd.down:
-        cart.move(up: false);
+        cart.move(up: true);
         rowFocused = mode == SaleMode.sale && cart.selected != null;
       case Cmd.item:
         if (mode == SaleMode.sale && cart.selected != null) onNavigate?.call(Cmd.item);
