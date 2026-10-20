@@ -204,7 +204,7 @@ td.neg{color:var(--bad)} td.pos{color:var(--good)}
         <div class="tablewrap tall"><table id="tbl"></table></div>
       </section>
       <section class="notes">
-        <p>Как считается. Агенты подключают магазины на пробный период; первые 2 месяца разгоняются. После пробного платит заданная доля; если средний чек выше опорного, доля падает по «чувствительности к цене» (1,0: цена +10% → платящих −10%). Каждый месяц часть платящих уходит.</p>
+        <p>Как считается. Пока агентов нет (по умолчанию первые 2 месяца) — подготовка: расходы есть, выручки нет. Новый агент первые 2 месяца работает медленнее. Подключённый магазин платит не сразу: сначала ввод товаров и пробный период, первая оплата — через заданное число месяцев. После пробного платит заданная доля; если средний чек выше опорного, доля падает по «чувствительности к цене» (1,0: цена +10% → платящих −10%). Каждый месяц часть платящих уходит.</p>
         <p>Прибыль делится, только когда компания закрыла свой минус: до возврата вложений инвестору идёт «доля прибыли до возврата», потом — его доля в компании. Транши инвестора пополняют счёт; если деньги на счёте уходят ниже нуля, вложений не хватает.</p>
         <p>Сценарии сохраняются в этом браузере: на другом устройстве их не будет. Темп BILLZ — 7 000+ магазинов за 8+ лет, это ~73 в месяц в среднем.</p>
       </section>
@@ -222,8 +222,8 @@ function example(){
       {id:uid(), name:"Магазин · 1 касса", price:27, share:80},
       {id:uid(), name:"Сеть · за точку", price:21, share:20},
     ],
-    growth:{perAgent:14, conv:65, ref:23, elast:1, churn:3.5, trial:0, ramp1:50, ramp2:75},
-    agents:[{id:uid(), from:1, count:4},{id:uid(), from:13, count:6},{id:uid(), from:25, count:8}],
+    growth:{perAgent:12, conv:65, ref:23, elast:1, churn:3.5, lag:2, ramp1:40, ramp2:70},
+    agents:[{id:uid(), from:3, count:4},{id:uid(), from:15, count:6},{id:uid(), from:27, count:8}],
     incomes:[
       {id:uid(), name:"Ввод товаров", type:"per_new", amount:75, share:30, from:1, to:0},
       {id:uid(), name:"Подписки «SM Агент»", type:"fixed", amount:0, share:100, from:7, to:0},
@@ -259,8 +259,8 @@ function normalize(st){
   return s;
 }
 let S;
-try{ S = normalize(JSON.parse(localStorage.getItem("sm-calc-v3")||"null")); }catch(e){ S = normalize(null); }
-const saveLocal = ()=>{ try{ localStorage.setItem("sm-calc-v3", JSON.stringify(S)); }catch(e){} };
+try{ S = normalize(JSON.parse(localStorage.getItem("sm-calc-v4")||"null")); }catch(e){ S = normalize(null); }
+const saveLocal = ()=>{ try{ localStorage.setItem("sm-calc-v4", JSON.stringify(S)); }catch(e){} };
 
 /* ---------- format ---------- */
 const nf = new Intl.NumberFormat("ru-RU",{maximumFractionDigits:0});
@@ -280,14 +280,21 @@ function model(st){
   const churn = g.churn/100;
   const sched = [...st.agents].sort((a,b)=>a.from-b.from);
   const agentsAt = m => { let c=0; for(const a of sched) if(m>=a.from) c=Number(a.count); return c; };
+  // Каждый найм — новые агенты с разгоном: 1-й и 2-й месяц работают медленнее.
+  const hires = []; { let prev=0; for(const a of sched){ const d=Number(a.count)-prev; if(d) hires.push({from:Number(a.from), d}); prev=Number(a.count); } }
+  const rampAt = t => t<=0 ? g.ramp1/100 : t===1 ? g.ramp2/100 : 1;
+  const effAgents = m => hires.reduce((s,h)=> m<h.from ? s : s + (h.d>0 ? h.d*rampAt(m-h.from) : h.d), 0);
+  // Подключённый магазин платит впервые через lag месяцев (ввод товаров + пробный).
+  const lag = Math.max(0, Math.round(Number(g.lag ?? 2)));
+  const news = [];
   const on = (x,m) => x.type==="once" ? m===Number(x.from) : (m>=Number(x.from||1) && (!Number(x.to) || m<=Number(x.to)));
   const totalInvest = st.investor.tranches.reduce((a,t)=>a+Number(t.amount||0),0);
   let paid=0, prevNew=0, cum=0, dist=0, invested=0, invGot=0, fGot=0, minCum=0, minCash=Infinity, rows=[];
   let posMonth=null, paybackMonth=null, cumZero=null, shortMonth=null;
   for(let m=1;m<=H;m++){
-    const ramp = m===1 ? g.ramp1/100 : m===2 ? g.ramp2/100 : 1;
-    const agents = agentsAt(m), nw = agents*g.perAgent*ramp;
-    const conversions = (Number(g.trial)===1 ? prevNew : nw)*conv; prevNew = nw;
+    const agents = agentsAt(m), nw = Math.max(0, effAgents(m))*g.perAgent;
+    news[m] = nw;
+    const conversions = (m-lag>=1 ? news[m-lag] : 0)*conv;
     paid = paid*(1-churn) + conversions;
     const sub = paid*arpu;
     const inc = st.incomes.map(x=>{ if(!on(x,m)) return 0; const a=Number(x.amount)||0;
@@ -317,7 +324,7 @@ function model(st){
     if(cumZero===null && minCum<0 && cum>=0) cumZero = m;
     if(paybackMonth===null && totalInvest>0 && invGot >= totalInvest-0.5) paybackMonth = m;
     const byTariff = tariffs.map(t=>({paid:paid*t.share/totShare, rev:paid*t.share/totShare*t.price}));
-    rows.push({m, agents, nw, paid, sub, inc, rev, exp, cost, profit, cum, cash, invested, invGot, fGot, toInv, toF, kept, byTariff});
+    rows.push({m, agents, nw, started:conversions, paid, sub, inc, rev, exp, cost, profit, cum, cash, invested, invGot, fGot, toInv, toF, kept, byTariff});
   }
   // безубыточность на 12-м месяце (или последнем)
   const mb = Math.min(12,H), ag = agentsAt(mb), nwb = ag*g.perAgent;
@@ -387,14 +394,14 @@ function renderEditor(){
       <button class="del" style="justify-self:end" data-action="del:agents#${a.id}" aria-label="Удалить этап">×</button></div></div>`).join("")}</div>
     <div class="addrow"><button class="btn small" data-action="add:agents">+ Добавить этап найма</button></div>
     <div class="fields">
-      ${fieldRange("Магазинов на агента в мес","growth.perAgent",g.perAgent,1,40,1,"подключение и ввод товаров")}
+      ${fieldRange("Магазинов на агента в мес","growth.perAgent",g.perAgent,1,40,1,"обученный агент с вводом товаров; реально 10–15")}
       ${fieldRange("Начинают платить, %","growth.conv",g.conv,5,98,1,"после пробного, при опорном чеке")}
       ${fieldRange("Опорный чек, $","growth.ref",g.ref,1,100,1,"цена, при которой платит доля выше")}
       ${fieldRange("Чувствительность к цене","growth.elast",g.elast,0,2.5,0.1,"0 — цена не влияет")}
       ${fieldRange("Уходят в месяц, %","growth.churn",g.churn,0,15,0.5)}
-      <div class="fld"><label for="f-growth-trial">Пробный период</label><select id="f-growth-trial" data-path="growth.trial" data-num="1"><option value="0" ${+g.trial===0?"selected":""}>14 дней</option><option value="1" ${+g.trial===1?"selected":""}>1 месяц</option></select></div>
-      ${fieldRange("Темп в 1-й месяц, %","growth.ramp1",g.ramp1,0,100,5)}
-      ${fieldRange("Темп во 2-й месяц, %","growth.ramp2",g.ramp2,0,100,5)}
+      ${fieldRange("Первая оплата через, мес","growth.lag",g.lag??2,0,6,1,"после подключения: ввод товаров + пробный")}
+      ${fieldRange("Новый агент: 1-й месяц, %","growth.ramp1",g.ramp1,0,100,5,"от обычного темпа")}
+      ${fieldRange("Новый агент: 2-й месяц, %","growth.ramp2",g.ramp2,0,100,5,"от обычного темпа")}
     </div>
   </details>
   <details open><summary>Доходы, кроме подписок<span class="cnt">${S.incomes.length}</span></summary>
@@ -603,9 +610,9 @@ function drawInvestor(r){
 }
 function drawTable(r){
   const c=v=>`<td class="${v<-0.5?"neg":v>0.5?"pos":""}">${usd(v)}</td>`;
-  let h=`<thead><tr><th>Мес</th><th>Когда</th><th>Агентов</th><th>Подключили</th><th>Платящих</th><th>Подписки</th><th>Другие доходы</th><th>Расходы</th><th>Прибыль</th><th>Накопленный итог</th><th>На счёте</th><th>Инвестору за мес</th><th>Инвестору, всего</th><th>Вам, всего</th></tr></thead><tbody>`;
+  let h=`<thead><tr><th>Мес</th><th>Когда</th><th>Агентов</th><th>Подключили</th><th>Начали платить</th><th>Платящих</th><th>Подписки</th><th>Другие доходы</th><th>Расходы</th><th>Прибыль</th><th>Накопленный итог</th><th>На счёте</th><th>Инвестору за мес</th><th>Инвестору, всего</th><th>Вам, всего</th></tr></thead><tbody>`;
   r.rows.forEach(x=>{ const mark=x.m===r.posMonth||x.m===r.paybackMonth;
-    h+=`<tr class="${mark?"mark":""} ${x.m%12===0?"year":""}"><td>${x.m}</td><td>${monthLabel(x.m)}</td><td>${x.agents}</td><td>${nf.format(Math.round(x.nw))}</td><td>${nf.format(Math.round(x.paid))}</td><td>${usd(x.sub)}</td><td>${usd(x.rev-x.sub)}</td><td>${usd(x.cost)}</td>${c(x.profit)}${c(x.cum)}${c(x.cash)}<td>${usd(x.toInv)}</td><td>${usd(x.invGot)}</td><td>${usd(x.fGot)}</td></tr>`; });
+    h+=`<tr class="${mark?"mark":""} ${x.m%12===0?"year":""}"><td>${x.m}</td><td>${monthLabel(x.m)}${x.agents===0?' <span class="hint">подготовка</span>':''}</td><td>${x.agents||"—"}</td><td>${nf.format(Math.round(x.nw))}</td><td>${nf.format(Math.round(x.started))}</td><td>${nf.format(Math.round(x.paid))}</td><td>${usd(x.sub)}</td><td>${usd(x.rev-x.sub)}</td><td>${usd(x.cost)}</td>${c(x.profit)}${c(x.cum)}${c(x.cash)}<td>${usd(x.toInv)}</td><td>${usd(x.invGot)}</td><td>${usd(x.fGot)}</td></tr>`; });
   document.getElementById("tbl").innerHTML=h+"</tbody>";
 }
 
