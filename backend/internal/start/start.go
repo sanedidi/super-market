@@ -179,8 +179,8 @@ type Totals struct {
 	// NoQty и NoPrice — строк без количества и без цены продажи.
 	NoQty   int `json:"no_qty"`
 	NoPrice int `json:"no_price"`
-	// NoPhoto — строк без фото товара: пока они есть, «Записать и закрыть»
-	// не проходит — без фото покупатель не увидит товар в каталоге.
+	// NoPhoto — строк без фото товара (фото не обязательно, но без него
+	// покупатель не увидит товар в каталоге).
 	NoPhoto int `json:"no_photo"`
 }
 
@@ -741,7 +741,6 @@ type postLine struct {
 	Price     *string
 	Current   string
 	Posted    bool
-	NoPhoto   bool
 }
 
 // PostInput — «Записать и закрыть». RestLater — «Остальное посчитаю потом»:
@@ -753,8 +752,7 @@ type PostInput struct {
 
 // Post — «Записать и закрыть»: у каждой строки должны быть количество и цена
 // продажи (можно 0). В режиме prices и с RestLater количество не обязательно:
-// строки без него — «Остаток не посчитан»; фото обязательно только в режиме
-// stock. Создаёт установку цен магазина (где цена отличается от
+// строки без него — «Остаток не посчитан». Фото не обязательно. Создаёт установку цен магазина (где цена отличается от
 // действующей) и оприходование на основной склад по себестоимости (строки с
 // количеством больше нуля), товары попадают в ассортимент магазина. Проведённые
 // строки отмечаются — повторный вызов после сбоя доделывает оставшееся.
@@ -796,8 +794,7 @@ func (s *Service) post(ctx context.Context, p *identity.Principal, st store, dra
 	needQty := !pricesMode && !restLater
 	rows, err := s.pool.Query(ctx, `
 		SELECT l.product_id, trim_scale(l.qty)::text, l.cost::text, l.price::text,
-		       COALESCE(sp.price, np.price, p.base_price)::text, l.document_id IS NOT NULL,
-		       COALESCE(cardinality(p.images), 0) = 0
+		       COALESCE(sp.price, np.price, p.base_price)::text, l.document_id IS NOT NULL
 		FROM start_lines l
 		JOIN products p ON p.id = l.product_id
 		LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = $2 AND sp.store_id = $3
@@ -808,7 +805,7 @@ func (s *Service) post(ctx context.Context, p *identity.Principal, st store, dra
 	}
 	lines, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (postLine, error) {
 		var l postLine
-		err := r.Scan(&l.ProductID, &l.Qty, &l.Cost, &l.Price, &l.Current, &l.Posted, &l.NoPhoto)
+		err := r.Scan(&l.ProductID, &l.Qty, &l.Cost, &l.Price, &l.Current, &l.Posted)
 		return l, err
 	})
 	if err != nil {
@@ -832,17 +829,6 @@ func (s *Service) post(ctx context.Context, p *identity.Principal, st store, dra
 		return res, apperr.Conflict("lines_unfilled", fmt.Sprintf("заполните количество и цену продажи — не заполнено строк: %d", unfilled)).
 			Uz(fmt.Sprintf("miqdor va sotish narxini kiriting — toʻldirilmagan qatorlar: %d", unfilled)).
 			WithDetails(map[string]any{"count": unfilled})
-	}
-	noPhoto := 0
-	for _, l := range lines {
-		if l.NoPhoto && !pricesMode {
-			noPhoto++
-		}
-	}
-	if noPhoto > 0 {
-		return res, apperr.Conflict("lines_no_photo", fmt.Sprintf("добавьте фото товаров — без фото: %d", noPhoto)).
-			Uz(fmt.Sprintf("mahsulot rasmlarini qoʻshing — rasmsiz: %d", noPhoto)).
-			WithDetails(map[string]any{"count": noPhoto})
 	}
 
 	// 1. Цены: только изменённые относительно действующих.

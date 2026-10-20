@@ -191,7 +191,6 @@ export function CountDrawer({
   const [busy, setBusy] = useState(false)
   const quota = usePhotoQuota(storeId).data
   const filled = !!line && line.qty !== null
-  const needPhoto = !prices && !!line && !line.image && photos.length === 0
 
   useEffect(() => {
     if (!line) return
@@ -211,10 +210,6 @@ export function CountDrawer({
     }
     if (price === null || price === '') {
       message.error(tr('Цена продажи обязательна — можно 0', 'Sotish narxi majburiy — 0 boʻlishi mumkin'))
-      return
-    }
-    if (needPhoto) {
-      message.error(tr('Сначала добавьте фото товара', 'Avval mahsulot rasmini qoʻshing'))
       return
     }
     setBusy(true)
@@ -244,7 +239,7 @@ export function CountDrawer({
       destroyOnClose
       title={prices ? tr('Цена товара', 'Mahsulot narxi') : tr('Количество и цены', 'Miqdor va narxlar')}
       extra={
-        <Button type="primary" size="large" icon={<PlusOutlined />} loading={busy} disabled={needPhoto} onClick={save}>
+        <Button type="primary" size="large" icon={<PlusOutlined />} loading={busy} onClick={save}>
           {tr('Сохранить и сканировать дальше', 'Saqlash va skanerlashni davom ettirish')}
         </Button>
       }
@@ -340,22 +335,17 @@ export function CountDrawer({
       )}
       {!line.image && (
         <Alert
-          type={prices ? 'info' : 'error'}
+          type="info"
           showIcon
           style={{ marginTop: 14 }}
-          message={prices ? tr('У товара нет фото — можно добавить сейчас или потом', 'Mahsulotning rasmi yoʻq — hozir yoki keyin qoʻshish mumkin') : tr('У товара нет фото', 'Mahsulotning rasmi yoʻq')}
+          message={tr('У товара нет фото — можно добавить сейчас или потом', 'Mahsulotning rasmi yoʻq — hozir yoki keyin qoʻshish mumkin')}
           description={
             <div>
               <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-                {prices
-                  ? tr(
-                      'Продавать на кассе можно и без фото. Фото нужно, чтобы покупатель увидел товар в приложении (до 6 снимков).',
-                      'Kassada rasmsiz ham sotish mumkin. Rasm xaridor mahsulotni ilovada koʻrishi uchun kerak (6 tagacha).',
-                    )
-                  : tr(
-                      'Без фото покупатель не увидит товар в каталоге, и «Записать и закрыть» не пройдёт. Загрузите снимок — можно несколько: лицевая сторона, этикетка, состав (до 6).',
-                      'Rasmsiz xaridor mahsulotni katalogda koʻrmaydi va «Yozish va yopish» oʻtmaydi. Rasm yuklang — bir nechta boʻlishi mumkin: old tomoni, yorligʻi, tarkibi (6 tagacha).',
-                    )}
+                {tr(
+                  'Продавать на кассе можно и без фото. Фото нужно, чтобы покупатель увидел товар в приложении (до 6 снимков).',
+                  'Kassada rasmsiz ham sotish mumkin. Rasm xaridor mahsulotni ilovada koʻrishi uchun kerak (6 tagacha).',
+                )}
               </Typography.Paragraph>
               <ImageUpload multiple max={6} value={photos} onChange={setPhotos} />
               {photos.length > 0 && quota?.enabled && !quotaOut(quota) && (

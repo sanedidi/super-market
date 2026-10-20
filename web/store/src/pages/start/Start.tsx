@@ -787,7 +787,6 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
     } catch (e) {
       message.error(errorText(e))
       if (e instanceof ApiError && e.code === 'lines_unfilled') setOnly('unfilled')
-      if (e instanceof ApiError && e.code === 'lines_no_photo') setOnly('no_photo')
       await refresh()
       throw e
     }
@@ -795,11 +794,6 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
 
   const post = () => {
     ;(document.activeElement as HTMLElement | null)?.blur()
-    if (!prices && t.no_photo > 0) {
-      setOnly('no_photo')
-      message.error(tr(`Добавьте фото: товаров без фото — ${t.no_photo}`, `Rasm qoʻshing: rasmsiz mahsulotlar — ${t.no_photo}`))
-      return
-    }
     if (t.unfilled > 0) {
       setOnly('unfilled')
       message.error(
@@ -928,13 +922,13 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
       </Row>
       {!prices && t.no_photo > 0 && (
         <Alert
-          type="error"
+          type="info"
           showIcon
           style={{ marginBottom: 16 }}
           message={tr(`Без фото: ${goods(t.no_photo)}`, `Rasmsiz: ${goods(t.no_photo)}`)}
           description={tr(
-            'Покупатель не увидит товар без фото, поэтому «Записать и закрыть» с такими товарами не пройдёт. Откройте товар и загрузите снимок.',
-            'Xaridor rasmsiz mahsulotni koʻrmaydi, shuning uchun «Yozish va yopish» oʻtmaydi. Mahsulotni oching va rasm yuklang.',
+            'Записать можно и без фото, но покупатель не увидит такие товары в приложении. Фото можно добавить сейчас или потом.',
+            'Rasmsiz ham yozish mumkin, lekin xaridor bunday mahsulotlarni ilovada koʻrmaydi. Rasmni hozir yoki keyin qoʻshish mumkin.',
           )}
           action={
             <Button size="small" onClick={() => setOnly('no_photo')}>
@@ -1043,8 +1037,8 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
 
 /**
  * «Остальное посчитать потом?» (Figma v5, Н-W4): посчитанное сохраняется,
- * остальные — «Остаток не посчитан», документ закрывается. Без цены продажи и
- * без фото не записать — их надо заполнить сначала.
+ * остальные — «Остаток не посчитан», документ закрывается. Без цены продажи
+ * не записать — её надо заполнить сначала.
  */
 function RestLaterModal({
   open,
@@ -1061,7 +1055,7 @@ function RestLaterModal({
 }) {
   const [busy, setBusy] = useState(false)
   const counted = t.products - t.no_qty
-  const blocked = t.no_price > 0 || t.no_photo > 0
+  const blocked = t.no_price > 0
   const row = (icon: ReactNode, text: ReactNode) => (
     <Flex gap={10} align="flex-start">
       {icon}
@@ -1121,13 +1115,6 @@ function RestLaterModal({
             <>
               {tr(`${goods(t.no_price)} без цены продажи — укажите цену, без неё не записать`, `${goods(t.no_price)} sotish narxisiz — narx kiriting, usiz yozib boʻlmaydi`)} ·{' '}
               <a onClick={() => onShow('unfilled')}>{tr('показать', 'koʻrsatish')}</a>
-            </>,
-          )}
-        {t.no_photo > 0 &&
-          row(
-            <ExclamationCircleFilled style={{ color: '#B42318', marginTop: 3 }} />,
-            <>
-              {tr(`${goods(t.no_photo)} без фото — добавьте снимок`, `${goods(t.no_photo)} rasmsiz — rasm qoʻshing`)} · <a onClick={() => onShow('no_photo')}>{tr('показать', 'koʻrsatish')}</a>
             </>,
           )}
       </Flex>
@@ -1289,8 +1276,8 @@ function LineTables({
       width: 44,
       render: (_, r) =>
         r.line && (
-          <Tooltip title={r.line.image || prices ? (prices ? tr('Цены', 'Narxlar') : tr('Количество и цены', 'Miqdor va narxlar')) : tr('Нужно фото товара', 'Mahsulot rasmi kerak')}>
-            <Button type="text" size="small" danger={!r.line.image && !prices} icon={r.line.image || prices ? <RightOutlined /> : <CameraOutlined />} onClick={() => onSheet(r.line!)} />
+          <Tooltip title={prices ? tr('Цены', 'Narxlar') : tr('Количество и цены', 'Miqdor va narxlar')}>
+            <Button type="text" size="small" icon={<RightOutlined />} onClick={() => onSheet(r.line!)} />
           </Tooltip>
         ),
     },

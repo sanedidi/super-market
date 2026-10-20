@@ -238,10 +238,9 @@ func TestStartNewItems(t *testing.T) {
 	}
 	a.expect(a.do("POST", "/store/start/lines", ownerTok, map[string]any{"store_id": storeID, "items": items}), 200, "fill")
 
-	// Товар без фото покупатель не увидит — записать нельзя, пока не добавят снимок.
-	np := a.expect(a.do("POST", "/store/start/post", ownerTok, map[string]any{"store_id": storeID}), 409, "post no photo")
-	if np.str("error", "code") != "lines_no_photo" || np.Body["error"].(map[string]any)["details"].(map[string]any)["count"] != 1.0 {
-		t.Fatalf("no photo post = %v", np.Body)
+	// Фото не обязательно, но счётчик «Без фото» его видит.
+	if d := a.expect(a.do("GET", "/store/start?store_id="+storeID, ownerTok, nil), 200, "no photo"); d.Body["totals"].(map[string]any)["no_photo"] != 1.0 {
+		t.Fatalf("no_photo = %v", d.Body["totals"])
 	}
 	a.expect(a.do("POST", "/store/start/lines/"+manual.str("id")+"/photo", ownerTok, map[string]any{"store_id": storeID, "images": []string{img}}), 200, "line photo")
 	if d := a.expect(a.do("GET", "/store/start?store_id="+storeID, ownerTok, nil), 200, "no photo gone"); d.Body["totals"].(map[string]any)["no_photo"] != 0.0 {

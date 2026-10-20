@@ -236,7 +236,6 @@ class _StartCountScreenState extends State<StartCountScreen> {
       if (!mounted) return;
       showMessage(context, e);
       if (e.code == 'lines_unfilled') _filter('unfilled');
-      if (e.code == 'lines_no_photo') _filter('no_photo');
     } catch (e) {
       if (mounted) showMessage(context, e);
     } finally {
@@ -245,7 +244,7 @@ class _StartCountScreenState extends State<StartCountScreen> {
   }
 
   /// Н4 · «Остальное посчитать потом?»: посчитанное сохранится, остальное —
-  /// «Остаток не посчитан». Без цены и без фото не записать.
+  /// «Остаток не посчитан». Без цены не записать.
   Future<void> _later() async {
     await _flush();
     await _load();
@@ -253,7 +252,6 @@ class _StartCountScreenState extends State<StartCountScreen> {
     final d = _d!;
     final noQty = _n('no_qty');
     final noPrice = _n('no_price');
-    final noPhoto = _n('no_photo');
     final counted = _n('products') - noQty;
     Widget row(IconData icon, Color color, String text) => Padding(
           padding: const EdgeInsets.only(bottom: 8),
@@ -263,7 +261,7 @@ class _StartCountScreenState extends State<StartCountScreen> {
             Expanded(child: Text(text, style: AppText.small.copyWith(color: AppColors.ink, fontWeight: FontWeight.w500))),
           ]),
         );
-    final blocked = noPrice > 0 || noPhoto > 0;
+    final blocked = noPrice > 0;
     final ok = await showSheet<bool>(
       context,
       (ctx) => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -281,7 +279,6 @@ class _StartCountScreenState extends State<StartCountScreen> {
             row(Icons.check_circle_rounded, AppColors.successInk, tr('${goods(counted)} — остаток и цена сохранятся', '${goods(counted)} — qoldiq va narx saqlanadi')),
             if (noQty > 0) row(Icons.help_outline_rounded, AppColors.text2, tr('${goods(noQty)} — «Остаток не посчитан», продавать можно', '${goods(noQty)} — «Qoldiq sanalmagan», sotish mumkin')),
             if (noPrice > 0) row(Icons.error_outline_rounded, AppColors.error, tr('${goods(noPrice)} без цены — укажите цену, без неё не записать', '${goods(noPrice)} narxsiz — narx kiriting, usiz yozib boʻlmaydi')),
-            if (noPhoto > 0) row(Icons.error_outline_rounded, AppColors.error, tr('${goods(noPhoto)} без фото — сделайте снимок', '${goods(noPhoto)} rasmsiz — rasmga oling')),
           ]),
         ),
         const SizedBox(height: 16),
@@ -291,7 +288,7 @@ class _StartCountScreenState extends State<StartCountScreen> {
       ]),
     );
     if (ok != true || !mounted) {
-      if (mounted && blocked) _filter(noPrice > 0 ? 'unfilled' : 'no_photo');
+      if (mounted && blocked) _filter('unfilled');
       return;
     }
     await _send(d, restLater: true);
@@ -404,15 +401,15 @@ class _StartCountScreenState extends State<StartCountScreen> {
                     if (_n('no_photo') > 0 && !prices) ...[
                       Container(
                         padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(color: AppColors.errorSoft, borderRadius: BorderRadius.circular(14)),
+                        decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(14)),
                         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           const Icon(Icons.photo_camera_rounded, color: AppColors.primary, size: 20),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                                tr('Без фото: ${goods(_n('no_photo'))} — покупатель их не увидит, документ не запишется. Откройте товар и сделайте фото.',
-                                    'Rasmsiz: ${goods(_n('no_photo'))} — xaridor ularni koʻrmaydi, hujjat yozilmaydi. Mahsulotni ochib, rasmga oling.'),
-                                style: AppText.small.copyWith(color: AppColors.error, fontWeight: FontWeight.w500)),
+                                tr('Без фото: ${goods(_n('no_photo'))} — записать можно, но покупатель их не увидит в приложении. Фото можно добавить сейчас или потом.',
+                                    'Rasmsiz: ${goods(_n('no_photo'))} — yozish mumkin, lekin xaridor ularni ilovada koʻrmaydi. Rasmni hozir yoki keyin qoʻshish mumkin.'),
+                                style: AppText.small.copyWith(color: AppColors.text2, fontWeight: FontWeight.w500)),
                           ),
                         ]),
                       ),
@@ -447,7 +444,7 @@ class _StartCountScreenState extends State<StartCountScreen> {
                         _Chip(tr('Без закупки · ${_n('no_cost')}', 'Xarid narxisiz · ${_n('no_cost')}'), on: _only == 'no_cost', tone: AppColors.warningInk, onTap: () => _filter('no_cost')),
                         if (!prices) ...[
                           const SizedBox(width: 6),
-                          _Chip(tr('Без фото · ${_n('no_photo')}', 'Rasmsiz · ${_n('no_photo')}'), on: _only == 'no_photo', tone: AppColors.error, onTap: () => _filter('no_photo')),
+                          _Chip(tr('Без фото · ${_n('no_photo')}', 'Rasmsiz · ${_n('no_photo')}'), on: _only == 'no_photo', tone: AppColors.warningInk, onTap: () => _filter('no_photo')),
                         ],
                       ]),
                     ),
@@ -642,8 +639,8 @@ class _CountCardState extends State<_CountCard> {
     final l = widget.line;
     final unit = (l['unit_short'] as String?) ?? tr('шт', 'dona');
     final img = l['image'];
-    // Без фото продавать можно в режиме цен — фото только для витрины.
-    final noPhoto = (img == null || '$img'.isEmpty) && !widget.prices;
+    // Фото не обязательно — только для витрины покупателя.
+    final noPhoto = img == null || '$img'.isEmpty;
     return AppCard(
       padding: const EdgeInsets.fromLTRB(14, 12, 4, 14),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -653,12 +650,8 @@ class _CountCardState extends State<_CountCard> {
                   width: 44,
                   height: 44,
                   alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: AppColors.errorSoft,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.primary, width: 1.5),
-                  ),
-                  child: const Icon(Icons.photo_camera_rounded, size: 20, color: AppColors.primary),
+                  decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(Icons.photo_camera_rounded, size: 20, color: AppColors.text2),
                 )
               : ProductThumb(l['image'] as String?, size: 44, badge: l['photo']),
           const SizedBox(width: 10),
@@ -667,14 +660,14 @@ class _CountCardState extends State<_CountCard> {
               Text('${l['name']}', style: AppText.bodyStrong.copyWith(fontSize: 14)),
               Text(
                   noPhoto
-                      ? tr('нужно фото товара', 'mahsulot rasmi kerak')
+                      ? tr('без фото', 'rasmsiz')
                       : '${l['barcode'] ?? tr('без штрихкода', 'shtrix-kodsiz')}',
-                  style: AppText.small.copyWith(fontSize: 12, color: noPhoto ? AppColors.error : null)),
+                  style: AppText.small.copyWith(fontSize: 12)),
             ]),
           ),
           IconButton(
-              tooltip: noPhoto ? tr('Сделать фото', 'Rasmga olish') : tr('Количество и цены', 'Miqdor va narxlar'),
-              icon: Icon(noPhoto ? Icons.add_a_photo_rounded : Icons.edit_note_rounded, color: noPhoto ? AppColors.primary : AppColors.text2),
+              tooltip: tr('Количество и цены', 'Miqdor va narxlar'),
+              icon: const Icon(Icons.edit_note_rounded, color: AppColors.text2),
               onPressed: widget.onOpen),
           IconButton(tooltip: tr('Убрать', 'Olib tashlash'), icon: const Icon(Icons.delete_outline_rounded, color: AppColors.text2), onPressed: widget.onRemove),
         ]),

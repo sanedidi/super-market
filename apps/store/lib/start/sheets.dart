@@ -464,8 +464,8 @@ class StartSteps extends StatelessWidget {
 
 /// И2–И6 · Шторка инвентаризации (поверх камеры или списка): количество и цена
 /// продажи обязательны (можно 0), цена закупки — по желанию. Товар уже
-/// заполняли — в поле прежнее количество, его можно исправить. Нет фото — сначала снимок:
-/// без фото покупатель не увидит товар и документ не записывается.
+/// заполняли — в поле прежнее количество, его можно исправить. Фото — по желанию:
+/// без него покупатель не увидит товар в приложении.
 /// true — строка сохранена.
 Future<bool> countSheet(BuildContext context, StartApi start, Map<String, dynamic> line) async {
   final r = await showSheet<bool>(context, (_) => _CountSheet(start: start, line: line));
@@ -517,8 +517,6 @@ class _CountSheetState extends State<_CountSheet> {
     final img = widget.line['image'];
     return img != null && '$img'.isNotEmpty;
   }
-
-  bool get _hasPhoto => _hadPhoto || _photos.isNotEmpty;
 
   /// «Только товары и цены» (v5, Н3): без количества, фото — по желанию.
   bool get _prices => widget.start.prices;
@@ -579,10 +577,6 @@ class _CountSheetState extends State<_CountSheet> {
       showMessage(context, tr('Цена закупки: неверное число', 'Xarid narxi: notoʻgʻri son'));
       return;
     }
-    if (!_hasPhoto && !_prices) {
-      showMessage(context, tr('Сначала сфотографируйте товар', 'Avval mahsulotni suratga oling'));
-      return;
-    }
     setState(() => _busy = true);
     try {
       if (_photos.isNotEmpty && !_hadPhoto) {
@@ -622,20 +616,17 @@ class _CountSheetState extends State<_CountSheet> {
         const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(color: _photos.isEmpty && !_prices ? AppColors.errorSoft : AppColors.bg, borderRadius: BorderRadius.circular(16)),
+          decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(16)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             if (_photos.isEmpty) ...[
               const Icon(Icons.photo_camera_rounded, color: AppColors.primary, size: 28),
               const SizedBox(height: 8),
-              Text(tr('Сфотографируйте товар', 'Mahsulotni suratga oling'), style: AppText.bodyStrong.copyWith(color: AppColors.error), textAlign: TextAlign.center),
+              Text(tr('Сфотографируйте товар', 'Mahsulotni suratga oling'), style: AppText.bodyStrong, textAlign: TextAlign.center),
               const SizedBox(height: 4),
               Text(
-                  _prices
-                      ? tr('Продавать можно и без фото — оно нужно, чтобы покупатель увидел товар в приложении',
-                          'Rasmsiz ham sotish mumkin — rasm xaridor mahsulotni ilovada koʻrishi uchun kerak')
-                      : tr('Без фото покупатель не увидит товар. Можно снять несколько: лицевая сторона, этикетка, состав',
-                          'Rasmsiz xaridor mahsulotni koʻrmaydi. Bir nechta olish mumkin: old tomoni, yorligʻi, tarkibi'),
-                  style: AppText.small.copyWith(color: _prices ? AppColors.text2 : AppColors.error), textAlign: TextAlign.center),
+                  tr('Продавать можно и без фото — оно нужно, чтобы покупатель увидел товар в приложении',
+                      'Rasmsiz ham sotish mumkin — rasm xaridor mahsulotni ilovada koʻrishi uchun kerak'),
+                  style: AppText.small.copyWith(color: AppColors.text2), textAlign: TextAlign.center),
             ] else ...[
               Align(
                 alignment: Alignment.centerLeft,
@@ -685,7 +676,7 @@ class _CountSheetState extends State<_CountSheet> {
               label: _photos.isEmpty
                   ? tr('Сделать фото', 'Rasmga olish')
                   : tr('Добавить ещё фото', 'Yana rasm qoʻshish'),
-              primary: _photos.isEmpty && !_prices,
+              primary: false,
               busy: _busy,
               onPressed: _photos.length >= _maxPhotos ? null : _takePhoto,
             ),
@@ -716,11 +707,7 @@ class _CountSheetState extends State<_CountSheet> {
               : tr('Цена закупки нужна только для расчёта прибыли — можно не заполнять', 'Xarid narxi faqat foydani hisoblash uchun kerak — toʻldirmasa ham boʻladi'),
           style: AppText.small),
       const SizedBox(height: 16),
-      SheetButton(label: tr('Сохранить и сканировать дальше', 'Saqlash va skanerlashni davom ettirish'), busy: _busy, onPressed: _hasPhoto || _prices ? _save : null),
-      if (!_hasPhoto && !_prices) ...[
-        const SizedBox(height: 6),
-        Text(tr('Кнопка включится, когда появится фото', 'Rasm paydo boʻlgach tugma ishlaydi'), style: AppText.small, textAlign: TextAlign.center),
-      ],
+      SheetButton(label: tr('Сохранить и сканировать дальше', 'Saqlash va skanerlashni davom ettirish'), busy: _busy, onPressed: _save),
     ]);
   }
 }
