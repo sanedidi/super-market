@@ -36,11 +36,20 @@ Future<void> openStartMethod(BuildContext context, StartApi start, StartMethod m
 /// Дальше — «Инвентаризация: Начало работы» (М5).
 /// Черновик общий с веб-панелью. Перед шагом 1 — «Как начнём?» (v5, Н1):
 /// «Только товары и цены» или «Сразу с остатками».
+///
+/// toStore — «Добавить товар» из «Моих товаров» после «Начала работы»: те же
+/// поиск, штрихкод, ИКПУ и «Новый товар» по фото, но товар сразу попадает в
+/// магазин (сервер сам видит, что «Начало работы» закрыто), а после
+/// добавления — шторка «Цена и остаток». Без шагов, черновика и фото полок.
 class StartScreen extends StatefulWidget {
-  const StartScreen({super.key, this.initial});
+  const StartScreen({super.key, this.initial, this.toStore = false, this.query});
 
   /// Сразу открыть способ (нажали кнопку в блоке на главной).
   final StartMethod? initial;
+  final bool toStore;
+
+  /// Сразу искать это (штрихкод, которого нет в «Моих товарах»).
+  final String? query;
 
   @override
   State<StartScreen> createState() => _StartScreenState();
@@ -74,6 +83,11 @@ class _StartScreenState extends State<StartScreen> {
   void initState() {
     super.initState();
     _load();
+    final q = widget.query;
+    if (q != null && q.isNotEmpty) {
+      _q.text = q;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _search());
+    }
     final m = widget.initial;
     if (m == StartMethod.search) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _qFocus.requestFocus());
@@ -143,6 +157,9 @@ class _StartScreenState extends State<StartScreen> {
     _loadNew();
     try {
       final d = await _start.draft(limit: 1000);
+      // «Добавить товар» работает так, пока «Начало работы» закрыто; иначе это
+      // обычное «Начало работы» с черновиком.
+      _start.afterAdd = widget.toStore && d['closed'] == true ? (ctx, p) => fillSheet(ctx, _start, p) : null;
       if (mounted) {
         setState(() {
           _d = d;
@@ -205,7 +222,7 @@ class _StartScreenState extends State<StartScreen> {
   Future<void> _add(Map<String, dynamic> item) async {
     final p = ProductRef.fromItem(item);
     setState(() => _busyId = p.id);
-    final r = await addToMyGoods(context, _start, p, source: isBarcode(_q.text) ? 'barcode' : 'search');
+    final r = await addToMyGoods(context, _start, p, source: isBarcode(_q.text) ? 'barcode' : 'search', listButton: _start.afterAdd == null);
     if (!mounted) return;
     setState(() {
       _busyId = null;
@@ -245,9 +262,10 @@ class _StartScreenState extends State<StartScreen> {
     final products = (t['products'] as num?)?.toInt() ?? 0;
     final freshCount = newItemsTotal(_new);
     final freshReady = (((_new?['counts'] as Map<String, dynamic>?)?['ready'] as num?)?.toInt() ?? 0) > 0;
-    if (d != null && d['closed'] == true && d['id'] == null) return const StartClosedScreen();
+    final toStore = widget.toStore && d?['closed'] == true;
+    if (!toStore && d != null && d['closed'] == true && d['id'] == null) return const StartClosedScreen();
     // Режим ещё не выбран (или меняют выбор) — «Как начнём?».
-    if (d != null && startModeChoice() && (d['mode'] == null || _choosing)) {
+    if (!toStore && d != null && startModeChoice() && (d['mode'] == null || _choosing)) {
       return StartModeScreen(
         start: _start,
         current: d['mode'] as String?,
@@ -262,11 +280,12 @@ class _StartScreenState extends State<StartScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.bg,
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(tr('Начало работы', 'Ishni boshlash')),
-          Text(tr('Найдите товары, которые есть в магазине', 'Doʻkonda bor mahsulotlarni toping'), style: AppText.small),
+          Text(toStore ? tr('Добавить товар', 'Mahsulot qoʻshish') : tr('Начало работы', 'Ishni boshlash')),
+          Text(toStore ? tr('Сразу в «Мои товары»', 'Darhol «Mahsulotlarim»ga') : tr('Найдите товары, которые есть в магазине', 'Doʻkonda bor mahsulotlarni toping'),
+              style: AppText.small),
         ]),
         actions: [
-          IconButton(tooltip: tr('Фото полок', 'Javon rasmi'), icon: const Icon(Icons.photo_camera_rounded), onPressed: () => _open(StartMethod.photo)),
+          if (!toStore) IconButton(tooltip: tr('Фото полок', 'Javon rasmi'), icon: const Icon(Icons.photo_camera_rounded), onPressed: () => _open(StartMethod.photo)),
           if (st.can('catalog.manage')) IconButton(tooltip: tr('Новый товар', 'Yangi mahsulot'), icon: const Icon(Icons.add_rounded), onPressed: () => _newItem()),
         ],
       ),
@@ -275,18 +294,30 @@ class _StartScreenState extends State<StartScreen> {
           : d == null
               ? const Center(child: CircularProgressIndicator())
               : Column(children: [
-                  Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 10), child: StartSteps(step: 1, prices: prices)),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: _Tabs(
-                      labels: freshCount > 0 || _tab == 2
-                          ? [tr('Поиск', 'Qidirish'), tr('Мои · $products', 'Meniki · $products'), tr('Внимание · $freshCount', 'Eʼtibor · $freshCount')]
-                          : [tr('Поиск в базе', 'Bazadan qidirish'), tr('Мои товары · $products', 'Mahsulotlarim · $products')],
-                      value: _tab,
-                      dot: freshReady ? 2 : null,
-                      onChanged: (v) => setState(() => _tab = v),
+                  if (!toStore) Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 10), child: StartSteps(step: 1, prices: prices)),
+                  // «Добавить товар»: черновика нет — вкладки «Поиск» и «Новые» (фото товаров для Super Market).
+                  if (toStore && (freshCount > 0 || _tab == 2))
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                      child: _Tabs(
+                        labels: [tr('Поиск в базе', 'Bazadan qidirish'), tr('Новые · $freshCount', 'Yangilar · $freshCount')],
+                        value: _tab == 2 ? 1 : 0,
+                        dot: freshReady ? 1 : null,
+                        onChanged: (v) => setState(() => _tab = v == 1 ? 2 : 0),
+                      ),
+                    )
+                  else if (!toStore)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: _Tabs(
+                        labels: freshCount > 0 || _tab == 2
+                            ? [tr('Поиск', 'Qidirish'), tr('Мои · $products', 'Meniki · $products'), tr('Внимание · $freshCount', 'Eʼtibor · $freshCount')]
+                            : [tr('Поиск в базе', 'Bazadan qidirish'), tr('Мои товары · $products', 'Mahsulotlarim · $products')],
+                        value: _tab,
+                        dot: freshReady ? 2 : null,
+                        onChanged: (v) => setState(() => _tab = v),
+                      ),
                     ),
-                  ),
                   const SizedBox(height: 12),
                   Expanded(
                       child: _tab == 0
@@ -295,7 +326,7 @@ class _StartScreenState extends State<StartScreen> {
                               ? _mineTab(d)
                               : NewItemsTab(start: _start, data: _new, onChanged: _load, onMore: _moreNew)),
                 ]),
-      bottomNavigationBar: d == null
+      bottomNavigationBar: d == null || toStore
           ? null
           : SafeArea(
               child: Padding(

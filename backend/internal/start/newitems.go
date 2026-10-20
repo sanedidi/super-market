@@ -952,6 +952,8 @@ type NewItemConfirmResult struct {
 	Created   bool   `json:"created"`
 	Line      Line   `json:"line"`
 	Totals    Totals `json:"totals"`
+	// Direct — «Начало работы» закрыто: товар сразу в магазине (line пуста).
+	Direct bool `json:"direct"`
 }
 
 func (s *Service) ConfirmNewItem(ctx context.Context, p *identity.Principal, id string, in NewItemConfirm) (NewItemConfirmResult, error) {
@@ -985,8 +987,17 @@ func (s *Service) ConfirmNewItem(ctx context.Context, p *identity.Principal, id 
 		if in.Barcode != nil {
 			code = strings.TrimSpace(*in.Barcode)
 		}
-		draft, err := s.ensureDraft(ctx, tx, p, st)
+		draft, direct, err := s.target(ctx, tx, p, st)
 		if err != nil {
+			return err
+		}
+		out.Direct = direct
+		add := func(in LineInput, ask bool) error {
+			if direct {
+				_, err := s.directLine(ctx, tx, p, st, in, ask)
+				return err
+			}
+			_, err := s.setLine(ctx, tx, p, st, draft, in, ask)
 			return err
 		}
 		pid := in.ProductID
@@ -994,7 +1005,7 @@ func (s *Service) ConfirmNewItem(ctx context.Context, p *identity.Principal, id 
 		if pid != "" {
 			// «Это он» — товар базы; штрихкод — к нему.
 			src = "photo"
-			if _, err := s.setLine(ctx, tx, p, st, draft, LineInput{ProductID: pid, Add: true, Source: &src, ConfirmSimilar: true}, true); err != nil {
+			if err := add(LineInput{ProductID: pid, Add: true, Source: &src, ConfirmSimilar: true}, true); err != nil {
 				return err
 			}
 			if code != "" {
@@ -1038,7 +1049,7 @@ func (s *Service) ConfirmNewItem(ctx context.Context, p *identity.Principal, id 
 				return err
 			}
 			out.Created = true
-			if _, err := s.setLine(ctx, tx, p, st, draft, LineInput{ProductID: pid, Add: true, Source: &src}, false); err != nil {
+			if err := add(LineInput{ProductID: pid, Add: true, Source: &src}, false); err != nil {
 				return err
 			}
 		}
@@ -1049,6 +1060,9 @@ func (s *Service) ConfirmNewItem(ctx context.Context, p *identity.Principal, id 
 			return err
 		}
 		out.ProductID = pid
+		if direct {
+			return nil
+		}
 		rows, err := tx.Query(ctx, lineSelect+` WHERE l.draft_id = $1 AND l.product_id = $4`, draft, st.PriceTypeID, st.ID, pid)
 		if err != nil {
 			return err

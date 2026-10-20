@@ -11,9 +11,11 @@ import 'package:sm_core/sm_core.dart';
 import '../main.dart' show showMessage;
 import '../receipt/receipt_logic.dart' show parseNum;
 import '../start/scanner.dart';
-import '../start/sheets.dart' show ProductThumb;
+import '../start/sheets.dart' show ProductThumb, fillSheet;
 import '../start/start_api.dart';
-import '../start/start_logic.dart' show goods;
+import '../start/start_logic.dart' show ProductRef, goods;
+import '../start/start_screen.dart';
+import '../state.dart';
 import '../suppliers/reorder_screen.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -223,7 +225,23 @@ class _MyProductsScreenState extends State<MyProductsScreen> {
     if (code == null || !mounted) return;
     _q.text = code;
     await _load();
-    if (mounted && _items.length == 1) _openItem(_items.first);
+    if (!mounted) return;
+    if (_items.length == 1) {
+      _openItem(_items.first);
+    } else if (_items.isEmpty && _status == null && _cat == null) {
+      // Штрихкода нет в магазине — сразу «Добавить товар» с ним (как в «Начале работы»).
+      await _add(query: code);
+    }
+  }
+
+  /// «Добавить товар» — как в «Начале работы»: поиск по базе, штрихкод, ИКПУ,
+  /// «Новый товар» по фото; товар сразу в магазине, потом «Цена и остаток».
+  Future<void> _add({String? query}) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => StartScreen(toStore: true, query: query, initial: query == null ? StartMethod.search : null)));
+    if (!mounted) return;
+    if (query != null) _q.clear();
+    _load();
   }
 
   Future<void> _openItem(Map<String, dynamic> it) async {
@@ -311,6 +329,9 @@ class _MyProductsScreenState extends State<MyProductsScreen> {
           if (d != null)
             Text([goods(_count(d, 'all')), if (cost != null) tr('по закупке ${money(cost)}', 'xarid narxida ${money(cost)}')].join(' · '), style: AppText.small),
         ]),
+        actions: [
+          IconButton(tooltip: tr('Добавить товар', 'Mahsulot qoʻshish'), icon: const Icon(Icons.add_rounded), onPressed: () => _add()),
+        ],
       ),
       body: NotificationListener<ScrollNotification>(
         onNotification: (n) {
@@ -381,7 +402,10 @@ class _MyProductsScreenState extends State<MyProductsScreen> {
               EmptyState(
                 icon: Icons.inventory_2_outlined,
                 title: _q.text.isNotEmpty || _status != null || _cat != null ? tr('Ничего не нашлось', 'Hech narsa topilmadi') : tr('Товаров пока нет', 'Hozircha mahsulotlar yoʻq'),
-                text: tr('Товары появятся после «Начала работы» или прихода.', 'Mahsulotlar «Ishni boshlash» yoki kirimdan keyin paydo boʻladi.'),
+                text: tr('Добавьте товар: найдите в базе, отсканируйте штрихкод или сфотографируйте — Super Market заполнит карточку.',
+                    'Mahsulot qoʻshing: bazadan toping, shtrix-kodni skanerlang yoki rasmga oling — Super Market kartochkani toʻldiradi.'),
+                action: tr('Добавить товар', 'Mahsulot qoʻshish'),
+                onAction: () => _add(query: _q.text.trim().isEmpty ? null : _q.text.trim()),
               )
             else
               AppCard(
@@ -538,6 +562,23 @@ class _ProductStockScreenState extends State<ProductStockScreen> {
     }
   }
 
+  /// Цены нет (добавили «Позже» или карточкой Super Market) — «Цена и остаток».
+  Future<void> _fill() async {
+    final it = _it;
+    await fillSheet(
+        context,
+        StartApi(context.read<Api>(), widget.storeId),
+        ProductRef(
+          id: '${it['product_id']}',
+          name: '${it['name']}',
+          image: it['image'] as String?,
+          barcode: it['barcode'] as String?,
+          unit: it['unit_short'] as String?,
+          fractional: it['is_fractional'] == true,
+        ));
+    if (mounted) _load();
+  }
+
   Future<void> _count() async {
     final ok = await showSheet<bool>(context, (_) => _CountSheet(storeId: widget.storeId, item: _it));
     if (ok == true && mounted) _load();
@@ -605,6 +646,10 @@ class _ProductStockScreenState extends State<ProductStockScreen> {
               price(tr('На сумму', 'Summasi'), it['stock_cost']),
             ],
           ]),
+          if (it['price'] == null && context.read<StoreState>().can('prices.manage')) ...[
+            const SizedBox(height: 12),
+            BigButton(label: tr('Поставить цену', 'Narx qoʻyish'), icon: Icons.sell_rounded, height: 50, onPressed: _fill),
+          ],
           const SizedBox(height: 12),
           Row(children: [
             Expanded(

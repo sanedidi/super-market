@@ -42,6 +42,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/count/items", m.countItems)
 		r.Get("/count/categories", m.countCategories)
 		r.Post("/count", m.count)
+		r.Post("/fill", m.fill)
 		r.Post("/lines/{product_id}/photo", m.linePhoto)
 		r.Post("/tasnif/preview", m.tasnifPreview)
 		r.Post("/tasnif", m.tasnifAdd)
@@ -341,6 +342,12 @@ func (m *Module) countCategories(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (countCategoriesOut, error) {
 		items, err := m.svc.CountCategories(r.Context(), pr(r), r.URL.Query().Get("store_id"))
 		return countCategoriesOut{Items: items}, err
+	})
+}
+
+func (m *Module) fill(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in FillInput) (FillResult, error) {
+		return m.svc.Fill(r.Context(), pr(r), in)
 	})
 }
 

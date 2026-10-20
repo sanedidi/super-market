@@ -354,13 +354,15 @@ class _NewProductScreenState extends State<NewProductScreen> {
         // Свой товар из «Начала работы» уходит на модерацию при «Записать и закрыть».
         'start_draft': true,
       }) as Map<String, dynamic>;
+      final ref = ProductRef.fromProduct(p);
       if (widget.withLine) {
         await widget.start.setLines([
           // Цена продажи, если указали, — сразу в строку (на шаге 2 её можно поменять).
           {'product_id': p['id'], 'add': true, if (hasPrice) 'price': price, 'source': 'new'},
         ]);
+        if (mounted) await widget.start.afterAdd?.call(context, ref);
       }
-      if (mounted) Navigator.of(context).pop(ProductRef.fromProduct(p));
+      if (mounted) Navigator.of(context).pop(ref);
     } catch (e) {
       if (mounted) showMessage(context, e);
     } finally {
@@ -404,8 +406,12 @@ class _NewProductScreenState extends State<NewProductScreen> {
       final r = await widget.start.confirmNewItem(id, body);
       if (!mounted) return;
       final line = (r['line'] as Map<String, dynamic>?) ?? const {};
-      showMessage(context, tr('${line['name'] ?? nameRu} — в «Моих товарах»', '${line['name'] ?? nameRu} — «Mahsulotlarim»da'));
-      Navigator.of(context).pop(ProductRef(id: '${r['product_id']}', name: '${line['name'] ?? nameRu}'));
+      final name = '${line['name'] ?? (nameRu.isNotEmpty ? nameRu : nameUz)}';
+      showMessage(context, tr('$name — в «Моих товарах»', '$name — «Mahsulotlarim»da'));
+      final code = _barcode.text.trim();
+      final ref = ProductRef(id: '${r['product_id']}', name: name, image: images.isEmpty ? null : images.first, barcode: code.isEmpty ? null : code);
+      await widget.start.afterAdd?.call(context, ref);
+      if (mounted) Navigator.of(context).pop(ref);
     } catch (e) {
       if (mounted) showMessage(context, e);
     } finally {

@@ -1,7 +1,7 @@
 name: sm_store
 description: Super Market Магазин — первая настройка магазина, начало работы (фото полок, штрихкоды), приход по фото накладной, склад, заказы и финансы магазина.
 publish_to: none
-version: 0.9.0+22
+version: 0.9.0+23
 
 environment:
   sdk: ">=3.4.0 <4.0.0"

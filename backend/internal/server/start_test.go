@@ -299,12 +299,12 @@ func TestStart(t *testing.T) {
 	if p := priceOf("Zero"); p != "0.00" {
 		t.Fatalf("zero price = %s", p)
 	}
-	// «Начало работы» закрыто: больше не показывается, добавить нельзя.
+	// «Начало работы» закрыто: больше не показывается, строки не правятся.
 	d = a.expect(a.do("GET", "/store/start?store_id="+storeID, ownerTok, nil), 200, "after post")
 	if d.Body["id"] != nil || d.Body["closed"] != true || d.Body["stock_products"] != 4.0 || d.Body["last_posted_at"] == nil {
 		t.Fatalf("after = %v", d.Body)
 	}
-	if c := a.expect(lines(map[string]any{"product_id": pepsi, "add": true}), 409, "closed"); code(c) != "start_closed" {
+	if c := a.expect(lines(map[string]any{"product_id": pepsi, "qty": 3}), 409, "closed"); code(c) != "start_closed" {
 		t.Fatalf("closed = %v", c.Body)
 	}
 
@@ -352,6 +352,48 @@ func TestStart(t *testing.T) {
 	if m := mine("&store_id=" + storeID); len(m) != 7 || !m[own] || !m[pepsi] {
 		t.Fatalf("mine after = %v", m)
 	}
+	// После «Начала работы» новый товар из «Моих товаров» — сразу в магазин:
+	// цена и количество проводятся документами, без количества — «не посчитан».
+	if c := a.expect(lines(map[string]any{"product_id": cola, "add": true}), 409, "direct again"); code(c) != "already_added" {
+		t.Fatalf("direct again = %v", c.Body)
+	}
+	sprite := product("Напиток Sprite 1 л", pcs, 0, "5449000000439")
+	tea := product("Чай Ахмад 100 г", pcs, 0, "")
+	if r := a.expect(lines(map[string]any{"product_id": sprite, "add": true, "source": "barcode", "price": 7000, "qty": 3, "cost": 5000}), 200, "direct"); r.Body["direct"] != true || len(r.Body["lines"].([]any)) != 0 {
+		t.Fatalf("direct = %v", r.Body)
+	}
+	if p := priceOf("Sprite"); p != "7000.00" {
+		t.Fatalf("sprite price = %s", p)
+	}
+	if st := a.expect(a.do("GET", "/store/inventory/stock?store_id="+storeID+"&product_id="+sprite, ownerTok, nil), 200, "sprite stock").items(); len(st) != 1 || st[0]["qty"] != "3.000" {
+		t.Fatalf("sprite stock = %v", st)
+	}
+	a.expect(lines(map[string]any{"product_id": tea, "add": true}), 200, "direct no price")
+	var teaUncounted bool
+	if err := pool.QueryRow(ctx, `SELECT uncounted_since IS NOT NULL FROM store_products WHERE store_id = $1 AND product_id = $2`, storeID, tea).Scan(&teaUncounted); err != nil || !teaUncounted {
+		t.Fatalf("tea uncounted = %v %v", teaUncounted, err)
+	}
+	if m := mine("&store_id=" + storeID); !m[sprite] || !m[tea] {
+		t.Fatalf("mine direct = %v", m)
+	}
+	// Цена и остаток сразу после добавления («Цена и остаток»).
+	fill := func(body map[string]any) resp {
+		body["store_id"] = storeID
+		return a.do("POST", "/store/start/fill", ownerTok, body)
+	}
+	a.expect(fill(map[string]any{"product_id": pepsi, "qty": 1}), 404, "fill not in store")
+	a.expect(fill(map[string]any{"product_id": tea, "qty": 1.5}), 400, "fill fractional")
+	a.expect(fill(map[string]any{"product_id": tea, "price": 12000, "qty": 4, "cost": 9000}), 200, "fill")
+	if p := priceOf("Ахмад"); p != "12000.00" {
+		t.Fatalf("tea price = %s", p)
+	}
+	if st := a.expect(a.do("GET", "/store/inventory/stock?store_id="+storeID+"&product_id="+tea, ownerTok, nil), 200, "tea stock").items(); len(st) != 1 || st[0]["qty"] != "4.000" {
+		t.Fatalf("tea stock = %v", st)
+	}
+	if c := a.expect(fill(map[string]any{"product_id": tea, "qty": 2}), 409, "fill again"); code(c) != "stock_exists" {
+		t.Fatalf("fill again = %v", c.Body)
+	}
+
 	// Расход ИИ записан как «фото полок».
 	var shelves int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM ai_usage WHERE kind = 'shelf' AND photo_id IS NOT NULL`).Scan(&shelves); err != nil || shelves != 3 {

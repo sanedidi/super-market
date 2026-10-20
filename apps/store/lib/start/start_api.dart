@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart' show BuildContext;
 import 'package:sm_core/sm_core.dart';
 
 import 'start_logic.dart';
@@ -17,6 +18,20 @@ class StartApi {
 
   /// «Только товары и цены».
   bool get prices => mode == 'prices';
+
+  /// «Добавить товар» из «Моих товаров» («Начало работы» закрыто): товар
+  /// сразу в магазине, после добавления — шторка «Цена и остаток».
+  Future<void> Function(BuildContext context, ProductRef p)? afterAdd;
+
+  /// Цена и остаток товара, который только что добавили в магазин: документ
+  /// цен и оприходование (POST /store/start/fill). null — поле не меняется.
+  Future<void> fill(String productId, {String? price, String? qty, String? cost}) => api.post('/store/start/fill', {
+        'store_id': storeId,
+        'product_id': productId,
+        if (price != null) 'price': price,
+        if (qty != null) 'qty': qty,
+        if (cost != null) 'cost': cost,
+      });
 
   Future<Map<String, dynamic>> draft({String? only, String? q, int limit = 200, int offset = 0}) async {
     final d = await api.get('/store/start', {'store_id': storeId, 'only': only, 'q': q, 'limit': limit, 'offset': offset}) as Map<String, dynamic>;

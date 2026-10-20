@@ -161,6 +161,8 @@ type TasnifAddResult struct {
 	Created   bool    `json:"created"`
 	Line      *Line   `json:"line,omitempty"`
 	Totals    *Totals `json:"totals,omitempty"`
+	// Direct — «Начало работы» закрыто: товар сразу в магазине (line нет).
+	Direct bool `json:"direct,omitempty"`
 	// Name — название товара (для окна выбора категории).
 	Name       string              `json:"name"`
 	UnitShort  string              `json:"unit_short"`
@@ -234,12 +236,20 @@ func (s *Service) AddTasnif(ctx context.Context, p *identity.Principal, in Tasni
 			out.Created = true
 		}
 		out.ProductID = pid
-		draft, err := s.ensureDraft(ctx, tx, p, st)
+		draft, direct, err := s.target(ctx, tx, p, st)
 		if err != nil {
 			return err
 		}
 		src := "tasnif"
-		if _, err := s.setLine(ctx, tx, p, st, draft, LineInput{ProductID: pid, Add: true, ConfirmSimilar: in.ConfirmSimilar, Source: &src}, true); err != nil {
+		li := LineInput{ProductID: pid, Add: true, ConfirmSimilar: in.ConfirmSimilar, Source: &src}
+		if direct {
+			if _, err := s.directLine(ctx, tx, p, st, li, true); err != nil {
+				return err
+			}
+			out.Status, out.Direct = "added", true
+			return tx.QueryRow(ctx, `SELECT loc(name, name_uz) FROM products WHERE id = $1`, pid).Scan(&out.Name)
+		}
+		if _, err := s.setLine(ctx, tx, p, st, draft, li, true); err != nil {
 			return err
 		}
 		rows, err := tx.Query(ctx, lineSelect+` WHERE l.draft_id = $1 AND l.product_id = $4`, draft, st.PriceTypeID, st.ID, pid)

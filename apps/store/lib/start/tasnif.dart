@@ -112,6 +112,9 @@ Future<bool> addFromTasnif(BuildContext context, StartApi start, Map<String, dyn
         continue;
       }
       showMessage(context, tr('${r['name']} — в «Моих товарах»', '${r['name']} — «Mahsulotlarim»da'));
+      if (r['product_id'] != null) {
+        await start.afterAdd?.call(context, ProductRef(id: '${r['product_id']}', name: '${r['name']}', image: p.image, barcode: barcode, unit: r['unit_short'] as String?));
+      }
       return true;
     } on ApiError catch (e) {
       if (!context.mounted) return false;

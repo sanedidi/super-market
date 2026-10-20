@@ -124,6 +124,7 @@ Future<AddResult> addToMyGoods(BuildContext context, StartApi start, ProductRef 
     }
     if (o.kind == AddKind.added) {
       showMessage(context, tr('${p.name} — в «Моих товарах»', '${p.name} — «Mahsulotlarim»da'));
+      await start.afterAdd?.call(context, p);
       return AddResult.added;
     }
     if (o.kind == AddKind.duplicate) {
@@ -133,6 +134,105 @@ Future<AddResult> addToMyGoods(BuildContext context, StartApi start, ProductRef 
   } catch (e) {
     if (context.mounted) showMessage(context, e);
     return AddResult.nothing;
+  }
+}
+
+/// «Цена и остаток» — сразу после «Добавить товар» в «Моих товарах»: цена
+/// продажи, сколько есть (пусто — «Остаток не посчитан») и цена закупки.
+/// «Позже» — товар остаётся без цены, касса спросит её при продаже.
+Future<void> fillSheet(BuildContext context, StartApi start, ProductRef p) {
+  return showSheet<void>(context, (_) => _FillSheet(start: start, product: p));
+}
+
+class _FillSheet extends StatefulWidget {
+  const _FillSheet({required this.start, required this.product});
+
+  final StartApi start;
+  final ProductRef product;
+
+  @override
+  State<_FillSheet> createState() => _FillSheetState();
+}
+
+class _FillSheetState extends State<_FillSheet> {
+  final _price = TextEditingController();
+  final _qty = TextEditingController();
+  final _cost = TextEditingController();
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _price.dispose();
+    _qty.dispose();
+    _cost.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    String? read(TextEditingController c, String what) {
+      final t = c.text.trim();
+      if (t.isEmpty) return null;
+      final v = parseNum(t);
+      if (v == null) throw FormatException(tr('$what: неверное число', '$what: notoʻgʻri son'));
+      return v;
+    }
+
+    final String? price, qty, cost;
+    try {
+      price = read(_price, sellPriceWord());
+      qty = read(_qty, tr('Количество', 'Miqdor'));
+      cost = read(_cost, tr('Цена закупки', 'Xarid narxi'));
+    } on FormatException catch (e) {
+      showMessage(context, e.message);
+      return;
+    }
+    if (price == null && qty == null) {
+      Navigator.pop(context);
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await widget.start.fill(widget.product.id, price: price, qty: qty, cost: qty == null ? null : cost);
+      if (!mounted) return;
+      showMessage(context, tr('${widget.product.name} — сохранено', '${widget.product.name} — saqlandi'));
+      Navigator.pop(context);
+    } catch (e) {
+      if (mounted) showMessage(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.product;
+    final canPrice = context.read<StoreState>().can('prices.manage');
+    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      SheetHeader(
+        title: tr('Цена и остаток', 'Narx va qoldiq'),
+        text: tr('Товар уже в «Моих товарах». Без цены касса спросит её при продаже, без количества — «Остаток не посчитан».',
+            'Mahsulot «Mahsulotlarim»da. Narxsiz boʻlsa, kassa sotishda uni soʻraydi, miqdorsiz — «Qoldiq sanalmagan».'),
+      ),
+      const SizedBox(height: 14),
+      StartProductCard(name: p.name, image: p.image, barcode: p.barcode),
+      const SizedBox(height: 14),
+      if (canPrice) ...[
+        NumField(label: sellPriceWord(), controller: _price, hint: tr('сум', 'soʻm'), digitsOnly: true),
+        const SizedBox(height: 12),
+      ] else ...[
+        Text(tr('Цену ставит владелец или сотрудник с правом «Установка цен».', 'Narxni egasi yoki «Narxlarni belgilash» huquqiga ega xodim qoʻyadi.'), style: AppText.small),
+        const SizedBox(height: 12),
+      ],
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: NumField(label: tr('Сколько есть, ${p.unit}', 'Qancha bor, ${p.unit}'), controller: _qty, hint: tr('не посчитан', 'sanalmagan'), decimal: p.fractional)),
+        const SizedBox(width: 10),
+        Expanded(child: NumField(label: tr('Цена закупки', 'Xarid narxi'), controller: _cost, hint: tr('по желанию', 'ixtiyoriy'), digitsOnly: true)),
+      ]),
+      const SizedBox(height: 16),
+      SheetButton(label: tr('Сохранить', 'Saqlash'), busy: _busy, onPressed: _save),
+      const SizedBox(height: 10),
+      SheetButton(label: tr('Позже', 'Keyinroq'), primary: false, onPressed: _busy ? null : () => Navigator.pop(context)),
+    ]);
   }
 }
 

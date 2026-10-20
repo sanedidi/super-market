@@ -390,6 +390,9 @@ type LinesResult struct {
 	Totals Totals `json:"totals"`
 	// Skipped — товары пакета, которые уже были в «Моих товарах».
 	Skipped []string `json:"skipped"`
+	// Direct — «Начало работы» уже закрыто: товары добавлены сразу в магазин
+	// (lines пусты).
+	Direct bool `json:"direct"`
 }
 
 // SetLines — добавить или изменить строки черновика (черновик создаётся сам).
@@ -398,15 +401,19 @@ func (s *Service) SetLines(ctx context.Context, p *identity.Principal, in LinesI
 		return LinesResult{}, apperr.Validation("items: от 1 до 500 товаров").Uz("items: 1 dan 500 tagacha mahsulot")
 	}
 	out := LinesResult{Lines: []Line{}, Skipped: []string{}}
+	var st store
+	var added []LineInput
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		st, err := s.store(ctx, tx, p, in.StoreID)
+		var err error
+		st, err = s.store(ctx, tx, p, in.StoreID)
 		if err != nil {
 			return err
 		}
-		id, err := s.ensureDraft(ctx, tx, p, st)
+		id, direct, err := s.target(ctx, tx, p, st)
 		if err != nil {
 			return err
 		}
+		out.Direct = direct
 		single := len(in.Items) == 1
 		ids := make([]string, 0, len(in.Items))
 		for i, it := range in.Items {
@@ -414,7 +421,12 @@ func (s *Service) SetLines(ctx context.Context, p *identity.Principal, in LinesI
 			// добавляют по одному поиском или сканером. Фото полок и только что
 			// созданный свой товар добавляются без вопросов, повтор — пропуск.
 			ask := single && (it.Source == nil || (*it.Source != "photo" && *it.Source != "new"))
-			skipped, err := s.setLine(ctx, tx, p, st, id, it, ask)
+			var skipped bool
+			if direct {
+				skipped, err = s.directLine(ctx, tx, p, st, it, ask)
+			} else {
+				skipped, err = s.setLine(ctx, tx, p, st, id, it, ask)
+			}
 			if err != nil {
 				if ae, ok := apperr.As(err); ok && !single && ae.Status == 400 {
 					return apperr.Validation(fmt.Sprintf("товар %d: %s", i+1, ae.Message)).Uz(fmt.Sprintf("%d-mahsulot: %s", i+1, ae.Text(i18n.UZ)))
@@ -425,7 +437,14 @@ func (s *Service) SetLines(ctx context.Context, p *identity.Principal, in LinesI
 				out.Skipped = append(out.Skipped, it.ProductID)
 				continue
 			}
+			if direct {
+				added = append(added, it)
+				continue
+			}
 			ids = append(ids, it.ProductID)
+		}
+		if direct {
+			return nil
 		}
 		rows, err := tx.Query(ctx, lineSelect+` WHERE l.draft_id = $1 AND l.product_id = ANY($4::uuid[]) ORDER BY l.added_at DESC`,
 			id, st.PriceTypeID, st.ID, ids)
@@ -438,6 +457,9 @@ func (s *Service) SetLines(ctx context.Context, p *identity.Principal, in LinesI
 		out.Totals, err = s.totals(ctx, tx, id, st)
 		return err
 	})
+	if err == nil && len(added) > 0 {
+		err = s.applyDirect(ctx, p, st, added)
+	}
 	return out, err
 }
 
