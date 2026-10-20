@@ -501,7 +501,8 @@ class _Doc extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
             child: Row(children: [
-              sums,
+              // На 1280–1366×768 «Итого / Скидка» выше полосы — уменьшаем целиком, без обрезания.
+              FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: sums),
               const SizedBox(width: 20),
               Expanded(child: Align(alignment: Alignment.centerRight, child: amount)),
             ]),

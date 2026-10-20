@@ -192,6 +192,10 @@ void main() {
       await tester.pumpWidget(const SizedBox());
       pay.dispose();
       await tester.runAsync(() async {
+        // Обмен с сервером идёт в фоне — дожидаемся, пока закончится, потом закрываем кассу.
+        for (var i = 0; i < 200 && pos.syncing; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
         pos.dispose();
         await dir.delete(recursive: true);
       });
