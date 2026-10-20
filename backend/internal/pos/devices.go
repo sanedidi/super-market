@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/sanedidi/super-market/backend/internal/catalog"
 	"github.com/sanedidi/super-market/backend/internal/debts"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/plans"
@@ -29,6 +30,7 @@ type Service struct {
 	pool  *pgxpool.Pool
 	sales *sales.Service
 	debts *debts.Service
+	cat   *catalog.Service
 	now   func() time.Time
 }
 

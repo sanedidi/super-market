@@ -439,6 +439,20 @@ func TestPOS(t *testing.T) {
 		"payments": []map[string]any{{"payment_method_id": cash, "amount": 12000}},
 	}), 400, "shift from panel")
 
+	// Цена товара прямо с кассы: только кассир с правом «Установка цен».
+	a.expect(posDo(a, "PUT", "/pos/products/"+sugar+"/price", dt, "", map[string]any{"price": 13000}), 401, "price no cashier")
+	a.expect(posDo(a, "PUT", "/pos/products/"+sugar+"/price", dt, cashier, map[string]any{"price": 13000}), 403, "price no perm")
+	a.expect(posDo(a, "PUT", "/pos/products/"+sugar+"/price", dt, owner, map[string]any{"price": 0}), 400, "price zero")
+	a.expect(posDo(a, "PUT", "/pos/products/00000000-0000-0000-0000-000000000000/price", dt, owner, map[string]any{"price": 13000}), 404, "price unknown product")
+	if pp := a.expect(posDo(a, "PUT", "/pos/products/"+sugar+"/price", dt, owner, map[string]any{"price": 13000}), 200, "price"); pp.str("price") != "13000.00" {
+		t.Fatalf("price = %v", pp.Body)
+	}
+	for _, x := range a.expect(posDo(a, "GET", "/pos/catalog", dt, "", nil), 200, "catalog priced").Body["products"].([]any) {
+		if m := x.(map[string]any); m["id"] == sugar && m["price"] != "13000.00" {
+			t.Fatalf("sugar in catalog = %v", m)
+		}
+	}
+
 	// Отключённая касса больше не работает.
 	a.expect(a.do("POST", "/store/pos/devices/"+dev.str("id")+"/revoke", tok, nil), 200, "revoke")
 	a.expect(posDo(a, "GET", "/pos/catalog", dt, "", nil), 401, "revoked device")

@@ -57,6 +57,9 @@ class _SaleScreenState extends State<SaleScreen> {
       case Cmd.debtQr:
         final qr = sale.takeDebtQr();
         if (qr != null) await showDebtDialog(context, sale, qr: qr);
+      case Cmd.price:
+        final r = sale.takePricePending();
+        if (r != null) await showPriceDialog(context, sale, r);
       case Cmd.qty:
         await showQtyDialog(context, sale);
       case Cmd.item:

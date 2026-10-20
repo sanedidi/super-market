@@ -44,6 +44,9 @@ Future<void> showItemDialog(BuildContext context, SaleController sale) async {
 Future<void> showQtyDialog(BuildContext context, SaleController sale) =>
     showDialog<void>(context: context, builder: (_) => _QtyDialog(sale: sale));
 
+Future<void> showPriceDialog(BuildContext context, SaleController sale, PendingPrice r) =>
+    showDialog<void>(context: context, builder: (_) => _PriceDialog(sale: sale, pending: r));
+
 Future<void> showDiscountDialog(BuildContext context, SaleController sale, {required bool all}) =>
     showDialog<void>(context: context, builder: (_) => _DiscountDialog(sale: sale, all: all));
 
@@ -586,6 +589,99 @@ class _QtyDialogState extends State<_QtyDialog> {
           _Footer(back: tr('Назад', 'Orqaga'), primary: tr('Применить', 'Qoʻllash'), onPrimary: _input.value.isEmpty ? null : _submit),
           const SizedBox(height: 10),
           Text(_error ?? tr('0 — удалить строку.', '0 — qatorni oʻchirish.'), style: t(12, c: _error != null ? C.error : C.ts)),
+        ],
+      ),
+    );
+  }
+}
+
+// ------------------------------------------------------------------ цена
+
+/// Товар без цены: цена продажи сохраняется на сервере (документ цен
+/// магазина), товар идёт в чек. Без права «Установка цен» — только подсказка.
+class _PriceDialog extends StatefulWidget {
+  const _PriceDialog({required this.sale, required this.pending});
+
+  final SaleController sale;
+  final PendingPrice pending;
+
+  @override
+  State<_PriceDialog> createState() => _PriceDialogState();
+}
+
+class _PriceDialogState extends State<_PriceDialog> {
+  final _input = _Input(max: 9);
+  bool _busy = false;
+  String? _error;
+
+  void _key(String k) {
+    if (_busy) return;
+    if (_input.key(k)) setState(() => _error = null);
+  }
+
+  Future<void> _submit() async {
+    final price = parseMoney(_input.value);
+    if (_busy || price <= 0) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final err = await widget.sale.setPrice(widget.pending, price);
+    if (!mounted) return;
+    if (err == null) {
+      Navigator.of(context).pop();
+    } else {
+      setState(() {
+        _busy = false;
+        _error = err;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.pending.product;
+    final can = widget.sale.canPrice;
+    final ready = can && parseMoney(_input.value) > 0;
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (_, e) => _keys(e, onEnter: ready ? _submit : () {}, onChar: _key),
+      child: _Shell(
+        width: 520,
+        title: tr('У товара нет цены', 'Mahsulot narxi yoʻq'),
+        subtitle: p.name,
+        children: [
+          if (can) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: C.brand, width: 2)),
+              child: Row(children: [
+                Expanded(
+                    child: Text(p.fractional ? tr('Цена за ${p.unit}, сум', 'Narx, ${p.unit} uchun, soʻm') : tr('Цена продажи, сум', 'Sotish narxi, soʻm'),
+                        style: t(16, w: FontWeight.w500, c: C.ts))),
+                Text(_input.value.isEmpty ? '—' : fmtMoney(parseMoney(_input.value)), style: t(40, w: FontWeight.w800)),
+              ]),
+            ),
+            const SizedBox(height: 12),
+            _Pad(onKey: _key, extra: '000'),
+            const SizedBox(height: 12),
+          ] else ...[
+            Text(tr('Цену ставит владелец или сотрудник с правом «Установка цен». Без цены товар продать нельзя.',
+                    'Narxni egasi yoki «Narxlarni belgilash» huquqiga ega xodim qoʻyadi. Narxsiz mahsulotni sotib boʻlmaydi.'),
+                style: t(16, c: C.ts)),
+            const SizedBox(height: 20),
+          ],
+          _Footer(
+            back: tr('Назад', 'Orqaga'),
+            primary: can ? tr('Сохранить цену и добавить', 'Narxni saqlash va qoʻshish') : null,
+            onPrimary: ready ? _submit : null,
+            busy: _busy,
+          ),
+          if (can) ...[
+            const SizedBox(height: 10),
+            Text(_error ?? tr('Цена сохранится в магазине — в следующий раз товар пробьётся сразу.', 'Narx doʻkonda saqlanadi — keyingi safar mahsulot darhol urib chiqariladi.'),
+                style: t(12, c: _error != null ? C.error : C.ts)),
+          ],
         ],
       ),
     );

@@ -572,17 +572,41 @@ class PosController extends ChangeNotifier {
           as Map<String, dynamic>;
       catalog.quickPinned = ((res['pinned'] as List?) ?? const []).map((e) => '$e').toList();
       catalog.quickTop = ((res['top'] as List?) ?? catalog.quickTop).map((e) => '$e').toList();
-      await store.writeJson('catalog.json', {
-        ...catalog.toJson(),
-        if (catalogAt != null) 'saved_at': catalogAt!.toUtc().toIso8601String(),
-        if (_catalogLang != null) 'lang': _catalogLang,
-      });
+      await _keepCatalog();
       online = true;
       notifyListeners();
       return null;
     } on ApiError catch (e) {
       _netError(e);
       return e.isNetwork ? tr('Нет связи с сервером — быстрые кнопки сохраняются на сервере, попробуйте позже', 'Server bilan aloqa yoʻq — tezkor tugmalar serverda saqlanadi, keyinroq urinib koʻring') : e.message;
+    }
+  }
+
+  /// Каталог на диске после правки на месте: время загрузки с сервера не меняется.
+  Future<void> _keepCatalog() => store.writeJson('catalog.json', {
+        ...catalog.toJson(),
+        if (catalogAt != null) 'saved_at': catalogAt!.toUtc().toIso8601String(),
+        if (_catalogLang != null) 'lang': _catalogLang,
+      });
+
+  bool get canPrice => cashier?.can(Perm.prices) ?? false;
+
+  /// Цена продажи товару без цены — сразу на сервере (документ цен магазина)
+  /// и в каталоге кассы. Возвращает товар с ценой; ошибка — [PriceError].
+  Future<Product> setProductPrice(Product p, int price) async {
+    if (!canPrice) throw PriceError(tr('Цену ставит владелец или сотрудник с правом «Установка цен»', 'Narxni egasi yoki «Narxlarni belgilash» huquqiga ega xodim qoʻyadi'));
+    try {
+      final res = await api.send('PUT', '/pos/products/${p.id}/price', body: {'price': moneyApi(price)}, cashier: cashier?.id)
+          as Map<String, dynamic>;
+      final priced = Product.fromJson({...p.toJson(), 'price': res['price']});
+      catalog.put(priced);
+      await _keepCatalog();
+      online = true;
+      notifyListeners();
+      return priced;
+    } on ApiError catch (e) {
+      _netError(e);
+      throw PriceError(e.isNetwork ? tr('Нет связи с сервером — цену сохранить нельзя, попробуйте позже', 'Server bilan aloqa yoʻq — narxni saqlab boʻlmaydi, keyinroq urinib koʻring') : e.message);
     }
   }
 
@@ -829,4 +853,13 @@ class PosController extends ChangeNotifier {
     }
     return rec;
   }
+}
+
+/// Цену не удалось поставить: текст — для окна цены.
+class PriceError implements Exception {
+  PriceError(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
 }

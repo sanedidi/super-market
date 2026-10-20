@@ -53,6 +53,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.With(debtsOn).Post("/pos/debtors/verify", m.debtorVerify)
 		r.With(debtsOn).Post("/pos/debt-payments", m.debtPayment)
 		r.Put("/pos/quick-keys", m.setQuickKeys)
+		r.Put("/pos/products/{id}/price", m.setPrice)
 	})
 	// Панель магазина: кассы, ПИНы, смены, налоговые поля, коды.
 	r.Group(func(r chi.Router) {
@@ -113,6 +114,12 @@ func (m *Module) catalog(w http.ResponseWriter, r *http.Request) {
 func (m *Module) setQuickKeys(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in QuickKeysInput) (QuickKeys, error) {
 		return m.svc.SetQuickKeys(r.Context(), pr(r), in)
+	})
+}
+
+func (m *Module) setPrice(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in PriceInput) (ProductPrice, error) {
+		return m.svc.SetPrice(r.Context(), pr(r), id, in)
 	})
 }
 

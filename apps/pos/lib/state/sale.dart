@@ -11,7 +11,7 @@ import '../core/quick.dart';
 import 'pos.dart';
 
 /// Команды быстрого режима — клавиши, которые не печатают символ.
-enum Cmd { enter, esc, del, backspace, up, down, star, pay, qty, item, search, discountLine, discountAll, hold, returns, orders, shiftMenu, debtQr }
+enum Cmd { enter, esc, del, backspace, up, down, star, pay, qty, item, search, discountLine, discountAll, hold, returns, orders, shiftMenu, debtQr, price }
 
 enum SaleMode { sale, paid, held }
 
@@ -25,6 +25,14 @@ class SaleMsg {
   final String note;
   final String right;
   final String rightNote;
+}
+
+/// Товар без цены ждёт цену: после неё — в чек с этим количеством и маркой.
+class PendingPrice {
+  PendingPrice(this.product, this.qty, this.mark);
+  final Product product;
+  final int qty;
+  final String? mark;
 }
 
 /// Чек пробит: что показать до следующего покупателя.
@@ -71,6 +79,30 @@ class SaleController extends ChangeNotifier {
     final q = _debtQr;
     _debtQr = null;
     return q;
+  }
+
+  /// Товар без цены: окно цены (Cmd.price) заберёт его через [takePricePending].
+  PendingPrice? _pricePending;
+
+  PendingPrice? takePricePending() {
+    final r = _pricePending;
+    _pricePending = null;
+    return r;
+  }
+
+  bool get canPrice => pos.canPrice;
+
+  /// Окно цены: цена сохраняется на сервере, товар — в чек. Ошибка — текст.
+  Future<String?> setPrice(PendingPrice r, int price) async {
+    if (price <= 0) return tr('Цена должна быть больше нуля', 'Narx noldan katta boʻlishi kerak');
+    try {
+      final p = await pos.setProductPrice(r.product, price);
+      _add(p, qty: r.qty, mark: r.mark);
+      notifyListeners();
+      return null;
+    } on PriceError catch (e) {
+      return e.message;
+    }
   }
 
   Catalog get catalog => pos.catalog;
@@ -314,7 +346,8 @@ class SaleController extends ChangeNotifier {
           openSearch();
         }
       case Cmd.debtQr:
-        break; // только навигация: окно «В долг» открывает экран продажи
+      case Cmd.price:
+        break; // только навигация: окна «В долг» и цены открывает экран продажи
       case Cmd.returns:
       case Cmd.shiftMenu:
         if (cart.isEmpty || mode == SaleMode.paid) {
@@ -466,6 +499,14 @@ class SaleController extends ChangeNotifier {
     }
     if (p.ikpu.isEmpty && pos.fiscalMode) {
       _error(tr('Нет ИКПУ — продавать нельзя. Владелец заполняет в панели', 'MXIK yoʻq — sotib boʻlmaydi. Egasi panelda toʻldiradi'), note: p.name);
+      return;
+    }
+    if (p.price <= 0) {
+      // За 0 сум не продаём: сначала цена (окно), потом товар в чек.
+      _pricePending = PendingPrice(p, qty, mark);
+      msg = SaleMsg(MsgKind.info, tr('У товара нет цены', 'Mahsulot narxi yoʻq'), note: p.name);
+      onSound?.call(false);
+      onNavigate?.call(Cmd.price);
       return;
     }
     if (mode == SaleMode.paid) _newCheck();

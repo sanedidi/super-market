@@ -156,7 +156,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		inventory.NewModule(invSvc, auth, log),
 		supply.NewModule(supplySvc, idSvc, auth, log),
 		sales.NewModule(salesSvc, auth, log),
-		pos.NewModule(pos.NewService(pool, salesSvc).WithDebts(debtSvc), auth, log),
+		pos.NewModule(pos.NewService(pool, salesSvc).WithDebts(debtSvc).WithCatalog(catSvc), auth, log),
 		debts.NewModule(debtSvc, auth, log),
 		orders.NewModule(ord, dlv, pay, auth, log),
 		billing.NewModule(bill, auth, log),

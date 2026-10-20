@@ -15,6 +15,10 @@ import 'package:sm_core/sm_core.dart' as sm_i18n;
 class FakeServer {
   bool offline = false;
   bool revoked = false;
+
+  /// В каталоге товар без цены и кассир с правом «Установка цен».
+  bool unpriced = false;
+  final List<Map<String, dynamic>> prices = [];
   final List<Map<String, dynamic>> shifts = [];
   final List<Map<String, dynamic>> sales = [];
   final List<Map<String, dynamic>> closes = [];
@@ -43,10 +47,12 @@ class FakeServer {
           'products': [
             {'id': 'bread', 'name': 'Хлеб', 'unit': 'шт', 'price': '6000.00', 'barcodes': ['4601234567893'], 'ikpu': '10000000000000000', 'vat_rate': '12.00', 'plu': 1},
             {'id': 'banana', 'name': 'Бананы', 'unit': 'кг', 'fractional': true, 'price': '24000.00', 'barcodes': [], 'plu': 10},
+            if (unpriced) {'id': 'water', 'name': 'Вода', 'unit': 'шт', 'price': '0.00', 'barcodes': ['4780000000011']},
           ],
           'quick': {'pinned': ['banana'], 'top': ['bread', 'banana']},
           'cashiers': [
             {'id': 'e1', 'name': 'Дилноза', 'pin_hash': pinHash('e1', '1234'), 'permissions': ['sales.pos']},
+            if (unpriced) {'id': 'e2', 'name': 'Азиз', 'pin_hash': pinHash('e2', '5555'), 'permissions': ['sales.pos', 'prices.manage']},
           ],
           'payment_methods': [
             {'id': 'cash', 'name': 'Наличные', 'kind': 'cash'},
@@ -55,6 +61,9 @@ class FakeServer {
           'settings': {'device_name': 'Касса 1', 'store_name': 'Чиланзар', 'weight_prefixes': ['22']},
           'open_shift_id': null,
         });
+      case 'PUT /pos/products/water/price':
+        prices.add({...body, 'cashier': c});
+        return _json(200, {'product_id': 'water', 'price': body['price']});
       case 'POST /pos/shifts':
         shifts.add(body);
         return _json(201, {'id': 'srv-shift', 'number': 7});
@@ -204,6 +213,48 @@ void main() {
     await pos.sync();
     await until(() => pos.queue == 0);
     expect(server.closes.single['counted_cash'], '234880.00');
+    sale.dispose();
+  });
+
+  test('товар без цены: окно цены, цена на сервер и в каталог, потом в чек', () async {
+    server.unpriced = true;
+    await pos.activate('ABCD2345');
+    final dilnoza = pos.catalog.cashiers.firstWhere((c) => c.id == 'e1');
+    final aziz = pos.catalog.cashiers.firstWhere((c) => c.id == 'e2');
+    pos.login(dilnoza, '1234');
+    await pos.openShift(0);
+    final sale = SaleController(pos);
+    final opened = <Cmd>[];
+    sale.onNavigate = opened.add;
+
+    for (var i = 0; i < 13; i++) {
+      sale.char('4780000000011'[i], Duration(milliseconds: i * 5));
+    }
+    await sale.command(Cmd.enter);
+    expect(opened, [Cmd.price]);
+    expect(sale.cart.isEmpty, isTrue); // за 0 сум в чек не попадает
+    final r = sale.takePricePending()!;
+    expect(r.product.id, 'water');
+    expect(r.qty, 1000);
+
+    // Без права «Установка цен» — цену не поставить.
+    expect(sale.canPrice, isFalse);
+    expect(await sale.setPrice(r, 500000), isNotNull);
+    expect(server.prices, isEmpty);
+    expect(sale.cart.isEmpty, isTrue);
+
+    pos.login(aziz, '5555');
+    expect(sale.canPrice, isTrue);
+    expect(await sale.setPrice(r, 0), isNotNull);
+    expect(await sale.setPrice(r, 500000), isNull);
+    expect(server.prices.single, {'price': '5000.00', 'cashier': 'e2'});
+    expect(sale.cart.lines.single.price, 500000);
+    expect(pos.catalog.byId('water')!.price, 500000); // в следующий раз — сразу в чек
+
+    // Нет связи — цена не сохраняется, окно покажет ошибку.
+    server.offline = true;
+    expect(await sale.setPrice(r, 600000), contains('Нет связи'));
+    server.offline = false;
     sale.dispose();
   });
 

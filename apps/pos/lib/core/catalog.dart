@@ -165,6 +165,7 @@ class Perm {
   static const returns = 'sales.return';
   static const debtsGive = 'debts.give';
   static const posSettings = 'pos.settings';
+  static const prices = 'prices.manage';
 }
 
 /// Покупатель с долгом в магазине кассы (для продажи в долг без связи).
@@ -328,6 +329,9 @@ class Catalog {
     }
     if (p.plu != null) _byPlu[p.plu!] = p.id;
   }
+
+  /// Товар с новыми данными (например, цена с кассы) — без полной загрузки каталога.
+  void put(Product p) => _put(p);
 
   Product? byId(String id) => _byId[id];
   Product? byBarcode(String code) {
