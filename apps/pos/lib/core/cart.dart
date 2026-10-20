@@ -136,7 +136,7 @@ class Cart {
     if (selected == line) selected = lines.isEmpty ? null : lines[i == 0 ? 0 : i - 1];
   }
 
-  /// Выбор строки стрелками: [up] — к более новой (выше на экране).
+  /// Выбор строки: [up] — к более новой строке, иначе — к более старой.
   void move({required bool up}) {
     if (lines.isEmpty) return;
     var i = selected == null ? lines.length - 1 : lines.indexOf(selected!);

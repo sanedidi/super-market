@@ -1,7 +1,7 @@
 name: sm_pos
 description: Касса Super Market для Windows и Android. Продаёт без интернета, чеки досылаются сами.
 publish_to: none
-version: 0.3.0+4
+version: 0.4.0+5
 
 environment:
   sdk: ">=3.6.0 <4.0.0"
@@ -30,3 +30,20 @@ flutter:
   uses-material-design: true
   assets:
     - assets/logo.png
+  # Шрифты встроены: на кассах с Windows 7/10 без интернета выглядит одинаково.
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter_400Regular.ttf
+        - asset: assets/fonts/Inter_500Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter_600SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter_700Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Inter_800ExtraBold.ttf
+          weight: 800
+    - family: NunitoSans
+      fonts:
+        - asset: assets/fonts/NunitoSans_900Black.ttf
+          weight: 900

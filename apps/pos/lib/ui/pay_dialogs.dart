@@ -7,31 +7,16 @@ import '../core/debts.dart';
 import '../core/money.dart';
 import '../data/api.dart';
 import '../state/sale.dart';
+import 'kit.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
-// Окна кассы (Figma «POS v3»): способ оплаты, наличные с клавиатурой на экране
-// и «Ровно», смешанная оплата, количество, скидка. Всё — и пальцем, и с клавиатуры.
+// Оплата (экран V1 в три колонки) и окна кассы: количество, цена, скидка,
+// карточка товара, долг. Всё — и пальцем, и с клавиатуры.
 
-/// Оплата: окно способа → (наличные / смешанная — окно суммы) → чек пробит.
-Future<void> showPayFlow(BuildContext context, SaleController sale) async {
-  final kind = await showDialog<String>(context: context, builder: (_) => _MethodDialog(sale: sale));
-  if (kind == null || !context.mounted) return;
-  switch (kind) {
-    case 'cash':
-      await showDialog<void>(context: context, builder: (_) => _CashDialog(sale: sale, mixed: false));
-    case 'mixed':
-      await showDialog<void>(context: context, builder: (_) => _CashDialog(sale: sale, mixed: true));
-    case 'debt':
-      await showDebtDialog(context, sale);
-    case final k when k.startsWith('debt:'):
-      // В окне способа оплаты отсканировали QR покупателя.
-      await showDebtDialog(context, sale, qr: k.substring(5));
-    default:
-      final err = await sale.pay(kind);
-      if (err != null && context.mounted) _toast(context, err);
-  }
-}
+/// Оплата — экран в три колонки ([PayScreen]); после оплаты — обратно к продаже.
+Future<void> showPayFlow(BuildContext context, SaleController sale) =>
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => PayScreen(sale: sale)));
 
 /// Карточка товара в чеке: двойное нажатие на строку или Enter на выбранной.
 Future<void> showItemDialog(BuildContext context, SaleController sale) async {
@@ -49,9 +34,6 @@ Future<void> showPriceDialog(BuildContext context, SaleController sale, PendingP
 
 Future<void> showDiscountDialog(BuildContext context, SaleController sale, {required bool all}) =>
     showDialog<void>(context: context, builder: (_) => _DiscountDialog(sale: sale, all: all));
-
-void _toast(BuildContext context, String text) =>
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text), backgroundColor: C.error));
 
 // ------------------------------------------------------------------ каркас
 
@@ -236,7 +218,7 @@ class _Input {
 }
 
 /// Клавиши окна: Enter, Esc и печатаемые символы.
-KeyEventResult _keys(KeyEvent e, {required VoidCallback onEnter, required void Function(String ch) onChar, VoidCallback? onSpace}) {
+KeyEventResult _keys(KeyEvent e, {required VoidCallback onEnter, required void Function(String ch) onChar}) {
   if (e is KeyUpEvent) return KeyEventResult.ignored;
   final k = e.logicalKey;
   if (isEnter(e)) {
@@ -247,10 +229,6 @@ KeyEventResult _keys(KeyEvent e, {required VoidCallback onEnter, required void F
     onChar('⌫');
     return KeyEventResult.handled;
   }
-  if (k == LogicalKeyboardKey.space && onSpace != null) {
-    onSpace();
-    return KeyEventResult.handled;
-  }
   final ch = printable(e);
   if (ch != null && ch != ' ') {
     onChar(ch);
@@ -259,35 +237,34 @@ KeyEventResult _keys(KeyEvent e, {required VoidCallback onEnter, required void F
   return KeyEventResult.ignored; // Esc закрывает окно сам
 }
 
-// ------------------------------------------------------------ способ оплаты
+// ------------------------------------------------------------------ оплата
 
-class _MethodDialog extends StatefulWidget {
-  const _MethodDialog({required this.sale});
+/// Оплата (Figma «V1 · Оплата», как в REGOS): слева доплата и принятые оплаты,
+/// в центре сумма, сдача, купюры и клавиатура, справа способы оплаты F1–F4.
+/// Наличных меньше итога — они принимаются частью, остаток — картой (mixed).
+/// QR покупателя со сканера — продажа в долг.
+class PayScreen extends StatefulWidget {
+  const PayScreen({super.key, required this.sale});
 
   final SaleController sale;
 
   @override
-  State<_MethodDialog> createState() => _MethodDialogState();
+  State<PayScreen> createState() => _PayScreenState();
 }
 
-class _MethodDialogState extends State<_MethodDialog> {
+class _PayScreenState extends State<PayScreen> {
+  final _input = _Input();
+  int _cashPart = 0;
+  bool _busy = false;
+  String? _error;
+
+  /// Сканер печатает QR покупателя («99…», 20 цифр) — копим отдельно от суммы.
+  String _raw = '';
+  Duration? _rawAt;
+
   SaleController get sale => widget.sale;
-
-  /// Сканер печатает QR покупателя («99…») — копим до Enter, чтобы цифры
-  /// внутри QR не выбрали способ оплаты.
-  String _scan = '';
-  Duration? _scanAt;
-
-  static List<(String, String, String, String)> get _items => [
-    ('1', 'cash', tr('Наличные', 'Naqd pul'), tr('клавиатура на экране, «Ровно» — без сдачи', 'ekrandagi klaviatura, «Aniq» — qaytimsiz')),
-    ('2', 'card', tr('Карта', 'Karta'), tr('терминал Uzcard · Humo', 'Uzcard · Humo terminali')),
-    ('3', 'qr', 'Payme · Click', tr('QR на экране покупателя', 'xaridor ekranidagi QR')),
-    ('4', 'mixed', tr('Смешанная', 'Aralash'), tr('часть наличными, остаток картой', 'bir qismi naqd, qolgani kartadan')),
-    ('5', 'debt', tr('В долг', 'Qarzga'), tr('QR покупателя из приложения или номер телефона · долг и свободный лимит видны до записи', 'ilovadagi xaridor QR kodi yoki telefon raqami · qarz va boʻsh limit yozishdan oldin koʻrinadi')),
-  ];
-
-  /// «В долг» показываем, только если магазин даёт в долг и у кассира есть право.
-  List<(String, String, String, String)> get _shown => [for (final it in _items) if (it.$2 != 'debt' || sale.pos.canDebt) it];
+  int get _amount => parseMoney(_input.value);
+  int get _rest => sale.due - _cashPart;
 
   bool _available(String kind) => switch (kind) {
         'mixed' => sale.method('cash') != null && sale.method('card') != null,
@@ -295,121 +272,24 @@ class _MethodDialogState extends State<_MethodDialog> {
         _ => sale.method(kind) != null,
       };
 
-  @override
-  Widget build(BuildContext context) {
-    void pick(String kind) {
-      if (_available(kind)) Navigator.of(context).pop(kind);
-    }
-
-    Widget tile((String, String, String, String) it) {
-      final (key, kind, title, sub) = it;
-      final ok = _available(kind);
-      final main = kind == 'cash';
-      return Expanded(
-        child: Opacity(
-          opacity: ok ? 1 : 0.4,
-          child: Padding(
-            padding: const EdgeInsets.all(6),
-            child: _Btn(
-              onTap: ok ? () => pick(kind) : null,
-              color: main ? C.brandSoft : C.surface,
-              border: main ? C.brand : C.border,
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                KeyBadge(key, size: 36),
-                const SizedBox(height: 10),
-                Text(title, style: t(24, w: FontWeight.w700)),
-                const SizedBox(height: 4),
-                Text(ok ? sub : tr('нет такого способа оплаты в магазине', 'doʻkonda bunday toʻlov usuli yoʻq'), style: t(13, c: C.ts)),
-              ]),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Focus(
-      autofocus: true,
-      onKeyEvent: (_, e) {
-        if (e is KeyUpEvent) return KeyEventResult.ignored;
-        // Сканер печатает без пауз; «9», нажатая рукой, через полсекунды забывается.
-        final at = _scanAt;
-        if (_scan.isNotEmpty && at != null && e.timeStamp - at > const Duration(milliseconds: 500)) _scan = '';
-        _scanAt = e.timeStamp;
-        final ch = printable(e);
-        if (isEnter(e)) {
-          if (_scan.isEmpty) {
-            pick('cash');
-          } else {
-            final qr = parseClientQr(_scan);
-            _scan = '';
-            if (qr != null && _available('debt')) Navigator.of(context).pop('debt:${qr.payload}');
-          }
-          return KeyEventResult.handled;
-        }
-        if (e.logicalKey == LogicalKeyboardKey.escape && _scan.isNotEmpty) {
-          _scan = '';
-          return KeyEventResult.handled;
-        }
-        // «9» способом оплаты не бывает — с неё начинается QR покупателя.
-        if (ch != null && (_scan.isNotEmpty || ch == '9')) {
-          _scan += ch;
-          return KeyEventResult.handled;
-        }
-        for (final it in _shown) {
-          if (ch == it.$1) {
-            pick(it.$2);
-            return KeyEventResult.handled;
-          }
-        }
-        return KeyEventResult.ignored;
-      },
-      child: _Shell(
-        title: tr('Способ оплаты', 'Toʻlov usuli'),
-        subtitle: tr('Цифра на клавиатуре или нажмите · Enter — наличные · Esc — к чеку', 'Klaviaturadagi raqam yoki bosing · Enter — naqd · Esc — chekka'),
-        right: fmtMoney(sale.due),
-        children: [
-          Row(children: [tile(_items[0]), tile(_items[1])]),
-          Row(children: [tile(_items[2]), tile(_items[3])]),
-          if (_shown.length > 4) Row(children: [tile(_items[4])]),
-          const SizedBox(height: 14),
-          _Footer(back: tr('Назад к чеку', 'Chekka qaytish')),
-        ],
-      ),
-    );
-  }
-}
-
-// ------------------------------------------------------- наличные / смешанная
-
-class _CashDialog extends StatefulWidget {
-  const _CashDialog({required this.sale, required this.mixed});
-
-  final SaleController sale;
-  final bool mixed;
-
-  @override
-  State<_CashDialog> createState() => _CashDialogState();
-}
-
-class _CashDialogState extends State<_CashDialog> {
-  final _input = _Input();
-  bool _busy = false;
-  String? _error;
-
-  SaleController get sale => widget.sale;
-  int get _amount => parseMoney(_input.value);
-
-  bool get _ready => widget.mixed ? _amount > 0 && _amount < sale.due : _amount >= sale.due && _amount > 0;
-
   void _key(String k) {
-    if (_input.key(k)) setState(() => _error = null);
+    setState(() {
+      _error = null;
+      if (k == 'C') {
+        _input.value = '';
+      } else {
+        _input.key(k);
+      }
+    });
   }
 
-  Future<void> _pay(int received) async {
+  Future<void> _pay(String kind, {int received = 0, int cashPart = 0}) async {
     if (_busy) return;
-    setState(() => _busy = true);
-    final err = widget.mixed ? await sale.pay('mixed', cashPart: received) : await sale.pay('cash', received: received);
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final err = await sale.pay(kind, received: received, cashPart: cashPart);
     if (!mounted) return;
     if (err == null) {
       Navigator.of(context).pop();
@@ -421,109 +301,444 @@ class _CashDialogState extends State<_CashDialog> {
     }
   }
 
-  void _submit() {
-    if (_ready) {
-      _pay(_amount);
+  /// F1 / Enter: наличные. Пусто — ровно; меньше итога — часть, остаток картой.
+  void _cash() {
+    if (_cashPart > 0) {
+      _card();
+      return;
+    }
+    if (!_available('cash')) {
+      setState(() => _error = tr('В магазине нет способа оплаты «Наличные»', 'Doʻkonda «Naqd pul» toʻlov usuli yoʻq'));
+      return;
+    }
+    final a = _amount;
+    if (a == 0) {
+      _pay('cash', received: sale.due);
+    } else if (a >= sale.due) {
+      _pay('cash', received: a);
+    } else if (_available('mixed')) {
+      setState(() {
+        _cashPart = a;
+        _input.value = '';
+        _error = null;
+      });
     } else {
-      setState(() => _error = widget.mixed
-          ? tr('Наличными — больше нуля и меньше итога ${fmtMoney(sale.due)}', 'Naqd — noldan koʻp va jami ${fmtMoney(sale.due)} dan kam')
-          : tr('Получено меньше итога ${fmtMoney(sale.due)} — наберите сумму или нажмите «Ровно»', 'Olingan summa jami ${fmtMoney(sale.due)} dan kam — summani tering yoki «Aniq»ni bosing'));
+      setState(() => _error = tr('Получено меньше итога ${fmtMoney(sale.due)}', 'Olingan summa jami ${fmtMoney(sale.due)} dan kam'));
     }
   }
 
+  void _exact() {
+    if (_cashPart == 0 && _available('cash')) _pay('cash', received: sale.due);
+  }
+
+  void _card() {
+    if (_cashPart > 0) {
+      _pay('mixed', cashPart: _cashPart);
+    } else if (_available('card')) {
+      _pay('card');
+    }
+  }
+
+  void _qr() {
+    if (_cashPart == 0 && _available('qr')) _pay('qr');
+  }
+
+  Future<void> _debt({String? qr}) async {
+    if (_cashPart > 0 || !_available('debt')) return;
+    await showDebtDialog(context, sale, qr: qr);
+    if (mounted && sale.mode == SaleMode.paid) Navigator.of(context).pop();
+  }
+
+  void _back() {
+    if (_cashPart > 0) {
+      setState(() => _cashPart = 0);
+    } else {
+      Navigator.of(context).pop();
+    }
+  }
+
+  KeyEventResult _onKey(FocusNode _, KeyEvent e) {
+    if (e is KeyUpEvent) return KeyEventResult.ignored;
+    final k = e.logicalKey;
+    final at = _rawAt;
+    if (at != null && e.timeStamp - at > const Duration(milliseconds: 500)) _raw = '';
+    _rawAt = e.timeStamp;
+    if (isEnter(e)) {
+      final qr = parseClientQr(_raw);
+      _raw = '';
+      if (qr != null) {
+        _input.value = '';
+        _debt(qr: qr.payload);
+      } else {
+        _cash();
+      }
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.escape) {
+      _back();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.space) {
+      _exact();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.backspace) {
+      _key('⌫');
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.f1) {
+      _cash();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.f2) {
+      _card();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.f3) {
+      _qr();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.f4) {
+      _debt();
+      return KeyEventResult.handled;
+    }
+    final ch = printable(e);
+    if (ch != null && RegExp(r'^[0-9]$').hasMatch(ch)) {
+      _raw += ch;
+      if (_raw.length <= 10) _key(ch);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ListenableBuilder(listenable: sale, builder: (context, _) => _build(context));
+
+  Widget _build(BuildContext context) {
+    final d = densityOf(context);
+    final g = d == Density.l ? 8.0 : 6.0;
     final due = sale.due;
     final amount = _amount;
-    final change = amount > due ? amount - due : 0;
-    final mixed = widget.mixed;
-    return Focus(
-      autofocus: true,
-      onKeyEvent: (_, e) => _keys(e, onEnter: _submit, onChar: _key, onSpace: mixed ? null : () => _pay(due)),
-      child: _Shell(
-        title: mixed ? tr('Смешанная оплата', 'Aralash toʻlov') : tr('Наличные', 'Naqd pul'),
-        subtitle: mixed ? tr('Наберите, сколько наличными — остаток картой', 'Naqd qanchaligini tering — qolgani kartadan') : tr('Сколько дал покупатель? Наберите или нажмите купюру', 'Xaridor qancha berdi? Tering yoki kupyurani bosing'),
-        right: fmtMoney(due),
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            decoration: BoxDecoration(
-              color: C.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: C.brand, width: 2),
+    final change = _cashPart == 0 && amount > due ? amount - due : 0;
+    final midW = switch (d) { Density.l => 400.0, Density.m => 370.0, Density.s => 330.0 };
+    final rightW = switch (d) { Density.l => 400.0, Density.m => 360.0, Density.s => 300.0 };
+    final big = switch (d) { Density.l => 60.0, Density.m => 54.0, Density.s => 46.0 };
+
+    final primary = _cashPart > 0
+        ? tr('Остаток картой · ${fmtMoney(_rest)}', 'Qoldiq kartadan · ${fmtMoney(_rest)}')
+        : amount == 0
+            ? tr('Пробить ровно', 'Aniq chiqarish')
+            : amount >= due
+                ? tr('Пробить · сдача ${fmtMoney(change)}', 'Chiqarish · qaytim ${fmtMoney(change)}')
+                : tr('Принять ${fmtMoney(amount)} наличными', '${fmtMoney(amount)} naqd qabul qilish');
+
+    Widget sumRow(String label, String value, {Color color = C.tp}) => Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Row(children: [
+            Expanded(child: Text(label, style: t(14, w: FontWeight.w500, c: C.td))),
+            Text(value, style: t(15, w: FontWeight.w700, c: color)),
+          ]),
+        );
+    final sums = Column(mainAxisSize: MainAxisSize.min, children: [
+      sumRow(tr('К оплате', 'Toʻlovga'), fmtMoney(due)),
+      sumRow(tr('Оплачено', 'Toʻlangan'), fmtMoney(_cashPart)),
+      sumRow(tr('Сдача', 'Qaytim'), fmtMoney(change), color: change > 0 ? C.success : C.tp),
+    ]);
+    final restBlock = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+      Text(tr('Доплата:', 'Qoʻshimcha toʻlov:'), style: t(16, w: FontWeight.w600, c: C.t2)),
+      FittedBox(fit: BoxFit.scaleDown, child: Text(fmtMoney(_rest), maxLines: 1, style: tb(big, h: 1.05))),
+    ]);
+
+    final left = Container(
+      decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: C.border)),
+      clipBehavior: Clip.antiAlias,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Container(
+          height: 36,
+          padding: const EdgeInsets.only(left: 14, right: 6),
+          decoration: const BoxDecoration(color: C.subtle, border: Border(bottom: BorderSide(color: C.border))),
+          child: Row(children: [
+            Text(tr('ОПЛАТА', 'TOʻLOV'), style: t(12.5, w: FontWeight.w700, c: C.success)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FitText(tr('·  ЧЕК №${sale.pos.nextSeq}  ·  ${sale.cart.count} поз.', '·  CHEK №${sale.pos.nextSeq}  ·  ${sale.cart.count} poz.'),
+                  style: t(12.5, w: FontWeight.w600, c: C.t2)),
             ),
-            child: Column(children: [
-              Row(children: [
-                Expanded(child: Text(mixed ? tr('Наличными', 'Naqd') : tr('Получено', 'Olindi'), style: t(16, w: FontWeight.w500, c: C.ts))),
-                Text(_input.value.isEmpty ? '—' : fmtMoney(amount), style: t(40, w: FontWeight.w800, c: _input.value.isEmpty ? C.td : C.tp)),
-              ]),
-              Row(children: [
-                Expanded(
-                  child: Text(mixed ? tr('Картой (остаток)', 'Kartadan (qoldiq)') : tr('Сдача', 'Qaytim'),
-                      style: t(18, w: FontWeight.w600, c: mixed ? C.ts : (change > 0 ? C.success : C.td))),
-                ),
-                Text(
-                  mixed ? (amount > 0 && amount < due ? fmtMoney(due - amount) : '—') : (amount >= due && amount > 0 ? fmtMoney(change) : '—'),
-                  style: t(mixed ? 32 : 36, w: FontWeight.w800, c: mixed ? C.tp : C.success),
-                ),
-              ]),
+            TextButton.icon(
+              onPressed: _back,
+              icon: const Icon(Icons.undo_rounded, size: 16),
+              label: Text(tr('Назад · Esc', 'Orqaga · Esc'), style: t(12.5, w: FontWeight.w600)),
+            ),
+          ]),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: d == Density.s
+              ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [restBlock, sums])
+              : Row(children: [Expanded(child: restBlock), const SizedBox(width: 16), SizedBox(width: 200, child: sums)]),
+        ),
+        Container(
+          height: 30,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: const BoxDecoration(color: C.subtle, border: Border(top: BorderSide(color: C.border), bottom: BorderSide(color: C.border))),
+          child: Row(children: [
+            Expanded(child: Text(tr('СПОСОБ ОПЛАТЫ', 'TOʻLOV USULI'), style: t(11, w: FontWeight.w700, c: C.td))),
+            Text(tr('СУММА', 'SUMMA'), style: t(11, w: FontWeight.w700, c: C.td)),
+          ]),
+        ),
+        if (_cashPart > 0) ...[
+          _PayRow(label: tr('Наличные', 'Naqd pul'), amount: fmtMoney(_cashPart)),
+          _PayRow(label: tr('Карта · остаток', 'Karta · qoldiq'), note: tr('нажмите «Карта» или Enter', '«Karta» yoki Enter bosing'), amount: fmtMoney(_rest), selected: true),
+        ] else
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: FitText(
+              tr('Наберите, сколько дал покупатель, и выберите способ. Enter — наличные, пробел — ровно. Меньше итога — остаток картой.',
+                  'Xaridor qancha berganini tering va usulni tanlang. Enter — naqd, probel — aniq. Jamidan kam boʻlsa — qolgani kartadan.'),
+              maxLines: 3,
+              style: t(14, c: C.ts),
+            ),
+          ),
+        const Spacer(),
+        Container(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+          color: _error != null ? C.errorSoft : C.subtle,
+          child: FitText(
+            _error ??
+                (_cashPart > 0
+                    ? tr('Наличные ${fmtMoney(_cashPart)} приняты. Остаток ${fmtMoney(_rest)} — картой. Esc — убрать наличные.',
+                        'Naqd ${fmtMoney(_cashPart)} qabul qilindi. Qoldiq ${fmtMoney(_rest)} — kartadan. Esc — naqdni olib tashlash.')
+                    : tr('Esc — назад к чеку', 'Esc — chekka qaytish')),
+            maxLines: 2,
+            style: t(13, w: FontWeight.w500, c: _error != null ? C.error : C.t2),
+          ),
+        ),
+      ]),
+    );
+
+    Widget field(String label, String value, {bool focus = false, Color? color}) => Expanded(
+          child: Container(
+            height: d == Density.l ? 70 : 62,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: focus ? C.surface : C.subtle,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: focus ? C.brand : C.border, width: focus ? 2 : 1),
+            ),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(label, style: t(11.5, w: FontWeight.w600, c: C.td)),
+              FitText(value, style: tb(d == Density.l ? 28 : 24, c: color ?? C.tp, h: 1.1)),
             ]),
           ),
-          if (!mixed) ...[
-            const SizedBox(height: 14),
-            Row(children: [
-              Expanded(
-                child: _Btn(
-                  onTap: _busy ? null : () => _pay(due),
-                  color: C.brandSoft,
-                  border: C.brand,
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: Column(children: [
-                    Text(tr('Ровно', 'Aniq'), style: t(18, w: FontWeight.w700, c: C.brand)),
-                    Text(tr('без сдачи · пробел', 'qaytimsiz · probel'), style: t(11, c: C.brand)),
-                  ]),
+        );
+    Widget key(String k, {Color bg = C.surface}) => Expanded(
+          child: Padding(
+            padding: EdgeInsets.all(g / 2),
+            child: Material(
+              color: bg,
+              borderRadius: BorderRadius.circular(8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => _key(k),
+                child: Container(
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: C.borderStrong)),
+                  child: k == '⌫'
+                      ? const Icon(Icons.backspace_outlined, size: 24, color: C.tp)
+                      : Text(k, style: t(22, w: FontWeight.w600)),
                 ),
               ),
-              for (final v in cashSuggestions(due)) ...[
+            ),
+          ),
+        );
+    final bills = cashSuggestions(due).take(d == Density.s ? 2 : 3).toList();
+    final cashOk = _cashPart == 0 && _available('cash');
+    Widget bill(String label, VoidCallback onTap, {bool exact = false}) => Expanded(
+          child: Padding(
+            padding: EdgeInsets.all(g / 2),
+            child: PosButton(
+              label: label,
+              hint: exact ? tr('пробел', 'probel') : tr('купюра', 'kupyura'),
+              center: true,
+              height: 48,
+              enabled: cashOk && !_busy,
+              bg: exact ? C.brandSoft : C.surface,
+              fg: exact ? C.brand : C.tp,
+              border: exact ? C.brand : C.borderStrong,
+              onTap: onTap,
+            ),
+          ),
+        );
+
+    final mid = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(children: [
+        field(_cashPart > 0 ? tr('Наличные приняты', 'Naqd qabul qilindi') : tr('Получено', 'Olindi'),
+            _cashPart > 0 ? fmtMoney(_cashPart) : (_input.value.isEmpty ? '—' : fmtMoney(amount)),
+            focus: _cashPart == 0),
+        SizedBox(width: g),
+        field(tr('Сдача', 'Qaytim'), change > 0 ? fmtMoney(change) : '0', color: change > 0 ? C.success : C.td),
+      ]),
+      SizedBox(height: g / 2),
+      Row(children: [
+        bill(tr('Ровно', 'Aniq'), _exact, exact: true),
+        for (final v in bills) bill(fmtMoney(v), () => _pay('cash', received: v)),
+      ]),
+      Expanded(
+        child: Column(children: [
+          for (final row in const [
+            ['7', '8', '9'],
+            ['4', '5', '6'],
+            ['1', '2', '3'],
+            ['0', '00', '000'],
+          ])
+            Expanded(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [for (final k in row) key(k)])),
+          Expanded(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [key('C', bg: C.keyBg), key('⌫', bg: C.keyBg)])),
+        ]),
+      ),
+      SizedBox(height: g / 2),
+      Opacity(
+        opacity: _busy ? 0.5 : 1,
+        child: Material(
+          color: C.brand,
+          borderRadius: BorderRadius.circular(10),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: _busy ? null : _cash,
+            child: Container(
+              height: d == Density.l ? 76 : 64,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(children: [
+                const Icon(Icons.print_outlined, color: Colors.white, size: 24),
                 const SizedBox(width: 10),
-                Expanded(
-                  child: _Btn(
-                    onTap: _busy ? null : () => _pay(v),
-                    color: C.surface,
-                    border: C.borderStrong,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: Column(children: [
-                      FittedBox(child: Text(fmtMoney(v), style: t(17, w: FontWeight.w700))),
-                      Text(tr('купюра', 'kupyura'), style: t(11, c: C.ts)),
+                Expanded(child: FitText(_busy ? tr('Сохраняем…', 'Saqlanmoqda…') : primary, style: tb(d == Density.l ? 24 : 21, c: Colors.white))),
+                const SizedBox(width: 8),
+                Text('Enter', style: t(13, w: FontWeight.w700, c: C.brandLine)),
+              ]),
+            ),
+          ),
+        ),
+      ),
+    ]);
+
+    Widget method(IconData icon, String title, String hint, String key, String kind, VoidCallback onTap) {
+      final ok = _cashPart > 0 ? kind == 'card' && _available('mixed') : _available(kind);
+      final sel = _cashPart > 0 ? kind == 'card' : kind == 'cash';
+      return Padding(
+        padding: EdgeInsets.only(bottom: g),
+        child: Opacity(
+          opacity: ok ? 1 : 0.4,
+          child: Material(
+            color: sel ? C.brandSoft : C.surface,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: ok && !_busy ? onTap : null,
+              child: Container(
+                height: d == Density.l ? 70 : 62,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: sel ? C.brand : C.border, width: sel ? 2 : 1),
+                ),
+                child: Row(children: [
+                  Icon(icon, size: 26, color: sel ? C.brand : C.t2),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      FitText(title, style: t(16, w: FontWeight.w700)),
+                      FitText(
+                        ok
+                            ? hint
+                            : _cashPart > 0
+                                ? tr('остаток — только картой', 'qoldiq — faqat kartadan')
+                                : tr('нет в магазине', 'doʻkonda yoʻq'),
+                        style: t(12, c: C.td),
+                      ),
                     ]),
                   ),
-                ),
-              ],
-            ]),
-          ],
-          const SizedBox(height: 12),
-          _Pad(onKey: _key),
-          const SizedBox(height: 12),
-          _Footer(
-            back: tr('Назад', 'Orqaga'),
-            primary: mixed
-                ? (_ready ? tr('Пробить · ${fmtMoney(amount)} + ${fmtMoney(due - amount)} картой', 'Chiqarish · ${fmtMoney(amount)} + ${fmtMoney(due - amount)} karta') : tr('Наберите сумму наличными', 'Naqd summani tering'))
-                : (_ready ? tr('Пробить чек · сдача ${fmtMoney(change)}', 'Chek chiqarish · qaytim ${fmtMoney(change)}') : tr('Пробить чек', 'Chek chiqarish')),
-            onPrimary: _ready ? _submit : null,
-            busy: _busy,
+                  const SizedBox(width: 8),
+                  Text(key, style: t(13, w: FontWeight.w700, c: C.td)),
+                ]),
+              ),
+            ),
           ),
-          const SizedBox(height: 10),
-          Text(
-            _error ??
-                (mixed
-                    ? tr('Сначала примите наличные, затем проведите остаток на терминале.', 'Avval naqd pulni qabul qiling, keyin qoldiqni terminaldan oʻtkazing.')
-                    : tr('«Пробить» работает, только если получено не меньше итога. «Ровно» и купюры пробивают чек сразу.', '«Chiqarish» faqat olingan summa jamidan kam boʻlmasa ishlaydi. «Aniq» va kupyuralar chekni darhol chiqaradi.')),
-            style: t(12, c: _error != null ? C.error : C.ts),
+        ),
+      );
+    }
+
+    final right = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Text(tr('СПОСОБ ОПЛАТЫ', 'TOʻLOV USULI'), style: t(11.5, w: FontWeight.w700, c: C.td)),
+      ),
+      method(Icons.payments_outlined, tr('Наличные', 'Naqd pul'), tr('сдача считается сама', 'qaytim oʻzi hisoblanadi'), 'F1', 'cash', _cash),
+      method(Icons.credit_card_rounded, tr('Карта · Uzcard / Humo', 'Karta · Uzcard / Humo'), tr('через терминал банка', 'bank terminali orqali'), 'F2', 'card', _card),
+      method(Icons.qr_code_2_rounded, 'Payme · Click', tr('QR на экране покупателя', 'xaridor ekranidagi QR'), 'F3', 'qr', _qr),
+      if (sale.pos.canDebt)
+        method(Icons.menu_book_outlined, tr('В долг', 'Qarzga'), tr('QR покупателя или номер · лимит', 'xaridor QR yoki raqami · limit'), 'F4', 'debt', _debt),
+      const Spacer(),
+      PosButton(
+        label: tr('Назад к чеку', 'Chekka qaytish'),
+        hint: 'Esc',
+        icon: Icons.undo_rounded,
+        height: 52,
+        onTap: () => Navigator.of(context).pop(),
+      ),
+    ]);
+
+    return Scaffold(
+      body: Focus(
+        autofocus: true,
+        onKeyEvent: _onKey,
+        child: Column(children: [
+          const TopBar(),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.all(g),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Expanded(child: left),
+                SizedBox(width: g),
+                SizedBox(width: midW, child: mid),
+                SizedBox(width: g),
+                SizedBox(width: rightW, child: right),
+              ]),
+            ),
           ),
-        ],
+        ]),
       ),
     );
   }
+}
+
+class _PayRow extends StatelessWidget {
+  const _PayRow({required this.label, required this.amount, this.note = '', this.selected = false});
+
+  final String label;
+  final String amount;
+  final String note;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: EdgeInsets.fromLTRB(selected ? 12 : 16, 10, 16, 10),
+        decoration: BoxDecoration(
+          color: selected ? C.brandSoft : C.surface,
+          border: Border(
+            bottom: const BorderSide(color: C.border),
+            left: selected ? const BorderSide(color: C.brand, width: 4) : BorderSide.none,
+          ),
+        ),
+        child: Row(children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              FitText(label, style: t(16, w: selected ? FontWeight.w700 : FontWeight.w500)),
+              if (note.isNotEmpty) FitText(note, style: t(12, c: C.td)),
+            ]),
+          ),
+          const SizedBox(width: 12),
+          Text(amount, style: t(16, w: FontWeight.w700)),
+        ]),
+      );
 }
 
 // --------------------------------------------------------------- количество
