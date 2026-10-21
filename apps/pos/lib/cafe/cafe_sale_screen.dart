@@ -32,11 +32,41 @@ import 'paid_dialog.dart';
 import 'search_dialog.dart';
 
 /// Вкладка слева: «Популярное», группа меню или «Стоп-лист».
-const _popular = '__popular';
-const _stopTab = '__stop';
+const cafePopularTab = '__popular';
+const cafeStopTab = '__stop';
+
+/// Блюда вкладки: товары каталога, которые продаются в этой точке.
+List<(Product, CafeDish)> cafeDishes(CafeMenu m, Catalog c, String tab) {
+  final all = <(Product, CafeDish)>[];
+  for (final d in m.dishes) {
+    if (!d.isDish || !d.onSale) continue;
+    final p = c.byId(d.productId);
+    if (p == null || !p.active) continue;
+    all.add((p, d));
+  }
+  int code(CafeDish d) => d.code ?? 99999;
+  if (tab == cafeStopTab) return all.where((x) => m.stopped(x.$1.id)).toList();
+  if (tab == cafePopularTab) {
+    final rank = {for (var i = 0; i < c.quickTop.length; i++) c.quickTop[i]: i};
+    all.sort((a, b) {
+      final ra = rank[a.$1.id] ?? 100000 + code(a.$2);
+      final rb = rank[b.$1.id] ?? 100000 + code(b.$2);
+      return ra.compareTo(rb);
+    });
+    return all;
+  }
+  return all.where((x) => x.$2.groupId == tab).toList()
+    ..sort((a, b) {
+      final c1 = code(a.$2).compareTo(code(b.$2));
+      return c1 != 0 ? c1 : a.$1.name.compareTo(b.$1.name);
+    });
+}
 
 class CafeSaleScreen extends StatefulWidget {
-  const CafeSaleScreen({super.key});
+  const CafeSaleScreen({super.key, this.fromHall = false});
+
+  /// Открыт из зала («С собой / без стола»): кнопка «← Зал» и Esc назад.
+  final bool fromHall;
 
   @override
   State<CafeSaleScreen> createState() => _CafeSaleScreenState();
@@ -46,7 +76,7 @@ class _CafeSaleScreenState extends State<CafeSaleScreen> {
   late final SaleController sale;
   final _focus = FocusNode();
   OrderType type = OrderType.here;
-  String tab = _popular;
+  String tab = cafePopularTab;
 
   @override
   void initState() {
@@ -206,6 +236,17 @@ class _CafeSaleScreenState extends State<CafeSaleScreen> {
     if (mounted) _focus.requestFocus();
   }
 
+  /// Сменить кассира: открыт из зала — сначала закрыть экран.
+  void _logout() {
+    if (widget.fromHall) Navigator.of(context).popUntil((r) => r.isFirst);
+    pos.logout();
+  }
+
+  /// Назад в зал — только с пустым заказом (или отложить).
+  void _back() {
+    if (_idle()) Navigator.of(context).maybePop();
+  }
+
   bool _idle() {
     if (sale.cart.isEmpty || sale.mode == SaleMode.paid) return true;
     sale.notice(tr('Сначала завершите или отложите заказ (F7)', 'Avval buyurtmani yakunlang yoki kechiktiring (F7)'));
@@ -230,7 +271,7 @@ class _CafeSaleScreenState extends State<CafeSaleScreen> {
         if (_idle()) _push(const CloseShiftScreen());
       }),
       (Icons.person_outline_rounded, tr('Сменить кассира', 'Kassirni almashtirish'), () {
-        if (_idle()) pos.logout();
+        if (_idle()) _logout();
       }),
       (Icons.print_rounded, tr('Оборудование: принтер, сканер', 'Uskunalar: printer, skaner'), () => _push(const EquipmentScreen())),
       (Icons.translate_rounded, 'Til · Язык · ${Lang.names[Lang.instance.code] ?? ''}', () async {
@@ -301,6 +342,10 @@ class _CafeSaleScreenState extends State<CafeSaleScreen> {
       sale.command(HardwareKeyboard.instance.isShiftPressed ? Cmd.discountAll : Cmd.discountLine);
       return true;
     }
+    if (k == LogicalKeyboardKey.escape && widget.fromHall && sale.input.isEmpty && (sale.cart.isEmpty || sale.mode == SaleMode.paid)) {
+      Navigator.of(context).maybePop();
+      return true;
+    }
     final cmd = _cmds[k];
     if (cmd != null) {
       sale.command(cmd);
@@ -317,34 +362,6 @@ class _CafeSaleScreenState extends State<CafeSaleScreen> {
   }
 
   // -------------------------------------------------------------- экран
-
-  /// Блюда вкладки: товары каталога, которые продаются в этой точке.
-  List<(Product, CafeDish)> _dishes(CafeMenu m, Catalog c) {
-    final all = <(Product, CafeDish)>[];
-    for (final d in m.dishes) {
-      if (!d.isDish || !d.onSale) continue;
-      final p = c.byId(d.productId);
-      if (p == null || !p.active) continue;
-      all.add((p, d));
-    }
-    int code(CafeDish d) => d.code ?? 99999;
-    if (tab == _stopTab) return all.where((x) => m.stopped(x.$1.id)).toList();
-    if (tab == _popular) {
-      final rank = {for (var i = 0; i < c.quickTop.length; i++) c.quickTop[i]: i};
-      all.sort((a, b) {
-        final ra = rank[a.$1.id] ?? 100000 + code(a.$2);
-        final rb = rank[b.$1.id] ?? 100000 + code(b.$2);
-        return ra.compareTo(rb);
-      });
-      return all;
-    }
-    final list = all.where((x) => x.$2.groupId == tab).toList()
-      ..sort((a, b) {
-        final c1 = code(a.$2).compareTo(code(b.$2));
-        return c1 != 0 ? c1 : a.$1.name.compareTo(b.$1.name);
-      });
-    return list;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -371,18 +388,19 @@ class _CafeSaleScreenState extends State<CafeSaleScreen> {
                     child: Consumer2<SaleController, PosController>(builder: (context, _, p, __) {
                       final m = p.catalog.cafe;
                       if (m == null) return const SizedBox.shrink();
-                      final dishes = _dishes(m, p.catalog);
+                      final dishes = cafeDishes(m, p.catalog, tab);
                       return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                        SizedBox(width: left, child: _Groups(menu: m, catalog: p.catalog, tab: tab, onTab: (v) => setState(() => tab = v))),
+                        SizedBox(width: left, child: CafeGroups(menu: m, catalog: p.catalog, tab: tab, onTab: (v) => setState(() => tab = v))),
                         SizedBox(width: g),
                         Expanded(
                           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                            Expanded(child: _Tiles(menu: m, tab: tab, dishes: dishes, sale: sale, onTap: _tap)),
+                            Expanded(child: CafeTiles(menu: m, tab: tab, dishes: dishes, sale: sale, onTap: _tap)),
                             SizedBox(height: g),
                             SizedBox(
                               height: d == Density.s ? 50 : 56,
                               child: _Functions(
                                 sale: sale,
+                                onBack: widget.fromHall ? _back : null,
                                 held: p.held.length,
                                 onSearch: _search,
                                 onHeld: _held,
@@ -408,7 +426,7 @@ class _CafeSaleScreenState extends State<CafeSaleScreen> {
                   ),
                 ),
               ]),
-              LimitLock(onCloseShift: () => _push(const CloseShiftScreen()), onChangeCashier: () => pos.logout()),
+              LimitLock(onCloseShift: () => _push(const CloseShiftScreen()), onChangeCashier: _logout),
             ]),
           ),
         ),
@@ -419,8 +437,8 @@ class _CafeSaleScreenState extends State<CafeSaleScreen> {
 
 // ---------------------------------------------------------------- группы
 
-class _Groups extends StatelessWidget {
-  const _Groups({required this.menu, required this.catalog, required this.tab, required this.onTab});
+class CafeGroups extends StatelessWidget {
+  const CafeGroups({required this.menu, required this.catalog, required this.tab, required this.onTab});
 
   final CafeMenu menu;
   final Catalog catalog;
@@ -468,20 +486,20 @@ class _Groups extends StatelessWidget {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Expanded(
         child: ListView(padding: EdgeInsets.zero, children: [
-          item(_popular, tr('Популярное', 'Ommabop'), all),
+          item(cafePopularTab, tr('Популярное', 'Ommabop'), all),
           for (final gr in menu.groups)
             if ((counts[gr.id] ?? 0) > 0) item(gr.id, gr.name, counts[gr.id] ?? 0),
         ]),
       ),
-      if (stopped > 0) item(_stopTab, tr('Стоп-лист', 'Stop-roʻyxat'), stopped, accent: C.warning),
+      if (stopped > 0) item(cafeStopTab, tr('Стоп-лист', 'Stop-roʻyxat'), stopped, accent: C.warning),
     ]);
   }
 }
 
 // ---------------------------------------------------------------- плитки
 
-class _Tiles extends StatelessWidget {
-  const _Tiles({required this.menu, required this.tab, required this.dishes, required this.sale, required this.onTap});
+class CafeTiles extends StatelessWidget {
+  const CafeTiles({required this.menu, required this.tab, required this.dishes, required this.sale, required this.onTap});
 
   final CafeMenu menu;
   final String tab;
@@ -491,7 +509,7 @@ class _Tiles extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title = tab == _popular ? tr('Популярное', 'Ommabop') : tab == _stopTab ? tr('Стоп-лист', 'Stop-roʻyxat') : (menu.group(tab)?.name ?? '');
+    final title = tab == cafePopularTab ? tr('Популярное', 'Ommabop') : tab == cafeStopTab ? tr('Стоп-лист', 'Stop-roʻyxat') : (menu.group(tab)?.name ?? '');
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Padding(
         padding: const EdgeInsets.fromLTRB(2, 0, 2, 6),
@@ -526,7 +544,7 @@ class _Tiles extends StatelessWidget {
         child: dishes.isEmpty
             ? Center(
                 child: Text(
-                  tab == _stopTab ? tr('На стопе ничего нет', 'Stopda hech narsa yoʻq') : tr('Блюд пока нет — меню заводится в панели: «Меню»', 'Hozircha taomlar yoʻq — menyu panelda: «Menyu»'),
+                  tab == cafeStopTab ? tr('На стопе ничего нет', 'Stopda hech narsa yoʻq') : tr('Блюд пока нет — меню заводится в панели: «Меню»', 'Hozircha taomlar yoʻq — menyu panelda: «Menyu»'),
                   style: t(15, c: C.ts),
                 ),
               )
@@ -538,7 +556,7 @@ class _Tiles extends StatelessWidget {
                   itemCount: dishes.length,
                   itemBuilder: (_, i) {
                     final (p, d) = dishes[i];
-                    return _DishTile(product: p, dish: d, stopped: menu.stopped(p.id), inCart: sale.inCart(p.id), onTap: () => onTap(p));
+                    return CafeDishTile(product: p, dish: d, stopped: menu.stopped(p.id), inCart: sale.inCart(p.id), onTap: () => onTap(p));
                   },
                 );
               }),
@@ -547,8 +565,8 @@ class _Tiles extends StatelessWidget {
   }
 }
 
-class _DishTile extends StatelessWidget {
-  const _DishTile({required this.product, required this.dish, required this.stopped, required this.inCart, required this.onTap});
+class CafeDishTile extends StatelessWidget {
+  const CafeDishTile({required this.product, required this.dish, required this.stopped, required this.inCart, required this.onTap});
 
   final Product product;
   final CafeDish dish;
@@ -622,9 +640,10 @@ class _DishTile extends StatelessWidget {
 // ------------------------------------------------------------- функции
 
 class _Functions extends StatelessWidget {
-  const _Functions({required this.sale, required this.held, required this.onSearch, required this.onHeld, required this.onMore});
+  const _Functions({required this.sale, required this.held, required this.onSearch, required this.onHeld, required this.onMore, this.onBack});
 
   final SaleController sale;
+  final VoidCallback? onBack;
   final int held;
   final VoidCallback onSearch;
   final VoidCallback onHeld;
@@ -634,6 +653,8 @@ class _Functions extends StatelessWidget {
   Widget build(BuildContext context) {
     final active = sale.mode == SaleMode.sale && !sale.cart.isEmpty;
     final cells = <Widget>[
+      if (onBack != null)
+        PosButton(label: tr('← Зал', '← Zal'), hint: tr('столы', 'stollar'), icon: Icons.table_restaurant_outlined, onTap: onBack),
       PosButton(label: tr('Поиск блюда', 'Taom qidirish'), hint: 'F2', onTap: onSearch),
       PosButton(label: tr('Количество', 'Miqdor'), hint: '*', enabled: active, onTap: () => sale.command(Cmd.qty)),
       PosButton(label: tr('Скидка', 'Chegirma'), hint: 'F6', enabled: active, onTap: () => sale.command(Cmd.discountLine)),
@@ -738,7 +759,7 @@ class _Order extends StatelessWidget {
                       itemCount: cart.lines.length,
                       itemBuilder: (_, i) {
                         final l = cart.lines[i];
-                        return _LineRow(line: l, selected: identical(l, sel), onTap: () => sale.select(l), onDouble: () => onEdit(l));
+                        return CafeLineRow(line: l, selected: identical(l, sel), onTap: () => sale.select(l), onDouble: () => onEdit(l));
                       },
                     ),
             ),
@@ -822,8 +843,8 @@ class _Order extends StatelessWidget {
   }
 }
 
-class _LineRow extends StatelessWidget {
-  const _LineRow({required this.line, required this.selected, required this.onTap, required this.onDouble});
+class CafeLineRow extends StatelessWidget {
+  const CafeLineRow({required this.line, required this.selected, required this.onTap, required this.onDouble});
 
   final CartLine line;
   final bool selected;

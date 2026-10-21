@@ -33,6 +33,21 @@ func (m *Module) kitchenRoutes(r chi.Router) {
 	r.Get("/pos/kitchen/wait", m.kitchenWait)
 	r.Get("/pos/kitchen/status", m.kitchenStatus)
 	r.Post("/pos/kitchen/printers", m.kitchenPrinters)
+	// Кафе со столами: зал, столы, открытые счета; операции со счётом.
+	r.Get("/pos/hall", m.hall)
+	r.Post("/pos/bills/ops", m.billOp)
+}
+
+func (m *Module) hall(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (cafe.HallState, error) {
+		return m.kitchen.Hall(r.Context(), pr(r))
+	})
+}
+
+func (m *Module) billOp(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in cafe.BillOp) (cafe.Bill, error) {
+		return m.kitchen.ApplyOp(r.Context(), pr(r), in)
+	})
 }
 
 func (m *Module) kitchenBoard(w http.ResponseWriter, r *http.Request) {
@@ -41,9 +56,11 @@ func (m *Module) kitchenBoard(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// kitchenAction — id карточки: продажа (uuid) или отправка счёта («uuid-номер»).
 func (m *Module) kitchenAction(w http.ResponseWriter, r *http.Request) {
-	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in cafe.KitchenActionInput) (cafe.KitchenBoard, error) {
-		return m.kitchen.Act(r.Context(), pr(r), id, in)
+	key := chi.URLParam(r, "id")
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in cafe.KitchenActionInput) (cafe.KitchenBoard, error) {
+		return m.kitchen.Act(r.Context(), pr(r), key, in)
 	})
 }
 

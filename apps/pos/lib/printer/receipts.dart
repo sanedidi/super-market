@@ -76,6 +76,9 @@ Uint8List saleReceipt({
   if (orderNo != null) {
     p.bold(true).size(2, 2).line(tr('ЗАКАЗ № ${orderNo.toString().padLeft(3, '0')}', 'BUYURTMA № ${orderNo.toString().padLeft(3, '0')}')).size(1, 1).bold(false);
   }
+  // Кафе со столами: стол счёта.
+  final table = sale.order?['table'];
+  if (table != null && '$table'.isNotEmpty) p.bold(true).line(tr('СТОЛ $table', '$table-STOL')).bold(false);
   p.align(PrintAlign.left);
   p.pair(tr('Чек № ${serverNumber ?? sale.seq}', 'Chek № ${serverNumber ?? sale.seq}'), _dt(sale.soldAt));
   p.pair(shiftLabel, tr('Кассир: ${sale.cashierName}', 'Kassir: ${sale.cashierName}'));

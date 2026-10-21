@@ -97,10 +97,13 @@ type Sale struct {
 	DebtBalance   string `json:"debt_balance"`
 	DebtOverLimit bool   `json:"debt_over_limit"`
 	// Кафе: тип заказа и номер дня.
-	OrderType *string       `json:"order_type"`
-	OrderNo   *int          `json:"order_no"`
-	Items     []SaleItem    `json:"items,omitempty"`
-	Payments  []SalePayment `json:"payments,omitempty"`
+	OrderType *string `json:"order_type"`
+	OrderNo   *int    `json:"order_no"`
+	// Кафе со столами: счёт и обслуживание.
+	BillID        *string       `json:"bill_id"`
+	ServiceAmount string        `json:"service_amount"`
+	Items         []SaleItem    `json:"items,omitempty"`
+	Payments      []SalePayment `json:"payments,omitempty"`
 }
 
 const saleSelect = `
@@ -109,7 +112,7 @@ const saleSelect = `
 	       s.fiscal_sign, s.fiscal_qr, s.fiscal_module, s.shift_id, s.created_at,
 	       s.debt_amount::text, COALESCE(dr.full_name, ''), COALESCE(dr.phone, ''),
 	       COALESCE((SELECT sum(de.amount) FROM debt_entries de WHERE de.debtor_id = s.debtor_id AND de.store_id = s.store_id), 0)::numeric(18,2)::text,
-	       s.debt_over_limit, s.order_type, s.order_no
+	       s.debt_over_limit, s.order_type, s.order_no, s.bill_id, s.service_amount::text
 	FROM sales s JOIN stores st ON st.id = s.store_id JOIN employees e ON e.id = s.cashier_id
 	LEFT JOIN debtors dr ON dr.id = s.debtor_id`
 
@@ -118,7 +121,7 @@ func scanSale(row pgx.CollectableRow) (Sale, error) {
 	err := row.Scan(&s.ID, &s.Number, &s.StoreID, &s.StoreName, &s.WarehouseID, &s.ClientUID, &s.Subtotal,
 		&s.Discount, &s.Total, &s.CustomerPhone, &s.Note, &s.Cashier, &s.SoldAt, &s.FiscalStatus,
 		&s.FiscalNumber, &s.FiscalSign, &s.FiscalQR, &s.FiscalModule, &s.ShiftID, &s.CreatedAt,
-		&s.DebtAmount, &s.DebtorName, &s.DebtorPhone, &s.DebtBalance, &s.DebtOverLimit, &s.OrderType, &s.OrderNo)
+		&s.DebtAmount, &s.DebtorName, &s.DebtorPhone, &s.DebtBalance, &s.DebtOverLimit, &s.OrderType, &s.OrderNo, &s.BillID, &s.ServiceAmount)
 	return s, err
 }
 
@@ -247,7 +250,13 @@ type SaleInput struct {
 		Modifiers []cafe.ChosenModifier `json:"modifiers"`
 		// Комментарий для кухни («рис помягче»).
 		Note string `json:"note"`
+		// Кафе со столами: какую позицию счёта оплачивает строка.
+		BillItemID *string `json:"bill_item_id"`
 	} `json:"items"`
+	// Кафе со столами: оплата счёта стола (целиком или часть при разделении)
+	// и обслуживание % этой части.
+	BillID        *string       `json:"bill_id"`
+	ServiceAmount *money.Amount `json:"service_amount"`
 	// Кафе: «Здесь / С собой / Доставка» и номер заказа дня для гостя (выдаёт касса).
 	OrderType *string `json:"order_type"`
 	OrderNo   *int    `json:"order_no"`
@@ -323,6 +332,20 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 	}
 	if in.OrderNo != nil && (*in.OrderNo < 1 || *in.OrderNo > 9999) {
 		return Sale{}, false, apperr.Validation("order_no: от 1 до 9999").Uz("order_no: 1 dan 9999 gacha")
+	}
+	if in.BillID != nil {
+		if !pos || !httpx.IsUUID(*in.BillID) {
+			return Sale{}, false, apperr.Validation("bill_id: оплату счёта стола передаёт касса").Uz("bill_id: stol hisobini toʻlovni kassa yuboradi")
+		}
+		in.OrderNo = nil
+		for _, it := range in.Items {
+			if it.BillItemID == nil || !httpx.IsUUID(*it.BillItemID) {
+				return Sale{}, false, apperr.Validation("items: у оплаты счёта каждая строка — позиция счёта (bill_item_id)").Uz("items: hisob toʻlovida har bir qator — hisob pozitsiyasi (bill_item_id)")
+			}
+		}
+	}
+	if in.ServiceAmount != nil && (!in.ServiceAmount.Valid() || in.BillID == nil) {
+		return Sale{}, false, apperr.Validation("service_amount: обслуживание — только при оплате счёта стола").Uz("service_amount: xizmat haqi faqat stol hisobini toʻlashda")
 	}
 	for _, it := range in.Items {
 		if len([]rune(it.Note)) > 200 {
@@ -415,11 +438,11 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 		}
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO sales (network_id, store_id, warehouse_id, number, client_uid, price_type_id,
-			                   subtotal, discount, total, cost, customer_phone, note, cashier_id, sold_at, device_id, shift_id, order_type, order_no)
-			VALUES ($1, $2, $3, $4, $5, $6, 0, 0, 0, 0, $7, $8, $9, $10, NULLIF($11, '')::uuid, $12, $13, $14) RETURNING id`,
+			                   subtotal, discount, total, cost, customer_phone, note, cashier_id, sold_at, device_id, shift_id, order_type, order_no, bill_id)
+			VALUES ($1, $2, $3, $4, $5, $6, 0, 0, 0, 0, $7, $8, $9, $10, NULLIF($11, '')::uuid, $12, $13, $14, $15) RETURNING id`,
 			p.NetworkID, in.StoreID, warehouseID, n, in.ClientUID, priceTypeID,
 			strings.TrimSpace(in.CustomerPhone), strings.TrimSpace(in.Note), p.EmployeeID, soldAt, p.DeviceID, in.ShiftID,
-			in.OrderType, in.OrderNo).Scan(&id); err != nil {
+			in.OrderType, in.OrderNo, in.BillID).Scan(&id); err != nil {
 			if db.IsUniqueViolation(err, "sales_network_id_client_uid_key") {
 				return errDuplicate
 			}
@@ -429,6 +452,7 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 		subtotal, discount, cost := money.D("0"), money.D("0"), money.D("0")
 		seen := map[string]bool{}
 		seenCodes := map[string]bool{}
+		var billLines []cafe.PaidLine
 		for i, it := range in.Items {
 			line := i + 1
 			ls := strconv.Itoa(line)
@@ -444,7 +468,7 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 			}
 			// Блюдо кафе может повторяться: два плова, один «без лука».
 			dish := prod.Kind == cafe.KindDish
-			if seen[it.ProductID] && !dish {
+			if seen[it.ProductID] && !dish && it.BillItemID == nil {
 				return apperr.Validation("items: товар повторяется в строке " + ls + " — объедините количество").Uz("items: " + ls + "-qatorda mahsulot takrorlanadi — miqdorni birlashtiring")
 			}
 			seen[it.ProductID] = true
@@ -538,11 +562,14 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 				lineCost = lineCost.Add(t.Cost)
 			}
 			if _, err := tx.Exec(ctx, `
-				INSERT INTO sale_items (sale_id, line, product_id, qty, price, discount, total, cost, marking_codes, short_qty, note)
-				VALUES ($1, $2, $3, $4::numeric, $5::numeric, $6::numeric, $7::numeric, $8::numeric, $9, $10::numeric, $11)`,
+				INSERT INTO sale_items (sale_id, line, product_id, qty, price, discount, total, cost, marking_codes, short_qty, note, bill_item_id)
+				VALUES ($1, $2, $3, $4::numeric, $5::numeric, $6::numeric, $7::numeric, $8::numeric, $9, $10::numeric, $11, $12)`,
 				id, line, it.ProductID, qty.Fixed(3), price, lineDiscount.Money(),
-				lineSum.Sub(lineDiscount).Money(), lineCost.Money(), codes, short, strings.TrimSpace(it.Note)); err != nil {
+				lineSum.Sub(lineDiscount).Money(), lineCost.Money(), codes, short, strings.TrimSpace(it.Note), it.BillItemID); err != nil {
 				return err
+			}
+			if it.BillItemID != nil {
+				billLines = append(billLines, cafe.PaidLine{BillItemID: *it.BillItemID, Qty: qty})
 			}
 			if dish {
 				if err := cafe.RecordSaleLine(ctx, tx, p.NetworkID, warehouseID, id, line, ingredients, mods); err != nil {
@@ -562,6 +589,30 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 			cost = cost.Add(lineCost)
 		}
 		total := subtotal.Sub(discount)
+		// Счёт стола: позиции оплачены, обслуживание — сверху, по проценту счёта.
+		service := money.D("0")
+		if in.BillID != nil {
+			if err := cafe.PayBill(ctx, tx, p.NetworkID, in.StoreID, *in.BillID, p.EmployeeID, billLines); err != nil {
+				return err
+			}
+			if in.ServiceAmount != nil {
+				service = money.D(string(*in.ServiceAmount))
+				pct, err := cafe.BillServicePercent(ctx, tx, *in.BillID)
+				if err != nil {
+					return err
+				}
+				expected := total.Mul(pct).Div(money.D("100")).Round2()
+				diff := service.Sub(expected)
+				if service.Sign() < 0 || diff.Cmp(money.D("1")) > 0 || diff.Cmp(money.D("-1")) < 0 {
+					return apperr.Validation("service_amount: обслуживание " + service.Money() + " не равно " + pct.Fixed(2) + "% от " + total.Money()).
+						Uz("service_amount: xizmat haqi " + service.Money() + " " + total.Money() + " ning " + pct.Fixed(2) + "% iga teng emas")
+				}
+			}
+			total = total.Add(service)
+			if _, err := tx.Exec(ctx, `UPDATE sales SET service_amount = $2::numeric WHERE id = $1`, id, service.Money()); err != nil {
+				return err
+			}
+		}
 
 		// Оплата: сумма способов оплаты = итог; деньги в кассы магазина.
 		paid := money.D("0")

@@ -11,6 +11,7 @@ import '../core/catalog.dart';
 import '../core/journal.dart';
 import '../core/money.dart';
 import '../printer/escpos.dart';
+import 'bills.dart';
 import 'menu.dart';
 
 String _hm(DateTime d) {
@@ -103,6 +104,90 @@ Uint8List testTicket({required PosSettings s, required CafeWorkshop workshop, re
   p.line('${s.storeName} · ${_hm(at)}');
   p.wrapped(tr('Принтер бегунков работает. Сюда будут печататься заказы цеха.', 'Buyurtma printeri ishlayapti. Sex buyurtmalari shu yerga chop etiladi.'));
   p.dashes().line('АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ').line("Oʻzbekcha: Gʻ gʻ Oʻ oʻ Sh Ch");
+  p.feed(3).cut();
+  return p.bytes();
+}
+
+/// Бегунки счёта стола: что за отправка.
+enum TableTicket { send, fire, cancel }
+
+/// Бегунок цеха по счёту стола: «СТОЛ 7», официант, блюда; «по команде» —
+/// с пометкой не готовить; «ПОДАВАТЬ» — блюда по команде в работу; «ОТМЕНА».
+Uint8List tableTicket({
+  required PosSettings s,
+  required Bill bill,
+  required CafeWorkshop workshop,
+  required List<(BillItem, int)> lines,
+  required DateTime at,
+  TableTicket kind = TableTicket.send,
+  String reason = '',
+  int paperMm = 80,
+  int codePage = 17,
+}) {
+  final p = EscPos(paperMm: paperMm, codePage: codePage);
+  p.init().align(PrintAlign.center).bold(true).line(workshop.name.toUpperCase());
+  p.size(2, 2).line(tr('СТОЛ ${bill.tableNumber}', '${bill.tableNumber}-STOL')).size(1, 1);
+  final later = kind == TableTicket.send && lines.isNotEmpty && lines.every((l) => l.$1.course == 'later');
+  switch (kind) {
+    case TableTicket.fire:
+      p.size(2, 1).line(tr('*** ПОДАВАТЬ ***', '*** BERISH ***')).size(1, 1);
+    case TableTicket.cancel:
+      p.size(2, 2).line(tr('ОТМЕНА', 'BEKOR')).size(1, 1);
+    case TableTicket.send:
+      if (later) p.line(tr('*** ПО КОМАНДЕ — ПОКА НЕ ГОТОВИТЬ ***', '*** BUYRUQ BOʻYICHA — HOZIR TAYYORLAMANG ***'));
+  }
+  p.bold(false);
+  p.line('${_hm(at)} · ${tr('гостей', 'mehmon')}: ${bill.guests}');
+  if (bill.waiterName.isNotEmpty) p.line(tr('Официант: ${bill.waiterName}', 'Ofitsiant: ${bill.waiterName}'));
+  p.align(PrintAlign.left).dashes();
+  for (final (i, q) in lines) {
+    p.bold(true).size(1, 2).wrapped('${fmtQty(q)} x ${i.name.toUpperCase()}').size(1, 1).bold(false);
+    for (final m in i.mods) {
+      final name = '${m.name}${m.qty > 1 ? ' x${m.qty}' : ''}';
+      p.wrapped(m.action == 'remove' ? '    !! ${name.toUpperCase()} !!' : '    $name');
+    }
+    if (i.note.isNotEmpty) p.wrapped('    » ${i.note}');
+  }
+  p.dashes();
+  if (kind == TableTicket.cancel) {
+    p.bold(true).wrapped(tr('НЕ ГОТОВИТЬ', 'TAYYORLAMANG')).bold(false);
+    if (reason.isNotEmpty) p.wrapped(tr('Причина: $reason', 'Sabab: $reason'));
+  } else if (!later) {
+    final ready = at.add(Duration(minutes: workshop.cookMinutes));
+    p.line(tr('Норма: ${workshop.cookMinutes} мин → к ${_hm(ready)}', 'Meʼyor: ${workshop.cookMinutes} daq → ${_hm(ready)} gacha'));
+  }
+  p.feed(3).cut();
+  return p.bytes();
+}
+
+/// Пречек — счёт гостю перед оплатой (не фискальный).
+Uint8List precheckReceipt({required PosSettings s, required Bill bill, required DateTime at, int paperMm = 80, int codePage = 17}) {
+  final p = EscPos(paperMm: paperMm, codePage: codePage);
+  p.init().align(PrintAlign.center).bold(true);
+  p.line(s.storeName.isNotEmpty ? s.storeName.toUpperCase() : s.networkName.toUpperCase());
+  p.size(2, 2).line(tr('СЧЁТ', 'HISOB')).size(1, 1);
+  p.line(tr('Стол ${bill.tableNumber}', '${bill.tableNumber}-stol')).bold(false);
+  p.line('${_hm(at)} · ${tr('гостей', 'mehmon')}: ${bill.guests}');
+  if (bill.waiterName.isNotEmpty) p.line(tr('Официант: ${bill.waiterName}', 'Ofitsiant: ${bill.waiterName}'));
+  p.align(PrintAlign.left).dashes();
+  var sum = 0;
+  for (final i in bill.items) {
+    final q = i.left;
+    if (q <= 0) continue;
+    final total = lineSum(i.price, q);
+    sum += total;
+    p.wrapped(i.name);
+    p.pair('  ${fmtQty(q)} x ${fmtMoney(i.price)}', fmtMoney(total));
+  }
+  p.dashes();
+  final service = percentOf(sum, bill.serviceBp);
+  if (service > 0) {
+    p.pair(tr('Сумма', 'Summa'), fmtMoney(sum));
+    p.pair(tr('Обслуживание ${fmtPercent(bill.serviceBp)}', 'Xizmat haqi ${fmtPercent(bill.serviceBp)}'), fmtMoney(service));
+  }
+  p.bold(true).size(1, 2).pair(tr('К ОПЛАТЕ', 'TOʻLOVGA'), fmtMoney(sum + service)).size(1, 1).bold(false);
+  p.dashes().align(PrintAlign.center);
+  p.wrapped(tr('Не является фискальным чеком', 'Fiskal chek emas'));
   p.feed(3).cut();
   return p.bytes();
 }

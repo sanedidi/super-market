@@ -1,3 +1,5 @@
+import 'package:sm_core/sm_core.dart' show tr;
+
 import 'cart.dart';
 import 'money.dart';
 
@@ -151,8 +153,33 @@ class SaleRecord {
             'marks': l.marks,
             if (l.mods.isNotEmpty) 'mods': [for (final m in l.mods) m.toJson()],
             if (l.comment.isNotEmpty) 'comment': l.comment,
+            if (l.billItemId != null) 'bill_item_id': l.billItemId,
+          },
+        // Кафе со столами: обслуживание — отдельной строкой чека (и в фискальном).
+        if (cart.service > 0)
+          {
+            'product_id': '',
+            'service': true,
+            'name': tr('Обслуживание ${fmtPercent(cart.serviceBp)}', 'Xizmat haqi ${fmtPercent(cart.serviceBp)}'),
+            'fiscal_name': 'Обслуживание ${fmtPercent(cart.serviceBp)}',
+            'unit': tr('усл.', 'xizm.'),
+            'qty': 1000,
+            'price': cart.service,
+            'discount': 0,
+            'total': cart.service,
+            'vat': vatIncluded(cart.service, cart.serviceVatBp),
+            'vat_bp': cart.serviceVatBp,
+            'ikpu': cart.serviceIkpu,
+            'package_code': '',
+            'marks': const <String>[],
           },
       ];
+
+  /// Кафе со столами: оплата счёта стола ({'bill': id, 'table': '7'}).
+  String? get billId => order?['bill'] as String?;
+
+  /// Обслуживание в чеке, тийины.
+  int get service => lines.where((l) => l['service'] == true).fold(0, (s, l) => s + (l['total'] as int));
 
   /// Тело POST /pos/sales. shift_id подставит очередь, когда смена дойдёт до сервера.
   Map<String, dynamic> apiBody(String shiftId) => {
@@ -161,7 +188,7 @@ class SaleRecord {
         'sold_at': soldAt.toUtc().toIso8601String(),
         'items': [
           for (final l in lines)
-            {
+            if (l['service'] != true) {
               'product_id': l['product_id'],
               'qty': qtyApi(l['qty'] as int),
               'price': moneyApi(l['price'] as int),
@@ -172,10 +199,13 @@ class SaleRecord {
                   for (final m in (l['mods'] as List).cast<Map<String, dynamic>>()) {'option_id': m['option_id'], 'qty': m['qty'] ?? 1},
                 ],
               if ((l['comment'] as String?)?.isNotEmpty ?? false) 'note': l['comment'],
+              if (l['bill_item_id'] != null) 'bill_item_id': l['bill_item_id'],
             },
         ],
         if (order != null) 'order_type': order!['type'],
-        if (order != null) 'order_no': order!['no'],
+        if (order != null && order!['no'] != null) 'order_no': order!['no'],
+        if (billId != null) 'bill_id': billId,
+        if (billId != null && service > 0) 'service_amount': moneyApi(service),
         'payments': [
           for (final p in payments) {'payment_method_id': p.methodId, 'amount': moneyApi(p.amount)},
         ],

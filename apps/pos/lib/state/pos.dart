@@ -16,7 +16,9 @@ import '../data/api.dart';
 import '../data/outbox.dart';
 import '../data/store.dart';
 import '../fiscal/fiscal.dart';
+import '../cafe/bills.dart';
 import '../cafe/kitchen_printing.dart';
+import '../cafe/tickets.dart';
 import '../printer/receipts.dart';
 import '../printer/transport.dart';
 
@@ -368,6 +370,18 @@ class PosController extends ChangeNotifier {
     }
   }
 
+  /// Отправить очередь сейчас, без каталога и проверок (касса кафе: операции
+  /// со счётом стола видны на других кассах и кухне сразу). Идёт отправка —
+  /// она заберёт и новое событие.
+  Future<void> push() async {
+    if (api.token == null) return;
+    final r = await outbox.flush();
+    if (r.offline) online = false;
+    if (r.sent > 0) online = true;
+    if (r.revoked) revoked = true;
+    notifyListeners();
+  }
+
   Future<void> _shiftOpened(String uid, String id, int number) async {
     if (shift?.uid == uid) {
       shift!
@@ -615,8 +629,9 @@ class PosController extends ChangeNotifier {
     }
     final uid = _uuid.v4();
     final soldAt = _now();
-    // Кафе: номер заказа дня выдаёт касса — и без интернета.
-    final orderNo = order == null ? null : nextOrderNo;
+    // Кафе: номер заказа дня выдаёт касса — и без интернета. У оплаты счёта
+    // стола номера нет: заказ уже на кухне.
+    final orderNo = order == null || order['bill'] != null ? null : nextOrderNo;
     var draft = SaleRecord(
       uid: uid,
       seq: _saleSeq + 1,
@@ -629,7 +644,7 @@ class PosController extends ChangeNotifier {
       received: received,
       fiscal: fiscal,
       debt: debt,
-      order: order == null ? null : {...order, 'no': orderNo},
+      order: order == null ? null : {...order, if (orderNo != null) 'no': orderNo},
     );
     if (fiscalMode && fiscal == null) {
       final receipt = FiscalReceipt.sale(draft);
@@ -662,7 +677,7 @@ class PosController extends ChangeNotifier {
   /// или принтер чеков, если экрана кухни нет (или касса без связи).
   /// Ошибка не мешает продаже.
   Future<bool> printKitchen(SaleRecord rec) async {
-    if (catalog.cafe == null || rec.order == null) return false;
+    if (catalog.cafe == null || rec.order == null || rec.billId != null) return false;
     final err = await kitchen.printOrder(rec);
     if (err != null || printError != null) {
       printError = err;
@@ -684,6 +699,20 @@ class PosController extends ChangeNotifier {
         codePage: printer.codePage,
         openDrawer: printer.drawer,
       ));
+
+  /// Кафе со столами: пречек гостю на принтер чеков.
+  Future<bool> printPrecheck(Bill b) =>
+      _print(() => precheckReceipt(s: catalog.settings, bill: b, at: _now(), paperMm: printer.paperMm, codePage: printer.codePage));
+
+  /// Кафе со столами: бегунки цехов по отправке счёта «На кухню», «Подавать»
+  /// или отмене. Ошибка не мешает работе.
+  Future<void> printTable(Bill b, List<(BillItem, int)> lines, {TableTicket kind = TableTicket.send, String reason = ''}) async {
+    final err = await kitchen.printTable(b, lines, kind: kind, reason: reason);
+    if (err != null) {
+      printError = err;
+      notifyListeners();
+    }
+  }
 
   /// X-отчёт на принтер.
   Future<bool> printX() => _print(() => shiftReport(

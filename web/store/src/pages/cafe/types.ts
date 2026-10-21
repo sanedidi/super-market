@@ -53,6 +53,38 @@ export type CafeSettings = {
   kitchen_sound: boolean
   display_show_cooking: boolean
   display_hide_minutes: number
+  waiter_own_tables: boolean
+  precheck_required: boolean
+  void_senior_only: boolean
+  service_ikpu: string
+}
+
+export type TableShape = 'rect' | 'round' | 'topchan'
+
+export type LayoutTable = {
+  id: string
+  hall_id: string
+  number: string
+  seats: number
+  shape: TableShape
+  x: number
+  y: number
+  w: number
+  h: number
+  waiter_id: string | null
+  waiter_name: string | null
+  bookable: boolean
+  service: boolean
+  busy: boolean
+}
+
+export type LayoutHall = {
+  id: string
+  name: string
+  name_ru: string
+  name_uz: string
+  sort: number
+  tables: LayoutTable[]
 }
 
 export type WorkshopIcon = 'fire' | 'bakery' | 'bar' | 'soup' | 'grill' | 'salad' | 'pizza' | 'cafe'

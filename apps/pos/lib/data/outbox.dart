@@ -19,7 +19,7 @@ class OutboxItem {
   /// Когда событие случилось на кассе — для правила «не больше 24 часов без связи».
   final DateTime at;
 
-  /// shift_open, cash_move, sale, shift_close.
+  /// shift_open, cash_move, sale, debt_payment, bill_op, shift_close.
   final String kind;
   final Map<String, dynamic> body;
   final String cashier;
@@ -207,6 +207,10 @@ class Outbox {
         final id = _shiftId(rec.shiftUid);
         await api.post('/pos/debt-payments', rec.apiBody(id), cashier: item.cashier);
       }
+      case 'bill_op': {
+        // Кафе со столами: операция со счётом (повтор безопасен — свой id).
+        await api.post('/pos/bills/ops', billOpBody(b), cashier: item.cashier);
+      }
       case 'shift_close': {
         final id = _shiftId(b['shift_uid'] as String);
         await api.post('/pos/shifts/$id/close', {
@@ -259,6 +263,15 @@ class Outbox {
 }
 
 class _Wait implements Exception {}
+
+/// Тело операции со счётом без полей, нужных только кассе («_name», «_mods»).
+Map<String, dynamic> billOpBody(Map<String, dynamic> b) {
+  Map<String, dynamic> clean(Map<String, dynamic> m) => {
+        for (final e in m.entries)
+          if (!e.key.startsWith('_')) e.key: e.value is Map ? clean((e.value as Map).cast<String, dynamic>()) : e.value,
+      };
+  return clean(b);
+}
 
 /// Сервер не принимает токен кассы: касса отключена в панели или подключена
 /// заново другим кодом. Ошибки кассира (401 cashier_*) сюда не относятся.

@@ -67,6 +67,7 @@ import { ModifiersPage } from './pages/cafe/Modifiers'
 import { KitchenPage } from './pages/cafe/Kitchen'
 import { KitchenStockPage } from './pages/cafe/KitchenStock'
 import { PrepsPage } from './pages/cafe/Preps'
+import { HallsPage } from './pages/cafe/Halls'
 
 const TITLE = tr('Панель магазина', 'Doʻkon paneli')
 
@@ -208,6 +209,13 @@ function menuFor(cafe: boolean): Item[] {
     if (i.key === 'purchases' || i.key === 'stock' || i.key === '/start') continue
     out.push(i)
     if (i.key === '/orders') out.push(...CAFE_ITEMS)
+  }
+  // Касса кафе: схема залов (П9) рядом с «Кассы и ПИНы».
+  const pos = out.findIndex((i) => i.key === 'pos')
+  if (pos >= 0) {
+    const ch = [...(out[pos].children ?? [])]
+    ch.splice(1, 0, { key: '/pos/halls', label: tr('Залы и столы', 'Zallar va stollar'), perm: 'stores.manage' })
+    out[pos] = { ...out[pos], children: ch }
   }
   return out
 }
@@ -357,6 +365,7 @@ export function StoreRoutes() {
           <Route key="prep-new" path="kitchen-stock/preps/new" element={<DishEditorPage kind="prep" />} />,
           <Route key="prep" path="kitchen-stock/preps/:id/edit" element={<DishEditorPage kind="prep" />} />,
           <Route key="kitchen" path="kitchen" element={<KitchenPage />} />,
+          <Route key="halls" path="pos/halls" element={<HallsPage />} />,
         ]}
         <Route path="balance" element={<BalancePage />} />
         <Route path="plan" element={<PlanPage />} />

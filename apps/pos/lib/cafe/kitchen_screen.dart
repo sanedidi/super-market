@@ -92,9 +92,11 @@ class _KitchenScreenState extends State<KitchenScreen> {
     final list = [for (final o in (res['orders'] as List?) ?? const []) KOrder.fromJson(o as Map<String, dynamic>)];
     fixedWorkshop = res['workshop_id'] as String?;
     if (fixedWorkshop != null) tab = null;
-    // Новый заказ — звук (кроме первой загрузки).
-    final fresh = list.where((o) => !_known.contains(o.saleId) && o.visible(_scope).isNotEmpty).toList();
-    _known.addAll(list.map((o) => o.saleId));
+    // Новый заказ — звук (кроме первой загрузки). «По команде» звенит,
+    // когда официант скажет «Подавать».
+    bool live(KOrder o) => o.visible(_scope).isNotEmpty && KOrder.statusOf(o.visible(_scope)) != 'waiting';
+    final fresh = list.where((o) => !_known.contains(o.id) && live(o)).toList();
+    _known.addAll([for (final o in list) if (live(o)) o.id]);
     if (!_first && fresh.isNotEmpty && sound) _beep();
     _first = false;
     if (mounted) {
@@ -129,7 +131,7 @@ class _KitchenScreenState extends State<KitchenScreen> {
     }
   }
 
-  void _act(KOrder o, String action) => _post('/pos/kitchen/orders/${o.saleId}/action', {
+  void _act(KOrder o, String action) => _post('/pos/kitchen/orders/${o.id}/action', {
         'action': action,
         if (_scope != null) 'workshop_id': _scope,
       });
@@ -140,7 +142,7 @@ class _KitchenScreenState extends State<KitchenScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(tr('Вернуть заказ № ${o.orderNo ?? ''} в «Готовятся»?', '№ ${o.orderNo ?? ''} buyurtmani «Tayyorlanmoqda»ga qaytarishmi?')),
+        title: Text(tr('Вернуть «${o.title}» в «Готовятся»?', '«${o.title}» ni «Tayyorlanmoqda»ga qaytarishmi?')),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(tr('Нет', 'Yoʻq'))),
           FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: Text(tr('Вернуть', 'Qaytarish'))),
@@ -170,9 +172,10 @@ class _KitchenScreenState extends State<KitchenScreen> {
       final vis = o.visible(scope);
       if (vis.isEmpty) continue;
       final st = KOrder.statusOf(vis);
-      cols[st]?.add(o);
+      // «По команде» — серой карточкой внизу «Новых», пока официант не скажет «Подавать».
+      cols[st == 'waiting' ? 'new' : st]?.add(o);
       final cancelled = vis.any((t) => t.cancelledAt != null || t.items.any((i) => i.cancelled > 0));
-      if (cancelled && !_acked.contains(o.saleId)) cancels.add(o);
+      if (cancelled && !_acked.contains(o.id)) cancels.add(o);
     }
     final ready = cols['ready']!..sort((a, b) => (a.readyAt(a.visible(scope)) ?? a.paidAt).compareTo(b.readyAt(b.visible(scope)) ?? b.paidAt));
     return Scaffold(
@@ -308,12 +311,12 @@ class _KitchenScreenState extends State<KitchenScreen> {
         const SizedBox(width: 14),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${tr('ОТМЕНА', 'BEKOR')} · № ${o.orderNo?.toString().padLeft(3, '0') ?? ''}$more', style: t(17, w: FontWeight.w800, c: Colors.white)),
+            Text('${tr('ОТМЕНА', 'BEKOR')} · ${o.title}$more', style: t(17, w: FontWeight.w800, c: Colors.white)),
             Text('${lines.join(', ')} — ${tr('не готовьте', 'tayyorlamang')}', style: t(14, w: FontWeight.w500, c: Colors.white)),
           ]),
         ),
         FilledButton(
-          onPressed: () => setState(() => _acked.add(o.saleId)),
+          onPressed: () => setState(() => _acked.add(o.id)),
           style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: C.brand, minimumSize: const Size(96, 44)),
           child: Text(tr('Понял', 'Tushundim'), style: t(15, w: FontWeight.w800, c: C.brand)),
         ),
@@ -322,7 +325,9 @@ class _KitchenScreenState extends State<KitchenScreen> {
   }
 
   Widget _column(String title, Color dot, List<KOrder> list, int lanes) {
-    final cards = [for (final o in list) _card(o)];
+    // Ждущие команды — после остальных.
+    final sorted = [...list.where((o) => KOrder.statusOf(o.visible(_scope)) != 'waiting'), ...list.where((o) => KOrder.statusOf(o.visible(_scope)) == 'waiting')];
+    final cards = [for (final o in sorted) _card(o)];
     Widget body;
     if (list.isEmpty) {
       body = const SizedBox.shrink();
@@ -393,7 +398,14 @@ class _KitchenScreenState extends State<KitchenScreen> {
       bar = status == 'new' ? _blue : _green;
       timerColor = status == 'new' ? _blue : _green;
     }
-    final redFrame = status != 'ready' && elapsed > lateAfter;
+    final waiting = status == 'waiting';
+    if (waiting) {
+      bar = C.border;
+      timerColor = C.td;
+      note = tr('ждёт команды официанта — не готовьте', 'ofitsiant buyrugʻini kutmoqda — tayyorlamang');
+      noteColor = C.td;
+    }
+    final redFrame = !waiting && status != 'ready' && elapsed > lateAfter;
     // Позиции других цехов — подсказка «+ 2 позиции в баре».
     final others = <String, int>{};
     if (_scope != null) {
@@ -405,14 +417,15 @@ class _KitchenScreenState extends State<KitchenScreen> {
     final typeIcon = switch (o.orderType) {
       'takeaway' => Icons.takeout_dining_outlined,
       'delivery' => Icons.two_wheeler_rounded,
-      _ => Icons.restaurant_rounded,
+      _ => o.tableLabel.isNotEmpty ? Icons.table_restaurant_outlined : Icons.restaurant_rounded,
     };
     final typeLabel = switch (o.orderType) {
       'takeaway' => tr('С собой', 'Olib ketish'),
       'delivery' => tr('Доставка', 'Yetkazish'),
-      _ => tr('Здесь', 'Shu yerda'),
+      _ => o.waiter.isNotEmpty ? o.waiter : tr('Здесь', 'Shu yerda'),
     };
     final (label, color, action) = switch (status) {
+      'waiting' => (tr('Ждёт команды', 'Buyruq kutilmoqda'), C.td, ''),
       'new' => (tr('Начать готовить', 'Tayyorlashni boshlash'), _blue, 'start'),
       'cooking' => (tr('Готово', 'Tayyor'), _green, 'ready'),
       _ => (o.orderType == 'delivery' ? tr('Отдано курьеру', 'Kuryerga berildi') : tr('Выдано', 'Berildi'), C.dark, 'served'),
@@ -431,7 +444,7 @@ class _KitchenScreenState extends State<KitchenScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
             child: Row(children: [
-              Text('№ ${o.orderNo?.toString().padLeft(3, '0') ?? '—'}', style: tb(26)),
+              Text(o.title, style: tb(26, c: waiting ? C.td : C.tp)),
               const SizedBox(width: 10),
               Icon(typeIcon, size: 16, color: C.t2),
               const SizedBox(width: 4),
@@ -439,7 +452,7 @@ class _KitchenScreenState extends State<KitchenScreen> {
               const Spacer(),
               Icon(Icons.timer_outlined, size: 20, color: timerColor),
               const SizedBox(width: 4),
-              Text(_clock(shown), style: tb(22, c: timerColor)),
+              if (!waiting) Text(_clock(shown), style: tb(22, c: timerColor)),
             ]),
           ),
           if (note != null)
@@ -449,7 +462,7 @@ class _KitchenScreenState extends State<KitchenScreen> {
             ),
           const SizedBox(height: 4),
           for (final tk in vis)
-            for (final i in tk.items) _item(i, enabled: status != 'ready'),
+            for (final i in tk.items) _item(i, enabled: status != 'ready' && !waiting),
           if (others.isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
@@ -469,7 +482,7 @@ class _KitchenScreenState extends State<KitchenScreen> {
             child: SizedBox(
               height: 52,
               child: FilledButton(
-                onPressed: busy ? null : () => _act(o, action),
+                onPressed: busy || waiting ? null : () => _act(o, action),
                 style: FilledButton.styleFrom(backgroundColor: color, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                 child: Text(label, style: t(17, w: FontWeight.w700, c: Colors.white)),
               ),

@@ -2,12 +2,15 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sm_core/sm_core.dart' as sm_i18n;
+import 'package:sm_pos/cafe/bills.dart';
 import 'package:sm_pos/cafe/kitchen_board.dart';
 import 'package:sm_pos/cafe/menu.dart';
 import 'package:sm_pos/cafe/tickets.dart';
 import 'package:sm_pos/core/cart.dart';
 import 'package:sm_pos/core/catalog.dart';
 import 'package:sm_pos/core/journal.dart';
+import 'package:sm_pos/core/money.dart';
+import 'package:sm_pos/data/outbox.dart';
 
 Product dish(String id, int price) => Product(id: id, name: 'Блюдо $id', price: price, fractional: false, marked: false, vatBp: 1200, unit: 'шт');
 
@@ -234,5 +237,148 @@ void main() {
     expect(d.showCooking, isFalse);
     expect(d.cooking, [44, 45]);
     expect(d.ready, [42]);
+  });
+
+  test('экран кухни: счёт стола и «по команде»', () {
+    final o = KOrder.fromJson({
+      'id': 'b1-2',
+      'sale_id': '',
+      'bill_id': 'b1',
+      'table_label': '7',
+      'waiter': 'Азиз',
+      'order_type': 'here',
+      'paid_at': '2026-10-21T07:40:00Z',
+      'tickets': [
+        {'id': 't1', 'workshop_id': 'w1', 'status': 'waiting', 'cook_minutes': 15, 'items': []},
+      ],
+    });
+    expect(o.id, 'b1-2');
+    expect(o.title, 'Стол 7');
+    expect(KOrder.statusOf(o.visible(null)), 'waiting');
+    // Продажа у прилавка: id карточки — продажа.
+    final s = KOrder.fromJson({'sale_id': 's1', 'order_no': 5, 'paid_at': '2026-10-21T07:40:00Z', 'tickets': []});
+    expect(s.id, 's1');
+    expect(s.title, '№ 005');
+  });
+
+  Map<String, dynamic> hallJson() => {
+        'version': 3,
+        'mode': 'both',
+        'service_percent': '10',
+        'waiter_own_tables': true,
+        'service_ikpu': '10399001001000000',
+        'halls': [
+          {'id': 'h1', 'name': 'Зал', 'sort': 0},
+        ],
+        'tables': [
+          {'id': 't7', 'hall_id': 'h1', 'number': '7', 'seats': 4, 'shape': 'rect', 'x': 1, 'y': 1, 'w': 4, 'h': 4, 'service': true},
+          {'id': 't9', 'hall_id': 'h1', 'number': '9', 'seats': 8, 'shape': 'round', 'x': 6, 'y': 1, 'w': 4, 'h': 4, 'service': false},
+        ],
+        'bills': [
+          {
+            'id': 'b1',
+            'table_id': 't7',
+            'table_number': '7',
+            'hall_name': 'Зал',
+            'guests': 2,
+            'service_percent': '10.00',
+            'opened_at': '2026-10-21T07:00:00Z',
+            'items': [
+              {'id': 'i1', 'seq': 1, 'product_id': 'plov', 'name': 'Плов', 'qty': '2', 'price': '45000.00', 'status': 'sent', 'cancelled_qty': '0', 'paid_qty': '0', 'kitchen': 'ready', 'mods': []},
+              {'id': 'i2', 'seq': 2, 'product_id': 'tea', 'name': 'Чай', 'qty': '1', 'price': '6000', 'status': 'sent', 'cancelled_qty': '1', 'paid_qty': '0', 'kitchen': 'cancelled', 'mods': []},
+            ],
+          },
+        ],
+      };
+
+  test('зал: счёт, обслуживание, итоги', () {
+    final v = HallView.fromJson(hallJson());
+    expect(v.serviceBp, 1000);
+    final b = v.billOn('t7')!;
+    expect(b.serviceBp, 1000);
+    expect(b.subtotal, 9000000); // чай отменён
+    expect(b.service, 900000);
+    expect(b.leftTotal, 9900000);
+    expect(b.ready, 1);
+    expect(v.billOn('t9'), isNull);
+    expect(fmtPercent(1000), '10%');
+    expect(fmtPercent(1250), '12,5%');
+    expect(fmtPercent(1205), '12,05%');
+  });
+
+  test('зал: операции из очереди видны сразу', () {
+    final m = CafeMenu.fromJson(jsonDecode(jsonEncode(menuJson())) as Map<String, dynamic>);
+    final v = HallView.fromJson(hallJson());
+    // Открыть стол 9 (без обслуживания), дописать, на кухню.
+    applyBillOp(v, {'id': 'o1', 'bill_id': 'b2', 'kind': 'open', 'table_id': 't9', 'guests': 3, 'waiter_id': ''});
+    final cart = Cart()..addDish(dish('plov', 4500000), mods: [LineMod(optionId: 'o3', name: 'Без лука', action: 'remove')]);
+    final body = itemBody('n1', cart.lines.single, course: 'later');
+    applyBillOp(v, {'id': 'o2', 'bill_id': 'b2', 'kind': 'add', 'item': body});
+    applyBillOp(v, {'id': 'o2', 'bill_id': 'b2', 'kind': 'add', 'item': body}); // повтор
+    final b2 = v.bill('b2')!;
+    expect(b2.guests, 3);
+    expect(b2.waiterId, isNull);
+    expect(b2.serviceBp, 0);
+    expect(b2.items.length, 1);
+    expect(b2.items.single.mods.single.action, 'remove');
+    expect(b2.newCount, 1);
+    applyBillOp(v, {'id': 'o3', 'bill_id': 'b2', 'kind': 'send'}, menu: m);
+    expect(b2.items.single.kitchen, 'waiting');
+    expect(b2.hasWaiting, isTrue);
+    applyBillOp(v, {'id': 'o4', 'bill_id': 'b2', 'kind': 'fire'}, menu: m);
+    expect(b2.items.single.kitchen, 'new');
+    // Тело операции на сервер — без полей кассы.
+    final sent = billOpBody({'id': 'o2', 'bill_id': 'b2', 'kind': 'add', 'item': body});
+    expect((sent['item'] as Map).containsKey('_name'), isFalse);
+    expect((sent['item'] as Map)['course'], 'later');
+    expect((sent['item'] as Map)['modifiers'], [
+      {'option_id': 'o3', 'qty': 1},
+    ]);
+    // Перенос и «закрыть без оплаты».
+    applyBillOp(v, {'id': 'o5', 'bill_id': 'b1', 'kind': 'move', 'to_table_id': 't9'});
+    expect(v.bill('b1')!.tableNumber, '9');
+    applyBillOp(v, {'id': 'o6', 'bill_id': 'b2', 'kind': 'void'});
+    expect(v.bill('b2'), isNull);
+  });
+
+  test('оплата счёта: обслуживание строкой, позиции счёта, без номера заказа', () {
+    final cart = Cart()
+      ..serviceBp = 1000
+      ..serviceIkpu = '10399001001000000';
+    cart.lines.add(CartLine(product: dish('plov', 4500000), qty: 2000, price: 4500000)..billItemId = 'i1');
+    expect(cart.itemsTotal, 9000000);
+    expect(cart.service, 900000);
+    expect(cart.total, 9900000);
+    final rec = SaleRecord(
+      uid: 'u',
+      seq: 1,
+      shiftUid: 's',
+      cashierId: 'e',
+      cashierName: 'Азиз',
+      soldAt: DateTime(2026, 10, 21, 13),
+      lines: SaleRecord.snapshot(cart),
+      payments: [Payment(methodId: 'm1', name: 'Наличные', kind: 'cash', amount: cart.total)],
+      received: cart.total,
+      order: {'type': 'here', 'bill': 'b1', 'table': '7'},
+    );
+    expect(rec.lines.length, 2);
+    expect(rec.service, 900000);
+    expect(rec.total, 9900000);
+    final body = rec.apiBody('sh');
+    expect(body['bill_id'], 'b1');
+    expect(body['service_amount'], '9000.00');
+    expect(body.containsKey('order_no'), isFalse);
+    final items = (body['items'] as List).cast<Map<String, dynamic>>();
+    expect(items.length, 1);
+    expect(items.single['bill_item_id'], 'i1');
+    // Журнал: обратно — то же.
+    final back = SaleRecord.fromJson(jsonDecode(jsonEncode(rec.toJson())) as Map<String, dynamic>);
+    expect(back.billId, 'b1');
+    expect(back.service, 900000);
+    // Оплата в очереди — позиции оплачены на экране зала.
+    final v = HallView.fromJson(hallJson());
+    applyBillSale(v, rec.toJson());
+    expect(v.billOn('t7')!.items.first.left, 0);
+    expect(v.billOn('t7')!.leftTotal, 0);
   });
 }

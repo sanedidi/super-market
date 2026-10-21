@@ -59,6 +59,9 @@ func (m *Module) Routes(r chi.Router) {
 		r.Put("/stop-list", m.setStop)
 		r.Get("/ingredients", m.ingredients)
 		r.Get("/stock", m.stock)
+
+		r.Get("/halls", m.layout)
+		r.Put("/halls", m.saveLayout)
 	})
 }
 
@@ -250,5 +253,19 @@ func (m *Module) stock(w http.ResponseWriter, r *http.Request) {
 func (m *Module) testPrint(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (Workshop, error) {
 		return m.svc.TestPrint(r.Context(), pr(r), id)
+	})
+}
+
+func (m *Module) layout(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[LayoutHall], error) {
+		items, err := m.svc.Layout(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+		return httpx.List[LayoutHall]{Items: items}, err
+	})
+}
+
+func (m *Module) saveLayout(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in LayoutInput) (httpx.List[LayoutHall], error) {
+		items, err := m.svc.SaveLayout(r.Context(), pr(r), in)
+		return httpx.List[LayoutHall]{Items: items}, err
 	})
 }

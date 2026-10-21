@@ -42,6 +42,9 @@ class CartLine {
   /// Комментарий для кухни («рис помягче»).
   String comment;
 
+  /// Кафе со столами: позиция счёта, которую оплачивает эта строка.
+  String? billItemId;
+
   /// Одинаковые модификаторы и комментарий — та же строка (+1 к количеству).
   String get modKey => '${mods.map((m) => '${m.optionId}x${m.qty}').join(',')}|$comment';
 
@@ -83,6 +86,7 @@ class CartLine {
         'discount_fixed': discountFixed,
         if (mods.isNotEmpty) 'mods': [for (final m in mods) m.toJson()],
         if (comment.isNotEmpty) 'comment': comment,
+        if (billItemId != null) 'bill_item_id': billItemId,
       };
 
   factory CartLine.fromJson(Map<String, dynamic> j) {
@@ -96,6 +100,7 @@ class CartLine {
     );
     l.discountBp = j['discount_bp'] as int?;
     l.discountFixed = (j['discount_fixed'] as int?) ?? 0;
+    l.billItemId = j['bill_item_id'] as String?;
     return l;
   }
 }
@@ -119,8 +124,35 @@ class Cart {
   int get count => lines.length;
   int get subtotal => lines.fold(0, (s, l) => s + l.sum);
   int get discount => lines.fold(0, (s, l) => s + l.discount);
-  int get total => lines.fold(0, (s, l) => s + l.total);
-  int get vat => lines.fold(0, (s, l) => s + l.vat);
+
+  /// Кафе со столами: обслуживание в сотых процента (1000 = 10%) от суммы
+  /// строк после скидок и ИКПУ строки «Обслуживание» для фискального чека.
+  int serviceBp = 0;
+  String serviceIkpu = '';
+
+  /// Сумма строк (без обслуживания).
+  int get itemsTotal => lines.fold(0, (s, l) => s + l.total);
+  int get service => serviceBp <= 0 ? 0 : percentOf(itemsTotal, serviceBp);
+
+  /// Итог к оплате: строки и обслуживание.
+  int get total => itemsTotal + service;
+  int get vat => lines.fold(0, (s, l) => s + l.vat) + (service > 0 ? vatIncluded(service, serviceVatBp) : 0);
+
+  /// НДС обслуживания — как у большинства строк счёта.
+  int get serviceVatBp {
+    final n = <int, int>{};
+    for (final l in lines) {
+      n[l.product.vatBp] = (n[l.product.vatBp] ?? 0) + 1;
+    }
+    var best = 0, cnt = -1;
+    n.forEach((k, v) {
+      if (v > cnt) {
+        best = k;
+        cnt = v;
+      }
+    });
+    return best;
+  }
 
   CartLine? lineOf(String productId) {
     for (final l in lines) {

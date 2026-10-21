@@ -16,6 +16,7 @@ import '../core/journal.dart';
 import '../data/api.dart';
 import '../data/store.dart';
 import '../printer/transport.dart';
+import 'bills.dart';
 import 'menu.dart';
 import 'tickets.dart';
 
@@ -112,6 +113,54 @@ class KitchenPrinting {
       if (!target.enabled) continue;
       final bytes = workshopTicket(
           s: cat.settings, sale: sale, menu: menu, workshop: w, lines: e.value, paperMm: target.paperMm, codePage: target.codePage);
+      if (w.networkPrinter) {
+        await _sendNetwork(w, bytes);
+      } else {
+        ownJob.add(bytes);
+      }
+    }
+    if (ownJob.isNotEmpty) {
+      try {
+        await sendToPrinter(own, ownJob.toBytes());
+      } on PrintError catch (e) {
+        error = e.message;
+      } catch (e) {
+        error = '$e';
+      }
+    }
+    return error;
+  }
+
+  /// Счёт стола: бегунки цехов по тем же правилам, что у заказа у прилавка
+  /// (номерка гостю нет). [lines] — позиция и сколько.
+  Future<String?> printTable(Bill bill, List<(BillItem, int)> lines, {TableTicket kind = TableTicket.send, String reason = ''}) async {
+    final cat = catalog();
+    final menu = cat.cafe;
+    if (menu == null || lines.isEmpty) return null;
+    final own = printer();
+    String? error;
+    final ownJob = BytesBuilder(copy: false);
+    final by = <String, List<(BillItem, int)>>{};
+    for (final l in lines) {
+      final d = menu.dish(l.$1.productId);
+      if (d == null || !d.isDish) continue;
+      final w = menu.workshop(d.workshopId);
+      if (w == null) continue;
+      by.putIfAbsent(w.id, () => []).add(l);
+    }
+    final at = DateTime.now();
+    for (final e in by.entries) {
+      final w = menu.workshop(e.key)!;
+      final needed = switch (w.ticketPrint) {
+        'always' => true,
+        'never' => false,
+        _ => !_screenOnline(w.id),
+      };
+      if (!needed) continue;
+      final target = _target(w);
+      if (!target.enabled) continue;
+      final bytes = tableTicket(
+          s: cat.settings, bill: bill, workshop: w, lines: e.value, at: at, kind: kind, reason: reason, paperMm: target.paperMm, codePage: target.codePage);
       if (w.networkPrinter) {
         await _sendNetwork(w, bytes);
       } else {

@@ -168,11 +168,11 @@ func CreateTickets(ctx context.Context, tx pgx.Tx, saleID string) error {
 		var ticketID string
 		err := tx.QueryRow(ctx, `
 			INSERT INTO kitchen_tickets (network_id, store_id, sale_id, workshop_id, order_no, order_type, status,
-			                             cook_minutes, cashier_name, paid_at, served_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CASE WHEN $7 = 'served' THEN now() END)
+			                             cook_minutes, cashier_name, paid_at, served_at, order_key)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CASE WHEN $7 = 'served' THEN now() END, $11)
 			ON CONFLICT (sale_id, workshop_id) DO NOTHING
 			RETURNING id`,
-			networkID, storeID, saleID, g.workshopID, orderNo, orderType, status, g.cook, cashier, soldAt).Scan(&ticketID)
+			networkID, storeID, saleID, g.workshopID, orderNo, orderType, status, g.cook, cashier, soldAt, saleID).Scan(&ticketID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			continue
 		}
@@ -258,12 +258,18 @@ type KitchenTicket struct {
 // KitchenOrder — заказ на экране кухни: бегунки всех цехов (экран цеха
 // показывает свои позиции и «+ N позиций в баре»).
 type KitchenOrder struct {
-	SaleID    string    `json:"sale_id"`
-	OrderNo   *int      `json:"order_no"`
-	OrderType string    `json:"order_type"`
-	PaidAt    time.Time `json:"paid_at"`
-	Cashier   string    `json:"cashier"`
-	// new · cooking · ready · served · cancelled — по всем цехам.
+	// Карточка: продажа у прилавка или отправка счёта стола «На кухню».
+	ID      string  `json:"id"`
+	SaleID  string  `json:"sale_id"`
+	BillID  *string `json:"bill_id"`
+	OrderNo *int    `json:"order_no"`
+	// Стол: «Стол 7», официант.
+	TableLabel string    `json:"table_label"`
+	Waiter     string    `json:"waiter"`
+	OrderType  string    `json:"order_type"`
+	PaidAt     time.Time `json:"paid_at"`
+	Cashier    string    `json:"cashier"`
+	// waiting («по команде») · new · cooking · ready · served · cancelled.
 	Status  string          `json:"status"`
 	ReadyAt *time.Time      `json:"ready_at"`
 	Tickets []KitchenTicket `json:"tickets"`
@@ -287,10 +293,12 @@ func deviceStore(p *identity.Principal) (string, error) {
 // orderStatus — состояние заказа по бегункам с экраном: готовится, пока
 // хоть один цех не готов; готов — когда все готовы.
 func orderStatus(ts []KitchenTicket) (string, *time.Time) {
-	var anyNew, anyCooking, anyReady, anyServed bool
+	var anyNew, anyCooking, anyReady, anyServed, anyWaiting bool
 	var readyAt *time.Time
 	for _, t := range ts {
 		switch t.Status {
+		case "waiting":
+			anyWaiting = true
 		case "new":
 			anyNew = true
 		case "cooking":
@@ -316,6 +324,8 @@ func orderStatus(ts []KitchenTicket) (string, *time.Time) {
 		return "ready", readyAt
 	case anyServed:
 		return "served", nil
+	case anyWaiting:
+		return "waiting", nil
 	}
 	return "cancelled", nil
 }
@@ -324,11 +334,12 @@ func orderStatus(ts []KitchenTicket) (string, *time.Time) {
 func loadOrders(ctx context.Context, q db.Querier, storeID, where string, args ...any) ([]KitchenOrder, error) {
 	all := append([]any{storeID}, args...)
 	rows, err := q.Query(ctx, `
-		SELECT t.id, t.sale_id, t.workshop_id, t.order_no, t.order_type, t.status, t.cook_minutes, t.cashier_name,
+		SELECT t.id, t.order_key, COALESCE(t.sale_id::text, ''), t.bill_id, t.table_label, t.waiter_name, t.workshop_id,
+		       t.order_no, t.order_type, t.status, t.cook_minutes, t.cashier_name,
 		       t.paid_at, t.started_at, t.ready_at, t.cancelled_at
 		FROM kitchen_tickets t
-		WHERE t.store_id = $1 AND t.sale_id IN (SELECT t.sale_id FROM kitchen_tickets t WHERE t.store_id = $1 AND (`+where+`))
-		ORDER BY t.paid_at, t.sale_id, t.workshop_id NULLS FIRST`, all...)
+		WHERE t.store_id = $1 AND t.order_key IN (SELECT t.order_key FROM kitchen_tickets t WHERE t.store_id = $1 AND (`+where+`))
+		ORDER BY t.paid_at, t.order_key, t.workshop_id NULLS FIRST`, all...)
 	if err != nil {
 		return nil, err
 	}
@@ -340,15 +351,15 @@ func loadOrders(ctx context.Context, q db.Querier, storeID, where string, args .
 	for rows.Next() {
 		var t KitchenTicket
 		var o KitchenOrder
-		if err := rows.Scan(&t.ID, &o.SaleID, &t.WorkshopID, &o.OrderNo, &o.OrderType, &t.Status, &t.CookMinutes, &o.Cashier,
-			&o.PaidAt, &t.StartedAt, &t.ReadyAt, &t.CancelledAt); err != nil {
+		if err := rows.Scan(&t.ID, &o.ID, &o.SaleID, &o.BillID, &o.TableLabel, &o.Waiter, &t.WorkshopID, &o.OrderNo, &o.OrderType,
+			&t.Status, &t.CookMinutes, &o.Cashier, &o.PaidAt, &t.StartedAt, &t.ReadyAt, &t.CancelledAt); err != nil {
 			return nil, err
 		}
 		t.Items = []KitchenItem{}
-		i, ok := at[o.SaleID]
+		i, ok := at[o.ID]
 		if !ok {
 			i = len(orders)
-			at[o.SaleID] = i
+			at[o.ID] = i
 			orders = append(orders, o)
 		}
 		ticketAt[t.ID] = [2]int{i, len(orders[i].Tickets)}
@@ -409,7 +420,7 @@ func (s *Service) Board(ctx context.Context, p *identity.Principal) (KitchenBoar
 	}
 	// Отменённый заказ виден ещё 10 минут — «ОТМЕНА».
 	out.Orders, err = loadOrders(ctx, s.pool, storeID,
-		`t.status IN ('new', 'cooking', 'ready') OR (t.status = 'cancelled' AND t.cancelled_at > now() - $2::interval)`,
+		`t.status IN ('waiting', 'new', 'cooking', 'ready') OR (t.status = 'cancelled' AND t.cancelled_at > now() - $2::interval)`,
 		"10 minutes")
 	return out, err
 }
@@ -423,7 +434,7 @@ type KitchenActionInput struct {
 }
 
 // Act — кнопка на карточке заказа. Повтор безопасен: уже сделанное не меняется.
-func (s *Service) Act(ctx context.Context, p *identity.Principal, saleID string, in KitchenActionInput) (KitchenBoard, error) {
+func (s *Service) Act(ctx context.Context, p *identity.Principal, orderKey string, in KitchenActionInput) (KitchenBoard, error) {
 	storeID, err := deviceStore(p)
 	if err != nil {
 		return KitchenBoard{}, err
@@ -431,7 +442,7 @@ func (s *Service) Act(ctx context.Context, p *identity.Principal, saleID string,
 	if p.DeviceKind == deviceDisplay {
 		return KitchenBoard{}, apperr.Forbidden("экран выдачи только показывает номера").Uz("berish ekrani faqat raqamlarni koʻrsatadi")
 	}
-	if !httpx.IsUUID(saleID) {
+	if !validOrderKey(orderKey) {
 		return KitchenBoard{}, apperr.NotFound("заказ не найден").Uz("buyurtma topilmadi")
 	}
 	ws := in.WorkshopID
@@ -445,23 +456,23 @@ func (s *Service) Act(ctx context.Context, p *identity.Principal, saleID string,
 	switch in.Action {
 	case "start":
 		sql = `UPDATE kitchen_tickets SET status = 'cooking', started_at = now()
-			WHERE sale_id = $1 AND store_id = $2 AND status = 'new' AND ($3 = '' OR workshop_id::text = $3)`
+			WHERE order_key = $1 AND store_id = $2 AND status = 'new' AND ($3 = '' OR workshop_id::text = $3)`
 	case "ready":
 		sql = `UPDATE kitchen_tickets SET status = 'ready', started_at = COALESCE(started_at, now()), ready_at = now()
-			WHERE sale_id = $1 AND store_id = $2 AND status IN ('new', 'cooking') AND ($3 = '' OR workshop_id::text = $3)`
+			WHERE order_key = $1 AND store_id = $2 AND status IN ('new', 'cooking') AND ($3 = '' OR workshop_id::text = $3)`
 	case "back":
 		sql = `UPDATE kitchen_tickets SET status = 'cooking', ready_at = NULL
-			WHERE sale_id = $1 AND store_id = $2 AND status = 'ready' AND ($3 = '' OR workshop_id::text = $3)`
+			WHERE order_key = $1 AND store_id = $2 AND status = 'ready' AND ($3 = '' OR workshop_id::text = $3)`
 	case "served":
 		// Выдают заказ целиком — все цеха.
 		sql = `UPDATE kitchen_tickets SET status = 'served', served_at = now(),
 			       started_at = COALESCE(started_at, now()), ready_at = COALESCE(ready_at, now())
-			WHERE sale_id = $1 AND store_id = $2 AND status IN ('new', 'cooking', 'ready') AND ($3 = '' OR $3 <> '')`
+			WHERE order_key = $1 AND store_id = $2 AND status IN ('new', 'cooking', 'ready') AND ($3 = '' OR $3 <> '')`
 	default:
 		return KitchenBoard{}, apperr.Validation("action: ожидается start, ready, back или served").Uz("action: start, ready, back yoki served boʻlishi kerak")
 	}
 	if err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, sql, saleID, storeID, ws)
+		tag, err := tx.Exec(ctx, sql, orderKey, storeID, ws)
 		if err != nil || tag.RowsAffected() == 0 {
 			return err
 		}
@@ -499,6 +510,22 @@ func (s *Service) ItemDone(ctx context.Context, p *identity.Principal, itemID st
 		return KitchenBoard{}, err
 	}
 	return s.Board(ctx, p)
+}
+
+// validOrderKey — карточка кухни: id продажи или «id счёта-номер отправки».
+func validOrderKey(k string) bool {
+	if httpx.IsUUID(k) {
+		return true
+	}
+	if len(k) < 38 || len(k) > 46 || k[36] != '-' || !httpx.IsUUID(k[:36]) {
+		return false
+	}
+	for _, c := range k[37:] {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // ------------------------------------------------------ экран выдачи

@@ -6,6 +6,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:sm_core/sm_core.dart' show tr;
 
 import '../data/api.dart';
 
@@ -76,17 +77,40 @@ class KTicket {
 DateTime? _time(Object? v) => v is String ? DateTime.tryParse(v)?.toLocal() : null;
 
 class KOrder {
-  KOrder({required this.saleId, this.orderNo, required this.orderType, required this.paidAt, required this.cashier, required this.tickets});
+  KOrder({
+    String? id,
+    required this.saleId,
+    this.billId,
+    this.orderNo,
+    this.tableLabel = '',
+    this.waiter = '',
+    required this.orderType,
+    required this.paidAt,
+    required this.cashier,
+    required this.tickets,
+  }) : id = id ?? saleId;
+
+  /// Карточка: продажа у прилавка или отправка счёта стола («счёт-партия»).
+  final String id;
   final String saleId;
+  final String? billId;
   final int? orderNo;
+
+  /// Стол счёта («7») и официант.
+  final String tableLabel;
+  final String waiter;
   final String orderType;
   final DateTime paidAt;
   final String cashier;
   final List<KTicket> tickets;
 
   factory KOrder.fromJson(Map<String, dynamic> j) => KOrder(
-        saleId: j['sale_id'] as String,
+        id: j['id'] as String?,
+        saleId: j['sale_id'] as String? ?? '',
+        billId: j['bill_id'] as String?,
         orderNo: (j['order_no'] as num?)?.toInt(),
+        tableLabel: j['table_label'] as String? ?? '',
+        waiter: j['waiter'] as String? ?? '',
         orderType: j['order_type'] as String? ?? 'here',
         paidAt: _time(j['paid_at']) ?? DateTime.now(),
         cashier: j['cashier'] as String? ?? '',
@@ -97,11 +121,17 @@ class KOrder {
   List<KTicket> visible(String? workshopId) =>
       [for (final t in tickets) if (!t.untracked && (workshopId == null || t.workshopId == workshopId)) t];
 
-  /// Состояние по видимым бегункам: new, cooking, ready, served, cancelled.
+  /// Заголовок карточки: «Стол 7» у счёта, «№ 047» у продажи.
+  String get title => tableLabel.isNotEmpty ? '${tr('Стол', 'Stol')} $tableLabel' : '№ ${orderNo?.toString().padLeft(3, '0') ?? '—'}';
+
+  /// Состояние по видимым бегункам: waiting («по команде»), new, cooking,
+  /// ready, served, cancelled.
   static String statusOf(List<KTicket> ts) {
-    var anyNew = false, anyCooking = false, anyReady = false, anyServed = false;
+    var anyNew = false, anyCooking = false, anyReady = false, anyServed = false, anyWaiting = false;
     for (final t in ts) {
       switch (t.status) {
+        case 'waiting':
+          anyWaiting = true;
         case 'new':
           anyNew = true;
         case 'cooking':
@@ -116,6 +146,7 @@ class KOrder {
     if (anyNew || anyCooking) return 'cooking';
     if (anyReady) return 'ready';
     if (anyServed) return 'served';
+    if (anyWaiting) return 'waiting';
     return 'cancelled';
   }
 

@@ -94,6 +94,12 @@ type Settings struct {
 	KitchenSound       bool `json:"kitchen_sound"`
 	DisplayShowCooking bool `json:"display_show_cooking"`
 	DisplayHideMinutes int  `json:"display_hide_minutes"`
+	// Столы (П10): официант видит только свои столы, пречек обязателен,
+	// закрыть без оплаты — только старший; ИКПУ строки «Обслуживание».
+	WaiterOwnTables  bool   `json:"waiter_own_tables"`
+	PrecheckRequired bool   `json:"precheck_required"`
+	VoidSeniorOnly   bool   `json:"void_senior_only"`
+	ServiceIKPU      string `json:"service_ikpu"`
 }
 
 type SettingsInput struct {
@@ -102,15 +108,21 @@ type SettingsInput struct {
 	KitchenSound       *bool         `json:"kitchen_sound"`
 	DisplayShowCooking *bool         `json:"display_show_cooking"`
 	DisplayHideMinutes *int          `json:"display_hide_minutes"`
+	WaiterOwnTables    *bool         `json:"waiter_own_tables"`
+	PrecheckRequired   *bool         `json:"precheck_required"`
+	VoidSeniorOnly     *bool         `json:"void_senior_only"`
+	ServiceIKPU        *string       `json:"service_ikpu"`
 }
 
 // GetSettings — тип бизнеса виден всем сетям (панель строит меню по нему).
 func (s *Service) GetSettings(ctx context.Context, p *identity.Principal) (Settings, error) {
 	var out Settings
 	err := s.pool.QueryRow(ctx, `SELECT business_type, cafe_mode, trim_scale(service_percent)::text,
-		kitchen_sound, display_show_cooking, display_hide_minutes FROM networks WHERE id = $1`,
+		kitchen_sound, display_show_cooking, display_hide_minutes, waiter_own_tables, precheck_required, void_senior_only, service_ikpu
+		FROM networks WHERE id = $1`,
 		p.NetworkID).Scan(&out.BusinessType, &out.CafeMode, &out.ServicePercent,
-		&out.KitchenSound, &out.DisplayShowCooking, &out.DisplayHideMinutes)
+		&out.KitchenSound, &out.DisplayShowCooking, &out.DisplayHideMinutes,
+		&out.WaiterOwnTables, &out.PrecheckRequired, &out.VoidSeniorOnly, &out.ServiceIKPU)
 	return out, err
 }
 
@@ -133,14 +145,24 @@ func (s *Service) UpdateSettings(ctx context.Context, p *identity.Principal, in 
 		x := v.Money()
 		pct = &x
 	}
+	if in.ServiceIKPU != nil {
+		v := strings.TrimSpace(*in.ServiceIKPU)
+		if v != "" && (len(v) != 17 || strings.Trim(v, "0123456789") != "") {
+			return Settings{}, apperr.Validation("service_ikpu: 17 цифр из tasnif.soliq.uz").Uz("service_ikpu: tasnif.soliq.uz dan 17 raqam")
+		}
+		in.ServiceIKPU = &v
+	}
 	if in.DisplayHideMinutes != nil && (*in.DisplayHideMinutes < 1 || *in.DisplayHideMinutes > 120) {
 		return Settings{}, apperr.Validation("display_hide_minutes: от 1 до 120").Uz("display_hide_minutes: 1 dan 120 gacha")
 	}
 	if err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `UPDATE networks SET cafe_mode = COALESCE($2, cafe_mode),
 			service_percent = COALESCE($3::numeric, service_percent), kitchen_sound = COALESCE($4, kitchen_sound),
-			display_show_cooking = COALESCE($5, display_show_cooking), display_hide_minutes = COALESCE($6, display_hide_minutes)
-			WHERE id = $1`, p.NetworkID, in.CafeMode, pct, in.KitchenSound, in.DisplayShowCooking, in.DisplayHideMinutes); err != nil {
+			display_show_cooking = COALESCE($5, display_show_cooking), display_hide_minutes = COALESCE($6, display_hide_minutes),
+			waiter_own_tables = COALESCE($7, waiter_own_tables), precheck_required = COALESCE($8, precheck_required),
+			void_senior_only = COALESCE($9, void_senior_only), service_ikpu = COALESCE($10, service_ikpu)
+			WHERE id = $1`, p.NetworkID, in.CafeMode, pct, in.KitchenSound, in.DisplayShowCooking, in.DisplayHideMinutes,
+			in.WaiterOwnTables, in.PrecheckRequired, in.VoidSeniorOnly, in.ServiceIKPU); err != nil {
 			return err
 		}
 		return bumpNetwork(ctx, tx, p.NetworkID)

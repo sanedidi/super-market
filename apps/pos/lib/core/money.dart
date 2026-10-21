@@ -97,3 +97,12 @@ List<int> cashSuggestions(int due) {
   final list = out.where((v) => v > due).toList()..sort();
   return list.take(4).toList();
 }
+
+/// Процент из сотых долей: 1000 → «10%», 1250 → «12,5%».
+String fmtPercent(int bp) {
+  final whole = bp ~/ 100;
+  final frac = bp % 100;
+  if (frac == 0) return '$whole%';
+  final f = frac % 10 == 0 ? '${frac ~/ 10}' : frac.toString().padLeft(2, '0');
+  return '$whole,$f%';
+}

@@ -2,7 +2,9 @@ package server_test
 
 import (
 	"context"
+	"fmt"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -851,4 +853,301 @@ func TestCafeKitchen(t *testing.T) {
 		t.Fatalf("settings = %v", set.Body)
 	}
 	a.expect(a.do("PATCH", "/store/cafe/settings", tok, map[string]any{"display_hide_minutes": 0}), 400, "bad hide")
+}
+
+// Этап 5: залы и столы, открытый счёт — операции (идемпотентные), кухня,
+// перенос, объединение, отмена с ПИНом старшего, разделение оплаты,
+// закрыть без оплаты.
+func TestCafeTables(t *testing.T) {
+	pool := freshDB(t)
+	cfg := testConfig()
+	cfg.DevOTPCode = "111111"
+	a := newAPI(t, cfg, pool, nil)
+	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
+	a.expect(a.do("POST", "/admin/networks", adminTok, map[string]any{
+		"name": "Кафе", "kind": "single", "owner_phone": "+998900000002", "owner_name": "В", "business_type": "cafe",
+	}), 201, "cafe")
+	tok, _ := a.login("+998900000002", identity.AppStore)
+	store := a.expect(a.do("POST", "/store/stores", tok, map[string]any{"name": "Кафе 1"}), 201, "store").str("id")
+	hot := a.expect(a.do("POST", "/store/cafe/menu-groups", tok, map[string]any{"name": "Горячее"}), 201, "hot").str("id")
+	drinks := a.expect(a.do("POST", "/store/cafe/menu-groups", tok, map[string]any{"name": "Напитки"}), 201, "drinks").str("id")
+	a.expect(a.do("POST", "/store/cafe/workshops", tok, map[string]any{"name": "Бар", "group_ids": []string{drinks}}), 201, "bar")
+	plov := a.expect(a.do("POST", "/store/cafe/dishes", tok, map[string]any{
+		"kind": "dish", "name": "Плов", "price": 35000, "menu_code": 12, "menu_group_id": hot, "ikpu": "10202001001000000",
+	}), 201, "plov").str("id")
+	tea := a.expect(a.do("POST", "/store/cafe/dishes", tok, map[string]any{
+		"kind": "dish", "name": "Чай", "price": 6000, "menu_code": 40, "menu_group_id": drinks, "ikpu": "10202001001000000",
+	}), 201, "tea").str("id")
+	a.expect(a.do("PATCH", "/store/cafe/settings", tok, map[string]any{"cafe_mode": "both", "service_percent": "10", "service_ikpu": "123"}), 400, "bad ikpu")
+	set := a.expect(a.do("PATCH", "/store/cafe/settings", tok, map[string]any{"cafe_mode": "both", "service_percent": "10", "precheck_required": true}), 200, "settings")
+	if set.str("cafe_mode") != "both" || set.Body["precheck_required"] != true || set.Body["void_senior_only"] != true {
+		t.Fatalf("settings = %v", set.Body)
+	}
+
+	// Схема зала (П9).
+	table := func(n string, seats, x int) map[string]any {
+		return map[string]any{"number": n, "seats": seats, "shape": "rect", "x": x, "y": 0, "w": 2, "h": 2}
+	}
+	a.expect(a.do("PUT", "/store/cafe/halls", tok, map[string]any{"store_id": store, "halls": []map[string]any{
+		{"name": "Зал", "tables": []map[string]any{table("1", 2, 0), table("1", 4, 3)}},
+	}}), 400, "duplicate number")
+	lay := a.expect(a.do("PUT", "/store/cafe/halls", tok, map[string]any{"store_id": store, "halls": []map[string]any{
+		{"name": "Зал", "name_uz": "Zal", "tables": []map[string]any{table("1", 2, 0), table("7", 4, 3)}},
+		{"name": "Терраса", "tables": []map[string]any{table("Т3", 6, 0)}},
+	}}), 200, "layout").items()
+	if len(lay) != 2 || len(lay[0]["tables"].([]any)) != 2 {
+		t.Fatalf("layout = %v", lay)
+	}
+	tid := map[string]string{}
+	for _, h := range lay {
+		for _, x := range h["tables"].([]any) {
+			tt := x.(map[string]any)
+			tid[tt["number"].(string)] = tt["id"].(string)
+		}
+	}
+
+	d := a.expect(a.do("POST", "/store/pos/devices", tok, map[string]any{"store_id": store, "name": "Касса"}), 201, "device")
+	posTok := a.expect(a.do("POST", "/pos/activate", "", map[string]any{"code": d.str("activation_code")}), 200, "activate").str("token")
+	k := a.expect(a.do("POST", "/store/pos/devices", tok, map[string]any{"store_id": store, "name": "Кухня", "kind": "kitchen"}), 201, "kds")
+	kdsTok := a.expect(a.do("POST", "/pos/activate", "", map[string]any{"code": k.str("activation_code")}), 200, "activate kds").str("token")
+	var owner string
+	for _, e := range a.expect(a.do("GET", "/store/employees", tok, nil), 200, "employees").items() {
+		owner = e["id"].(string)
+	}
+	a.expect(a.do("PUT", "/store/pos/pins/"+owner, tok, map[string]any{"pin": "9999"}), 200, "pin")
+	cat := a.expect(posDo(a, "GET", "/pos/catalog", posTok, "", nil), 200, "catalog")
+	var cash string
+	for _, x := range cat.Body["payment_methods"].([]any) {
+		if m := x.(map[string]any); m["kind"] == "cash" {
+			cash = m["id"].(string)
+		}
+	}
+	shift := a.expect(posDo(a, "POST", "/pos/shifts", posTok, owner, map[string]any{"client_uid": "shift-tables-01"}), 201, "shift").str("id")
+
+	hall := a.expect(posDo(a, "GET", "/pos/hall", posTok, owner, nil), 200, "hall")
+	if hall.str("mode") != "both" || len(hall.Body["halls"].([]any)) != 2 || len(hall.Body["tables"].([]any)) != 3 || len(hall.Body["bills"].([]any)) != 0 {
+		t.Fatalf("hall = %v", hall.Body)
+	}
+
+	n := 0
+	uid := func() string {
+		n++
+		return fmt.Sprintf("00000000-0000-4000-8000-%012d", n)
+	}
+	op := func(body map[string]any, want int, what string) resp {
+		if _, ok := body["id"]; !ok {
+			body["id"] = uid()
+		}
+		return a.expect(posDo(a, "POST", "/pos/bills/ops", posTok, owner, body), want, what)
+	}
+	b1 := "11111111-0000-4000-8000-000000000001"
+	open := map[string]any{"id": uid(), "bill_id": b1, "kind": "open", "table_id": tid["7"], "guests": 4}
+	bill := op(open, 200, "open")
+	if bill.str("status") != "open" || bill.str("table_number") != "7" || bill.str("service_percent") != "10" || bill.Body["guests"].(float64) != 4 {
+		t.Fatalf("bill = %v", bill.Body)
+	}
+	op(open, 200, "open again (same op)")
+	op(map[string]any{"bill_id": "11111111-0000-4000-8000-000000000009", "kind": "open", "table_id": tid["7"]}, 409, "table busy")
+	// Кассир без кассы (без X-Cashier-ID) не может.
+	a.expect(posDo(a, "POST", "/pos/bills/ops", posTok, "", map[string]any{"id": uid(), "bill_id": b1, "kind": "guests", "guests": 3}), 403, "no cashier")
+
+	item := func(id, product string, qty, price int, course string, guest int) map[string]any {
+		return map[string]any{"bill_id": b1, "kind": "add", "item": map[string]any{
+			"id": id, "product_id": product, "qty": qty, "price": price, "course": course, "guest": guest, "note": "без зелени"}}
+	}
+	plovItem, teaItem, extra := uid(), uid(), uid()
+	op(item(plovItem, plov, 2, 35000, "now", 1), 200, "add plov")
+	op(item(teaItem, tea, 1, 6000, "later", 2), 200, "add tea")
+	op(item(extra, plov, 1, 35000, "now", 0), 400, "bad guest")
+	op(item(extra, plov, 1, 35000, "now", 3), 200, "add extra")
+	op(map[string]any{"bill_id": b1, "kind": "remove", "item_id": extra}, 200, "remove new")
+	bill = op(map[string]any{"bill_id": b1, "kind": "update", "item_id": teaItem, "qty": 2}, 200, "tea qty")
+	if len(bill.Body["items"].([]any)) != 2 || bill.str("subtotal") != "82000.00" || bill.str("service") != "8200.00" || bill.str("total") != "90200.00" {
+		t.Fatalf("bill after add = %v", bill.Body)
+	}
+
+	// На кухню: плов — сразу, чай — «по команде».
+	bill = op(map[string]any{"bill_id": b1, "kind": "send"}, 200, "send")
+	op(map[string]any{"bill_id": b1, "kind": "remove", "item_id": plovItem}, 409, "remove sent")
+	board := a.expect(posDo(a, "GET", "/pos/kitchen/board", kdsTok, "", nil), 200, "board").Body["orders"].([]any)
+	if len(board) != 2 {
+		t.Fatalf("board = %v", board)
+	}
+	statuses := map[string]string{}
+	var plovOrder string
+	for _, x := range board {
+		o := x.(map[string]any)
+		if o["table_label"] != "7" || o["order_no"] != nil {
+			t.Fatalf("bill order = %v", o)
+		}
+		statuses[o["status"].(string)] = o["id"].(string)
+		if o["status"] == "new" {
+			plovOrder = o["id"].(string)
+		}
+	}
+	if statuses["new"] == "" || statuses["waiting"] == "" {
+		t.Fatalf("statuses = %v", statuses)
+	}
+	op(map[string]any{"bill_id": b1, "kind": "fire"}, 200, "fire")
+	a.expect(posDo(a, "POST", "/pos/kitchen/orders/"+plovOrder+"/action", kdsTok, "", map[string]any{"action": "start"}), 200, "start plov")
+
+	// Отмена плова — только со старшим и причиной; кухня видит «ОТМЕНА».
+	op(map[string]any{"bill_id": b1, "kind": "cancel", "item_id": plovItem, "qty": 1, "reason": "гость передумал"}, 403, "cancel without senior")
+	op(map[string]any{"bill_id": b1, "kind": "cancel", "item_id": plovItem, "qty": 3, "reason": "x", "approver_id": owner}, 409, "cancel too many")
+	bill = op(map[string]any{"bill_id": b1, "kind": "cancel", "item_id": plovItem, "qty": 1, "reason": "гость передумал", "approver_id": owner, "spoil": true}, 200, "cancel")
+	for _, x := range bill.Body["items"].([]any) {
+		it := x.(map[string]any)
+		if it["id"] == plovItem && (it["cancelled_qty"] != "1" || it["kitchen"] != "cooking") {
+			t.Fatalf("cancelled item = %v", it)
+		}
+	}
+	if bill.str("subtotal") != "47000.00" {
+		t.Fatalf("subtotal after cancel = %s", bill.str("subtotal"))
+	}
+	var kc string
+	if err := pool.QueryRow(context.Background(), `SELECT trim_scale(cancelled_qty)::text FROM kitchen_ticket_items WHERE bill_item_id = $1`, plovItem).Scan(&kc); err != nil || kc != "1" {
+		t.Fatalf("kitchen cancelled = %s %v", kc, err)
+	}
+
+	// Перенос на свободный стол 1; объединение со столом Т3.
+	op(map[string]any{"bill_id": b1, "kind": "move", "to_table_id": tid["Т3"]}, 200, "move to T3")
+	b2 := "11111111-0000-4000-8000-000000000002"
+	op(map[string]any{"bill_id": b2, "kind": "open", "table_id": tid["7"], "guests": 2}, 200, "open b2 on 7")
+	op(map[string]any{"bill_id": b1, "kind": "move", "to_table_id": tid["7"]}, 409, "move to busy")
+	op(map[string]any{"bill_id": b2, "kind": "add", "item": map[string]any{"id": uid(), "product_id": tea, "qty": 1, "price": 6000}}, 200, "add tea b2")
+	merged := op(map[string]any{"bill_id": b2, "kind": "merge", "to_bill_id": b1}, 200, "merge b2 → b1")
+	if merged.str("id") != b1 || len(merged.Body["items"].([]any)) != 3 || merged.Body["guests"].(float64) != 6 {
+		t.Fatalf("merged = %v", merged.Body)
+	}
+	op(map[string]any{"bill_id": b2, "kind": "guests", "guests": 2}, 409, "op on merged bill")
+
+	// Часть блюд — за стол 1 (новый счёт).
+	b3 := "11111111-0000-4000-8000-000000000003"
+	moved := op(map[string]any{"bill_id": b1, "kind": "move_items", "to_table_id": tid["1"], "new_bill_id": b3,
+		"items": []map[string]any{{"id": plovItem, "qty": 1}}}, 200, "move items")
+	for _, x := range moved.Body["items"].([]any) {
+		if it := x.(map[string]any); it["id"] == plovItem && it["qty"] != "1" {
+			t.Fatalf("source after move = %v", it)
+		}
+	}
+	h := a.expect(posDo(a, "GET", "/pos/hall", posTok, owner, nil), 200, "hall 2")
+	bills := map[string]map[string]any{}
+	for _, x := range h.Body["bills"].([]any) {
+		b := x.(map[string]any)
+		bills[b["id"].(string)] = b
+	}
+	if len(bills) != 2 || bills[b3] == nil || bills[b3]["table_number"] != "1" || bills[b3]["subtotal"] != "35000.00" {
+		t.Fatalf("hall bills = %v", bills)
+	}
+
+	// Оплата счёта стола 1 целиком (с обслуживанием).
+	pay := func(billID, client string, lines []map[string]any, service, total string, want int) resp {
+		items := []map[string]any{}
+		for _, l := range lines {
+			items = append(items, l)
+		}
+		return a.expect(posDo(a, "POST", "/pos/sales", posTok, owner, map[string]any{
+			"client_uid": client, "shift_id": shift, "bill_id": billID, "service_amount": service,
+			"items": items, "payments": []map[string]any{{"payment_method_id": cash, "amount": total}},
+		}), want, "pay "+client)
+	}
+	b3item := bills[b3]["items"].([]any)[0].(map[string]any)["id"].(string)
+	line := func(id, product string, qty, price int) map[string]any {
+		return map[string]any{"product_id": product, "qty": qty, "price": price, "bill_item_id": id}
+	}
+	pay(b3, "bill-pay-0001", []map[string]any{line(b3item, plov, 1, 35000)}, "9999.00", "44999.00", 400)
+	pay(b3, "bill-pay-0002", []map[string]any{line(b3item, plov, 2, 35000)}, "7000.00", "77000.00", 409)
+	s := pay(b3, "bill-pay-0003", []map[string]any{line(b3item, plov, 1, 35000)}, "3500.00", "38500.00", 201)
+	if s.str("service_amount") != "3500.00" || s.str("total") != "38500.00" || s.str("bill_id") != b3 {
+		t.Fatalf("sale = %v", s.Body)
+	}
+	pay(b3, "bill-pay-0004", []map[string]any{line(b3item, plov, 1, 35000)}, "3500.00", "38500.00", 409)
+
+	// Счёт b1: разделить — гость платит за чай, остаток — второй гость.
+	var teaB2 string
+	for _, x := range bills[b1]["items"].([]any) {
+		it := x.(map[string]any)
+		if it["id"] != teaItem && it["id"] != plovItem {
+			teaB2 = it["id"].(string)
+		}
+	}
+	pay(b1, "bill-pay-0005", []map[string]any{line(teaItem, tea, 2, 6000)}, "1200.00", "13200.00", 201)
+	h = a.expect(posDo(a, "GET", "/pos/hall", posTok, owner, nil), 200, "hall 3")
+	if len(h.Body["bills"].([]any)) != 1 {
+		t.Fatalf("bill closed too early: %v", h.Body["bills"])
+	}
+	op(map[string]any{"bill_id": b1, "kind": "void", "reason": "ушли", "approver_id": owner}, 409, "void partly paid")
+	pay(b1, "bill-pay-0006", []map[string]any{line(teaB2, tea, 1, 6000)}, "600.00", "6600.00", 201)
+	h = a.expect(posDo(a, "GET", "/pos/hall", posTok, owner, nil), 200, "hall 4")
+	if len(h.Body["bills"].([]any)) != 0 {
+		t.Fatalf("bills left = %v", h.Body["bills"])
+	}
+
+	// Закрыть без оплаты — старший и причина.
+	b4 := "11111111-0000-4000-8000-000000000004"
+	op(map[string]any{"bill_id": b4, "kind": "open", "table_id": tid["7"]}, 200, "open b4")
+	op(map[string]any{"bill_id": b4, "kind": "add", "item": map[string]any{"id": uid(), "product_id": plov, "qty": 1, "price": 35000}}, 200, "add b4")
+	op(map[string]any{"bill_id": b4, "kind": "send"}, 200, "send b4")
+	op(map[string]any{"bill_id": b4, "kind": "void", "reason": "ушли"}, 403, "void without senior")
+	v := op(map[string]any{"bill_id": b4, "kind": "void", "reason": "гость ушёл", "approver_id": owner}, 200, "void")
+	if v.str("status") != "void" {
+		t.Fatalf("void = %v", v.Body)
+	}
+	var cancelled int
+	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM kitchen_tickets WHERE bill_id = $1 AND status = 'cancelled'`, b4).Scan(&cancelled); err != nil || cancelled != 1 {
+		t.Fatalf("void kitchen = %d %v", cancelled, err)
+	}
+	// Пустой стол (на кухню ничего не ушло) закрывает сам официант, без причины.
+	b7 := "11111111-0000-4000-8000-000000000007"
+	op(map[string]any{"bill_id": b7, "kind": "open", "table_id": tid["7"]}, 200, "open b7")
+	op(map[string]any{"bill_id": b7, "kind": "add", "item": map[string]any{"id": uid(), "product_id": plov, "qty": 1, "price": 35000}}, 200, "add b7")
+	if v := op(map[string]any{"bill_id": b7, "kind": "void"}, 200, "void empty"); v.str("status") != "void" {
+		t.Fatalf("void empty = %v", v.Body)
+	}
+	// Стол с открытым счётом не удалить.
+	b5 := "11111111-0000-4000-8000-000000000005"
+	op(map[string]any{"bill_id": b5, "kind": "open", "table_id": tid["1"]}, 200, "open b5")
+	a.expect(a.do("PUT", "/store/cafe/halls", tok, map[string]any{"store_id": store, "halls": []map[string]any{
+		{"id": lay[0]["id"], "name": "Зал", "tables": []map[string]any{}},
+	}}), 409, "delete busy table")
+
+	// Нагрузка: три кассы одновременно дописывают один счёт, каждая шлёт
+	// каждую операцию дважды (повтор после обрыва) — ничего не теряется и не
+	// дублируется.
+	b6 := "11111111-0000-4000-8000-000000000006"
+	op(map[string]any{"bill_id": b6, "kind": "open", "table_id": tid["Т3"]}, 200, "open b6")
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	failed := []int{}
+	for dev := 0; dev < 3; dev++ {
+		wg.Add(1)
+		go func(dev int) {
+			defer wg.Done()
+			for i := 0; i < 15; i++ {
+				opID := fmt.Sprintf("00000000-0000-4000-9%03d-%012d", dev, i)
+				itemID := fmt.Sprintf("00000000-0000-4000-a%03d-%012d", dev, i)
+				body := map[string]any{"id": opID, "bill_id": b6, "kind": "add",
+					"item": map[string]any{"id": itemID, "product_id": tea, "qty": 1, "price": 6000}}
+				for rep := 0; rep < 2; rep++ {
+					r := posDo(a, "POST", "/pos/bills/ops", posTok, owner, body)
+					if r.Status != 200 {
+						mu.Lock()
+						failed = append(failed, r.Status)
+						mu.Unlock()
+					}
+				}
+			}
+		}(dev)
+	}
+	wg.Wait()
+	if len(failed) > 0 {
+		t.Fatalf("concurrent ops failed: %v", failed)
+	}
+	var items, seqs int
+	if err := pool.QueryRow(context.Background(), `SELECT count(*), count(DISTINCT seq) FROM bill_items WHERE bill_id = $1`, b6).Scan(&items, &seqs); err != nil {
+		t.Fatal(err)
+	}
+	if items != 45 || seqs != 45 {
+		t.Fatalf("items = %d, distinct seq = %d", items, seqs)
+	}
 }
