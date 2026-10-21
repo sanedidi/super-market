@@ -33,6 +33,45 @@ class HeldCart {
       HeldCart(DateTime.parse(j['at'] as String).toLocal(), Cart.fromJson(j['lines'] as List));
 }
 
+/// Смена этой кассы, открытая на сервере (GET /pos/shifts/current).
+class ServerShift {
+  ServerShift({
+    required this.id,
+    required this.number,
+    required this.openedAt,
+    required this.openedByName,
+    required this.openingCash,
+    required this.salesCount,
+    required this.salesTotal,
+    required this.expectedCash,
+  });
+
+  final String id;
+  final int number;
+  final DateTime openedAt;
+  final String openedByName;
+  final int openingCash;
+  final int salesCount;
+  final int salesTotal;
+
+  /// Наличные по расчёту сервера: размен + наличные продажи − возвраты ± внесения/изъятия.
+  final int expectedCash;
+
+  factory ServerShift.fromJson(Map<String, dynamic> j) {
+    final r = (j['report'] as Map<String, dynamic>?) ?? const {};
+    return ServerShift(
+      id: j['id'] as String,
+      number: (j['number'] as num?)?.toInt() ?? 0,
+      openedAt: DateTime.tryParse(j['opened_at'] as String? ?? '')?.toLocal() ?? DateTime.now(),
+      openedByName: j['opened_by_name'] as String? ?? '',
+      openingCash: parseMoney(j['opening_cash']),
+      salesCount: (r['sales_count'] as num?)?.toInt() ?? 0,
+      salesTotal: parseMoney(r['sales_total']),
+      expectedCash: parseMoney(r['expected_cash'] ?? j['opening_cash']),
+    );
+  }
+}
+
 /// Состояние кассы: устройство, каталог, кассир, смена, очередь на сервер.
 /// Всё, что касается продажи, работает без интернета.
 class PosController extends ChangeNotifier {
@@ -330,36 +369,95 @@ class PosController extends ChangeNotifier {
   Future<void> _adoptServerShift() async {
     final id = catalog.openShiftId;
     if (id == null || _closedServerShifts.contains(id) || outbox.pending > 0) return;
-    var opening = 0;
-    var number = 0;
-    var openedAt = _now();
-    var openedByName = cashier?.name ?? '';
+    ServerShift? sh;
     try {
-      final res = await api.get('/pos/shifts/current', cashier: cashier?.id) as Map<String, dynamic>;
-      final sh = res['shift'] as Map<String, dynamic>?;
-      if (sh == null || sh['id'] != id) return;
-      opening = parseMoney(sh['opening_cash']);
-      number = (sh['number'] as num?)?.toInt() ?? 0;
-      openedAt = DateTime.tryParse(sh['opened_at'] as String? ?? '')?.toLocal() ?? openedAt;
-      openedByName = sh['opened_by_name'] as String? ?? openedByName;
-    } on ApiError {
+      sh = await _currentServerShift();
+    } catch (_) {
       return;
     }
-    if (shift != null) return;
+    if (sh == null || sh.id != id || shift != null) return;
+    await _adopt(sh);
+  }
+
+  /// Продолжить серверную смену на кассе (после переустановки или когда
+  /// кассир выбрал «Продолжить смену №N» при открытии).
+  Future<void> _adopt(ServerShift sh) async {
     shift = LocalShift(
-      uid: 'srv-$id',
-      openedAt: openedAt,
-      openingCash: opening,
+      uid: 'srv-${sh.id}',
+      openedAt: sh.openedAt,
+      openingCash: sh.openingCash,
       openedBy: '',
-      openedByName: openedByName,
-      serverId: id,
-      number: number,
+      openedByName: sh.openedByName.isEmpty ? (cashier?.name ?? '') : sh.openedByName,
+      serverId: sh.id,
+      number: sh.number,
     );
-    await outbox.knowShift(shift!.uid, id);
+    await outbox.knowShift(shift!.uid, sh.id);
     await _saveState();
     await _loadJournal();
     if (cashier != null) stage = Stage.work;
     notifyListeners();
+  }
+
+  Future<ServerShift?> _currentServerShift() async {
+    final res = await api.get('/pos/shifts/current', cashier: cashier?.id) as Map<String, dynamic>;
+    final sh = res['shift'] as Map<String, dynamic>?;
+    return sh == null ? null : ServerShift.fromJson(sh);
+  }
+
+  // ------------------------------------------------ зависшая смена на сервере
+
+  /// Сервер не принял открытие смены: на кассе (на сервере) уже открыта другая
+  /// смена — обычно прошлый Z-отчёт не дошёл. Из-за неё отклоняется и всё,
+  /// что пробито в текущей смене (Figma «Касса · «Не принято N»», НП1).
+  bool get staleShiftBlocks => outbox.failed.any((i) => i.kind == 'shift_open' && i.errorCode == 'shift_open');
+
+  /// Открытая на сервере смена этой кассы, которая не совпадает с текущей
+  /// сменой кассы; null — такой нет. Без связи — ApiError.
+  Future<ServerShift?> staleServerShift() async {
+    final sh = await _currentServerShift();
+    if (!online) {
+      online = true;
+      notifyListeners();
+    }
+    if (sh == null || sh.id == shift?.serverId) return null;
+    // Z-отчёт этой смены ещё в очереди — она не зависла, просто не доотправлена.
+    if (outbox.pendingItems.any((i) => i.kind == 'shift_close' && outbox.shiftIds[i.body['shift_uid']] == sh.id)) return null;
+    return sh;
+  }
+
+  /// Закрыть на сервере старую смену этой кассы (НП2): пересчёта нет — сумма
+  /// в ящике по расчёту сервера. Потом всё непринятое уходит заново.
+  /// Ошибка — текст, успех — null.
+  Future<String?> closeServerShift(ServerShift sh) async {
+    try {
+      await api.post('/pos/shifts/${sh.id}/close', {'stale': true, 'closed_at': _now().toUtc().toIso8601String()},
+          cashier: cashier?.id);
+    } on ApiError catch (e) {
+      _netError(e);
+      return e.isNetwork ? tr('Нет связи с сервером — попробуйте, когда появится интернет', 'Server bilan aloqa yoʻq — internet paydo boʻlganda urinib koʻring') : e.message;
+    }
+    _closedServerShifts.add(sh.id);
+    await _saveState();
+    online = true;
+    await retryFailed();
+    return null;
+  }
+
+  /// «Продолжить смену №N» при открытии смены (НП4): касса берёт серверную смену.
+  Future<void> continueServerShift(ServerShift sh) async {
+    _closedServerShifts.remove(sh.id);
+    await _adopt(sh);
+  }
+
+  /// «Повторить все»: всё, что сервер не принял, — снова в очередь и на сервер.
+  Future<void> retryFailed() async {
+    await outbox.retryAll();
+    notifyListeners();
+    // Идёт отправка — дождаться, иначе sync() сразу вернётся и очередь постоит.
+    while (syncing) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    await sync();
   }
 
   // ------------------------------------------------------------- смена

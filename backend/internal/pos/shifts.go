@@ -38,13 +38,16 @@ type Shift struct {
 	CountedCash  *string    `json:"counted_cash"`
 	Diff         *string    `json:"diff"`
 	DiffReason   string     `json:"diff_reason"`
-	Report       *Report    `json:"report,omitempty"`
+	// Откуда закрыта: pos — на кассе, pos_stale — касса закрыла свою старую
+	// смену, оставшуюся открытой на сервере, panel — в панели магазина.
+	ClosedVia *string `json:"closed_via"`
+	Report    *Report `json:"report,omitempty"`
 }
 
 const shiftSelect = `
 	SELECT sh.id, sh.number, sh.store_id, st.name, sh.device_id, d.name, sh.opened_by, oe.full_name, sh.opened_at,
 	       sh.opening_cash::text, sh.closed_by, ce.full_name, sh.closed_at, sh.expected_cash::text, sh.counted_cash::text,
-	       sh.diff::text, sh.diff_reason
+	       sh.diff::text, sh.diff_reason, sh.closed_via
 	FROM pos_shifts sh
 	JOIN stores st ON st.id = sh.store_id
 	JOIN pos_devices d ON d.id = sh.device_id
@@ -55,7 +58,7 @@ func scanShift(r pgx.CollectableRow) (Shift, error) {
 	var s Shift
 	err := r.Scan(&s.ID, &s.Number, &s.StoreID, &s.StoreName, &s.DeviceID, &s.DeviceName, &s.OpenedBy, &s.OpenedByName,
 		&s.OpenedAt, &s.OpeningCash, &s.ClosedBy, &s.ClosedByName, &s.ClosedAt, &s.ExpectedCash, &s.CountedCash,
-		&s.Diff, &s.DiffReason)
+		&s.Diff, &s.DiffReason, &s.ClosedVia)
 	return s, err
 }
 
@@ -287,6 +290,10 @@ type CloseInput struct {
 	CountedCash money.Amount `json:"counted_cash"`
 	DiffReason  string       `json:"diff_reason"`
 	ClosedAt    *time.Time   `json:"closed_at"`
+	// Stale — касса закрывает свою старую смену, которая осталась открытой на
+	// сервере (Z-отчёт не дошёл, сервер не принимает новую смену). Пересчёта
+	// нет: без counted_cash сумма в ящике — по расчёту, расхождение 0.
+	Stale bool `json:"stale"`
 }
 
 // CloseShift закрывает смену: кассир пересчитал наличные, сервер сравнивает
@@ -295,7 +302,30 @@ func (s *Service) CloseShift(ctx context.Context, p *identity.Principal, shiftID
 	if err := requireCashier(p); err != nil {
 		return Shift{}, err
 	}
-	if !in.CountedCash.Valid() || money.D(string(in.CountedCash)).Sign() < 0 {
+	via := "pos"
+	if in.Stale {
+		via = "pos_stale"
+	}
+	return s.closeShift(ctx, p, shiftID, in, via)
+}
+
+// StoreCloseShift — владелец закрывает в панели смену, которая осталась
+// открытой (касса недоступна или Z-отчёт не дошёл). Право «Финансы».
+func (s *Service) StoreCloseShift(ctx context.Context, p *identity.Principal, shiftID string, in CloseInput) (Shift, error) {
+	if err := p.Require(identity.PermFinanceManage); err != nil {
+		return Shift{}, err
+	}
+	if p.EmployeeID == "" {
+		return Shift{}, apperr.Forbidden("закрыть смену может только сотрудник сети").Uz("smenani faqat tarmoq xodimi yopishi mumkin")
+	}
+	in.Stale = false
+	in.ClosedAt = nil
+	return s.closeShift(ctx, p, shiftID, in, "panel")
+}
+
+func (s *Service) closeShift(ctx context.Context, p *identity.Principal, shiftID string, in CloseInput, via string) (Shift, error) {
+	byExpected := in.Stale && strings.TrimSpace(string(in.CountedCash)) == ""
+	if !byExpected && (!in.CountedCash.Valid() || money.D(string(in.CountedCash)).Sign() < 0) {
 		return Shift{}, apperr.Validation("counted_cash: посчитанная сумма в ящике").Uz("counted_cash: qutidagi sanalgan summa")
 	}
 	in.DiffReason = strings.TrimSpace(in.DiffReason)
@@ -324,14 +354,18 @@ func (s *Service) CloseShift(ctx context.Context, p *identity.Principal, shiftID
 		if err != nil {
 			return err
 		}
-		diff := money.D(string(in.CountedCash)).Sub(money.D(r.ExpectedCash))
+		counted := string(in.CountedCash)
+		if byExpected {
+			counted = r.ExpectedCash
+		}
+		diff := money.D(counted).Sub(money.D(r.ExpectedCash))
 		if diff.Sign() != 0 && in.DiffReason == "" {
 			return apperr.Validation("diff_reason: укажите причину расхождения").Uz("diff_reason: farq sababini kiriting").
 				WithDetails(map[string]any{"expected_cash": r.ExpectedCash, "diff": diff.Money()})
 		}
 		_, err = tx.Exec(ctx, `UPDATE pos_shifts SET closed_by = $2, closed_at = $3, expected_cash = $4::numeric,
-			counted_cash = $5::numeric, diff = $6::numeric, diff_reason = $7 WHERE id = $1`,
-			sh.ID, p.EmployeeID, at, r.ExpectedCash, string(in.CountedCash), diff.Money(), in.DiffReason)
+			counted_cash = $5::numeric, diff = $6::numeric, diff_reason = $7, closed_via = $8 WHERE id = $1`,
+			sh.ID, p.EmployeeID, at, r.ExpectedCash, counted, diff.Money(), in.DiffReason, via)
 		return err
 	})
 	if err != nil {

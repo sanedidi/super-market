@@ -8,6 +8,7 @@ import 'package:sm_core/sm_core.dart' show tr;
 import '../core/limits.dart';
 import '../state/pos.dart';
 import 'kit.dart';
+import 'rejected_dialog.dart';
 import 'theme.dart';
 
 /// Логотип Super Market (тот же, что у приложения покупателя).
@@ -149,7 +150,15 @@ class TopBar extends StatelessWidget {
         _Pill(tr('Очередь ${pos.queue}', 'Navbat ${pos.queue}'), C.warning)
       else if (d != Density.s)
         Text(tr('Очередь 0', 'Navbat 0'), style: t(12, w: FontWeight.w600, c: C.brandLine)),
-      if (pos.failed > 0) _Pill(tr('Не принято ${pos.failed}', 'Qabul qilinmagan ${pos.failed}'), C.error),
+      // Нажимается: список с причинами (Figma «Не принято N», НП1).
+      if (pos.failed > 0)
+        MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            onTap: () => showRejectedDialog(context),
+            child: _Pill(tr('Не принято ${pos.failed}', 'Qabul qilinmagan ${pos.failed}'), C.error),
+          ),
+        ),
     ];
     return Container(
       height: d == Density.l ? 52 : 44,

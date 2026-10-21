@@ -12,6 +12,7 @@ import 'equipment_screen.dart';
 import 'kit.dart';
 import 'language_dialog.dart';
 import 'quick_keys_screen.dart';
+import 'rejected_dialog.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -174,6 +175,9 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
         _quickKeys();
       case '9':
         _language();
+      case '0':
+        if (pos.failed == 0) return false;
+        showRejectedDialog(context);
       default:
         return false;
     }
@@ -201,6 +205,10 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
       if (pos.canTakeDebtPayment) _Tile(Icons.menu_book_outlined, tr('Погашение долга', 'Qarzni toʻlash'), tr('7 · наличные или карта', '7 · naqd yoki karta'), _debtPayment),
       if (pos.canQuickKeys) _Tile(Icons.bolt_rounded, tr('Быстрые кнопки', 'Tezkor tugmalar'), tr('8 · настройка', '8 · sozlash'), _quickKeys),
       _Tile(Icons.translate_rounded, 'Til · Язык', '9 · ${Lang.names[Lang.instance.code] ?? ''}', _language),
+      if (pos.failed > 0)
+        _Tile(Icons.sync_problem_rounded, tr('Не принято · ${pos.failed}', 'Qabul qilinmagan · ${pos.failed}'), tr('0 · причины', '0 · sabablar'),
+            () => showRejectedDialog(context),
+            danger: true),
     ];
     const cols = 4;
     final rows = (tiles.length / cols).ceil();

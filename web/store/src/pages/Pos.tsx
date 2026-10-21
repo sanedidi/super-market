@@ -12,6 +12,7 @@ import {
   Flex,
   Form,
   Input,
+  InputNumber,
   Modal,
   Popconfirm,
   Row,
@@ -93,6 +94,8 @@ interface Shift {
   counted_cash: string | null
   diff: string | null
   diff_reason: string
+  /** pos — Z-отчёт на кассе, pos_stale — касса закрыла зависшую смену, panel — в панели. */
+  closed_via: 'pos' | 'pos_stale' | 'panel' | null
   report?: ShiftReport
 }
 
@@ -447,8 +450,92 @@ export function PosDevicesPage() {
 
 // ---------------------------------------------------------------- смены
 
+/** Сколько часов открыта смена. */
+const openHours = (s: Shift) => Math.max(0, dayjs().diff(dayjs(s.opened_at), 'hour'))
+
+/** Откуда закрыта смена, если не Z-отчётом на кассе. */
+function closedVia(s: Shift) {
+  if (s.closed_via === 'pos_stale') return tr('закрыта с кассы: Z-отчёт не дошёл до сервера', 'kassadan yopilgan: Z-hisobot serverga yetmagan')
+  if (s.closed_via === 'panel') return tr('закрыта в панели', 'panelda yopilgan')
+  return ''
+}
+
+// Figma «Панель · Смены — закрыть зависшую смену кассы» (П1, П2): смена осталась
+// открытой (касса недоступна или Z-отчёт не дошёл) — закрыть здесь. Право «Финансы».
+function CloseShiftModal({ shift, onClose }: { shift: Shift | null; onClose: () => void }) {
+  const [form] = Form.useForm<{ counted_cash: string; diff_reason?: string }>()
+  const expected = shift?.report?.expected_cash ?? '0'
+  const counted = Form.useWatch('counted_cash', form)
+  const differs = counted !== undefined && counted !== null && counted !== '' && Number(counted) !== Number(expected)
+  const close = useAction(
+    (v: { counted_cash: string; diff_reason?: string }) =>
+      api.post<Shift>(`/store/pos/shifts/${shift!.id}/close`, { counted_cash: String(v.counted_cash), diff_reason: v.diff_reason ?? '' }),
+    { success: tr('Смена закрыта', 'Smena yopildi') },
+  )
+  return (
+    <Modal
+      open={!!shift}
+      onCancel={onClose}
+      destroyOnHidden
+      title={shift ? tr(`Закрыть смену №${shift.number}?`, `№${shift.number} smena yopilsinmi?`) : ''}
+      okText={tr('Закрыть смену', 'Smenani yopish')}
+      okButtonProps={{ danger: true, loading: close.isPending }}
+      cancelText={tr('Отмена', 'Bekor qilish')}
+      onOk={() =>
+        form
+          .validateFields()
+          .then((v) => close.mutateAsync(v))
+          .then(onClose)
+          .catch(() => {})
+      }
+    >
+      {shift && (
+        <Flex vertical gap={12}>
+          <Typography.Text type="secondary">
+            {shift.device_name} · {shift.opened_by_name} · {tr('открыта', 'ochilgan')} {dateTime(shift.opened_at)}
+          </Typography.Text>
+          <Descriptions column={1} size="small" bordered>
+            <Descriptions.Item label={tr('Должно быть в ящике', 'Gʻaladonda boʻlishi kerak')}>
+              <b>{money(expected)}</b>
+            </Descriptions.Item>
+          </Descriptions>
+          <Form form={form} layout="vertical" initialValues={{ counted_cash: String(Number(expected)) }} preserve={false}>
+            <Form.Item
+              name="counted_cash"
+              label={tr('Посчитано в ящике', 'Gʻaladonda sanaldi')}
+              rules={[{ required: true, message: tr('Укажите сумму', 'Summani kiriting') }]}
+              extra={tr(
+                'По умолчанию — по расчёту. Если касса уже в новой смене, наличные этой смены обычно лежат в её ящике.',
+                'Odatiy — hisob boʻyicha. Agar kassa yangi smenada boʻlsa, bu smenaning naqd puli odatda uning gʻaladonida.',
+              )}
+            >
+              <InputNumber<string> stringMode min="0" style={{ width: '100%' }} addonAfter={tr('сум', 'soʻm')} />
+            </Form.Item>
+            <Form.Item
+              name="diff_reason"
+              label={tr('Причина расхождения', 'Farq sababi')}
+              rules={[{ required: differs, message: tr('Сумма отличается — укажите причину', 'Summa farq qiladi — sababini kiriting') }]}
+            >
+              <Input maxLength={300} disabled={!differs} placeholder={differs ? '' : tr('нужна, если сумма отличается', 'summa farq qilsa kerak')} />
+            </Form.Item>
+          </Form>
+          <Alert
+            type="warning"
+            message={tr(
+              'Смена закроется с пометкой «закрыта в панели». Касса сама отправит всё, что сервер не принял, — новую смену и её чеки.',
+              'Smena «panelda yopilgan» belgisi bilan yopiladi. Kassa server qabul qilmagan hamma narsani — yangi smena va uning cheklarini oʻzi yuboradi.',
+            )}
+          />
+        </Flex>
+      )}
+    </Modal>
+  )
+}
+
 function ShiftDrawer({ id, onClose }: { id: string | null; onClose: () => void }) {
+  const { can } = useStore()
   const sh = useItem<Shift>(id ? `/store/pos/shifts/${id}` : null)
+  const [closing, setClosing] = useState<Shift | null>(null)
   const s = sh.data
   const r = s?.report
   return (
@@ -456,6 +543,24 @@ function ShiftDrawer({ id, onClose }: { id: string | null; onClose: () => void }
       <LoadError error={sh.error} retry={() => sh.refetch()} />
       {s && (
         <Flex vertical gap={16}>
+          {!s.closed_at && (
+            <Alert
+              type={openHours(s) >= 12 ? 'error' : 'info'}
+              showIcon
+              message={tr(`Смена открыта ${openHours(s)} ч`, `Smena ${openHours(s)} soatdan beri ochiq`)}
+              description={tr(
+                'Пока она открыта, сервер не примет новую смену этой кассы. Если Z-отчёт не дошёл или касса недоступна — закройте смену здесь.',
+                'U ochiq ekan, server bu kassaning yangi smenasini qabul qilmaydi. Z-hisobot yetmagan yoki kassa ishlamasa — smenani shu yerda yoping.',
+              )}
+              action={
+                can('finance.manage') && (
+                  <Button danger type="primary" onClick={() => setClosing(s)}>
+                    {tr('Закрыть смену', 'Smenani yopish')}
+                  </Button>
+                )
+              }
+            />
+          )}
           <Descriptions column={1} size="small" bordered>
             <Descriptions.Item label={tr('Магазин', 'Doʻkon')}>{s.store_name}</Descriptions.Item>
             <Descriptions.Item label={tr('Открыл', 'Ochgan')}>
@@ -463,6 +568,11 @@ function ShiftDrawer({ id, onClose }: { id: string | null; onClose: () => void }
             </Descriptions.Item>
             <Descriptions.Item label={tr('Закрыл', 'Yopgan')}>
               {s.closed_at ? `${s.closed_by_name ?? ''} · ${dateTime(s.closed_at)}` : tr('Смена открыта', 'Smena ochiq')}
+              {s.closed_at && closedVia(s) && (
+                <div>
+                  <Typography.Text type="secondary">{closedVia(s)}</Typography.Text>
+                </div>
+              )}
             </Descriptions.Item>
             <Descriptions.Item label={tr('Размен', 'Mayda pul')}>{money(s.opening_cash)}</Descriptions.Item>
           </Descriptions>
@@ -503,6 +613,13 @@ function ShiftDrawer({ id, onClose }: { id: string | null; onClose: () => void }
           )}
         </Flex>
       )}
+      <CloseShiftModal
+        shift={closing}
+        onClose={() => {
+          setClosing(null)
+          sh.refetch()
+        }}
+      />
     </Drawer>
   )
 }
@@ -545,7 +662,21 @@ export function PosShiftsPage() {
             {
               title: tr('Закрыта', 'Yopilgan'),
               key: 'c',
-              render: (_, r) => (r.closed_at ? dateTime(r.closed_at) : <Tag color="blue">{tr('Открыта', 'Ochiq')}</Tag>),
+              render: (_, r) =>
+                r.closed_at ? (
+                  <Space direction="vertical" size={0}>
+                    {dateTime(r.closed_at)}
+                    {closedVia(r) && (
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        {closedVia(r)}
+                      </Typography.Text>
+                    )}
+                  </Space>
+                ) : openHours(r) >= 12 ? (
+                  <Tag color="red">{tr(`открыта ${openHours(r)} ч`, `${openHours(r)} soat ochiq`)}</Tag>
+                ) : (
+                  <Tag color="blue">{tr('Открыта', 'Ochiq')}</Tag>
+                ),
             },
             { title: tr('Размен', 'Mayda pul'), dataIndex: 'opening_cash', align: 'right', render: (v: string) => money(v) },
             { title: tr('Должно быть', 'Boʻlishi kerak'), dataIndex: 'expected_cash', align: 'right', render: (v: string | null) => (v === null ? '—' : money(v)) },

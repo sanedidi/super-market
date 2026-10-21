@@ -453,6 +453,41 @@ func TestPOS(t *testing.T) {
 		}
 	}
 
+	// Зависшая смена: Z-отчёт не дошёл, сервер не принимает новую смену.
+	// Касса закрывает старую сама (по расчёту), владелец — в панели.
+	stale := a.expect(posDo(a, "POST", "/pos/shifts", dt, cashier, map[string]any{"client_uid": "stale-shift-0001", "opening_cash": 50000}), 201, "open stale").str("id")
+	if r := a.expect(posDo(a, "POST", "/pos/shifts", dt, cashier, map[string]any{"client_uid": "stale-shift-0002"}), 409, "second open"); r.str("error", "code") != "shift_open" ||
+		r.Body["error"].(map[string]any)["details"].(map[string]any)["shift_id"] != stale {
+		t.Fatalf("second open = %v", r.Body)
+	}
+	if cur := a.expect(posDo(a, "GET", "/pos/shifts/current", dt, cashier, nil), 200, "current stale"); cur.str("shift", "id") != stale ||
+		cur.Body["shift"].(map[string]any)["report"].(map[string]any)["expected_cash"] != "50000.00" {
+		t.Fatalf("current stale = %v", cur.Body)
+	}
+	a.expect(posDo(a, "POST", "/pos/shifts/"+stale+"/close", dt, cashier, map[string]any{}), 400, "close without count")
+	sc := a.expect(posDo(a, "POST", "/pos/shifts/"+stale+"/close", dt, cashier, map[string]any{"stale": true}), 200, "close stale")
+	if sc.str("closed_via") != "pos_stale" || sc.str("counted_cash") != "50000.00" || sc.str("diff") != "0.00" {
+		t.Fatalf("close stale = %v", sc.Body)
+	}
+	fresh := a.expect(posDo(a, "POST", "/pos/shifts", dt, cashier, map[string]any{"client_uid": "stale-shift-0002"}), 201, "open after stale").str("id")
+	if ev := a.expect(a.do("GET", "/store/pos/shifts/"+stale+"/events", tok, nil), 200, "stale events").items(); !strings.Contains(fmt.Sprint(ev[len(ev)-1]["note"]), "закрыта с кассы") {
+		t.Fatalf("stale events = %v", ev)
+	}
+	// Панель: только право «Финансы»; расхождение — с причиной; повтор безопасен.
+	a.expect(a.do("POST", "/store/pos/shifts/"+fresh+"/close", cashierTok, map[string]any{"counted_cash": 0}), 403, "cashier closes in panel")
+	a.expect(a.do("POST", "/store/pos/shifts/"+fresh+"/close", tok, map[string]any{"counted_cash": 1000}), 400, "panel diff without reason")
+	pc := a.expect(a.do("POST", "/store/pos/shifts/"+fresh+"/close", tok, map[string]any{"counted_cash": 0, "stale": true}), 200, "panel close")
+	if pc.str("closed_via") != "panel" || pc.str("diff") != "0.00" || pc.Body["closed_by_name"] == nil {
+		t.Fatalf("panel close = %v", pc.Body)
+	}
+	a.expect(a.do("POST", "/store/pos/shifts/"+fresh+"/close", tok, map[string]any{"counted_cash": 0}), 200, "panel close again")
+	if cur := a.expect(posDo(a, "GET", "/pos/shifts/current", dt, "", nil), 200, "current after panel"); cur.Body["shift"] != nil {
+		t.Fatalf("current after panel close = %v", cur.Body)
+	}
+	if first := a.expect(a.do("GET", "/store/pos/shifts/"+shift, tok, nil), 200, "first shift"); first.str("closed_via") != "pos" {
+		t.Fatalf("first shift closed_via = %v", first.Body["closed_via"])
+	}
+
 	// Отключённая касса больше не работает.
 	a.expect(a.do("POST", "/store/pos/devices/"+dev.str("id")+"/revoke", tok, nil), 200, "revoke")
 	a.expect(posDo(a, "GET", "/pos/catalog", dt, "", nil), 401, "revoked device")
