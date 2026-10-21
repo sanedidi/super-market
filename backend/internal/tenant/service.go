@@ -55,7 +55,8 @@ type Network struct {
 	PlanName         string  `json:"plan_name"`
 	EffectivePlanKey string  `json:"effective_plan_key"`
 	PlanTrialUntil   *string `json:"plan_trial_until"`
-	// Тип бизнеса: store — магазин, cafe — кафе / ресторан.
+	// Тип бизнеса: store — магазин, cafe — кафе у прилавка, restaurant —
+	// кафе со столами (в базе это cafe с режимом tables или both).
 	BusinessType string `json:"business_type"`
 }
 
@@ -67,7 +68,8 @@ const networkSelect = `
 	       COALESCE(el.login, ''), COALESCE(el.must_change_password, false),
 	       el.password_changed_at, el.last_login_at,
 	       n.plan_key, (SELECT loc(pl.name, pl.name_uz) FROM plans pl WHERE pl.key = n.plan_key), network_plan(n.id),
-	       to_char(n.plan_trial_until, 'YYYY-MM-DD'), n.business_type
+	       to_char(n.plan_trial_until, 'YYYY-MM-DD'),
+	       CASE WHEN n.business_type = 'cafe' AND n.cafe_mode <> 'counter' THEN 'restaurant' ELSE n.business_type END
 	FROM networks n
 	LEFT JOIN roles r     ON r.network_id = n.id AND r.is_owner
 	LEFT JOIN employees e ON e.role_id = r.id
@@ -85,8 +87,8 @@ type CreateNetworkInput struct {
 	// Тариф сети; пусто — одиночному «Бесплатный» (с пробным периодом),
 	// сети магазинов — «Сеть».
 	PlanKey string `json:"plan_key"`
-	// Тип бизнеса: store (по умолчанию) или cafe. Кафе — только у сети
-	// магазинов или одиночного магазина, не у агента.
+	// Тип бизнеса: store (по умолчанию), cafe или restaurant (кафе со
+	// столами). Кафе — только у сети магазинов или одиночного магазина, не у агента.
 	BusinessType string `json:"business_type"`
 }
 
@@ -127,11 +129,12 @@ func (s *Service) CreateNetwork(ctx context.Context, in CreateNetworkInput) (Net
 		} else if p.Audience != plans.AudienceOf(in.Kind) {
 			return apperr.Validation("plan_key: тариф для другого вида сетей (магазины / агенты)").Uz("plan_key: tarif boshqa turdagi tarmoqlar uchun (doʻkonlar / agentlar)")
 		}
-		if err := tx.QueryRow(ctx, `INSERT INTO networks (name, kind, plan_key, business_type) VALUES ($1, $2, $3, $4) RETURNING id`,
-			name, in.Kind, planKey, in.BusinessType).Scan(&id); err != nil {
+		bt, mode := businessOf(in.BusinessType)
+		if err := tx.QueryRow(ctx, `INSERT INTO networks (name, kind, plan_key, business_type, cafe_mode) VALUES ($1, $2, $3, $4, COALESCE(NULLIF($5, ''), 'counter')) RETURNING id`,
+			name, in.Kind, planKey, bt, mode).Scan(&id); err != nil {
 			return err
 		}
-		if in.BusinessType == cafe.BusinessCafe {
+		if bt == cafe.BusinessCafe {
 			// Новое кафе сразу получает цех «Кухня».
 			if err := cafe.EnsureDefaults(ctx, tx, id); err != nil {
 				return err
@@ -228,11 +231,26 @@ type UpdateNetworkInput struct {
 	BusinessType *string `json:"business_type"`
 }
 
-func checkBusinessType(kind, bt string) error {
-	if bt != cafe.BusinessStore && bt != cafe.BusinessCafe {
-		return apperr.Validation("business_type: ожидается store или cafe").Uz("business_type: store yoki cafe boʻlishi kerak")
+// businessRestaurant — ресторан: кафе со столами и официантами (режим кафе
+// «со столами»; владелец может переключить на «столы + с собой» в панели).
+const businessRestaurant = "restaurant"
+
+// businessOf — тип бизнеса в базе и режим кафе (” — не менять).
+func businessOf(in string) (string, string) {
+	switch in {
+	case businessRestaurant:
+		return cafe.BusinessCafe, "tables"
+	case cafe.BusinessCafe:
+		return cafe.BusinessCafe, "counter"
 	}
-	if bt == cafe.BusinessCafe && kind == "distributor" {
+	return in, ""
+}
+
+func checkBusinessType(kind, bt string) error {
+	if bt != cafe.BusinessStore && bt != cafe.BusinessCafe && bt != businessRestaurant {
+		return apperr.Validation("business_type: ожидается store, cafe или restaurant").Uz("business_type: store, cafe yoki restaurant boʻlishi kerak")
+	}
+	if bt != cafe.BusinessStore && kind == "distributor" {
 		return apperr.Validation("business_type: агент не может быть кафе").Uz("business_type: agent kafe boʻla olmaydi")
 	}
 	return nil
@@ -263,16 +281,26 @@ func (s *Service) UpdateNetwork(ctx context.Context, id string, in UpdateNetwork
 			if err := checkBusinessType(kind, *in.BusinessType); err != nil {
 				return err
 			}
-			if *in.BusinessType == cafe.BusinessCafe {
+			bt, mode := businessOf(*in.BusinessType)
+			if bt == cafe.BusinessCafe {
 				if err := cafe.EnsureDefaults(ctx, tx, id); err != nil {
 					return err
 				}
 			}
+			// Кафе ↔ ресторан — режим кассы: у прилавка или со столами. Режим
+			// «столы + с собой», выбранный владельцем, ресторан не сбрасывает.
+			if _, err := tx.Exec(ctx, `
+				UPDATE networks SET business_type = $2,
+				       cafe_mode = CASE WHEN $3 = 'counter' THEN 'counter'
+				                        WHEN $3 = 'tables' AND cafe_mode = 'counter' THEN 'tables'
+				                        ELSE cafe_mode END
+				WHERE id = $1`, id, bt, mode); err != nil {
+				return err
+			}
 		}
 		_, err = tx.Exec(ctx, `
-			UPDATE networks SET name = COALESCE($2, name), status = COALESCE($3, status),
-			       business_type = COALESCE($4, business_type) WHERE id = $1`,
-			id, name, in.Status, in.BusinessType)
+			UPDATE networks SET name = COALESCE($2, name), status = COALESCE($3, status) WHERE id = $1`,
+			id, name, in.Status)
 		return err
 	})
 	if err != nil {

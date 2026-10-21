@@ -67,6 +67,32 @@ func TestCafeFlow(t *testing.T) {
 	}
 	a.expect(a.do("PATCH", "/store/cafe/settings", tok, map[string]any{"cafe_mode": "tables", "service_percent": 10}), 200, "settings")
 
+	// Ресторан — кафе со столами: в списке сетей «restaurant», касса — на зале.
+	rest := a.expect(a.do("POST", "/admin/networks", adminTok, map[string]any{
+		"name": "Ресторан", "kind": "single", "owner_phone": "+998900000007", "owner_name": "Р", "business_type": "restaurant",
+	}), 201, "restaurant network")
+	if rest.str("business_type") != "restaurant" {
+		t.Fatalf("restaurant = %v", rest.Body)
+	}
+	restTok, _ := a.login("+998900000007", identity.AppStore)
+	if s := a.expect(a.do("GET", "/store/cafe/settings", restTok, nil), 200, "restaurant settings"); s.str("business_type") != "cafe" || s.str("cafe_mode") != "tables" {
+		t.Fatalf("restaurant settings = %v", s.Body)
+	}
+	// «Столы + с собой» у владельца — всё ещё ресторан; «Сделать кафе» — у прилавка.
+	a.expect(a.do("PATCH", "/store/cafe/settings", restTok, map[string]any{"cafe_mode": "both"}), 200, "restaurant both")
+	if n := a.expect(a.do("PATCH", "/admin/networks/"+rest.str("id"), adminTok, map[string]any{"business_type": "restaurant"}), 200, "keep both"); n.str("business_type") != "restaurant" {
+		t.Fatalf("keep both = %v", n.Body)
+	}
+	if s := a.expect(a.do("GET", "/store/cafe/settings", restTok, nil), 200, "both kept"); s.str("cafe_mode") != "both" {
+		t.Fatalf("both kept = %v", s.Body)
+	}
+	if n := a.expect(a.do("PATCH", "/admin/networks/"+rest.str("id"), adminTok, map[string]any{"business_type": "cafe"}), 200, "to cafe"); n.str("business_type") != "cafe" {
+		t.Fatalf("to cafe = %v", n.Body)
+	}
+	a.expect(a.do("POST", "/admin/networks", adminTok, map[string]any{
+		"name": "Агент 2", "kind": "distributor", "owner_phone": "+998900000006", "owner_name": "А", "business_type": "restaurant",
+	}), 400, "distributor restaurant")
+
 	// Магазину разделы кафе закрыты.
 	shopTok, _ := setupNetwork(t, a, adminTok, "+998900000003")
 	if r := a.expect(a.do("GET", "/store/cafe/dishes", shopTok, nil), 403, "shop dishes"); r.Body["error"].(map[string]any)["code"] != "not_cafe" {

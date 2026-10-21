@@ -16,9 +16,19 @@ function kindTitle(k: string, long = false): string {
   return 'Одиночный магазин'
 }
 
-/** Тип бизнеса: магазин или кафе (Figma «Кафе» П4). Меняет только супер-админ. */
+type Business = 'store' | 'cafe' | 'restaurant'
+
+/** Тип бизнеса (Figma «Кафе» П4): магазин, кафе у прилавка или ресторан —
+ *  кафе со столами и официантами. Меняет только супер-админ. */
 function businessTitle(b: string | undefined): string {
-  return b === 'cafe' ? 'Кафе' : 'Магазин'
+  return b === 'cafe' ? 'Кафе' : b === 'restaurant' ? 'Ресторан' : 'Магазин'
+}
+
+/** Что изменится в панели и на кассе при смене типа бизнеса. */
+const BUSINESS_SWITCH: Record<Business, string> = {
+  store: 'Меню и техкарты останутся, но разделы кафе скроются.',
+  cafe: 'В панели — «Меню», «Склад продуктов», «Кухня»; касса откроется у прилавка.',
+  restaurant: 'В панели — разделы кафе и «Залы и столы»; касса откроется на зале со столами.',
 }
 
 /** Карточки выбора типа бизнеса в окне «Новая сеть». */
@@ -26,7 +36,7 @@ function BusinessTypeCards({ value = 'store', onChange }: { value?: string; onCh
   const cards = [
     { key: 'store', icon: <ShopOutlined />, title: 'Магазин', text: 'товары со штрихкодом, остатки, приходы' },
     { key: 'cafe', icon: <CoffeeOutlined />, title: 'Кафе', text: 'меню, техкарты, кухня, номер заказа' },
-    { key: 'restaurant', icon: <TableOutlined />, title: 'Ресторан', text: 'столы, официанты, общий счёт', soon: true },
+    { key: 'restaurant', icon: <TableOutlined />, title: 'Ресторан', text: 'столы, официанты, общий счёт' },
   ]
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
@@ -37,20 +47,16 @@ function BusinessTypeCards({ value = 'store', onChange }: { value?: string; onCh
             key={c.key}
             role="radio"
             aria-checked={on}
-            onClick={() => !c.soon && onChange?.(c.key)}
+            onClick={() => onChange?.(c.key)}
             style={{
               border: `${on ? 2 : 1}px solid ${on ? '#d92d20' : '#eaecf0'}`,
-              background: on ? '#fef3f2' : c.soon ? '#f9fafb' : '#fff',
+              background: on ? '#fef3f2' : '#fff',
               borderRadius: 12,
               padding: 12,
-              cursor: c.soon ? 'not-allowed' : 'pointer',
-              opacity: c.soon ? 0.55 : 1,
+              cursor: 'pointer',
             }}
           >
-            <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 20, color: on ? '#d92d20' : undefined }}>{c.icon}</span>
-              {c.soon && <Tag bordered={false}>позже</Tag>}
-            </Space>
+            <span style={{ fontSize: 20, color: on ? '#d92d20' : undefined }}>{c.icon}</span>
             <div style={{ fontWeight: 700, marginTop: 6 }}>{c.title}</div>
             <div style={{ fontSize: 12, color: '#667085' }}>{c.text}</div>
           </div>
@@ -69,7 +75,7 @@ interface Network extends OwnerInfo {
   plan_name: string
   effective_plan_key: string
   plan_trial_until: string | null
-  business_type?: 'store' | 'cafe'
+  business_type?: Business
 }
 
 export function Networks() {
@@ -100,6 +106,7 @@ export function Networks() {
               <Space size={4}>
                 {kindTitle(k)}
                 {n.business_type === 'cafe' && <Tag color="volcano">Кафе</Tag>}
+                {n.business_type === 'restaurant' && <Tag color="orange">Ресторан</Tag>}
               </Space>
             ),
           },
@@ -180,7 +187,7 @@ export function Networks() {
                         name="business_type"
                         label="Тип бизнеса"
                         initialValue="store"
-                        extra="У кафе в панели вместо «Закупок» и «Склада» будут «Меню», «Склад продуктов» и «Кухня». Тип потом меняет только супер-админ."
+                        extra="У кафе и ресторана в панели вместо «Закупок» и «Склада» будут «Меню», «Склад продуктов» и «Кухня»; у ресторана касса открывается на зале со столами. Тип потом меняет только супер-админ."
                       >
                         <BusinessTypeCards />
                       </Form.Item>
@@ -279,21 +286,27 @@ function NetworkCard({ id, onClose }: { id: string | null; onClose: () => void }
             <Descriptions.Item label="Тип">{kindTitle(n.kind, true)}</Descriptions.Item>
             {n.kind !== 'distributor' && (
               <Descriptions.Item label="Тип бизнеса">
-                <Space>
+                <Space wrap>
                   {businessTitle(n.business_type)}
-                  <Popconfirm
-                    title={n.business_type === 'cafe' ? 'Сделать магазином? Меню и техкарты останутся, но разделы кафе скроются.' : 'Сделать кафе? В панели появятся «Меню», «Склад продуктов» и «Кухня».'}
-                    onConfirm={() =>
-                      setBusiness
-                        .mutateAsync({ id: n.id, business_type: n.business_type === 'cafe' ? 'store' : 'cafe' })
-                        .then(() => net.refetch())
-                        .catch(() => undefined)
-                    }
-                  >
-                    <Button size="small" loading={setBusiness.isPending}>
-                      {n.business_type === 'cafe' ? 'Сделать магазином' : 'Сделать кафе'}
-                    </Button>
-                  </Popconfirm>
+                  {(['store', 'cafe', 'restaurant'] as Business[])
+                    .filter((b) => b !== (n.business_type ?? 'store'))
+                    .map((b) => (
+                      <Popconfirm
+                        key={b}
+                        title={`Сделать ${b === 'store' ? 'магазином' : b === 'cafe' ? 'кафе' : 'рестораном'}?`}
+                        description={BUSINESS_SWITCH[b]}
+                        onConfirm={() =>
+                          setBusiness
+                            .mutateAsync({ id: n.id, business_type: b })
+                            .then(() => net.refetch())
+                            .catch(() => undefined)
+                        }
+                      >
+                        <Button size="small" loading={setBusiness.isPending}>
+                          {b === 'store' ? 'Сделать магазином' : b === 'cafe' ? 'Сделать кафе' : 'Сделать рестораном'}
+                        </Button>
+                      </Popconfirm>
+                    ))}
                 </Space>
               </Descriptions.Item>
             )}

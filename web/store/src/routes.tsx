@@ -287,7 +287,8 @@ function Header() {
 
 export function StoreRoutes() {
   const { can, me, has } = useStore()
-  const cafe = me?.network.business_type === 'cafe'
+  // Ресторан — то же кафе, только касса открывается на зале со столами.
+  const cafe = me?.network.business_type === 'cafe' || me?.network.business_type === 'restaurant'
   const menu = me ? filterMenu(menuFor(cafe), can, has) : []
   return (
     <SetupGate>
