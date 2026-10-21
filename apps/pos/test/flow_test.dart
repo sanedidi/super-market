@@ -19,6 +19,9 @@ class FakeServer {
 
   /// В каталоге товар без цены и кассир с правом «Установка цен».
   bool unpriced = false;
+
+  /// Магазин даёт в долг.
+  bool debts = false;
   final List<Map<String, dynamic>> prices = [];
   final List<Map<String, dynamic>> shifts = [];
   final List<Map<String, dynamic>> sales = [];
@@ -74,7 +77,7 @@ class FakeServer {
             {'id': 'cash', 'name': 'Наличные', 'kind': 'cash'},
             {'id': 'card', 'name': 'Терминал', 'kind': 'card'},
           ],
-          'settings': {'device_name': 'Касса 1', 'store_name': 'Чиланзар', 'weight_prefixes': ['22']},
+          'settings': {'device_name': 'Касса 1', 'store_name': 'Чиланзар', 'weight_prefixes': ['22'], 'debt_enabled': debts},
           'open_shift_id': null,
         });
       case 'PUT /pos/products/water/price':
@@ -400,6 +403,29 @@ void main() {
     expect(pos.shift!.number, 6);
     // Это уже своя смена — больше не «зависшая».
     expect(await pos.staleServerShift(), isNull);
+  });
+
+  test('QR покупателя на пустом чеке — «Погашение долга»', () async {
+    server.debts = true;
+    await pos.activate('ABCD2345');
+    pos.login(pos.catalog.cashiers.single, '1234');
+    await pos.openShift(0);
+    final sale = SaleController(pos);
+    final nav = <Cmd>[];
+    sale.onNavigate = nav.add;
+    const code = '99123456789062793923';
+    Future<void> scanQr() async {
+      for (var i = 0; i < code.length; i++) {
+        sale.char(code[i], Duration(milliseconds: i * 5));
+      }
+      await sale.command(Cmd.enter);
+    }
+
+    await scanQr();
+    expect(nav, [Cmd.debtPay]);
+    expect(sale.takeDebtPayQr(), sm_i18n.parseClientQr(code)!.payload);
+    expect(sale.takeDebtPayQr(), isNull);
+    sale.dispose();
   });
 
   test('плитки, экранная клавиатура и поиск', () async {

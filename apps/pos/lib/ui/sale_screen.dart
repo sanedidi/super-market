@@ -68,6 +68,10 @@ class _SaleScreenState extends State<SaleScreen> {
       case Cmd.debtQr:
         final qr = sale.takeDebtQr();
         if (qr != null) await showDebtDialog(context, sale, qr: qr);
+      case Cmd.debtPay:
+        final qr = sale.takeDebtPayQr();
+        _closeOverlays();
+        if (qr != null) await showDebtPaymentDialog(context, context.read<PosController>(), qr: qr);
       case Cmd.price:
         final r = sale.takePricePending();
         if (r != null) await showPriceDialog(context, sale, r);

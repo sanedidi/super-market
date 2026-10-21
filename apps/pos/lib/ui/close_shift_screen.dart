@@ -5,20 +5,20 @@ import 'package:sm_core/sm_core.dart' show tr;
 
 import '../core/money.dart';
 import '../state/pos.dart';
+import 'kit.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
-/// Закрытие смены: «слепой» пересчёт купюр. Сколько должно быть в ящике,
-/// касса показывает только после пересчёта.
+/// Закрытие смены (Figma «Касса · Закрытие смены — одна сумма, без купюр»):
+/// кассир пересчитывает ящик и набирает одну сумму — купюры по отдельности не
+/// вводятся. Пересчёт «слепой»: сколько должно быть, касса показывает только
+/// после Enter. Расхождение — с причиной (F2/F3/F4).
 class CloseShiftScreen extends StatefulWidget {
   const CloseShiftScreen({super.key});
 
   @override
   State<CloseShiftScreen> createState() => _CloseShiftScreenState();
 }
-
-/// Купюры сума; последняя строка — монеты и мелочь суммой.
-const _notes = [200000, 100000, 50000, 20000, 10000, 5000, 2000, 1000];
 
 Map<LogicalKeyboardKey, String> get _reasons => {
       LogicalKeyboardKey.f2: tr('Сдача без мелочи', 'Qaytim mayda pulsiz berildi'),
@@ -27,26 +27,44 @@ Map<LogicalKeyboardKey, String> get _reasons => {
     };
 
 class _CloseShiftScreenState extends State<CloseShiftScreen> {
-  final List<String> _counts = List.filled(_notes.length + 1, '');
-  int _row = 0;
+  /// Сумма в ящике цифрами, без пробелов (сумы).
+  String _input = '';
   bool _revealed = false;
   String? _reason;
   bool _busy = false;
   String? _error;
 
-  int get _rowCount => _notes.length + 1;
+  int get _counted => parseMoney(_input);
 
-  int _rowSum(int i) {
-    if (i < _notes.length) return (int.tryParse(_counts[i]) ?? 0) * _notes[i] * 100;
-    return parseMoney(_counts[i]);
+  void _type(String d) {
+    if (_input.length + d.length > 11) return;
+    if ((_input.isEmpty || _input == '0') && d.startsWith('0')) {
+      if (d == '0' && _input.isEmpty) _edited(() => _input = '0');
+      return;
+    }
+    _edited(() => _input = _input == '0' ? d : _input + d);
   }
 
-  int get _counted {
-    var s = 0;
-    for (var i = 0; i < _rowCount; i++) {
-      s += _rowSum(i);
+  void _erase() {
+    if (_input.isNotEmpty) _edited(() => _input = _input.substring(0, _input.length - 1));
+  }
+
+  /// Сумму поправили после сверки — причину расхождения выбрать заново.
+  void _edited(VoidCallback change) => setState(() {
+        change();
+        _error = null;
+        if (_revealed) _reason = null;
+      });
+
+  void _reveal() {
+    if (_input.isEmpty) {
+      setState(() => _error = tr('Наберите, сколько наличных в ящике (пусто — 0)', 'Gʻaladonda qancha naqd pul borligini tering (boʻsh — 0)'));
+      return;
     }
-    return s;
+    setState(() {
+      _revealed = true;
+      _error = null;
+    });
   }
 
   Future<void> _close() async {
@@ -87,30 +105,19 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
       return true;
     }
     if (isEnter(e)) {
-      if (!_revealed && _row < _rowCount - 1) {
-        setState(() => _row++);
-      } else if (!_revealed) {
-        setState(() => _revealed = true);
-      } else {
+      if (_revealed) {
         _close();
+      } else {
+        _reveal();
       }
       return true;
     }
-    if (k == LogicalKeyboardKey.arrowDown) {
-      setState(() => _row = (_row + 1).clamp(0, _rowCount - 1));
-      return true;
-    }
-    if (k == LogicalKeyboardKey.arrowUp) {
-      setState(() => _row = (_row - 1).clamp(0, _rowCount - 1));
-      return true;
-    }
     if (k == LogicalKeyboardKey.backspace) {
-      final v = _counts[_row];
-      if (v.isNotEmpty) setState(() => _counts[_row] = v.substring(0, v.length - 1));
+      _erase();
       return true;
     }
-    if (ch != null && RegExp(r'^[0-9]$').hasMatch(ch) && _counts[_row].length < 9) {
-      setState(() => _counts[_row] += ch);
+    if (ch != null && RegExp(r'^[0-9]$').hasMatch(ch)) {
+      _type(ch);
       return true;
     }
     return false;
@@ -122,6 +129,18 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
     if (pos.shift == null) return const Scaffold();
     final expected = pos.report.expectedCash;
     final diff = _counted - expected;
+    final extra = Padding(
+      padding: const EdgeInsets.all(6),
+      child: Material(
+        color: C.surface,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => _type('000'),
+          child: SizedBox(width: 76, height: 52, child: Center(child: Text('000', style: t(22, w: FontWeight.w500)))),
+        ),
+      ),
+    );
     return Scaffold(
       body: KeyCatcher(
         onKey: _onKey,
@@ -133,52 +152,41 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
               child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 Expanded(
                   child: Panel(
+                    padding: const EdgeInsets.fromLTRB(28, 24, 28, 24),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                      Text(tr('Закрытие смены №${pos.shift!.number ?? '·'} · пересчитайте наличные', 'Smena №${pos.shift!.number ?? '·'} yopilmoqda · naqd pulni sanang'), style: t(24, w: FontWeight.w700)),
+                      Text(tr('Закрытие смены №${pos.shift!.number ?? '·'}', 'Smena №${pos.shift!.number ?? '·'} yopilmoqda'), style: t(24, w: FontWeight.w700)),
+                      const SizedBox(height: 4),
                       Text(
-                          tr('Наберите количество купюр и Enter — курсор перейдёт ниже. ↑↓ — к другой строке.',
-                              'Kupyuralar sonini tering va Enter — kursor pastga oʻtadi. ↑↓ — boshqa qatorga.'),
-                          style: t(13, c: C.ts)),
-                      const SizedBox(height: 12),
-                      Expanded(
-                        child: ListView(children: [
-                          for (var i = 0; i < _rowCount; i++)
-                            GestureDetector(
-                              onTap: () => setState(() => _row = i),
-                              child: Container(
-                                height: 50,
-                                padding: const EdgeInsets.symmetric(horizontal: 12),
-                                decoration: BoxDecoration(
-                                  color: i == _row ? C.brandSoft : null,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: const Border(bottom: BorderSide(color: C.border)),
-                                ),
-                                child: Row(children: [
-                                  Expanded(
-                                    child: Text(i < _notes.length ? fmtMoney(_notes[i] * 100) : tr('Монеты и мелочь (сумма)', 'Tangalar va mayda pul (summa)'),
-                                        style: t(16)),
-                                  ),
-                                  Container(
-                                    width: 110,
-                                    height: 34,
-                                    alignment: Alignment.centerRight,
-                                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                                    decoration: BoxDecoration(
-                                      color: C.surface,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: i == _row ? C.brand : C.borderStrong, width: i == _row ? 2 : 1),
-                                    ),
-                                    child: Text(_counts[i].isEmpty ? '0' : _counts[i], style: t(16, w: FontWeight.w600)),
-                                  ),
-                                  SizedBox(
-                                    width: 160,
-                                    child: Text(fmtMoney(_rowSum(i)), textAlign: TextAlign.right, style: t(16, w: FontWeight.w700)),
-                                  ),
-                                ]),
-                              ),
-                            ),
+                          tr('Пересчитайте наличные в ящике и наберите сумму. Купюры по отдельности вводить не нужно.',
+                              'Gʻaladondagi naqd pulni sanang va summani tering. Kupyuralarni alohida kiritish shart emas.'),
+                          style: t(14, c: C.ts)),
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: C.surface,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: _revealed ? C.borderStrong : C.brand, width: _revealed ? 1 : 2),
+                        ),
+                        child: Row(children: [
+                          Expanded(child: Text(tr('Наличных в ящике', 'Gʻaladondagi naqd pul'), style: t(16, w: FontWeight.w500, c: C.ts))),
+                          Flexible(
+                            flex: 2,
+                            child: FitText(_input.isEmpty ? '0' : fmtMoney(_counted),
+                                textAlign: TextAlign.right, style: tb(44, c: _input.isEmpty ? C.td : C.tp)),
+                          ),
                         ]),
                       ),
+                      const SizedBox(height: 8),
+                      Text(
+                          _revealed
+                              ? tr('Сумму можно поправить: цифры и ⌫ — сверка обновится', 'Summani tuzatish mumkin: raqamlar va ⌫ — solishtirish yangilanadi')
+                              : tr('Цифры — сумма · ⌫ — стереть · 000 — три нуля · Enter — сверить с кассой',
+                                  'Raqamlar — summa · ⌫ — oʻchirish · 000 — uchta nol · Enter — kassa bilan solishtirish'),
+                          style: t(13, c: C.ts)),
+                      const Spacer(),
+                      Center(child: NumPad(onDigit: _type, onBackspace: _erase, extra: extra)),
+                      const Spacer(),
                     ]),
                   ),
                 ),
@@ -218,7 +226,7 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
                         if (_revealed) {
                           _close();
                         } else {
-                          setState(() => _revealed = true);
+                          _reveal();
                         }
                       },
                     ),

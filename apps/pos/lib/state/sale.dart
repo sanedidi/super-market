@@ -11,7 +11,7 @@ import '../core/quick.dart';
 import 'pos.dart';
 
 /// Команды быстрого режима — клавиши, которые не печатают символ.
-enum Cmd { enter, esc, del, backspace, up, down, star, pay, qty, item, search, discountLine, discountAll, hold, returns, orders, shiftMenu, debtQr, price }
+enum Cmd { enter, esc, del, backspace, up, down, star, pay, qty, item, search, discountLine, discountAll, hold, returns, orders, shiftMenu, debtQr, debtPay, price }
 
 enum SaleMode { sale, paid, held }
 
@@ -78,6 +78,16 @@ class SaleController extends ChangeNotifier {
   String? takeDebtQr() {
     final q = _debtQr;
     _debtQr = null;
+    return q;
+  }
+
+  /// QR покупателя на пустом чеке: откроется «Погашение долга» (Cmd.debtPay)
+  /// и заберёт его через [takeDebtPayQr] (Figma ДП, п. 6 логики).
+  String? _debtPayQr;
+
+  String? takeDebtPayQr() {
+    final q = _debtPayQr;
+    _debtPayQr = null;
     return q;
   }
 
@@ -350,8 +360,9 @@ class SaleController extends ChangeNotifier {
           openSearch();
         }
       case Cmd.debtQr:
+      case Cmd.debtPay:
       case Cmd.price:
-        break; // только навигация: окна «В долг» и цены открывает экран продажи
+        break; // только навигация: окна «В долг», погашения долга и цены открывает экран продажи
       case Cmd.returns:
       case Cmd.shiftMenu:
         if (cart.isEmpty || mode == SaleMode.paid) {
@@ -430,6 +441,13 @@ class SaleController extends ChangeNotifier {
   /// QR покупателя в чеке (Figma «ДQ1»): сразу окно «В долг» с его карточкой.
   void _clientQr(String payload) {
     if (mode == SaleMode.held) return;
+    // Чек пустой — покупатель пришёл погасить долг.
+    if (((cart.isEmpty && mode == SaleMode.sale) || mode == SaleMode.paid) && pos.canTakeDebtPayment) {
+      onSound?.call(true);
+      _debtPayQr = payload;
+      onNavigate?.call(Cmd.debtPay);
+      return;
+    }
     if (!pos.canDebt) {
       _error(tr('QR покупателя — для продажи в долг, а на этой кассе в долг не дают', 'Xaridor QR kodi — qarzga sotish uchun, bu kassada esa qarzga berilmaydi'),
           note: tr('Нужно «Даёт в долг» у магазина и право кассира', 'Doʻkonda «Qarzga beradi» va kassir huquqi kerak'));
