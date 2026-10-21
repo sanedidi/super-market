@@ -404,10 +404,10 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 | PUT | `/pos/products/{id}/price` | `{price}` (больше нуля) — цена продажи товара в магазине кассы: документ цен по типу цен по умолчанию создаётся и сразу проводится. Касса спрашивает цену, когда пробивают товар без цены. Кассир с правом `prices.manage` («Установка цен»; у владельца — всегда), без кассира — 401 → `{product_id, price}` |
 | POST | `/pos/login` | `{employee_id, pin}` — проверка ПИНа онлайн; 5 ошибок → блок на 5 минут (`429 pin_locked`) |
 | GET | `/pos/shifts/current` | Открытая смена кассы с X-отчётом или `{shift: null}` |
-| POST | `/pos/shifts` | Открыть смену `{client_uid, opening_cash, opened_at?}`; 201/200 (повтор), `409 shift_open` |
+| POST | `/pos/shifts` | Открыть смену `{client_uid, opening_cash, opened_at?}`; 201/200 (повтор), `409 shift_open` — на кассе уже открыта другая смена, её id в `details.shift_id` |
 | GET | `/pos/shifts/{id}` | Смена с X-отчётом: продажи, возвраты, по способам оплаты, ожидаемые наличные |
 | POST | `/pos/shifts/{id}/cash-moves` | Внесение/изъятие `{client_uid, kind: in/out, amount, reason}` |
-| POST | `/pos/shifts/{id}/close` | `{counted_cash, diff_reason}` — расхождение без причины → 400; повтор → та же смена |
+| POST | `/pos/shifts/{id}/close` | `{counted_cash, diff_reason}` — расхождение без причины → 400; повтор → та же смена. `{stale: true}` без `counted_cash` — касса закрывает свою старую смену, оставшуюся открытой на сервере (Z-отчёт не дошёл): сумма по расчёту, `closed_via: pos_stale` |
 | POST | `/pos/sales` | Как `/store/sales` + `shift_id`, `fiscal: {number, sign, qr, module}`, `items[].marking_codes`, `items[].price` (цена, по которой касса пробила чек — офлайн могла быть старая). Магазин — кассы; нехватка остатка и снятый с продажи товар не отклоняют продажу, недостача — в `sale_items.short_qty` |
 | GET | `/pos/sales?q=` | Поиск чека для возврата: номер или `client_uid` (QR на чеке кассы) |
 | GET | `/pos/sales/{id}` | Чек; в строках для чека возврата — `ikpu`, `package_code`, `vat_rate`, `marking_codes`, `fiscal_name` (название для фискального чека — русское, `product_name` — на языке запроса), в чеке — `fiscal_module` |
@@ -427,7 +427,8 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 | GET | `/store/pos/pins?store_id=` | `staff.manage` — сотрудники магазина: есть ли ПИН, права на кассе (`can_pos`, `can_discount`, `can_return`) |
 | PUT | `/store/pos/pins/{employee_id}` | `staff.manage` — `{pin}` 4–6 цифр, уникален в сети |
 | DELETE | `/store/pos/pins/{employee_id}` | `staff.manage` — убрать ПИН (сотрудник пропадёт из списка на кассе) |
-| GET | `/store/pos/shifts`, `/store/pos/shifts/{id}` | `reports.view` или `finance.manage` |
+| GET | `/store/pos/shifts`, `/store/pos/shifts/{id}` | `reports.view` или `finance.manage`; `closed_via`: `pos` — Z-отчёт на кассе, `pos_stale` — касса закрыла зависшую смену, `panel` — закрыта в панели |
+| POST | `/store/pos/shifts/{id}/close` | `finance.manage`: закрыть открытую смену в панели `{counted_cash, diff_reason}` (расхождение — с причиной); `closed_via: panel`; повтор → та же смена |
 | PUT | `/store/pos/products/{id}/tax` | `catalog.manage` — ИКПУ, код упаковки, НДС, маркировка (только свои товары) |
 | PUT | `/store/pos/products/{id}/plu` | `catalog.manage` — короткий код `{plu}` или `null` |
 | PUT | `/store/pos/payment-methods/{id}/kind` | `finance.manage` — cash/card/qr/other |

@@ -141,7 +141,7 @@ class Outbox {
           await _send(item);
           r.sent++;
           await store.delete('$_dir${Platform.pathSeparator}${item.fileName}');
-          _pending.removeAt(0);
+          _pending.remove(item);
         } on _Wait {
           break;
         } on ApiError catch (e) {
@@ -158,7 +158,7 @@ class Outbox {
           item.errorCode = e.code;
           await store.writeJson('$_failedDir${Platform.pathSeparator}${item.fileName}', item.toJson());
           await store.delete('$_dir${Platform.pathSeparator}${item.fileName}');
-          _pending.removeAt(0);
+          _pending.remove(item);
           _failed.add(item);
           r.failed++;
         }
@@ -226,11 +226,35 @@ class Outbox {
     _failed.remove(item);
     item.error = null;
     item.errorCode = null;
-    await store.delete('$_failedDir${Platform.pathSeparator}${item.fileName}');
+    // Сначала в очередь, потом из ошибок: сбой между ними даст дубль, а не потерю
+    // (сервер узнаёт повтор по client_uid).
     await store.writeJson('$_dir${Platform.pathSeparator}${item.fileName}', item.toJson());
+    await store.delete('$_failedDir${Platform.pathSeparator}${item.fileName}');
     _pending
       ..add(item)
       ..sort((a, b) => a.seq.compareTo(b.seq));
+  }
+
+  /// Вернуть в очередь все события, которые сервер не принял («Повторить все»,
+  /// или после того как закрыли зависшую смену). Порядок — исходный.
+  Future<int> retryAll() async {
+    // Не вставлять в очередь посреди отправки — дождаться её конца.
+    while (_flushing) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    final items = List.of(_failed);
+    for (final i in items) {
+      i.error = null;
+      i.errorCode = null;
+      await store.writeJson('$_dir${Platform.pathSeparator}${i.fileName}', i.toJson());
+      await store.delete('$_failedDir${Platform.pathSeparator}${i.fileName}');
+    }
+    // В очередь — разом и по порядку, чтобы отправка не взяла их вразнобой.
+    _failed.removeWhere(items.contains);
+    _pending
+      ..addAll(items)
+      ..sort((a, b) => a.seq.compareTo(b.seq));
+    return items.length;
   }
 }
 

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../core/money.dart';
 import '../state/pos.dart';
+import 'rejected_dialog.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -19,12 +20,48 @@ class OpenShiftScreen extends StatefulWidget {
 class _OpenShiftScreenState extends State<OpenShiftScreen> {
   String _input = '';
   bool _busy = false;
+  String? _error;
 
   Future<void> _open() async {
     if (_busy) return;
-    setState(() => _busy = true);
+    final pos = context.read<PosController>();
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     try {
-      await context.read<PosController>().openShift(parseMoney(_input));
+      // НП4: на сервере осталась открытой прошлая смена этой кассы — новую он
+      // не примет. Без связи открываем как раньше (разберётся «Не принято»).
+      ServerShift? found;
+      if (pos.online) {
+        // Сначала доотправить очередь: Z-отчёт прошлой смены мог ещё не уйти.
+        while (pos.syncing) {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        }
+        if (pos.queue > 0) await pos.sync();
+        try {
+          found = await pos.staleServerShift();
+        } catch (_) {
+          found = null;
+        }
+      }
+      if (!mounted) return;
+      final stale = found;
+      if (stale != null) {
+        final choice = await showDialog<String>(context: context, builder: (_) => StaleShiftOnOpen(shift: stale));
+        if (!mounted || choice == null) return;
+        if (choice == 'continue') {
+          await pos.continueServerShift(stale);
+          return;
+        }
+        final err = await pos.closeServerShift(stale);
+        if (err != null) {
+          if (mounted) setState(() => _error = err);
+          return;
+        }
+        if (mounted) showPosNote(context, tr('Смена №${stale.number} закрыта на сервере', 'Smena №${stale.number} serverda yopildi'));
+      }
+      await pos.openShift(parseMoney(_input));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -87,6 +124,14 @@ class _OpenShiftScreenState extends State<OpenShiftScreen> {
                   ),
                   const SizedBox(height: 16),
                   Center(child: NumPad(onDigit: _onDigit, onBackspace: _back)),
+                  if (_error != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(color: C.errorSoft, borderRadius: BorderRadius.circular(10)),
+                      child: Text(_error!, style: t(13, w: FontWeight.w600, c: C.error)),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   KeyCard(
                     keyLabel: 'Enter',

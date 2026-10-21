@@ -71,6 +71,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/store/pos/shifts", m.listShifts)
 		r.Get("/store/pos/shifts/{id}", m.getShift)
 		r.Get("/store/pos/shifts/{id}/events", m.shiftEvents)
+		r.Post("/store/pos/shifts/{id}/close", m.storeCloseShift)
 		r.Get("/store/pos/cashiers", m.cashiers)
 		r.Put("/store/pos/products/{id}/tax", m.setTax)
 		r.Put("/store/pos/products/{id}/plu", m.setPLU)
@@ -298,6 +299,12 @@ func (m *Module) listShifts(w http.ResponseWriter, r *http.Request) {
 func (m *Module) getShift(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (Shift, error) {
 		return m.svc.GetShift(r.Context(), pr(r), id)
+	})
+}
+
+func (m *Module) storeCloseShift(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in CloseInput) (Shift, error) {
+		return m.svc.StoreCloseShift(r.Context(), pr(r), id, in)
 	})
 }
 

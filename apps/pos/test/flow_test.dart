@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:sm_pos/core/money.dart';
 import 'package:sm_pos/core/pin.dart';
 import 'package:sm_pos/data/api.dart';
 import 'package:sm_pos/data/store.dart';
@@ -24,6 +25,11 @@ class FakeServer {
   final List<Map<String, dynamic>> closes = [];
   final List<String> cashiers = [];
 
+  /// Смена этой кассы, оставшаяся открытой на сервере (Z-отчёт не дошёл):
+  /// новую смену сервер не принимает (409 shift_open).
+  Map<String, dynamic>? staleShift;
+  final List<Map<String, dynamic>> staleCloses = [];
+
   late final client = MockClient((req) async {
     if (offline) throw const SocketException('нет сети');
     final path = req.url.path.replaceFirst('/api/v1', '');
@@ -35,6 +41,16 @@ class FakeServer {
     }
     if (path != '/pos/activate' && req.headers['Authorization'] != 'Bearer pd_test') {
       return _json(401, {'error': {'code': 'unauthorized', 'message': 'нужен токен кассы'}});
+    }
+    final stale = staleShift;
+    if (req.method == 'GET' && path == '/pos/shifts/current') return _json(200, {'shift': stale});
+    if (stale != null && req.method == 'POST' && path == '/pos/shifts') {
+      return _json(409, {'error': {'code': 'shift_open', 'message': 'на кассе уже открыта смена — закройте её', 'details': {'shift_id': stale['id']}}});
+    }
+    if (stale != null && req.method == 'POST' && path == '/pos/shifts/${stale['id']}/close') {
+      staleCloses.add(body);
+      staleShift = null;
+      return _json(200, {...stale, 'closed_via': 'pos_stale'});
     }
     switch ('${req.method} $path') {
       case 'POST /pos/activate':
@@ -324,6 +340,66 @@ void main() {
     await until(() => pos.queue == 0);
     expect(server.sales.length, 1);
     sale.dispose();
+  });
+
+  Map<String, dynamic> oldShift() => {
+        'id': 'old-shift',
+        'number': 6,
+        'opened_at': '2026-10-20T13:02:00Z',
+        'opened_by_name': 'Шахзод',
+        'opening_cash': '50000.00',
+        'report': {'sales_count': 3, 'sales_total': '120000.00', 'expected_cash': '80000.00'},
+      };
+
+  test('зависшая смена на сервере: «Не принято» → закрыть старую → всё уходит', () async {
+    await pos.activate('ABCD2345');
+    pos.login(pos.catalog.cashiers.single, '1234');
+    server.staleShift = oldShift();
+    server.offline = true; // смену открыли без связи — сервер не спросить
+    await pos.openShift(0);
+    final sale = SaleController(pos);
+    sale.char('1', Duration.zero);
+    await sale.command(Cmd.enter);
+    expect(await sale.pay('card'), isNull);
+    server.offline = false;
+    await until(() => !pos.syncing);
+    await pos.sync();
+    // Сервер не принял открытие смены, а за ним и чек.
+    expect(pos.failed, 2);
+    expect(pos.queue, 0);
+    expect(pos.staleShiftBlocks, isTrue);
+    expect(pos.outbox.failed.last.errorCode, 'shift_not_sent');
+
+    final sh = await pos.staleServerShift();
+    expect(sh, isNotNull);
+    expect(sh!.number, 6);
+    expect(sh.openedByName, 'Шахзод');
+    expect(sh.expectedCash, parseMoney('80000.00'));
+    expect(await pos.closeServerShift(sh), isNull);
+    expect(server.staleCloses.single['stale'], isTrue);
+    await until(() => !pos.syncing);
+    await pos.sync();
+    await until(() => pos.queue == 0 && pos.failed == 0);
+    expect(server.shifts.length, 1);
+    expect(server.sales.single['shift_id'], 'srv-shift');
+    expect(pos.shift!.number, 7);
+    expect(pos.staleShiftBlocks, isFalse);
+    sale.dispose();
+  });
+
+  test('открытие смены: на сервере открыта прошлая — продолжить её', () async {
+    await pos.activate('ABCD2345');
+    pos.login(pos.catalog.cashiers.single, '1234');
+    expect(await pos.staleServerShift(), isNull);
+    server.staleShift = oldShift();
+    final sh = await pos.staleServerShift();
+    expect(sh?.id, 'old-shift');
+    await pos.continueServerShift(sh!);
+    expect(pos.stage, Stage.work);
+    expect(pos.shift!.serverId, 'old-shift');
+    expect(pos.shift!.number, 6);
+    // Это уже своя смена — больше не «зависшая».
+    expect(await pos.staleServerShift(), isNull);
   });
 
   test('плитки, экранная клавиатура и поиск', () async {

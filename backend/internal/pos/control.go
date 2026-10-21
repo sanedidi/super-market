@@ -278,6 +278,22 @@ func (s *Service) ShiftEvents(ctx context.Context, p *identity.Principal, id str
 			}
 			ev.Amount = sh.Diff
 		}
+		// Закрыта не Z-отчётом на кассе — пишем, кем и откуда.
+		if sh.ClosedVia != nil && *sh.ClosedVia != "pos" {
+			who := ""
+			if sh.ClosedByName != nil {
+				who = " · " + *sh.ClosedByName
+			}
+			via := i18n.Pick(lang, "закрыта в панели", "panelda yopilgan")
+			if *sh.ClosedVia == "pos_stale" {
+				via = i18n.Pick(lang, "закрыта с кассы: Z-отчёт не дошёл до сервера, сумма по расчёту", "kassadan yopilgan: Z-hisobot serverga yetmagan, summa hisob boʻyicha")
+			}
+			if ev.Note == "" || (sh.Diff != nil && money.D(*sh.Diff).Sign() == 0) {
+				ev.Note = via + who
+			} else {
+				ev.Note = via + who + " · " + ev.Note
+			}
+		}
 		out = append(out, ev)
 	}
 	return out, nil
