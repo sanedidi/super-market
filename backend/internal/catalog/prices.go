@@ -504,6 +504,8 @@ type ProductForSale struct {
 	IsFractional bool
 	IsActive     bool
 	Price        string
+	// Kind — goods (товар), dish (блюдо кафе), prep (заготовка).
+	Kind string
 }
 
 // EffectivePrice: цена магазина → цена сети → базовая цена товара.
@@ -511,13 +513,13 @@ func EffectivePrice(ctx context.Context, q db.Querier, networkID, storeID, price
 	var p ProductForSale
 	err := q.QueryRow(ctx, `
 		SELECT p.id, loc(p.name, p.name_uz), u.is_fractional, p.is_active,
-		       COALESCE(sp.price, np.price, p.base_price)::text
+		       COALESCE(sp.price, np.price, p.base_price)::text, p.kind
 		FROM products p
 		JOIN units u ON u.id = p.unit_id
 		LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = $3 AND sp.store_id = $2
 		LEFT JOIN prices np ON np.product_id = p.id AND np.price_type_id = $3 AND np.store_id IS NULL
 		WHERE p.id = $4 AND (p.network_id IS NULL OR p.network_id = $1)`,
-		networkID, storeID, priceTypeID, productID).Scan(&p.ID, &p.Name, &p.IsFractional, &p.IsActive, &p.Price)
+		networkID, storeID, priceTypeID, productID).Scan(&p.ID, &p.Name, &p.IsFractional, &p.IsActive, &p.Price, &p.Kind)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, apperr.Validation("товар не найден").Uz("mahsulot topilmadi")
 	}

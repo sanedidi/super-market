@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/sanedidi/super-market/backend/internal/cafe"
 	"github.com/sanedidi/super-market/backend/internal/catalog"
 	"github.com/sanedidi/super-market/backend/internal/finance"
 	"github.com/sanedidi/super-market/backend/internal/identity"
@@ -22,6 +23,9 @@ import (
 
 // defaultWarehouseName — название создаётся на языке того, кто создаёт магазин.
 var defaultWarehouseName = i18n.Text{RU: "Основной склад", UZ: "Asosiy ombor"}
+
+// cafeWarehouseName — склад продуктов кафе.
+var cafeWarehouseName = i18n.Text{RU: "Кухня", UZ: "Oshxona"}
 
 type Service struct {
 	pool *pgxpool.Pool
@@ -51,6 +55,8 @@ type Network struct {
 	PlanName         string  `json:"plan_name"`
 	EffectivePlanKey string  `json:"effective_plan_key"`
 	PlanTrialUntil   *string `json:"plan_trial_until"`
+	// Тип бизнеса: store — магазин, cafe — кафе / ресторан.
+	BusinessType string `json:"business_type"`
 }
 
 const networkSelect = `
@@ -61,7 +67,7 @@ const networkSelect = `
 	       COALESCE(el.login, ''), COALESCE(el.must_change_password, false),
 	       el.password_changed_at, el.last_login_at,
 	       n.plan_key, (SELECT loc(pl.name, pl.name_uz) FROM plans pl WHERE pl.key = n.plan_key), network_plan(n.id),
-	       to_char(n.plan_trial_until, 'YYYY-MM-DD')
+	       to_char(n.plan_trial_until, 'YYYY-MM-DD'), n.business_type
 	FROM networks n
 	LEFT JOIN roles r     ON r.network_id = n.id AND r.is_owner
 	LEFT JOIN employees e ON e.role_id = r.id
@@ -79,6 +85,9 @@ type CreateNetworkInput struct {
 	// Тариф сети; пусто — одиночному «Бесплатный» (с пробным периодом),
 	// сети магазинов — «Сеть».
 	PlanKey string `json:"plan_key"`
+	// Тип бизнеса: store (по умолчанию) или cafe. Кафе — только у сети
+	// магазинов или одиночного магазина, не у агента.
+	BusinessType string `json:"business_type"`
 }
 
 // CreateNetwork создаёт сеть и её владельца (супер-админ).
@@ -89,6 +98,12 @@ func (s *Service) CreateNetwork(ctx context.Context, in CreateNetworkInput) (Net
 	}
 	if in.Kind != "chain" && in.Kind != "single" && in.Kind != "distributor" {
 		return Network{}, apperr.Validation("kind: ожидается chain, single или distributor").Uz("kind: chain, single yoki distributor boʻlishi kerak")
+	}
+	if in.BusinessType == "" {
+		in.BusinessType = cafe.BusinessStore
+	}
+	if err := checkBusinessType(in.Kind, in.BusinessType); err != nil {
+		return Network{}, err
 	}
 	login, hash, err := identity.PrepareOwnerLogin(identity.LoginInput{Login: in.OwnerLogin, Password: in.OwnerPassword})
 	if err != nil {
@@ -112,9 +127,15 @@ func (s *Service) CreateNetwork(ctx context.Context, in CreateNetworkInput) (Net
 		} else if p.Audience != plans.AudienceOf(in.Kind) {
 			return apperr.Validation("plan_key: тариф для другого вида сетей (магазины / агенты)").Uz("plan_key: tarif boshqa turdagi tarmoqlar uchun (doʻkonlar / agentlar)")
 		}
-		if err := tx.QueryRow(ctx, `INSERT INTO networks (name, kind, plan_key) VALUES ($1, $2, $3) RETURNING id`,
-			name, in.Kind, planKey).Scan(&id); err != nil {
+		if err := tx.QueryRow(ctx, `INSERT INTO networks (name, kind, plan_key, business_type) VALUES ($1, $2, $3, $4) RETURNING id`,
+			name, in.Kind, planKey, in.BusinessType).Scan(&id); err != nil {
 			return err
+		}
+		if in.BusinessType == cafe.BusinessCafe {
+			// Новое кафе сразу получает цех «Кухня».
+			if err := cafe.EnsureDefaults(ctx, tx, id); err != nil {
+				return err
+			}
 		}
 		ownerID, err := identity.CreateOwner(ctx, tx, id, in.OwnerPhone, in.OwnerName)
 		if err != nil {
@@ -203,6 +224,18 @@ func (s *Service) ListNetworks(ctx context.Context, search string, page httpx.Pa
 type UpdateNetworkInput struct {
 	Name   *string `json:"name"`
 	Status *string `json:"status"`
+	// Тип бизнеса меняет только супер-админ.
+	BusinessType *string `json:"business_type"`
+}
+
+func checkBusinessType(kind, bt string) error {
+	if bt != cafe.BusinessStore && bt != cafe.BusinessCafe {
+		return apperr.Validation("business_type: ожидается store или cafe").Uz("business_type: store yoki cafe boʻlishi kerak")
+	}
+	if bt == cafe.BusinessCafe && kind == "distributor" {
+		return apperr.Validation("business_type: агент не может быть кафе").Uz("business_type: agent kafe boʻla olmaydi")
+	}
+	return nil
 }
 
 func (s *Service) UpdateNetwork(ctx context.Context, id string, in UpdateNetworkInput) (Network, error) {
@@ -217,14 +250,33 @@ func (s *Service) UpdateNetwork(ctx context.Context, id string, in UpdateNetwork
 		n := strings.TrimSpace(*in.Name)
 		name = &n
 	}
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE networks SET name = COALESCE($2, name), status = COALESCE($3, status) WHERE id = $1`,
-		id, name, in.Status)
+	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		var kind string
+		err := tx.QueryRow(ctx, `SELECT kind FROM networks WHERE id = $1 FOR UPDATE`, id).Scan(&kind)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperr.NotFound("сеть не найдена").Uz("tarmoq topilmadi")
+		}
+		if err != nil {
+			return err
+		}
+		if in.BusinessType != nil {
+			if err := checkBusinessType(kind, *in.BusinessType); err != nil {
+				return err
+			}
+			if *in.BusinessType == cafe.BusinessCafe {
+				if err := cafe.EnsureDefaults(ctx, tx, id); err != nil {
+					return err
+				}
+			}
+		}
+		_, err = tx.Exec(ctx, `
+			UPDATE networks SET name = COALESCE($2, name), status = COALESCE($3, status),
+			       business_type = COALESCE($4, business_type) WHERE id = $1`,
+			id, name, in.Status, in.BusinessType)
+		return err
+	})
 	if err != nil {
 		return Network{}, err
-	}
-	if tag.RowsAffected() == 0 {
-		return Network{}, apperr.NotFound("сеть не найдена").Uz("tarmoq topilmadi")
 	}
 	return s.GetNetwork(ctx, id)
 }
@@ -382,10 +434,19 @@ func (s *Service) CreateStore(ctx context.Context, p *identity.Principal, in Sto
 			p.NetworkID, strings.TrimSpace(*in.Name), trimPtr(in.Address), trimPtr(in.Phone), in.Lat, in.Lng, trimPtr(in.City)).Scan(&id); err != nil {
 			return err
 		}
+		// Склад по умолчанию; у кафе — «Кухня» (склад продуктов).
+		whName := defaultWarehouseName
+		var bt string
+		if err := tx.QueryRow(ctx, `SELECT business_type FROM networks WHERE id = $1`, p.NetworkID).Scan(&bt); err != nil {
+			return err
+		}
+		if bt == cafe.BusinessCafe {
+			whName = cafeWarehouseName
+		}
 		var whID string
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO warehouses (network_id, store_id, name) VALUES ($1, $2, $3) RETURNING id`,
-			p.NetworkID, id, defaultWarehouseName.Ctx(ctx)).Scan(&whID); err != nil {
+			p.NetworkID, id, whName.Ctx(ctx)).Scan(&whID); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE stores SET default_warehouse_id = $2 WHERE id = $1`, id, whID); err != nil {

@@ -554,6 +554,10 @@ func (s *Service) Post(ctx context.Context, p *identity.Principal, id string) (D
 				if err := AddBatch(ctx, tx, p.NetworkID, d.WarehouseID, it.ProductID, it.Qty, cost, costUSD, DocStock, d.ID); err != nil {
 					return err
 				}
+				// Кафе: приход закрывает «минус» продукта.
+				if err := CloseShortfalls(ctx, tx, p.NetworkID, d.WarehouseID, it.ProductID); err != nil {
+					return err
+				}
 				lineTotal = mul(ctx, tx, it.Qty, *it.Price)
 
 			case TypeSupplierReturn:
@@ -589,6 +593,9 @@ func (s *Service) Post(ctx context.Context, p *identity.Principal, id string) (D
 						return err
 					}
 				}
+				if err := CloseShortfalls(ctx, tx, p.NetworkID, *d.ToWarehouseID, it.ProductID); err != nil {
+					return err
+				}
 				lineTotal = takenCost(ctx, tx, taken, "UZS")
 
 			case TypeWriteOff:
@@ -599,6 +606,10 @@ func (s *Service) Post(ctx context.Context, p *identity.Principal, id string) (D
 				lineTotal = takenCost(ctx, tx, taken, "UZS")
 
 			case TypeInventory:
+				// Посчитан фактический остаток — «минус» кафе закрыт без списания.
+				if err := CloseShortfallsByCount(ctx, tx, d.WarehouseID, it.ProductID); err != nil {
+					return err
+				}
 				expected, err := StockQty(ctx, tx, d.WarehouseID, it.ProductID)
 				if err != nil {
 					return err

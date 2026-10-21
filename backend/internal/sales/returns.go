@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/sanedidi/super-market/backend/internal/cafe"
 	"github.com/sanedidi/super-market/backend/internal/debts"
 	"github.com/sanedidi/super-market/backend/internal/finance"
 	"github.com/sanedidi/super-market/backend/internal/identity"
@@ -172,14 +173,14 @@ func (s *Service) CreateReturn(ctx context.Context, p *identity.Principal, in Re
 				return apperr.Validation("items: строка чека " + ls + " повторяется").Uz("items: chekning " + ls + "-qatori takrorlanadi")
 			}
 			seen[it.SaleLine] = true
-			var productID, soldQty, lineTotal, returned string
+			var productID, soldQty, lineTotal, returned, kind, soldCost string
 			var fractional bool
 			err := tx.QueryRow(ctx, `
-				SELECT i.product_id, i.qty::text, i.total::text, u.is_fractional,
+				SELECT i.product_id, i.qty::text, i.total::text, u.is_fractional, p.kind, i.cost::text,
 				       COALESCE((SELECT sum(ri.qty) FROM customer_return_items ri JOIN customer_returns r ON r.id = ri.return_id
 				                 WHERE r.sale_id = i.sale_id AND ri.sale_line = i.line), 0)::text
 				FROM sale_items i JOIN products p ON p.id = i.product_id JOIN units u ON u.id = p.unit_id
-				WHERE i.sale_id = $1 AND i.line = $2`, in.SaleID, it.SaleLine).Scan(&productID, &soldQty, &lineTotal, &fractional, &returned)
+				WHERE i.sale_id = $1 AND i.line = $2`, in.SaleID, it.SaleLine).Scan(&productID, &soldQty, &lineTotal, &fractional, &kind, &soldCost, &returned)
 			if errors.Is(err, pgx.ErrNoRows) {
 				return apperr.Validation("items: нет строки чека " + ls).Uz("items: chekda " + ls + "-qator yoʻq")
 			}
@@ -201,12 +202,20 @@ func (s *Service) CreateReturn(ctx context.Context, p *identity.Principal, in Re
 
 			// Возвращаем в партии в обратном порядке списания, пропуская то,
 			// что уже вернули раньше (оно тоже возвращалось с конца).
-			taken, lineCost, err := batchesForReturn(ctx, tx, in.SaleID, it.SaleLine, money.D(returned), qty)
-			if err != nil {
-				return err
-			}
-			if err := inventory.ReturnToBatches(ctx, tx, p.NetworkID, taken, warehouseID, productID, inventory.DocCustomerReturn, id); err != nil {
-				return err
+			var lineCost money.Dec
+			if kind == cafe.KindDish {
+				// Блюдо кафе: приготовленное на склад не вернуть — продукты
+				// остаются списанными (порча), себестоимость — та же доля.
+				lineCost = money.D(soldCost).Mul(qty).Div(money.D(soldQty))
+			} else {
+				taken, c, err := batchesForReturn(ctx, tx, in.SaleID, it.SaleLine, money.D(returned), qty)
+				if err != nil {
+					return err
+				}
+				if err := inventory.ReturnToBatches(ctx, tx, p.NetworkID, taken, warehouseID, productID, inventory.DocCustomerReturn, id); err != nil {
+					return err
+				}
+				lineCost = c
 			}
 			refund := money.D(lineTotal).Mul(qty).Div(money.D(soldQty))
 			// Последний возврат по строке забирает остаток суммы — без копеечных хвостов.

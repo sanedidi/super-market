@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/sanedidi/super-market/backend/internal/cafe"
 	"github.com/sanedidi/super-market/backend/internal/catalog"
 	"github.com/sanedidi/super-market/backend/internal/debts"
 	"github.com/sanedidi/super-market/backend/internal/finance"
@@ -49,6 +50,15 @@ type SaleItem struct {
 	// FiscalName — название для фискального чека: всегда основное (русское),
 	// как в чеке продажи; product_name — на языке запроса.
 	FiscalName string `json:"fiscal_name"`
+	// Модификаторы блюда кафе (для чека и бегунка).
+	Modifiers []SaleItemModifier `json:"modifiers,omitempty" db:"-"`
+}
+
+type SaleItemModifier struct {
+	OptionID string `json:"option_id"`
+	Name     string `json:"name"`
+	Qty      int    `json:"qty"`
+	Price    string `json:"price"`
 }
 
 type SalePayment struct {
@@ -133,6 +143,29 @@ func (s *Service) getSale(ctx context.Context, q db.Querier, p *identity.Princip
 		return Sale{}, err
 	}
 	rows, err = q.Query(ctx, `
+		SELECT m.line, m.option_id, m.name, m.qty, m.price::text
+		FROM sale_item_modifiers m WHERE m.sale_id = $1 ORDER BY m.line, m.name`, id)
+	if err != nil {
+		return Sale{}, err
+	}
+	for rows.Next() {
+		var line int
+		var m SaleItemModifier
+		if err := rows.Scan(&line, &m.OptionID, &m.Name, &m.Qty, &m.Price); err != nil {
+			rows.Close()
+			return Sale{}, err
+		}
+		for i := range sale.Items {
+			if sale.Items[i].Line == line {
+				sale.Items[i].Modifiers = append(sale.Items[i].Modifiers, m)
+			}
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return Sale{}, err
+	}
+	rows, err = q.Query(ctx, `
 		SELECT sp.payment_method_id, m.name, sp.amount::text
 		FROM sale_payments sp JOIN payment_methods m ON m.id = sp.payment_method_id
 		WHERE sp.sale_id = $1`, id)
@@ -205,6 +238,8 @@ type SaleInput struct {
 		Price *money.Amount `json:"price"`
 		// Коды маркировки DataMatrix, по одному на каждую штуку (только касса).
 		MarkingCodes []string `json:"marking_codes"`
+		// Модификаторы блюда кафе («без лука», «+ сыр», «0,5 порции»).
+		Modifiers []cafe.ChosenModifier `json:"modifiers"`
 	} `json:"items"`
 	Payments []struct {
 		PaymentMethodID string       `json:"payment_method_id"`
@@ -378,16 +413,33 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 			if !httpx.IsUUID(it.ProductID) {
 				return apperr.Validation("items: неверный product_id в строке " + ls).Uz("items: " + ls + "-qatorda product_id notoʻgʻri")
 			}
-			if seen[it.ProductID] {
-				return apperr.Validation("items: товар повторяется в строке " + ls + " — объедините количество").Uz("items: " + ls + "-qatorda mahsulot takrorlanadi — miqdorni birlashtiring")
-			}
-			seen[it.ProductID] = true
 			if !it.Qty.Valid() || money.D(string(it.Qty)).Sign() <= 0 {
 				return apperr.Validation("items: количество должно быть больше нуля в строке " + ls).Uz("items: " + ls + "-qatorda miqdor noldan katta boʻlishi kerak")
 			}
 			prod, err := catalog.EffectivePrice(ctx, tx, p.NetworkID, in.StoreID, priceTypeID, it.ProductID)
 			if err != nil {
 				return apperr.Validation("items: товар не найден в строке " + ls).Uz("items: " + ls + "-qatorda mahsulot topilmadi")
+			}
+			// Блюдо кафе может повторяться: два плова, один «без лука».
+			dish := prod.Kind == cafe.KindDish
+			if seen[it.ProductID] && !dish {
+				return apperr.Validation("items: товар повторяется в строке " + ls + " — объедините количество").Uz("items: " + ls + "-qatorda mahsulot takrorlanadi — miqdorni birlashtiring")
+			}
+			seen[it.ProductID] = true
+			var mods []cafe.ResolvedModifier
+			if len(it.Modifiers) > 0 && !dish {
+				return apperr.Validation("items: модификаторы бывают только у блюд (строка " + ls + ")").Uz("items: modifikatorlar faqat taomlarda boʻladi (" + ls + "-qator)")
+			}
+			if dish && (len(it.Modifiers) > 0 || !pos) {
+				if mods, err = cafe.ResolveModifiers(ctx, tx, p.NetworkID, it.ProductID, prod.Name, it.Modifiers, !pos); err != nil {
+					return err
+				}
+				// Цена блюда с доплатами за модификаторы.
+				base := money.D(prod.Price)
+				for _, m := range mods {
+					base = base.Add(m.Price.Mul(money.D(strconv.Itoa(m.Qty))))
+				}
+				prod.Price = base.Money()
 			}
 			// Касса могла продать офлайн товар, который тем временем сняли с продажи.
 			if !prod.IsActive && !pos {
@@ -422,17 +474,29 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 				return err
 			}
 			var taken []inventory.Taken
+			var ingredients []cafe.TakenIngredient
 			short := "0"
 			// Остаток не посчитан («Только товары и цены»): сколько товара на
 			// полке, учёт не знает — продаём, недостачу фиксируем, как с кассы.
 			var uncounted bool
-			if !pos {
+			if !pos && !dish {
 				if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM store_products WHERE store_id = $1 AND product_id = $2 AND uncounted_since IS NOT NULL)`,
 					in.StoreID, it.ProductID).Scan(&uncounted); err != nil {
 					return err
 				}
 			}
-			if pos || uncounted {
+			if dish {
+				// Блюдо не лежит на складе: списываем продукты по техкарте,
+				// чего не хватило — в «минус», продажа проходит.
+				needs, err := cafe.Explode(ctx, tx, it.ProductID, qty, mods)
+				if err != nil {
+					return err
+				}
+				ingredients, err = cafe.TakeIngredients(ctx, tx, p.NetworkID, warehouseID, needs, inventory.DocSale, id)
+				if err != nil {
+					return err
+				}
+			} else if pos || uncounted {
 				// С кассы — продажа уже случилась: недостачу фиксируем, а не отклоняем.
 				taken, short, err = inventory.TakeUpTo(ctx, tx, p.NetworkID, warehouseID, it.ProductID, qty.Fixed(3), inventory.DocSale, id)
 			} else {
@@ -445,12 +509,20 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 			for _, t := range taken {
 				lineCost = lineCost.Add(money.D(t.Qty).Mul(money.D(t.UnitCost)))
 			}
+			for _, t := range ingredients {
+				lineCost = lineCost.Add(t.Cost)
+			}
 			if _, err := tx.Exec(ctx, `
 				INSERT INTO sale_items (sale_id, line, product_id, qty, price, discount, total, cost, marking_codes, short_qty)
 				VALUES ($1, $2, $3, $4::numeric, $5::numeric, $6::numeric, $7::numeric, $8::numeric, $9, $10::numeric)`,
 				id, line, it.ProductID, qty.Fixed(3), price, lineDiscount.Money(),
 				lineSum.Sub(lineDiscount).Money(), lineCost.Money(), codes, short); err != nil {
 				return err
+			}
+			if dish {
+				if err := cafe.RecordSaleLine(ctx, tx, p.NetworkID, warehouseID, id, line, ingredients, mods); err != nil {
+					return err
+				}
 			}
 			for _, t := range taken {
 				if _, err := tx.Exec(ctx, `
