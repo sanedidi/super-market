@@ -137,6 +137,8 @@ void main() {
 
     final dilnoza = pos.catalog.cashiers.single;
     expect(pos.login(dilnoza, '0000'), 'Неверный ПИН');
+    expect(pos.login(dilnoza, '12345'), 'ПИН — 4 цифры');
+    expect(pos.login(dilnoza, '123'), 'ПИН — 4 цифры');
     expect(pos.login(dilnoza, '1234'), isNull);
     expect(pos.stage, Stage.openShift);
 

@@ -169,7 +169,7 @@ class _ReturnScreenState extends State<ReturnScreen> {
         _submit('card');
       } else if (k == LogicalKeyboardKey.backspace) {
         if (_pin.isNotEmpty) setState(() => _pin = _pin.substring(0, _pin.length - 1));
-      } else if (ch != null && RegExp(r'^[0-9]$').hasMatch(ch) && _pin.length < 6) {
+      } else if (ch != null && RegExp(r'^[0-9]$').hasMatch(ch) && _pin.length < 4) {
         setState(() => _pin += ch);
       }
       return true;
@@ -425,7 +425,7 @@ class _ReturnScreenState extends State<ReturnScreen> {
             FitText(tr('ПИН старшего с правом на возврат', 'Qaytarish huquqiga ega katta kassir PIN-kodi'), maxLines: 2, style: t(13, w: FontWeight.w600, c: C.warning)),
             const SizedBox(height: 8),
             Row(children: [
-              for (var i = 0; i < 4 || i < _pin.length; i++)
+              for (var i = 0; i < 4; i++)
                 Container(
                   width: 12,
                   height: 12,

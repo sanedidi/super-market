@@ -425,7 +425,7 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 | POST | `/store/pos/devices/{id}/revoke` | отключить кассу |
 | POST | `/store/pos/phone` | `sales.pos` — касса в телефоне («SM Магазин» → «Продать»): `{store_id, app_version}` → `{token, device_id, device_name, store_id, store_name, employee_id, employee_name}`. Касса привязана к сотруднику: дальше телефон работает через `/pos/…` с этим токеном, `X-Cashier-ID` не нужен (чужой — 401). Повторный вызов — та же касса, новый токен (старый не действует). В лимит касс тарифа не входит; в списке касс — `phone: true` |
 | GET | `/store/pos/pins?store_id=` | `staff.manage` — сотрудники магазина: есть ли ПИН, права на кассе (`can_pos`, `can_discount`, `can_return`) |
-| PUT | `/store/pos/pins/{employee_id}` | `staff.manage` — `{pin}` 4–6 цифр, уникален в сети |
+| PUT | `/store/pos/pins/{employee_id}` | `staff.manage` — `{pin}` ровно 4 цифры, уникален в сети |
 | DELETE | `/store/pos/pins/{employee_id}` | `staff.manage` — убрать ПИН (сотрудник пропадёт из списка на кассе) |
 | GET | `/store/pos/shifts`, `/store/pos/shifts/{id}` | `reports.view` или `finance.manage`; `closed_via`: `pos` — Z-отчёт на кассе, `pos_stale` — касса закрыла зависшую смену, `panel` — закрыта в панели |
 | POST | `/store/pos/shifts/{id}/close` | `finance.manage`: закрыть открытую смену в панели `{counted_cash, diff_reason}` (расхождение — с причиной); `closed_via: panel`; повтор → та же смена |

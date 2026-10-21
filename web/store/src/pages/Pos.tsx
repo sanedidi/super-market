@@ -280,14 +280,14 @@ function PinsCard() {
   const clear = useAction((id: string) => api.del(`/store/pos/pins/${id}`), { ...inv, success: tr('ПИН убран', 'PIN-kod olib tashlandi') })
   if (!can('staff.manage')) return null
   const items = list.data ?? []
-  const valid = /^[0-9]{4,6}$/.test(pin)
+  const valid = /^[0-9]{4}$/.test(pin)
 
   return (
     <Card title={tr('ПИНы кассиров', 'Kassirlar PIN-kodlari')} styles={{ body: { paddingTop: 8 } }}>
       <Typography.Paragraph type="secondary" style={{ fontSize: 13 }}>
         {tr(
-          'Кассир входит на кассе по ПИНу (4–6 цифр). Без ПИНа сотрудника нет в списке на кассе. Права (скидки, возвраты) — в «Настройки → Роли».',
-          'Kassir kassaga PIN-kod (4–6 raqam) bilan kiradi. PIN-kodsiz xodim kassadagi roʻyxatda boʻlmaydi. Huquqlar (chegirmalar, qaytarishlar) — «Sozlamalar → Rollar» boʻlimida.',
+          'Кассир входит на кассе по ПИНу (ровно 4 цифры). Без ПИНа сотрудника нет в списке на кассе. Права (скидки, возвраты) — в «Настройки → Роли».',
+          'Kassir kassaga PIN-kod (aynan 4 ta raqam) bilan kiradi. PIN-kodsiz xodim kassadagi roʻyxatda boʻlmaydi. Huquqlar (chegirmalar, qaytarishlar) — «Sozlamalar → Rollar» boʻlimida.',
         )}
       </Typography.Paragraph>
       <LoadError error={list.error} retry={() => list.refetch()} />
@@ -356,8 +356,8 @@ function PinsCard() {
           autoFocus
           value={pin}
           inputMode="numeric"
-          maxLength={6}
-          placeholder={tr('4–6 цифр', '4–6 raqam')}
+          maxLength={4}
+          placeholder={tr('4 цифры', '4 ta raqam')}
           onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
           onPressEnter={() => editing && valid && save.mutate({ id: editing.employee_id, pin }, { onSuccess: () => setEditing(null) })}
           style={{ fontSize: 24, letterSpacing: 8 }}

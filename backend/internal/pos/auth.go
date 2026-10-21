@@ -118,7 +118,8 @@ func requireCashier(p *identity.Principal) error {
 
 // --------------------------------------------------------------- ПИН
 
-var pinRe = regexp.MustCompile(`^[0-9]{4,6}$`)
+// ПИН кассира — строго 4 цифры.
+var pinRe = regexp.MustCompile(`^[0-9]{4}$`)
 
 // PinHash — хеш ПИНа, который знает и сервер, и касса (для входа без
 // интернета). Привязан к сотруднику, чтобы одинаковые ПИНы не совпадали.
@@ -131,13 +132,13 @@ type PinInput struct {
 	PIN string `json:"pin"`
 }
 
-// SetPIN — владелец или менеджер задаёт кассиру ПИН (4–6 цифр).
+// SetPIN — владелец или менеджер задаёт кассиру ПИН (ровно 4 цифры).
 func (s *Service) SetPIN(ctx context.Context, p *identity.Principal, employeeID string, in PinInput) (map[string]bool, error) {
 	if err := p.Require(identity.PermStaffManage); err != nil {
 		return nil, err
 	}
 	if !pinRe.MatchString(in.PIN) {
-		return nil, apperr.Validation("pin: 4–6 цифр").Uz("pin: 4–6 ta raqam")
+		return nil, apperr.Validation("pin: ПИН — ровно 4 цифры").Uz("pin: PIN-kod — aynan 4 ta raqam")
 	}
 	if !httpx.IsUUID(employeeID) {
 		return nil, apperr.NotFound("сотрудник не найден").Uz("xodim topilmadi")

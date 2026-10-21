@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart' show LangSwitch, tr;
 
 import '../core/catalog.dart';
-import '../core/pin.dart';
 import '../state/pos.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -25,25 +24,22 @@ class _LoginScreenState extends State<LoginScreen> {
   List<Cashier> get _cashiers => context.read<PosController>().catalog.cashiers;
 
   void _digit(String d) {
-    if (_pin.length >= 6) return;
+    if (_pin.length >= 4) return;
     setState(() {
       _pin += d;
       _error = null;
     });
-    final list = _cashiers;
-    if (list.isEmpty) return;
-    final c = list[_sel.clamp(0, list.length - 1)];
-    // Верный ПИН входит сразу; неверный считается попыткой только по Enter или на 6-й цифре.
-    if (_pin.length >= 4 && pinHash(c.id, _pin) == c.pinHash) {
-      _submit();
-    } else if (_pin.length == 6) {
-      _submit();
-    }
+    // ПИН — строго 4 цифры: на 4-й цифре касса сразу проверяет его.
+    if (_pin.length == 4) _submit();
   }
 
   void _submit() {
     final list = _cashiers;
     if (list.isEmpty || _pin.isEmpty) return;
+    if (_pin.length != 4) {
+      setState(() => _error = tr('ПИН — 4 цифры', 'PIN-kod — 4 ta raqam'));
+      return;
+    }
     final c = list[_sel.clamp(0, list.length - 1)];
     final err = context.read<PosController>().login(c, _pin);
     setState(() {
@@ -169,7 +165,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       Text(tr('ПИН-код · ${sel.name}', 'PIN-kod · ${sel.name}'), style: t(14, c: C.ts)),
                       const SizedBox(height: 12),
                       Row(mainAxisSize: MainAxisSize.min, children: [
-                        for (var i = 0; i < 4 || i < _pin.length; i++)
+                        for (var i = 0; i < 4; i++)
                           Container(
                             width: 14,
                             height: 14,

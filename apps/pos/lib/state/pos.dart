@@ -334,8 +334,12 @@ class PosController extends ChangeNotifier {
 
   // ------------------------------------------------------------- кассир
 
+  /// ПИН кассира — строго 4 цифры (как на сервере).
+  static final _pinRe = RegExp(r'^[0-9]{4}$');
+
   /// Вход по ПИНу — проверка на кассе, без сервера. Возвращает ошибку или null.
   String? login(Cashier c, String pin) {
+    if (!_pinRe.hasMatch(pin)) return tr('ПИН — 4 цифры', 'PIN-kod — 4 ta raqam');
     final wait = pins.lockedFor(c.id);
     if (wait != null) return tr('Слишком много попыток — подождите ${wait.inMinutes + 1} мин', 'Urinishlar juda koʻp — ${wait.inMinutes + 1} daqiqa kuting');
     if (!pins.check(c.id, c.pinHash, pin)) {
@@ -352,6 +356,7 @@ class PosController extends ChangeNotifier {
 
   /// Проверить ПИН старшего (возврат, скидка без права). Возвращает кассира с правом.
   Cashier? confirm(String perm, String pin) {
+    if (!_pinRe.hasMatch(pin)) return null;
     for (final c in catalog.cashiers) {
       if (c.can(perm) && pins.check(c.id, c.pinHash, pin)) return c;
     }

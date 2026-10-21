@@ -155,6 +155,8 @@ func TestPOS(t *testing.T) {
 		}
 	}
 	a.expect(a.do("PUT", "/store/pos/pins/"+cashier, tok, map[string]any{"pin": "12a4"}), 400, "bad pin")
+	a.expect(a.do("PUT", "/store/pos/pins/"+cashier, tok, map[string]any{"pin": "12345"}), 400, "pin longer than 4")
+	a.expect(a.do("PUT", "/store/pos/pins/"+cashier, tok, map[string]any{"pin": "123"}), 400, "pin shorter than 4")
 	a.expect(a.do("PUT", "/store/pos/pins/"+cashier, tok, map[string]any{"pin": "1234"}), 200, "pin")
 	a.expect(a.do("PUT", "/store/pos/pins/"+owner, tok, map[string]any{"pin": "1234"}), 409, "pin taken")
 	a.expect(a.do("PUT", "/store/pos/pins/"+owner, tok, map[string]any{"pin": "9999"}), 200, "owner pin")
