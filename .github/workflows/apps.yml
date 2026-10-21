@@ -3,24 +3,42 @@ name: apps
 # Проверка Flutter-приложений: анализатор и тесты — только тех приложений, что изменились
 # в коммите (изменения в apps/core проверяют все). Экономия минут Actions.
 # Скриншоты экранов приложения покупателя (golden) — в артефакте client-screens.
-# Проверочные APK и касса для Windows собираются ТОЛЬКО вручную:
-# Actions → apps → Run workflow → «builds» = true. Сборки для Google Play (AAB) — workflow release.
+#
+# Сборки (APK и касса для Windows) — только по запросу, по умолчанию ничего не собирается:
+#   • при пуше — метка в сообщении коммита:
+#       [build: windows]                 касса для Windows
+#       [build: windows, store]          несколько через запятую
+#       [build: android]                 все APK (касса, магазин, курьер, дистрибьютор)
+#       [build: all]                     всё
+#     Имена: windows, pos-android, store, courier, distributor, android, all, none.
+#     Метка работает в любом коммите пуша, даже если приложения не менялись.
+#   • вручную — Actions → apps → Run workflow → «Что собрать».
+# Сборки для Google Play (AAB) — workflow release.
 on:
   push:
     branches: [main, "client-*"]
-    paths: ["apps/**", ".github/workflows/apps.yml"]
   pull_request:
     paths: ["apps/**", ".github/workflows/apps.yml"]
   workflow_dispatch:
     inputs:
-      builds:
-        description: "Собрать APK (касса, курьер, магазин, дистрибьютор) и кассу для Windows"
-        type: boolean
-        default: false
+      build:
+        description: "Что собрать"
+        type: choice
+        default: none
+        options:
+          - none
+          - windows
+          - pos-android
+          - store
+          - courier
+          - distributor
+          - android
+          - all
 
 concurrency:
-  # Новый пуш отменяет незаконченную проверку того же ветки — не платим за устаревшие прогоны.
-  group: apps-${{ github.ref }}
+  # Новый пуш отменяет незаконченную проверку той же ветки — не платим за устаревшие прогоны.
+  # Прогон со сборкой — в своей группе: его не отменяет следующий пуш.
+  group: apps-${{ github.ref }}-${{ (github.event_name == 'workflow_dispatch' || contains(toJSON(github.event.commits.*.message), '[build')) && github.run_id || 'check' }}
   cancel-in-progress: true
 
 env:
@@ -29,8 +47,56 @@ env:
   FLUTTER_VERSION: "3.44.x"
 
 jobs:
-  # Какие приложения изменились. Ручной запуск проверяет все.
+  # Что собирать: метка [build: …] в сообщениях коммитов пуша или выбор при ручном запуске.
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      windows: ${{ steps.p.outputs.windows }}
+      pos-android: ${{ steps.p.outputs.pos-android }}
+      store: ${{ steps.p.outputs.store }}
+      courier: ${{ steps.p.outputs.courier }}
+      distributor: ${{ steps.p.outputs.distributor }}
+    steps:
+      - id: p
+        env:
+          EVENT: ${{ github.event_name }}
+          CHOICE: ${{ inputs.build }}
+          MESSAGES: ${{ toJSON(github.event.commits.*.message) }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            want="$CHOICE"
+          elif [ "$EVENT" = "push" ]; then
+            want=$(printf '%s' "$MESSAGES" | grep -ioE '\[build:?[^]]*\]' | sed -E 's/^\[build:?//I; s/\]$//' | tr 'A-Z,' 'a-z ' | tr '\n' ' ' || true)
+          else
+            want=""
+          fi
+          windows=false; posa=false; store=false; courier=false; distributor=false
+          for w in $want; do
+            case "$w" in
+              windows|win|pos-windows) windows=true ;;
+              pos-android) posa=true ;;
+              store) store=true ;;
+              courier) courier=true ;;
+              distributor) distributor=true ;;
+              android|apk) posa=true; store=true; courier=true; distributor=true ;;
+              all) windows=true; posa=true; store=true; courier=true; distributor=true ;;
+              none|"") ;;
+              *) echo "::warning title=Неизвестная сборка::«$w» — допустимо: windows, pos-android, store, courier, distributor, android, all, none" ;;
+            esac
+          done
+          {
+            echo "windows=$windows"
+            echo "pos-android=$posa"
+            echo "store=$store"
+            echo "courier=$courier"
+            echo "distributor=$distributor"
+          } >> "$GITHUB_OUTPUT"
+          echo "### Сборки: windows=$windows, pos-android=$posa, store=$store, courier=$courier, distributor=$distributor" >> "$GITHUB_STEP_SUMMARY"
+
+  # Какие приложения проверять: при пуше — что изменилось; при ручном запуске — то,
+  # что собирается («none» — проверить все).
   changes:
+    needs: plan
     runs-on: ubuntu-latest
     # В pull request paths-filter берёт список файлов через GitHub API — без
     # pull-requests: read падает «Resource not accessible by integration».
@@ -38,14 +104,15 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      client: ${{ github.event_name == 'workflow_dispatch' || steps.f.outputs.client == 'true' }}
-      store: ${{ github.event_name == 'workflow_dispatch' || steps.f.outputs.store == 'true' }}
-      courier: ${{ github.event_name == 'workflow_dispatch' || steps.f.outputs.courier == 'true' }}
-      pos: ${{ github.event_name == 'workflow_dispatch' || steps.f.outputs.pos == 'true' }}
-      distributor: ${{ github.event_name == 'workflow_dispatch' || steps.f.outputs.distributor == 'true' }}
+      client: ${{ github.event_name == 'workflow_dispatch' && inputs.build == 'none' || steps.f.outputs.client == 'true' }}
+      store: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'none' || needs.plan.outputs.store == 'true') || steps.f.outputs.store == 'true' }}
+      courier: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'none' || needs.plan.outputs.courier == 'true') || steps.f.outputs.courier == 'true' }}
+      pos: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'none' || needs.plan.outputs.windows == 'true' || needs.plan.outputs.pos-android == 'true') || steps.f.outputs.pos == 'true' }}
+      distributor: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'none' || needs.plan.outputs.distributor == 'true') || steps.f.outputs.distributor == 'true' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
+        if: github.event_name != 'workflow_dispatch'
         id: f
         with:
           filters: |
@@ -121,8 +188,9 @@ jobs:
 
   # Касса для Windows: архив с SuperMarketPOS.exe — в артефакте pos-windows.
   pos-windows:
-    needs: analyze
-    if: github.event_name == 'workflow_dispatch' && inputs.builds
+    needs: [plan, analyze]
+    # Сборка идёт, даже если проверка пропущена (приложение не менялось), но не после её ошибки.
+    if: ${{ !cancelled() && needs.plan.outputs.windows == 'true' && needs.analyze.result != 'failure' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -148,8 +216,9 @@ jobs:
 
   # Касса для Android: APK — в артефакте pos-android.
   pos-android:
-    needs: analyze
-    if: github.event_name == 'workflow_dispatch' && inputs.builds
+    needs: [plan, analyze]
+    # Сборка идёт, даже если проверка пропущена (приложение не менялось), но не после её ошибки.
+    if: ${{ !cancelled() && needs.plan.outputs.pos-android == 'true' && needs.analyze.result != 'failure' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -177,8 +246,9 @@ jobs:
 
   # Приложение курьера для Android: APK — в артефакте courier-android.
   courier-android:
-    needs: analyze
-    if: github.event_name == 'workflow_dispatch' && inputs.builds
+    needs: [plan, analyze]
+    # Сборка идёт, даже если проверка пропущена (приложение не менялось), но не после её ошибки.
+    if: ${{ !cancelled() && needs.plan.outputs.courier == 'true' && needs.analyze.result != 'failure' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -206,8 +276,9 @@ jobs:
 
   # Приложение магазина для Android: APK — в артефакте store-android.
   store-android:
-    needs: analyze
-    if: github.event_name == 'workflow_dispatch' && inputs.builds
+    needs: [plan, analyze]
+    # Сборка идёт, даже если проверка пропущена (приложение не менялось), но не после её ошибки.
+    if: ${{ !cancelled() && needs.plan.outputs.store == 'true' && needs.analyze.result != 'failure' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -235,8 +306,9 @@ jobs:
 
   # Приложение дистрибьютора для Android: APK — в артефакте distributor-android.
   distributor-android:
-    needs: analyze
-    if: github.event_name == 'workflow_dispatch' && inputs.builds
+    needs: [plan, analyze]
+    # Сборка идёт, даже если проверка пропущена (приложение не менялось), но не после её ошибки.
+    if: ${{ !cancelled() && needs.plan.outputs.distributor == 'true' && needs.analyze.result != 'failure' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
