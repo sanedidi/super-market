@@ -167,6 +167,8 @@ func (s *Service) CreateReturn(ctx context.Context, p *identity.Principal, in Re
 
 		total, cost := money.D("0"), money.D("0")
 		seen := map[int]bool{}
+		// Блюда кафе: возвращённое ещё не выданным уходит на кухню как «ОТМЕНА».
+		kitchenCancel := map[int]string{}
 		for _, it := range in.Items {
 			ls := strconv.Itoa(it.SaleLine)
 			if seen[it.SaleLine] {
@@ -237,6 +239,12 @@ func (s *Service) CreateReturn(ctx context.Context, p *identity.Principal, in Re
 			}
 			total = total.Add(refund.Round2())
 			cost = cost.Add(lineCost)
+			if kind == cafe.KindDish {
+				kitchenCancel[it.SaleLine] = qty.Fixed(3)
+			}
+		}
+		if err := cafe.CancelTicketLines(ctx, tx, in.SaleID, kitchenCancel); err != nil {
+			return err
 		}
 
 		if _, err := tx.Exec(ctx, `UPDATE customer_returns SET total = $2::numeric, cost = $3::numeric WHERE id = $1`,

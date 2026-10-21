@@ -7,6 +7,8 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart' show Lang, tr;
 
 import 'cafe/cafe_sale_screen.dart';
+import 'cafe/display_screen.dart';
+import 'cafe/kitchen_screen.dart';
 import 'data/api.dart';
 import 'data/store.dart';
 import 'state/pos.dart';
@@ -60,6 +62,8 @@ class PosApp extends StatelessWidget {
                 Stage.login => const LoginScreen(),
                 Stage.openShift => const OpenShiftScreen(),
                 Stage.work => cafe ? const CafeSaleScreen() : const SaleScreen(),
+                Stage.kitchen => const KitchenScreen(),
+                Stage.display => const DisplayScreen(),
               },
       ),
     );

@@ -9,11 +9,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/sanedidi/super-market/backend/internal/cafe"
 	"github.com/sanedidi/super-market/backend/internal/debts"
 	"github.com/sanedidi/super-market/backend/internal/finance"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/plans"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
+	"github.com/sanedidi/super-market/backend/internal/platform/events"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/sales"
 )
@@ -22,6 +24,9 @@ type Module struct {
 	svc  *Service
 	auth *identity.Authenticator
 	log  *slog.Logger
+	// Кафе: экраны кухни и выдачи (WithKitchen).
+	kitchen *cafe.Service
+	hub     *events.Hub
 }
 
 func NewModule(svc *Service, auth *identity.Authenticator, log *slog.Logger) *Module {
@@ -54,6 +59,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.With(debtsOn).Post("/pos/debt-payments", m.debtPayment)
 		r.Put("/pos/quick-keys", m.setQuickKeys)
 		r.Put("/pos/products/{id}/price", m.setPrice)
+		m.kitchenRoutes(r)
 	})
 	// Панель магазина: кассы, ПИНы, смены, налоговые поля, коды.
 	r.Group(func(r chi.Router) {
@@ -247,7 +253,7 @@ func (m *Module) returnFiscal(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) listDevices(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Device], error) {
-		items, err := m.svc.ListDevices(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+		items, err := m.svc.ListDevices(r.Context(), pr(r), r.URL.Query().Get("store_id"), r.URL.Query().Get("kind"))
 		return httpx.List[Device]{Items: items}, err
 	})
 }

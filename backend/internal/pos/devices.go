@@ -44,6 +44,13 @@ func (s *Service) WithDebts(d *debts.Service) *Service {
 	return s
 }
 
+// Виды устройств: касса, экран кухни, экран выдачи для гостей.
+const (
+	KindPOS     = "pos"
+	KindKitchen = "kitchen"
+	KindDisplay = "display"
+)
+
 // Код активации живёт сутки: владелец создаёт кассу в панели и вводит код
 // на устройстве.
 const activationTTL = 24 * time.Hour
@@ -65,6 +72,11 @@ type Device struct {
 	OpenShiftID *string `json:"open_shift_id"`
 	// Касса в телефоне сотрудника (приложение «SM Магазин»): в лимит тарифа не входит.
 	Phone bool `json:"phone"`
+	// pos, kitchen (экран кухни; без цеха — все цеха), display (экран выдачи).
+	Kind         string  `json:"kind"`
+	WorkshopID   *string `json:"workshop_id"`
+	WorkshopName *string `json:"workshop_name"`
+	Online       bool    `json:"online"`
 }
 
 const deviceSelect = `
@@ -72,23 +84,40 @@ const deviceSelect = `
 	       CASE WHEN d.revoked_at IS NOT NULL THEN 'revoked' WHEN d.token_hash IS NOT NULL THEN 'active' ELSE 'waiting' END,
 	       d.activated_at, d.last_seen_at, d.app_version, d.created_at, d.activation_expires,
 	       (SELECT sh.id FROM pos_shifts sh WHERE sh.device_id = d.id AND sh.closed_at IS NULL),
-	       d.employee_id IS NOT NULL
+	       d.employee_id IS NOT NULL, d.kind, d.workshop_id,
+	       (SELECT loc(w.name, w.name_uz) FROM workshops w WHERE w.id = d.workshop_id),
+	       COALESCE(d.token_hash IS NOT NULL AND d.revoked_at IS NULL AND d.last_seen_at > now() - interval '2 minutes', false)
 	FROM pos_devices d JOIN stores st ON st.id = d.store_id`
 
 func scanDevice(r pgx.CollectableRow) (Device, error) {
 	var d Device
 	err := r.Scan(&d.ID, &d.StoreID, &d.StoreName, &d.Name, &d.Status, &d.ActivatedAt, &d.LastSeenAt,
-		&d.AppVersion, &d.CreatedAt, &d.ActivationExpires, &d.OpenShiftID, &d.Phone)
+		&d.AppVersion, &d.CreatedAt, &d.ActivationExpires, &d.OpenShiftID, &d.Phone, &d.Kind, &d.WorkshopID, &d.WorkshopName, &d.Online)
 	return d, err
 }
 
-func (s *Service) ListDevices(ctx context.Context, p *identity.Principal, storeID string) ([]Device, error) {
+// ListDevices — устройства сети. kinds — какие виды (через запятую: pos,
+// kitchen, display); пусто — только кассы (страница «Кассы» панели).
+func (s *Service) ListDevices(ctx context.Context, p *identity.Principal, storeID, kinds string) ([]Device, error) {
 	if storeID != "" && !httpx.IsUUID(storeID) {
 		return nil, apperr.Validation("store_id: неверный id").Uz("store_id: id notoʻgʻri")
 	}
+	want := []string{}
+	for _, k := range strings.Split(kinds, ",") {
+		if k = strings.TrimSpace(k); k != "" {
+			if k != KindPOS && k != KindKitchen && k != KindDisplay {
+				return nil, apperr.Validation("kind: ожидается pos, kitchen или display").Uz("kind: pos, kitchen yoki display boʻlishi kerak")
+			}
+			want = append(want, k)
+		}
+	}
+	if len(want) == 0 {
+		want = []string{KindPOS}
+	}
 	rows, err := s.pool.Query(ctx, deviceSelect+`
 		WHERE d.network_id = $1 AND ($2 OR d.store_id = ANY($3::uuid[])) AND ($4 = '' OR d.store_id::text = $4)
-		ORDER BY d.revoked_at IS NOT NULL, st.name, d.name`, p.NetworkID, p.SeesAllStores(), p.StoreIDs, storeID)
+		  AND d.kind = ANY($5)
+		ORDER BY d.revoked_at IS NOT NULL, st.name, d.name`, p.NetworkID, p.SeesAllStores(), p.StoreIDs, storeID, want)
 	if err != nil {
 		return nil, err
 	}
@@ -119,6 +148,10 @@ func (s *Service) getDevice(ctx context.Context, p *identity.Principal, id strin
 type DeviceInput struct {
 	StoreID string `json:"store_id"`
 	Name    string `json:"name"`
+	// Кафе: kitchen — экран кухни (workshop_id — цех, пусто — все цеха),
+	// display — экран выдачи. Пусто — касса.
+	Kind       string  `json:"kind"`
+	WorkshopID *string `json:"workshop_id"`
 }
 
 // CreateDevice заводит кассу в магазине и сразу выдаёт код активации.
@@ -127,6 +160,35 @@ func (s *Service) CreateDevice(ctx context.Context, p *identity.Principal, in De
 		return Device{}, err
 	}
 	in.Name = strings.TrimSpace(in.Name)
+	if in.Kind == "" {
+		in.Kind = KindPOS
+	}
+	if in.Kind != KindPOS && in.Kind != KindKitchen && in.Kind != KindDisplay {
+		return Device{}, apperr.Validation("kind: ожидается pos, kitchen или display").Uz("kind: pos, kitchen yoki display boʻlishi kerak")
+	}
+	if in.Kind != KindKitchen || (in.WorkshopID != nil && *in.WorkshopID == "") {
+		in.WorkshopID = nil
+	}
+	if in.Kind != KindPOS {
+		// Экраны кухни и выдачи — только у кафе; цех — этой сети.
+		var bt string
+		if err := s.pool.QueryRow(ctx, `SELECT business_type FROM networks WHERE id = $1`, p.NetworkID).Scan(&bt); err != nil {
+			return Device{}, err
+		}
+		if bt != "cafe" {
+			return Device{}, apperr.Validation("kind: экраны кухни и выдачи — только у кафе").Uz("kind: oshxona va berish ekranlari faqat kafe uchun")
+		}
+		if in.WorkshopID != nil {
+			var ok bool
+			if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workshops WHERE id::text = $1 AND network_id = $2 AND is_active)`,
+				*in.WorkshopID, p.NetworkID).Scan(&ok); err != nil {
+				return Device{}, err
+			}
+			if !ok {
+				return Device{}, apperr.Validation("workshop_id: цех не найден").Uz("workshop_id: sex topilmadi")
+			}
+		}
+	}
 	if in.Name == "" || len([]rune(in.Name)) > 60 {
 		return Device{}, apperr.Validation("name: название кассы, до 60 символов").Uz("name: kassa nomi, 60 belgigacha")
 	}
@@ -147,11 +209,14 @@ func (s *Service) CreateDevice(ctx context.Context, p *identity.Principal, in De
 		if _, err := tx.Exec(ctx, `SELECT 1 FROM networks WHERE id = $1 FOR UPDATE`, p.NetworkID); err != nil {
 			return err
 		}
-		if err := plans.CheckAdd(ctx, tx, p.NetworkID, plans.LimitRegisters); err != nil {
-			return err
+		// Экраны кухни и выдачи в лимит касс не входят.
+		if in.Kind == KindPOS {
+			if err := plans.CheckAdd(ctx, tx, p.NetworkID, plans.LimitRegisters); err != nil {
+				return err
+			}
 		}
-		return tx.QueryRow(ctx, `INSERT INTO pos_devices (network_id, store_id, name) VALUES ($1, $2, $3) RETURNING id`,
-			p.NetworkID, in.StoreID, in.Name).Scan(&id)
+		return tx.QueryRow(ctx, `INSERT INTO pos_devices (network_id, store_id, name, kind, workshop_id) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+			p.NetworkID, in.StoreID, in.Name, in.Kind, in.WorkshopID).Scan(&id)
 	}); err != nil {
 		return Device{}, err
 	}
@@ -213,6 +278,11 @@ type Activation struct {
 	StoreID     string `json:"store_id"`
 	StoreName   string `json:"store_name"`
 	NetworkName string `json:"network_name"`
+	// Вид устройства: касса открывает продажу, экран кухни — заказы цеха,
+	// экран выдачи — номера для гостей.
+	Kind         string  `json:"kind"`
+	WorkshopID   *string `json:"workshop_id"`
+	WorkshopName *string `json:"workshop_name"`
 }
 
 // Activate меняет код активации на постоянный токен устройства.
@@ -232,9 +302,10 @@ func (s *Service) Activate(ctx context.Context, in ActivateInput) (Activation, e
 		FROM stores st, networks n
 		WHERE d.activation_hash = $1 AND d.activation_expires > now() AND d.revoked_at IS NULL
 		  AND st.id = d.store_id AND n.id = d.network_id AND n.status = 'active'
-		RETURNING d.id, d.name, st.id, st.name, n.name`,
+		RETURNING d.id, d.name, st.id, st.name, n.name, d.kind, d.workshop_id,
+		          (SELECT loc(w.name, w.name_uz) FROM workshops w WHERE w.id = d.workshop_id)`,
 		hashSecret(code), hashSecret(token), strings.TrimSpace(in.AppVersion)).Scan(
-		&a.DeviceID, &a.DeviceName, &a.StoreID, &a.StoreName, &a.NetworkName)
+		&a.DeviceID, &a.DeviceName, &a.StoreID, &a.StoreName, &a.NetworkName, &a.Kind, &a.WorkshopID, &a.WorkshopName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Activation{}, apperr.New(400, "activation_invalid", "код неверный или устарел — создайте новый в панели магазина").Uz("kod notoʻgʻri yoki eskirgan — doʻkon panelida yangisini yarating")
 	}

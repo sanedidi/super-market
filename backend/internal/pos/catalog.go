@@ -79,6 +79,11 @@ type Settings struct {
 	WeightPrefixes []string `json:"weight_prefixes"`
 	// «Даёт в долг»: показывать ли кассиру продажу в долг.
 	DebtEnabled bool `json:"debt_enabled"`
+	// Вид устройства (pos, kitchen, display) и цех экрана кухни: панель может
+	// поменять цех, устройство узнаёт об этом при синхронизации.
+	DeviceKind   string  `json:"device_kind"`
+	WorkshopID   *string `json:"workshop_id"`
+	WorkshopName *string `json:"workshop_name"`
 }
 
 type Catalog struct {
@@ -132,11 +137,13 @@ func (s *Service) Catalog(ctx context.Context, p *identity.Principal, since *tim
 	out.Version = out.Version.UTC()
 	err := s.pool.QueryRow(ctx, `
 		SELECT d.id, d.name, st.id, st.name, COALESCE(st.address, ''), n.name, n.receipt_header, n.receipt_footer, n.pos_weight_prefixes,
-		       st.debt_enabled AND network_has_feature(n.id, 'debts'), (SELECT sh.id FROM pos_shifts sh WHERE sh.device_id = d.id AND sh.closed_at IS NULL)
+		       st.debt_enabled AND network_has_feature(n.id, 'debts'), (SELECT sh.id FROM pos_shifts sh WHERE sh.device_id = d.id AND sh.closed_at IS NULL),
+		       d.kind, d.workshop_id, (SELECT loc(w.name, w.name_uz) FROM workshops w WHERE w.id = d.workshop_id)
 		FROM pos_devices d JOIN stores st ON st.id = d.store_id JOIN networks n ON n.id = d.network_id
 		WHERE d.id = $1`, p.DeviceID).Scan(&out.Settings.DeviceID, &out.Settings.DeviceName, &out.Settings.StoreID,
 		&out.Settings.StoreName, &out.Settings.StoreAddress, &out.Settings.NetworkName, &out.Settings.ReceiptHeader,
-		&out.Settings.ReceiptFooter, &out.Settings.WeightPrefixes, &out.Settings.DebtEnabled, &out.OpenShiftID)
+		&out.Settings.ReceiptFooter, &out.Settings.WeightPrefixes, &out.Settings.DebtEnabled, &out.OpenShiftID,
+		&out.Settings.DeviceKind, &out.Settings.WorkshopID, &out.Settings.WorkshopName)
 	if err != nil {
 		return out, err
 	}

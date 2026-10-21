@@ -235,6 +235,9 @@ class PosSettings {
     this.receiptFooter = '',
     this.weightPrefixes = const ['22'],
     this.debtEnabled = false,
+    this.deviceKind = 'pos',
+    this.workshopId,
+    this.workshopName,
   });
 
   final String deviceId;
@@ -250,6 +253,12 @@ class PosSettings {
   /// Магазин даёт в долг: показывать «В долг» кассиру с правом.
   final bool debtEnabled;
 
+  /// Вид устройства: pos — касса, kitchen — экран кухни (workshopId — цех,
+  /// null — все цеха), display — экран выдачи для гостей.
+  final String deviceKind;
+  final String? workshopId;
+  final String? workshopName;
+
   factory PosSettings.fromJson(Map<String, dynamic> j) => PosSettings(
         deviceId: j['device_id'] as String? ?? '',
         deviceName: j['device_name'] as String? ?? '',
@@ -261,6 +270,9 @@ class PosSettings {
         receiptFooter: j['receipt_footer'] as String? ?? '',
         weightPrefixes: ((j['weight_prefixes'] as List?) ?? const ['22']).map((e) => '$e').toList(),
         debtEnabled: j['debt_enabled'] == true,
+        deviceKind: j['device_kind'] as String? ?? 'pos',
+        workshopId: j['workshop_id'] as String?,
+        workshopName: j['workshop_name'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -274,6 +286,9 @@ class PosSettings {
         'receipt_footer': receiptFooter,
         'weight_prefixes': weightPrefixes,
         'debt_enabled': debtEnabled,
+        'device_kind': deviceKind,
+        'workshop_id': workshopId,
+        'workshop_name': workshopName,
       };
 }
 

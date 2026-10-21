@@ -2,7 +2,9 @@ package server_test
 
 import (
 	"context"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
 )
@@ -574,4 +576,279 @@ func TestCafePOS(t *testing.T) {
 	if short != "0.05" {
 		t.Fatalf("onion shortfall = %s", short)
 	}
+}
+
+// Этап 4: бегунки по цехам, экран кухни, экран выдачи, отмена при возврате,
+// стоп-лист с кухни, состояние принтеров и ожидание событий.
+func TestCafeKitchen(t *testing.T) {
+	pool := freshDB(t)
+	cfg := testConfig()
+	cfg.DevOTPCode = "111111"
+	a := newAPI(t, cfg, pool, nil)
+	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
+	a.expect(a.do("POST", "/admin/networks", adminTok, map[string]any{
+		"name": "Кафе", "kind": "single", "owner_phone": "+998900000002", "owner_name": "В", "business_type": "cafe",
+	}), 201, "cafe")
+	tok, _ := a.login("+998900000002", identity.AppStore)
+	store := a.expect(a.do("POST", "/store/stores", tok, map[string]any{"name": "Кафе 1"}), 201, "store").str("id")
+	hot := a.expect(a.do("POST", "/store/cafe/menu-groups", tok, map[string]any{"name": "Горячее"}), 201, "hot").str("id")
+	drinks := a.expect(a.do("POST", "/store/cafe/menu-groups", tok, map[string]any{"name": "Напитки"}), 201, "drinks").str("id")
+	a.expect(a.do("POST", "/store/cafe/workshops", tok, map[string]any{
+		"name": "Бар", "icon": "bar", "group_ids": []string{drinks}, "printer_kind": "network",
+	}), 400, "network printer without ip")
+	bar := a.expect(a.do("POST", "/store/cafe/workshops", tok, map[string]any{
+		"name": "Бар", "icon": "bar", "cook_minutes": 3, "group_ids": []string{drinks},
+		"printer_kind": "network", "printer_host": "192.168.1.42", "printer_paper": 58,
+	}), 201, "bar")
+	if bar.str("printer_kind") != "network" || bar.Body["printer_paper"].(float64) != 58 || bar.Body["printer_port"].(float64) != 9100 {
+		t.Fatalf("bar = %v", bar.Body)
+	}
+	var kitchenWS string
+	for _, w := range a.expect(a.do("GET", "/store/cafe/workshops", tok, nil), 200, "workshops").items() {
+		if w["is_default"] == true {
+			kitchenWS = w["id"].(string)
+		}
+	}
+	plov := a.expect(a.do("POST", "/store/cafe/dishes", tok, map[string]any{
+		"kind": "dish", "name": "Плов", "price": 35000, "menu_code": 12, "menu_group_id": hot, "ikpu": "10202001001000000",
+	}), 201, "plov").str("id")
+	tea := a.expect(a.do("POST", "/store/cafe/dishes", tok, map[string]any{
+		"kind": "dish", "name": "Чай", "price": 6000, "menu_code": 40, "menu_group_id": drinks, "ikpu": "10202001001000000",
+	}), 201, "tea").str("id")
+	mods := a.expect(a.do("POST", "/store/cafe/modifier-groups", tok, map[string]any{
+		"name": "Острота", "options": []map[string]any{{"name": "острый", "action": "none"}},
+	}), 201, "mods")
+	noOnion := mods.Body["options"].([]any)[0].(map[string]any)["id"].(string)
+
+	activate := func(body map[string]any) (string, resp) {
+		d := a.expect(a.do("POST", "/store/pos/devices", tok, body), 201, "device")
+		act := a.expect(a.do("POST", "/pos/activate", "", map[string]any{"code": d.str("activation_code")}), 200, "activate")
+		return act.str("token"), act
+	}
+	posTok, _ := activate(map[string]any{"store_id": store, "name": "Касса 1"})
+	kdsTok, kact := activate(map[string]any{"store_id": store, "name": "Экран кухни", "kind": "kitchen"})
+	if kact.str("kind") != "kitchen" || kact.Body["workshop_id"] != nil {
+		t.Fatalf("kitchen activation = %v", kact.Body)
+	}
+	dispTok, _ := activate(map[string]any{"store_id": store, "name": "ТВ в зале", "kind": "display"})
+	// Экраны не в списке касс, но видны отдельно.
+	if n := len(a.expect(a.do("GET", "/store/pos/devices", tok, nil), 200, "tills").items()); n != 1 {
+		t.Fatalf("tills = %d", n)
+	}
+	a.expect(a.do("GET", "/store/pos/devices?kind=bad", tok, nil), 400, "bad kind")
+	c := a.expect(posDo(a, "GET", "/pos/catalog", kdsTok, "", nil), 200, "kitchen catalog")
+	if c.Body["settings"].(map[string]any)["device_kind"] != "kitchen" || c.Body["cafe"].(map[string]any)["kitchen_sound"] != true {
+		t.Fatalf("kitchen catalog settings = %v", c.Body["settings"])
+	}
+	screens := a.expect(a.do("GET", "/store/pos/devices?kind=kitchen,display", tok, nil), 200, "screens").items()
+	if len(screens) != 2 {
+		t.Fatalf("screens = %v", screens)
+	}
+	for _, sc := range screens {
+		if sc["kind"] == "kitchen" && sc["online"] != true {
+			t.Fatalf("kitchen screen offline after catalog: %v", sc)
+		}
+	}
+
+	pc := a.expect(posDo(a, "GET", "/pos/catalog", posTok, "", nil), 200, "pos catalog")
+	var cash string
+	for _, x := range pc.Body["payment_methods"].([]any) {
+		if m := x.(map[string]any); m["kind"] == "cash" {
+			cash = m["id"].(string)
+		}
+	}
+	for _, w := range pc.Body["cafe"].(map[string]any)["workshops"].([]any) {
+		if m := w.(map[string]any); m["id"] == bar.str("id") && (m["printer_host"] != "192.168.1.42" || m["printer_paper"].(float64) != 58) {
+			t.Fatalf("pos workshop printer = %v", m)
+		}
+	}
+	var owner string
+	for _, e := range a.expect(a.do("GET", "/store/employees", tok, nil), 200, "employees").items() {
+		owner = e["id"].(string)
+	}
+	a.expect(a.do("PUT", "/store/pos/pins/"+owner, tok, map[string]any{"pin": "9999"}), 200, "pin")
+	shift := a.expect(posDo(a, "POST", "/pos/shifts", posTok, owner, map[string]any{"client_uid": "shift-kds-01"}), 201, "shift").str("id")
+	// Экран кухни не продаёт, даже с кассиром в заголовке.
+	if r := posDo(a, "POST", "/pos/shifts", kdsTok, owner, map[string]any{"client_uid": "shift-kds-02"}); r.Status < 400 {
+		t.Fatalf("kitchen screen opened a shift: %d", r.Status)
+	}
+
+	// Экран ждёт изменений: продажа будит его сразу.
+	v0 := int64(a.expect(posDo(a, "GET", "/pos/kitchen/wait?v=999999", kdsTok, "", nil), 200, "wait now").Body["version"].(float64))
+	woke := make(chan int64, 1)
+	go func() {
+		r := posDo(a, "GET", "/pos/kitchen/wait?v="+strconv.FormatInt(v0, 10), kdsTok, "", nil)
+		woke <- int64(r.Body["version"].(float64))
+	}()
+	time.Sleep(300 * time.Millisecond)
+	start := time.Now()
+	sale := a.expect(posDo(a, "POST", "/pos/sales", posTok, owner, map[string]any{
+		"client_uid": "kds-sale-0001", "shift_id": shift, "order_type": "takeaway", "order_no": 47,
+		"items": []map[string]any{
+			{"product_id": plov, "qty": 2, "price": 35000, "modifiers": []map[string]any{{"option_id": noOnion}}, "note": "острое отдельно"},
+			{"product_id": tea, "qty": 1, "price": 6000},
+		},
+		"payments": []map[string]any{{"payment_method_id": cash, "amount": 76000}},
+	}), 201, "sale 47").str("id")
+	select {
+	case v := <-woke:
+		if v <= v0 || time.Since(start) > 5*time.Second {
+			t.Fatalf("wait woke with %d after %s", v, time.Since(start))
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("wait did not wake on sale")
+	}
+
+	board := func(token string) []map[string]any {
+		b := a.expect(posDo(a, "GET", "/pos/kitchen/board", token, "", nil), 200, "board")
+		var out []map[string]any
+		for _, o := range b.Body["orders"].([]any) {
+			out = append(out, o.(map[string]any))
+		}
+		return out
+	}
+	orders := board(kdsTok)
+	if len(orders) != 1 || orders[0]["order_no"].(float64) != 47 || orders[0]["status"] != "new" || orders[0]["order_type"] != "takeaway" {
+		t.Fatalf("board = %v", orders)
+	}
+	tickets := orders[0]["tickets"].([]any)
+	if len(tickets) != 2 {
+		t.Fatalf("tickets = %v", tickets)
+	}
+	var kitchenTicket, barTicket map[string]any
+	for _, x := range tickets {
+		tk := x.(map[string]any)
+		if tk["workshop_id"] == bar.str("id") {
+			barTicket = tk
+		} else if tk["workshop_id"] == kitchenWS {
+			kitchenTicket = tk
+		}
+	}
+	if kitchenTicket == nil || barTicket == nil || barTicket["cook_minutes"].(float64) != 3 {
+		t.Fatalf("tickets = %v", tickets)
+	}
+	pi := kitchenTicket["items"].([]any)[0].(map[string]any)
+	if pi["qty"] != "2" || pi["note"] != "острое отдельно" || pi["mods"].([]any)[0].(map[string]any)["name"] != "острый" {
+		t.Fatalf("plov item = %v", pi)
+	}
+	disp := a.expect(posDo(a, "GET", "/pos/kitchen/display", dispTok, "", nil), 200, "display")
+	if len(disp.Body["cooking"].([]any)) != 1 || len(disp.Body["ready"].([]any)) != 0 || disp.Body["show_cooking"] != true {
+		t.Fatalf("display = %v", disp.Body)
+	}
+	a.expect(posDo(a, "POST", "/pos/kitchen/orders/"+sale+"/action", dispTok, "", map[string]any{"action": "start"}), 403, "display acts")
+	a.expect(posDo(a, "POST", "/pos/kitchen/orders/"+sale+"/action", kdsTok, "", map[string]any{"action": "cook"}), 400, "bad action")
+
+	// Кухня начала и закончила свою часть — заказ ещё готовится (бар не готов).
+	a.expect(posDo(a, "POST", "/pos/kitchen/orders/"+sale+"/action", kdsTok, "", map[string]any{"action": "start", "workshop_id": kitchenWS}), 200, "start")
+	o := a.expect(posDo(a, "POST", "/pos/kitchen/orders/"+sale+"/action", kdsTok, "", map[string]any{"action": "ready", "workshop_id": kitchenWS}), 200, "ready kitchen")
+	if st := o.Body["orders"].([]any)[0].(map[string]any)["status"]; st != "cooking" {
+		t.Fatalf("after kitchen ready status = %v", st)
+	}
+	teaItem := barTicket["items"].([]any)[0].(map[string]any)["id"].(string)
+	o = a.expect(posDo(a, "POST", "/pos/kitchen/items/"+teaItem+"/done", kdsTok, "", map[string]any{"done": true}), 200, "done")
+	if o.Body["orders"].([]any)[0].(map[string]any)["status"] != "cooking" {
+		t.Fatalf("done changed status: %v", o.Body)
+	}
+	o = a.expect(posDo(a, "POST", "/pos/kitchen/orders/"+sale+"/action", kdsTok, "", map[string]any{"action": "ready"}), 200, "ready all")
+	if o.Body["orders"].([]any)[0].(map[string]any)["status"] != "ready" {
+		t.Fatalf("ready status = %v", o.Body)
+	}
+	disp = a.expect(posDo(a, "GET", "/pos/kitchen/display", dispTok, "", nil), 200, "display ready")
+	if len(disp.Body["ready"].([]any)) != 1 || disp.Body["ready"].([]any)[0].(float64) != 47 || len(disp.Body["cooking"].([]any)) != 0 {
+		t.Fatalf("display ready = %v", disp.Body)
+	}
+	a.expect(posDo(a, "POST", "/pos/kitchen/orders/"+sale+"/action", kdsTok, "", map[string]any{"action": "served"}), 200, "served")
+	if len(board(kdsTok)) != 0 {
+		t.Fatal("served order still on board")
+	}
+	a.expect(posDo(a, "POST", "/pos/kitchen/orders/"+sale+"/action", kdsTok, "", map[string]any{"action": "served"}), 200, "served again")
+
+	// Экран только у бара: бегунок кухни сразу «выдан» (его печатает касса).
+	for _, s := range screens {
+		if s["kind"] == "kitchen" {
+			a.expect(a.do("POST", "/store/pos/devices/"+s["id"].(string)+"/revoke", tok, nil), 200, "revoke kitchen")
+		}
+	}
+	barTok, bact := activate(map[string]any{"store_id": store, "name": "Экран бара", "kind": "kitchen", "workshop_id": bar.str("id")})
+	if bact.Body["workshop_name"] != "Бар" {
+		t.Fatalf("bar activation = %v", bact.Body)
+	}
+	s48 := a.expect(posDo(a, "POST", "/pos/sales", posTok, owner, map[string]any{
+		"client_uid": "kds-sale-0002", "shift_id": shift, "order_type": "here", "order_no": 48,
+		"items": []map[string]any{
+			{"product_id": plov, "qty": 1, "price": 35000},
+			{"product_id": tea, "qty": 2, "price": 6000},
+		},
+		"payments": []map[string]any{{"payment_method_id": cash, "amount": 47000}},
+	}), 201, "sale 48").str("id")
+	orders = board(barTok)
+	if len(orders) != 1 || orders[0]["status"] != "new" || len(orders[0]["tickets"].([]any)) != 2 {
+		t.Fatalf("bar board = %v", orders)
+	}
+	// Экран бара действует только на свой цех, даже если просит «все».
+	a.expect(posDo(a, "POST", "/pos/kitchen/orders/"+s48+"/action", barTok, "", map[string]any{"action": "ready", "workshop_id": kitchenWS}), 200, "bar ready")
+	var kst string
+	if err := pool.QueryRow(context.Background(), `SELECT status FROM kitchen_tickets WHERE sale_id = $1 AND workshop_id = $2`, s48, kitchenWS).Scan(&kst); err != nil {
+		t.Fatal(err)
+	}
+	if kst != "served" {
+		t.Fatalf("kitchen ticket without screen = %s", kst)
+	}
+	a.expect(posDo(a, "POST", "/pos/kitchen/orders/"+s48+"/action", barTok, "", map[string]any{"action": "back"}), 200, "back")
+
+	// Возврат чая: на экране бара — «ОТМЕНА», заказ отменён.
+	a.expect(posDo(a, "POST", "/pos/returns", posTok, owner, map[string]any{
+		"sale_id": s48, "payment_method_id": cash, "reason": "передумал", "shift_id": shift,
+		"items": []map[string]any{{"sale_line": 2, "qty": 2}},
+	}), 201, "return tea")
+	orders = board(barTok)
+	if len(orders) != 1 || orders[0]["status"] != "cancelled" {
+		t.Fatalf("after return = %v", orders)
+	}
+	for _, x := range orders[0]["tickets"].([]any) {
+		tk := x.(map[string]any)
+		if tk["workshop_id"] == bar.str("id") && (tk["status"] != "cancelled" || tk["items"].([]any)[0].(map[string]any)["cancelled_qty"] != "2") {
+			t.Fatalf("cancelled ticket = %v", tk)
+		}
+	}
+
+	// Стоп-лист с кухни виден кассе.
+	a.expect(posDo(a, "PUT", "/pos/kitchen/stop", dispTok, "", map[string]any{"product_id": plov, "stopped": true}), 403, "display stop")
+	st := a.expect(posDo(a, "PUT", "/pos/kitchen/stop", barTok, "", map[string]any{"product_id": plov, "stopped": true}), 200, "stop")
+	if len(st.Body["stop"].([]any)) != 1 {
+		t.Fatalf("stop = %v", st.Body)
+	}
+	// Тест печати из панели и отчёт кассы о принтере.
+	a.expect(a.do("POST", "/store/cafe/workshops/"+bar.str("id")+"/test-print", tok, nil), 200, "test print")
+	status := a.expect(posDo(a, "GET", "/pos/kitchen/status", posTok, owner, nil), 200, "status")
+	if status.Body["screens"].(map[string]any)[bar.str("id")] != true || len(status.Body["print_tests"].([]any)) != 1 ||
+		len(status.Body["stop"].([]any)) != 1 {
+		t.Fatalf("status = %v", status.Body)
+	}
+	a.expect(posDo(a, "POST", "/pos/kitchen/printers", posTok, owner, []map[string]any{{"workshop_id": bar.str("id"), "ok": false, "pending": 2}}), 200, "printers")
+	for _, w := range a.expect(a.do("GET", "/store/cafe/workshops", tok, nil), 200, "workshops").items() {
+		if w["id"] == bar.str("id") && (w["printer_ok"] != false || w["printer_pending"].(float64) != 2 || w["printer_seen_at"] == nil) {
+			t.Fatalf("bar printer = %v", w)
+		}
+	}
+	// Продажа, дошедшая через 5 часов (касса была без связи), на кухню не идёт.
+	a.expect(posDo(a, "POST", "/pos/sales", posTok, owner, map[string]any{
+		"client_uid": "kds-sale-0003", "shift_id": shift, "order_type": "here", "order_no": 49,
+		"sold_at":  time.Now().Add(-5 * time.Hour).UTC().Format(time.RFC3339),
+		"items":    []map[string]any{{"product_id": tea, "qty": 1, "price": 6000}},
+		"payments": []map[string]any{{"payment_method_id": cash, "amount": 6000}},
+	}), 201, "late sale")
+	var late int
+	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM kitchen_tickets WHERE order_no = 49`).Scan(&late); err != nil {
+		t.Fatal(err)
+	}
+	if late != 0 {
+		t.Fatalf("late sale tickets = %d", late)
+	}
+	// Настройки кухни.
+	set := a.expect(a.do("PATCH", "/store/cafe/settings", tok, map[string]any{"display_hide_minutes": 7, "kitchen_sound": false}), 200, "settings")
+	if set.Body["display_hide_minutes"].(float64) != 7 || set.Body["kitchen_sound"] != false {
+		t.Fatalf("settings = %v", set.Body)
+	}
+	a.expect(a.do("PATCH", "/store/cafe/settings", tok, map[string]any{"display_hide_minutes": 0}), 400, "bad hide")
 }

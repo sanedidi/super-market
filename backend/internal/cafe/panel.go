@@ -68,16 +68,7 @@ func (s *Service) SetStop(ctx context.Context, p *identity.Principal, in StopInp
 	if !httpx.IsUUID(in.ProductID) {
 		return nil, apperr.Validation("product_id: блюдо не найдено").Uz("product_id: taom topilmadi")
 	}
-	if in.Stopped {
-		tag, err := s.pool.Exec(ctx, `
-			INSERT INTO stop_list (store_id, product_id, created_by)
-			SELECT $1, id, NULLIF($3, '')::uuid FROM products WHERE id = $2 AND (network_id IS NULL OR network_id = $4)
-			ON CONFLICT DO NOTHING`, in.StoreID, in.ProductID, p.EmployeeID, p.NetworkID)
-		if err != nil {
-			return nil, err
-		}
-		_ = tag
-	} else if _, err := s.pool.Exec(ctx, `DELETE FROM stop_list WHERE store_id = $1 AND product_id = $2`, in.StoreID, in.ProductID); err != nil {
+	if err := setStop(ctx, s.pool, p.NetworkID, in.StoreID, in.ProductID, in.Stopped, p.EmployeeID); err != nil {
 		return nil, err
 	}
 	return s.ListStop(ctx, p, in.StoreID)

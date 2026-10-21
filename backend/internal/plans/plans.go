@@ -591,7 +591,7 @@ func CheckLimit(ctx context.Context, q db.Querier, networkID, key string, used i
 // Счётчики лимитов, которые считаются по базе (витрина считает свои сама).
 var usageSQL = map[string]string{
 	LimitStores:    `SELECT count(*) FROM stores WHERE network_id = $1 AND status = 'active'`,
-	LimitRegisters: `SELECT count(*) FROM pos_devices WHERE network_id = $1 AND revoked_at IS NULL AND employee_id IS NULL`, // телефоны сотрудников — бесплатно
+	LimitRegisters: `SELECT count(*) FROM pos_devices WHERE network_id = $1 AND revoked_at IS NULL AND employee_id IS NULL AND kind = 'pos'`, // телефоны сотрудников, экраны кухни и выдачи — бесплатно
 	// Курьер — сотрудник, чья роль даёт право доставки; остальные (кроме
 	// владельца) — сотрудники.
 	LimitStaff: `SELECT count(*) FROM employees e JOIN roles r ON r.id = e.role_id

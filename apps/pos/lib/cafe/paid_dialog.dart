@@ -62,6 +62,8 @@ class _PaidDialogState extends State<_PaidDialog> {
     };
     final cook = cookMinutes;
     final printed = widget.pos.printer.enabled;
+    // Экран кухни в сети — заказ уже на нём (бегунок печатается, только если цех так настроен).
+    final onScreen = widget.pos.kitchen.screens?.values.any((v) => v) ?? false;
     void close() => Navigator.of(context).pop();
     return CallbackShortcuts(
       bindings: {
@@ -107,8 +109,12 @@ class _PaidDialogState extends State<_PaidDialog> {
                 ),
                 const SizedBox(height: 16),
                 _Fact(Icons.receipt_long_rounded, s.fiscal != null ? tr('Фискальный чек напечатан', 'Fiskal chek chop etildi') : tr('Чек напечатан (тестовый режим)', 'Chek chop etildi (test rejimi)'), ok: printed),
-                _Fact(Icons.restaurant_rounded, tr('Бегунок с номером ушёл на принтер — для кухни', 'Raqamli chek printerga ketdi — oshxona uchun'), ok: printed),
-                if (!printed) _Fact(Icons.print_disabled_rounded, tr('Принтер не подключён — назовите номер повару', 'Printer ulanmagan — raqamni oshpazga ayting'), ok: false),
+                if (onScreen)
+                  _Fact(Icons.soup_kitchen_outlined, tr('Заказ на экране кухни', 'Buyurtma oshxona ekranida'))
+                else
+                  _Fact(Icons.restaurant_rounded, tr('Бегунок с номером ушёл на принтер — для кухни', 'Raqamli chek printerga ketdi — oshxona uchun'), ok: printed),
+                if (!printed && !onScreen)
+                  _Fact(Icons.print_disabled_rounded, tr('Принтер не подключён — назовите номер повару', 'Printer ulanmagan — raqamni oshpazga ayting'), ok: false),
                 const SizedBox(height: 20),
                 Row(children: [
                   Expanded(

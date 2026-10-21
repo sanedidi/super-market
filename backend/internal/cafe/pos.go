@@ -27,6 +27,12 @@ type PosWorkshop struct {
 	IsDefault   bool   `json:"is_default"`
 	CookMinutes int    `json:"cook_minutes"`
 	TicketPrint string `json:"ticket_print"`
+	// Принтер бегунков цеха: none — печатает касса на свой принтер чеков
+	// (как и pos), network — касса отправляет на IP:порт в сети кафе.
+	PrinterKind  string `json:"printer_kind"`
+	PrinterHost  string `json:"printer_host"`
+	PrinterPort  int    `json:"printer_port"`
+	PrinterPaper int    `json:"printer_paper"`
 }
 
 type PosDish struct {
@@ -69,14 +75,16 @@ type PosMenu struct {
 	ModGroups      []PosModGroup `json:"modifier_groups"`
 	// Блюда на стопе в этой точке.
 	Stop []string `json:"stop"`
+	// Звук на экране кухни при новом заказе.
+	KitchenSound bool `json:"kitchen_sound"`
 }
 
 // MenuForPOS — меню кафе для кассы точки; nil — сеть не кафе.
 func MenuForPOS(ctx context.Context, q db.Querier, networkID, storeID string) (*PosMenu, error) {
 	out := &PosMenu{}
 	var bt string
-	if err := q.QueryRow(ctx, `SELECT business_type, cafe_mode, trim_scale(service_percent)::text FROM networks WHERE id = $1`, networkID).
-		Scan(&bt, &out.Mode, &out.ServicePercent); err != nil {
+	if err := q.QueryRow(ctx, `SELECT business_type, cafe_mode, trim_scale(service_percent)::text, kitchen_sound FROM networks WHERE id = $1`, networkID).
+		Scan(&bt, &out.Mode, &out.ServicePercent, &out.KitchenSound); err != nil {
 		return nil, err
 	}
 	if bt != BusinessCafe {
@@ -90,7 +98,8 @@ func MenuForPOS(ctx context.Context, q db.Querier, networkID, storeID string) (*
 	if out.Groups, err = pgx.CollectRows(rows, pgx.RowToStructByPos[PosGroup]); err != nil {
 		return nil, err
 	}
-	rows, err = q.Query(ctx, `SELECT id, loc(name, name_uz), icon, is_default, cook_minutes, ticket_print FROM workshops
+	rows, err = q.Query(ctx, `SELECT id, loc(name, name_uz), icon, is_default, cook_minutes, ticket_print,
+		printer_kind, printer_host, printer_port, printer_paper FROM workshops
 		WHERE network_id = $1 AND is_active ORDER BY is_default DESC, sort, name`, networkID)
 	if err != nil {
 		return nil, err

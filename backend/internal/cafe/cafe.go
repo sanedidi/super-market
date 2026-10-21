@@ -90,18 +90,27 @@ type Settings struct {
 	BusinessType   string `json:"business_type"`
 	CafeMode       string `json:"cafe_mode"`
 	ServicePercent string `json:"service_percent"`
+	// Кухня (П7 «Заказы на кухне», «Экран выдачи»).
+	KitchenSound       bool `json:"kitchen_sound"`
+	DisplayShowCooking bool `json:"display_show_cooking"`
+	DisplayHideMinutes int  `json:"display_hide_minutes"`
 }
 
 type SettingsInput struct {
-	CafeMode       *string       `json:"cafe_mode"`
-	ServicePercent *money.Amount `json:"service_percent"`
+	CafeMode           *string       `json:"cafe_mode"`
+	ServicePercent     *money.Amount `json:"service_percent"`
+	KitchenSound       *bool         `json:"kitchen_sound"`
+	DisplayShowCooking *bool         `json:"display_show_cooking"`
+	DisplayHideMinutes *int          `json:"display_hide_minutes"`
 }
 
 // GetSettings — тип бизнеса виден всем сетям (панель строит меню по нему).
 func (s *Service) GetSettings(ctx context.Context, p *identity.Principal) (Settings, error) {
 	var out Settings
-	err := s.pool.QueryRow(ctx, `SELECT business_type, cafe_mode, trim_scale(service_percent)::text FROM networks WHERE id = $1`,
-		p.NetworkID).Scan(&out.BusinessType, &out.CafeMode, &out.ServicePercent)
+	err := s.pool.QueryRow(ctx, `SELECT business_type, cafe_mode, trim_scale(service_percent)::text,
+		kitchen_sound, display_show_cooking, display_hide_minutes FROM networks WHERE id = $1`,
+		p.NetworkID).Scan(&out.BusinessType, &out.CafeMode, &out.ServicePercent,
+		&out.KitchenSound, &out.DisplayShowCooking, &out.DisplayHideMinutes)
 	return out, err
 }
 
@@ -124,8 +133,18 @@ func (s *Service) UpdateSettings(ctx context.Context, p *identity.Principal, in 
 		x := v.Money()
 		pct = &x
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE networks SET cafe_mode = COALESCE($2, cafe_mode),
-		service_percent = COALESCE($3::numeric, service_percent) WHERE id = $1`, p.NetworkID, in.CafeMode, pct); err != nil {
+	if in.DisplayHideMinutes != nil && (*in.DisplayHideMinutes < 1 || *in.DisplayHideMinutes > 120) {
+		return Settings{}, apperr.Validation("display_hide_minutes: от 1 до 120").Uz("display_hide_minutes: 1 dan 120 gacha")
+	}
+	if err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `UPDATE networks SET cafe_mode = COALESCE($2, cafe_mode),
+			service_percent = COALESCE($3::numeric, service_percent), kitchen_sound = COALESCE($4, kitchen_sound),
+			display_show_cooking = COALESCE($5, display_show_cooking), display_hide_minutes = COALESCE($6, display_hide_minutes)
+			WHERE id = $1`, p.NetworkID, in.CafeMode, pct, in.KitchenSound, in.DisplayShowCooking, in.DisplayHideMinutes); err != nil {
+			return err
+		}
+		return bumpNetwork(ctx, tx, p.NetworkID)
+	}); err != nil {
 		return Settings{}, err
 	}
 	return s.GetSettings(ctx, p)
@@ -150,6 +169,17 @@ type Workshop struct {
 	// Группы меню цеха (id и названия по порядку).
 	GroupIDs   []string `json:"group_ids"`
 	GroupNames []string `json:"group_names"`
+	// Принтер бегунков: none — касса печатает на свой принтер, network — по
+	// сети. Состояние присылает касса: ok (nil — ещё не печатала), сколько
+	// бегунков ждут, когда отвечала; test_at — запрошен «Тест печати».
+	PrinterKind    string     `json:"printer_kind"`
+	PrinterHost    string     `json:"printer_host"`
+	PrinterPort    int        `json:"printer_port"`
+	PrinterPaper   int        `json:"printer_paper"`
+	PrinterOK      *bool      `json:"printer_ok"`
+	PrinterPending int        `json:"printer_pending"`
+	PrinterSeenAt  *time.Time `json:"printer_seen_at"`
+	PrinterTestAt  *time.Time `json:"printer_test_at"`
 }
 
 const workshopSelect = `
@@ -164,7 +194,9 @@ const workshopSelect = `
 	       COALESCE((SELECT array_agg(g.id::text ORDER BY g.sort, g.name) FROM menu_groups g
 	                 WHERE g.network_id = w.network_id AND g.is_active AND (g.workshop_id = w.id OR (g.workshop_id IS NULL AND w.is_default))), '{}'),
 	       COALESCE((SELECT array_agg(loc(g.name, g.name_uz) ORDER BY g.sort, g.name) FROM menu_groups g
-	                 WHERE g.network_id = w.network_id AND g.is_active AND (g.workshop_id = w.id OR (g.workshop_id IS NULL AND w.is_default))), '{}')
+	                 WHERE g.network_id = w.network_id AND g.is_active AND (g.workshop_id = w.id OR (g.workshop_id IS NULL AND w.is_default))), '{}'),
+	       w.printer_kind, w.printer_host, w.printer_port, w.printer_paper, w.printer_ok, w.printer_pending,
+	       w.printer_seen_at, w.printer_test_at
 	FROM workshops w`
 
 type NameInput struct {
@@ -231,6 +263,11 @@ type WorkshopInput struct {
 	TicketPrint *string `json:"ticket_print"`
 	// GroupIDs — группы меню, которые переезжают в этот цех (П7б «Новый цех»).
 	GroupIDs *[]string `json:"group_ids"`
+	// Принтер бегунков цеха (П7в «Подключить принтер»).
+	PrinterKind  *string `json:"printer_kind"`
+	PrinterHost  *string `json:"printer_host"`
+	PrinterPort  *int    `json:"printer_port"`
+	PrinterPaper *int    `json:"printer_paper"`
 }
 
 var errWorkshopExists = apperr.Conflict("workshop_exists", "цех с таким названием уже есть").Uz("bunday nomli sex allaqachon bor")
@@ -246,6 +283,25 @@ func (in WorkshopInput) validate() error {
 	}
 	if in.TicketPrint != nil && *in.TicketPrint != "always" && *in.TicketPrint != "offline" && *in.TicketPrint != "never" {
 		return apperr.Validation("ticket_print: ожидается always, offline или never").Uz("ticket_print: always, offline yoki never boʻlishi kerak")
+	}
+	if in.PrinterKind != nil && *in.PrinterKind != "none" && *in.PrinterKind != "network" {
+		return apperr.Validation("printer_kind: ожидается none или network").Uz("printer_kind: none yoki network boʻlishi kerak")
+	}
+	if in.PrinterHost != nil {
+		h := strings.TrimSpace(*in.PrinterHost)
+		if len(h) > 100 || strings.ContainsAny(h, " /\\") {
+			return apperr.Validation("printer_host: IP-адрес принтера, например 192.168.1.40").Uz("printer_host: printer IP manzili, masalan 192.168.1.40")
+		}
+		*in.PrinterHost = h
+	}
+	if in.PrinterKind != nil && *in.PrinterKind == "network" && (in.PrinterHost == nil || *in.PrinterHost == "") {
+		return apperr.Validation("printer_host: укажите IP-адрес принтера").Uz("printer_host: printer IP manzilini kiriting")
+	}
+	if in.PrinterPort != nil && (*in.PrinterPort < 1 || *in.PrinterPort > 65535) {
+		return apperr.Validation("printer_port: от 1 до 65535 (обычно 9100)").Uz("printer_port: 1 dan 65535 gacha (odatda 9100)")
+	}
+	if in.PrinterPaper != nil && *in.PrinterPaper != 58 && *in.PrinterPaper != 80 {
+		return apperr.Validation("printer_paper: 58 или 80 мм").Uz("printer_paper: 58 yoki 80 mm")
 	}
 	return nil
 }
@@ -265,9 +321,12 @@ func (s *Service) CreateWorkshop(ctx context.Context, p *identity.Principal, in 
 	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		var id string
 		err := tx.QueryRow(ctx, `
-			INSERT INTO workshops (network_id, name, name_uz, sort, icon, cook_minutes, ticket_print)
-			VALUES ($1, $2, COALESCE($3, ''), COALESCE($4, 0), COALESCE($5, 'fire'), COALESCE($6, 15), COALESCE($7, 'offline')) RETURNING id`,
-			p.NetworkID, *ru, uz, in.Sort, in.Icon, in.CookMinutes, in.TicketPrint).Scan(&id)
+			INSERT INTO workshops (network_id, name, name_uz, sort, icon, cook_minutes, ticket_print,
+			                       printer_kind, printer_host, printer_port, printer_paper)
+			VALUES ($1, $2, COALESCE($3, ''), COALESCE($4, 0), COALESCE($5, 'fire'), COALESCE($6, 15), COALESCE($7, 'offline'),
+			        COALESCE($8, 'none'), COALESCE($9, ''), COALESCE($10, 9100), COALESCE($11, 80)) RETURNING id`,
+			p.NetworkID, *ru, uz, in.Sort, in.Icon, in.CookMinutes, in.TicketPrint,
+			in.PrinterKind, in.PrinterHost, in.PrinterPort, in.PrinterPaper).Scan(&id)
 		if db.IsUniqueViolation(err, "workshops_name_key") {
 			return errWorkshopExists
 		}
@@ -275,6 +334,9 @@ func (s *Service) CreateWorkshop(ctx context.Context, p *identity.Principal, in 
 			return err
 		}
 		if err := moveGroups(ctx, tx, p.NetworkID, id, in.GroupIDs); err != nil {
+			return err
+		}
+		if err := bumpNetwork(ctx, tx, p.NetworkID); err != nil {
 			return err
 		}
 		out, err = getWorkshop(ctx, tx, p.NetworkID, id)
@@ -317,8 +379,12 @@ func (s *Service) UpdateWorkshop(ctx context.Context, p *identity.Principal, id 
 	var out Workshop
 	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `UPDATE workshops SET name = COALESCE($3, name), name_uz = COALESCE($4, name_uz), sort = COALESCE($5, sort),
-			icon = COALESCE($6, icon), cook_minutes = COALESCE($7, cook_minutes), ticket_print = COALESCE($8, ticket_print)
-			WHERE network_id = $1 AND id = $2 AND is_active`, p.NetworkID, id, ru, uz, in.Sort, in.Icon, in.CookMinutes, in.TicketPrint)
+			icon = COALESCE($6, icon), cook_minutes = COALESCE($7, cook_minutes), ticket_print = COALESCE($8, ticket_print),
+			printer_kind = COALESCE($9, printer_kind), printer_host = COALESCE($10, printer_host),
+			printer_port = COALESCE($11, printer_port), printer_paper = COALESCE($12, printer_paper),
+			printer_ok = CASE WHEN $9 IS DISTINCT FROM NULL OR $10 IS DISTINCT FROM NULL OR $11 IS DISTINCT FROM NULL THEN NULL ELSE printer_ok END
+			WHERE network_id = $1 AND id = $2 AND is_active`, p.NetworkID, id, ru, uz, in.Sort, in.Icon, in.CookMinutes, in.TicketPrint,
+			in.PrinterKind, in.PrinterHost, in.PrinterPort, in.PrinterPaper)
 		if db.IsUniqueViolation(err, "workshops_name_key") {
 			return errWorkshopExists
 		}
@@ -336,6 +402,9 @@ func (s *Service) UpdateWorkshop(ctx context.Context, p *identity.Principal, id 
 			}
 		}
 		if err := moveGroups(ctx, tx, p.NetworkID, id, in.GroupIDs); err != nil {
+			return err
+		}
+		if err := bumpNetwork(ctx, tx, p.NetworkID); err != nil {
 			return err
 		}
 		out, err = getWorkshop(ctx, tx, p.NetworkID, id)
@@ -366,6 +435,13 @@ func (s *Service) DeleteWorkshop(ctx context.Context, p *identity.Principal, id 
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE products SET workshop_id = NULL WHERE workshop_id = $1`, id); err != nil {
+			return err
+		}
+		// Экран кухни этого цеха начинает показывать все цеха.
+		if _, err := tx.Exec(ctx, `UPDATE pos_devices SET workshop_id = NULL WHERE workshop_id = $1`, id); err != nil {
+			return err
+		}
+		if err := bumpNetwork(ctx, tx, p.NetworkID); err != nil {
 			return err
 		}
 		// Название освобождаем: можно снова создать цех с тем же именем.

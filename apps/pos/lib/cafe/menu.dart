@@ -27,7 +27,18 @@ class CafeGroup {
 }
 
 class CafeWorkshop {
-  CafeWorkshop({required this.id, required this.name, this.icon = 'fire', this.isDefault = false, this.cookMinutes = 15, this.ticketPrint = 'offline'});
+  CafeWorkshop({
+    required this.id,
+    required this.name,
+    this.icon = 'fire',
+    this.isDefault = false,
+    this.cookMinutes = 15,
+    this.ticketPrint = 'offline',
+    this.printerKind = 'none',
+    this.printerHost = '',
+    this.printerPort = 9100,
+    this.printerPaper = 80,
+  });
 
   final String id;
   final String name;
@@ -38,6 +49,14 @@ class CafeWorkshop {
   /// always — бегунок печатается всегда, offline — если нет экрана кухни, never — нет.
   final String ticketPrint;
 
+  /// Принтер бегунков цеха: none — принтер чеков кассы, network — IP:порт в сети кафе.
+  final String printerKind;
+  final String printerHost;
+  final int printerPort;
+  final int printerPaper;
+
+  bool get networkPrinter => printerKind == 'network' && printerHost.isNotEmpty;
+
   factory CafeWorkshop.fromJson(Map<String, dynamic> j) => CafeWorkshop(
         id: j['id'] as String,
         name: j['name'] as String? ?? '',
@@ -45,10 +64,24 @@ class CafeWorkshop {
         isDefault: j['is_default'] == true,
         cookMinutes: (j['cook_minutes'] as num?)?.toInt() ?? 15,
         ticketPrint: j['ticket_print'] as String? ?? 'offline',
+        printerKind: j['printer_kind'] as String? ?? 'none',
+        printerHost: j['printer_host'] as String? ?? '',
+        printerPort: (j['printer_port'] as num?)?.toInt() ?? 9100,
+        printerPaper: (j['printer_paper'] as num?)?.toInt() ?? 80,
       );
 
-  Map<String, dynamic> toJson() =>
-      {'id': id, 'name': name, 'icon': icon, 'is_default': isDefault, 'cook_minutes': cookMinutes, 'ticket_print': ticketPrint};
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'icon': icon,
+        'is_default': isDefault,
+        'cook_minutes': cookMinutes,
+        'ticket_print': ticketPrint,
+        'printer_kind': printerKind,
+        'printer_host': printerHost,
+        'printer_port': printerPort,
+        'printer_paper': printerPaper,
+      };
 }
 
 /// Блюдо (или заготовка) — данные кафе к товару каталога с тем же id.
@@ -189,6 +222,7 @@ class CafeMenu {
     List<CafeDish> dishes = const [],
     List<ModGroup> modGroups = const [],
     Set<String>? stop,
+    this.kitchenSound = true,
   }) : stop = stop ?? <String>{} {
     for (final d in dishes) {
       _dishes[d.productId] = d;
@@ -205,6 +239,9 @@ class CafeMenu {
   final List<CafeGroup> groups;
   final List<CafeWorkshop> workshops;
   final Set<String> stop;
+
+  /// Звук на экране кухни при новом заказе (настройка панели).
+  final bool kitchenSound;
 
   final Map<String, CafeDish> _dishes = {};
   final Map<int, String> _byCode = {};
@@ -256,6 +293,7 @@ class CafeMenu {
         dishes: ((j['dishes'] as List?) ?? const []).map((e) => CafeDish.fromJson(e as Map<String, dynamic>)).toList(),
         modGroups: ((j['modifier_groups'] as List?) ?? const []).map((e) => ModGroup.fromJson(e as Map<String, dynamic>)).toList(),
         stop: ((j['stop'] as List?) ?? const []).map((e) => '$e').toSet(),
+        kitchenSound: j['kitchen_sound'] != false,
       );
 
   Map<String, dynamic> toJson() => {
@@ -266,6 +304,7 @@ class CafeMenu {
         'dishes': [for (final d in _dishes.values) d.toJson()],
         'modifier_groups': [for (final g in _mods.values) g.toJson()],
         'stop': stop.toList(),
+        'kitchen_sound': kitchenSound,
       };
 }
 

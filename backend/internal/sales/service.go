@@ -613,6 +613,12 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 			WHERE id = $1`, id, subtotal.Money(), discount.Money(), total.Money(), cost.Money()); err != nil {
 			return err
 		}
+		// Кафе: заказ с номером — бегунки по цехам на экраны кухни.
+		if in.OrderNo != nil {
+			if err := cafe.CreateTickets(ctx, tx, id); err != nil {
+				return err
+			}
+		}
 		if pos && in.Fiscal != nil {
 			_, err = tx.Exec(ctx, `UPDATE sales SET fiscal_status = 'registered', fiscal_number = $2, fiscal_sign = $3,
 				fiscal_qr = $4, fiscal_module = $5, fiscal_at = now() WHERE id = $1`,

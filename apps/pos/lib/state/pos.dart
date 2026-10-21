@@ -16,12 +16,14 @@ import '../data/api.dart';
 import '../data/outbox.dart';
 import '../data/store.dart';
 import '../fiscal/fiscal.dart';
-import '../cafe/tickets.dart';
+import '../cafe/kitchen_printing.dart';
 import '../printer/receipts.dart';
 import '../printer/transport.dart';
 
 /// Где сейчас касса.
-enum Stage { loading, activate, login, openShift, work }
+/// kitchen — экран кухни, display — экран выдачи для гостей (кафе): без
+/// кассира и смены, вид устройства задаёт панель.
+enum Stage { loading, activate, login, openShift, work, kitchen, display }
 
 /// Отложенный чек (F7): покупатель отошёл, кассир обслуживает следующего.
 class HeldCart {
@@ -134,6 +136,16 @@ class PosController extends ChangeNotifier {
 
   bool get fiscalMode => fiscal.real;
 
+  /// Кафе: бегунки на принтеры цехов, очередь непечатанных, тесты печати.
+  late final KitchenPrinting kitchen = KitchenPrinting(api: api, store: store, catalog: () => catalog, printer: () => printer);
+
+  /// Экран по виду устройства: касса — вход кассира, экраны кафе — сразу работа.
+  Stage _deviceStage() => switch (catalog.settings.deviceKind) {
+        'kitchen' => Stage.kitchen,
+        'display' => Stage.display,
+        _ => cashier == null ? Stage.login : (shift == null ? Stage.openShift : Stage.work),
+      };
+
   /// Чековый принтер и последняя ошибка печати (показывается в верхней строке).
   PrinterConfig printer = PrinterConfig();
   String? printError;
@@ -193,11 +205,12 @@ class PosController extends ChangeNotifier {
     }
     printer = PrinterConfig.fromJson(await store.readJson('printer.json'));
     await outbox.load();
+    await kitchen.load();
     if (shift != null) {
       shift!.serverId ??= outbox.shiftIds[shift!.uid];
       await _loadJournal();
     }
-    stage = api.token == null ? Stage.activate : Stage.login;
+    stage = api.token == null ? Stage.activate : _deviceStage();
     notifyListeners();
     Lang.instance.addListener(_langChanged);
     if (api.token != null) _startTimer();
@@ -253,6 +266,17 @@ class PosController extends ChangeNotifier {
   /// Код из панели магазина → постоянный токен кассы, затем полный каталог.
   Future<void> activate(String code) async {
     final res = await api.post('/pos/activate', {'code': code, 'app_version': appVersion}) as Map<String, dynamic>;
+    // Касса подключена к другой точке (например, магазин → кафе): смена и чеки
+    // прежней точки сюда не переносятся.
+    final prevStore = catalog.settings.storeId;
+    final moved = prevStore.isNotEmpty && prevStore != res['store_id'];
+    if (moved && shift != null) {
+      shift = null;
+      journal.clear();
+      held.clear();
+      cashier = null;
+      await _saveState();
+    }
     api.token = res['token'] as String;
     await store.writeJson('device.json', res);
     catalog = Catalog();
@@ -261,9 +285,10 @@ class PosController extends ChangeNotifier {
     revoked = false;
     // События, которые сервер отклонил, пока касса была отключена, — отправить снова.
     for (final item in List.of(outbox.failed)) {
+      if (moved) break;
       if (item.errorCode == 'device_revoked' || (item.error ?? '').startsWith('касса отключена')) await outbox.retry(item);
     }
-    stage = cashier == null ? Stage.login : (shift == null ? Stage.openShift : Stage.work);
+    stage = _deviceStage();
     notifyListeners();
     _startTimer();
   }
@@ -291,7 +316,16 @@ class PosController extends ChangeNotifier {
         if (lang == _catalogLang && catalog.version != null && catalog.length > 0) 'since': catalog.version!,
       };
       final res = await api.get('/pos/catalog', query: q) as Map<String, dynamic>;
+      final kind = catalog.settings.deviceKind;
       catalog.apply(res);
+      // Панель поменяла вид устройства (касса ↔ экран кухни) — другой экран.
+      if (kind != catalog.settings.deviceKind && stage != Stage.activate && stage != Stage.loading) {
+        if (catalog.settings.deviceKind == 'pos') {
+          if (stage == Stage.kitchen || stage == Stage.display) stage = _deviceStage();
+        } else if (shift == null) {
+          stage = _deviceStage();
+        }
+      }
       _catalogLang = lang;
       catalogAt = _now();
       _lastCatalog = catalogAt;
@@ -327,6 +361,7 @@ class PosController extends ChangeNotifier {
       if (r.revoked) revoked = true;
       final due = _lastCatalog == null || _now().difference(_lastCatalog!) > const Duration(minutes: 1);
       if (catalog || due || _catalogLang != Lang.instance.code) await syncCatalog();
+      if (this.catalog.cafe != null) await kitchen.tick();
     } finally {
       syncing = false;
       notifyListeners();
@@ -623,18 +658,17 @@ class PosController extends ChangeNotifier {
     return rec;
   }
 
-  /// Кафе: номерок гостю и бегунки по цехам на принтер чеков (экраны кухни и
-  /// принтеры цехов — на следующем этапе). Ошибка не мешает продаже.
+  /// Кафе: номерок гостю на принтер чеков и бегунки цехов — на принтер цеха
+  /// или принтер чеков, если экрана кухни нет (или касса без связи).
+  /// Ошибка не мешает продаже.
   Future<bool> printKitchen(SaleRecord rec) async {
-    final menu = catalog.cafe;
-    if (menu == null || rec.order == null) return false;
-    return _print(() => kitchenTickets(
-          s: catalog.settings,
-          sale: rec,
-          menu: menu,
-          paperMm: printer.paperMm,
-          codePage: printer.codePage,
-        ));
+    if (catalog.cafe == null || rec.order == null) return false;
+    final err = await kitchen.printOrder(rec);
+    if (err != null || printError != null) {
+      printError = err;
+      notifyListeners();
+    }
+    return err == null;
   }
 
   String get _shiftLabel => '${catalog.settings.deviceName.isEmpty ? tr('Касса', 'Kassa') : catalog.settings.deviceName}'

@@ -46,12 +46,12 @@ func (s *Service) authenticate(r *http.Request) (*identity.Principal, error) {
 	p := &identity.Principal{App: identity.AppPOS}
 	var storeID string
 	var lastSeen *time.Time
-	var phoneOwner *string
+	var phoneOwner, workshopID *string
 	err := s.pool.QueryRow(ctx, `
-		SELECT d.id, d.network_id, n.kind, d.store_id, d.last_seen_at, d.employee_id
+		SELECT d.id, d.network_id, n.kind, d.store_id, d.last_seen_at, d.employee_id, d.kind, d.workshop_id
 		FROM pos_devices d JOIN networks n ON n.id = d.network_id AND n.status = 'active'
 		WHERE d.token_hash = $1 AND d.revoked_at IS NULL`, hashSecret(raw)).Scan(
-		&p.DeviceID, &p.NetworkID, &p.NetworkKind, &storeID, &lastSeen, &phoneOwner)
+		&p.DeviceID, &p.NetworkID, &p.NetworkKind, &storeID, &lastSeen, &phoneOwner, &p.DeviceKind, &workshopID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, apperr.New(http.StatusUnauthorized, "device_revoked", "касса отключена или активирована заново — введите новый код").Uz("kassa oʻchirilgan yoki qayta faollashtirilgan — yangi kodni kiriting")
 	}
@@ -59,8 +59,20 @@ func (s *Service) authenticate(r *http.Request) (*identity.Principal, error) {
 		return nil, err
 	}
 	p.StoreIDs = []string{storeID}
-	if lastSeen == nil || s.now().Sub(*lastSeen) > time.Minute {
+	if workshopID != nil {
+		p.DeviceWorkshopID = *workshopID
+	}
+	// Экран кухни ждёт событий длинными запросами — «в сети» отмечаем чаще.
+	seenEvery := time.Minute
+	if p.DeviceKind != KindPOS {
+		seenEvery = 20 * time.Second
+	}
+	if lastSeen == nil || s.now().Sub(*lastSeen) > seenEvery {
 		_, _ = s.pool.Exec(ctx, `UPDATE pos_devices SET last_seen_at = now() WHERE id = $1`, p.DeviceID)
+	}
+	// Экран кухни и экран выдачи не продают: кассира у них нет.
+	if p.DeviceKind != KindPOS {
+		return p, nil
 	}
 	id := strings.TrimSpace(r.Header.Get(cashierHeader))
 	if phoneOwner != nil {

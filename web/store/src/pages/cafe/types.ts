@@ -17,6 +17,42 @@ export type Workshop = {
   ticket_print: 'always' | 'offline' | 'never'
   group_ids: string[]
   group_names: string[]
+  /** none — бегунок печатает касса на свой принтер, network — принтер цеха по сети. */
+  printer_kind: 'none' | 'network'
+  printer_host: string
+  printer_port: number
+  printer_paper: 58 | 80
+  /** Состояние от кассы: null — ещё не печатала. */
+  printer_ok: boolean | null
+  printer_pending: number
+  printer_seen_at: string | null
+  printer_test_at: string | null
+}
+
+/** Экран кухни (kitchen) или экран выдачи (display) — устройство кассы другого вида. */
+export type KitchenDevice = {
+  id: string
+  store_id: string
+  name: string
+  status: 'waiting' | 'active' | 'revoked'
+  kind: 'pos' | 'kitchen' | 'display'
+  workshop_id: string | null
+  workshop_name: string | null
+  online: boolean
+  activated_at: string | null
+  last_seen_at: string | null
+  created_at: string
+  activation_code?: string
+  activation_expires?: string | null
+}
+
+export type CafeSettings = {
+  business_type: 'store' | 'cafe'
+  cafe_mode: 'counter' | 'tables' | 'both'
+  service_percent: string
+  kitchen_sound: boolean
+  display_show_cooking: boolean
+  display_hide_minutes: number
 }
 
 export type WorkshopIcon = 'fire' | 'bakery' | 'bar' | 'soup' | 'grill' | 'salad' | 'pizza' | 'cafe'

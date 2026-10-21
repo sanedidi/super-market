@@ -1,25 +1,52 @@
-// Кухня → Цеха (Figma П7) и окно «Новый цех» (П7б). Экраны кухни, принтеры
-// бегунков и экран выдачи подключаются на этапе 4 — здесь пока заглушки.
+// Кухня → Цеха и устройства (Figma П7): цеха с группами меню, экраны кухни,
+// принтеры бегунков (П7а, П7в), экран выдачи для гостей и настройки заказов;
+// окно «Новый цех» (П7б).
 import { useEffect, useState } from 'react'
-import { App, Alert, Button, Card, Checkbox, Col, Dropdown, Empty, Input, InputNumber, Modal, Row, Segmented, Space, Tag, Typography } from 'antd'
-import { EditOutlined, InfoCircleOutlined, MoreOutlined, PlusOutlined, PrinterOutlined, DesktopOutlined } from '@ant-design/icons'
-import { LoadError, PageTitle, api, errorText, tr, useList } from '@sm/shared'
+import { App, Button, Checkbox, Col, Empty, Input, InputNumber, Modal, Row, Segmented, Space, Typography } from 'antd'
+import { DesktopOutlined, InfoCircleOutlined, PlusOutlined } from '@ant-design/icons'
+import { LoadError, PageTitle, api, errorText, tr, useItem, useList } from '@sm/shared'
 import { useQueryClient } from '@tanstack/react-query'
 import { useStore } from '../../ctx'
 import { NeedStore } from '../../ui'
-import { LinkTabs, WORKSHOP_ICONS, WorkshopEmoji } from './common'
-import type { MenuGroup, Workshop, WorkshopIcon } from './types'
+import { LinkTabs, WORKSHOP_ICONS } from './common'
+import { ConnectModal, DisplayCard, OrdersCard, PrinterModal, WorkshopCard } from './KitchenDevices'
+import type { CafeSettings, KitchenDevice, MenuGroup, Workshop, WorkshopIcon } from './types'
 
-const printTitle = (p: Workshop['ticket_print']) =>
-  p === 'always' ? tr('бегунок печатается всегда', 'cheki doim chop etiladi') : p === 'never' ? tr('без бегунка', 'cheksiz') : tr('бегунок — если экран не в сети', 'chek — ekran tarmoqda boʻlmasa')
+type Connect = { kind: 'kitchen' | 'display'; workshopId?: string; device?: KitchenDevice }
 
 export function KitchenPage() {
-  const { can } = useStore()
+  const { can, storeId } = useStore()
   const manage = can('catalog.manage')
   const list = useList<Workshop>('/store/cafe/workshops')
+  const devices = useList<KitchenDevice>(storeId ? '/store/pos/devices' : null, { kind: 'kitchen,display', store_id: storeId })
+  const settings = useItem<CafeSettings>('/store/cafe/settings')
   const [edit, setEdit] = useState<Workshop | 'new' | null>(null)
+  const [connect, setConnect] = useState<Connect | null>(null)
+  const [printer, setPrinter] = useState<Workshop | null>(null)
   const { modal, message } = App.useApp()
   const qc = useQueryClient()
+
+  // «В сети» и состояние принтеров меняются сами — обновлять раз в 15 секунд.
+  useEffect(() => {
+    const t = setInterval(() => {
+      qc.invalidateQueries({ queryKey: ['/store/pos/devices'] })
+      qc.invalidateQueries({ queryKey: ['/store/cafe/workshops'] })
+    }, 15000)
+    return () => clearInterval(t)
+  }, [qc])
+
+  const live = (devices.data ?? []).filter((d) => d.status !== 'revoked')
+  const screens = live.filter((d) => d.kind === 'kitchen')
+  const displays = live.filter((d) => d.kind === 'display')
+
+  const saveSettings = async (patch: Partial<CafeSettings>) => {
+    try {
+      const next = await api.patch<CafeSettings>('/store/cafe/settings', patch)
+      qc.setQueryData(['/store/cafe/settings', undefined], next)
+    } catch (e) {
+      message.error(errorText(e))
+    }
+  }
 
   const remove = (w: Workshop) =>
     modal.confirm({
@@ -31,6 +58,7 @@ export function KitchenPage() {
           await api.del(`/store/cafe/workshops/${w.id}`)
           qc.invalidateQueries({ queryKey: ['/store/cafe/workshops'] })
           qc.invalidateQueries({ queryKey: ['/store/cafe/menu-groups'] })
+          qc.invalidateQueries({ queryKey: ['/store/pos/devices'] })
         } catch (e) {
           message.error(errorText(e))
         }
@@ -44,86 +72,67 @@ export function KitchenPage() {
         tabs={<LinkTabs items={[{ path: '/kitchen', label: tr('Цеха и устройства', 'Sexlar va qurilmalar'), count: list.data?.length }]} />}
         extra={
           manage && (
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setEdit('new')}>
-              {tr('Цех', 'Sex')}
-            </Button>
+            <Space>
+              <Button icon={<DesktopOutlined />} onClick={() => setConnect({ kind: 'display' })}>
+                {tr('Экран выдачи', 'Berish ekrani')}
+              </Button>
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setEdit('new')}>
+                {tr('Цех', 'Sex')}
+              </Button>
+            </Space>
           )
         }
       />
       <Typography.Paragraph type="secondary">
         {tr(
-          'Цех — место на кухне, где готовят свои блюда. Заказ попадает в цех по группе меню блюда (или по цеху, указанному у блюда).',
-          'Sex — oshxonada oʻz taomlari tayyorlanadigan joy. Buyurtma sexga taomning menyu guruhi boʻyicha tushadi (yoki taomda koʻrsatilgan sex boʻyicha).',
+          'Цеха, экраны кухни, принтеры бегунков и экран выдачи для гостей. Заказ попадает в цех по группе меню блюда (или по цеху, указанному у блюда).',
+          'Sexlar, oshxona ekranlari, chek printerlari va mehmonlar uchun berish ekrani. Buyurtma sexga taomning menyu guruhi boʻyicha tushadi (yoki taomda koʻrsatilgan sex boʻyicha).',
         )}
       </Typography.Paragraph>
-      <LoadError error={list.error} retry={() => list.refetch()} />
+      <LoadError error={list.error ?? devices.error} retry={() => (list.refetch(), devices.refetch())} />
       <Row gutter={[16, 16]}>
         {(list.data ?? []).map((w) => (
           <Col key={w.id} xs={24} md={12} xl={8}>
-            <Card style={{ height: '100%' }} styles={{ body: { display: 'flex', flexDirection: 'column', height: '100%' } }}>
-              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                <WorkshopEmoji icon={w.icon} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 18, fontWeight: 800 }}>
-                    {w.name} {w.is_default && <Tag bordered={false}>{tr('по умолчанию', 'asosiy')}</Tag>}
-                  </div>
-                  <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-                    {tr('норма по умолчанию', 'standart meʼyor')} · {w.cook_minutes} {tr('мин', 'daq')} · {printTitle(w.ticket_print)}
-                  </Typography.Text>
-                </div>
-                {manage && !w.is_default && (
-                  <Dropdown menu={{ items: [{ key: 'del', danger: true, label: tr('Удалить цех', 'Sexni oʻchirish'), onClick: () => remove(w) }] }}>
-                    <Button type="text" icon={<MoreOutlined />} />
-                  </Dropdown>
-                )}
-              </div>
-              <Typography.Text type="secondary" style={{ marginTop: 14, fontSize: 12 }}>
-                {tr('Группы меню', 'Menyu guruhlari')}
-              </Typography.Text>
-              <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {w.group_names.length ? (
-                  w.group_names.map((g) => (
-                    <Tag key={g} bordered={false} style={{ borderRadius: 12, padding: '2px 10px' }}>
-                      {g}
-                    </Tag>
-                  ))
-                ) : (
-                  <Typography.Text type="secondary">{tr('нет групп', 'guruhlar yoʻq')}</Typography.Text>
-                )}
-              </div>
-              <Typography.Text type="secondary" style={{ marginTop: 14, fontSize: 12 }}>
-                {tr('Устройства', 'Qurilmalar')}
-              </Typography.Text>
-              <Space direction="vertical" style={{ width: '100%', marginTop: 6 }}>
-                <Button block icon={<DesktopOutlined />} disabled style={{ borderStyle: 'dashed' }}>
-                  {tr('Подключить экран кухни — скоро', 'Oshxona ekranini ulash — tez orada')}
-                </Button>
-                <Button block icon={<PrinterOutlined />} disabled style={{ borderStyle: 'dashed' }}>
-                  {tr('Подключить принтер — скоро', 'Printerni ulash — tez orada')}
-                </Button>
-              </Space>
-              <div style={{ flex: 1 }} />
-              {manage && (
-                <Button icon={<EditOutlined />} style={{ marginTop: 16 }} onClick={() => setEdit(w)}>
-                  {tr('Изменить', 'Oʻzgartirish')}
-                </Button>
-              )}
-            </Card>
+            <WorkshopCard
+              w={w}
+              screens={screens}
+              manage={manage}
+              onEdit={() => setEdit(w)}
+              onRemove={w.is_default ? undefined : () => remove(w)}
+              onConnect={() => setConnect({ kind: 'kitchen', workshopId: w.id })}
+              onShowCode={(d) => setConnect({ kind: d.kind === 'display' ? 'display' : 'kitchen', device: d })}
+              onPrinter={() => setPrinter(w)}
+            />
           </Col>
         ))}
       </Row>
       {list.data?.length === 0 && <Empty />}
-      <Alert
-        style={{ marginTop: 16 }}
-        type="info"
-        showIcon
-        icon={<InfoCircleOutlined />}
-        message={tr(
-          'Экраны кухни, принтеры бегунков и экран выдачи для гостей подключим на следующем этапе — вместе с кассой кафе.',
-          'Oshxona ekranlari, chek printerlari va mehmonlar uchun berish ekranini keyingi bosqichda — kafe kassasi bilan birga ulaymiz.',
-        )}
-      />
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col xs={24} lg={12}>
+          <DisplayCard
+            displays={displays}
+            settings={settings.data}
+            manage={manage}
+            onConnect={() => setConnect({ kind: 'display' })}
+            onShowCode={(d) => setConnect({ kind: 'display', device: d })}
+            onSave={saveSettings}
+          />
+        </Col>
+        <Col xs={24} lg={12}>
+          <OrdersCard settings={settings.data} manage={manage} onSave={saveSettings} />
+        </Col>
+      </Row>
       <WorkshopModal open={edit !== null} workshop={edit === 'new' ? undefined : edit ?? undefined} onClose={() => setEdit(null)} />
+      <ConnectModal
+        open={connect !== null}
+        kind={connect?.kind ?? 'kitchen'}
+        storeId={storeId}
+        workshops={list.data ?? []}
+        workshopId={connect?.workshopId}
+        device={connect?.device}
+        onClose={() => setConnect(null)}
+      />
+      <PrinterModal open={printer !== null} workshop={printer ?? undefined} onClose={() => setPrinter(null)} />
     </NeedStore>
   )
 }

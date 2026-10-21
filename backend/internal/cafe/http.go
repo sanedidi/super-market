@@ -32,6 +32,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/workshops", m.createWorkshop)
 		r.Patch("/workshops/{id}", m.updateWorkshop)
 		r.Delete("/workshops/{id}", m.deleteWorkshop)
+		r.Post("/workshops/{id}/test-print", m.testPrint)
 
 		r.Get("/menu-groups", m.listGroups)
 		r.Post("/menu-groups", m.createGroup)
@@ -243,5 +244,11 @@ func (m *Module) stock(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (StockSummary, error) {
 		return m.svc.Stock(r.Context(), pr(r), q.Get("store_id"), q.Get("warehouse_id"), q.Get("q"), q.Get("status"))
+	})
+}
+
+func (m *Module) testPrint(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (Workshop, error) {
+		return m.svc.TestPrint(r.Context(), pr(r), id)
 	})
 }

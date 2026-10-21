@@ -110,6 +110,10 @@ type Principal struct {
 
 	// Касса, с которой пришёл запрос (только App == AppPOS).
 	DeviceID string
+	// Вид устройства: pos — касса, kitchen — экран кухни, display — экран
+	// выдачи; у экрана кухни может быть свой цех.
+	DeviceKind       string
+	DeviceWorkshopID string
 }
 
 // Can — есть ли у сотрудника право.
