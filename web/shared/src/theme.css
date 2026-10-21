@@ -1896,3 +1896,18 @@ body {
   .sm-setup-day > :nth-child(3), .sm-setup-day > :nth-child(4) { grid-column: span 1; }
   .sm-setup-day:first-child { display: none; }
 }
+
+/* ─── Строки таблиц: стоп-лист, минус, не хватает (кафе) ─────────────────── */
+
+.sm-row-muted td {
+  color: var(--sm-muted);
+  background: #fafafa;
+}
+
+.sm-row-danger td {
+  background: #fef3f2 !important;
+}
+
+.sm-row-warning td {
+  background: #fffaeb !important;
+}

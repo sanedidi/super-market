@@ -118,13 +118,19 @@ const text = (n: ReactNode) => (typeof n === 'string' || typeof n === 'number' ?
 
 /**
  * Подписи вкладок для страниц, которых нет в меню (подстраница пункта меню):
- * путь → подпись. Без записи такая страница подписывается «Пункт / Документ».
+ * путь → подпись («/путь/*» — для всех страниц под путём). Без записи такая
+ * страница подписывается «Пункт / Документ».
  */
 export const tabLabels: Record<string, string> = {}
 
 /** Подпись страницы для полосы вкладок: «Группа / Пункт» по самому длинному совпадению пути. */
 function labelFor(nav: NavItem[], path: string): string {
   if (tabLabels[path]) return tabLabels[path]
+  // «/menu/dishes/*» — подпись для всех страниц под этим путём.
+  const wild = Object.keys(tabLabels)
+    .filter((k) => k.endsWith('/*') && path.startsWith(k.slice(0, -1)))
+    .sort((a, b) => b.length - a.length)[0]
+  if (wild) return tabLabels[wild]
   let best: { key: string; label: string } | undefined
   const walk = (items: NavItem[], parent?: string) =>
     items.forEach((i) => {

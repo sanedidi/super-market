@@ -1,7 +1,7 @@
 // Типы ответов API (поля — json-теги структур Go). Деньги и количество — строки.
 // Объявлены через type, чтобы подходить под RemoteSelect (Record<string, unknown>).
 
-export type Network = { id: string; name: string; kind: 'chain' | 'single'; status: string }
+export type Network = { id: string; name: string; kind: 'chain' | 'single'; status: string; business_type?: 'store' | 'cafe' }
 
 export type Me = {
   user_id: string

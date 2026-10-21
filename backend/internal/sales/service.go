@@ -439,6 +439,9 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 				for _, m := range mods {
 					base = base.Add(m.Price.Mul(money.D(strconv.Itoa(m.Qty))))
 				}
+				if base.Sign() < 0 {
+					base = money.D("0")
+				}
 				prod.Price = base.Money()
 			}
 			// Касса могла продать офлайн товар, который тем временем сняли с продажи.

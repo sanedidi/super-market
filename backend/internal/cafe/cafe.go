@@ -143,15 +143,28 @@ type Workshop struct {
 	IsActive   bool   `json:"is_active"`
 	GroupCount int    `json:"group_count"`
 	DishCount  int    `json:"dish_count"`
+	// Значок, норма по умолчанию, мин, и когда печатать бегунок.
+	Icon        string `json:"icon"`
+	CookMinutes int    `json:"cook_minutes"`
+	TicketPrint string `json:"ticket_print"`
+	// Группы меню цеха (id и названия по порядку).
+	GroupIDs   []string `json:"group_ids"`
+	GroupNames []string `json:"group_names"`
 }
 
 const workshopSelect = `
 	SELECT w.id, loc(w.name, w.name_uz), w.name, w.name_uz, w.sort, w.is_default, w.is_active,
-	       (SELECT count(*) FROM menu_groups g WHERE g.workshop_id = w.id AND g.is_active)::int,
+	       (SELECT count(*) FROM menu_groups g WHERE g.network_id = w.network_id AND g.is_active
+	         AND (g.workshop_id = w.id OR (g.workshop_id IS NULL AND w.is_default)))::int,
 	       (SELECT count(*) FROM products p
 	         LEFT JOIN menu_groups g ON g.id = p.menu_group_id
 	         WHERE p.network_id = w.network_id AND p.kind = 'dish' AND p.is_active
-	           AND COALESCE(p.workshop_id, g.workshop_id, (SELECT d.id FROM workshops d WHERE d.network_id = w.network_id AND d.is_default)) = w.id)::int
+	           AND COALESCE(p.workshop_id, g.workshop_id, (SELECT d.id FROM workshops d WHERE d.network_id = w.network_id AND d.is_default)) = w.id)::int,
+	       w.icon, w.cook_minutes, w.ticket_print,
+	       COALESCE((SELECT array_agg(g.id::text ORDER BY g.sort, g.name) FROM menu_groups g
+	                 WHERE g.network_id = w.network_id AND g.is_active AND (g.workshop_id = w.id OR (g.workshop_id IS NULL AND w.is_default))), '{}'),
+	       COALESCE((SELECT array_agg(loc(g.name, g.name_uz) ORDER BY g.sort, g.name) FROM menu_groups g
+	                 WHERE g.network_id = w.network_id AND g.is_active AND (g.workshop_id = w.id OR (g.workshop_id IS NULL AND w.is_default))), '{}')
 	FROM workshops w`
 
 type NameInput struct {
@@ -212,12 +225,30 @@ func getWorkshop(ctx context.Context, q db.Querier, networkID, id string) (Works
 
 type WorkshopInput struct {
 	NameInput
-	Sort *int `json:"sort"`
+	Sort        *int    `json:"sort"`
+	Icon        *string `json:"icon"`
+	CookMinutes *int    `json:"cook_minutes"`
+	TicketPrint *string `json:"ticket_print"`
 	// GroupIDs — группы меню, которые переезжают в этот цех (П7б «Новый цех»).
 	GroupIDs *[]string `json:"group_ids"`
 }
 
 var errWorkshopExists = apperr.Conflict("workshop_exists", "цех с таким названием уже есть").Uz("bunday nomli sex allaqachon bor")
+
+var workshopIcons = map[string]bool{"fire": true, "bakery": true, "bar": true, "soup": true, "grill": true, "salad": true, "pizza": true, "cafe": true}
+
+func (in WorkshopInput) validate() error {
+	if in.Icon != nil && !workshopIcons[*in.Icon] {
+		return apperr.Validation("icon: неизвестный значок").Uz("icon: nomaʼlum belgi")
+	}
+	if in.CookMinutes != nil && (*in.CookMinutes < 1 || *in.CookMinutes > 600) {
+		return apperr.Validation("cook_minutes: от 1 до 600").Uz("cook_minutes: 1 dan 600 gacha")
+	}
+	if in.TicketPrint != nil && *in.TicketPrint != "always" && *in.TicketPrint != "offline" && *in.TicketPrint != "never" {
+		return apperr.Validation("ticket_print: ожидается always, offline или never").Uz("ticket_print: always, offline yoki never boʻlishi kerak")
+	}
+	return nil
+}
 
 func (s *Service) CreateWorkshop(ctx context.Context, p *identity.Principal, in WorkshopInput) (Workshop, error) {
 	if err := s.manage(ctx, p); err != nil {
@@ -227,11 +258,16 @@ func (s *Service) CreateWorkshop(ctx context.Context, p *identity.Principal, in 
 	if err != nil {
 		return Workshop{}, err
 	}
+	if err := in.validate(); err != nil {
+		return Workshop{}, err
+	}
 	var out Workshop
 	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		var id string
-		err := tx.QueryRow(ctx, `INSERT INTO workshops (network_id, name, name_uz, sort) VALUES ($1, $2, COALESCE($3, ''), COALESCE($4, 0)) RETURNING id`,
-			p.NetworkID, *ru, uz, in.Sort).Scan(&id)
+		err := tx.QueryRow(ctx, `
+			INSERT INTO workshops (network_id, name, name_uz, sort, icon, cook_minutes, ticket_print)
+			VALUES ($1, $2, COALESCE($3, ''), COALESCE($4, 0), COALESCE($5, 'fire'), COALESCE($6, 15), COALESCE($7, 'offline')) RETURNING id`,
+			p.NetworkID, *ru, uz, in.Sort, in.Icon, in.CookMinutes, in.TicketPrint).Scan(&id)
 		if db.IsUniqueViolation(err, "workshops_name_key") {
 			return errWorkshopExists
 		}
@@ -275,10 +311,14 @@ func (s *Service) UpdateWorkshop(ctx context.Context, p *identity.Principal, id 
 	if err != nil {
 		return Workshop{}, err
 	}
+	if err := in.validate(); err != nil {
+		return Workshop{}, err
+	}
 	var out Workshop
 	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `UPDATE workshops SET name = COALESCE($3, name), name_uz = COALESCE($4, name_uz), sort = COALESCE($5, sort)
-			WHERE network_id = $1 AND id = $2 AND is_active`, p.NetworkID, id, ru, uz, in.Sort)
+		tag, err := tx.Exec(ctx, `UPDATE workshops SET name = COALESCE($3, name), name_uz = COALESCE($4, name_uz), sort = COALESCE($5, sort),
+			icon = COALESCE($6, icon), cook_minutes = COALESCE($7, cook_minutes), ticket_print = COALESCE($8, ticket_print)
+			WHERE network_id = $1 AND id = $2 AND is_active`, p.NetworkID, id, ru, uz, in.Sort, in.Icon, in.CookMinutes, in.TicketPrint)
 		if db.IsUniqueViolation(err, "workshops_name_key") {
 			return errWorkshopExists
 		}
@@ -287,6 +327,13 @@ func (s *Service) UpdateWorkshop(ctx context.Context, p *identity.Principal, id 
 		}
 		if tag.RowsAffected() == 0 {
 			return apperr.NotFound("цех не найден").Uz("sex topilmadi")
+		}
+		// Группы, которые сняли с цеха, возвращаются в цех по умолчанию.
+		if in.GroupIDs != nil {
+			if _, err := tx.Exec(ctx, `UPDATE menu_groups SET workshop_id = NULL WHERE network_id = $1 AND workshop_id = $2 AND NOT (id::text = ANY($3::text[]))`,
+				p.NetworkID, id, *in.GroupIDs); err != nil {
+				return err
+			}
 		}
 		if err := moveGroups(ctx, tx, p.NetworkID, id, in.GroupIDs); err != nil {
 			return err

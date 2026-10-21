@@ -29,6 +29,18 @@ type RecipeLine struct {
 	UnitCost string `json:"unit_cost"`
 	Cost     string `json:"cost"`
 	HasCost  bool   `json:"has_cost"`
+	// NotTracked — не учитываем на складе (вода): не списывается, не в себестоимости.
+	NotTracked bool `json:"not_tracked"`
+}
+
+// UsedIn — где используется заготовка: блюдо (заготовка) и сколько на единицу.
+type UsedIn struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Kind      string `json:"kind"`
+	Qty       string `json:"qty"`
+	UnitShort string `json:"unit_short"`
+	IsActive  bool   `json:"is_active"`
 }
 
 // Dish — блюдо или заготовка.
@@ -66,9 +78,14 @@ type Dish struct {
 	Markup       string  `json:"markup"`
 	FoodCost     *string `json:"food_cost"`
 	HasRecipe    bool    `json:"has_recipe"`
+	// Выход порции для меню («350 г»).
+	Portion string `json:"portion"`
+	// Точки, где блюдо сейчас на стопе.
+	StopStoreIDs []string `json:"stop_store_ids"`
 	// Сколько заготовки на складах (только для заготовок).
 	Stock  *string      `json:"stock,omitempty"`
 	Recipe []RecipeLine `json:"recipe,omitempty"`
+	UsedIn []UsedIn     `json:"used_in,omitempty"`
 }
 
 const dishSelect = `
@@ -79,7 +96,8 @@ const dishSelect = `
 	       p.cook_minutes, p.shelf_hours, p.ikpu, p.package_code, trim_scale(p.vat_rate)::text, p.images, p.is_active,
 	       COALESCE((SELECT array_agg(sp.store_id::text ORDER BY sp.store_id) FROM store_products sp WHERE sp.product_id = p.id), '{}'),
 	       COALESCE((SELECT array_agg(pm.group_id::text ORDER BY pm.sort, pm.group_id) FROM product_modifier_groups pm WHERE pm.product_id = p.id), '{}'),
-	       EXISTS (SELECT 1 FROM recipe_items ri WHERE ri.product_id = p.id)
+	       EXISTS (SELECT 1 FROM recipe_items ri WHERE ri.product_id = p.id),
+	       p.portion, COALESCE((SELECT array_agg(sl.store_id::text ORDER BY sl.store_id) FROM stop_list sl WHERE sl.product_id = p.id), '{}')
 	FROM products p
 	JOIN units u ON u.id = p.unit_id
 	LEFT JOIN workshops kw ON kw.id = COALESCE(p.workshop_id,
@@ -92,7 +110,7 @@ func scanDish(row pgx.CollectableRow) (Dish, error) {
 		&d.MenuCode, &d.MenuGroupID, &d.MenuGroup, &d.WorkshopID, &d.KitchenID, &d.KitchenName,
 		&d.UnitID, &d.UnitShort, &d.IsFractional, &d.Price, &d.YieldQty,
 		&d.CookMinutes, &d.ShelfHours, &d.IKPU, &d.PackageCode, &d.VatRate, &d.Images, &d.IsActive,
-		&d.StoreIDs, &d.ModifierGroups, &d.HasRecipe)
+		&d.StoreIDs, &d.ModifierGroups, &d.HasRecipe, &d.Portion, &d.StopStoreIDs)
 	return d, err
 }
 
@@ -122,7 +140,7 @@ func loadCostBook(ctx context.Context, q db.Querier, networkID string) (*costBoo
 	rows, err := q.Query(ctx, `
 		SELECT ri.product_id, ri.ingredient_id, ri.qty::text, p.yield_qty::text
 		FROM recipe_items ri JOIN products p ON p.id = ri.product_id
-		WHERE p.network_id = $1 ORDER BY ri.product_id, ri.line`, networkID)
+		WHERE p.network_id = $1 AND NOT ri.not_tracked ORDER BY ri.product_id, ri.line`, networkID)
 	if err != nil {
 		return nil, err
 	}
@@ -214,13 +232,14 @@ func (b *costBook) fill(d *Dish) {
 // --------------------------------------------------------------- список
 
 type DishFilter struct {
-	Kind     string
-	Query    string
-	GroupID  string
-	StoreID  string
-	NoRecipe bool
-	All      bool // и выключенные
-	Page     httpx.Page
+	Kind       string
+	WorkshopID string
+	Query      string
+	GroupID    string
+	StoreID    string
+	NoRecipe   bool
+	All        bool // и выключенные
+	Page       httpx.Page
 }
 
 func (s *Service) ListDishes(ctx context.Context, p *identity.Principal, f DishFilter) ([]Dish, error) {
@@ -233,7 +252,8 @@ func (s *Service) ListDishes(ctx context.Context, p *identity.Principal, f DishF
 	if f.Kind != KindDish && f.Kind != KindPrep {
 		return nil, apperr.Validation("kind: ожидается dish или prep").Uz("kind: dish yoki prep boʻlishi kerak")
 	}
-	if (f.GroupID != "" && f.GroupID != "none" && !httpx.IsUUID(f.GroupID)) || (f.StoreID != "" && !httpx.IsUUID(f.StoreID)) {
+	if (f.GroupID != "" && f.GroupID != "none" && !httpx.IsUUID(f.GroupID)) || (f.StoreID != "" && !httpx.IsUUID(f.StoreID)) ||
+		(f.WorkshopID != "" && !httpx.IsUUID(f.WorkshopID)) {
 		return nil, apperr.Validation("неверный фильтр").Uz("filtr notoʻgʻri")
 	}
 	q := strings.TrimSpace(f.Query)
@@ -247,9 +267,10 @@ func (s *Service) ListDishes(ctx context.Context, p *identity.Principal, f DishF
 		  AND ($6 = '' OR ($6 = 'none' AND p.menu_group_id IS NULL) OR p.menu_group_id::text = $6)
 		  AND ($7 = '' OR EXISTS (SELECT 1 FROM store_products sp WHERE sp.product_id = p.id AND sp.store_id::text = $7))
 		  AND (NOT $8 OR NOT EXISTS (SELECT 1 FROM recipe_items ri WHERE ri.product_id = p.id))
+		  AND ($11 = '' OR kw.id::text = $11)
 		ORDER BY (SELECT g.sort FROM menu_groups g WHERE g.id = p.menu_group_id) NULLS LAST, p.menu_code NULLS LAST, p.name
 		LIMIT $9 OFFSET $10`,
-		p.NetworkID, f.Kind, f.All, q, code, f.GroupID, f.StoreID, f.NoRecipe, f.Page.Limit, f.Page.Offset)
+		p.NetworkID, f.Kind, f.All, q, code, f.GroupID, f.StoreID, f.NoRecipe, f.Page.Limit, f.Page.Offset, f.WorkshopID)
 	if err != nil {
 		return nil, err
 	}
@@ -292,7 +313,7 @@ func getDish(ctx context.Context, q db.Querier, networkID, id string) (Dish, err
 	}
 	book.fill(&d)
 	rows, err = q.Query(ctx, `
-		SELECT ri.line, ri.ingredient_id, loc(i.name, i.name_uz), i.kind, loc(u.short_name, u.short_name_uz), trim_scale(ri.qty)::text
+		SELECT ri.line, ri.ingredient_id, loc(i.name, i.name_uz), i.kind, loc(u.short_name, u.short_name_uz), trim_scale(ri.qty)::text, ri.not_tracked
 		FROM recipe_items ri JOIN products i ON i.id = ri.ingredient_id JOIN units u ON u.id = i.unit_id
 		WHERE ri.product_id = $1 ORDER BY ri.line`, id)
 	if err != nil {
@@ -300,13 +321,17 @@ func getDish(ctx context.Context, q db.Querier, networkID, id string) (Dish, err
 	}
 	d.Recipe, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (RecipeLine, error) {
 		var l RecipeLine
-		err := r.Scan(&l.Line, &l.IngredientID, &l.Name, &l.Kind, &l.UnitShort, &l.Qty)
+		err := r.Scan(&l.Line, &l.IngredientID, &l.Name, &l.Kind, &l.UnitShort, &l.Qty, &l.NotTracked)
 		return l, err
 	})
 	if err != nil {
 		return d, err
 	}
 	for i := range d.Recipe {
+		if d.Recipe[i].NotTracked {
+			d.Recipe[i].UnitCost, d.Recipe[i].Cost, d.Recipe[i].HasCost = "0.00", "0.00", true
+			continue
+		}
 		u := book.unit(d.Recipe[i].IngredientID)
 		d.Recipe[i].UnitCost = u.cost.Money()
 		d.Recipe[i].Cost = u.cost.Mul(money.D(d.Recipe[i].Qty)).Money()
@@ -321,6 +346,19 @@ func getDish(ctx context.Context, q db.Querier, networkID, id string) (Dish, err
 			return d, err
 		}
 		d.Stock = &stock
+		rows, err := q.Query(ctx, `
+			SELECT p.id, loc(p.name, p.name_uz), p.kind, trim_scale(ri.qty / p.yield_qty)::text, loc(u.short_name, u.short_name_uz), p.is_active
+			FROM recipe_items ri JOIN products p ON p.id = ri.product_id JOIN units u ON u.id = p.unit_id
+			WHERE ri.ingredient_id = $1 ORDER BY p.is_active DESC, p.name`, id)
+		if err != nil {
+			return d, err
+		}
+		if d.UsedIn, err = pgx.CollectRows(rows, pgx.RowToStructByPos[UsedIn]); err != nil {
+			return d, err
+		}
+		if d.UsedIn == nil {
+			d.UsedIn = []UsedIn{}
+		}
 	}
 	return d, nil
 }
@@ -330,6 +368,7 @@ func getDish(ctx context.Context, q db.Querier, networkID, id string) (Dish, err
 type RecipeInput struct {
 	IngredientID string    `json:"ingredient_id"`
 	Qty          money.Qty `json:"qty"`
+	NotTracked   bool      `json:"not_tracked"`
 }
 
 type DishInput struct {
@@ -351,6 +390,7 @@ type DishInput struct {
 	VatRate       *money.Amount          `json:"vat_rate"`
 	Images        *[]string              `json:"images"`
 	IsActive      *bool                  `json:"is_active"`
+	Portion       *string                `json:"portion"`
 	// Где продаётся: магазины (точки) сети. При создании без поля — во всех.
 	StoreIDs *[]string `json:"store_ids"`
 	// Техкарта целиком (заменяет прежнюю) и группы модификаторов по порядку.
@@ -406,6 +446,13 @@ func (in *DishInput) validate(create bool) error {
 			return apperr.Validation("ikpu: 17 цифр").Uz("ikpu: 17 ta raqam")
 		}
 	}
+	if in.Portion != nil {
+		v := strings.TrimSpace(*in.Portion)
+		in.Portion = &v
+		if len([]rune(v)) > 30 {
+			return apperr.Validation("portion: до 30 символов").Uz("portion: 30 belgigacha")
+		}
+	}
 	if in.PackageCode != nil && len(strings.TrimSpace(*in.PackageCode)) > 20 {
 		return apperr.Validation("package_code: до 20 символов").Uz("package_code: 20 belgigacha")
 	}
@@ -457,12 +504,13 @@ func (s *Service) CreateDish(ctx context.Context, p *identity.Principal, in Dish
 		var id string
 		err := tx.QueryRow(ctx, `
 			INSERT INTO products (network_id, proposed_by, name, name_uz, description, description_uz, category_id, unit_id,
-			                      base_price, images, moderation_status, kind, yield_qty, ikpu, package_code, vat_rate)
+			                      base_price, images, moderation_status, kind, yield_qty, ikpu, package_code, vat_rate, portion)
 			VALUES ($1, $1, $2, COALESCE($3, ''), COALESCE($4, ''), COALESCE($5, ''), $6, $7,
-			        COALESCE($8::numeric, 0), $9, 'approved', $10, COALESCE($11::numeric, 1), COALESCE($12, ''), COALESCE($13, ''), COALESCE($14::numeric, 12))
+			        COALESCE($8::numeric, 0), $9, 'approved', $10, COALESCE($11::numeric, 1), COALESCE($12, ''), COALESCE($13, ''), COALESCE($14::numeric, 12),
+			        COALESCE($15, ''))
 			RETURNING id`,
 			p.NetworkID, *in.Name, in.NameUz, in.Description, in.DescriptionUz, DishCategoryID, unitID,
-			in.Price, images, *in.Kind, in.YieldQty, in.IKPU, in.PackageCode, in.VatRate).Scan(&id)
+			in.Price, images, *in.Kind, in.YieldQty, in.IKPU, in.PackageCode, in.VatRate, in.Portion).Scan(&id)
 		if err != nil {
 			return err
 		}
@@ -512,10 +560,10 @@ func (s *Service) UpdateDish(ctx context.Context, p *identity.Principal, id stri
 			       unit_id = COALESCE($6, unit_id), base_price = COALESCE($7::numeric, base_price),
 			       yield_qty = COALESCE($8::numeric, yield_qty), ikpu = COALESCE($9, ikpu),
 			       package_code = COALESCE($10, package_code), vat_rate = COALESCE($11::numeric, vat_rate),
-			       images = COALESCE($12, images), is_active = COALESCE($13, is_active)
+			       images = COALESCE($12, images), is_active = COALESCE($13, is_active), portion = COALESCE($14, portion)
 			WHERE id = $1`,
 			id, in.Name, in.NameUz, in.Description, in.DescriptionUz, in.UnitID, in.Price, in.YieldQty,
-			in.IKPU, in.PackageCode, in.VatRate, in.Images, in.IsActive); err != nil {
+			in.IKPU, in.PackageCode, in.VatRate, in.Images, in.IsActive, in.Portion); err != nil {
 			return err
 		}
 		if err := applyDish(ctx, tx, p, id, kind, &in, false); err != nil {
@@ -673,8 +721,8 @@ func setRecipe(ctx context.Context, tx pgx.Tx, networkID, productID string, line
 		if l.IngredientID == productID {
 			return errCycle
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO recipe_items (product_id, line, ingredient_id, qty) VALUES ($1, $2, $3, $4::numeric)`,
-			productID, i+1, l.IngredientID, money.D(string(l.Qty)).Fixed(4)); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO recipe_items (product_id, line, ingredient_id, qty, not_tracked) VALUES ($1, $2, $3, $4::numeric, $5)`,
+			productID, i+1, l.IngredientID, money.D(string(l.Qty)).Fixed(4), l.NotTracked); err != nil {
 			return err
 		}
 	}

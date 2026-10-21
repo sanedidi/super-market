@@ -334,3 +334,158 @@ func TestCafeFlow(t *testing.T) {
 		t.Fatalf("shop workshops = %v", ws)
 	}
 }
+
+// TestCafePanel — данные для панели кафе (этап 2): цеха со значком и
+// бегунком, стоп-лист, поиск продуктов для техкарты, «не учитываем» (вода),
+// скидка у «0,5 порции», «+ блюдо» в модификаторе, остатки склада продуктов
+// с минусом и «хватит на», предпросмотр производства.
+func TestCafePanel(t *testing.T) {
+	pool := freshDB(t)
+	cfg := testConfig()
+	cfg.DevOTPCode = "111111"
+	a := newAPI(t, cfg, pool, nil)
+	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
+	cat := a.expect(a.do("POST", "/admin/catalog/categories", adminTok, map[string]any{"name": "Продукты"}), 201, "category")
+	var kg, l string
+	for _, u := range a.expect(a.do("GET", "/admin/catalog/units", adminTok, nil), 200, "units").items() {
+		switch u["short_name"] {
+		case "кг":
+			kg = u["id"].(string)
+		case "л":
+			l = u["id"].(string)
+		}
+	}
+	product := func(name, unit string) string {
+		return a.expect(a.do("POST", "/admin/products", adminTok, map[string]any{"name": name, "category_id": cat.str("id"), "unit_id": unit}), 201, name).str("id")
+	}
+	flour, water, onion, cucumber := product("Мука пшеничная", kg), product("Вода питьевая", l), product("Лук репчатый", kg), product("Огурцы", kg)
+
+	a.expect(a.do("POST", "/admin/networks", adminTok, map[string]any{
+		"name": "Кафе", "kind": "single", "owner_phone": "+998900000002", "owner_name": "В", "business_type": "cafe",
+	}), 201, "cafe")
+	tok, _ := a.login("+998900000002", identity.AppStore)
+	store := a.expect(a.do("POST", "/store/stores", tok, map[string]any{"name": "Кафе 1"}), 201, "store").str("id")
+	wh := a.expect(a.do("GET", "/store/warehouses?store_id="+store, tok, nil), 200, "wh").items()[0]["id"].(string)
+
+	// Цех со значком, нормой и бегунком; группа уходит в него и обратно в «Кухню».
+	g := a.expect(a.do("POST", "/store/cafe/menu-groups", tok, map[string]any{"name": "Самса"}), 201, "group").str("id")
+	a.expect(a.do("POST", "/store/cafe/workshops", tok, map[string]any{"name": "Самса", "icon": "rocket"}), 400, "bad icon")
+	ws := a.expect(a.do("POST", "/store/cafe/workshops", tok, map[string]any{
+		"name": "Самса", "name_uz": "Somsaxona", "icon": "bakery", "cook_minutes": 5, "ticket_print": "always", "group_ids": []string{g},
+	}), 201, "workshop")
+	if ws.str("icon") != "bakery" || ws.Body["cook_minutes"].(float64) != 5 || ws.str("ticket_print") != "always" || len(ws.Body["group_names"].([]any)) != 1 {
+		t.Fatalf("workshop = %v", ws.Body)
+	}
+	a.expect(a.do("PATCH", "/store/cafe/workshops/"+ws.str("id"), tok, map[string]any{"group_ids": []string{}}), 200, "unassign")
+	kitchen := a.expect(a.do("GET", "/store/cafe/workshops", tok, nil), 200, "workshops").items()[0]
+	if kitchen["is_default"] != true || len(kitchen["group_names"].([]any)) != 1 {
+		t.Fatalf("kitchen = %v", kitchen)
+	}
+
+	// Продукты для техкарты: поиск по каталогу с ценой последнего прихода.
+	doc := a.expect(a.do("POST", "/store/inventory/documents", tok, map[string]any{
+		"type": "posting", "warehouse_id": wh, "items": []map[string]any{
+			{"product_id": flour, "qty": 10, "price": 8000}, {"product_id": onion, "qty": 1, "price": 5000},
+		},
+	}), 201, "posting")
+	a.expect(a.do("POST", "/store/inventory/documents/"+doc.str("id")+"/post", tok, nil), 200, "post")
+	found := a.expect(a.do("GET", "/store/cafe/ingredients?q=мука", tok, nil), 200, "ingredients").items()
+	if len(found) != 1 || found[0]["id"] != flour || found[0]["cost"] != "8000.00" {
+		t.Fatalf("ingredients = %v", found)
+	}
+
+	// Тесто: мука и вода «не учитываем» — вода не списывается и не в себестоимости.
+	dough := a.expect(a.do("POST", "/store/cafe/dishes", tok, map[string]any{
+		"kind": "prep", "name": "Тесто", "unit_id": kg, "yield_qty": 1, "shelf_hours": 24,
+		"recipe": []map[string]any{{"ingredient_id": flour, "qty": 0.6}, {"ingredient_id": water, "qty": 0.32, "not_tracked": true}},
+	}), 201, "dough")
+	if dough.str("cost") != "4800.00" || dough.Body["cost_complete"] != true {
+		t.Fatalf("dough = %v", dough.Body)
+	}
+	if preps := a.expect(a.do("GET", "/store/cafe/ingredients", tok, nil), 200, "preps").items(); len(preps) != 1 || preps[0]["kind"] != "prep" {
+		t.Fatalf("preps = %v", preps)
+	}
+
+	// Предпросмотр: 20 кг теста — муки 12 кг, на складе 10 → не хватает 2.
+	pv := a.expect(a.do("GET", "/store/cafe/production-preview?store_id="+store+"&product_id="+dough.str("id")+"&qty=20", tok, nil), 200, "preview")
+	lines := pv.Body["lines"].([]any)
+	if len(lines) != 1 || lines[0].(map[string]any)["short"] != "2.000" || lines[0].(map[string]any)["enough"] != false ||
+		pv.str("cost") != "96000.00" || len(pv.Body["not_tracked"].([]any)) != 1 {
+		t.Fatalf("preview = %v", pv.Body)
+	}
+	var cook string
+	for _, e := range a.expect(a.do("GET", "/store/employees", tok, nil), 200, "employees").items() {
+		cook = e["id"].(string)
+	}
+	prod := a.expect(a.do("POST", "/store/cafe/production", tok, map[string]any{
+		"store_id": store, "product_id": dough.str("id"), "qty": 20, "cook_id": cook,
+	}), 201, "production")
+	if prod.str("cook") == "" {
+		t.Fatalf("production = %v", prod.Body)
+	}
+
+	// Салат, плов с «0,5 порции» (дешевле) и «+ салат × 0,5».
+	salad := a.expect(a.do("POST", "/store/cafe/dishes", tok, map[string]any{
+		"kind": "dish", "name": "Ачичук", "price": 12000, "recipe": []map[string]any{{"ingredient_id": cucumber, "qty": 0.2}},
+	}), 201, "salad")
+	mods := a.expect(a.do("POST", "/store/cafe/modifier-groups", tok, map[string]any{
+		"name": "К плову", "options": []map[string]any{
+			{"name": "0,5 порции", "action": "factor", "factor": 0.5, "price": -15000},
+			{"name": "+ салат", "action": "add", "product_id": salad.str("id"), "qty": 0.5, "price": 6000},
+		},
+	}), 201, "mods")
+	a.expect(a.do("POST", "/store/cafe/modifier-groups", tok, map[string]any{
+		"name": "Плохо", "options": []map[string]any{{"name": "x", "price": -1}},
+	}), 400, "negative price without factor")
+	plov := a.expect(a.do("POST", "/store/cafe/dishes", tok, map[string]any{
+		"kind": "dish", "name": "Плов", "price": 35000, "portion": "350 г", "menu_group_id": g,
+		"recipe":             []map[string]any{{"ingredient_id": onion, "qty": 0.1}},
+		"modifier_group_ids": []string{mods.str("id")},
+	}), 201, "plov")
+	if plov.str("portion") != "350 г" {
+		t.Fatalf("plov = %v", plov.Body)
+	}
+	half, withSalad := mods.Body["options"].([]any)[0].(map[string]any)["id"], mods.Body["options"].([]any)[1].(map[string]any)["id"]
+	var cash string
+	for _, m := range a.expect(a.do("GET", "/store/finance/payment-methods?store_id="+store, tok, nil), 200, "methods").items() {
+		if m["name"] == "Наличные" {
+			cash = m["id"].(string)
+		}
+	}
+	// 0,5 порции (35 000 − 15 000) + салат × 0,5 (6 000) = 26 000; лук 0,05, огурцы 0,1 — в минус.
+	a.expect(a.do("POST", "/store/sales", tok, map[string]any{
+		"client_uid": "panel-sale-01", "store_id": store,
+		"items":    []map[string]any{{"product_id": plov.str("id"), "qty": 1, "modifiers": []map[string]any{{"option_id": half}, {"option_id": withSalad}}}},
+		"payments": []map[string]any{{"payment_method_id": cash, "amount": 26000}},
+	}), 201, "sale")
+
+	st := a.expect(a.do("GET", "/store/cafe/stock?store_id="+store, tok, nil), 200, "stock")
+	rows := map[string]map[string]any{}
+	for _, x := range st.Body["items"].([]any) {
+		r := x.(map[string]any)
+		rows[r["product_id"].(string)] = r
+	}
+	if rows[cucumber]["qty"] != "-0.1" || rows[cucumber]["status"] != "minus" || rows[onion]["qty"] != "0.95" ||
+		rows[flour]["qty"] != "-2" || st.Body["minus"].(float64) != 2 || rows[dough.str("id")]["qty"] != "20" {
+		t.Fatalf("stock = %v", st.Body)
+	}
+	if _, ok := rows[water]; ok {
+		t.Fatalf("water must not be in stock: %v", rows[water])
+	}
+	if only := a.expect(a.do("GET", "/store/cafe/stock?store_id="+store+"&status=minus", tok, nil), 200, "minus").Body["items"].([]any); len(only) != 2 {
+		t.Fatalf("minus = %v", only)
+	}
+
+	// Стоп-лист точки.
+	a.expect(a.do("PUT", "/store/cafe/stop-list", tok, map[string]any{"store_id": store, "product_id": plov.str("id"), "stopped": true}), 200, "stop")
+	if d := a.expect(a.do("GET", "/store/cafe/dishes/"+plov.str("id"), tok, nil), 200, "plov"); len(d.Body["stop_store_ids"].([]any)) != 1 {
+		t.Fatalf("stop = %v", d.Body)
+	}
+	if sl := a.expect(a.do("GET", "/store/cafe/stop-list?store_id="+store, tok, nil), 200, "stop list").items(); len(sl) != 1 {
+		t.Fatalf("stop list = %v", sl)
+	}
+	a.expect(a.do("PUT", "/store/cafe/stop-list", tok, map[string]any{"store_id": store, "product_id": plov.str("id"), "stopped": false}), 200, "unstop")
+	if d := a.expect(a.do("GET", "/store/cafe/dishes/"+dough.str("id"), tok, nil), 200, "dough"); d.Body["used_in"] != nil {
+		t.Fatalf("dough used_in = %v", d.Body["used_in"])
+	}
+}

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Alert, Button, Descriptions, Drawer, Form, Input, Popconfirm, Select, Space, Spin, Table, Tag, Typography } from 'antd'
-import { DeleteOutlined, KeyOutlined, WarningOutlined } from '@ant-design/icons'
+import { CoffeeOutlined, DeleteOutlined, KeyOutlined, ShopOutlined, TableOutlined, WarningOutlined } from '@ant-design/icons'
 import { CrudPage, PhoneInput, StatusTag, api, date, dateTime, errorText, formatPhone, money, phoneRule, useAction, useItem, useList } from '@sm/shared'
 import { useUrlState } from '../hooks'
 import { planPrice, type Plan } from './Plans'
@@ -16,6 +16,50 @@ function kindTitle(k: string, long = false): string {
   return 'Одиночный магазин'
 }
 
+/** Тип бизнеса: магазин или кафе (Figma «Кафе» П4). Меняет только супер-админ. */
+function businessTitle(b: string | undefined): string {
+  return b === 'cafe' ? 'Кафе' : 'Магазин'
+}
+
+/** Карточки выбора типа бизнеса в окне «Новая сеть». */
+function BusinessTypeCards({ value = 'store', onChange }: { value?: string; onChange?: (v: string) => void }) {
+  const cards = [
+    { key: 'store', icon: <ShopOutlined />, title: 'Магазин', text: 'товары со штрихкодом, остатки, приходы' },
+    { key: 'cafe', icon: <CoffeeOutlined />, title: 'Кафе', text: 'меню, техкарты, кухня, номер заказа' },
+    { key: 'restaurant', icon: <TableOutlined />, title: 'Ресторан', text: 'столы, официанты, общий счёт', soon: true },
+  ]
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+      {cards.map((c) => {
+        const on = value === c.key
+        return (
+          <div
+            key={c.key}
+            role="radio"
+            aria-checked={on}
+            onClick={() => !c.soon && onChange?.(c.key)}
+            style={{
+              border: `${on ? 2 : 1}px solid ${on ? '#d92d20' : '#eaecf0'}`,
+              background: on ? '#fef3f2' : c.soon ? '#f9fafb' : '#fff',
+              borderRadius: 12,
+              padding: 12,
+              cursor: c.soon ? 'not-allowed' : 'pointer',
+              opacity: c.soon ? 0.55 : 1,
+            }}
+          >
+            <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 20, color: on ? '#d92d20' : undefined }}>{c.icon}</span>
+              {c.soon && <Tag bordered={false}>позже</Tag>}
+            </Space>
+            <div style={{ fontWeight: 700, marginTop: 6 }}>{c.title}</div>
+            <div style={{ fontSize: 12, color: '#667085' }}>{c.text}</div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 interface Network extends OwnerInfo {
   kind: 'chain' | 'single' | 'distributor'
   status: 'active' | 'blocked'
@@ -25,6 +69,7 @@ interface Network extends OwnerInfo {
   plan_name: string
   effective_plan_key: string
   plan_trial_until: string | null
+  business_type?: 'store' | 'cafe'
 }
 
 export function Networks() {
@@ -48,7 +93,16 @@ export function Networks() {
             dataIndex: 'name',
             render: (n, row) => <Typography.Link onClick={() => setOpenId(row.id)}>{n}</Typography.Link>,
           },
-          { title: 'Тип', dataIndex: 'kind', render: (k) => kindTitle(k) },
+          {
+            title: 'Тип',
+            dataIndex: 'kind',
+            render: (k, n) => (
+              <Space size={4}>
+                {kindTitle(k)}
+                {n.business_type === 'cafe' && <Tag color="volcano">Кафе</Tag>}
+              </Space>
+            ),
+          },
           { title: 'Магазинов', dataIndex: 'stores_count' },
           {
             title: 'Тариф',
@@ -119,6 +173,20 @@ export function Networks() {
                     ]}
                   />
                 </Form.Item>
+                <Form.Item noStyle dependencies={['kind']}>
+                  {({ getFieldValue }) =>
+                    getFieldValue('kind') !== 'distributor' && (
+                      <Form.Item
+                        name="business_type"
+                        label="Тип бизнеса"
+                        initialValue="store"
+                        extra="У кафе в панели вместо «Закупок» и «Склада» будут «Меню», «Склад продуктов» и «Кухня». Тип потом меняет только супер-админ."
+                      >
+                        <BusinessTypeCards />
+                      </Form.Item>
+                    )
+                  }
+                </Form.Item>
                 <PlanField />
                 <Form.Item name="owner_name" label="Имя владельца" rules={[{ required: true }]}>
                   <Input />
@@ -177,6 +245,9 @@ function NetworkCard({ id, onClose }: { id: string | null; onClose: () => void }
   const [planOpen, setPlanOpen] = useState(false)
   const [del, setDel] = useState<DeleteTarget | null>(null)
   const setStatus = useAction((status: string) => api.patch(`/admin/networks/${id}`, { status }), { success: 'Статус изменён' })
+  const setBusiness = useAction((v: { id: string; business_type: string }) => api.patch(`/admin/networks/${v.id}`, { business_type: v.business_type }), {
+    success: 'Тип бизнеса изменён',
+  })
   const error = net.error ?? stores.error ?? billing.error
   return (
     <Drawer open={id !== null} onClose={onClose} width={720} title={n ? n.name : 'Сеть'}>
@@ -206,6 +277,26 @@ function NetworkCard({ id, onClose }: { id: string | null; onClose: () => void }
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
           <Descriptions column={1} size="small" bordered>
             <Descriptions.Item label="Тип">{kindTitle(n.kind, true)}</Descriptions.Item>
+            {n.kind !== 'distributor' && (
+              <Descriptions.Item label="Тип бизнеса">
+                <Space>
+                  {businessTitle(n.business_type)}
+                  <Popconfirm
+                    title={n.business_type === 'cafe' ? 'Сделать магазином? Меню и техкарты останутся, но разделы кафе скроются.' : 'Сделать кафе? В панели появятся «Меню», «Склад продуктов» и «Кухня».'}
+                    onConfirm={() =>
+                      setBusiness
+                        .mutateAsync({ id: n.id, business_type: n.business_type === 'cafe' ? 'store' : 'cafe' })
+                        .then(() => net.refetch())
+                        .catch(() => undefined)
+                    }
+                  >
+                    <Button size="small" loading={setBusiness.isPending}>
+                      {n.business_type === 'cafe' ? 'Сделать магазином' : 'Сделать кафе'}
+                    </Button>
+                  </Popconfirm>
+                </Space>
+              </Descriptions.Item>
+            )}
             <Descriptions.Item label="Статус">
               <StatusTag status={n.status} />
             </Descriptions.Item>

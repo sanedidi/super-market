@@ -3,7 +3,9 @@ package cafe
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -120,7 +122,7 @@ type ModifierOptionInput struct {
 	ID        *string       `json:"id"`
 	Name      *string       `json:"name"`
 	NameUz    *string       `json:"name_uz"`
-	Price     *money.Amount `json:"price"`
+	Price     *SignedAmount `json:"price"`
 	Action    *string       `json:"action"`
 	ProductID *string       `json:"product_id"`
 	Qty       *money.Qty    `json:"qty"`
@@ -230,7 +232,8 @@ func setOptions(ctx context.Context, tx pgx.Tx, networkID, groupID string, opts 
 		}
 		price := "0"
 		if o.Price != nil {
-			if !o.Price.Valid() || money.D(string(*o.Price)).Sign() < 0 {
+			// Скидка (минус) — только у «0,5 порции»: порция меньше — дешевле.
+			if money.D(string(*o.Price)).Sign() < 0 && action != ActionFactor {
 				return bad("неверная доплата", "qoʻshimcha narx notoʻgʻri")
 			}
 			price = money.D(string(*o.Price)).Money()
@@ -245,7 +248,8 @@ func setOptions(ctx context.Context, tx pgx.Tx, networkID, groupID string, opts 
 			var kind string
 			err := tx.QueryRow(ctx, `SELECT kind FROM products WHERE id = $1 AND (network_id IS NULL OR network_id = $2)`,
 				*o.ProductID, networkID).Scan(&kind)
-			if errors.Is(err, pgx.ErrNoRows) || kind == KindDish {
+			// Добавить можно и блюдо (спишется по его техкарте), убрать — только продукт техкарты.
+			if errors.Is(err, pgx.ErrNoRows) || (kind == KindDish && (action == ActionRemove || *o.ProductID == "")) {
 				return bad("продукт не найден", "mahsulot topilmadi")
 			}
 			if err != nil {
@@ -293,6 +297,20 @@ func setOptions(ctx context.Context, tx pgx.Tx, networkID, groupID string, opts 
 	}
 	_, err := tx.Exec(ctx, `UPDATE modifier_options SET is_active = false WHERE group_id = $1 AND NOT (id = ANY($2::uuid[]))`, groupID, keep)
 	return err
+}
+
+// SignedAmount — сумма, которая может быть со знаком минус (скидка варианта).
+type SignedAmount string
+
+var signedRe = regexp.MustCompile(`^-?\d{1,12}(\.\d{1,2})?$`)
+
+func (a *SignedAmount) UnmarshalJSON(b []byte) error {
+	v := strings.Trim(strings.TrimSpace(string(b)), `"`)
+	if !signedRe.MatchString(v) {
+		return apperr.Validation("price: ожидается сумма, например 5000 или -15000").Uz("price: summa kerak, masalan 5000 yoki -15000")
+	}
+	*a = SignedAmount(v)
+	return nil
 }
 
 // DeleteModifierGroup скрывает группу и отвязывает её от блюд.

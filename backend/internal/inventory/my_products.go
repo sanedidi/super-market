@@ -124,7 +124,8 @@ func (s *Service) MyProducts(ctx context.Context, p *identity.Principal, f MyPro
 	}
 
 	args := []any{f.StoreID, *wh, priceType}
-	where := ` WHERE pr.is_active`
+	// Блюда кафе не лежат на складе — в «Мои товары» их нет.
+	where := ` WHERE pr.is_active AND pr.kind <> 'dish'`
 	if f.CategoryID != "" {
 		if !httpx.IsUUID(f.CategoryID) {
 			return out, apperr.Validation("category_id: категория не найдена").Uz("category_id: kategoriya topilmadi")
@@ -175,7 +176,7 @@ func (s *Service) MyProducts(ctx context.Context, p *identity.Principal, f MyPro
 	crow, err := s.pool.Query(ctx, `
 		SELECT c.id, loc(c.name, c.name_uz), count(*)::int
 		FROM store_products sp
-		JOIN products pr  ON pr.id = sp.product_id AND pr.is_active
+		JOIN products pr  ON pr.id = sp.product_id AND pr.is_active AND pr.kind <> 'dish'
 		JOIN categories c ON c.id = pr.category_id
 		WHERE sp.store_id = $1
 		GROUP BY c.id ORDER BY 3 DESC, 2`, f.StoreID)

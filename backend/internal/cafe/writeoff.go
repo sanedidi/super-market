@@ -25,11 +25,18 @@ type Need struct {
 // строку, «+ сыр» добавляет продукт. Порядок — по id продукта (одинаковый
 // порядок блокировок у параллельных продаж).
 func Explode(ctx context.Context, q db.Querier, productID string, qty money.Dec, mods []ResolvedModifier) ([]Need, error) {
+	return explode(ctx, q, productID, qty, mods, 0)
+}
+
+func explode(ctx context.Context, q db.Querier, productID string, qty money.Dec, mods []ResolvedModifier, depth int) ([]Need, error) {
+	if depth > 3 {
+		return nil, nil
+	}
 	var yield string
 	if err := q.QueryRow(ctx, `SELECT yield_qty::text FROM products WHERE id = $1`, productID).Scan(&yield); err != nil {
 		return nil, err
 	}
-	rows, err := q.Query(ctx, `SELECT ingredient_id, qty::text FROM recipe_items WHERE product_id = $1 ORDER BY line`, productID)
+	rows, err := q.Query(ctx, `SELECT ingredient_id, qty::text FROM recipe_items WHERE product_id = $1 AND NOT not_tracked ORDER BY line`, productID)
 	if err != nil {
 		return nil, err
 	}
@@ -71,8 +78,25 @@ func Explode(ctx context.Context, q db.Querier, productID string, qty money.Dec,
 		add(l.id, money.D(l.qty).Mul(perUnit).Mul(qty))
 	}
 	for _, m := range mods {
-		if m.Action == ActionAdd {
-			add(m.ProductID, m.AddQty.Mul(money.D(strconv.Itoa(m.Qty))).Mul(qty))
+		if m.Action != ActionAdd {
+			continue
+		}
+		v := m.AddQty.Mul(money.D(strconv.Itoa(m.Qty))).Mul(qty)
+		// «+ салат ачичук × 0,5» — продукты этого блюда по его техкарте.
+		var kind string
+		if err := q.QueryRow(ctx, `SELECT kind FROM products WHERE id = $1`, m.ProductID).Scan(&kind); err != nil {
+			return nil, err
+		}
+		if kind != KindDish {
+			add(m.ProductID, v)
+			continue
+		}
+		sub, err := explode(ctx, q, m.ProductID, v, nil, depth+1)
+		if err != nil {
+			return nil, err
+		}
+		for _, n := range sub {
+			add(n.IngredientID, n.Qty)
 		}
 	}
 	out := make([]Need, 0, len(need))

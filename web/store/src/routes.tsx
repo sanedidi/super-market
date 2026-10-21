@@ -21,8 +21,11 @@ import {
   ShoppingCartOutlined,
   ShoppingOutlined,
   WalletOutlined,
+  CoffeeOutlined,
+  FireOutlined,
+  ShopOutlined,
 } from '@ant-design/icons'
-import { Shell, tr, type MenuItem } from '@sm/shared'
+import { Shell, tabLabels, tr, type MenuItem } from '@sm/shared'
 import { useStore } from './ctx'
 import { DashboardPage } from './pages/Dashboard'
 import { StartPage } from './pages/start/Start'
@@ -58,6 +61,12 @@ import { PosDevicesPage, PosShiftsPage } from './pages/Pos'
 import { DebtSettingsPage, DebtorsPage } from './pages/Debts'
 import { OrderAlerts } from './notify'
 import { FEATURE_BY_PATH, LockedFeature, PlanErrorHost, PlanPage } from './pages/Plan'
+import { MenuPage, StopListPage } from './pages/cafe/Menu'
+import { DishEditorPage } from './pages/cafe/Dish'
+import { ModifiersPage } from './pages/cafe/Modifiers'
+import { KitchenPage } from './pages/cafe/Kitchen'
+import { KitchenStockPage } from './pages/cafe/KitchenStock'
+import { PrepsPage } from './pages/cafe/Preps'
 
 const TITLE = tr('Панель магазина', 'Doʻkon paneli')
 
@@ -173,6 +182,36 @@ const MENU: Item[] = [
   { key: '/plan', label: tr('Тариф', 'Tarif'), icon: <CrownOutlined /> },
 ]
 
+// Кафе: вместо «Закупок» и «Склада» — «Меню», «Склад продуктов» и «Кухня»
+// (Figma «Веб-панель», Panel/Sidebar · Кафе). Приход, списание и
+// инвентаризация открываются со страницы «Склад продуктов».
+const CAFE_ITEMS: Item[] = [
+  { key: '/menu', label: tr('Меню', 'Menyu'), icon: <CoffeeOutlined /> },
+  { key: '/kitchen-stock', label: tr('Склад продуктов', 'Mahsulotlar ombori'), icon: <ShopOutlined /> },
+  { key: '/kitchen', label: tr('Кухня', 'Oshxona'), icon: <FireOutlined /> },
+]
+
+Object.assign(tabLabels, {
+  '/menu/modifiers': tr('Меню / Модификаторы', 'Menyu / Modifikatorlar'),
+  '/menu/stop': tr('Меню / Стоп-лист', 'Menyu / Stop-roʻyxat'),
+  '/menu/dishes/new': tr('Меню / Новое блюдо', 'Menyu / Yangi taom'),
+  '/menu/dishes/*': tr('Меню / Блюдо', 'Menyu / Taom'),
+  '/kitchen-stock/preps': tr('Склад продуктов / Заготовки', 'Mahsulotlar ombori / Yarim tayyorlar'),
+  '/kitchen-stock/preps/new': tr('Заготовки / Новая', 'Yarim tayyorlar / Yangi'),
+  '/kitchen-stock/preps/*': tr('Заготовки / Техкарта', 'Yarim tayyorlar / Texkarta'),
+})
+
+function menuFor(cafe: boolean): Item[] {
+  if (!cafe) return MENU
+  const out: Item[] = []
+  for (const i of MENU) {
+    if (i.key === 'purchases' || i.key === 'stock' || i.key === '/start') continue
+    out.push(i)
+    if (i.key === '/orders') out.push(...CAFE_ITEMS)
+  }
+  return out
+}
+
 function filterMenu(items: Item[], can: (p: string) => boolean, has: (f: string) => boolean): MenuItem[] {
   const allowed = (i: Item) => allowedBy(i.perm, can)
   const out: MenuItem[] = []
@@ -240,7 +279,8 @@ function Header() {
 
 export function StoreRoutes() {
   const { can, me, has } = useStore()
-  const menu = me ? filterMenu(MENU, can, has) : []
+  const cafe = me?.network.business_type === 'cafe'
+  const menu = me ? filterMenu(menuFor(cafe), can, has) : []
   return (
     <SetupGate>
     <Routes>
@@ -307,6 +347,17 @@ export function StoreRoutes() {
         <Route path="settings/roles" element={<RolesPage />} />
         <Route path="settings/employees" element={<EmployeesPage />} />
 
+        {cafe && [
+          <Route key="menu" path="menu" element={<MenuPage />} />,
+          <Route key="mods" path="menu/modifiers" element={<ModifiersPage />} />,
+          <Route key="stop" path="menu/stop" element={<StopListPage />} />,
+          <Route key="dish" path="menu/dishes/:id" element={<DishEditorPage kind="dish" />} />,
+          <Route key="kstock" path="kitchen-stock" element={<KitchenStockPage />} />,
+          <Route key="preps" path="kitchen-stock/preps" element={<PrepsPage />} />,
+          <Route key="prep-new" path="kitchen-stock/preps/new" element={<DishEditorPage kind="prep" />} />,
+          <Route key="prep" path="kitchen-stock/preps/:id/edit" element={<DishEditorPage kind="prep" />} />,
+          <Route key="kitchen" path="kitchen" element={<KitchenPage />} />,
+        ]}
         <Route path="balance" element={<BalancePage />} />
         <Route path="plan" element={<PlanPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -53,6 +53,11 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/production/{id}", m.getProduction)
 
 		r.Get("/shortfalls", m.listShortfalls)
+		r.Get("/production-preview", m.previewProduction)
+		r.Get("/stop-list", m.listStop)
+		r.Put("/stop-list", m.setStop)
+		r.Get("/ingredients", m.ingredients)
+		r.Get("/stock", m.stock)
 	})
 }
 
@@ -116,7 +121,7 @@ func (m *Module) listDishes(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Dish], error) {
 		items, err := m.svc.ListDishes(r.Context(), pr(r), DishFilter{
-			Kind: q.Get("kind"), Query: q.Get("q"), GroupID: q.Get("group_id"), StoreID: q.Get("store_id"),
+			Kind: q.Get("kind"), Query: q.Get("q"), GroupID: q.Get("group_id"), StoreID: q.Get("store_id"), WorkshopID: q.Get("workshop_id"),
 			NoRecipe: q.Get("no_recipe") == "1" || q.Get("no_recipe") == "true",
 			All:      q.Get("all") == "1" || q.Get("all") == "true",
 			Page:     httpx.PageFrom(r),
@@ -202,5 +207,41 @@ func (m *Module) listShortfalls(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Shortfall], error) {
 		items, err := m.svc.ListShortfalls(r.Context(), pr(r), r.URL.Query().Get("store_id"))
 		return httpx.List[Shortfall]{Items: items}, err
+	})
+}
+
+func (m *Module) previewProduction(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (ProductionPreview, error) {
+		return m.svc.PreviewProduction(r.Context(), pr(r), q.Get("store_id"), q.Get("product_id"), q.Get("qty"))
+	})
+}
+
+func (m *Module) listStop(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[StopItem], error) {
+		items, err := m.svc.ListStop(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+		return httpx.List[StopItem]{Items: items}, err
+	})
+}
+
+func (m *Module) setStop(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in StopInput) (httpx.List[StopItem], error) {
+		items, err := m.svc.SetStop(r.Context(), pr(r), in)
+		return httpx.List[StopItem]{Items: items}, err
+	})
+}
+
+func (m *Module) ingredients(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Ingredient], error) {
+		items, err := m.svc.SearchIngredients(r.Context(), pr(r), q.Get("q"), q.Get("with_dishes") == "1")
+		return httpx.List[Ingredient]{Items: items}, err
+	})
+}
+
+func (m *Module) stock(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (StockSummary, error) {
+		return m.svc.Stock(r.Context(), pr(r), q.Get("store_id"), q.Get("warehouse_id"), q.Get("q"), q.Get("status"))
 	})
 }

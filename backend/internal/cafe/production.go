@@ -30,26 +30,30 @@ type ProductionItem struct {
 }
 
 type Production struct {
-	ID          string           `json:"id"`
-	Number      int64            `json:"number"`
-	StoreID     string           `json:"store_id"`
-	WarehouseID string           `json:"warehouse_id"`
-	ProductID   string           `json:"product_id"`
-	ProductName string           `json:"product_name"`
-	UnitShort   string           `json:"unit_short"`
-	Qty         string           `json:"qty"`
-	Cost        string           `json:"cost"`
-	UnitCost    string           `json:"unit_cost"`
-	ExpiresAt   *time.Time       `json:"expires_at"`
-	Note        string           `json:"note"`
-	CreatedBy   string           `json:"created_by"`
-	CreatedAt   time.Time        `json:"created_at"`
-	Items       []ProductionItem `json:"items,omitempty"`
+	ID          string     `json:"id"`
+	Number      int64      `json:"number"`
+	StoreID     string     `json:"store_id"`
+	WarehouseID string     `json:"warehouse_id"`
+	ProductID   string     `json:"product_id"`
+	ProductName string     `json:"product_name"`
+	UnitShort   string     `json:"unit_short"`
+	Qty         string     `json:"qty"`
+	Cost        string     `json:"cost"`
+	UnitCost    string     `json:"unit_cost"`
+	ExpiresAt   *time.Time `json:"expires_at"`
+	Note        string     `json:"note"`
+	CreatedBy   string     `json:"created_by"`
+	CreatedAt   time.Time  `json:"created_at"`
+	// Кто готовил (повар) и когда.
+	Cook       *string          `json:"cook"`
+	ProducedAt time.Time        `json:"produced_at"`
+	Items      []ProductionItem `json:"items,omitempty"`
 }
 
 const productionSelect = `
 	SELECT d.id, d.number, d.store_id, d.warehouse_id, d.product_id, loc(p.name, p.name_uz), loc(u.short_name, u.short_name_uz),
-	       trim_scale(d.qty)::text, d.cost::text, round(d.cost / d.qty, 2)::text, d.expires_at, d.note, e.full_name, d.created_at
+	       trim_scale(d.qty)::text, d.cost::text, round(d.cost / d.qty, 2)::text, d.expires_at, d.note, e.full_name, d.created_at,
+	       (SELECT c.full_name FROM employees c WHERE c.id = d.cook_id), d.produced_at
 	FROM production_docs d
 	JOIN products p ON p.id = d.product_id
 	JOIN units u ON u.id = p.unit_id
@@ -58,7 +62,7 @@ const productionSelect = `
 func scanProduction(row pgx.CollectableRow) (Production, error) {
 	var d Production
 	err := row.Scan(&d.ID, &d.Number, &d.StoreID, &d.WarehouseID, &d.ProductID, &d.ProductName, &d.UnitShort,
-		&d.Qty, &d.Cost, &d.UnitCost, &d.ExpiresAt, &d.Note, &d.CreatedBy, &d.CreatedAt)
+		&d.Qty, &d.Cost, &d.UnitCost, &d.ExpiresAt, &d.Note, &d.CreatedBy, &d.CreatedAt, &d.Cook, &d.ProducedAt)
 	return d, err
 }
 
@@ -109,7 +113,7 @@ func (s *Service) ListProduction(ctx context.Context, p *identity.Principal, f P
 	rows, err := s.pool.Query(ctx, productionSelect+`
 		WHERE d.network_id = $1 AND ($2 OR d.store_id = ANY($3::uuid[]))
 		  AND ($4 = '' OR d.store_id::text = $4) AND ($5 = '' OR d.product_id::text = $5)
-		ORDER BY d.created_at DESC LIMIT $6 OFFSET $7`,
+		ORDER BY d.produced_at DESC, d.created_at DESC LIMIT $6 OFFSET $7`,
 		p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.StoreID, f.ProductID, f.Page.Limit, f.Page.Offset)
 	if err != nil {
 		return nil, err
@@ -125,6 +129,9 @@ type ProductionInput struct {
 	Qty         money.Qty  `json:"qty"`
 	ExpiresAt   *time.Time `json:"expires_at"`
 	Note        string     `json:"note"`
+	// Кто готовил (сотрудник сети) и когда; без них — кто провёл и сейчас.
+	CookID     *string    `json:"cook_id"`
+	ProducedAt *time.Time `json:"produced_at"`
 }
 
 // CreateProduction проводит производство заготовки сразу (без черновика).
@@ -167,6 +174,27 @@ func (s *Service) CreateProduction(ctx context.Context, p *identity.Principal, i
 			return Production{}, false, err
 		}
 	}
+	producedAt := s.now()
+	if in.ProducedAt != nil {
+		if in.ProducedAt.After(producedAt.Add(5*time.Minute)) || in.ProducedAt.Before(producedAt.Add(-7*24*time.Hour)) {
+			return Production{}, false, apperr.Validation("produced_at: не из будущего и не старше 7 дней").Uz("produced_at: kelajakdan emas va 7 kundan eski emas")
+		}
+		producedAt = *in.ProducedAt
+	}
+	if in.CookID != nil && *in.CookID == "" {
+		in.CookID = nil
+	}
+	if in.CookID != nil {
+		var ok bool
+		if httpx.IsUUID(*in.CookID) {
+			if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM employees WHERE id = $1 AND network_id = $2)`, *in.CookID, p.NetworkID).Scan(&ok); err != nil {
+				return Production{}, false, err
+			}
+		}
+		if !ok {
+			return Production{}, false, apperr.Validation("cook_id: сотрудник не найден").Uz("cook_id: xodim topilmadi")
+		}
+	}
 	var id string
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		warehouseID, err := storeWarehouse(ctx, tx, p.NetworkID, in.StoreID, in.WarehouseID)
@@ -189,7 +217,7 @@ func (s *Service) CreateProduction(ctx context.Context, p *identity.Principal, i
 		}
 		expires := in.ExpiresAt
 		if expires == nil && shelf != nil {
-			t := s.now().Add(time.Duration(*shelf) * time.Hour)
+			t := producedAt.Add(time.Duration(*shelf) * time.Hour)
 			expires = &t
 		}
 		qty := money.D(money.D(string(in.Qty)).Fixed(3))
@@ -198,9 +226,9 @@ func (s *Service) CreateProduction(ctx context.Context, p *identity.Principal, i
 			return err
 		}
 		err = tx.QueryRow(ctx, `
-			INSERT INTO production_docs (network_id, number, store_id, warehouse_id, product_id, qty, expires_at, note, client_uid, created_by)
-			VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9, $10) RETURNING id`,
-			p.NetworkID, n, in.StoreID, warehouseID, in.ProductID, qty.Fixed(3), expires, in.Note, in.ClientUID, p.EmployeeID).Scan(&id)
+			INSERT INTO production_docs (network_id, number, store_id, warehouse_id, product_id, qty, expires_at, note, client_uid, created_by, cook_id, produced_at)
+			VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9, $10, $11, $12) RETURNING id`,
+			p.NetworkID, n, in.StoreID, warehouseID, in.ProductID, qty.Fixed(3), expires, in.Note, in.ClientUID, p.EmployeeID, in.CookID, producedAt).Scan(&id)
 		if db.IsUniqueViolation(err, "production_docs_network_id_client_uid_key") {
 			return errDupProduction
 		}
