@@ -47,15 +47,27 @@ env:
   FLUTTER_VERSION: "3.44.x"
 
 jobs:
-  # Что собирать: метка [build: …] в сообщениях коммитов пуша или выбор при ручном запуске.
-  plan:
+  # Одно короткое задание (экономия минут): что собирать — метка [build: …] в сообщениях
+  # коммитов пуша или выбор при ручном запуске; какие приложения проверять — при пуше то,
+  # что изменилось, при ручном запуске то, что собирается («none» — проверить все).
+  changes:
     runs-on: ubuntu-latest
+    # В pull request paths-filter берёт список файлов через GitHub API — без
+    # pull-requests: read падает «Resource not accessible by integration».
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       windows: ${{ steps.p.outputs.windows }}
       pos-android: ${{ steps.p.outputs.pos-android }}
-      store: ${{ steps.p.outputs.store }}
-      courier: ${{ steps.p.outputs.courier }}
-      distributor: ${{ steps.p.outputs.distributor }}
+      build-store: ${{ steps.p.outputs.store }}
+      build-courier: ${{ steps.p.outputs.courier }}
+      build-distributor: ${{ steps.p.outputs.distributor }}
+      client: ${{ github.event_name == 'workflow_dispatch' && inputs.build == 'none' || steps.f.outputs.client == 'true' }}
+      store: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'none' || steps.p.outputs.store == 'true') || steps.f.outputs.store == 'true' }}
+      courier: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'none' || steps.p.outputs.courier == 'true') || steps.f.outputs.courier == 'true' }}
+      pos: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'none' || steps.p.outputs.windows == 'true' || steps.p.outputs.pos-android == 'true') || steps.f.outputs.pos == 'true' }}
+      distributor: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'none' || steps.p.outputs.distributor == 'true') || steps.f.outputs.distributor == 'true' }}
     steps:
       - id: p
         env:
@@ -92,34 +104,17 @@ jobs:
             echo "distributor=$distributor"
           } >> "$GITHUB_OUTPUT"
           echo "### Сборки: windows=$windows, pos-android=$posa, store=$store, courier=$courier, distributor=$distributor" >> "$GITHUB_STEP_SUMMARY"
-
-  # Какие приложения проверять: при пуше — что изменилось; при ручном запуске — то,
-  # что собирается («none» — проверить все).
-  changes:
-    needs: plan
-    runs-on: ubuntu-latest
-    # В pull request paths-filter берёт список файлов через GitHub API — без
-    # pull-requests: read падает «Resource not accessible by integration».
-    permissions:
-      contents: read
-      pull-requests: read
-    outputs:
-      client: ${{ github.event_name == 'workflow_dispatch' && inputs.build == 'none' || steps.f.outputs.client == 'true' }}
-      store: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'none' || needs.plan.outputs.store == 'true') || steps.f.outputs.store == 'true' }}
-      courier: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'none' || needs.plan.outputs.courier == 'true') || steps.f.outputs.courier == 'true' }}
-      pos: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'none' || needs.plan.outputs.windows == 'true' || needs.plan.outputs.pos-android == 'true') || steps.f.outputs.pos == 'true' }}
-      distributor: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'none' || needs.plan.outputs.distributor == 'true') || steps.f.outputs.distributor == 'true' }}
-    steps:
       - uses: actions/checkout@v4
+        if: github.event_name != 'workflow_dispatch'
       - uses: dorny/paths-filter@v3
         if: github.event_name != 'workflow_dispatch'
         id: f
         with:
+          # Правка этого файла не перепроверяет все приложения — экономия минут.
           filters: |
             shared: &shared
               - "apps/core/**"
               - "apps/scripts/**"
-              - ".github/workflows/apps.yml"
             client: [*shared, "apps/client/**"]
             store: [*shared, "apps/store/**"]
             courier: [*shared, "apps/courier/**"]
@@ -155,6 +150,8 @@ jobs:
         if: ${{ always() && needs.changes.outputs.client == 'true' }}
         with:
           name: client-screens
+          # Хранить неделю: место под артефакты на тарифе Free — 500 МБ.
+          retention-days: 7
           path: apps/client/test/screens/*.png
           if-no-files-found: ignore
       - name: Courier
@@ -188,9 +185,9 @@ jobs:
 
   # Касса для Windows: архив с SuperMarketPOS.exe — в артефакте pos-windows.
   pos-windows:
-    needs: [plan, analyze]
+    needs: [changes, analyze]
     # Сборка идёт, даже если проверка пропущена (приложение не менялось), но не после её ошибки.
-    if: ${{ !cancelled() && needs.plan.outputs.windows == 'true' && needs.analyze.result != 'failure' }}
+    if: ${{ !cancelled() && needs.changes.outputs.windows == 'true' && needs.analyze.result != 'failure' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -212,13 +209,15 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: pos-windows
+          # Хранить неделю: место под артефакты на тарифе Free — 500 МБ.
+          retention-days: 7
           path: apps/pos/build/windows/x64/runner/Release/
 
   # Касса для Android: APK — в артефакте pos-android.
   pos-android:
-    needs: [plan, analyze]
+    needs: [changes, analyze]
     # Сборка идёт, даже если проверка пропущена (приложение не менялось), но не после её ошибки.
-    if: ${{ !cancelled() && needs.plan.outputs.pos-android == 'true' && needs.analyze.result != 'failure' }}
+    if: ${{ !cancelled() && needs.changes.outputs.pos-android == 'true' && needs.analyze.result != 'failure' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -242,13 +241,15 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: pos-android
+          # Хранить неделю: место под артефакты на тарифе Free — 500 МБ.
+          retention-days: 7
           path: apps/pos/build/app/outputs/flutter-apk/app-release.apk
 
   # Приложение курьера для Android: APK — в артефакте courier-android.
   courier-android:
-    needs: [plan, analyze]
+    needs: [changes, analyze]
     # Сборка идёт, даже если проверка пропущена (приложение не менялось), но не после её ошибки.
-    if: ${{ !cancelled() && needs.plan.outputs.courier == 'true' && needs.analyze.result != 'failure' }}
+    if: ${{ !cancelled() && needs.changes.outputs.build-courier == 'true' && needs.analyze.result != 'failure' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -272,13 +273,15 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: courier-android
+          # Хранить неделю: место под артефакты на тарифе Free — 500 МБ.
+          retention-days: 7
           path: apps/courier/build/app/outputs/flutter-apk/app-release.apk
 
   # Приложение магазина для Android: APK — в артефакте store-android.
   store-android:
-    needs: [plan, analyze]
+    needs: [changes, analyze]
     # Сборка идёт, даже если проверка пропущена (приложение не менялось), но не после её ошибки.
-    if: ${{ !cancelled() && needs.plan.outputs.store == 'true' && needs.analyze.result != 'failure' }}
+    if: ${{ !cancelled() && needs.changes.outputs.build-store == 'true' && needs.analyze.result != 'failure' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -302,13 +305,15 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: store-android
+          # Хранить неделю: место под артефакты на тарифе Free — 500 МБ.
+          retention-days: 7
           path: apps/store/build/app/outputs/flutter-apk/app-release.apk
 
   # Приложение дистрибьютора для Android: APK — в артефакте distributor-android.
   distributor-android:
-    needs: [plan, analyze]
+    needs: [changes, analyze]
     # Сборка идёт, даже если проверка пропущена (приложение не менялось), но не после её ошибки.
-    if: ${{ !cancelled() && needs.plan.outputs.distributor == 'true' && needs.analyze.result != 'failure' }}
+    if: ${{ !cancelled() && needs.changes.outputs.build-distributor == 'true' && needs.analyze.result != 'failure' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -332,4 +337,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: distributor-android
+          # Хранить неделю: место под артефакты на тарифе Free — 500 МБ.
+          retention-days: 7
           path: apps/distributor/build/app/outputs/flutter-apk/app-release.apk
