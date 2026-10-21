@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart' show Lang, tr;
 
+import 'cafe/cafe_sale_screen.dart';
 import 'data/api.dart';
 import 'data/store.dart';
 import 'state/pos.dart';
@@ -36,6 +37,8 @@ class PosApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final stage = context.select<PosController, Stage>((p) => p.stage);
     final revoked = context.select<PosController, bool>((p) => p.revoked);
+    // Сеть-кафе: касса у прилавка с плитками блюд, номером заказа и бегунком.
+    final cafe = context.select<PosController, bool>((p) => p.catalog.cafe != null);
     return ListenableBuilder(
       listenable: Lang.instance,
       builder: (context, _) => MaterialApp(
@@ -56,7 +59,7 @@ class PosApp extends StatelessWidget {
                 Stage.activate => const ActivationScreen(),
                 Stage.login => const LoginScreen(),
                 Stage.openShift => const OpenShiftScreen(),
-                Stage.work => const SaleScreen(),
+                Stage.work => cafe ? const CafeSaleScreen() : const SaleScreen(),
               },
       ),
     );

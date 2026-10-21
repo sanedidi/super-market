@@ -97,9 +97,16 @@ class SaleRecord {
     this.received = 0,
     this.fiscal,
     this.debt,
+    this.order,
   });
 
   final String uid;
+
+  /// Заказ кафе: {'type': 'here'|'takeaway'|'delivery', 'no': 47}; null — магазин.
+  final Map<String, dynamic>? order;
+
+  int? get orderNo => (order?['no'] as num?)?.toInt();
+  String? get orderType => order?['type'] as String?;
 
   /// Часть итога в долг; null — оплачено полностью.
   final DebtPart? debt;
@@ -142,6 +149,8 @@ class SaleRecord {
             'ikpu': l.product.ikpu,
             'package_code': l.product.packageCode,
             'marks': l.marks,
+            if (l.mods.isNotEmpty) 'mods': [for (final m in l.mods) m.toJson()],
+            if (l.comment.isNotEmpty) 'comment': l.comment,
           },
       ];
 
@@ -158,8 +167,15 @@ class SaleRecord {
               'price': moneyApi(l['price'] as int),
               if ((l['discount'] as int) > 0) 'discount': moneyApi(l['discount'] as int),
               if ((l['marks'] as List).isNotEmpty) 'marking_codes': l['marks'],
+              if ((l['mods'] as List?)?.isNotEmpty ?? false)
+                'modifiers': [
+                  for (final m in (l['mods'] as List).cast<Map<String, dynamic>>()) {'option_id': m['option_id'], 'qty': m['qty'] ?? 1},
+                ],
+              if ((l['comment'] as String?)?.isNotEmpty ?? false) 'note': l['comment'],
             },
         ],
+        if (order != null) 'order_type': order!['type'],
+        if (order != null) 'order_no': order!['no'],
         'payments': [
           for (final p in payments) {'payment_method_id': p.methodId, 'amount': moneyApi(p.amount)},
         ],
@@ -180,6 +196,7 @@ class SaleRecord {
         'received': received,
         'fiscal': fiscal,
         if (debt != null) 'debt': debt!.toJson(),
+        if (order != null) 'order': order,
       };
 
   factory SaleRecord.fromJson(Map<String, dynamic> j) => SaleRecord(
@@ -194,6 +211,7 @@ class SaleRecord {
         received: (j['received'] as int?) ?? 0,
         fiscal: j['fiscal'] as Map<String, dynamic>?,
         debt: j['debt'] is Map ? DebtPart.fromJson(j['debt'] as Map<String, dynamic>) : null,
+        order: j['order'] is Map ? (j['order'] as Map).cast<String, dynamic>() : null,
       );
 }
 

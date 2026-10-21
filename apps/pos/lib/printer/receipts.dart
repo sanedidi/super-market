@@ -70,12 +70,24 @@ Uint8List saleReceipt({
   final p = EscPos(paperMm: paperMm, codePage: codePage);
   final r = FiscalReceipt.sale(sale);
   _header(p, s);
-  p.align(PrintAlign.center).bold(true).line(tr('КАССОВЫЙ ЧЕК · ПРОДАЖА', 'KASSA CHEKI · SOTUV')).bold(false).align(PrintAlign.left);
+  p.align(PrintAlign.center).bold(true).line(tr('КАССОВЫЙ ЧЕК · ПРОДАЖА', 'KASSA CHEKI · SOTUV')).bold(false);
+  // Кафе: номер заказа для гостя крупно.
+  final orderNo = sale.orderNo;
+  if (orderNo != null) {
+    p.bold(true).size(2, 2).line(tr('ЗАКАЗ № ${orderNo.toString().padLeft(3, '0')}', 'BUYURTMA № ${orderNo.toString().padLeft(3, '0')}')).size(1, 1).bold(false);
+  }
+  p.align(PrintAlign.left);
   p.pair(tr('Чек № ${serverNumber ?? sale.seq}', 'Chek № ${serverNumber ?? sale.seq}'), _dt(sale.soldAt));
   p.pair(shiftLabel, tr('Кассир: ${sale.cashierName}', 'Kassir: ${sale.cashierName}'));
   p.dashes();
-  for (final l in r.lines) {
-    _line(p, l);
+  for (var i = 0; i < r.lines.length; i++) {
+    _line(p, r.lines[i]);
+    // Кафе: модификаторы блюда под строкой.
+    final mods = i < sale.lines.length ? ((sale.lines[i]['mods'] as List?) ?? const []).cast<Map<String, dynamic>>() : const <Map<String, dynamic>>[];
+    for (final m in mods) {
+      final price = (m['price'] as int?) ?? 0;
+      p.wrapped('  • ${m['name']}${price != 0 ? ' (${price > 0 ? '+' : ''}${fmtMoney(price)})' : ''}');
+    }
   }
   p.dashes();
   p.bold(true).size(1, 2).pair(tr('ИТОГО', 'JAMI'), fmtMoney(r.total)).size(1, 1).bold(false);

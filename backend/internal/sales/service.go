@@ -50,6 +50,8 @@ type SaleItem struct {
 	// FiscalName — название для фискального чека: всегда основное (русское),
 	// как в чеке продажи; product_name — на языке запроса.
 	FiscalName string `json:"fiscal_name"`
+	// Комментарий для кухни (кафе).
+	Note string `json:"note"`
 	// Модификаторы блюда кафе (для чека и бегунка).
 	Modifiers []SaleItemModifier `json:"modifiers,omitempty" db:"-"`
 }
@@ -89,13 +91,16 @@ type Sale struct {
 	ShiftID       *string   `json:"shift_id"`
 	CreatedAt     time.Time `json:"created_at"`
 	// В долг: сумма, покупатель и его долг в магазине сейчас (для чека).
-	DebtAmount    string        `json:"debt_amount"`
-	DebtorName    string        `json:"debtor_name"`
-	DebtorPhone   string        `json:"debtor_phone"`
-	DebtBalance   string        `json:"debt_balance"`
-	DebtOverLimit bool          `json:"debt_over_limit"`
-	Items         []SaleItem    `json:"items,omitempty"`
-	Payments      []SalePayment `json:"payments,omitempty"`
+	DebtAmount    string `json:"debt_amount"`
+	DebtorName    string `json:"debtor_name"`
+	DebtorPhone   string `json:"debtor_phone"`
+	DebtBalance   string `json:"debt_balance"`
+	DebtOverLimit bool   `json:"debt_over_limit"`
+	// Кафе: тип заказа и номер дня.
+	OrderType *string       `json:"order_type"`
+	OrderNo   *int          `json:"order_no"`
+	Items     []SaleItem    `json:"items,omitempty"`
+	Payments  []SalePayment `json:"payments,omitempty"`
 }
 
 const saleSelect = `
@@ -104,7 +109,7 @@ const saleSelect = `
 	       s.fiscal_sign, s.fiscal_qr, s.fiscal_module, s.shift_id, s.created_at,
 	       s.debt_amount::text, COALESCE(dr.full_name, ''), COALESCE(dr.phone, ''),
 	       COALESCE((SELECT sum(de.amount) FROM debt_entries de WHERE de.debtor_id = s.debtor_id AND de.store_id = s.store_id), 0)::numeric(18,2)::text,
-	       s.debt_over_limit
+	       s.debt_over_limit, s.order_type, s.order_no
 	FROM sales s JOIN stores st ON st.id = s.store_id JOIN employees e ON e.id = s.cashier_id
 	LEFT JOIN debtors dr ON dr.id = s.debtor_id`
 
@@ -113,7 +118,7 @@ func scanSale(row pgx.CollectableRow) (Sale, error) {
 	err := row.Scan(&s.ID, &s.Number, &s.StoreID, &s.StoreName, &s.WarehouseID, &s.ClientUID, &s.Subtotal,
 		&s.Discount, &s.Total, &s.CustomerPhone, &s.Note, &s.Cashier, &s.SoldAt, &s.FiscalStatus,
 		&s.FiscalNumber, &s.FiscalSign, &s.FiscalQR, &s.FiscalModule, &s.ShiftID, &s.CreatedAt,
-		&s.DebtAmount, &s.DebtorName, &s.DebtorPhone, &s.DebtBalance, &s.DebtOverLimit)
+		&s.DebtAmount, &s.DebtorName, &s.DebtorPhone, &s.DebtBalance, &s.DebtOverLimit, &s.OrderType, &s.OrderNo)
 	return s, err
 }
 
@@ -133,7 +138,7 @@ func (s *Service) getSale(ctx context.Context, q db.Querier, p *identity.Princip
 		SELECT i.line, i.product_id, loc(p.name, p.name_uz), i.qty::text, i.price::text, i.discount::text, i.total::text,
 		       COALESCE((SELECT sum(ri.qty) FROM customer_return_items ri JOIN customer_returns r ON r.id = ri.return_id
 		                 WHERE r.sale_id = i.sale_id AND ri.sale_line = i.line), 0)::text,
-		       p.ikpu, p.package_code, p.vat_rate::text, i.marking_codes, p.name
+		       p.ikpu, p.package_code, p.vat_rate::text, i.marking_codes, p.name, i.note
 		FROM sale_items i JOIN products p ON p.id = i.product_id
 		WHERE i.sale_id = $1 ORDER BY i.line`, id)
 	if err != nil {
@@ -240,8 +245,13 @@ type SaleInput struct {
 		MarkingCodes []string `json:"marking_codes"`
 		// Модификаторы блюда кафе («без лука», «+ сыр», «0,5 порции»).
 		Modifiers []cafe.ChosenModifier `json:"modifiers"`
+		// Комментарий для кухни («рис помягче»).
+		Note string `json:"note"`
 	} `json:"items"`
-	Payments []struct {
+	// Кафе: «Здесь / С собой / Доставка» и номер заказа дня для гостя (выдаёт касса).
+	OrderType *string `json:"order_type"`
+	OrderNo   *int    `json:"order_no"`
+	Payments  []struct {
 		PaymentMethodID string       `json:"payment_method_id"`
 		Amount          money.Amount `json:"amount"`
 	} `json:"payments"`
@@ -307,6 +317,17 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 	}
 	if len(in.Items) == 0 || len(in.Items) > 500 {
 		return Sale{}, false, apperr.Validation("items: от 1 до 500 строк").Uz("items: 1 dan 500 tagacha qator")
+	}
+	if in.OrderType != nil && *in.OrderType != "here" && *in.OrderType != "takeaway" && *in.OrderType != "delivery" {
+		return Sale{}, false, apperr.Validation("order_type: ожидается here, takeaway или delivery").Uz("order_type: here, takeaway yoki delivery boʻlishi kerak")
+	}
+	if in.OrderNo != nil && (*in.OrderNo < 1 || *in.OrderNo > 9999) {
+		return Sale{}, false, apperr.Validation("order_no: от 1 до 9999").Uz("order_no: 1 dan 9999 gacha")
+	}
+	for _, it := range in.Items {
+		if len([]rune(it.Note)) > 200 {
+			return Sale{}, false, apperr.Validation("items: комментарий до 200 символов").Uz("items: izoh 200 belgigacha")
+		}
 	}
 	if len(in.Payments) == 0 && in.Debt == nil {
 		return Sale{}, false, apperr.Validation("payments: укажите оплату").Uz("payments: toʻlovni kiriting")
@@ -394,10 +415,11 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 		}
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO sales (network_id, store_id, warehouse_id, number, client_uid, price_type_id,
-			                   subtotal, discount, total, cost, customer_phone, note, cashier_id, sold_at, device_id, shift_id)
-			VALUES ($1, $2, $3, $4, $5, $6, 0, 0, 0, 0, $7, $8, $9, $10, NULLIF($11, '')::uuid, $12) RETURNING id`,
+			                   subtotal, discount, total, cost, customer_phone, note, cashier_id, sold_at, device_id, shift_id, order_type, order_no)
+			VALUES ($1, $2, $3, $4, $5, $6, 0, 0, 0, 0, $7, $8, $9, $10, NULLIF($11, '')::uuid, $12, $13, $14) RETURNING id`,
 			p.NetworkID, in.StoreID, warehouseID, n, in.ClientUID, priceTypeID,
-			strings.TrimSpace(in.CustomerPhone), strings.TrimSpace(in.Note), p.EmployeeID, soldAt, p.DeviceID, in.ShiftID).Scan(&id); err != nil {
+			strings.TrimSpace(in.CustomerPhone), strings.TrimSpace(in.Note), p.EmployeeID, soldAt, p.DeviceID, in.ShiftID,
+			in.OrderType, in.OrderNo).Scan(&id); err != nil {
 			if db.IsUniqueViolation(err, "sales_network_id_client_uid_key") {
 				return errDuplicate
 			}
@@ -516,10 +538,10 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 				lineCost = lineCost.Add(t.Cost)
 			}
 			if _, err := tx.Exec(ctx, `
-				INSERT INTO sale_items (sale_id, line, product_id, qty, price, discount, total, cost, marking_codes, short_qty)
-				VALUES ($1, $2, $3, $4::numeric, $5::numeric, $6::numeric, $7::numeric, $8::numeric, $9, $10::numeric)`,
+				INSERT INTO sale_items (sale_id, line, product_id, qty, price, discount, total, cost, marking_codes, short_qty, note)
+				VALUES ($1, $2, $3, $4::numeric, $5::numeric, $6::numeric, $7::numeric, $8::numeric, $9, $10::numeric, $11)`,
 				id, line, it.ProductID, qty.Fixed(3), price, lineDiscount.Money(),
-				lineSum.Sub(lineDiscount).Money(), lineCost.Money(), codes, short); err != nil {
+				lineSum.Sub(lineDiscount).Money(), lineCost.Money(), codes, short, strings.TrimSpace(it.Note)); err != nil {
 				return err
 			}
 			if dish {

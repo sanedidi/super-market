@@ -489,3 +489,89 @@ func TestCafePanel(t *testing.T) {
 		t.Fatalf("dough used_in = %v", d.Body["used_in"])
 	}
 }
+
+// TestCafePOS — касса кафе (этап 3): меню кафе в каталоге кассы, продажа
+// блюда с модификаторами, комментарием, типом и номером заказа.
+func TestCafePOS(t *testing.T) {
+	pool := freshDB(t)
+	cfg := testConfig()
+	cfg.DevOTPCode = "111111"
+	a := newAPI(t, cfg, pool, nil)
+	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
+	cat := a.expect(a.do("POST", "/admin/catalog/categories", adminTok, map[string]any{"name": "Продукты"}), 201, "category")
+	var kg string
+	for _, u := range a.expect(a.do("GET", "/admin/catalog/units", adminTok, nil), 200, "units").items() {
+		if u["short_name"] == "кг" {
+			kg = u["id"].(string)
+		}
+	}
+	rice := a.expect(a.do("POST", "/admin/products", adminTok, map[string]any{"name": "Рис", "category_id": cat.str("id"), "unit_id": kg}), 201, "rice").str("id")
+	onion := a.expect(a.do("POST", "/admin/products", adminTok, map[string]any{"name": "Лук", "category_id": cat.str("id"), "unit_id": kg}), 201, "onion").str("id")
+	a.expect(a.do("POST", "/admin/networks", adminTok, map[string]any{
+		"name": "Кафе", "kind": "single", "owner_phone": "+998900000002", "owner_name": "В", "business_type": "cafe",
+	}), 201, "cafe")
+	tok, _ := a.login("+998900000002", identity.AppStore)
+	store := a.expect(a.do("POST", "/store/stores", tok, map[string]any{"name": "Кафе 1"}), 201, "store").str("id")
+	g := a.expect(a.do("POST", "/store/cafe/menu-groups", tok, map[string]any{"name": "Горячее", "color": "#E8A33D"}), 201, "group").str("id")
+	rm := a.expect(a.do("POST", "/store/cafe/modifier-groups", tok, map[string]any{
+		"name": "Убрать", "options": []map[string]any{{"name": "без лука", "action": "remove", "product_id": onion}},
+	}), 201, "mods")
+	noOnion := rm.Body["options"].([]any)[0].(map[string]any)["id"].(string)
+	plov := a.expect(a.do("POST", "/store/cafe/dishes", tok, map[string]any{
+		"kind": "dish", "name": "Плов", "price": 35000, "menu_code": 12, "menu_group_id": g, "ikpu": "10202001001000000",
+		"recipe":             []map[string]any{{"ingredient_id": rice, "qty": 0.15}, {"ingredient_id": onion, "qty": 0.05}},
+		"modifier_group_ids": []string{rm.str("id")}, "portion": "350 г",
+	}), 201, "plov").str("id")
+	a.expect(a.do("PUT", "/store/cafe/stop-list", tok, map[string]any{"store_id": store, "product_id": plov, "stopped": true}), 200, "stop")
+
+	dev := a.expect(a.do("POST", "/store/pos/devices", tok, map[string]any{"store_id": store, "name": "Касса 1"}), 201, "device")
+	dt := a.expect(a.do("POST", "/pos/activate", "", map[string]any{"code": dev.str("activation_code")}), 200, "activate").str("token")
+	c := a.expect(posDo(a, "GET", "/pos/catalog", dt, "", nil), 200, "catalog")
+	menu, ok := c.Body["cafe"].(map[string]any)
+	if !ok || menu["mode"] != "counter" || len(menu["groups"].([]any)) != 1 || len(menu["modifier_groups"].([]any)) != 1 ||
+		len(menu["stop"].([]any)) != 1 || len(menu["workshops"].([]any)) != 1 {
+		t.Fatalf("cafe menu = %v", c.Body["cafe"])
+	}
+	d := menu["dishes"].([]any)[0].(map[string]any)
+	if d["product_id"] != plov || d["menu_code"].(float64) != 12 || d["on_sale"] != true || d["workshop_id"] == nil || len(d["modifier_group_ids"].([]any)) != 1 {
+		t.Fatalf("dish = %v", d)
+	}
+	var cash string
+	for _, x := range c.Body["payment_methods"].([]any) {
+		if m := x.(map[string]any); m["kind"] == "cash" {
+			cash = m["id"].(string)
+		}
+	}
+	var owner string
+	for _, e := range a.expect(a.do("GET", "/store/employees", tok, nil), 200, "employees").items() {
+		owner = e["id"].(string)
+	}
+	a.expect(a.do("PUT", "/store/pos/pins/"+owner, tok, map[string]any{"pin": "9999"}), 200, "pin")
+	shift := a.expect(posDo(a, "POST", "/pos/shifts", dt, owner, map[string]any{"client_uid": "shift-cafe-01"}), 201, "shift").str("id")
+	a.expect(posDo(a, "POST", "/pos/sales", dt, owner, map[string]any{
+		"client_uid": "cafe-pos-0001", "shift_id": shift, "order_type": "inside",
+		"items":    []map[string]any{{"product_id": plov, "qty": 1, "price": 35000}},
+		"payments": []map[string]any{{"payment_method_id": cash, "amount": 35000}},
+	}), 400, "bad order type")
+	s := a.expect(posDo(a, "POST", "/pos/sales", dt, owner, map[string]any{
+		"client_uid": "cafe-pos-0002", "shift_id": shift, "order_type": "takeaway", "order_no": 47,
+		"items": []map[string]any{
+			{"product_id": plov, "qty": 2, "price": 35000, "modifiers": []map[string]any{{"option_id": noOnion}}, "note": "рис помягче"},
+			{"product_id": plov, "qty": 1, "price": 35000},
+		},
+		"payments": []map[string]any{{"payment_method_id": cash, "amount": 105000}},
+	}), 201, "cafe pos sale")
+	items := s.Body["items"].([]any)
+	if s.Body["order_no"].(float64) != 47 || s.str("order_type") != "takeaway" || len(items) != 2 ||
+		items[0].(map[string]any)["note"] != "рис помягче" || len(items[0].(map[string]any)["modifiers"].([]any)) != 1 {
+		t.Fatalf("sale = %v", s.Body)
+	}
+	// Рис списан на 3 порции, лук — только на одну (две «без лука») — в минус.
+	var short string
+	if err := pool.QueryRow(context.Background(), `SELECT trim_scale(sum(qty))::text FROM stock_shortfalls WHERE product_id = $1`, onion).Scan(&short); err != nil {
+		t.Fatal(err)
+	}
+	if short != "0.05" {
+		t.Fatalf("onion shortfall = %s", short)
+	}
+}

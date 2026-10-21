@@ -11,7 +11,7 @@ import '../core/quick.dart';
 import 'pos.dart';
 
 /// Команды быстрого режима — клавиши, которые не печатают символ.
-enum Cmd { enter, esc, del, backspace, up, down, star, pay, qty, item, search, discountLine, discountAll, hold, returns, orders, shiftMenu, debtQr, debtPay, price }
+enum Cmd { enter, esc, del, backspace, up, down, star, pay, qty, item, search, discountLine, discountAll, hold, returns, orders, shiftMenu, debtQr, debtPay, price, dish }
 
 enum SaleMode { sale, paid, held }
 
@@ -102,6 +102,71 @@ class SaleController extends ChangeNotifier {
 
   bool get canPrice => pos.canPrice;
 
+  // ---------------------------------------------------------------- кафе
+
+  /// Кафе: тип и номер заказа для чека ({'type': 'takeaway'}); касса добавит номер дня.
+  Map<String, dynamic>? Function()? orderInfo;
+
+  /// Блюдо по коду, у которого есть модификаторы: окно выбора (Cmd.dish)
+  /// заберёт его через [takeDishPending] вместе с количеством.
+  (Product, int)? _dishPending;
+
+  (Product, int)? takeDishPending() {
+    final r = _dishPending;
+    _dishPending = null;
+    return r;
+  }
+
+  /// Блюдо в чек с модификаторами и комментарием (окно модификаторов, плитка).
+  /// Ошибка — текст, успех — null.
+  String? addDish(Product p, {int qty = 1000, List<LineMod> mods = const [], String comment = ''}) {
+    if (busy || mode == SaleMode.held) return tr('Касса занята', 'Kassa band');
+    if (!p.active) return tr('Блюдо снято с продажи', 'Taom sotuvdan olingan');
+    if (catalog.cafe?.stopped(p.id) ?? false) return tr('«${p.name}» на стопе — закончилось', '«${p.name}» stopda — tugagan');
+    if (p.ikpu.isEmpty && pos.fiscalMode) return tr('Нет ИКПУ — продавать нельзя. Владелец заполняет в панели', 'MXIK yoʻq — sotib boʻlmaydi. Egasi panelda toʻldiradi');
+    if (mode == SaleMode.paid) _newCheck();
+    mode = SaleMode.sale;
+    rowFocused = false;
+    try {
+      final line = cart.addDish(p, qty: qty, mods: mods, comment: comment);
+      msg = SaleMsg(MsgKind.ok, p.name,
+          note: mods.map((m) => m.name).join(' · '), right: fmtMoney(line.total), rightNote: '${fmtQty(line.qty)} × ${fmtMoney(line.price)}');
+      onSound?.call(true);
+      notifyListeners();
+      return null;
+    } on CartError catch (e) {
+      return e.message;
+    }
+  }
+
+  /// Модификаторы и комментарий строки поменяли в окне (из чека).
+  void replaceDish(CartLine line, {required int qty, required List<LineMod> mods, required String comment}) {
+    if (mode != SaleMode.sale) return;
+    cart.replaceDish(line, qty: qty, mods: mods, comment: comment);
+    notifyListeners();
+  }
+
+  /// Блюдо по коду или из поиска: с модификаторами — окно, иначе сразу в чек.
+  void _dishOrAsk(Product p, int qty) {
+    final menu = catalog.cafe;
+    if (menu != null && menu.modsOf(p.id).isNotEmpty) {
+      _dishPending = (p, qty);
+      onNavigate?.call(Cmd.dish);
+      return;
+    }
+    final err = addDish(p, qty: qty);
+    if (err != null) _error(err, note: p.name);
+  }
+
+  /// Набранное число перед плиткой — количество порций (по умолчанию 1).
+  int takeTypedQty() {
+    final raw = input.trim();
+    if (raw.isEmpty) return 1000;
+    _clearInput();
+    final q = (parseQty(raw) ~/ 1000) * 1000;
+    return q <= 0 ? 1000 : q;
+  }
+
   /// Окно цены: цена сохраняется на сервере, товар — в чек. Ошибка — текст.
   Future<String?> setPrice(PendingPrice r, int price) async {
     if (price <= 0) return tr('Цена должна быть больше нуля', 'Narx noldan katta boʻlishi kerak');
@@ -157,8 +222,11 @@ class SaleController extends ChangeNotifier {
   /// Сколько штук товара уже в чеке (для значка на плитке), 0 — нет.
   int inCart(String productId) {
     if (mode != SaleMode.sale) return 0;
-    final l = cart.lineOf(productId);
-    return l == null ? 0 : l.qty;
+    var q = 0;
+    for (final l in cart.lines) {
+      if (l.product.id == productId) q += l.qty;
+    }
+    return q;
   }
 
   /// Нажатие на плитку: +1 в чек; набранное на клавиатуре — количество
@@ -362,6 +430,7 @@ class SaleController extends ChangeNotifier {
       case Cmd.debtQr:
       case Cmd.debtPay:
       case Cmd.price:
+      case Cmd.dish:
         break; // только навигация: окна «В долг», погашения долга и цены открывает экран продажи
       case Cmd.returns:
       case Cmd.shiftMenu:
@@ -424,6 +493,13 @@ class SaleController extends ChangeNotifier {
     // Сканер, длинный код или буквы — штрихкод/марка; короткие цифры — код товара.
     if (scanned || !digits || raw.length >= 8) {
       _scanCode(raw);
+      return;
+    }
+    // Кафе: короткий код блюда («12» + Enter).
+    final dishId = catalog.cafe?.byCode(int.parse(raw));
+    final dish = dishId == null ? null : catalog.byId(dishId);
+    if (dish != null) {
+      _dishOrAsk(dish, 1000);
       return;
     }
     final p = catalog.byPlu(int.parse(raw));
@@ -743,7 +819,7 @@ class SaleController extends ChangeNotifier {
     busy = true;
     notifyListeners();
     try {
-      final rec = await pos.recordSale(cart, payments, received: kind == 'card' || kind == 'qr' ? 0 : received);
+      final rec = await pos.recordSale(cart, payments, received: kind == 'card' || kind == 'qr' ? 0 : received, order: orderInfo?.call());
       paid = PaidInfo(rec, label);
       mode = SaleMode.paid;
       rowFocused = false;
@@ -781,7 +857,8 @@ class SaleController extends ChangeNotifier {
     try {
       final rec = await pos.recordSale(cart, payments,
           received: restKind == 'cash' ? rest : 0,
-          debt: DebtPart(phone: who.phone, name: buyer, amount: debt, balance: who.debt + debt));
+          debt: DebtPart(phone: who.phone, name: buyer, amount: debt, balance: who.debt + debt),
+          order: orderInfo?.call());
       final label = rest > 0
           ? tr('В долг ${fmtMoney(debt)} + ${fmtMoney(rest)} ${restKind == 'cash' ? 'наличными' : 'картой'}',
               'Qarzga ${fmtMoney(debt)} + ${fmtMoney(rest)} ${restKind == 'cash' ? 'naqd' : 'karta'}')

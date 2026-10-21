@@ -16,6 +16,7 @@ import '../data/api.dart';
 import '../data/outbox.dart';
 import '../data/store.dart';
 import '../fiscal/fiscal.dart';
+import '../cafe/tickets.dart';
 import '../printer/receipts.dart';
 import '../printer/transport.dart';
 
@@ -98,6 +99,18 @@ class PosController extends ChangeNotifier {
   final List<HeldCart> held = [];
   int _saleSeq = 0;
 
+  /// Кафе: номер заказа дня для гостя («№ 047»), с 1 каждый день на этой кассе.
+  int _orderNo = 0;
+  String _orderDay = '';
+
+  String _today() {
+    final d = _now();
+    return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  }
+
+  /// Номер, который получит следующий заказ кафе.
+  int get nextOrderNo => _orderDay == _today() ? (_orderNo % 999) + 1 : 1;
+
   /// Номера чеков на сервере: client_uid → номер.
   final Map<String, int> serverNumbers = {};
 
@@ -167,6 +180,8 @@ class PosController extends ChangeNotifier {
     final st = await store.readJson('state.json');
     if (st != null) {
       _saleSeq = (st['sale_seq'] as int?) ?? 0;
+      _orderNo = (st['order_no'] as int?) ?? 0;
+      _orderDay = st['order_day'] as String? ?? '';
       if (st['shift'] != null) shift = LocalShift.fromJson(st['shift'] as Map<String, dynamic>);
       for (final h in (st['held'] as List?) ?? const []) {
         held.add(HeldCart.fromJson(h as Map<String, dynamic>));
@@ -217,6 +232,8 @@ class PosController extends ChangeNotifier {
 
   Future<void> _saveState() => store.writeJson('state.json', {
         'sale_seq': _saleSeq,
+        'order_no': _orderNo,
+        'order_day': _orderDay,
         'shift': shift?.toJson(),
         'held': [for (final h in held) h.toJson()],
         'closed_shifts': _closedServerShifts.toList(),
@@ -553,7 +570,8 @@ class PosController extends ChangeNotifier {
 
   /// Чек оплачен: фискальный модуль (если подключён), журнал смены, очередь,
   /// печать. Сервер не нужен.
-  Future<SaleRecord> recordSale(Cart cart, List<Payment> payments, {int received = 0, Map<String, dynamic>? fiscal, DebtPart? debt}) async {
+  Future<SaleRecord> recordSale(Cart cart, List<Payment> payments,
+      {int received = 0, Map<String, dynamic>? fiscal, DebtPart? debt, Map<String, dynamic>? order}) async {
     final blocked = saleBlocked;
     if (blocked != null) throw CartError(blocked);
     if (debt != null && fiscalMode) {
@@ -562,6 +580,8 @@ class PosController extends ChangeNotifier {
     }
     final uid = _uuid.v4();
     final soldAt = _now();
+    // Кафе: номер заказа дня выдаёт касса — и без интернета.
+    final orderNo = order == null ? null : nextOrderNo;
     var draft = SaleRecord(
       uid: uid,
       seq: _saleSeq + 1,
@@ -574,6 +594,7 @@ class PosController extends ChangeNotifier {
       received: received,
       fiscal: fiscal,
       debt: debt,
+      order: order == null ? null : {...order, 'no': orderNo},
     );
     if (fiscalMode && fiscal == null) {
       final receipt = FiscalReceipt.sale(draft);
@@ -587,6 +608,10 @@ class PosController extends ChangeNotifier {
       }
     }
     _saleSeq++;
+    if (orderNo != null) {
+      _orderNo = orderNo;
+      _orderDay = _today();
+    }
     final rec = draft;
     await store.append(_journalName(rec.shiftUid), rec.toJson());
     await outbox.add('sale', rec.toJson(), rec.cashierId, at: rec.soldAt);
@@ -594,8 +619,22 @@ class PosController extends ChangeNotifier {
     journal.add(rec);
     notifyListeners();
     unawaited(sync());
-    unawaited(printSale(rec));
+    unawaited(printSale(rec).then((_) => printKitchen(rec)));
     return rec;
+  }
+
+  /// Кафе: номерок гостю и бегунки по цехам на принтер чеков (экраны кухни и
+  /// принтеры цехов — на следующем этапе). Ошибка не мешает продаже.
+  Future<bool> printKitchen(SaleRecord rec) async {
+    final menu = catalog.cafe;
+    if (menu == null || rec.order == null) return false;
+    return _print(() => kitchenTickets(
+          s: catalog.settings,
+          sale: rec,
+          menu: menu,
+          paperMm: printer.paperMm,
+          codePage: printer.codePage,
+        ));
   }
 
   String get _shiftLabel => '${catalog.settings.deviceName.isEmpty ? tr('Касса', 'Kassa') : catalog.settings.deviceName}'

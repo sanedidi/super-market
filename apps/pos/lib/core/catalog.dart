@@ -1,5 +1,6 @@
 import 'package:sm_core/sm_core.dart' show tr;
 
+import '../cafe/menu.dart';
 import 'money.dart';
 
 /// Товар из каталога кассы (GET /pos/catalog).
@@ -312,6 +313,9 @@ class Catalog {
   /// Покупатели сети с их долгом в этом магазине: телефон → покупатель.
   Map<String, Debtor> debtors = {};
 
+  /// Меню кафе (группы, модификаторы, стоп-лист); null — касса магазина.
+  CafeMenu? cafe;
+
   Iterable<Product> get products => _byId.values;
   int get length => _byId.length;
 
@@ -398,6 +402,10 @@ class Catalog {
       quickPinned = ((q['pinned'] as List?) ?? const []).map((e) => '$e').toList();
       quickTop = ((q['top'] as List?) ?? const []).map((e) => '$e').toList();
     }
+    // Меню кафе сервер присылает целиком при каждой синхронизации (null — не кафе).
+    if (j.containsKey('cafe')) {
+      cafe = j['cafe'] is Map ? CafeMenu.fromJson(j['cafe'] as Map<String, dynamic>) : null;
+    }
     if (j['debtors'] is List) {
       debtors = {
         for (final e in (j['debtors'] as List).cast<Map<String, dynamic>>())
@@ -417,6 +425,7 @@ class Catalog {
         'settings': settings.toJson(),
         'open_shift_id': openShiftId,
         'debtors': [for (final d in debtors.values) d.toJson()],
+        'cafe': cafe?.toJson(),
       };
 
   factory Catalog.fromJson(Map<String, dynamic> j) => Catalog()..apply(j);

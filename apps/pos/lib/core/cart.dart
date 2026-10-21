@@ -3,14 +3,47 @@ import 'package:sm_core/sm_core.dart' show tr;
 import 'catalog.dart';
 import 'money.dart';
 
+/// Модификатор блюда в строке (кафе): «без лука», «+ казы», «0,5 порции».
+/// Цена — доплата за одну порцию в тийинах (может быть отрицательной).
+class LineMod {
+  LineMod({required this.optionId, required this.name, this.qty = 1, this.price = 0, this.action = 'none'});
+
+  final String optionId;
+  final String name;
+  final int qty;
+  final int price;
+  final String action;
+
+  Map<String, dynamic> toJson() => {'option_id': optionId, 'name': name, 'qty': qty, 'price': price, 'action': action};
+
+  factory LineMod.fromJson(Map<String, dynamic> j) => LineMod(
+        optionId: j['option_id'] as String,
+        name: j['name'] as String? ?? '',
+        qty: (j['qty'] as int?) ?? 1,
+        price: (j['price'] as int?) ?? 0,
+        action: j['action'] as String? ?? 'none',
+      );
+}
+
 /// Строка чека. Цена фиксируется при добавлении: если каталог обновится
 /// посреди чека, покупатель платит то, что видел на экране.
 class CartLine {
-  CartLine({required this.product, required this.qty, int? price, List<String>? marks})
+  CartLine({required this.product, required this.qty, int? price, List<String>? marks, List<LineMod>? mods, this.comment = ''})
       : price = price ?? product.price,
-        marks = marks ?? [];
+        marks = marks ?? [],
+        mods = mods ?? [];
 
   final Product product;
+
+  /// Модификаторы блюда (кафе); у товара магазина — пусто. Цена строки уже
+  /// включает их доплату.
+  final List<LineMod> mods;
+
+  /// Комментарий для кухни («рис помягче»).
+  String comment;
+
+  /// Одинаковые модификаторы и комментарий — та же строка (+1 к количеству).
+  String get modKey => '${mods.map((m) => '${m.optionId}x${m.qty}').join(',')}|$comment';
 
   /// Количество в тысячных.
   int qty;
@@ -48,6 +81,8 @@ class CartLine {
         'marks': marks,
         'discount_bp': discountBp,
         'discount_fixed': discountFixed,
+        if (mods.isNotEmpty) 'mods': [for (final m in mods) m.toJson()],
+        if (comment.isNotEmpty) 'comment': comment,
       };
 
   factory CartLine.fromJson(Map<String, dynamic> j) {
@@ -56,6 +91,8 @@ class CartLine {
       qty: j['qty'] as int,
       price: j['price'] as int,
       marks: ((j['marks'] as List?) ?? const []).map((e) => '$e').toList(),
+      mods: ((j['mods'] as List?) ?? const []).map((e) => LineMod.fromJson(e as Map<String, dynamic>)).toList(),
+      comment: j['comment'] as String? ?? '',
     );
     l.discountBp = j['discount_bp'] as int?;
     l.discountFixed = (j['discount_fixed'] as int?) ?? 0;
@@ -110,6 +147,49 @@ class Cart {
       line.qty += qty;
     }
     if (mark != null) line.marks.add(mark);
+    selected = line;
+    return line;
+  }
+
+  /// Блюдо кафе: та же порция с теми же модификаторами и комментарием —
+  /// +[qty] к строке, иначе новая строка (два плова, один «без лука»).
+  /// Цена строки — цена блюда плюс доплаты модификаторов.
+  CartLine addDish(Product p, {int qty = 1000, List<LineMod> mods = const [], String comment = ''}) {
+    if (qty <= 0) throw CartError(tr('Количество должно быть больше нуля', 'Miqdor noldan katta boʻlishi kerak'));
+    if (!p.fractional && qty % 1000 != 0) throw CartError(tr('«${p.name}» продаётся только целым количеством', '«${p.name}» faqat butun miqdorda sotiladi'));
+    final probe = CartLine(product: p, qty: qty, mods: [...mods], comment: comment.trim());
+    for (final l in lines) {
+      if (l.product.id == p.id && l.modKey == probe.modKey) {
+        l.qty += qty;
+        selected = l;
+        return l;
+      }
+    }
+    var price = p.price;
+    for (final m in mods) {
+      price += m.price * m.qty;
+    }
+    if (price < 0) price = 0;
+    final line = CartLine(product: p, qty: qty, price: price, mods: [...mods], comment: comment.trim());
+    lines.add(line);
+    selected = line;
+    return line;
+  }
+
+  /// Заменить модификаторы и комментарий строки (окно модификаторов из чека).
+  CartLine replaceDish(CartLine old, {required int qty, required List<LineMod> mods, required String comment}) {
+    final i = lines.indexOf(old);
+    var price = old.product.price;
+    for (final m in mods) {
+      price += m.price * m.qty;
+    }
+    if (price < 0) price = 0;
+    final line = CartLine(product: old.product, qty: qty, price: price, mods: [...mods], comment: comment.trim());
+    if (i < 0) {
+      lines.add(line);
+    } else {
+      lines[i] = line;
+    }
     selected = line;
     return line;
   }

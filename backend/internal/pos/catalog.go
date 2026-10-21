@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/sanedidi/super-market/backend/internal/cafe"
 	"github.com/sanedidi/super-market/backend/internal/catalog"
 	"github.com/sanedidi/super-market/backend/internal/debts"
 	"github.com/sanedidi/super-market/backend/internal/identity"
@@ -95,6 +96,9 @@ type Catalog struct {
 	Debtors []debts.CatalogDebtor `json:"debtors"`
 	// Быстрые кнопки: закреплённые владельцем и самые продаваемые — всегда целиком.
 	Quick QuickKeys `json:"quick"`
+	// Меню кафе (группы, цеха, модификаторы, стоп-лист) — всегда целиком;
+	// null — сеть не кафе, касса работает как магазин.
+	Cafe *cafe.PosMenu `json:"cafe"`
 }
 
 // QuickKeys — товары для плиток на экране продажи.
@@ -212,7 +216,10 @@ func (s *Service) Catalog(ctx context.Context, p *identity.Principal, since *tim
 	if out.Debtors, err = debts.CatalogDebtors(ctx, s.pool, p.NetworkID, storeID); err != nil {
 		return out, err
 	}
-	out.Quick, err = s.quickKeys(ctx, storeID)
+	if out.Quick, err = s.quickKeys(ctx, storeID); err != nil {
+		return out, err
+	}
+	out.Cafe, err = cafe.MenuForPOS(ctx, s.pool, p.NetworkID, storeID)
 	return out, err
 }
 
