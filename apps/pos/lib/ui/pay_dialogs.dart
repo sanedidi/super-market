@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:sm_core/sm_core.dart' show parseClientQr, tr;
+import 'package:sm_core/sm_core.dart' show Lang, parseClientQr, tr;
 
 import '../core/cart.dart';
 import '../core/debts.dart';
@@ -31,6 +31,10 @@ Future<void> showQtyDialog(BuildContext context, SaleController sale) =>
 
 Future<void> showPriceDialog(BuildContext context, SaleController sale, PendingPrice r) =>
     showDialog<void>(context: context, builder: (_) => _PriceDialog(sale: sale, pending: r));
+
+/// Штрихкода нет ни в магазине, ни в Super Market — продать неизвестным товаром.
+Future<void> showUnknownDialog(BuildContext context, SaleController sale, String barcode) =>
+    showDialog<void>(context: context, builder: (_) => _UnknownDialog(sale: sale, barcode: barcode));
 
 Future<void> showDiscountDialog(BuildContext context, SaleController sale, {required bool all}) =>
     showDialog<void>(context: context, builder: (_) => _DiscountDialog(sale: sale, all: all));
@@ -877,6 +881,14 @@ class _PriceDialogState extends State<_PriceDialog> {
                 Text(_input.value.isEmpty ? '—' : fmtMoney(parseMoney(_input.value)), style: t(40, w: FontWeight.w800)),
               ]),
             ),
+            if (!widget.sale.online) ...[
+              const SizedBox(height: 12),
+              _Note(
+                warn: true,
+                text: tr('Нет связи с сервером. Цена сохранится на кассе — товар пробьётся сразу и в следующий раз тоже. В Super Market цена уйдёт из очереди, когда появится сеть.',
+                    'Server bilan aloqa yoʻq. Narx kassada saqlanadi — mahsulot darhol va keyingi safar ham urib chiqariladi. Super Marketga narx tarmoq paydo boʻlganda navbatdan yuboriladi.'),
+              ),
+            ],
             const SizedBox(height: 12),
             _Pad(onKey: _key, extra: '000'),
             const SizedBox(height: 12),
@@ -899,6 +911,272 @@ class _PriceDialogState extends State<_PriceDialog> {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Подсказка в окне: жёлтая (предупреждение) или серая (сведения).
+class _Note extends StatelessWidget {
+  const _Note({required this.text, this.warn = false});
+
+  final String text;
+  final bool warn;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: warn ? C.warningSoft : C.subtle,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: warn ? const Color(0xFFFEDF89) : C.border),
+        ),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(warn ? Icons.wifi_off_rounded : Icons.info_outline_rounded, size: 18, color: warn ? C.warning : C.ts),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: t(13, c: warn ? C.warning : C.t2))),
+        ]),
+      );
+}
+
+// --------------------------------------------------------- неизвестный товар
+
+/// «Товара нет в базе» (Figma НТ2, НТ2б): штрихкода нет ни в магазине, ни в
+/// Super Market. Цена — обязательно (цифровая клавиатура), название — по
+/// желанию (F2 или нажатие на поле — буквенная клавиатура RU / LAT). Продать
+/// может любой кассир; остаток не списывается, владелец увидит товар в панели
+/// «Товары → Без карточки».
+class _UnknownDialog extends StatefulWidget {
+  const _UnknownDialog({required this.sale, required this.barcode});
+
+  final SaleController sale;
+  final String barcode;
+
+  @override
+  State<_UnknownDialog> createState() => _UnknownDialogState();
+}
+
+class _UnknownDialogState extends State<_UnknownDialog> {
+  final _price = _Input(max: 9);
+  String _name = '';
+  bool _naming = false;
+  bool _latin = Lang.instance.isUz;
+  String? _error;
+
+  int get _value => parseMoney(_price.value);
+
+  void _priceKey(String k) {
+    if (_price.key(k)) setState(() => _error = null);
+  }
+
+  void _nameKey(String k) {
+    setState(() {
+      _error = null;
+      if (k == '⌫') {
+        if (_name.isNotEmpty) _name = _name.substring(0, _name.length - 1);
+      } else if (_name.length < 120) {
+        if (k == ' ' && (_name.isEmpty || _name.endsWith(' '))) return;
+        _name += k;
+      }
+    });
+  }
+
+  /// Буква с экранной клавиатуры: первая — заглавная, дальше — строчные.
+  void _letter(String k) => _nameKey(_name.isEmpty || _name.endsWith(' ') ? k.toUpperCase() : k.toLowerCase());
+
+  void _toggle([bool? naming]) => setState(() => _naming = naming ?? !_naming);
+
+  void _submit() {
+    if (_value <= 0) {
+      setState(() {
+        _naming = false;
+        _error = tr('Наберите цену', 'Narxni tering');
+      });
+      return;
+    }
+    final err = widget.sale.addUnknown(widget.barcode, _value, _name);
+    if (err == null) {
+      Navigator.of(context).pop();
+    } else {
+      setState(() => _error = err);
+    }
+  }
+
+  KeyEventResult _onKey(KeyEvent e) {
+    if (e is KeyUpEvent) return KeyEventResult.ignored;
+    final k = e.logicalKey;
+    if (isEnter(e)) {
+      _submit();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.f2 || k == LogicalKeyboardKey.tab) {
+      _toggle();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.backspace) {
+      if (_naming) {
+        _nameKey('⌫');
+      } else {
+        _priceKey('⌫');
+      }
+      return KeyEventResult.handled;
+    }
+    final ch = printable(e);
+    if (ch == null) return KeyEventResult.ignored; // Esc закрывает окно сам
+    if (_naming) {
+      _nameKey(ch);
+    } else if (RegExp(r'^[0-9]$').hasMatch(ch)) {
+      _priceKey(ch);
+    } else if (ch != ' ') {
+      // Начали печатать буквы — значит, название.
+      setState(() => _naming = true);
+      _nameKey(ch);
+    }
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ready = _value > 0;
+    Widget field({required bool active, required VoidCallback onTap, required Widget child}) => GestureDetector(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            decoration: BoxDecoration(
+              color: C.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: active ? C.brand : C.borderStrong, width: active ? 2 : 1),
+            ),
+            child: child,
+          ),
+        );
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (_, e) => _onKey(e),
+      child: _Shell(
+        width: 640,
+        title: tr('Товара нет в базе', 'Mahsulot bazada yoʻq'),
+        subtitle: tr('Штрихкод ${widget.barcode} — такого товара нет ни в магазине, ни в Super Market. Его можно продать как неизвестный товар.',
+            'Shtrix-kod ${widget.barcode} — bunday mahsulot na doʻkonda, na Super Marketda bor. Uni nomaʼlum mahsulot sifatida sotish mumkin.'),
+        children: [
+          field(
+            active: !_naming,
+            onTap: () => _toggle(false),
+            child: Row(children: [
+              Expanded(child: Text(tr('Цена, сум *', 'Narx, soʻm *'), style: t(16, w: FontWeight.w500, c: C.ts))),
+              Text(_price.value.isEmpty ? '—' : fmtMoney(_value), style: t(_naming ? 28.0 : 40.0, w: FontWeight.w800)),
+            ]),
+          ),
+          const SizedBox(height: 10),
+          field(
+            active: _naming,
+            onTap: () => _toggle(true),
+            child: Row(children: [
+              Text(tr('Название', 'Nomi'), style: t(16, w: FontWeight.w500, c: C.ts)),
+              const SizedBox(width: 14),
+              Expanded(
+                child: FitText(
+                  _name.isEmpty && !_naming ? tr('необязательно', 'ixtiyoriy') : '$_name${_naming ? '|' : ''}',
+                  textAlign: TextAlign.right,
+                  style: _name.isEmpty && !_naming ? t(16, c: C.td) : t(20, w: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(_naming ? tr('F2 · к цене', 'F2 · narxga') : tr('F2 · клавиатура', 'F2 · klaviatura'), style: t(12, w: FontWeight.w600, c: C.td)),
+            ]),
+          ),
+          const SizedBox(height: 12),
+          if (_naming)
+            _Letters(
+              latin: _latin,
+              onKey: (k) => k == ' ' || k == '⌫' || RegExp(r'^[0-9]$').hasMatch(k) ? _nameKey(k) : _letter(k),
+              onSwitch: () => setState(() => _latin = !_latin),
+              onDone: () => _toggle(false),
+            )
+          else
+            _Pad(onKey: _priceKey, extra: '000'),
+          const SizedBox(height: 12),
+          _Note(
+            text: tr('Остаток не списывается. Владелец увидит товар в панели «Товары → Без карточки» (штрихкод, цена, сколько продано) и заведёт карточку одной кнопкой — дальше товар пробивается обычно.',
+                'Qoldiq hisobdan chiqarilmaydi. Egasi mahsulotni panelda «Mahsulotlar → Kartochkasiz» boʻlimida koʻradi (shtrix-kod, narx, qancha sotilgan) va bitta tugma bilan kartochka ochadi — keyin mahsulot odatdagidek urib chiqariladi.'),
+          ),
+          const SizedBox(height: 12),
+          _Footer(
+            back: tr('Отмена', 'Bekor qilish'),
+            primary: ready ? tr('Продать за ${fmtMoney(_value)}', '${fmtMoney(_value)} ga sotish') : tr('Продать', 'Sotish'),
+            onPrimary: ready ? _submit : null,
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 10),
+            Text(_error!, style: t(12, c: C.error)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Буквенная клавиатура окна: цифры, кириллица или латиница, пробел,
+/// Ғ Қ / Oʻ Gʻ и «Готово» (обратно к цене).
+class _Letters extends StatelessWidget {
+  const _Letters({required this.latin, required this.onKey, required this.onSwitch, required this.onDone});
+
+  final bool latin;
+  final void Function(String k) onKey;
+  final VoidCallback onSwitch;
+  final VoidCallback onDone;
+
+  static const _cyr = [
+    ['Й', 'Ц', 'У', 'К', 'Е', 'Н', 'Г', 'Ш', 'Щ', 'З', 'Х'],
+    ['Ф', 'Ы', 'В', 'А', 'П', 'Р', 'О', 'Л', 'Д', 'Ж', 'Э'],
+    ['Я', 'Ч', 'С', 'М', 'И', 'Т', 'Ь', 'Б', 'Ю', 'Ъ', 'Ў'],
+  ];
+  static const _lat = [
+    ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', 'ʻ'],
+    ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', '-', '%'],
+    ['Z', 'X', 'C', 'V', 'B', 'N', 'M', ',', '.', '/', '"'],
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    const grey = Color(0xFFE4E7EC);
+    Widget key(String label, VoidCallback onTap, {int flex = 2, Color color = C.surface, Color textColor = C.tp, double fs = 18}) => Expanded(
+          flex: flex,
+          child: Padding(
+            padding: const EdgeInsets.all(3),
+            child: Material(
+              color: color,
+              borderRadius: BorderRadius.circular(8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: onTap,
+                child: Center(child: FitText(label, textAlign: TextAlign.center, style: t(fs, w: FontWeight.w600, c: textColor))),
+              ),
+            ),
+          ),
+        );
+    Widget row(List<Widget> keys) => SizedBox(height: 50, child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: keys));
+    return Container(
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(color: C.keyBg, borderRadius: BorderRadius.circular(12)),
+      child: Column(children: [
+        row([
+          for (final d in const ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']) key(d, () => onKey(d)),
+          key('⌫', () => onKey('⌫'), color: grey),
+        ]),
+        for (final r in latin ? _lat : _cyr) row([for (final k in r) key(k, () => onKey(k))]),
+        row([
+          key(latin ? 'LAT → RU' : 'RU → LAT', onSwitch, flex: 4, color: grey, fs: 14),
+          key(tr('Пробел', 'Probel'), () => onKey(' '), flex: 8, textColor: C.ts, fs: 15),
+          if (!latin) ...[
+            key('Ғ', () => onKey('ғ'), color: grey),
+            key('Қ', () => onKey('қ'), color: grey),
+          ] else ...[
+            key('Oʻ', () => onKey('oʻ'), color: grey, fs: 16),
+            key('Gʻ', () => onKey('gʻ'), color: grey, fs: 16),
+          ],
+          key(tr('К цене · F2', 'Narxga · F2'), onDone, flex: 5, color: C.dark, textColor: Colors.white, fs: 14),
+        ]),
+      ]),
     );
   }
 }

@@ -320,6 +320,7 @@ class PosController extends ChangeNotifier {
       final res = await api.get('/pos/catalog', query: q) as Map<String, dynamic>;
       final kind = catalog.settings.deviceKind;
       catalog.apply(res);
+      _applyQueuedPrices();
       // Панель поменяла вид устройства (касса ↔ экран кухни) — другой экран.
       if (kind != catalog.settings.deviceKind && stage != Stage.activate && stage != Stage.loading) {
         if (catalog.settings.deviceKind == 'pos') {
@@ -806,21 +807,61 @@ class PosController extends ChangeNotifier {
   bool get canPrice => cashier?.can(Perm.prices) ?? false;
 
   /// Цена продажи товару без цены — сразу на сервере (документ цен магазина)
-  /// и в каталоге кассы. Возвращает товар с ценой; ошибка — [PriceError].
+  /// и в каталоге кассы. Нет связи — цена в каталоге кассы и в очереди: уйдёт
+  /// раньше чека, где товар продан (очередь идёт по порядку), и только если
+  /// цену за это время не поставили в панели. Возвращает товар с ценой;
+  /// ошибка — [PriceError].
   Future<Product> setProductPrice(Product p, int price) async {
     if (!canPrice) throw PriceError(tr('Цену ставит владелец или сотрудник с правом «Установка цен»', 'Narxni egasi yoki «Narxlarni belgilash» huquqiga ega xodim qoʻyadi'));
+    Product priced;
     try {
       final res = await api.send('PUT', '/pos/products/${p.id}/price', body: {'price': moneyApi(price)}, cashier: cashier?.id)
           as Map<String, dynamic>;
-      final priced = Product.fromJson({...p.toJson(), 'price': res['price']});
-      catalog.put(priced);
-      await _keepCatalog();
+      priced = Product.fromJson({...p.toJson(), 'price': res['price']});
       online = true;
-      notifyListeners();
-      return priced;
     } on ApiError catch (e) {
       _netError(e);
-      throw PriceError(e.isNetwork ? tr('Нет связи с сервером — цену сохранить нельзя, попробуйте позже', 'Server bilan aloqa yoʻq — narxni saqlab boʻlmaydi, keyinroq urinib koʻring') : e.message);
+      if (!e.isNetwork) throw PriceError(e.message);
+      await outbox.add('price', {'product_id': p.id, 'price': price, 'name': p.name, 'product': p.toJson()}, cashier!.id, at: _now());
+      priced = Product.fromJson({...p.toJson(), 'price': moneyApi(price)});
+    }
+    catalog.put(priced);
+    await _keepCatalog();
+    notifyListeners();
+    return priced;
+  }
+
+  /// Цены, поставленные без связи, ещё в очереди — каталог с сервера их не
+  /// знает (или загружен заново целиком): вернуть их товарам без цены.
+  void _applyQueuedPrices() {
+    for (final i in outbox.pendingItems) {
+      if (i.kind != 'price') continue;
+      final price = (i.body['price'] as num?)?.toInt() ?? 0;
+      final cur = catalog.byId(i.body['product_id'] as String? ?? '');
+      if (price <= 0 || (cur != null && cur.price > 0)) continue;
+      final src = cur?.toJson() ?? (i.body['product'] as Map?)?.cast<String, dynamic>();
+      if (src != null) catalog.put(Product.fromJson({...src, 'price': moneyApi(price)}));
+    }
+  }
+
+  /// Товар Super Market по штрихкоду, которого нет в каталоге кассы (у него
+  /// нет цены в магазине). null — такого штрихкода нет нигде; без связи —
+  /// [ApiError] со статусом 0.
+  Future<Product?> lookupBarcode(String code) async {
+    try {
+      final res = await api.get('/pos/products/lookup', query: {'barcode': code}, cashier: cashier?.id, wait: const Duration(seconds: 4))
+          as Map<String, dynamic>;
+      online = true;
+      return Product.fromJson({
+        ...res,
+        'fractional': res['is_fractional'] == true,
+        'marked': res['is_marked'] == true,
+        'barcodes': [res['barcode'] ?? code],
+      });
+    } on ApiError catch (e) {
+      if (e.status == 404) return null;
+      _netError(e);
+      rethrow;
     }
   }
 

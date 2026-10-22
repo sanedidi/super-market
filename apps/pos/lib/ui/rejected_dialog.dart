@@ -75,6 +75,8 @@ String _time(DateTime d) {
         final reason = '${b['reason'] ?? ''}'.trim();
         final name = b['kind'] == 'in' ? tr('Внесение', 'Kiritish') : tr('Изъятие', 'Olish');
         return (reason.isEmpty ? name : '$name · $reason', (b['amount'] as num?)?.toInt());
+      case 'price':
+        return (tr('Цена · ${b['name'] ?? ''}', 'Narx · ${b['name'] ?? ''}'), (b['price'] as num?)?.toInt());
       case 'sale':
         final r = SaleRecord.fromJson(b);
         return (tr('Чек №${r.seq}', 'Chek №${r.seq}'), r.total);

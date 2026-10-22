@@ -18,13 +18,14 @@ class PosApi {
   /// Токен устройства (pd_…), выдаётся при активации.
   String? token;
 
-  Future<dynamic> get(String path, {Map<String, String>? query, String? cashier}) =>
-      send('GET', path, query: query, cashier: cashier);
+  /// [wait] — свой срок ответа (короче обычного: касса не должна зависать).
+  Future<dynamic> get(String path, {Map<String, String>? query, String? cashier, Duration? wait}) =>
+      send('GET', path, query: query, cashier: cashier, wait: wait);
 
   Future<dynamic> post(String path, Object? body, {String? cashier}) =>
       send('POST', path, body: body ?? const {}, cashier: cashier);
 
-  Future<dynamic> send(String method, String path, {Map<String, String>? query, Object? body, String? cashier}) async {
+  Future<dynamic> send(String method, String path, {Map<String, String>? query, Object? body, String? cashier, Duration? wait}) async {
     var uri = Uri.parse('$baseUrl$path');
     if (query != null && query.isNotEmpty) uri = uri.replace(queryParameters: query);
     final req = http.Request(method, uri);
@@ -38,7 +39,7 @@ class PosApi {
     }
     http.Response res;
     try {
-      res = await http.Response.fromStream(await _http.send(req).timeout(timeout));
+      res = await http.Response.fromStream(await _http.send(req).timeout(wait ?? timeout));
     } on TimeoutException {
       throw ApiError(0, 'network', tr('Сервер не отвечает', 'Server javob bermayapti'));
     } catch (_) {

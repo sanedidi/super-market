@@ -320,9 +320,9 @@ func TestI18nData(t *testing.T) {
 	}
 	readStats()
 	// Без перевода: категории «Продукты»? — нет; «Хлеб» переведён; units: «Пачка» без name_uz;
-	// товары: «Батон» (название и описание). Категорий 4 + служебная «Блюда и
-	// заготовки кафе» (миграция 0068, переведена).
-	if stats["categories"] != [2]int{5, 0} || stats["units"][1] != 1 || stats["colors"] != [2]int{1, 0} || stats["products"] != [2]int{4, 1} {
+	// товары: «Батон» (название и описание). Категорий 4 + служебные «Блюда и
+	// заготовки кафе» (миграция 0068) и «Без карточки» (0073), обе переведены.
+	if stats["categories"] != [2]int{6, 0} || stats["units"][1] != 1 || stats["colors"] != [2]int{1, 0} || stats["products"] != [2]int{4, 1} {
 		t.Fatalf("stats = %v", stats)
 	}
 	if _, err := pool.Exec(ctx, `UPDATE categories SET name_uz = '' WHERE id = $1`, bread.str("id")); err != nil {

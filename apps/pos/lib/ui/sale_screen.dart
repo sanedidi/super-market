@@ -75,6 +75,9 @@ class _SaleScreenState extends State<SaleScreen> {
       case Cmd.price:
         final r = sale.takePricePending();
         if (r != null) await showPriceDialog(context, sale, r);
+      case Cmd.unknown:
+        final code = sale.takeUnknownPending();
+        if (code != null) await showUnknownDialog(context, sale, code);
       case Cmd.qty:
         await showQtyDialog(context, sale);
       case Cmd.item:
@@ -785,6 +788,7 @@ class _LineRow extends StatelessWidget {
       p.name,
       if (cols.disc == 0 && line.hasDiscount) tr('скидка $disc', 'chegirma $disc'),
       if (p.marked) tr('✓ маркировка', '✓ markirovka'),
+      if (p.unknown) tr('${p.unknownBarcode} · нет в базе', '${p.unknownBarcode} · bazada yoʻq'),
     ].join('  ·  ');
     final size = d == Density.l ? 16.0 : 15.0;
     Widget cell(String s, double w, {Color c = C.tp, FontWeight fw = FontWeight.w400, TextAlign align = TextAlign.right}) =>

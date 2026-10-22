@@ -22,6 +22,9 @@ class FakeServer {
 
   /// Магазин даёт в долг.
   bool debts = false;
+
+  /// Сервер не принимает цены (500) — цена из очереди ждёт.
+  bool priceDown = false;
   final List<Map<String, dynamic>> prices = [];
   final List<Map<String, dynamic>> shifts = [];
   final List<Map<String, dynamic>> sales = [];
@@ -81,8 +84,17 @@ class FakeServer {
           'open_shift_id': null,
         });
       case 'PUT /pos/products/water/price':
+      case 'PUT /pos/products/shampoo/price':
+        if (priceDown) return _json(500, {'error': {'code': 'internal', 'message': 'сбой'}});
         prices.add({...body, 'cashier': c});
-        return _json(200, {'product_id': 'water', 'price': body['price']});
+        return _json(200, {'product_id': path.split('/')[3], 'price': body['price']});
+      case 'GET /pos/products/lookup':
+        // В Super Market есть только шампунь — без цены в магазине.
+        if (req.url.queryParameters['barcode'] != '4870205001123') return _json(404, {'error': {'code': 'not_found', 'message': 'товара нет в Super Market'}});
+        return _json(200, {
+          'id': 'shampoo', 'name': 'Шампунь 400 мл', 'name_ru': 'Шампунь 400 мл', 'name_uz': '', 'unit': 'шт', 'is_fractional': false,
+          'price': '0.00', 'ikpu': '', 'package_code': '', 'vat_rate': '12.00', 'is_marked': false, 'barcode': '4870205001123',
+        });
       case 'POST /pos/shifts':
         shifts.add(body);
         return _json(201, {'id': 'srv-shift', 'number': 7});
@@ -272,10 +284,81 @@ void main() {
     expect(sale.cart.lines.single.price, 500000);
     expect(pos.catalog.byId('water')!.price, 500000); // в следующий раз — сразу в чек
 
-    // Нет связи — цена не сохраняется, окно покажет ошибку.
+    // Нет связи — цена на кассе и в очереди: товар сразу в чек.
+    await until(() => !pos.syncing);
     server.offline = true;
-    expect(await sale.setPrice(r, 600000), contains('Нет связи'));
+    expect(await sale.setPrice(r, 600000), isNull);
+    expect(pos.catalog.byId('water')!.price, 600000);
+    expect(pos.outbox.pendingItems.last.kind, 'price');
+    expect(server.prices.length, 1);
+
+    // Каталог загрузился раньше, чем ушла цена, — цена из очереди не теряется.
     server.offline = false;
+    server.priceDown = true;
+    await pos.sync(catalog: true);
+    expect(pos.catalog.byId('water')!.price, 600000);
+    expect(pos.outbox.pendingItems.map((i) => i.kind), contains('price'));
+
+    // Сервер снова принимает: цена уходит «только если цены ещё нет».
+    server.priceDown = false;
+    await pos.sync();
+    expect(server.prices.last, {'price': '6000.00', 'if_unpriced': true, 'cashier': 'e2'});
+    expect(pos.outbox.pending, 0);
+    sale.dispose();
+  });
+
+  test('товара нет в каталоге: Super Market без цены — окно цены, нигде нет — неизвестный товар', () async {
+    await pos.activate('ABCD2345');
+    pos.login(pos.catalog.cashiers.single, '1234');
+    await pos.openShift(0);
+    await until(() => !pos.syncing);
+    final sale = SaleController(pos);
+    final opened = <Cmd>[];
+    sale.onNavigate = opened.add;
+    Future<void> scan(String code) async {
+      for (var i = 0; i < code.length; i++) {
+        sale.char(code[i], Duration(milliseconds: i * 5));
+      }
+      await sale.command(Cmd.enter);
+    }
+
+    // Есть в Super Market, но у магазина нет цены — окно цены.
+    await scan('4870205001123');
+    expect(opened, [Cmd.price]);
+    expect(sale.takePricePending()!.product.id, 'shampoo');
+    expect(sale.cart.isEmpty, isTrue);
+
+    // Нет нигде — «Товара нет в базе»: цена обязательна, название по желанию.
+    await scan('4600123456789');
+    expect(opened.last, Cmd.unknown);
+    final code = sale.takeUnknownPending()!;
+    expect(code, '4600123456789');
+    expect(sale.addUnknown(code, 0, ''), isNotNull);
+    expect(sale.addUnknown(code, 1500000, '  Сок   Bliss 1 л '), isNull);
+    expect(sale.cart.lines.single.product.name, 'Сок Bliss 1 л');
+    expect(sale.cart.lines.single.price, 1500000);
+
+    // Тот же штрихкод ещё раз — +1 без окна.
+    await scan('4600123456789');
+    expect(opened.length, 2);
+    expect(sale.cart.lines.single.qty, 2000);
+
+    // Без связи Super Market не спросить — сразу неизвестный товар.
+    server.offline = true;
+    await scan('8690526083411');
+    expect(opened.last, Cmd.unknown);
+    expect(sale.addUnknown(sale.takeUnknownPending()!, 700000, ''), isNull);
+    expect(sale.cart.lines.last.product.name, 'Неизвестный товар');
+    expect(await sale.pay('cash', received: 3700000), isNull);
+
+    await until(() => !pos.syncing);
+    server.offline = false;
+    await pos.sync();
+    final items = (server.sales.single['items'] as List).cast<Map<String, dynamic>>();
+    expect(items, [
+      {'unknown_barcode': '4600123456789', 'unknown_name': 'Сок Bliss 1 л', 'qty': '2', 'price': '15000.00'},
+      {'unknown_barcode': '8690526083411', 'qty': '1', 'price': '7000.00'},
+    ]);
     sale.dispose();
   });
 

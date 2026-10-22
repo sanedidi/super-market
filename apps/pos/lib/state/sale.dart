@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:sm_core/sm_core.dart' show Lang, parseClientQr, tr;
+import 'package:sm_core/sm_core.dart' show ApiError, Lang, parseClientQr, tr;
 
 import '../core/cart.dart';
 import '../core/catalog.dart';
@@ -11,7 +11,7 @@ import '../core/quick.dart';
 import 'pos.dart';
 
 /// Команды быстрого режима — клавиши, которые не печатают символ.
-enum Cmd { enter, esc, del, backspace, up, down, star, pay, qty, item, search, discountLine, discountAll, hold, returns, orders, shiftMenu, debtQr, debtPay, price, dish }
+enum Cmd { enter, esc, del, backspace, up, down, star, pay, qty, item, search, discountLine, discountAll, hold, returns, orders, shiftMenu, debtQr, debtPay, price, dish, unknown }
 
 enum SaleMode { sale, paid, held }
 
@@ -101,6 +101,31 @@ class SaleController extends ChangeNotifier {
   }
 
   bool get canPrice => pos.canPrice;
+
+  /// Штрихкода нет ни в каталоге кассы, ни в Super Market: окно «Товара нет
+  /// в базе» (Cmd.unknown) заберёт его через [takeUnknownPending].
+  String? _unknownPending;
+
+  String? takeUnknownPending() {
+    final r = _unknownPending;
+    _unknownPending = null;
+    return r;
+  }
+
+  /// Нет связи: окно цены предупреждает, что цена уйдёт из очереди.
+  bool get online => pos.online;
+
+  /// Окно «Товара нет в базе»: неизвестный товар в чек — с ценой и названием
+  /// по желанию. Остаток не списывается. Ошибка — текст, успех — null.
+  String? addUnknown(String barcode, int price, String name) {
+    if (price <= 0) return tr('Цена должна быть больше нуля', 'Narx noldan katta boʻlishi kerak');
+    if (mode == SaleMode.held || busy) return tr('Касса занята', 'Kassa band');
+    name = name.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (name.length > 120) name = name.substring(0, 120);
+    _add(Product.unknown(barcode, price, name));
+    notifyListeners();
+    return null;
+  }
 
   // ---------------------------------------------------------------- кафе
 
@@ -431,6 +456,7 @@ class SaleController extends ChangeNotifier {
       case Cmd.debtPay:
       case Cmd.price:
       case Cmd.dish:
+      case Cmd.unknown:
         break; // только навигация: окна «В долг», погашения долга и цены открывает экран продажи
       case Cmd.returns:
       case Cmd.shiftMenu:
@@ -492,7 +518,7 @@ class SaleController extends ChangeNotifier {
     final digits = RegExp(r'^[0-9]+$').hasMatch(raw);
     // Сканер, длинный код или буквы — штрихкод/марка; короткие цифры — код товара.
     if (scanned || !digits || raw.length >= 8) {
-      _scanCode(raw);
+      await _scanCode(raw);
       return;
     }
     // Кафе: короткий код блюда («12» + Enter).
@@ -539,7 +565,7 @@ class SaleController extends ChangeNotifier {
   }
 
   /// Штрихкод, этикетка весов или DataMatrix. false — не нашли (сообщение уже показано).
-  bool _scanCode(String raw) {
+  Future<bool> _scanCode(String raw) async {
     final code = fixLayout(raw);
     final mark = parseMark(code);
     if (mark != null) {
@@ -568,16 +594,63 @@ class SaleController extends ChangeNotifier {
       return true;
     }
     final p = catalog.byBarcode(code);
-    if (p == null) {
-      _error(tr('Товар не найден: $code', 'Mahsulot topilmadi: $code'), note: tr('Звук ошибки · строка не добавлена', 'Xatolik ovozi · qator qoʻshilmadi'), right: tr('Поиск: F2', 'Qidirish: F2'));
-      return false;
-    }
+    if (p == null) return _notInCatalog(code);
     if (p.marked) {
       _error(tr('Маркированный товар — сканируйте DataMatrix на упаковке', 'Markirovkali mahsulot — qadoqdagi DataMatrix kodini skanerlang'), note: p.name);
       return true;
     }
     _add(p);
     return true;
+  }
+
+  /// Штрихкода нет в каталоге кассы (магазин). Есть в Super Market без цены —
+  /// окно цены; нет нигде (или нет связи) — окно «Товара нет в базе»:
+  /// продать неизвестным товаром. Кафе — только сообщение.
+  Future<bool> _notInCatalog(String code) async {
+    void notFound() => _error(tr('Товар не найден: $code', 'Mahsulot topilmadi: $code'),
+        note: tr('Звук ошибки · строка не добавлена', 'Xatolik ovozi · qator qoʻshilmadi'), right: tr('Поиск: F2', 'Qidirish: F2'));
+    if (catalog.cafe != null || !Product.unknownBarcodeRe.hasMatch(code)) {
+      notFound();
+      return false;
+    }
+    // Тот же неизвестный товар уже в чеке — ещё штука, без окна.
+    final same = mode == SaleMode.sale ? cart.lineOf('${Product.unknownPrefix}$code') : null;
+    if (same != null) {
+      _add(same.product);
+      return true;
+    }
+    if (pos.online) {
+      busy = true;
+      msg = SaleMsg(MsgKind.info, tr('Ищем в Super Market…', 'Super Marketda qidirilmoqda…'), note: code);
+      notifyListeners();
+      try {
+        final found = await pos.lookupBarcode(code);
+        if (found != null) {
+          busy = false;
+          if (found.marked) {
+            _error(tr('Маркированный товар — сканируйте DataMatrix на упаковке', 'Markirovkali mahsulot — qadoqdagi DataMatrix kodini skanerlang'), note: found.name);
+            return true;
+          }
+          if (found.price > 0) catalog.put(found);
+          _add(found);
+          return true;
+        }
+      } on ApiError {
+        // Нет связи — сервер не спросить: продаём неизвестным товаром.
+      } finally {
+        busy = false;
+      }
+    }
+    if (pos.fiscalMode) {
+      _error(tr('Товара нет в базе — с фискальным модулем без ИКПУ продать нельзя', 'Mahsulot bazada yoʻq — fiskal modul bilan MXIKsiz sotib boʻlmaydi'),
+          note: code, right: tr('Поиск: F2', 'Qidirish: F2'));
+      return false;
+    }
+    _unknownPending = code;
+    msg = SaleMsg(MsgKind.info, tr('Товара нет в базе', 'Mahsulot bazada yoʻq'), note: code);
+    onSound?.call(false);
+    onNavigate?.call(Cmd.unknown);
+    return false;
   }
 
   /// Товар из поиска (F2) или по коду.
@@ -616,7 +689,9 @@ class SaleController extends ChangeNotifier {
       msg = SaleMsg(
         MsgKind.ok,
         p.name,
-        note: p.ikpu.isEmpty ? tr('Только что отсканировано · нет ИКПУ — заполните в панели', 'Hozirgina skanerlandi · MXIK yoʻq — panelda toʻldiring') : tr('Только что отсканировано', 'Hozirgina skanerlandi'),
+        note: p.unknown
+            ? tr('Неизвестный товар · ${p.unknownBarcode} · нет в базе', 'Nomaʼlum mahsulot · ${p.unknownBarcode} · bazada yoʻq')
+            : p.ikpu.isEmpty ? tr('Только что отсканировано · нет ИКПУ — заполните в панели', 'Hozirgina skanerlandi · MXIK yoʻq — panelda toʻldiring') : tr('Только что отсканировано', 'Hozirgina skanerlandi'),
         right: fmtMoney(lineSum(line.price, qty)),
         rightNote: '$q ${fmtMoney(line.price)}',
       );

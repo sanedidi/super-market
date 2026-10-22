@@ -517,7 +517,8 @@ func filterWhere(search string) string {
 	            SELECT id FROM categories WHERE id::text = $2
 	            UNION SELECT c.id FROM categories c JOIN sub ON c.parent_id = sub.id)
 	        SELECT id FROM sub))
-	AND ($3 = '' OR EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND pb.barcode = $3))`
+	AND ($3 = '' OR EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = p.id AND pb.barcode = $3))
+	AND p.kind <> 'unknown'` // служебный «Неизвестный товар» кассы — не в списках
 }
 
 // searchWhere — условие поиска товаров p по строке q (штрихкод, слова,

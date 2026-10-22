@@ -19,7 +19,7 @@ class OutboxItem {
   /// Когда событие случилось на кассе — для правила «не больше 24 часов без связи».
   final DateTime at;
 
-  /// shift_open, cash_move, sale, debt_payment, bill_op, shift_close.
+  /// shift_open, cash_move, price, sale, debt_payment, bill_op, shift_close.
   final String kind;
   final Map<String, dynamic> body;
   final String cashier;
@@ -206,6 +206,11 @@ class Outbox {
         final rec = DebtPaymentRecord.fromJson(b);
         final id = _shiftId(rec.shiftUid);
         await api.post('/pos/debt-payments', rec.apiBody(id), cashier: item.cashier);
+      }
+      case 'price': {
+        // Цена, поставленная без связи: только если цены всё ещё нет.
+        await api.send('PUT', '/pos/products/${b['product_id']}/price',
+            body: {'price': moneyApi((b['price'] as num).toInt()), 'if_unpriced': true}, cashier: item.cashier);
       }
       case 'bill_op': {
         // Кафе со столами: операция со счётом (повтор безопасен — свой id).

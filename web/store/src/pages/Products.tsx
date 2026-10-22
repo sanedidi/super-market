@@ -10,6 +10,12 @@ import { Num } from '../ui'
 import type { DictItem, Product } from '../types'
 import { FlavorMenu, childrenOf, useVariantGroups, variantNameCell, variantPriceCell, variantStockCell, type VRow } from './variants'
 import { OwnVariantsTab, useOwnGroups } from './OwnVariants'
+import { UnknownGoodsTab, useUnknownGoods, type UnknownGood } from './UnknownGoods'
+
+type Tab = 'goods' | 'variants' | 'unknown'
+
+/** Новый товар из «Без карточки»: название с кассы, штрихкод и цена. */
+type Prefill = { name: string; barcode: string; price: string }
 
 // Для редактирования API отдаёт ещё и сырые названия на обоих языках.
 type ProductEdit = Product & { name_ru?: string; name_uz?: string; description_ru?: string; description_uz?: string }
@@ -51,9 +57,13 @@ function spanLoading(cols: TableColumnType<VRow>[]): TableColumnType<VRow>[] {
 
 export function ProductsPage() {
   // Вкладки «Товары» и «Вариации» (Figma «Панель магазина · Вариации своих товаров», В1).
-  const [tab, setTab] = useState<'goods' | 'variants'>('goods')
+  const [tab, setTab] = useState<Tab>('goods')
   const proposed = useOwnGroups('proposed', 1).data?.counts.proposed ?? 0
   const { storeId, can } = useStore()
+  // «Без карточки» (Figma ПБ1): что касса продала неизвестным товаром.
+  const seeUnknown = can('catalog.manage') || can('prices.manage') || can('reports.view')
+  const unknown = useUnknownGoods(storeId || undefined, seeUnknown).data?.length ?? 0
+  const [prefill, setPrefill] = useState<Prefill | null>(null)
   const [q, setQ] = useState('')
   const [categoryId, setCategoryId] = useState<string>()
   const [editing, setEditing] = useState<ProductEdit | null>(null)
@@ -186,7 +196,7 @@ export function ProductsPage() {
         tabs={
           <Tabs
             activeKey={tab}
-            onChange={(k) => setTab(k as 'goods' | 'variants')}
+            onChange={(k) => setTab(k as Tab)}
             items={[
               { key: 'goods', label: tr('Товары', 'Mahsulotlar') },
               {
@@ -198,6 +208,19 @@ export function ProductsPage() {
                   </span>
                 ),
               },
+              ...(seeUnknown
+                ? [
+                    {
+                      key: 'unknown',
+                      label: (
+                        <span>
+                          {tr('Без карточки', 'Kartochkasiz')}
+                          {unknown > 0 && <Tag color="orange" bordered={false} style={{ marginLeft: 6, marginInlineEnd: 0 }}>{unknown}</Tag>}
+                        </span>
+                      ),
+                    },
+                  ]
+                : []),
             ]}
           />
         }
@@ -209,6 +232,7 @@ export function ProductsPage() {
               icon={<PlusOutlined />}
               onClick={() => {
                 setEditing(null)
+                setPrefill(null)
                 setOpen(true)
               }}
             >
@@ -225,7 +249,15 @@ export function ProductsPage() {
           </>
         )}
       </PageTitle>
-      {tab === 'variants' ? (
+      {tab === 'unknown' ? (
+        <UnknownGoodsTab
+          onCreate={(g: UnknownGood) => {
+            setEditing(null)
+            setPrefill({ name: g.name, barcode: g.barcode, price: g.price_max })
+            setOpen(true)
+          }}
+        />
+      ) : tab === 'variants' ? (
         <OwnVariantsTab />
       ) : (
         <>
@@ -282,12 +314,12 @@ export function ProductsPage() {
           </Typography.Paragraph>
         </>
       )}
-      <ProductModal open={open} editing={editing} onClose={() => setOpen(false)} />
+      <ProductModal open={open} editing={editing} prefill={prefill} onClose={() => setOpen(false)} />
     </>
   )
 }
 
-function ProductModal({ open, editing, onClose }: { open: boolean; editing: ProductEdit | null; onClose: () => void }) {
+function ProductModal({ open, editing, prefill, onClose }: { open: boolean; editing: ProductEdit | null; prefill: Prefill | null; onClose: () => void }) {
   const { storeId } = useStore()
   const [form] = Form.useForm()
   const uzFirst = getLang() === 'uz'
@@ -390,8 +422,25 @@ function ProductModal({ open, editing, onClose }: { open: boolean; editing: Prod
             images: editing.images ?? [],
             is_active: editing.is_active,
           })
+        else if (prefill)
+          form.setFieldsValue({
+            [uzFirst ? 'name_uz' : 'name']: prefill.name || undefined,
+            barcodes: [prefill.barcode],
+            base_price: prefill.price,
+          })
       }}
     >
+      {!editing && prefill && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={tr(
+            `Штрихкод ${prefill.barcode} продан на кассе без карточки. Название и цена — с кассы, проверьте их.`,
+            `${prefill.barcode} shtrix-kodi kassada kartochkasiz sotilgan. Nomi va narxi — kassadan, tekshiring.`,
+          )}
+        />
+      )}
       {!editing && (
         <Alert
           type="info"

@@ -154,6 +154,8 @@ class SaleRecord {
             if (l.mods.isNotEmpty) 'mods': [for (final m in l.mods) m.toJson()],
             if (l.comment.isNotEmpty) 'comment': l.comment,
             if (l.billItemId != null) 'bill_item_id': l.billItemId,
+            if (l.product.unknown) 'unknown_barcode': l.product.unknownBarcode,
+            if (l.product.unknown) 'unknown_name': l.product.nameRu,
           },
         // Кафе со столами: обслуживание — отдельной строкой чека (и в фискальном).
         if (cart.service > 0)
@@ -189,7 +191,9 @@ class SaleRecord {
         'items': [
           for (final l in lines)
             if (l['service'] != true) {
-              'product_id': l['product_id'],
+              // Неизвестный товар — без product_id: штрихкод и название кассира.
+              if (l['unknown_barcode'] != null) 'unknown_barcode': l['unknown_barcode'] else 'product_id': l['product_id'],
+              if ((l['unknown_name'] as String?)?.isNotEmpty ?? false) 'unknown_name': l['unknown_name'],
               'qty': qtyApi(l['qty'] as int),
               'price': moneyApi(l['price'] as int),
               if ((l['discount'] as int) > 0) 'discount': moneyApi(l['discount'] as int),

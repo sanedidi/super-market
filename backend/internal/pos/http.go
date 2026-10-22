@@ -59,6 +59,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.With(debtsOn).Post("/pos/debt-payments", m.debtPayment)
 		r.Put("/pos/quick-keys", m.setQuickKeys)
 		r.Put("/pos/products/{id}/price", m.setPrice)
+		r.Get("/pos/products/lookup", m.lookup)
 		m.kitchenRoutes(r)
 	})
 	// Панель магазина: кассы, ПИНы, смены, налоговые поля, коды.
@@ -83,6 +84,9 @@ func (m *Module) Routes(r chi.Router) {
 		r.Put("/store/pos/products/{id}/plu", m.setPLU)
 		r.Put("/store/pos/payment-methods/{id}/kind", m.setKind)
 		r.Get("/store/pos/settings", m.getSettings)
+		// Товары → «Без карточки»: что касса продала неизвестным товаром.
+		r.Get("/store/pos/unknown-goods", m.unknownGoods)
+		r.Post("/store/pos/unknown-goods/adopt", m.adoptUnknown)
 		r.Put("/store/pos/settings", m.saveSettings)
 	})
 	// Супер-админ: ИКПУ общих товаров платформы.
@@ -127,6 +131,25 @@ func (m *Module) setQuickKeys(w http.ResponseWriter, r *http.Request) {
 func (m *Module) setPrice(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in PriceInput) (ProductPrice, error) {
 		return m.svc.SetPrice(r.Context(), pr(r), id, in)
+	})
+}
+
+func (m *Module) lookup(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (LookupProduct, error) {
+		return m.svc.Lookup(r.Context(), pr(r), r.URL.Query().Get("barcode"))
+	})
+}
+
+func (m *Module) unknownGoods(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[UnknownGood], error) {
+		items, err := m.svc.UnknownGoods(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+		return httpx.List[UnknownGood]{Items: items}, err
+	})
+}
+
+func (m *Module) adoptUnknown(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in AdoptInput) (ProductPrice, error) {
+		return m.svc.AdoptUnknown(r.Context(), pr(r), in)
 	})
 }
 

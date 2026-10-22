@@ -138,10 +138,10 @@ func (s *Service) getSale(ctx context.Context, q db.Querier, p *identity.Princip
 		return Sale{}, err
 	}
 	rows, err = q.Query(ctx, `
-		SELECT i.line, i.product_id, loc(p.name, p.name_uz), i.qty::text, i.price::text, i.discount::text, i.total::text,
+		SELECT i.line, i.product_id, COALESCE(NULLIF(i.unknown_name, ''), loc(p.name, p.name_uz)), i.qty::text, i.price::text, i.discount::text, i.total::text,
 		       COALESCE((SELECT sum(ri.qty) FROM customer_return_items ri JOIN customer_returns r ON r.id = ri.return_id
 		                 WHERE r.sale_id = i.sale_id AND ri.sale_line = i.line), 0)::text,
-		       p.ikpu, p.package_code, p.vat_rate::text, i.marking_codes, p.name, i.note
+		       p.ikpu, p.package_code, p.vat_rate::text, i.marking_codes, COALESCE(NULLIF(i.unknown_name, ''), p.name), i.note
 		FROM sale_items i JOIN products p ON p.id = i.product_id
 		WHERE i.sale_id = $1 ORDER BY i.line`, id)
 	if err != nil {
@@ -252,6 +252,11 @@ type SaleInput struct {
 		Note string `json:"note"`
 		// Кафе со столами: какую позицию счёта оплачивает строка.
 		BillItemID *string `json:"bill_item_id"`
+		// Неизвестный товар (только касса): штрихкода нет ни в магазине, ни в
+		// Super Market — product_id пустой, цена от кассира, название — по
+		// желанию. Строка ссылается на служебный товар сети, остаток не трогает.
+		UnknownBarcode string `json:"unknown_barcode"`
+		UnknownName    string `json:"unknown_name"`
 	} `json:"items"`
 	// Кафе со столами: оплата счёта стола (целиком или часть при разделении)
 	// и обслуживание % этой части.
@@ -347,10 +352,29 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 	if in.ServiceAmount != nil && (!in.ServiceAmount.Valid() || in.BillID == nil) {
 		return Sale{}, false, apperr.Validation("service_amount: обслуживание — только при оплате счёта стола").Uz("service_amount: xizmat haqi faqat stol hisobini toʻlashda")
 	}
-	for _, it := range in.Items {
+	for i := range in.Items {
+		it := &in.Items[i]
 		if len([]rune(it.Note)) > 200 {
 			return Sale{}, false, apperr.Validation("items: комментарий до 200 символов").Uz("items: izoh 200 belgigacha")
 		}
+		it.UnknownBarcode = strings.TrimSpace(it.UnknownBarcode)
+		it.UnknownName = strings.TrimSpace(it.UnknownName)
+		if it.UnknownBarcode == "" {
+			continue
+		}
+		if !pos || !unknownBarcodeRe.MatchString(it.UnknownBarcode) {
+			return Sale{}, false, apperr.Validation("items: неизвестный товар — штрихкод с кассы").Uz("items: nomaʼlum mahsulot — kassadan shtrix-kod")
+		}
+		if len([]rune(it.UnknownName)) > 120 {
+			return Sale{}, false, apperr.Validation("items: название неизвестного товара — до 120 символов").Uz("items: nomaʼlum mahsulot nomi — 120 belgigacha")
+		}
+		if it.Price == nil || !it.Price.Valid() || money.D(string(*it.Price)).Sign() <= 0 {
+			return Sale{}, false, apperr.Validation("items: у неизвестного товара нужна цена").Uz("items: nomaʼlum mahsulotga narx kerak")
+		}
+		if len(it.Modifiers) > 0 || it.BillItemID != nil || len(it.MarkingCodes) > 0 {
+			return Sale{}, false, apperr.Validation("items: неизвестный товар — без модификаторов и маркировки").Uz("items: nomaʼlum mahsulot — modifikator va markirovkasiz")
+		}
+		it.ProductID = ""
 	}
 	if len(in.Payments) == 0 && in.Debt == nil {
 		return Sale{}, false, apperr.Validation("payments: укажите оплату").Uz("payments: toʻlovni kiriting")
@@ -453,9 +477,21 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 		seen := map[string]bool{}
 		seenCodes := map[string]bool{}
 		var billLines []cafe.PaidLine
+		unknownID := ""
 		for i, it := range in.Items {
 			line := i + 1
 			ls := strconv.Itoa(line)
+			unknown := it.UnknownBarcode != ""
+			if unknown {
+				if unknownID == "" {
+					id, err := UnknownProduct(ctx, tx, p.NetworkID)
+					if err != nil {
+						return err
+					}
+					unknownID = id
+				}
+				it.ProductID = unknownID
+			}
 			if !httpx.IsUUID(it.ProductID) {
 				return apperr.Validation("items: неверный product_id в строке " + ls).Uz("items: " + ls + "-qatorda product_id notoʻgʻri")
 			}
@@ -468,7 +504,7 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 			}
 			// Блюдо кафе может повторяться: два плова, один «без лука».
 			dish := prod.Kind == cafe.KindDish
-			if seen[it.ProductID] && !dish && it.BillItemID == nil {
+			if seen[it.ProductID] && !dish && it.BillItemID == nil && !unknown {
 				return apperr.Validation("items: товар повторяется в строке " + ls + " — объедините количество").Uz("items: " + ls + "-qatorda mahsulot takrorlanadi — miqdorni birlashtiring")
 			}
 			seen[it.ProductID] = true
@@ -545,6 +581,8 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 				if err != nil {
 					return err
 				}
+			} else if unknown {
+				// Неизвестный товар: на складе его нет — ни остатка, ни недостачи.
 			} else if pos || uncounted {
 				// С кассы — продажа уже случилась: недостачу фиксируем, а не отклоняем.
 				taken, short, err = inventory.TakeUpTo(ctx, tx, p.NetworkID, warehouseID, it.ProductID, qty.Fixed(3), inventory.DocSale, id)
@@ -562,10 +600,12 @@ func (s *Service) CreateSale(ctx context.Context, p *identity.Principal, in Sale
 				lineCost = lineCost.Add(t.Cost)
 			}
 			if _, err := tx.Exec(ctx, `
-				INSERT INTO sale_items (sale_id, line, product_id, qty, price, discount, total, cost, marking_codes, short_qty, note, bill_item_id)
-				VALUES ($1, $2, $3, $4::numeric, $5::numeric, $6::numeric, $7::numeric, $8::numeric, $9, $10::numeric, $11, $12)`,
+				INSERT INTO sale_items (sale_id, line, product_id, qty, price, discount, total, cost, marking_codes, short_qty, note, bill_item_id,
+				                        unknown_barcode, unknown_name)
+				VALUES ($1, $2, $3, $4::numeric, $5::numeric, $6::numeric, $7::numeric, $8::numeric, $9, $10::numeric, $11, $12, $13, $14)`,
 				id, line, it.ProductID, qty.Fixed(3), price, lineDiscount.Money(),
-				lineSum.Sub(lineDiscount).Money(), lineCost.Money(), codes, short, strings.TrimSpace(it.Note), it.BillItemID); err != nil {
+				lineSum.Sub(lineDiscount).Money(), lineCost.Money(), codes, short, strings.TrimSpace(it.Note), it.BillItemID,
+				it.UnknownBarcode, it.UnknownName); err != nil {
 				return err
 			}
 			if it.BillItemID != nil {

@@ -111,6 +111,28 @@ class Product {
 
   static String? _nonEmpty(String? s) => s == null || s.isEmpty ? null : s;
 
+  /// Неизвестный товар (Figma «Касса · Цена без связи и неизвестный товар»):
+  /// штрихкода нет ни в магазине, ни в Super Market — кассир продаёт его с
+  /// ценой и названием по желанию. В каталог не попадает; id — «unknown:<штрихкод>»,
+  /// название кассира — в [nameRu] (пусто — «Неизвестный товар»).
+  factory Product.unknown(String barcode, int price, String name) => Product(
+        id: '$unknownPrefix$barcode',
+        name: name.isEmpty ? tr('Неизвестный товар', 'Nomaʼlum mahsulot') : name,
+        nameRu: name,
+        price: price,
+        barcodes: [barcode],
+        vatBp: 0,
+        unit: tr('шт', 'dona'),
+      );
+
+  static const unknownPrefix = 'unknown:';
+
+  /// Штрихкод, который можно продать неизвестным товаром (как на сервере).
+  static final unknownBarcodeRe = RegExp(r'^[0-9A-Za-z-]{4,32}$');
+
+  bool get unknown => id.startsWith(unknownPrefix);
+  String get unknownBarcode => unknown ? id.substring(unknownPrefix.length) : '';
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,

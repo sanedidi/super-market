@@ -22,6 +22,9 @@ func (s *Service) WithCatalog(c *catalog.Service) *Service {
 
 type PriceInput struct {
 	Price money.Amount `json:"price"`
+	// IfUnpriced — цену поставили на кассе без связи (очередь): если у товара
+	// цена уже появилась (поставили в панели или на другой кассе) — не менять.
+	IfUnpriced bool `json:"if_unpriced"`
 }
 
 type ProductPrice struct {
@@ -61,6 +64,15 @@ func (s *Service) SetPrice(ctx context.Context, p *identity.Principal, productID
 		return ProductPrice{}, err
 	}
 	storeID := p.StoreIDs[0]
+	if in.IfUnpriced {
+		cur, err := catalog.EffectivePrice(ctx, s.pool, p.NetworkID, storeID, priceType, productID)
+		if err != nil {
+			return ProductPrice{}, err
+		}
+		if money.D(cur.Price).Sign() > 0 {
+			return ProductPrice{ProductID: productID, Price: money.D(cur.Price).Money()}, nil
+		}
+	}
 	note := "Касса"
 	items := []struct {
 		ProductID string       `json:"product_id"`
