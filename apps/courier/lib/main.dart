@@ -11,12 +11,14 @@ import 'screens/login_screen.dart';
 import 'screens/shell.dart';
 import 'state.dart';
 import 'ui/theme.dart';
+import 'version.dart';
+
+// Версия для экранов «Ещё» / профиля — одна на приложение, в version.dart.
+export 'version.dart' show appVersion;
 
 /// Адрес API задаётся при сборке: flutter run --dart-define=API_URL=http://localhost:8080/api/v1
 const apiUrl = String.fromEnvironment('API_URL', defaultValue: 'https://api.super-market.uz/api/v1');
 
-/// Версия для экрана профиля (совпадает с pubspec.yaml).
-const appVersion = '1.1.0';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -60,7 +62,14 @@ class CourierApp extends StatelessWidget {
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-        home: loggedIn ? const Shell() : (crowd ? const CrowdShell() : const LoginScreen()),
+        // ОБ1 · «Есть обновление» — шторка поверх главного экрана.
+        home: UpdateCheck(
+          api: context.read<Api>(),
+          app: appId,
+          version: appVersion,
+          open: openStore,
+          child: loggedIn ? const Shell() : (crowd ? const CrowdShell() : const LoginScreen()),
+        ),
       ),
     );
   }

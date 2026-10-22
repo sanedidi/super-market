@@ -6,6 +6,7 @@ import {
   BellOutlined,
   BulbOutlined,
   CarOutlined,
+  CloudSyncOutlined,
   DeliveredProcedureOutlined,
   DashboardOutlined,
   DollarOutlined,
@@ -37,6 +38,7 @@ import { StorePhotos } from './pages/StorePhotos'
 import { Translations } from './pages/Translations'
 import { Notifications, PushCampaign, PushNew } from './pages/Push'
 import { InvestNowBadge, InvestVisitors } from './pages/InvestVisitors'
+import { AppVersions } from './pages/AppVersions'
 
 const menu: MenuItem[] = [
   { key: '/', icon: <DashboardOutlined />, label: 'Главная' },
@@ -89,6 +91,7 @@ const menu: MenuItem[] = [
   { key: '/ai-photo', icon: <PictureOutlined />, label: 'ИИ для фото' },
   { key: '/invest', icon: <RiseOutlined />, label: 'Инвест-страница', extra: <InvestNowBadge /> },
   { key: '/translations', icon: <TranslationOutlined />, label: 'Переводы' },
+  { key: '/app-versions', icon: <CloudSyncOutlined />, label: 'Версии приложений' },
 ]
 
 // Подстраницы, которых нет в меню, — подписи вкладок.
@@ -126,6 +129,7 @@ export function AdminRoutes() {
         <Route path="ai-photo" element={<AIPhoto />} />
         <Route path="ai-photo/store" element={<StorePhotos />} />
         <Route path="translations" element={<Translations />} />
+        <Route path="app-versions" element={<AppVersions />} />
         <Route path="invest" element={<InvestVisitors />} />
         <Route path="notifications/new" element={<PushNew />} />
         <Route path="notifications/:id" element={<PushCampaign />} />

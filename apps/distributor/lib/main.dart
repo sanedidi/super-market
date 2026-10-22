@@ -17,12 +17,14 @@ import 'auth.dart';
 import 'firebase_options.dart';
 import 'point_setup.dart';
 import 'shell.dart';
+import 'version.dart';
+
+// Версия для экранов «Ещё» / профиля — одна на приложение, в version.dart.
+export 'version.dart' show appVersion;
 
 /// Адрес API задаётся при сборке: flutter run --dart-define=API_URL=http://localhost:8080/api/v1
 const apiUrl = String.fromEnvironment('API_URL', defaultValue: 'https://api.super-market.uz/api/v1');
 
-/// Версия для экрана «Ещё» (совпадает с pubspec.yaml).
-const appVersion = '0.1.0';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -122,7 +124,8 @@ class _DistributorAppState extends State<DistributorApp> with WidgetsBindingObse
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-        home: home,
+        // ОБ1 · «Есть обновление» — шторка поверх главного экрана.
+        home: UpdateCheck(api: context.read<Api>(), app: appId, version: appVersion, open: openStore, child: home),
         builder: (context, child) => showLock
             ? Stack(fit: StackFit.expand, children: [
                 ExcludeSemantics(child: child!),

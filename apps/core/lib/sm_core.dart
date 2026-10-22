@@ -2,6 +2,7 @@
 library sm_core;
 
 export 'src/api.dart';
+export 'src/app_update.dart';
 export 'src/client_qr.dart';
 export 'src/format.dart';
 export 'src/i18n.dart';

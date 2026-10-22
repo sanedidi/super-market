@@ -14,6 +14,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/admin"
 	"github.com/sanedidi/super-market/backend/internal/ads"
 	"github.com/sanedidi/super-market/backend/internal/ai"
+	"github.com/sanedidi/super-market/backend/internal/appversions"
 	"github.com/sanedidi/super-market/backend/internal/billing"
 	"github.com/sanedidi/super-market/backend/internal/cafe"
 	"github.com/sanedidi/super-market/backend/internal/catalog"
@@ -183,6 +184,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		summary.NewModule(summary.NewService(pool, log), auth, log),
 		account.NewModule(account.NewService(pool, idSvc, notify.New(pool, tg, log), log), auth, log),
 		invest.NewModule(invest.NewService(pool), auth, log),
+		appversions.NewModule(appversions.NewService(pool), auth, log),
 	)
 	return &App{Handler: h, Orders: ord, Payments: pay, Billing: bill, Start: startSvc}, nil
 }

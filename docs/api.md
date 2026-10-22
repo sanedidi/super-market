@@ -1344,3 +1344,20 @@ env `REVIEW_AGENT_LOGIN=+998XXXXXXXXX:123456` (SMS не отправляется
 
 Сервер добавляет к данным каждого пуша `kind` (`supply_payment`, `brand_approved`, `supply_order_new`, `supply_income`…),
 если в данных нет своего; приложения открывают по нему нужный экран.
+
+## Версии приложений («Есть обновление»)
+
+Супер-админ вписывает версию, выложенную в App Store / Google Play; приложения (Super Market, SM Магазин,
+SM Курьер, SM Агент) при запуске и при возврате (не чаще раза в час) спрашивают, есть ли новее, и показывают
+шторку «Есть обновление» (`UpdateCheck` в `sm_core`). «Позже» — следующий раз через сутки.
+
+- `GET /public/app-version?app=store&platform=ios&version=0.9.1` — без токена. `app`: client, store, courier,
+  agent; `platform`: ios, android. Ответ `{update, latest, store_url, notes[]}`; `notes` — «Что нового» на языке
+  запроса (Accept-Language). `update: true` — только если заданы и версия, и ссылка, и версия приложения старее.
+- `GET /admin/app-versions` — все 8 пар приложение × платформа (`latest`, `store_url`, `notes_ru`, `notes_uz`,
+  `updated_at`; не заданные — пустые).
+- `PUT /admin/app-versions/{app}/{platform}` — `{latest?, store_url?, notes_ru?, notes_uz?}`; поле без ключа не
+  меняется. Версия — `0.9.2`, ссылка — `https://…`, «Что нового» — по строке на пункт, до 2000 символов.
+
+Версия приложения — `appVersion` в `apps/<app>/lib/version.dart`; тест `test/version_test.dart` сверяет её с
+`pubspec.yaml`.

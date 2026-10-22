@@ -13,6 +13,7 @@ import 'screens/root_shell.dart';
 import 'state.dart';
 import 'ui/brand.dart';
 import 'ui/theme.dart';
+import 'version.dart';
 
 /// Адрес API задаётся при сборке: flutter run --dart-define=API_URL=http://10.0.2.2:8080/api/v1
 const apiUrl = String.fromEnvironment('API_URL', defaultValue: 'https://api.super-market.uz/api/v1');
@@ -62,7 +63,8 @@ class ClientApp extends StatelessWidget {
         // Тёмные значки статус-бара по умолчанию; красные экраны (главная,
         // вход, заставка) задают светлые своим AnnotatedRegion.
         builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(value: SystemUiOverlayStyle.dark, child: child!),
-        home: _Gate(onboardingDone: onboardingDone),
+        // ОБ1 · «Есть обновление» — шторка поверх главного экрана.
+        home: UpdateCheck(api: context.read<Api>(), app: appId, version: appVersion, open: openStore, child: _Gate(onboardingDone: onboardingDone)),
       ),
     );
   }

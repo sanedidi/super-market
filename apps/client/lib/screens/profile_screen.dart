@@ -18,9 +18,8 @@ import 'order_screen.dart';
 import 'orders_screen.dart';
 import 'profile_details_screen.dart';
 import 'root_shell.dart';
+import '../version.dart' show appVersion;
 
-/// Версия приложения (совпадает с pubspec.yaml).
-const appVersion = '0.9.1';
 
 /// Города: ключ — как хранится в профиле на сервере (по-русски), значение — подпись.
 Map<String, String> get _cities => {
