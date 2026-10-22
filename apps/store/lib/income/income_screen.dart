@@ -292,13 +292,13 @@ class _IncomeScreenState extends State<IncomeScreen> {
         }
         final info = await _info(p);
         if (!ctx.mounted) return false;
-        return _openLine(ctx, info, scanning: true);
+        return await _openLine(ctx, info, scanning: true);
       }
       final ref = await _capture(() => _missing(ctx, code));
       if (ref == null || !ctx.mounted) return false;
       final info = await _info(ref, isNew: true);
       if (!ctx.mounted) return false;
-      return _openLine(ctx, info, scanning: true);
+      return await _openLine(ctx, info, scanning: true);
     } catch (e) {
       if (ctx.mounted) showMessage(ctx, e);
       return false;
