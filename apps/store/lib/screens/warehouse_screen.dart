@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import '../income/income_entry.dart';
 import '../receipt/capture_screen.dart';
 import '../receipt/receipt_logic.dart';
 import '../receipt/review_screen.dart';
@@ -13,7 +14,8 @@ import '../suppliers/suppliers_screen.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 
-/// М4 · Склад: «Мои товары и остатки» (О1), приход по фото накладной, последние накладные.
+/// М4 · Склад: «Мои товары и остатки» (О1), приход товара (сканер, поиск, новый
+/// товар по фото — Р1) и по фото накладной, последние накладные.
 class WarehouseScreen extends StatefulWidget {
   const WarehouseScreen({super.key});
 
@@ -23,6 +25,7 @@ class WarehouseScreen extends StatefulWidget {
 
 class _WarehouseScreenState extends State<WarehouseScreen> {
   List<Map<String, dynamic>>? _scans;
+  Map<String, dynamic>? _draft;
   Object? _error;
   String? _loadedFor;
 
@@ -35,8 +38,11 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     try {
       final scans = await api.list('/store/invoice-scans', {'store_id': storeId, 'limit': 30});
       if (!mounted) return;
+      final draft = await incomeDraft(context);
+      if (!mounted) return;
       setState(() {
         _scans = scans;
+        _draft = draft;
         _error = null;
       });
     } catch (e) {
@@ -72,24 +78,37 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
             MyProductsCard(key: ValueKey('my-${st.storeId}'), storeId: st.storeId!),
             const SizedBox(height: 16),
           ],
-          AppCard(
-            color: AppColors.ink,
+          // Р1 · Приход товара: сканер, поиск, новый товар по фото — и по фото накладной.
+          IncomeWayCard(
+            dark: true,
+            icon: Icons.qr_code_scanner_rounded,
+            title: tr('Приход товара', 'Mahsulot kirimi'),
+            text: tr('Сканер, поиск, новый товар по фото', 'Skaner, qidiruv, rasm orqali yangi mahsulot'),
+            onTap: () async {
+              await openIncome(context);
+              if (mounted) _load();
+            },
+          ),
+          const SizedBox(height: 10),
+          IncomeWayCard(
+            icon: Icons.document_scanner_rounded,
+            title: tr('Приход по фото накладной', 'Yuk xati rasmi orqali kirim'),
+            text: tr('Super Market прочитает накладную', 'Super Market yuk xatini oʻqiydi'),
             onTap: () async {
               await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CaptureScreen()));
               if (mounted) _load();
             },
-            child: Row(children: [
-              const IconBox(Icons.document_scanner_rounded, bg: AppColors.primary, fg: AppColors.white),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(tr('Приход по фото накладной', 'Yuk xati rasmi orqali kirim'), style: AppText.bodyStrong.copyWith(color: AppColors.white, fontSize: 16)),
-                  Text(tr('ИИ прочитает поставщика и товары', 'SI yetkazib beruvchi va mahsulotlarni oʻqiydi'), style: AppText.small.copyWith(color: AppColors.muted)),
-                ]),
-              ),
-              const Icon(Icons.chevron_right_rounded, color: AppColors.white),
-            ]),
           ),
+          if (_draft != null) ...[
+            const SizedBox(height: 10),
+            IncomeDraftTile(
+              draft: _draft!,
+              onTap: () async {
+                await openIncome(context, id: '${_draft!['id']}');
+                if (mounted) _load();
+              },
+            ),
+          ],
           const SizedBox(height: 10),
           Row(children: [
             Expanded(

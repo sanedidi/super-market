@@ -53,6 +53,10 @@ type MyProduct struct {
 	// Себестоимость единицы и сумма остатка — только с правом «Склад» или «Отчёты».
 	AvgCost   *string `json:"avg_cost,omitempty"`
 	StockCost *string `json:"stock_cost,omitempty"`
+	// LastCost — цена закупки в последнем проведённом приходе (сум); ручной
+	// приход в «SM Магазин» подставляет её в новую строку. Тоже только с
+	// правом «Склад» или «Отчёты».
+	LastCost *string `json:"last_cost,omitempty"`
 }
 
 type MyProductsFilter struct {
@@ -212,6 +216,8 @@ func (s *Service) MyProducts(ctx context.Context, p *identity.Principal, f MyPro
 	default:
 		return out, apperr.Validation("order: attention или name").Uz("order: attention yoki name")
 	}
+	args = append(args, p.NetworkID)
+	netArg := len(args)
 	args = append(args, f.Status)
 	statusArg := len(args)
 	rows, err := s.pool.Query(ctx, base+fmt.Sprintf(`
@@ -219,22 +225,26 @@ func (s *Service) MyProducts(ctx context.Context, p *identity.Principal, f MyPro
 		       trim_scale(qty)::text, round(per_day, 1)::text,
 		       CASE WHEN NOT uncounted AND per_day > 0 THEN floor(GREATEST(qty, 0) / per_day)::int END,
 		       status,
-		       CASE WHEN qty > 0 THEN round(cost / qty, 2)::text END, round(cost, 2)::text
+		       CASE WHEN qty > 0 THEN round(cost / qty, 2)::text END, round(cost, 2)::text,
+		       (SELECT trim_scale(i.price)::text FROM stock_document_items i JOIN stock_documents d ON d.id = i.document_id
+		         WHERE d.network_id = $%d AND d.type = 'income' AND d.status = 'posted' AND d.currency = 'UZS'
+		           AND i.product_id = y.id AND i.price IS NOT NULL
+		         ORDER BY d.posted_at DESC LIMIT 1)
 		FROM y
 		WHERE $%d = '' OR status = $%d
 		ORDER BY %s
-		LIMIT %d OFFSET %d`, statusArg, statusArg, order, f.Page.Limit, f.Page.Offset), productsearch.Args(args)...)
+		LIMIT %d OFFSET %d`, netArg, statusArg, statusArg, order, f.Page.Limit, f.Page.Offset), productsearch.Args(args)...)
 	if err != nil {
 		return out, err
 	}
 	out.Items, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (MyProduct, error) {
 		var it MyProduct
-		var avg *string
+		var avg, last *string
 		var cost string
 		err := r.Scan(&it.ProductID, &it.Name, &it.Image, &it.Barcode, &it.Category, &it.UnitShort, &it.IsFractional, &it.Price,
-			&it.Uncounted, &it.Qty, &it.PerDay, &it.DaysLeft, &it.Status, &avg, &cost)
+			&it.Uncounted, &it.Qty, &it.PerDay, &it.DaysLeft, &it.Status, &avg, &cost, &last)
 		if sees {
-			it.AvgCost, it.StockCost = avg, &cost
+			it.AvgCost, it.StockCost, it.LastCost = avg, &cost, last
 		}
 		return it, err
 	})

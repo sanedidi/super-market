@@ -160,6 +160,16 @@ func TestStartMode(t *testing.T) {
 	if one := a.expect(a.do("GET", "/store/inventory/my-products?store_id="+storeID+"&product_id="+cola, ownerTok, nil), 200, "my cola").items(); len(one) != 1 || one[0]["qty"] != "6" || one[0]["status"] != "ok" || one[0]["price"] != "12000.00" {
 		t.Fatalf("my cola = %v", one)
 	}
+	// Ручной приход в «SM Магазин»: цена закупки из последнего проведённого прихода.
+	sup := a.expect(a.do("POST", "/store/finance/counterparties", ownerTok, map[string]any{"name": "Coca-Cola Bottlers"}), 201, "supplier").str("id")
+	inc := a.expect(a.do("POST", "/store/inventory/documents", ownerTok, map[string]any{
+		"type": "income", "warehouse_id": my.str("warehouse_id"), "counterparty_id": sup,
+		"items": []map[string]any{{"product_id": cola, "qty": "2", "price": "9500"}},
+	}), 201, "manual income").str("id")
+	a.expect(a.do("POST", "/store/inventory/documents/"+inc+"/post", ownerTok, nil), 200, "manual income post")
+	if one := a.expect(a.do("GET", "/store/inventory/my-products?store_id="+storeID+"&product_id="+cola, ownerTok, nil), 200, "my cola after income").items(); len(one) != 1 || one[0]["qty"] != "8" || one[0]["last_cost"] != "9500" {
+		t.Fatalf("my cola after income = %v", one)
+	}
 	a.expect(a.do("GET", "/store/inventory/my-products?store_id="+storeID+"&status=bad", ownerTok, nil), 400, "my bad status")
 	a.expect(a.do("GET", "/store/inventory/my-products?store_id="+stockStore, ownerTok, nil), 404, "my foreign")
 

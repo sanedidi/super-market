@@ -30,10 +30,14 @@ const _purpleSoft = Color(0xFFF4F3FF);
 /// Р1 · Фото нового товара. true — отправлено Super Market; ручная форма —
 /// «Заполнить вручную» (возвращает то, что вернула форма).
 class NewItemCameraScreen extends StatefulWidget {
-  const NewItemCameraScreen({super.key, required this.start, this.barcode});
+  const NewItemCameraScreen({super.key, required this.start, this.barcode, this.onSent});
 
   final StartApi start;
   final String? barcode;
+
+  /// Карточка ушла Super Market (ответ /store/start/new-items): ручной приход
+  /// ждёт её, чтобы сразу добавить новый товар в приход.
+  final ValueChanged<Map<String, dynamic>>? onSent;
 
   @override
   State<NewItemCameraScreen> createState() => _NewItemCameraScreenState();
@@ -76,6 +80,7 @@ class _NewItemCameraScreenState extends State<NewItemCameraScreen> {
         urls.add(res['url'] as String);
       }
       final it = await widget.start.createNewItem(urls, barcode: widget.barcode);
+      widget.onSent?.call(it);
       if (!mounted) return;
       Navigator.of(context).pop(it['status'] == 'failed' ? 'failed' : 'sent');
     } on ApiError catch (e) {

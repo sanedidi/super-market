@@ -3,8 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../dashboard/home_dashboard.dart';
+import '../income/income_entry.dart';
 import '../kassa/kassa_screen.dart';
-import '../receipt/capture_screen.dart';
 import '../setup/setup_screens.dart';
 import '../start/start_screen.dart';
 import '../start/stock_count.dart';
@@ -193,11 +193,12 @@ class _HomeScreenState extends State<HomeScreen> {
     return Row(children: [
       Expanded(
         child: _MiniAction(
-          icon: Icons.document_scanner_rounded,
+          icon: Icons.move_to_inbox_rounded,
           label: tr('Приход', 'Kirim'),
           bg: AppColors.primarySoft,
           fg: AppColors.primary,
-          onTap: canIncome ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CaptureScreen())) : null,
+          // Р2 · шторка: сканером или вручную / по фото накладной.
+          onTap: canIncome ? () => openIncomeChooser(context) : null,
         ),
       ),
       const SizedBox(width: 8),
@@ -240,11 +241,11 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(children: [
             Expanded(
               child: _Action(
-                icon: Icons.document_scanner_rounded,
-                label: tr('Приход по фото', 'Rasm orqali kirim'),
+                icon: Icons.move_to_inbox_rounded,
+                label: tr('Приход товара', 'Mahsulot kirimi'),
                 bg: AppColors.primarySoft,
                 fg: AppColors.primary,
-                onTap: canIncome ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CaptureScreen())) : null,
+                onTap: canIncome ? () => openIncomeChooser(context) : null,
               ),
             ),
             const SizedBox(width: 12),
