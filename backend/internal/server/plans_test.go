@@ -160,3 +160,22 @@ func TestPlanCommission(t *testing.T) {
 		t.Fatalf("commission on start = %s", n)
 	}
 }
+
+// «Бесплатный» выключен супер-админом (как на проде): новая сеть без тарифа
+// получает первый действующий тариф, а не ошибку «тариф не найден».
+func TestDefaultPlanDisabled(t *testing.T) {
+	pool := freshDB(t)
+	a := newAPI(t, paymeConfig(), pool, nil)
+	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
+	a.expect(a.do("PATCH", "/admin/plans/free", adminTok, map[string]any{"is_active": false}), 200, "disable free")
+	net := a.expect(a.do("POST", "/admin/networks", adminTok, map[string]string{
+		"name": "Дукон", "kind": "single", "owner_phone": "+998900000002", "owner_name": "Владелец",
+	}), 201, "network without plan")
+	if net.str("plan_key") != "start" {
+		t.Fatalf("network = %v", net.Body)
+	}
+	// Явно выбранный выключенный тариф — по-прежнему ошибка.
+	a.expect(a.do("POST", "/admin/networks", adminTok, map[string]string{
+		"name": "Дукон 2", "kind": "single", "owner_phone": "+998900000003", "owner_name": "Владелец", "plan_key": "free",
+	}), 400, "explicit disabled plan")
+}

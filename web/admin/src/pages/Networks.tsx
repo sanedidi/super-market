@@ -231,7 +231,7 @@ interface Store {
 function PlanField() {
   const plans = useList<Plan>('/admin/plans')
   return (
-    <Form.Item name="plan_key" label="Тариф" extra="Пусто — одиночный магазин начнёт с «Бесплатного» и пробного периода, сеть магазинов — с «Сети». Поменять можно потом.">
+    <Form.Item name="plan_key" label="Тариф" extra="Пусто — одиночный магазин начнёт с первого действующего тарифа и пробного периода, сеть магазинов — с «Сети». Поменять можно потом.">
       <Select
         allowClear
         placeholder="По умолчанию"

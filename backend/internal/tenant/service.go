@@ -123,6 +123,17 @@ func (s *Service) CreateNetwork(ctx context.Context, in CreateNetworkInput) (Net
 		}
 		if planKey == "" {
 			planKey = map[string]string{"single": "free", "chain": "network"}[in.Kind]
+			// Тариф по умолчанию супер-админ мог выключить (так было с «Бесплатным»)
+			// — тогда первый действующий тариф для такой сети.
+			if p, err := plans.Get(ctx, tx, planKey); err != nil || !p.IsActive {
+				minStores := map[string]int{"single": 1, "chain": 2}[in.Kind]
+				if err := tx.QueryRow(ctx, `
+					SELECT key FROM plans
+					WHERE is_active AND audience = $1 AND min_stores <= GREATEST($2, 1)
+					ORDER BY sort, key LIMIT 1`, plans.AudienceOf(in.Kind), minStores).Scan(&planKey); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+					return err
+				}
+			}
 		}
 		if p, err := plans.Get(ctx, tx, planKey); err != nil || !p.IsActive {
 			return apperr.Validation("plan_key: тариф не найден").Uz("plan_key: tarif topilmadi")
