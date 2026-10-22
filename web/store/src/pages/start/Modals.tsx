@@ -317,7 +317,7 @@ export function BarcodeModal({ code, onClose }: { code: string | null; onClose: 
           style={{ marginBottom: 16 }}
         />
         {mode === 'bind' ? (
-          <ProductSelect value={product?.id} label={product?.name} onChange={(id, p) => setProduct({ id, name: p?.name ?? '' })} autoFocus />
+          <ProductSelect all value={product?.id} label={product?.name} onChange={(id, p) => setProduct({ id, name: p?.name ?? '' })} autoFocus />
         ) : (
           <Typography.Text>
             {tr(`Создайте свой товар со штрихкодом ${code}. Он сразу встанет в «Мои товары».`, `${code} shtrix-kodli oʻz mahsulotingizni yarating. U darhol «Mahsulotlarim»ga tushadi.`)}

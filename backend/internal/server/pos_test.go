@@ -48,6 +48,11 @@ func TestPOS(t *testing.T) {
 	a := newAPI(t, cfg, pool, nil)
 	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
 	cola, sugar := catalogBasics(t, a, adminTok)
+	// Товар центральной базы с базовой ценой, которого магазин не добавлял, — не на кассе.
+	foreign := a.expect(a.do("POST", "/admin/products", adminTok, map[string]any{
+		"name": "Fanta 1 л", "category_id": a.expect(a.do("GET", "/admin/products/"+cola, adminTok, nil), 200, "cola").str("category_id"),
+		"unit_id": a.expect(a.do("GET", "/admin/products/"+cola, adminTok, nil), 200, "cola").str("unit_id"), "base_price": 9000,
+	}), 201, "foreign product").str("id")
 	tok, store := setupNetwork(t, a, adminTok, "+998900000002")
 	wh := a.expect(a.do("GET", "/store/warehouses?store_id="+store, tok, nil), 200, "wh").items()[0]["id"].(string)
 	doc := a.expect(a.do("POST", "/store/inventory/documents", tok, map[string]any{
@@ -95,6 +100,9 @@ func TestPOS(t *testing.T) {
 	if p := prods[sugar]; p["plu"].(float64) != 10 || p["fractional"] != true {
 		t.Fatalf("sugar in catalog = %v", p)
 	}
+	if _, ok := prods[foreign]; ok {
+		t.Fatalf("central product the store never added is on the register: %v", prods[foreign])
+	}
 	if len(cat.Body["cashiers"].([]any)) != 0 {
 		t.Fatalf("cashiers without pin = %v", cat.Body["cashiers"])
 	}
@@ -125,6 +133,7 @@ func TestPOS(t *testing.T) {
 		`ALTER TABLE pos_plu DISABLE TRIGGER pos_plu_updated_at`,
 		`UPDATE pos_plu SET updated_at = now() - interval '2 hours'`,
 		`ALTER TABLE pos_plu ENABLE TRIGGER pos_plu_updated_at`,
+		`UPDATE store_products SET added_at = now() - interval '2 hours'`,
 	} {
 		if _, err := pool.Exec(context.Background(), q); err != nil {
 			t.Fatal(err)
@@ -134,7 +143,7 @@ func TestPOS(t *testing.T) {
 		t.Fatalf("empty delta = %v", d.Body["products"])
 	}
 	a.expect(a.do("PUT", "/admin/pos/products/"+sugar+"/tax", adminTok, map[string]any{"package_code": "1500"}), 200, "touch sugar")
-	if d := a.expect(posDo(a, "GET", "/pos/catalog?epoch=1&since="+ver, dt, "", nil), 200, "old epoch"); d.Body["full"] != true || d.Body["epoch"] != float64(4) {
+	if d := a.expect(posDo(a, "GET", "/pos/catalog?epoch=1&since="+ver, dt, "", nil), 200, "old epoch"); d.Body["full"] != true || d.Body["epoch"] != float64(pos.CatalogEpoch) {
 		t.Fatalf("old epoch = %v", d.Body["full"])
 	}
 	if d := a.expect(posDo(a, "GET", "/pos/catalog?since="+ver, dt, "", nil), 200, "delta"); len(d.Body["products"].([]any)) != 1 {

@@ -126,7 +126,9 @@ const catalogOverlap = time.Minute
 // без цены на кассу больше не идут, а старые копии их ещё хранят.
 // 3 — в товарах появились группы вариаций (вес и вкус); 4 — названия
 // переключателей группы («Цвет» вместо «Вкус» у посуды и т. п.).
-const CatalogEpoch = 4
+// 5 — на кассу идут только товары магазина («Мои товары»), а не вся
+// центральная база с базовой ценой: старые копии надо заменить целиком.
+const CatalogEpoch = 5
 
 func (s *Service) Catalog(ctx context.Context, p *identity.Principal, since *time.Time) (Catalog, error) {
 	out := Catalog{Full: since == nil, Epoch: CatalogEpoch}
@@ -180,13 +182,16 @@ func (s *Service) Catalog(ctx context.Context, p *identity.Principal, since *tim
 		LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = $3 AND sp.store_id = $2
 		LEFT JOIN prices np ON np.product_id = p.id AND np.price_type_id = $3 AND np.store_id IS NULL AND np.network_id = $1
 		LEFT JOIN pos_plu pl ON pl.network_id = $1 AND pl.product_id = p.id
+		LEFT JOIN store_products mine ON mine.store_id = $2 AND mine.product_id = p.id
 		WHERE (p.network_id IS NULL OR p.network_id = $1)
-		  -- Общий каталог большой (в том числе товары из каталога ИКПУ без цены):
-		  -- кассе нужны только товары, которые этот магазин может продать —
-		  -- свои, с ценой сети или магазина, с кодом на кассе или с базовой ценой.
-		  AND (p.network_id = $1 OR sp.price IS NOT NULL OR np.price IS NOT NULL OR pl.plu IS NOT NULL OR p.base_price > 0)
+		  -- Только товары магазина («Мои товары»: добавил сам, пришли приходом,
+		  -- есть цена магазина; блюда кафе — в выбранных точках), а не вся
+		  -- центральная база. Плюс товары с ценой сети и с кодом весов (PLU) —
+		  -- их сеть настроила сама. Незнакомый штрихкод касса продаёт как
+		  -- «Неизвестный товар».
+		  AND (mine.product_id IS NOT NULL OR np.price IS NOT NULL OR pl.plu IS NOT NULL)
 		  AND ($4::timestamptz IS NULL OR p.updated_at > $4 OR u.updated_at > $4 OR sp.updated_at > $4
-		       OR np.updated_at > $4 OR pl.updated_at > $4 OR vg.updated_at > $4)
+		       OR np.updated_at > $4 OR pl.updated_at > $4 OR vg.updated_at > $4 OR mine.added_at > $4)
 		ORDER BY loc(p.name, p.name_uz)`, p.NetworkID, storeID, priceType, from)
 	if err != nil {
 		return out, err

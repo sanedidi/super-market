@@ -13,6 +13,8 @@ import { tr } from '../i18n'
 
 export interface EditorPaths {
   products: string
+  /** Доп. параметры поиска товаров: панель магазина — только «Мои товары» (scope=mine). */
+  productParams?: Record<string, string | undefined>
   categories: string
   banners: string
 }
@@ -106,7 +108,7 @@ function LinkPicker({ value, onChange, paths }: { value?: BlockLink | null; onCh
         <RemoteSelect path={paths.categories} value={value?.id} onChange={(id) => onChange({ type: t, id: id as string })} placeholder={tr('Категория', 'Kategoriya')} style={{ width: '100%', marginTop: 8 }} />
       )}
       {t === 'product' && (
-        <RemoteSelect search path={paths.products} value={value?.id} onChange={(id) => onChange({ type: t, id: id as string })} placeholder={tr('Найти товар', 'Mahsulotni topish')} style={{ width: '100%', marginTop: 8 }} />
+        <RemoteSelect search path={paths.products} params={paths.productParams} value={value?.id} onChange={(id) => onChange({ type: t, id: id as string })} placeholder={tr('Найти товар', 'Mahsulotni topish')} style={{ width: '100%', marginTop: 8 }} />
       )}
       {t === 'url' && (
         <Input value={value?.url} onChange={(e) => onChange({ type: t, url: e.target.value })} placeholder="https://" style={{ marginTop: 8 }} />
@@ -142,6 +144,7 @@ function ShelfSettings({ b, change, paths, features, onUpgrade }: { b: HomeBlock
           <RemoteSelect
             search
             path={paths.products}
+            params={paths.productParams}
             value={null}
             placeholder={tr('+ Добавить товар', '+ Mahsulot qoʻshish')}
             filter={(p) => !ids.includes(String(p.id))}

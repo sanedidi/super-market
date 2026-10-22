@@ -38,18 +38,24 @@ export function Num(props: InputNumberProps<string>) {
   return <InputNumber<string> stringMode min="0" style={{ width: '100%' }} {...props} />
 }
 
-/** Поиск товара по названию или штрихкоду (/store/products?q=). */
+/**
+ * Поиск товара по названию или штрихкоду (/store/products?q=). Только товары
+ * магазина («Мои товары»); всю центральную базу — с [all] (там, где товар
+ * как раз добавляют в магазин, например в «Начале работы»).
+ */
 export function ProductSelect({
   value,
   label,
   onChange,
   priceTypeId,
+  all,
   ...props
 }: {
   value?: string
   label?: string
   onChange?: (id: string, p: Product | undefined) => void
   priceTypeId?: string
+  all?: boolean
 } & Omit<SelectProps, 'value' | 'onChange' | 'options'>) {
   const { storeId } = useStore()
   const [q, setQ] = useState('')
@@ -62,6 +68,7 @@ export function ProductSelect({
     q: debounced,
     store_id: storeId || undefined,
     price_type_id: priceTypeId,
+    scope: all ? undefined : 'mine',
     limit: 30,
   })
   const options = (data ?? []).map((p) => ({

@@ -410,7 +410,7 @@ export function ShowcasePage() {
         storesPath="/store/home/stores"
         previewPath="/store/home/preview"
         storeParam="store_id"
-        paths={{ products: '/store/products', categories: '/store/catalog/categories', banners: '/store/banners' }}
+        paths={{ products: '/store/products', productParams: { scope: 'mine', store_id: storeId || undefined }, categories: '/store/catalog/categories', banners: '/store/banners' }}
         unwrap={(raw) => (raw as ShowcaseData).layout}
         top={(raw, blocks) => <PlanBar data={raw as ShowcaseData} blocks={blocks} onCompare={() => setPlans({ open: true })} />}
         locked={(b) => !!b.pinned}
