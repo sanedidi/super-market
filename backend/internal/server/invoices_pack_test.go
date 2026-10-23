@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
@@ -164,6 +165,34 @@ func TestInvoicePacks(t *testing.T) {
 		t.Fatalf("chicken again = %v", l)
 	}
 	_ = supplier
+
+	// Сумма строки не прочитана (как у накладных до обновления), строка одна —
+	// сумма берётся из «Итого»; распознать заново можно, пока нет прихода.
+	old := scan(`{"supplier_name":"Linko-SFA","supplier_inn":"305111222","number":"347931","currency":"UZS","total":365400,
+	 "lines":[{"name":"Окорочка с/з 12 кг мар","qty":1,"price":30450}]}`)
+	if l := line(old, 0); l["pack"] != "12.000" || l["pack_source"] != "sum" || l["stock_qty"] != "12.000" || l["read_sum"] != "365400.00" {
+		t.Fatalf("one line without sum = %v", l)
+	}
+	// Миграция 0077 для старых: та же логика в SQL.
+	if _, err := pool.Exec(ctx, `UPDATE invoice_scan_lines SET read_sum = NULL, pack = 1, pack_source = '', cost = NULL WHERE scan_id = $1`, old.str("id")); err != nil {
+		t.Fatal(err)
+	}
+	mig, err := os.ReadFile("../../db/migrations/0077_invoice_old_sums.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, string(mig)); err != nil {
+		t.Fatal(err)
+	}
+	if l := line(a.expect(a.do("GET", "/store/invoice-scans/"+old.str("id"), ownerTok, nil), 200, "old"), 0); l["pack"] != "12.000" || l["cost"] != "30450.00" || l["sum"] != "365400.00" {
+		t.Fatalf("migrated old line = %v", l)
+	}
+	fai.set(reply)
+	again := a.expect(a.do("POST", "/store/invoice-scans/"+old.str("id")+"/retry", ownerTok, nil), 202, "retry ready")
+	if again.str("status") != "ready" || len(again.Body["lines"].([]any)) != 2 {
+		t.Fatalf("retry ready = %v", again.Body)
+	}
+	a.expect(a.do("POST", "/store/invoice-scans/"+id+"/retry", ownerTok, nil), 409, "retry with income")
 
 	// Подсказки строки отдают, дробный ли товар.
 	sug := a.expect(a.do("GET", "/store/invoice-scans/"+sc.str("id")+"/lines/1/suggestions?q=окорочка", ownerTok, nil), 200, "suggest").items()

@@ -76,6 +76,7 @@ interface ShiftReport {
   cash_returns: string
   expected_cash: string
   fiscal_pending: number
+  debt_paid_cash?: string
 }
 
 interface Shift {
@@ -532,6 +533,103 @@ function CloseShiftModal({ shift, onClose }: { shift: Shift | null; onClose: () 
   )
 }
 
+/** Строка формулы: знак, подпись (и пояснение), сумма. */
+function MoneyLine({ sign, label, hint, value, strong }: { sign?: string; label: string; hint?: string; value: string | null; strong?: boolean }) {
+  return (
+    <Flex align="flex-start" gap={8} style={{ padding: '5px 0' }}>
+      <Typography.Text type="secondary" strong style={{ width: 12 }}>
+        {sign ?? ''}
+      </Typography.Text>
+      <div style={{ flex: 1 }}>
+        <Typography.Text strong={strong} type={strong ? undefined : 'secondary'}>
+          {label}
+        </Typography.Text>
+        {hint && (
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {hint}
+            </Typography.Text>
+          </div>
+        )}
+      </div>
+      <Typography.Text strong style={{ fontSize: strong ? 16 : undefined, whiteSpace: 'nowrap' }}>
+        {value === null ? '—' : money(value)}
+      </Typography.Text>
+    </Flex>
+  )
+}
+
+/**
+ * П1 · Две понятные формулы смены (Figma «Финансы понятно»): «Выручка» —
+ * все способы оплаты, и «Наличные в ящике» — только то, что лежит в ящике.
+ * Терминал в ящик не попадает.
+ */
+function ShiftMoney({ shift: s, report: r }: { shift: Shift; report: ShiftReport }) {
+  const cash = r.by_method.filter((m) => m.kind === 'cash')
+  const other = r.by_method.filter((m) => m.kind !== 'cash')
+  const debtCash = Number(r.debt_paid_cash ?? 0)
+  return (
+    <Row gutter={[16, 16]}>
+      <Col xs={24} md={12}>
+        <Card size="small" title={tr('Выручка', 'Tushum')}>
+          {cash.map((m, i) => (
+            <MoneyLine key={m.payment_method_id} sign={i === 0 ? undefined : '+'} label={m.name} value={m.sales} />
+          ))}
+          {other.map((m, i) => (
+            <MoneyLine
+              key={m.payment_method_id}
+              sign={cash.length + i === 0 ? undefined : '+'}
+              label={m.name}
+              hint={tr('уходит на счёт в банке', 'bankdagi hisobga tushadi')}
+              value={m.sales}
+            />
+          ))}
+          <MoneyLine
+            sign="−"
+            label={tr('Возвраты', 'Qaytarishlar')}
+            hint={tr(`${r.returns_count} чек.`, `${r.returns_count} chek`)}
+            value={r.returns_total}
+          />
+          <MoneyLine label={tr('Скидки (уже учтены в чеках)', 'Chegirmalar (cheklarda hisobga olingan)')} value={r.discounts} />
+          <div style={{ borderTop: '1px solid #E8E8EB', marginTop: 6, paddingTop: 4 }}>
+            <MoneyLine
+              sign="="
+              strong
+              label={tr(`Выручка · ${r.sales_count} чек.`, `Tushum · ${r.sales_count} chek`)}
+              value={String(Number(r.sales_total) - Number(r.returns_total))}
+            />
+          </div>
+        </Card>
+      </Col>
+      <Col xs={24} md={12}>
+        <Card size="small" title={tr('Наличные в ящике', 'Gʻaladondagi naqd pul')}>
+          <MoneyLine label={tr('Размен на начало', 'Boshidagi maydalik')} hint={dateTime(s.opened_at)} value={s.opening_cash} />
+          <MoneyLine sign="+" label={tr('Наличные продажи', 'Naqd sotuvlar')} value={r.cash_sales} />
+          {debtCash > 0 && <MoneyLine sign="+" label={tr('Погашения долгов наличными', 'Qarzlar naqd toʻlovi')} value={r.debt_paid_cash ?? '0'} />}
+          <MoneyLine sign="+" label={tr('Внесения', 'Kiritishlar')} value={r.cash_in} />
+          <MoneyLine sign="−" label={tr('Изъятия и сдачи кассы', 'Olishlar va kassa topshirish')} value={r.cash_out} />
+          <MoneyLine sign="−" label={tr('Возвраты наличными', 'Naqd qaytarishlar')} value={r.cash_returns} />
+          <div style={{ borderTop: '1px solid #E8E8EB', marginTop: 6, paddingTop: 4 }}>
+            <MoneyLine sign="=" strong label={tr('Должно быть в ящике', 'Gʻaladonda boʻlishi kerak')} value={s.expected_cash ?? r.expected_cash} />
+          </div>
+          {s.counted_cash !== null && <MoneyLine label={tr('Посчитано при закрытии', 'Yopishda sanaldi')} value={s.counted_cash} />}
+          {s.diff !== null && Number(s.diff) !== 0 && (
+            <Typography.Text type="danger">
+              {tr('Расхождение', 'Farq')} {money(s.diff)}
+              {s.diff_reason && ` · ${s.diff_reason}`}
+            </Typography.Text>
+          )}
+          <div style={{ marginTop: 8 }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {tr('Терминал сюда не входит — эти деньги не в ящике', 'Terminal bu yerga kirmaydi — bu pul gʻaladonda emas')}
+            </Typography.Text>
+          </div>
+        </Card>
+      </Col>
+    </Row>
+  )
+}
+
 function ShiftDrawer({ id, onClose }: { id: string | null; onClose: () => void }) {
   const { can } = useStore()
   const sh = useItem<Shift>(id ? `/store/pos/shifts/${id}` : null)
@@ -539,7 +637,7 @@ function ShiftDrawer({ id, onClose }: { id: string | null; onClose: () => void }
   const s = sh.data
   const r = s?.report
   return (
-    <Drawer open={!!id} onClose={onClose} width={520} title={s ? tr(`Смена №${s.number} · ${s.device_name}`, `Smena №${s.number} · ${s.device_name}`) : tr('Смена', 'Smena')}>
+    <Drawer open={!!id} onClose={onClose} width={760} title={s ? tr(`Смена №${s.number} · ${s.device_name}`, `Smena №${s.number} · ${s.device_name}`) : tr('Смена', 'Smena')}>
       <LoadError error={sh.error} retry={() => sh.refetch()} />
       {s && (
         <Flex vertical gap={16}>
@@ -578,34 +676,7 @@ function ShiftDrawer({ id, onClose }: { id: string | null; onClose: () => void }
           </Descriptions>
           {r && (
             <>
-              <Descriptions column={1} size="small" bordered title={tr('Продажи', 'Sotuvlar')}>
-                <Descriptions.Item label={tr('Чеков', 'Cheklar')}>{r.sales_count}</Descriptions.Item>
-                <Descriptions.Item label={tr('Выручка', 'Tushum')}>{money(r.sales_total)}</Descriptions.Item>
-                <Descriptions.Item label={tr('Скидки', 'Chegirmalar')}>{money(r.discounts)}</Descriptions.Item>
-                <Descriptions.Item label={tr('Возвраты', 'Qaytarishlar')}>
-                  {r.returns_count} · {money(r.returns_total)}
-                </Descriptions.Item>
-                {r.by_method.map((m) => (
-                  <Descriptions.Item key={m.payment_method_id} label={m.name}>
-                    {money(m.sales)}
-                    {Number(m.returns) > 0 && ` · ${tr('возвраты', 'qaytarishlar')} ${money(m.returns)}`}
-                  </Descriptions.Item>
-                ))}
-              </Descriptions>
-              <Descriptions column={1} size="small" bordered title={tr('Наличные в ящике', 'Gʻaladondagi naqd pul')}>
-                <Descriptions.Item label={tr('Внесения', 'Kiritishlar')}>{money(r.cash_in)}</Descriptions.Item>
-                <Descriptions.Item label={tr('Изъятия', 'Olishlar')}>{money(r.cash_out)}</Descriptions.Item>
-                <Descriptions.Item label={tr('Должно быть', 'Boʻlishi kerak')}>{money(s.expected_cash ?? r.expected_cash)}</Descriptions.Item>
-                {s.counted_cash !== null && <Descriptions.Item label={tr('Посчитано', 'Sanaldi')}>{money(s.counted_cash)}</Descriptions.Item>}
-                {s.diff !== null && (
-                  <Descriptions.Item label={tr('Расхождение', 'Farq')}>
-                    <Typography.Text type={Number(s.diff) === 0 ? 'success' : 'danger'}>
-                      {money(s.diff)}
-                      {s.diff_reason && ` · ${s.diff_reason}`}
-                    </Typography.Text>
-                  </Descriptions.Item>
-                )}
-              </Descriptions>
+              <ShiftMoney shift={s} report={r} />
               {r.fiscal_pending > 0 && (
                 <Alert type="warning" showIcon message={tr(`Чеков без фискального признака: ${r.fiscal_pending}`, `Fiskal belgisiz cheklar: ${r.fiscal_pending}`)} />
               )}

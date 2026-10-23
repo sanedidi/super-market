@@ -32,6 +32,29 @@ void main() {
     expect(handoverError('200', '100.00'), contains('не больше остатка'));
   });
 
+  test('handoverShortage: в ящике − забираете − размен', () {
+    expect(handoverShortage('1915000.00', '1 715 000', '200 000'), 0);
+    expect(handoverShortage('1915000.00', '1700000', '200000'), 15000);
+    expect(handoverShortage('1915000.00', '1720000', '200000'), -5000);
+  });
+
+  test('todayShifts: идущие и сегодняшние', () {
+    final now = DateTime(2026, 10, 23, 12);
+    final all = [
+      {'id': 'open', 'opened_at': '2026-10-20T08:00:00', 'closed_at': null},
+      {'id': 'today', 'opened_at': '2026-10-23T00:10:00', 'closed_at': '2026-10-23T08:35:00'},
+      {'id': 'night', 'opened_at': '2026-10-22T20:00:00', 'closed_at': '2026-10-23T02:00:00'},
+      {'id': 'old', 'opened_at': '2026-10-22T08:00:00', 'closed_at': '2026-10-22T20:00:00'},
+    ];
+    expect(todayShifts(all, now).map((s) => s['id']), ['open', 'today', 'night']);
+  });
+
+  test('profitKnown', () {
+    expect(profitKnown({'no_cost_products': 0}), isTrue);
+    expect(profitKnown({'no_cost_products': 58}), isFalse);
+    expect(profitKnown({}), isTrue);
+  });
+
   test('billingStatus', () {
     expect(billingStatus({'overdue': true, 'unpaid_uzs': '100'}), 'Есть просроченный счёт');
     expect(billingStatus({'overdue': false, 'unpaid_uzs': '100.00'}), 'Есть неоплаченный счёт');

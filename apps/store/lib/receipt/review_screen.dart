@@ -64,6 +64,19 @@ class _ReviewScreenState extends State<ReviewScreen> {
     }
   }
 
+  /// Распознанную накладную — заново (например, распознанную до того, как
+  /// Super Market стал читать сумму строки). Выбранные товары сбросятся.
+  Future<void> _retryReady() async {
+    final yes = await confirmSheet(context,
+        title: tr('Распознать заново?', 'Qayta tanib olinsinmi?'),
+        text: tr('Super Market прочитает накладную ещё раз. Выбранные в строках товары и правки сбросятся.',
+            'Super Market yuk xatini qaytadan oʻqiydi. Qatorlarda tanlangan mahsulotlar va tuzatishlar bekor boʻladi.'),
+        confirm: tr('Распознать', 'Tanib olish'),
+        cancel: tr('Отмена', 'Bekor qilish'),
+        icon: Icons.refresh_rounded);
+    if (yes && mounted) await _retry();
+  }
+
   Future<void> _supplier() async {
     if (!_editable) return;
     final s = await pickSupplier(context, widget.id, _s!);
@@ -135,8 +148,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
         actions: [
           if (_editable)
             PopupMenuButton<String>(
-              onSelected: (_) => _post(post: false),
-              itemBuilder: (_) => [PopupMenuItem(value: 'draft', child: Text(tr('Сохранить как черновик прихода', 'Kirim qoralamasi sifatida saqlash')))],
+              onSelected: (v) => v == 'retry' ? _retryReady() : _post(post: false),
+              itemBuilder: (_) => [
+                PopupMenuItem(value: 'draft', child: Text(tr('Сохранить как черновик прихода', 'Kirim qoralamasi sifatida saqlash'))),
+                PopupMenuItem(value: 'retry', child: Text(tr('Распознать заново', 'Qayta tanib olish'))),
+              ],
             ),
         ],
       ),

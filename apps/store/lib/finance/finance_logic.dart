@@ -39,6 +39,27 @@ String? handoverError(String text, Object? balance) {
   return null;
 }
 
+/// Сдача кассы (Ф2, Ф3): недостача = в ящике − забираете − оставляете на
+/// размен. Плюс — денег меньше, минус — лишние.
+num handoverShortage(Object? drawer, String take, String leave) =>
+    n(drawer) - n(plainAmount(take)) - n(plainAmount(leave));
+
+/// Быстрые суммы «Оставить на размен».
+const leaveChips = [0, 100000, 200000, 500000];
+
+/// Смены для «Продажи сегодня»: идущие и открытые или закрытые сегодня.
+List<Map<String, dynamic>> todayShifts(List<Map<String, dynamic>> all, DateTime now) {
+  bool today(Object? v) {
+    final d = DateTime.tryParse('${v ?? ''}')?.toLocal();
+    return d != null && d.year == now.year && d.month == now.month && d.day == now.day;
+  }
+
+  return [for (final s in all) if (s['closed_at'] == null || today(s['opened_at']) || today(s['closed_at'])) s];
+}
+
+/// Прибыль можно показать числом: у всех проданных товаров есть цена закупки.
+bool profitKnown(Map<String, dynamic> pl) => n(pl['no_cost_products']) == 0;
+
 /// Сумма без пробелов для API: «1 250 000» → «1250000».
 String plainAmount(String text) => text.replaceAll(RegExp(r'\s'), '').replaceAll(',', '.');
 

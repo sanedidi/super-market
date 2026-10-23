@@ -76,6 +76,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Put("/store/pos/pins/{id}", m.setPIN)
 		r.Delete("/store/pos/pins/{id}", m.clearPIN)
 		r.Get("/store/pos/shifts", m.listShifts)
+		r.Get("/store/pos/drawer", m.drawer)
 		r.Get("/store/pos/shifts/{id}", m.getShift)
 		r.Get("/store/pos/shifts/{id}/events", m.shiftEvents)
 		r.Post("/store/pos/shifts/{id}/close", m.storeCloseShift)
@@ -160,9 +161,26 @@ func (m *Module) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) currentShift(w http.ResponseWriter, r *http.Request) {
-	httpx.Respond(w, r, m.log, http.StatusOK, func() (map[string]*Shift, error) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (map[string]any, error) {
 		sh, err := m.svc.CurrentShift(r.Context(), pr(r))
-		return map[string]*Shift{"shift": sh}, err
+		if err != nil {
+			return nil, err
+		}
+		// Смены нет — сколько оставили в ящике на размен при сдаче кассы:
+		// касса подставит эту сумму в «Размен на начало смены».
+		var left *string
+		if sh == nil {
+			if left, err = m.svc.LeftInDrawer(r.Context(), pr(r)); err != nil {
+				return nil, err
+			}
+		}
+		return map[string]any{"shift": sh, "left_in_drawer": left}, nil
+	})
+}
+
+func (m *Module) drawer(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (Drawer, error) {
+		return m.svc.Drawer(r.Context(), pr(r), r.URL.Query().Get("store_id"))
 	})
 }
 

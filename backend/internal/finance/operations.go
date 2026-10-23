@@ -3,6 +3,7 @@ package finance
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -208,11 +209,16 @@ type CashTransfer struct {
 	Note         string    `json:"note"`
 	CreatedBy    string    `json:"created_by"`
 	CreatedAt    time.Time `json:"created_at"`
+	// Сдача кассы: сколько оставили в ящике на размен и недостача при
+	// пересчёте (плюс — не хватило, минус — лишнее). null — старая сдача.
+	LeftAmount *string `json:"left_amount"`
+	Shortage   *string `json:"shortage"`
 }
 
 const transferSelect = `
 	SELECT t.id, t.number, t.kind, t.from_id, f.name, f.currency, t.to_id, d.name, d.currency,
-	       t.amount_from::text, t.amount_to::text, t.rate::text, t.note, e.full_name, t.created_at
+	       t.amount_from::text, t.amount_to::text, t.rate::text, t.note, e.full_name, t.created_at,
+	       t.left_amount::text, t.shortage::text
 	FROM cash_transfers t
 	JOIN cashboxes f ON f.id = t.from_id
 	JOIN cashboxes d ON d.id = t.to_id
@@ -232,6 +238,10 @@ type TransferInput struct {
 	ToID   string       `json:"to_id"` // для сдачи кассы можно не указывать — главная касса в той же валюте
 	Amount money.Amount `json:"amount"`
 	Note   string       `json:"note"`
+	// Сдача кассы магазина (Ф2): сколько оставить в ящике на размен. Тогда
+	// amount — сколько забирают; учёт выравнивается по ящику смены, разница
+	// (amount + leave ≠ в ящике) — недостача или излишек.
+	Leave *money.Amount `json:"leave"`
 }
 
 // CreateTransfer: kind = transfer (из кассы в кассу) или handover (сдача
@@ -260,6 +270,9 @@ func (s *Service) CreateTransfer(ctx context.Context, p *identity.Principal, kin
 		if kind == "handover" {
 			if from.IsMain {
 				return apperr.Validation("from_id: сдают кассу магазина, а не главную").Uz("from_id: asosiy kassani emas, doʻkon kassasini topshirish kerak")
+			}
+			if from.Kind == "bank" {
+				return apperr.Validation("from_id: терминал не сдают — эти деньги на счёте в банке").Uz("from_id: terminal topshirilmaydi — bu pul bankdagi hisobda")
 			}
 			if toID == "" {
 				err := tx.QueryRow(ctx, `SELECT id FROM cashboxes WHERE network_id = $1 AND is_main AND currency = $2`,
@@ -316,12 +329,39 @@ func (s *Service) CreateTransfer(ctx context.Context, p *identity.Principal, kin
 		if err != nil {
 			return err
 		}
+		// Сдача с разменом: в ящике по смене → сколько забрали и оставили.
+		var drawer money.Dec
+		var shifts []OpenShiftCash
+		var left, shortage *string
+		if in.Leave != nil {
+			if kind != "handover" || from.StoreID == nil {
+				return apperr.Validation("leave: размен оставляют при сдаче кассы магазина").Uz("leave: maydalik doʻkon kassasini topshirishda qoldiriladi")
+			}
+			if !in.Leave.Valid() {
+				return apperr.Validation("leave: неверная сумма").Uz("leave: summa notoʻgʻri")
+			}
+			if drawer, shifts, err = DrawerCash(ctx, tx, p.NetworkID, *from.StoreID, from.ID); err != nil {
+				return err
+			}
+			if len(shifts) > 1 {
+				return apperr.Conflict("several_shifts", "смены идут на нескольких кассах — сдайте кассу, когда останется одна").
+					Uz("smenalar bir nechta kassada ochiq — bittasi qolganda kassani topshiring")
+			}
+			l := string(*in.Leave)
+			sh := drawer.Sub(money.D(string(in.Amount))).Sub(money.D(l)).Money()
+			left, shortage = &l, &sh
+		}
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO cash_transfers (network_id, number, kind, from_id, to_id, amount_from, amount_to, rate, note, created_by)
-			VALUES ($1, $2, $3, $4, $5, $6::numeric, $7::numeric, $8::numeric, $9, $10) RETURNING id`,
+			INSERT INTO cash_transfers (network_id, number, kind, from_id, to_id, amount_from, amount_to, rate, note, created_by, left_amount, shortage)
+			VALUES ($1, $2, $3, $4, $5, $6::numeric, $7::numeric, $8::numeric, $9, $10, $11::numeric, $12::numeric) RETURNING id`,
 			p.NetworkID, n, kind, from.ID, to.ID, string(in.Amount), amountTo, rate,
-			strings.TrimSpace(in.Note), p.EmployeeID).Scan(&id); err != nil {
+			strings.TrimSpace(in.Note), p.EmployeeID, left, shortage).Scan(&id); err != nil {
 			return err
+		}
+		if in.Leave != nil {
+			if err := s.drawerHandover(ctx, tx, p, from.ID, id, drawer, shifts, string(in.Amount), money.D(*shortage)); err != nil {
+				return err
+			}
 		}
 		if err := SubtractCash(ctx, tx, p.NetworkID, from.ID, string(in.Amount), DocCashTransfer, id); err != nil {
 			return err
@@ -362,4 +402,45 @@ func (s *Service) CounterpartyEntries(ctx context.Context, p *identity.Principal
 	rows, err := s.pool.Query(ctx, `SELECT amount::text, doc_type, doc_id, created_at FROM counterparty_entries
 		WHERE counterparty_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`, id, page.Limit, page.Offset)
 	return many[CashEntry](rows, err)
+}
+
+// drawerHandover — сдача кассы с разменом: учёт кассы магазина выравнивается
+// по ящику смены, недостача (излишек) записывается, а в открытой смене
+// появляются изъятие «Сдача кассы» и недостача — X-отчёт смены сходится с
+// тем, что осталось в ящике.
+func (s *Service) drawerHandover(ctx context.Context, tx pgx.Tx, p *identity.Principal, cashboxID, transferID string,
+	drawer money.Dec, shifts []OpenShiftCash, take string, shortage money.Dec) error {
+	bal, err := CashBalance(ctx, tx, cashboxID)
+	if err != nil {
+		return err
+	}
+	if d := drawer.Sub(bal); !d.IsZero() {
+		if err := AddCash(ctx, tx, p.NetworkID, cashboxID, d.Money(), DocDrawerSync, transferID); err != nil {
+			return err
+		}
+	}
+	if !shortage.IsZero() {
+		if err := AddCash(ctx, tx, p.NetworkID, cashboxID, shortage.Neg().Money(), DocHandoverShortage, transferID); err != nil {
+			return err
+		}
+	}
+	if len(shifts) != 1 {
+		return nil
+	}
+	move := func(n int, kind string, amount money.Dec, reason string) error {
+		if amount.Sign() <= 0 {
+			return nil
+		}
+		_, err := tx.Exec(ctx, `INSERT INTO pos_cash_moves (network_id, shift_id, client_uid, kind, amount, reason, created_by, created_at)
+			VALUES ($1, $2, $3, $4, $5::numeric, $6, $7, now())`,
+			p.NetworkID, shifts[0].ID, fmt.Sprintf("handover-%s-%d", transferID, n), kind, amount.Money(), reason, p.EmployeeID)
+		return err
+	}
+	if err := move(1, "out", money.D(take), i18n.T(ctx, "Сдача кассы", "Kassani topshirish")); err != nil {
+		return err
+	}
+	if shortage.Sign() > 0 {
+		return move(2, "out", shortage, i18n.T(ctx, "Недостача при сдаче кассы", "Kassani topshirishda kamomad"))
+	}
+	return move(2, "in", shortage.Neg(), i18n.T(ctx, "Излишек при сдаче кассы", "Kassani topshirishda ortiqcha"))
 }

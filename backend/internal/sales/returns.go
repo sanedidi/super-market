@@ -261,7 +261,9 @@ func (s *Service) CreateReturn(ctx context.Context, p *identity.Principal, in Re
 			cashPart = total.Sub(debtPart)
 		}
 		if cashPart.Sign() > 0 {
-			return finance.SubtractCash(ctx, tx, p.NetworkID, cashboxID, cashPart.Money(), finance.DocCustomerReturn, id)
+			// Возврат уже отдан покупателю из ящика: остаток кассы по учёту
+			// может не знать размен (он только в смене) — не отклоняем.
+			return finance.AddCash(ctx, tx, p.NetworkID, cashboxID, cashPart.Neg().Money(), finance.DocCustomerReturn, id)
 		}
 		return nil
 	})

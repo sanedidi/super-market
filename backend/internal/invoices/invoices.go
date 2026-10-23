@@ -184,13 +184,26 @@ func (s *Service) Retry(ctx context.Context, p *identity.Principal, id string) (
 	if err != nil {
 		return sc, err
 	}
-	if sc.Status != StatusFailed {
-		return sc, apperr.Conflict("scan_not_failed", "распознать заново можно только после ошибки").Uz("qayta tanib olish faqat xatolikdan keyin mumkin")
+	// Заново — после ошибки или распознанную, пока по ней нет прихода
+	// (например, распознанную до того, как стали читать сумму строки).
+	if sc.Status != StatusFailed && sc.Status != StatusReady {
+		return sc, apperr.Conflict("scan_not_failed", "распознать заново можно, пока по накладной нет прихода").Uz("kirim yaratilmaguncha qayta tanib olish mumkin")
 	}
 	if _, err := s.ai.Conn(ctx); err != nil {
 		return Scan{}, err
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE invoice_scans SET status = 'processing', error = '' WHERE id = $1`, id); err != nil {
+	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `UPDATE invoice_scans SET status = 'processing', error = '' WHERE id = $1 AND status IN ('failed', 'ready') AND document_id IS NULL`, id)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return apperr.Conflict("scan_not_failed", "распознать заново можно, пока по накладной нет прихода").Uz("kirim yaratilmaguncha qayta tanib olish mumkin")
+		}
+		_, err = tx.Exec(ctx, `DELETE FROM invoice_scan_lines WHERE scan_id = $1`, id)
+		return err
+	})
+	if err != nil {
 		return Scan{}, err
 	}
 	s.start(id, p.NetworkID, i18n.FromContext(ctx))

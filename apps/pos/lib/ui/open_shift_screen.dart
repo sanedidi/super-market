@@ -21,6 +21,30 @@ class _OpenShiftScreenState extends State<OpenShiftScreen> {
   String _input = '';
   bool _busy = false;
   String? _error;
+  // Размен, оставленный при сдаче кассы (Figma «Финансы понятно», Ф2):
+  // подставляем его, кассиру вводить не нужно.
+  String? _left;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadLeft());
+  }
+
+  Future<void> _loadLeft() async {
+    final pos = context.read<PosController>();
+    if (!pos.online) return;
+    try {
+      final left = await pos.leftInDrawer();
+      if (!mounted || left == null) return;
+      setState(() {
+        _left = left;
+        if (_input.isEmpty) _input = left;
+      });
+    } catch (_) {
+      // без связи — кассир наберёт размен сам
+    }
+  }
 
   Future<void> _open() async {
     if (_busy) return;
@@ -120,6 +144,14 @@ class _OpenShiftScreenState extends State<OpenShiftScreen> {
                       Text(tr('Размен на начало смены', 'Smena boshidagi mayda pul'), style: t(14, c: Colors.white70)),
                       const SizedBox(height: 8),
                       Text(fmtMoney(amount), style: t(56, w: FontWeight.w700, c: Colors.white)),
+                      if (_left != null) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                            _input == _left
+                                ? tr('Оставлено при сдаче кассы — пересчитайте и нажмите Enter', 'Kassani topshirishda qoldirilgan — sanab, Enter bosing')
+                                : tr('При сдаче кассы оставили ${fmtMoney(parseMoney(_left))}', 'Kassani topshirishda ${fmtMoney(parseMoney(_left))} qoldirilgan'),
+                            style: t(13, c: Colors.white70)),
+                      ],
                     ]),
                   ),
                   const SizedBox(height: 16),

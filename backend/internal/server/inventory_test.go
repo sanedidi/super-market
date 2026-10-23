@@ -52,9 +52,10 @@ func TestInventoryAndFinanceFlow(t *testing.T) {
 	wh1 := whs[0]["id"].(string)
 	wh2 := a.expect(a.do("POST", "/store/warehouses", tok, map[string]any{"store_id": store1, "name": "Подсобка"}), 201, "wh2").str("id")
 
-	// Магазин получил кассу и способы оплаты, сеть — главную кассу.
+	// Магазин получил кассу наличных, «Терминал (банк)» и способы оплаты,
+	// сеть — главную кассу.
 	boxes := a.expect(a.do("GET", "/store/finance/cashboxes", tok, nil), 200, "cashboxes").items()
-	if len(boxes) != 2 || boxes[0]["is_main"] != true {
+	if len(boxes) != 3 || boxes[0]["is_main"] != true || boxes[1]["kind"] != "cash" || boxes[2]["kind"] != "bank" {
 		t.Fatalf("cashboxes = %v", boxes)
 	}
 	mainBox, storeBox := boxes[0]["id"].(string), boxes[1]["id"].(string)
@@ -250,9 +251,10 @@ func TestInventoryAndFinanceFlow(t *testing.T) {
 		t.Fatalf("seller stock must hide cost: %v", stock)
 	}
 
-	// Кассир с finance.manage и доступом к одному магазину видит только его кассу.
+	// Кассир с finance.manage и доступом к одному магазину видит только его
+	// кассы: наличные и «Терминал (банк)», без главной.
 	a.expect(a.do("PATCH", "/store/roles/"+role, tok, map[string]any{"permissions": []string{identity.PermFinanceManage}}), 200, "grant finance")
-	if boxes := a.expect(a.do("GET", "/store/finance/cashboxes", sellerTok, nil), 200, "seller boxes").items(); len(boxes) != 1 {
+	if boxes := a.expect(a.do("GET", "/store/finance/cashboxes", sellerTok, nil), 200, "seller boxes").items(); len(boxes) != 2 || boxes[0]["is_main"] != false || boxes[1]["is_main"] != false {
 		t.Fatalf("seller must see only store cashbox: %v", boxes)
 	}
 }

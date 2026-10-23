@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/sanedidi/super-market/backend/internal/debts"
+	"github.com/sanedidi/super-market/backend/internal/finance"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/db"
@@ -41,13 +42,18 @@ type Shift struct {
 	// Откуда закрыта: pos — на кассе, pos_stale — касса закрыла свою старую
 	// смену, оставшуюся открытой на сервере, panel — в панели магазина.
 	ClosedVia *string `json:"closed_via"`
-	Report    *Report `json:"report,omitempty"`
+	// Чеков и выручка смены — для списков («Продажи сегодня» по сменам).
+	SalesCount int     `json:"sales_count"`
+	SalesTotal string  `json:"sales_total"`
+	Report     *Report `json:"report,omitempty"`
 }
 
 const shiftSelect = `
 	SELECT sh.id, sh.number, sh.store_id, st.name, sh.device_id, d.name, sh.opened_by, oe.full_name, sh.opened_at,
 	       sh.opening_cash::text, sh.closed_by, ce.full_name, sh.closed_at, sh.expected_cash::text, sh.counted_cash::text,
-	       sh.diff::text, sh.diff_reason, sh.closed_via
+	       sh.diff::text, sh.diff_reason, sh.closed_via,
+	       (SELECT count(*) FROM sales WHERE shift_id = sh.id)::int,
+	       (SELECT COALESCE(sum(total), 0) FROM sales WHERE shift_id = sh.id)::numeric(18,2)::text
 	FROM pos_shifts sh
 	JOIN stores st ON st.id = sh.store_id
 	JOIN pos_devices d ON d.id = sh.device_id
@@ -58,7 +64,7 @@ func scanShift(r pgx.CollectableRow) (Shift, error) {
 	var s Shift
 	err := r.Scan(&s.ID, &s.Number, &s.StoreID, &s.StoreName, &s.DeviceID, &s.DeviceName, &s.OpenedBy, &s.OpenedByName,
 		&s.OpenedAt, &s.OpeningCash, &s.ClosedBy, &s.ClosedByName, &s.ClosedAt, &s.ExpectedCash, &s.CountedCash,
-		&s.Diff, &s.DiffReason, &s.ClosedVia)
+		&s.Diff, &s.DiffReason, &s.ClosedVia, &s.SalesCount, &s.SalesTotal)
 	return s, err
 }
 
@@ -272,17 +278,29 @@ func (s *Service) CashMove(ctx context.Context, p *identity.Principal, shiftID s
 		return CashMove{}, err
 	}
 	var m CashMove
-	err = s.pool.QueryRow(ctx, `
-		WITH ins AS (
-			INSERT INTO pos_cash_moves (network_id, shift_id, client_uid, kind, amount, reason, created_by, created_at)
-			SELECT $1, $2, $3, $4, $5::numeric, $6, $7, $8
-			WHERE NOT EXISTS (SELECT 1 FROM pos_cash_moves WHERE network_id = $1 AND client_uid = $3)
-			RETURNING id, kind, amount, reason, created_at)
-		SELECT id, kind, amount::text, reason, created_at FROM ins
-		UNION ALL
-		SELECT id, kind, amount::text, reason, created_at FROM pos_cash_moves WHERE network_id = $1 AND client_uid = $3`,
-		p.NetworkID, sh.ID, in.ClientUID, in.Kind, string(in.Amount), in.Reason, p.EmployeeID, at).Scan(
-		&m.ID, &m.Kind, &m.Amount, &m.Reason, &m.CreatedAt)
+	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		var created bool
+		err := tx.QueryRow(ctx, `
+			WITH ins AS (
+				INSERT INTO pos_cash_moves (network_id, shift_id, client_uid, kind, amount, reason, created_by, created_at)
+				SELECT $1, $2, $3, $4, $5::numeric, $6, $7, $8
+				WHERE NOT EXISTS (SELECT 1 FROM pos_cash_moves WHERE network_id = $1 AND client_uid = $3)
+				RETURNING id, kind, amount, reason, created_at)
+			SELECT id, kind, amount::text, reason, created_at, true FROM ins
+			UNION ALL
+			SELECT id, kind, amount::text, reason, created_at, false FROM pos_cash_moves WHERE network_id = $1 AND client_uid = $3`,
+			p.NetworkID, sh.ID, in.ClientUID, in.Kind, string(in.Amount), in.Reason, p.EmployeeID, at).Scan(
+			&m.ID, &m.Kind, &m.Amount, &m.Reason, &m.CreatedAt, &created)
+		if err != nil || !created {
+			return err
+		}
+		// Внесение и изъятие — это наличные ящика: касса магазина тоже.
+		amount := money.D(m.Amount)
+		if m.Kind == "out" {
+			amount = amount.Neg()
+		}
+		return toDrawer(ctx, tx, p.NetworkID, sh.StoreID, amount, finance.DocPOSCashMove, m.ID)
+	})
 	return m, err
 }
 
@@ -363,10 +381,13 @@ func (s *Service) closeShift(ctx context.Context, p *identity.Principal, shiftID
 			return apperr.Validation("diff_reason: укажите причину расхождения").Uz("diff_reason: farq sababini kiriting").
 				WithDetails(map[string]any{"expected_cash": r.ExpectedCash, "diff": diff.Money()})
 		}
-		_, err = tx.Exec(ctx, `UPDATE pos_shifts SET closed_by = $2, closed_at = $3, expected_cash = $4::numeric,
+		if _, err = tx.Exec(ctx, `UPDATE pos_shifts SET closed_by = $2, closed_at = $3, expected_cash = $4::numeric,
 			counted_cash = $5::numeric, diff = $6::numeric, diff_reason = $7, closed_via = $8 WHERE id = $1`,
-			sh.ID, p.EmployeeID, at, r.ExpectedCash, counted, diff.Money(), in.DiffReason, via)
-		return err
+			sh.ID, p.EmployeeID, at, r.ExpectedCash, counted, diff.Money(), in.DiffReason, via); err != nil {
+			return err
+		}
+		// Пересчитали больше или меньше — касса магазина (ящик) тоже.
+		return toDrawer(ctx, tx, p.NetworkID, sh.StoreID, diff, finance.DocShiftClose, sh.ID)
 	})
 	if err != nil {
 		return Shift{}, err
@@ -411,4 +432,41 @@ func (s *Service) GetShift(ctx context.Context, p *identity.Principal, id string
 		return Shift{}, err
 	}
 	return s.ShiftWithReport(ctx, p, id)
+}
+
+// toDrawer — движение наличных ящика в кассе магазина (без проверки остатка:
+// касса досылает то, что уже случилось). Нет кассы наличных — пропускаем.
+func toDrawer(ctx context.Context, tx pgx.Tx, networkID, storeID string, amount money.Dec, docType, docID string) error {
+	if amount.IsZero() {
+		return nil
+	}
+	cb, err := finance.StoreCashbox(ctx, tx, networkID, storeID)
+	if err != nil || cb == "" {
+		return err
+	}
+	return finance.AddCash(ctx, tx, networkID, cb, amount.Money(), docType, docID)
+}
+
+// LeftInDrawer — сколько оставили в ящике магазина на размен (остаток кассы
+// наличных), пока на кассах магазина нет открытых смен. nil — смена уже идёт
+// или кассы нет: касса спрашивает размен как раньше.
+func (s *Service) LeftInDrawer(ctx context.Context, p *identity.Principal) (*string, error) {
+	if len(p.StoreIDs) == 0 {
+		return nil, nil
+	}
+	storeID := p.StoreIDs[0]
+	var open bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pos_shifts WHERE store_id = $1 AND closed_at IS NULL)`, storeID).Scan(&open); err != nil || open {
+		return nil, err
+	}
+	cb, err := finance.StoreCashbox(ctx, s.pool, p.NetworkID, storeID)
+	if err != nil || cb == "" {
+		return nil, err
+	}
+	bal, err := finance.CashBalance(ctx, s.pool, cb)
+	if err != nil || bal.Sign() <= 0 {
+		return nil, err
+	}
+	v := bal.Fixed(0)
+	return &v, nil
 }

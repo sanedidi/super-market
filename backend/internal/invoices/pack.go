@@ -167,7 +167,12 @@ func repack(ctx context.Context, q db.Querier, networkID, scanID string, line in
 		readSum                     *float64
 		productID, cp               *string
 	)
-	err := q.QueryRow(ctx, `SELECT l.name, l.unit, l.qty::float8, l.price::float8, l.read_sum::float8, l.product_id, s.counterparty_id, s.currency
+	// Сумма строки не прочитана, а строка в накладной одна — её сумма и есть
+	// «Итого» накладной (так же с накладными, распознанными до 23 окт 2026).
+	err := q.QueryRow(ctx, `SELECT l.name, l.unit, l.qty::float8, l.price::float8,
+		       COALESCE(l.read_sum, CASE WHEN (SELECT count(*) FROM invoice_scan_lines x WHERE x.scan_id = l.scan_id) = 1
+		                                 THEN s.invoice_total END)::float8,
+		       l.product_id, s.counterparty_id, s.currency
 		FROM invoice_scan_lines l JOIN invoice_scans s ON s.id = l.scan_id WHERE l.scan_id = $1 AND l.line = $2`, scanID, line).
 		Scan(&name, &unit, &qty, &price, &readSum, &productID, &cp, &currency)
 	if err != nil {
@@ -207,8 +212,13 @@ func repack(ctx context.Context, q db.Querier, networkID, scanID string, line in
 	}
 	pack, src := GuessPack(in)
 	cost := lineCost(qty, price, in.ReadSum, pack)
-	_, err = q.Exec(ctx, `UPDATE invoice_scan_lines SET pack = $3, pack_source = $4, cost = $5 WHERE scan_id = $1 AND line = $2`,
-		scanID, line, fmtNum(pack, 3), src, fmtNum(cost, 2))
+	var sum *string
+	if in.ReadSum > 0 {
+		v := fmtNum(in.ReadSum, 2)
+		sum = &v
+	}
+	_, err = q.Exec(ctx, `UPDATE invoice_scan_lines SET pack = $3, pack_source = $4, cost = $5, read_sum = COALESCE(read_sum, $6::numeric)
+		WHERE scan_id = $1 AND line = $2`, scanID, line, fmtNum(pack, 3), src, fmtNum(cost, 2), sum)
 	return err
 }
 

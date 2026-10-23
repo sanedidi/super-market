@@ -470,6 +470,17 @@ class PosController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Сколько оставили в ящике на размен при сдаче кассы (сумы, целые) —
+  /// подставляется в «Размен на начало смены». null — не знаем или смена уже идёт.
+  Future<String?> leftInDrawer() async {
+    final res = await api.get('/pos/shifts/current', cashier: cashier?.id) as Map<String, dynamic>;
+    if (res['shift'] != null) return null;
+    final v = res['left_in_drawer'];
+    if (v == null) return null;
+    final s = '$v'.split('.').first.replaceAll(RegExp(r'\D'), '');
+    return s.isEmpty || s == '0' ? null : s;
+  }
+
   Future<ServerShift?> _currentServerShift() async {
     final res = await api.get('/pos/shifts/current', cashier: cashier?.id) as Map<String, dynamic>;
     final sh = res['shift'] as Map<String, dynamic>?;

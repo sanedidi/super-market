@@ -345,7 +345,7 @@ func (s *Service) money(ctx context.Context, p *identity.Principal, storeID stri
 	if p.Can(identity.PermFinanceManage) {
 		var stores, main string
 		if err := s.pool.QueryRow(ctx, `
-			SELECT COALESCE(sum(e.amount) FILTER (WHERE c.store_id IS NOT NULL), 0)::numeric(18,2)::text,
+			SELECT COALESCE(sum(e.amount) FILTER (WHERE c.store_id IS NOT NULL AND c.kind = 'cash'), 0)::numeric(18,2)::text,
 			       COALESCE(sum(e.amount) FILTER (WHERE c.is_main), 0)::numeric(18,2)::text
 			FROM cashboxes c JOIN cash_entries e ON e.cashbox_id = c.id
 			WHERE c.network_id = $1 AND c.currency = 'UZS' AND c.is_active

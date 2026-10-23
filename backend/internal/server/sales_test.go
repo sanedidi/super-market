@@ -118,12 +118,14 @@ func TestSalesFlow(t *testing.T) {
 		t.Fatalf("returned_qty = %v", got)
 	}
 
-	// «Наличные» и «Терминал» идут в одну кассу магазина:
-	// 20 000 + 27 000 − 14 500 − 14 500 = 18 000.
+	// «Наличные» — в кассу магазина (ящик), «Терминал» — в «Терминал (банк)»:
+	// наличными 20 000 − 14 500 − 14 500 = −9 000 (возврат отдали из размена,
+	// которого учёт не знает), терминал 27 000.
 	boxes := a.expect(a.do("GET", "/store/finance/cashboxes", tok, nil), 200, "boxes").items()
 	for _, b := range boxes {
-		if b["is_main"] == false && b["balance"] != "18000.00" {
-			t.Fatalf("store cashbox balance = %v", b["balance"])
+		want := map[string]string{"cash": "-9000.00", "bank": "27000.00"}[b["kind"].(string)]
+		if b["is_main"] == false && b["balance"] != want {
+			t.Fatalf("store cashbox %v balance = %v", b["kind"], b["balance"])
 		}
 	}
 

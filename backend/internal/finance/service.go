@@ -283,11 +283,14 @@ type Cashbox struct {
 	IsMain    bool    `json:"is_main"`
 	IsActive  bool    `json:"is_active"`
 	Balance   string  `json:"balance"`
+	// cash — наличные (ящик магазина или главная касса), bank — терминал:
+	// деньги по карте на счёте, их не сдают.
+	Kind string `json:"kind"`
 }
 
 const cashboxSelect = `
 	SELECT c.id, c.store_id, s.name, c.name, c.currency, c.is_main, c.is_active,
-	       COALESCE((SELECT sum(e.amount) FROM cash_entries e WHERE e.cashbox_id = c.id), 0)::text
+	       COALESCE((SELECT sum(e.amount) FROM cash_entries e WHERE e.cashbox_id = c.id), 0)::text, c.kind
 	FROM cashboxes c LEFT JOIN stores s ON s.id = c.store_id`
 
 // Касса видна, если у сотрудника есть доступ к её магазину; главная — только

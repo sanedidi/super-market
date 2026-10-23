@@ -30,6 +30,8 @@ func (m *Module) Routes(r chi.Router) {
 		pro := m.auth.Feature(plans.FeatureReportsPro)
 		r.With(pro).Get("/cash-flow", m.cashFlow)
 		r.With(pro).Get("/profit-loss", m.profitLoss)
+		r.With(pro).Get("/no-cost", m.noCost)
+		r.With(pro).Post("/no-cost", m.setCost)
 		r.With(m.auth.Feature(plans.FeatureABCXYZ)).Get("/abc-xyz", m.abcXyz)
 		r.Get("/sales-series", m.salesSeries)
 		r.Get("/sales-breakdown", m.salesBreakdown)
@@ -58,6 +60,28 @@ func (m *Module) profitLoss(w http.ResponseWriter, r *http.Request) {
 			return ProfitLoss{}, err
 		}
 		return m.svc.ProfitLoss(r.Context(), identity.FromContext(r.Context()), f)
+	})
+}
+
+func (m *Module) noCost(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[NoCostItem], error) {
+		f, err := filter(r)
+		if err != nil {
+			return httpx.List[NoCostItem]{}, err
+		}
+		items, err := m.svc.NoCost(r.Context(), identity.FromContext(r.Context()), f)
+		return httpx.List[NoCostItem]{Items: items}, err
+	})
+}
+
+func (m *Module) setCost(w http.ResponseWriter, r *http.Request) {
+	var in CostInput
+	if err := httpx.Decode(r, &in); err != nil {
+		httpx.Fail(w, r, m.log, err)
+		return
+	}
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (CostResult, error) {
+		return m.svc.SetCost(r.Context(), identity.FromContext(r.Context()), in)
 	})
 }
 

@@ -6,6 +6,7 @@ import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'finance_logic.dart';
+import 'no_cost_screen.dart';
 
 /// Прибыль и убыток магазина за период (как отчёт в панели).
 class ProfitScreen extends StatefulWidget {
@@ -92,11 +93,39 @@ class _ProfitScreenState extends State<ProfitScreen> {
     final income = ((pl['other_income'] as List?) ?? const []).cast<Map<String, dynamic>>();
     final expenses = ((pl['expenses'] as List?) ?? const []).cast<Map<String, dynamic>>();
     final net = n(pl['net_profit']);
+    final known = profitKnown(pl);
     return [
+      if (!known) ...[
+        AppCard(
+          color: AppColors.warningSoft,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text(tr('Прибыль не посчитать', 'Foydani hisoblab boʻlmaydi'), style: AppText.title.copyWith(color: AppColors.warningInk)),
+            const SizedBox(height: 4),
+            Text(
+                tr('У ${pl['no_cost_products']} из ${pl['sold_products']} проданных товаров нет цены закупки — их себестоимость считается как 0, поэтому прибыль ниже завышена.',
+                    '${pl['sold_products']} ta sotilgan mahsulotdan ${pl['no_cost_products']} tasida xarid narxi yoʻq — tannarxi 0 deb hisoblanadi, shuning uchun quyidagi foyda oshirilgan.'),
+                style: AppText.small.copyWith(color: AppColors.warningInk)),
+            const SizedBox(height: 10),
+            SmallButton(
+              label: tr('Внести цены закупки · ${pl['no_cost_products']}', 'Xarid narxlarini kiritish · ${pl['no_cost_products']}'),
+              icon: Icons.edit_rounded,
+              onPressed: () async {
+                final changed = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => NoCostScreen(period: _period)));
+                if (changed == true) _load();
+              },
+            ),
+          ]),
+        ),
+        const SizedBox(height: 12),
+      ],
       AppCard(
         color: net < 0 ? AppColors.errorSoft : AppColors.successSoft,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(net < 0 ? tr('Убыток', 'Zarar') : tr('Чистая прибыль', 'Sof foyda'), style: AppText.small),
+          Text(
+              known
+                  ? (net < 0 ? tr('Убыток', 'Zarar') : tr('Чистая прибыль', 'Sof foyda'))
+                  : tr('Чистая прибыль — без цен закупки, неточно', 'Sof foyda — xarid narxlarisiz, aniq emas'),
+              style: AppText.small),
           Text(money(pl['net_profit']), style: AppText.h1.copyWith(fontSize: 30, color: net < 0 ? AppColors.error : AppColors.successInk)),
           const SizedBox(height: 4),
           Text(

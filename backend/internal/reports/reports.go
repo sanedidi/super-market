@@ -225,6 +225,10 @@ type ProfitLoss struct {
 	NetProfit        string           `json:"net_profit"`
 	SalesCount       int              `json:"sales_count"`
 	OrdersCount      int              `json:"orders_count"`
+	// Разных товаров продано за период и у скольких нет себестоимости (нет
+	// цены закупки): пока они есть, прибыль неточная (Ф1, Ф4).
+	SoldProducts   int `json:"sold_products"`
+	NoCostProducts int `json:"no_cost_products"`
 }
 
 // ProfitLoss — прибыль и убыток в сумах. Выручка POS — по дате продажи,
@@ -259,6 +263,9 @@ func (s *Service) ProfitLoss(ctx context.Context, p *identity.Principal, f Filte
 		WHERE network_id = $1 AND ($2::uuid[] IS NULL OR store_id = ANY($2)) AND status = 'delivered'
 		  AND delivered_at >= $3 AND delivered_at < $4`, args...).
 		Scan(&r.OnlineOrders, &r.DeliveryFees, &c.Online, &out.OrdersCount); err != nil {
+		return out, err
+	}
+	if out.SoldProducts, out.NoCostProducts, err = s.costCoverage(ctx, args); err != nil {
 		return out, err
 	}
 	revenue := money.D(r.POSSales).Sub(money.D(r.CustomerReturns)).Add(money.D(r.OnlineOrders)).Add(money.D(r.DeliveryFees))

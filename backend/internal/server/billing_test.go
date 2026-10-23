@@ -243,7 +243,8 @@ func TestBillingPayoutsReports(t *testing.T) {
 
 	cf := a.expect(a.do("GET", "/store/reports/cash-flow?store_id="+store, tok, nil), 200, "cash flow")
 	cbs := cf.Body["cashboxes"].([]any)
-	if len(cbs) != 1 {
+	// Касса наличных магазина и «Терминал (банк)».
+	if len(cbs) != 2 || cbs[1].(map[string]any)["closing"] != "0.00" {
 		t.Fatalf("cash flow boxes = %v", cbs)
 	}
 	if b := cbs[0].(map[string]any); b["opening"] != "0.00" || b["income"] != "30000.00" || b["expense"] != "20000.00" || b["closing"] != "10000.00" {
