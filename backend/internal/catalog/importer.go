@@ -294,6 +294,11 @@ func importCategory(ctx context.Context, tx pgx.Tx, refs importRefs, path, pathU
 	return *parent, nil
 }
 
+// UnitID — единица по короткому названию («шт», «кг», «л»); пусто — шт.
+func UnitID(ctx context.Context, tx pgx.Tx, short string) (string, error) {
+	return importUnit(ctx, tx, importRefs{brands: map[string]string{}, cats: map[string]string{}, units: map[string]string{}}, short)
+}
+
 func importUnit(ctx context.Context, tx pgx.Tx, refs importRefs, short string) (string, error) {
 	short = strings.ToLower(strings.TrimSpace(short))
 	if short == "" {

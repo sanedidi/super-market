@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:sm_pos/core/money.dart';
 import 'package:sm_pos/core/pin.dart';
 import 'package:sm_pos/data/api.dart';
+import 'package:sm_pos/data/open_sources.dart';
 import 'package:sm_pos/data/store.dart';
 import 'package:sm_pos/state/pos.dart';
 import 'package:sm_pos/state/sale.dart';
@@ -26,6 +27,9 @@ class FakeServer {
   /// Сервер не принимает цены (500) — цена из очереди ждёт.
   bool priceDown = false;
   final List<Map<String, dynamic>> prices = [];
+
+  /// «Это он» с кассы: подтверждённые товары из открытых источников.
+  final List<Map<String, dynamic>> founds = [];
   final List<Map<String, dynamic>> shifts = [];
   final List<Map<String, dynamic>> sales = [];
   final List<Map<String, dynamic>> closes = [];
@@ -85,6 +89,7 @@ class FakeServer {
         });
       case 'PUT /pos/products/water/price':
       case 'PUT /pos/products/shampoo/price':
+      case 'PUT /pos/products/bread/price':
         if (priceDown) return _json(500, {'error': {'code': 'internal', 'message': 'сбой'}});
         prices.add({...body, 'cashier': c});
         return _json(200, {'product_id': path.split('/')[3], 'price': body['price']});
@@ -94,6 +99,19 @@ class FakeServer {
         return _json(200, {
           'id': 'shampoo', 'name': 'Шампунь 400 мл', 'name_ru': 'Шампунь 400 мл', 'name_uz': '', 'unit': 'шт', 'is_fractional': false,
           'price': '0.00', 'ikpu': '', 'package_code': '', 'vat_rate': '12.00', 'is_marked': false, 'barcode': '4870205001123',
+        });
+      case 'POST /pos/products/found/preview':
+        final t = (body['tasnif'] as List?) ?? const [];
+        return _json(200, {
+          'items': [
+            if (t.isNotEmpty) {'source': 'tasnif', 'index': 0, 'name': 'Coca-Cola сладкий, стеклянная бутылка 0,25 л', 'ikpu': '02202002001010021', 'unit': 'шт', 'brand': 'Coca-Cola', 'image': '', 'marked': false},
+          ],
+        });
+      case 'POST /pos/products/found':
+        founds.add({...body, 'cashier': c});
+        return _json(201, {
+          'created': true,
+          'product': {'id': 'coke', 'name': body['name'], 'unit': 'шт', 'price': body['price'], 'barcodes': [body['barcode']], 'ikpu': '02202002001010021', 'vat_rate': '12.00', 'active': true},
         });
       case 'POST /pos/shifts':
         shifts.add(body);
@@ -562,6 +580,109 @@ void main() {
     expect(sale.searching, isFalse);
     expect(sale.cart.lineOf('bread')!.qty, 5000);
 
+    sale.dispose();
+  });
+
+  test('F8: цена товара прямо на кассе — во всём магазине, ПИН старшего, без связи', () async {
+    server.unpriced = true;
+    await pos.activate('ABCD2345');
+    final dilnoza = pos.catalog.cashiers.firstWhere((c) => c.id == 'e1');
+    pos.login(dilnoza, '1234');
+    await pos.openShift(0);
+    await until(() => !pos.syncing);
+    final sale = SaleController(pos);
+    final opened = <Cmd>[];
+    sale.onNavigate = opened.add;
+
+    // Пустой чек — менять нечего.
+    await sale.command(Cmd.changePrice);
+    expect(opened, isEmpty);
+
+    for (var i = 0; i < 13; i++) {
+      sale.char('4601234567893'[i], Duration(milliseconds: i * 5));
+    }
+    await sale.command(Cmd.enter);
+    expect(sale.cart.lines.single.price, 600000);
+    await sale.command(Cmd.changePrice);
+    expect(opened, [Cmd.changePrice]);
+    final bread = sale.takeChangePending()!;
+    expect(bread.id, 'bread');
+
+    // У Дилнозы нет права: без ПИНа старшего нельзя; чужой ПИН не подходит.
+    expect(sale.canPrice, isFalse);
+    expect(await sale.changePrice(bread, 650000), isNotNull);
+    expect(sale.priceApprover('1234').who, isNull); // у кассира нет права
+    final aziz = sale.priceApprover('5555').who!;
+    expect(aziz.id, 'e2');
+    expect(await sale.changePrice(bread, 600000, by: aziz), isNotNull); // та же цена
+    expect(await sale.changePrice(bread, 650000, by: aziz), isNull);
+    expect(server.prices.last, {'price': '6500.00', 'cashier': 'e2'});
+    expect(sale.cart.lines.single.price, 650000);
+    expect(pos.catalog.byId('bread')!.price, 650000);
+    expect(pos.cashier!.id, 'e1'); // кассир остался в смене
+
+    // Без связи — сразу на кассе, из очереди уйдёт и при уже стоящей цене.
+    server.offline = true;
+    expect(await sale.changePrice(pos.catalog.byId('bread')!, 700000, by: aziz), isNull);
+    expect(sale.cart.lines.single.price, 700000);
+    server.offline = false;
+    server.priceDown = true;
+    await pos.sync(catalog: true);
+    expect(pos.catalog.byId('bread')!.price, 700000); // цена из очереди не теряется
+    server.priceDown = false;
+    await pos.sync();
+    expect(server.prices.last, {'price': '7000.00', 'if_unpriced': false, 'cashier': 'e2'});
+    sale.dispose();
+  });
+
+  test('незнакомый штрихкод нашёлся в каталоге ИКПУ — «Это он» и сразу в чек', () async {
+    server.unpriced = true;
+    pos.openSearch = (code) async => code == '4780069000017'
+        ? OpenRaw([{'mxikCode': '02202002001010021', 'mxikName': 'Напитки: COCA-COLA', 'internationalCode': code, 'label': 0}], null)
+        : const OpenRaw([], null);
+    await pos.activate('ABCD2345');
+    pos.login(pos.catalog.cashiers.firstWhere((c) => c.id == 'e1'), '1234');
+    await pos.openShift(0);
+    await until(() => !pos.syncing);
+    final sale = SaleController(pos);
+    final opened = <Cmd>[];
+    sale.onNavigate = opened.add;
+    Future<void> scan(String code) async {
+      for (var i = 0; i < code.length; i++) {
+        sale.char(code[i], Duration(milliseconds: i * 5));
+      }
+      await sale.command(Cmd.enter);
+    }
+
+    await scan('4780069000017');
+    expect(opened.last, Cmd.found);
+    final g = sale.takeFoundPending()!;
+    expect(g.items.single.ikpu, '02202002001010021');
+    expect(sale.cart.isEmpty, isTrue);
+    // Без права и без ПИНа старшего — нельзя.
+    expect(await sale.addFound(g, g.items.single, 'Coca-Cola 0,25 л', 600000), isNotNull);
+    final aziz = sale.priceApprover('5555').who!;
+    expect(await sale.addFound(g, g.items.single, 'Coca-Cola 0,25 л', 600000, by: aziz), isNull);
+    expect(server.founds.single['source'], 'tasnif');
+    expect(server.founds.single['name'], 'Coca-Cola 0,25 л');
+    expect(server.founds.single['price'], '6000.00');
+    expect(server.founds.single['cashier'], 'e2');
+    expect((server.founds.single['tasnif'] as Map)['mxikCode'], '02202002001010021');
+    expect(sale.cart.lines.single.product.id, 'coke');
+    expect(sale.cart.lines.single.price, 600000);
+
+    // Следующий скан — уже из каталога кассы, без поиска.
+    await scan('4780069000017');
+    expect(sale.cart.lines.single.qty, 2000);
+    expect(opened.where((c) => c == Cmd.found).length, 1);
+
+    // Нигде нет — как раньше, «Товара нет в базе»; «Не он» — туда же.
+    await scan('4600123456789');
+    expect(opened.last, Cmd.unknown);
+    sale.takeUnknownPending();
+    sale.notFound('4780069000024');
+    expect(opened.last, Cmd.unknown);
+    expect(sale.takeUnknownPending(), '4780069000024');
     sale.dispose();
   });
 }

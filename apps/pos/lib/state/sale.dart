@@ -8,10 +8,11 @@ import '../core/debts.dart';
 import '../core/journal.dart';
 import '../core/money.dart';
 import '../core/quick.dart';
+import '../data/open_sources.dart';
 import 'pos.dart';
 
 /// Команды быстрого режима — клавиши, которые не печатают символ.
-enum Cmd { enter, esc, del, backspace, up, down, star, pay, qty, item, search, discountLine, discountAll, hold, returns, orders, shiftMenu, debtQr, debtPay, price, dish, unknown }
+enum Cmd { enter, esc, del, backspace, up, down, star, pay, qty, item, search, discountLine, discountAll, hold, returns, orders, shiftMenu, debtQr, debtPay, price, dish, unknown, changePrice, found }
 
 enum SaleMode { sale, paid, held }
 
@@ -101,6 +102,94 @@ class SaleController extends ChangeNotifier {
   }
 
   bool get canPrice => pos.canPrice;
+
+  /// Смена цены (F8): окно «Изменить цену» заберёт товар через [takeChangePending].
+  Product? _changePending;
+
+  Product? takeChangePending() {
+    final r = _changePending;
+    _changePending = null;
+    return r;
+  }
+
+  /// Незнакомый штрихкод нашёлся в открытых источниках: окно «Нашли товар по
+  /// штрихкоду» (Cmd.found) заберёт находку через [takeFoundPending].
+  FoundGoods? _foundPending;
+
+  FoundGoods? takeFoundPending() {
+    final r = _foundPending;
+    _foundPending = null;
+    return r;
+  }
+
+  /// Касса с фискальным модулем: товар без ИКПУ не продать.
+  bool get fiscalMode => pos.fiscalMode;
+
+  /// Старший по ПИНу для цены (у кассира нет права «Установка цен»).
+  ({Cashier? who, String? error}) priceApprover(String pin) => pos.priceApprover(pin);
+
+  /// F8: цена товара выбранной строки (без выбора — последней). Меняется во
+  /// всём магазине, строки товара в чеке пересчитываются.
+  void _changePrice() {
+    if (catalog.cafe != null) {
+      _error(tr('В кафе цену блюда меняют в меню панели', 'Kafeda taom narxi panel menyusida oʻzgartiriladi'));
+      return;
+    }
+    if (mode != SaleMode.sale || cart.isEmpty) {
+      _error(tr('Сначала отсканируйте товар или выберите строку в чеке', 'Avval mahsulotni skanerlang yoki chekdagi qatorni tanlang'), right: 'F8');
+      return;
+    }
+    final p = (cart.selected ?? cart.lines.last).product;
+    if (p.unknown) {
+      _error(tr('У неизвестного товара нет карточки — цена только в этом чеке', 'Nomaʼlum mahsulotning kartochkasi yoʻq — narx faqat shu chekda'), note: p.name);
+      return;
+    }
+    _changePending = catalog.byId(p.id) ?? p;
+    onNavigate?.call(Cmd.changePrice);
+  }
+
+  /// Окно «Изменить цену»: новая цена в магазине (документ цен, без связи —
+  /// очередь) и строки товара в чеке по новой цене. Ошибка — текст.
+  Future<String?> changePrice(Product p, int price, {Cashier? by}) async {
+    if (price <= 0) return tr('Цена должна быть больше нуля', 'Narx noldan katta boʻlishi kerak');
+    if (price == p.price) return tr('Это и есть текущая цена', 'Bu joriy narxning oʻzi');
+    try {
+      final np = await pos.setProductPrice(p, price, by: by, change: true);
+      cart.reprice(np);
+      msg = SaleMsg(MsgKind.ok, tr('Цена изменена · ${np.name}', 'Narx oʻzgartirildi · ${np.name}'),
+          note: tr('во всём магазине · на всех кассах', 'butun doʻkonda · barcha kassalarda'), right: '${fmtMoney(p.price)} → ${fmtMoney(np.price)}');
+      onSound?.call(true);
+      notifyListeners();
+      return null;
+    } on PriceError catch (e) {
+      return e.message;
+    }
+  }
+
+  /// «Это он»: найденный товар — в базу и «Мои товары» с ценой, сразу в чек.
+  Future<String?> addFound(FoundGoods g, FoundCandidate c, String name, int price, {Cashier? by}) async {
+    if (price <= 0) return tr('Наберите цену', 'Narxni tering');
+    try {
+      final p = await pos.addFound(g, c, name, price, by: by);
+      _add(p);
+      notifyListeners();
+      return null;
+    } on PriceError catch (e) {
+      return e.message;
+    }
+  }
+
+  /// «Не он»: продать как неизвестный товар (окно НТ2), как раньше.
+  void notFound(String code) {
+    if (pos.fiscalMode) {
+      _error(tr('Товара нет в базе — с фискальным модулем без ИКПУ продать нельзя', 'Mahsulot bazada yoʻq — fiskal modul bilan MXIKsiz sotib boʻlmaydi'),
+          note: code, right: tr('Поиск: F2', 'Qidirish: F2'));
+      notifyListeners();
+      return;
+    }
+    _unknownPending = code;
+    onNavigate?.call(Cmd.unknown);
+  }
 
   /// Штрихкода нет ни в каталоге кассы, ни в Super Market: окно «Товара нет
   /// в базе» (Cmd.unknown) заберёт его через [takeUnknownPending].
@@ -452,11 +541,14 @@ class SaleController extends ChangeNotifier {
         } else {
           openSearch();
         }
+      case Cmd.changePrice:
+        _changePrice();
       case Cmd.debtQr:
       case Cmd.debtPay:
       case Cmd.price:
       case Cmd.dish:
       case Cmd.unknown:
+      case Cmd.found:
         break; // только навигация: окна «В долг», погашения долга и цены открывает экран продажи
       case Cmd.returns:
       case Cmd.shiftMenu:
@@ -634,6 +726,20 @@ class SaleController extends ChangeNotifier {
           if (found.price > 0) catalog.put(found);
           _add(found);
           return true;
+        }
+        // Нет и в Super Market — ищем в каталоге ИКПУ и Open Food Facts
+        // (обычно меньше полсекунды, не дольше двух).
+        msg = SaleMsg(MsgKind.info, tr('Ищем по штрихкоду в каталоге ИКПУ и Open Food Facts…', 'Shtrix-kod boʻyicha MXIK katalogi va Open Food Factsda qidirilmoqda…'), note: code);
+        notifyListeners();
+        final open = await pos.searchOpenSources(code);
+        // С фискальным модулем без ИКПУ не продать — находки без ИКПУ не нужны.
+        if (open != null && (!pos.fiscalMode || open.items.any((c) => c.ikpu.isNotEmpty))) {
+          busy = false;
+          _foundPending = open;
+          msg = SaleMsg(MsgKind.info, tr('Нашли товар по штрихкоду — проверьте', 'Mahsulot shtrix-kod boʻyicha topildi — tekshiring'), note: open.items.first.name);
+          onSound?.call(true);
+          onNavigate?.call(Cmd.found);
+          return false;
         }
       } on ApiError {
         // Нет связи — сервер не спросить: продаём неизвестным товаром.

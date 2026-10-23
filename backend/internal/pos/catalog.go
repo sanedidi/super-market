@@ -121,6 +121,89 @@ const quickTopLimit = 200
 // всё равно попадут в следующую выгрузку (повтор товара безвреден).
 const catalogOverlap = time.Minute
 
+// changedOverlap — перекрытие для лёгкой проверки: цена, записанная в
+// транзакции, начатой чуть раньше версии, всё равно будет замечена. Окно
+// маленькое, чтобы касса не перекачивала изменения лишний раз; редкие
+// пропуски подберёт обычная выгрузка раз в минуту (с перекрытием в минуту).
+const changedOverlap = 5 * time.Second
+
+// CatalogChanged — изменилось ли что-то в товарах кассы после версии since:
+// цены магазина и сети, сами товары магазина, единицы, коды весов, новые
+// «Мои товары», группы вариаций. Дешёвые EXISTS по индексам — касса
+// спрашивает каждые 10 секунд и качает изменения, только когда они есть.
+func (s *Service) CatalogChanged(ctx context.Context, p *identity.Principal, since time.Time) (bool, error) {
+	storeID := p.StoreIDs[0]
+	from := since.Add(-changedOverlap)
+	var changed bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM prices pr
+		               WHERE pr.network_id = $1 AND pr.updated_at > $3
+		                 AND (pr.store_id IS NULL OR pr.store_id = $2))
+		    OR EXISTS (SELECT 1 FROM pos_plu pl WHERE pl.network_id = $1 AND pl.updated_at > $3)
+		    OR EXISTS (SELECT 1 FROM store_products sp WHERE sp.store_id = $2 AND sp.added_at > $3)
+		    OR EXISTS (SELECT 1 FROM products pp
+		               WHERE pp.updated_at > $3
+		                 AND (pp.network_id = $1
+		                      OR EXISTS (SELECT 1 FROM store_products sp WHERE sp.store_id = $2 AND sp.product_id = pp.id)))
+		    OR EXISTS (SELECT 1 FROM variant_groups vg
+		               WHERE vg.updated_at > $3
+		                 AND EXISTS (SELECT 1 FROM products vp JOIN store_products sp ON sp.product_id = vp.id
+		                             WHERE vp.variant_group_id = vg.id AND sp.store_id = $2))
+		    OR EXISTS (SELECT 1 FROM units u WHERE u.updated_at > $3)`,
+		p.NetworkID, storeID, from).Scan(&changed)
+	return changed, err
+}
+
+// catalogProductsSQL — товары кассы: $1 сеть, $2 магазин, $3 тип цен,
+// $4 изменения после (NULL — все), $5 один товар (NULL — все).
+const catalogProductsSQL = `
+		SELECT p.id, loc(p.name, p.name_uz), loc(u.short_name, u.short_name_uz), u.is_fractional,
+		       p.is_active AND (p.moderation_status = 'approved' OR p.network_id = $1),
+		       COALESCE(sp.price, np.price, p.base_price)::text,
+		       COALESCE((SELECT array_agg(b.barcode ORDER BY b.barcode) FROM product_barcodes b WHERE b.product_id = p.id), '{}'),
+		       p.ikpu, p.package_code, p.vat_rate::text, p.is_marked, pl.plu,
+		       COALESCE(p.images[1], ''),
+		       COALESCE(loc(c2.name, c2.name_uz), loc(c1.name, c1.name_uz), loc(c.name, c.name_uz), ''),
+		       p.name, p.name_uz,
+		       vg.id, COALESCE(loc(vg.name, vg.name_uz), ''),
+		       CASE WHEN vg.id IS NULL THEN '' ELSE loc(p.variant_weight, p.variant_weight_uz) END,
+		       CASE WHEN vg.id IS NULL THEN '' ELSE loc(p.variant_flavor, p.variant_flavor_uz) END,
+		       p.variant_weight_sort::float8, p.variant_sort,
+		       COALESCE(loc(vg.weight_label, vg.weight_label_uz), ''), COALESCE(loc(vg.flavor_label, vg.flavor_label_uz), '')
+		FROM products p
+		JOIN units u ON u.id = p.unit_id
+		LEFT JOIN variant_groups vg ON vg.id = p.variant_group_id AND vg.status = 'confirmed'
+		LEFT JOIN categories c ON c.id = p.category_id
+		LEFT JOIN categories c1 ON c1.id = c.parent_id
+		LEFT JOIN categories c2 ON c2.id = c1.parent_id
+		LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = $3 AND sp.store_id = $2
+		LEFT JOIN prices np ON np.product_id = p.id AND np.price_type_id = $3 AND np.store_id IS NULL AND np.network_id = $1
+		LEFT JOIN pos_plu pl ON pl.network_id = $1 AND pl.product_id = p.id
+		LEFT JOIN store_products mine ON mine.store_id = $2 AND mine.product_id = p.id
+		WHERE (p.network_id IS NULL OR p.network_id = $1)
+		  -- Только товары магазина («Мои товары»: добавил сам, пришли приходом,
+		  -- есть цена магазина; блюда кафе — в выбранных точках), а не вся
+		  -- центральная база. Плюс товары с ценой сети и с кодом весов (PLU) —
+		  -- их сеть настроила сама. Незнакомый штрихкод касса продаёт как
+		  -- «Неизвестный товар».
+		  AND (mine.product_id IS NOT NULL OR np.price IS NOT NULL OR pl.plu IS NOT NULL)
+		  AND ($4::timestamptz IS NULL OR p.updated_at > $4 OR u.updated_at > $4 OR sp.updated_at > $4
+		       OR np.updated_at > $4 OR pl.updated_at > $4 OR vg.updated_at > $4 OR mine.added_at > $4)
+		  AND ($5::uuid IS NULL OR p.id = $5)`
+
+// catalogProduct — один товар в том виде, в каком его получает касса.
+func (s *Service) catalogProduct(ctx context.Context, p *identity.Principal, id string) (CatalogProduct, error) {
+	priceType, err := catalog.DefaultPriceType(ctx, s.pool, p.NetworkID)
+	if err != nil {
+		return CatalogProduct{}, err
+	}
+	rows, err := s.pool.Query(ctx, catalogProductsSQL, p.NetworkID, p.StoreIDs[0], priceType, nil, id)
+	if err != nil {
+		return CatalogProduct{}, err
+	}
+	return pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[CatalogProduct])
+}
+
 // CatalogEpoch — поколение каталога кассы. Касса присылает своё (epoch), и если
 // оно другое, получает каталог целиком. 2 — после импорта каталога ИКПУ товары
 // без цены на кассу больше не идут, а старые копии их ещё хранят.
@@ -159,40 +242,8 @@ func (s *Service) Catalog(ctx context.Context, p *identity.Principal, since *tim
 		t := since.Add(-catalogOverlap)
 		from = &t
 	}
-	rows, err := s.pool.Query(ctx, `
-		SELECT p.id, loc(p.name, p.name_uz), loc(u.short_name, u.short_name_uz), u.is_fractional,
-		       p.is_active AND (p.moderation_status = 'approved' OR p.network_id = $1),
-		       COALESCE(sp.price, np.price, p.base_price)::text,
-		       COALESCE((SELECT array_agg(b.barcode ORDER BY b.barcode) FROM product_barcodes b WHERE b.product_id = p.id), '{}'),
-		       p.ikpu, p.package_code, p.vat_rate::text, p.is_marked, pl.plu,
-		       COALESCE(p.images[1], ''),
-		       COALESCE(loc(c2.name, c2.name_uz), loc(c1.name, c1.name_uz), loc(c.name, c.name_uz), ''),
-		       p.name, p.name_uz,
-		       vg.id, COALESCE(loc(vg.name, vg.name_uz), ''),
-		       CASE WHEN vg.id IS NULL THEN '' ELSE loc(p.variant_weight, p.variant_weight_uz) END,
-		       CASE WHEN vg.id IS NULL THEN '' ELSE loc(p.variant_flavor, p.variant_flavor_uz) END,
-		       p.variant_weight_sort::float8, p.variant_sort,
-		       COALESCE(loc(vg.weight_label, vg.weight_label_uz), ''), COALESCE(loc(vg.flavor_label, vg.flavor_label_uz), '')
-		FROM products p
-		JOIN units u ON u.id = p.unit_id
-		LEFT JOIN variant_groups vg ON vg.id = p.variant_group_id AND vg.status = 'confirmed'
-		LEFT JOIN categories c ON c.id = p.category_id
-		LEFT JOIN categories c1 ON c1.id = c.parent_id
-		LEFT JOIN categories c2 ON c2.id = c1.parent_id
-		LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = $3 AND sp.store_id = $2
-		LEFT JOIN prices np ON np.product_id = p.id AND np.price_type_id = $3 AND np.store_id IS NULL AND np.network_id = $1
-		LEFT JOIN pos_plu pl ON pl.network_id = $1 AND pl.product_id = p.id
-		LEFT JOIN store_products mine ON mine.store_id = $2 AND mine.product_id = p.id
-		WHERE (p.network_id IS NULL OR p.network_id = $1)
-		  -- Только товары магазина («Мои товары»: добавил сам, пришли приходом,
-		  -- есть цена магазина; блюда кафе — в выбранных точках), а не вся
-		  -- центральная база. Плюс товары с ценой сети и с кодом весов (PLU) —
-		  -- их сеть настроила сама. Незнакомый штрихкод касса продаёт как
-		  -- «Неизвестный товар».
-		  AND (mine.product_id IS NOT NULL OR np.price IS NOT NULL OR pl.plu IS NOT NULL)
-		  AND ($4::timestamptz IS NULL OR p.updated_at > $4 OR u.updated_at > $4 OR sp.updated_at > $4
-		       OR np.updated_at > $4 OR pl.updated_at > $4 OR vg.updated_at > $4 OR mine.added_at > $4)
-		ORDER BY loc(p.name, p.name_uz)`, p.NetworkID, storeID, priceType, from)
+	rows, err := s.pool.Query(ctx, catalogProductsSQL+`
+		ORDER BY loc(p.name, p.name_uz)`, p.NetworkID, storeID, priceType, from, nil)
 	if err != nil {
 		return out, err
 	}

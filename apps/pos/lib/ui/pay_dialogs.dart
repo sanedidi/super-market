@@ -3,9 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:sm_core/sm_core.dart' show Lang, parseClientQr, tr;
 
 import '../core/cart.dart';
+import '../core/catalog.dart';
 import '../core/debts.dart';
 import '../core/money.dart';
 import '../data/api.dart';
+import '../data/open_sources.dart';
 import '../state/sale.dart';
 import 'kit.dart';
 import 'theme.dart';
@@ -35,6 +37,17 @@ Future<void> showPriceDialog(BuildContext context, SaleController sale, PendingP
 /// Штрихкода нет ни в магазине, ни в Super Market — продать неизвестным товаром.
 Future<void> showUnknownDialog(BuildContext context, SaleController sale, String barcode) =>
     showDialog<void>(context: context, builder: (_) => _UnknownDialog(sale: sale, barcode: barcode));
+
+/// F8: новая цена товара во всём магазине (Figma «Касса · Изменить цену товара»).
+Future<void> showChangePriceDialog(BuildContext context, SaleController sale, Product product) =>
+    showDialog<void>(context: context, builder: (_) => _ChangePriceDialog(sale: sale, product: product));
+
+/// Незнакомый штрихкод нашёлся в каталоге ИКПУ или Open Food Facts — кассир
+/// подтверждает «Это он» (Figma «Касса · Штрихкода нет нигде», НШ1–НШ3).
+Future<void> showFoundDialog(BuildContext context, SaleController sale, FoundGoods found) async {
+  final notThis = await showDialog<bool>(context: context, builder: (_) => _FoundDialog(sale: sale, found: found));
+  if (notThis == true) sale.notFound(found.barcode);
+}
 
 Future<void> showDiscountDialog(BuildContext context, SaleController sale, {required bool all}) =>
     showDialog<void>(context: context, builder: (_) => _DiscountDialog(sale: sale, all: all));
@@ -2189,4 +2202,527 @@ class _DebtDialogState extends State<_DebtDialog> {
         'dev' => tr('тестовый режим сервера', 'server test rejimi'),
         _ => tr('код отправлен', 'kod yuborildi'),
       };
+}
+
+// ---------------------------------------------------- цена: смена и ПИН старшего
+
+/// Поле окна: рамка красная, когда в него идёт ввод.
+Widget _field({required bool active, required VoidCallback onTap, required Widget child}) => GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        decoration: BoxDecoration(
+          color: C.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: active ? C.brand : C.borderStrong, width: active ? 2 : 1),
+        ),
+        child: child,
+      ),
+    );
+
+/// ПИН старшего: четыре точки.
+Widget _pinDots(String pin) => Row(mainAxisSize: MainAxisSize.min, children: [
+      for (var i = 0; i < 4; i++)
+        Container(
+          width: 18,
+          height: 18,
+          margin: const EdgeInsets.only(left: 8),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: i < pin.length ? C.tp : Colors.transparent,
+            border: Border.all(color: i < pin.length ? C.tp : C.borderStrong, width: 2),
+          ),
+        ),
+    ]);
+
+/// Цена и (у кассира без права «Установка цен») ПИН старшего: общий ввод для
+/// окон «Изменить цену» и «Нашли товар».
+mixin _PriceWithPin<T extends StatefulWidget> on State<T> {
+  final price = _Input(max: 9);
+  String pin = '';
+  bool pinField = false;
+  bool busy = false;
+  String? error;
+
+  SaleController get saleCtl;
+  bool get needPin => !saleCtl.canPrice;
+  int get value => parseMoney(price.value);
+
+  void priceKey(String k) {
+    if (busy) return;
+    setState(() {
+      error = null;
+      if (pinField) {
+        if (k == '⌫') {
+          if (pin.isNotEmpty) pin = pin.substring(0, pin.length - 1);
+        } else if (RegExp(r'^[0-9]$').hasMatch(k) && pin.length < 4) {
+          pin += k;
+        }
+      } else {
+        price.key(k);
+      }
+    });
+  }
+
+  /// Старший по ПИНу; null — продолжать нельзя (ошибка уже показана).
+  /// `(ok: true, by: null)` — у кассира своё право.
+  ({bool ok, Cashier? by}) approver() {
+    if (!needPin) return (ok: true, by: null);
+    if (pin.length < 4) {
+      setState(() => pinField = true);
+      return (ok: false, by: null);
+    }
+    final r = saleCtl.priceApprover(pin);
+    if (r.who == null) {
+      setState(() {
+        pin = '';
+        pinField = true;
+        error = r.error;
+      });
+      return (ok: false, by: null);
+    }
+    return (ok: true, by: r.who);
+  }
+
+  Widget priceField(String label) => _field(
+        active: !pinField,
+        onTap: () => setState(() => pinField = false),
+        child: Row(children: [
+          Expanded(child: Text(label, style: t(16, w: FontWeight.w500, c: C.ts))),
+          Text(price.value.isEmpty ? '—' : fmtMoney(value), style: t(40, w: FontWeight.w800)),
+        ]),
+      );
+
+  Widget pinRow() => _field(
+        active: pinField,
+        onTap: () => setState(() => pinField = true),
+        child: Row(children: [
+          Expanded(child: Text(tr('ПИН владельца или старшего', 'Egasi yoki katta xodim PIN-kodi'), style: t(16, w: FontWeight.w500, c: C.ts))),
+          SizedBox(height: 48, child: Center(child: _pinDots(pin))),
+        ]),
+      );
+
+  Widget noRightNote() => _Note(
+        text: tr('У кассира ${saleCtl.pos.cashier?.name ?? ''} нет права «Установка цен». Владелец или старший вводит свой ПИН — цена сохранится от его имени, кассир остаётся в смене.',
+            'Kassir ${saleCtl.pos.cashier?.name ?? ''}da «Narxlarni belgilash» huquqi yoʻq. Egasi yoki katta xodim oʻz PIN-kodini kiritadi — narx uning nomidan saqlanadi, kassir smenada qoladi.'),
+      );
+}
+
+class _ChangePriceDialog extends StatefulWidget {
+  const _ChangePriceDialog({required this.sale, required this.product});
+
+  final SaleController sale;
+  final Product product;
+
+  @override
+  State<_ChangePriceDialog> createState() => _ChangePriceDialogState();
+}
+
+class _ChangePriceDialogState extends State<_ChangePriceDialog> with _PriceWithPin<_ChangePriceDialog> {
+  @override
+  SaleController get saleCtl => widget.sale;
+
+  Product get p => widget.product;
+
+  Future<void> _submit() async {
+    if (busy) return;
+    if (value <= 0) {
+      setState(() {
+        pinField = false;
+        error = tr('Наберите новую цену', 'Yangi narxni tering');
+      });
+      return;
+    }
+    if (needPin && !pinField && pin.length < 4) {
+      setState(() => pinField = true);
+      return;
+    }
+    final a = approver();
+    if (!a.ok) return;
+    setState(() {
+      busy = true;
+      error = null;
+    });
+    final err = await widget.sale.changePrice(p, value, by: a.by);
+    if (!mounted) return;
+    if (err == null) {
+      Navigator.of(context).pop();
+    } else {
+      setState(() {
+        busy = false;
+        error = err;
+      });
+    }
+  }
+
+  KeyEventResult _onKey(KeyEvent e) {
+    if (e is KeyUpEvent) return KeyEventResult.ignored;
+    final k = e.logicalKey;
+    if (needPin && (k == LogicalKeyboardKey.tab || k == LogicalKeyboardKey.arrowUp || k == LogicalKeyboardKey.arrowDown)) {
+      setState(() => pinField = !pinField);
+      return KeyEventResult.handled;
+    }
+    return _keys(e, onEnter: _submit, onChar: priceKey);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final diff = value - p.price;
+    final ready = value > 0 && value != p.price && (!needPin || pin.length == 4);
+    final code = p.barcodes.isEmpty ? '' : ' · ${p.barcodes.first}';
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (_, e) => _onKey(e),
+      child: _Shell(
+        width: 900,
+        title: tr('Изменить цену', 'Narxni oʻzgartirish'),
+        subtitle: tr('${p.name}$code · сейчас ${fmtMoney(p.price)} сум', '${p.name}$code · hozir ${fmtMoney(p.price)} soʻm'),
+        children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                priceField(p.fractional ? tr('Новая цена за ${p.unit}, сум', 'Yangi narx, ${p.unit} uchun, soʻm') : tr('Новая цена, сум', 'Yangi narx, soʻm')),
+                if (needPin) ...[const SizedBox(height: 10), pinRow()],
+                const SizedBox(height: 12),
+                if (needPin)
+                  noRightNote()
+                else
+                  _Note(
+                    text: value > 0 && diff != 0
+                        ? tr('Было ${fmtMoney(p.price)} → станет ${fmtMoney(value)} (${diff > 0 ? '+' : '−'}${fmtMoney(diff.abs())}). Цена изменится во всём магазине: на всех кассах и в приложении покупателя. Строка в этом чеке пересчитается.',
+                            'Edi ${fmtMoney(p.price)} → boʻladi ${fmtMoney(value)} (${diff > 0 ? '+' : '−'}${fmtMoney(diff.abs())}). Narx butun doʻkonda oʻzgaradi: barcha kassalarda va xaridor ilovasida. Shu chekdagi qator qayta hisoblanadi.')
+                        : tr('Цена изменится во всём магазине: на всех кассах и в приложении покупателя. Строка в этом чеке пересчитается.',
+                            'Narx butun doʻkonda oʻzgaradi: barcha kassalarda va xaridor ilovasida. Shu chekdagi qator qayta hisoblanadi.'),
+                  ),
+                if (!widget.sale.online) ...[
+                  const SizedBox(height: 10),
+                  _Note(
+                    warn: true,
+                    text: tr('Нет связи с сервером. Новая цена сразу действует на этой кассе, в Super Market уйдёт из очереди, когда появится сеть.',
+                        'Server bilan aloqa yoʻq. Yangi narx shu kassada darhol amal qiladi, Super Marketga tarmoq paydo boʻlganda navbatdan yuboriladi.'),
+                  ),
+                ],
+              ]),
+            ),
+            const SizedBox(width: 16),
+            SizedBox(width: 300, child: _Pad(onKey: priceKey, extra: '000')),
+          ]),
+          const SizedBox(height: 16),
+          _Footer(
+            back: tr('Отмена', 'Bekor qilish'),
+            primary: needPin ? tr('Подтвердить и сохранить', 'Tasdiqlash va saqlash') : tr('Сохранить цену', 'Narxni saqlash'),
+            onPrimary: ready ? _submit : null,
+            busy: busy,
+          ),
+          if (error != null) ...[
+            const SizedBox(height: 10),
+            Text(error!, style: t(13, w: FontWeight.w600, c: C.error)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ------------------------------------------- нашли товар в открытых источниках
+
+class _FoundDialog extends StatefulWidget {
+  const _FoundDialog({required this.sale, required this.found});
+
+  final SaleController sale;
+  final FoundGoods found;
+
+  @override
+  State<_FoundDialog> createState() => _FoundDialogState();
+}
+
+class _FoundDialogState extends State<_FoundDialog> with _PriceWithPin<_FoundDialog> {
+  @override
+  SaleController get saleCtl => widget.sale;
+
+  /// Показываем не больше четырёх вариантов (по штрихкоду их обычно один).
+  late final List<FoundCandidate> _items = widget.found.items
+      .where((c) => !widget.sale.fiscalMode || c.ikpu.isNotEmpty)
+      .take(4)
+      .toList();
+  int _sel = 0;
+  late String _name = _items.first.name;
+  bool _edited = false;
+  bool _naming = false;
+  bool _latin = Lang.instance.isUz;
+
+  FoundCandidate get _c => _items[_sel];
+
+  void _select(int i) {
+    if (busy || i < 0 || i >= _items.length) return;
+    setState(() {
+      _sel = i;
+      if (!_edited) _name = _c.name;
+    });
+  }
+
+  void _nameKey(String k) {
+    setState(() {
+      error = null;
+      _edited = true;
+      if (k == '⌫') {
+        if (_name.isNotEmpty) _name = _name.substring(0, _name.length - 1);
+      } else if (_name.length < 200) {
+        if (k == ' ' && (_name.isEmpty || _name.endsWith(' '))) return;
+        _name += k;
+      }
+    });
+  }
+
+  void _letter(String k) => _nameKey(_name.isEmpty || _name.endsWith(' ') ? k.toUpperCase() : k.toLowerCase());
+
+  void _notThis() {
+    if (busy) return;
+    Navigator.of(context).pop(true);
+  }
+
+  Future<void> _submit() async {
+    if (busy) return;
+    if (_naming) {
+      setState(() => _naming = false);
+      return;
+    }
+    if (value <= 0) {
+      setState(() {
+        pinField = false;
+        error = tr('Наберите цену продажи', 'Sotish narxini tering');
+      });
+      return;
+    }
+    if (_name.trim().isEmpty) {
+      setState(() => error = tr('Название не может быть пустым', 'Nomi boʻsh boʻlishi mumkin emas'));
+      return;
+    }
+    if (needPin && !pinField && pin.length < 4) {
+      setState(() => pinField = true);
+      return;
+    }
+    final a = approver();
+    if (!a.ok) return;
+    setState(() {
+      busy = true;
+      error = null;
+    });
+    final err = await widget.sale.addFound(widget.found, _c, _name.trim(), value, by: a.by);
+    if (!mounted) return;
+    if (err == null) {
+      Navigator.of(context).pop(false);
+    } else {
+      setState(() {
+        busy = false;
+        error = err;
+      });
+    }
+  }
+
+  KeyEventResult _onKey(KeyEvent e) {
+    if (e is KeyUpEvent) return KeyEventResult.ignored;
+    final k = e.logicalKey;
+    if (isEnter(e)) {
+      _submit();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.f4) {
+      _notThis();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.f2) {
+      setState(() => _naming = !_naming);
+      return KeyEventResult.handled;
+    }
+    if (_naming) {
+      if (k == LogicalKeyboardKey.backspace) {
+        _nameKey('⌫');
+        return KeyEventResult.handled;
+      }
+      final ch = printable(e);
+      if (ch == null) return KeyEventResult.ignored;
+      _nameKey(ch);
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.arrowUp || k == LogicalKeyboardKey.arrowDown) {
+      _select(_sel + (k == LogicalKeyboardKey.arrowUp ? -1 : 1));
+      return KeyEventResult.handled;
+    }
+    if (needPin && k == LogicalKeyboardKey.tab) {
+      setState(() => pinField = !pinField);
+      return KeyEventResult.handled;
+    }
+    return _keys(e, onEnter: _submit, onChar: priceKey);
+  }
+
+  Widget _photo(String url) => ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          width: 56,
+          height: 56,
+          color: C.subtle,
+          child: url.isEmpty
+              ? const Icon(Icons.image_outlined, color: C.td)
+              : Image.network(url, fit: BoxFit.contain, errorBuilder: (_, __, ___) => const Icon(Icons.image_outlined, color: C.td)),
+        ),
+      );
+
+  Widget _card(int i) {
+    final c = _items[i];
+    final sel = i == _sel;
+    final many = _items.length > 1;
+    final meta = [
+      if (c.ikpu.isNotEmpty) '${tr('ИКПУ', 'MXIK')} ${c.ikpu}' else tr('без ИКПУ', 'MXIKsiz'),
+      if (c.unit.isNotEmpty) c.unit,
+      if (c.brand.isNotEmpty) c.brand,
+    ].join(' · ');
+    final name = sel ? '$_name${_naming ? '|' : ''}' : c.name;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: GestureDetector(
+        onTap: () => _select(i),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: C.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: many && sel ? C.brand : C.border, width: many && sel ? 2 : 1),
+          ),
+          child: Row(children: [
+            if (many) ...[
+              Icon(sel ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded, color: sel ? C.brand : C.borderStrong),
+              const SizedBox(width: 12),
+            ],
+            _photo(c.image),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: t(18, w: FontWeight.w700)),
+                const SizedBox(height: 4),
+                Text(meta, maxLines: 1, overflow: TextOverflow.ellipsis, style: t(13, c: C.ts)),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(color: c.fromTasnif ? C.successSoft : C.warningSoft, borderRadius: BorderRadius.circular(6)),
+                  child: Text(c.fromTasnif ? tr('Каталог ИКПУ · tasnif.soliq.uz', 'MXIK katalogi · tasnif.soliq.uz') : 'Open Food Facts',
+                      style: t(11, w: FontWeight.w600, c: c.fromTasnif ? C.success : C.warning)),
+                ),
+              ]),
+            ),
+            if (sel)
+              Text(_naming ? tr('F2 · готово', 'F2 · tayyor') : tr('F2 · название', 'F2 · nomi'), style: t(12, w: FontWeight.w600, c: C.td)),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ready = value > 0 && _name.trim().isNotEmpty && (!needPin || pin.length == 4);
+    final many = _items.length > 1;
+    final left = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      for (var i = 0; i < _items.length; i++) _card(i),
+      const SizedBox(height: 4),
+      priceField(tr('Цена продажи, сум *', 'Sotish narxi, soʻm *')),
+      if (needPin) ...[const SizedBox(height: 10), pinRow()],
+      const SizedBox(height: 12),
+      if (needPin)
+        noRightNote()
+      else if (_c.fromTasnif)
+        _Note(
+          text: tr('«Это он» — товар добавится в базу Super Market и в «Мои товары», цена сохранится в магазине. Следующий скан — сразу в чек.',
+              '«Bu u» — mahsulot Super Market bazasiga va «Mening mahsulotlarim»ga qoʻshiladi, narx doʻkonda saqlanadi. Keyingi skan — darhol chekka.'),
+        )
+      else
+        _Note(
+          warn: true,
+          text: tr('Название — из открытой базы Open Food Facts. ИКПУ нет — владелец заполнит его в панели, товар будет в «Требуют внимания».',
+              'Nomi — Open Food Facts ochiq bazasidan. MXIK yoʻq — egasi uni panelda toʻldiradi, mahsulot «Eʼtibor talab qiladi»da boʻladi.'),
+        ),
+    ]);
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (_, e) => _onKey(e),
+      child: _Shell(
+        width: 940,
+        title: many ? tr('Нашли несколько вариантов', 'Bir nechta variant topildi') : tr('Нашли товар по штрихкоду', 'Mahsulot shtrix-kod boʻyicha topildi'),
+        subtitle: many
+            ? tr('${widget.found.barcode} · выберите товар как на упаковке (↑ ↓)', '${widget.found.barcode} · qadoqdagidek mahsulotni tanlang (↑ ↓)')
+            : tr('${widget.found.barcode} · проверьте по упаковке, тот ли это товар', '${widget.found.barcode} · qadoq boʻyicha tekshiring, shu mahsulotmi'),
+        children: [
+          if (_naming) ...[
+            left,
+            const SizedBox(height: 12),
+            _Letters(
+              latin: _latin,
+              onKey: (k) => k == ' ' || k == '⌫' || RegExp(r'^[0-9]$').hasMatch(k) ? _nameKey(k) : _letter(k),
+              onSwitch: () => setState(() => _latin = !_latin),
+              onDone: () => setState(() => _naming = false),
+            ),
+          ] else
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: left),
+              const SizedBox(width: 16),
+              SizedBox(width: 300, child: _Pad(onKey: priceKey, extra: '000')),
+            ]),
+          const SizedBox(height: 16),
+          Row(children: [
+            _Btn(
+              onTap: busy ? null : () => Navigator.of(context).pop(),
+              color: C.surface,
+              border: C.borderStrong,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const KeyBadge('Esc', size: 44),
+                const SizedBox(width: 10),
+                Text(tr('Отмена', 'Bekor'), style: t(17, w: FontWeight.w600)),
+              ]),
+            ),
+            const SizedBox(width: 10),
+            _Btn(
+              onTap: busy ? null : _notThis,
+              color: C.surface,
+              border: C.borderStrong,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const KeyBadge('F4', size: 44),
+                const SizedBox(width: 10),
+                Text(many ? tr('Ни один', 'Hech biri') : tr('Не он', 'Bu emas'), style: t(17, w: FontWeight.w600)),
+              ]),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Opacity(
+                opacity: !ready || busy ? 0.35 : 1,
+                child: _Btn(
+                  onTap: ready && !busy ? _submit : null,
+                  color: C.brand,
+                  child: Row(children: [
+                    const KeyBadge('Enter', dark: true, size: 52),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        busy
+                            ? tr('Сохраняем…', 'Saqlanmoqda…')
+                            : value > 0
+                                ? tr('${many ? 'Выбрать' : 'Это он'} — продать за ${fmtMoney(value)}', '${many ? 'Tanlash' : 'Bu u'} — ${fmtMoney(value)} ga sotish')
+                                : (many ? tr('Выбрать', 'Tanlash') : tr('Это он', 'Bu u')),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: t(19, w: FontWeight.w700, c: Colors.white),
+                      ),
+                    ),
+                  ]),
+                ),
+              ),
+            ),
+          ]),
+          if (error != null) ...[
+            const SizedBox(height: 10),
+            Text(error!, style: t(13, w: FontWeight.w600, c: C.error)),
+          ],
+        ],
+      ),
+    );
+  }
 }

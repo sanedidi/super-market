@@ -13,6 +13,7 @@ import '../core/limits.dart';
 import '../core/money.dart';
 import '../core/pin.dart';
 import '../data/api.dart';
+import '../data/open_sources.dart';
 import '../data/outbox.dart';
 import '../data/store.dart';
 import '../fiscal/fiscal.dart';
@@ -363,11 +364,27 @@ class PosController extends ChangeNotifier {
       if (r.sent > 0) online = true;
       if (r.revoked) revoked = true;
       final due = _lastCatalog == null || _now().difference(_lastCatalog!) > const Duration(minutes: 1);
-      if (catalog || due || _catalogLang != Lang.instance.code) await syncCatalog();
+      if (catalog || due || _catalogLang != Lang.instance.code || await _catalogChanged()) await syncCatalog();
       if (this.catalog.cafe != null) await kitchen.tick();
     } finally {
       syncing = false;
       notifyListeners();
+    }
+  }
+
+  /// Лёгкая проверка между выгрузками: поменялось ли что-то в товарах
+  /// (цена в панели и т. п.) после нашей версии. Да — касса сразу качает
+  /// изменения, не дожидаясь минуты. Ошибка или старый сервер — «нет»:
+  /// изменения всё равно придут с обычной выгрузкой раз в минуту.
+  Future<bool> _catalogChanged() async {
+    final v = catalog.version;
+    if (v == null || catalog.length == 0) return false;
+    try {
+      final res = await api.get('/pos/catalog/changed', query: {'since': v}, wait: const Duration(seconds: 5));
+      return res is Map && res['changed'] == true;
+    } on ApiError catch (e) {
+      if (e.status == 0) online = false;
+      return false;
     }
   }
 
@@ -822,18 +839,25 @@ class PosController extends ChangeNotifier {
   /// раньше чека, где товар продан (очередь идёт по порядку), и только если
   /// цену за это время не поставили в панели. Возвращает товар с ценой;
   /// ошибка — [PriceError].
-  Future<Product> setProductPrice(Product p, int price) async {
-    if (!canPrice) throw PriceError(tr('Цену ставит владелец или сотрудник с правом «Установка цен»', 'Narxni egasi yoki «Narxlarni belgilash» huquqiga ega xodim qoʻyadi'));
+  ///
+  /// [by] — старший, подтвердивший цену своим ПИНом (у кассира нет права);
+  /// [change] — смена цены товару с ценой (F8): из очереди ставится всегда.
+  Future<Product> setProductPrice(Product p, int price, {Cashier? by, bool change = false}) async {
+    final who = by ?? cashier;
+    if (who == null || !who.can(Perm.prices)) {
+      throw PriceError(tr('Цену ставит владелец или сотрудник с правом «Установка цен»', 'Narxni egasi yoki «Narxlarni belgilash» huquqiga ega xodim qoʻyadi'));
+    }
     Product priced;
     try {
-      final res = await api.send('PUT', '/pos/products/${p.id}/price', body: {'price': moneyApi(price)}, cashier: cashier?.id)
+      final res = await api.send('PUT', '/pos/products/${p.id}/price', body: {'price': moneyApi(price)}, cashier: who.id)
           as Map<String, dynamic>;
       priced = Product.fromJson({...p.toJson(), 'price': res['price']});
       online = true;
     } on ApiError catch (e) {
       _netError(e);
       if (!e.isNetwork) throw PriceError(e.message);
-      await outbox.add('price', {'product_id': p.id, 'price': price, 'name': p.name, 'product': p.toJson()}, cashier!.id, at: _now());
+      await outbox.add('price', {'product_id': p.id, 'price': price, 'name': p.name, 'product': p.toJson(), if (change) 'change': true}, who.id,
+          at: _now());
       priced = Product.fromJson({...p.toJson(), 'price': moneyApi(price)});
     }
     catalog.put(priced);
@@ -849,9 +873,78 @@ class PosController extends ChangeNotifier {
       if (i.kind != 'price') continue;
       final price = (i.body['price'] as num?)?.toInt() ?? 0;
       final cur = catalog.byId(i.body['product_id'] as String? ?? '');
-      if (price <= 0 || (cur != null && cur.price > 0)) continue;
+      if (price <= 0 || (cur != null && cur.price > 0 && i.body['change'] != true)) continue;
       final src = cur?.toJson() ?? (i.body['product'] as Map?)?.cast<String, dynamic>();
       if (src != null) catalog.put(Product.fromJson({...src, 'price': moneyApi(price)}));
+    }
+  }
+
+  /// Поиск в открытых источниках (в тестах — заглушка).
+  Future<OpenRaw> Function(String code) openSearch = searchOpen;
+
+  /// Старший по ПИНу: сотрудник с правом «Установка цен», который подтверждает
+  /// цену за кассира без этого права (ПИНы в сети разные). Проверка — на
+  /// кассе, как вход; 5 неверных ПИНов подряд — пауза 5 минут.
+  ({Cashier? who, String? error}) priceApprover(String pin) {
+    const key = 'price-approve';
+    final wait = pins.lockedFor(key);
+    if (wait != null) return (who: null, error: tr('Слишком много попыток — подождите ${wait.inMinutes + 1} мин', 'Urinishlar juda koʻp — ${wait.inMinutes + 1} daqiqa kuting'));
+    Cashier? found;
+    for (final c in catalog.cashiers) {
+      if (c.can(Perm.prices) && c.pinHash.isNotEmpty && pinHash(c.id, pin) == c.pinHash) {
+        found = c;
+        break;
+      }
+    }
+    // Тот же счётчик попыток, что и у входа: верный ПИН — сброс.
+    pins.check(key, found == null ? '' : pinHash(key, pin), pin);
+    if (found != null) return (who: found, error: null);
+    return (who: null, error: tr('ПИН не подходит — нужен сотрудник с правом «Установка цен»', 'PIN-kod mos emas — «Narxlarni belgilash» huquqiga ega xodim kerak'));
+  }
+
+  /// Штрихкода нет ни у кассы, ни в Super Market — ищем в открытых источниках
+  /// (каталог ИКПУ, Open Food Facts) и приводим находки к виду для окна.
+  /// Пусто — не нашли или нет связи.
+  Future<FoundGoods?> searchOpenSources(String code) async {
+    final raw = await openSearch(code);
+    if (raw.tasnif.isEmpty && raw.off == null) return null;
+    try {
+      final res = await api.send('POST', '/pos/products/found/preview',
+          body: {'barcode': code, 'tasnif': raw.tasnif, 'off': raw.off}, cashier: cashier?.id, wait: const Duration(seconds: 4)) as Map<String, dynamic>;
+      online = true;
+      final items = ((res['items'] as List?) ?? const []).cast<Map<String, dynamic>>().map(FoundCandidate.fromJson).toList();
+      return items.isEmpty ? null : FoundGoods(code, items, raw.tasnif, raw.off);
+    } on ApiError catch (e) {
+      _netError(e);
+      return null;
+    }
+  }
+
+  /// «Это он»: товар в базу Super Market и «Мои товары» с ценой магазина,
+  /// сразу в каталог кассы. [by] — старший по ПИНу. Ошибка — [PriceError].
+  Future<Product> addFound(FoundGoods g, FoundCandidate c, String name, int price, {Cashier? by}) async {
+    final who = by ?? cashier;
+    if (who == null || !who.can(Perm.prices)) {
+      throw PriceError(tr('Цену ставит владелец или сотрудник с правом «Установка цен»', 'Narxni egasi yoki «Narxlarni belgilash» huquqiga ega xodim qoʻyadi'));
+    }
+    try {
+      final res = await api.post('/pos/products/found', {
+        'barcode': g.barcode,
+        'source': c.source,
+        if (c.source == 'tasnif') 'tasnif': g.tasnif[c.index],
+        if (g.off != null) 'off': g.off,
+        'name': name,
+        'price': moneyApi(price),
+      }, cashier: who.id) as Map<String, dynamic>;
+      online = true;
+      final p = Product.fromJson(res['product'] as Map<String, dynamic>);
+      catalog.put(p);
+      await _keepCatalog();
+      notifyListeners();
+      return p;
+    } on ApiError catch (e) {
+      _netError(e);
+      throw PriceError(e.isNetwork ? tr('Нет связи с сервером — продайте как неизвестный товар (F4)', 'Server bilan aloqa yoʻq — nomaʼlum mahsulot sifatida soting (F4)') : e.message);
     }
   }
 

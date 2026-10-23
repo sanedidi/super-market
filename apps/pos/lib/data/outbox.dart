@@ -208,9 +208,10 @@ class Outbox {
         await api.post('/pos/debt-payments', rec.apiBody(id), cashier: item.cashier);
       }
       case 'price': {
-        // Цена, поставленная без связи: только если цены всё ещё нет.
+        // Цена, поставленная без связи товару без цены, — только если цены всё
+        // ещё нет. Смена цены (F8, change) — новая цена в любом случае.
         await api.send('PUT', '/pos/products/${b['product_id']}/price',
-            body: {'price': moneyApi((b['price'] as num).toInt()), 'if_unpriced': true}, cashier: item.cashier);
+            body: {'price': moneyApi((b['price'] as num).toInt()), 'if_unpriced': b['change'] != true}, cashier: item.cashier);
       }
       case 'bill_op': {
         // Кафе со столами: операция со счётом (повтор безопасен — свой id).

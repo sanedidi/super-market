@@ -78,6 +78,12 @@ class _SaleScreenState extends State<SaleScreen> {
       case Cmd.unknown:
         final code = sale.takeUnknownPending();
         if (code != null) await showUnknownDialog(context, sale, code);
+      case Cmd.changePrice:
+        final p = sale.takeChangePending();
+        if (p != null) await showChangePriceDialog(context, sale, p);
+      case Cmd.found:
+        final g = sale.takeFoundPending();
+        if (g != null) await showFoundDialog(context, sale, g);
       case Cmd.qty:
         await showQtyDialog(context, sale);
       case Cmd.item:
@@ -108,6 +114,7 @@ class _SaleScreenState extends State<SaleScreen> {
     LogicalKeyboardKey.numpadMultiply: Cmd.star,
     LogicalKeyboardKey.f2: Cmd.search,
     LogicalKeyboardKey.f7: Cmd.hold,
+    LogicalKeyboardKey.f8: Cmd.changePrice,
     LogicalKeyboardKey.f9: Cmd.returns,
     LogicalKeyboardKey.f10: Cmd.orders,
     LogicalKeyboardKey.f11: Cmd.shiftMenu,
@@ -262,6 +269,7 @@ class _SaleScreenState extends State<SaleScreen> {
       _Action(tr('Количество', 'Miqdor'), tr('Кол-во', 'Miqdor'), '*', () => sale.command(Cmd.qty), enabled: active),
       _Action(tr('Скидка на строку', 'Qatorga chegirma'), tr('Скидка', 'Chegirma'), 'F6', () => sale.command(Cmd.discountLine), enabled: active),
       _Action(tr('Скидка на чек', 'Chekka chegirma'), tr('На весь чек', 'Butun chekka'), 'Shift + F6', () => sale.command(Cmd.discountAll), enabled: active),
+      _Action(tr('Изменить цену', 'Narxni oʻzgartirish'), tr('Цена', 'Narx'), 'F8', () => sale.command(Cmd.changePrice), enabled: active),
       _Action(
         held ? tr('Назад к чеку', 'Chekka qaytish') : (active ? tr('Отложить чек', 'Chekni kechiktirish') : tr('Отложенные чеки', 'Kechiktirilgan cheklar')),
         held ? tr('К чеку', 'Chekka') : (active ? tr('Отложить', 'Kechiktirish') : tr('Отложенные', 'Kechiktirilgan')),

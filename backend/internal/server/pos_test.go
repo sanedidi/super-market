@@ -134,6 +134,7 @@ func TestPOS(t *testing.T) {
 		`UPDATE pos_plu SET updated_at = now() - interval '2 hours'`,
 		`ALTER TABLE pos_plu ENABLE TRIGGER pos_plu_updated_at`,
 		`UPDATE store_products SET added_at = now() - interval '2 hours'`,
+		`UPDATE prices SET updated_at = now() - interval '2 hours'`,
 	} {
 		if _, err := pool.Exec(context.Background(), q); err != nil {
 			t.Fatal(err)
@@ -142,6 +143,11 @@ func TestPOS(t *testing.T) {
 	if d := a.expect(posDo(a, "GET", "/pos/catalog?since="+ver, dt, "", nil), 200, "delta"); len(d.Body["products"].([]any)) != 0 || d.Body["full"] != false {
 		t.Fatalf("empty delta = %v", d.Body["products"])
 	}
+	// Лёгкая проверка: ничего не менялось — false.
+	if c := a.expect(posDo(a, "GET", "/pos/catalog/changed?since="+ver, dt, "", nil), 200, "changed: nothing"); c.Body["changed"] != false {
+		t.Fatalf("changed without changes = %v", c.Body)
+	}
+	a.expect(posDo(a, "GET", "/pos/catalog/changed?since=bad", dt, "", nil), 400, "changed: bad since")
 	a.expect(a.do("PUT", "/admin/pos/products/"+sugar+"/tax", adminTok, map[string]any{"package_code": "1500"}), 200, "touch sugar")
 	if d := a.expect(posDo(a, "GET", "/pos/catalog?epoch=1&since="+ver, dt, "", nil), 200, "old epoch"); d.Body["full"] != true || d.Body["epoch"] != float64(pos.CatalogEpoch) {
 		t.Fatalf("old epoch = %v", d.Body["full"])
@@ -149,6 +155,40 @@ func TestPOS(t *testing.T) {
 	if d := a.expect(posDo(a, "GET", "/pos/catalog?since="+ver, dt, "", nil), 200, "delta"); len(d.Body["products"].([]any)) != 1 {
 		t.Fatalf("delta after change = %v", d.Body["products"])
 	}
+	if c := a.expect(posDo(a, "GET", "/pos/catalog/changed?since="+ver, dt, "", nil), 200, "changed: product"); c.Body["changed"] != true {
+		t.Fatalf("changed after product touch = %v", c.Body)
+	}
+	// Цену колы поменяли в панели магазина («Установка цен») — касса узнаёт
+	// об этом лёгкой проверкой и получает новую цену в изменениях.
+	for _, q := range []string{
+		`ALTER TABLE products DISABLE TRIGGER products_updated_at`,
+		`UPDATE products SET updated_at = now() - interval '2 hours'`,
+		`ALTER TABLE products ENABLE TRIGGER products_updated_at`,
+		`UPDATE prices SET updated_at = now() - interval '2 hours'`,
+	} {
+		if _, err := pool.Exec(context.Background(), q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if c := a.expect(posDo(a, "GET", "/pos/catalog/changed?since="+ver, dt, "", nil), 200, "changed: aged"); c.Body["changed"] != false {
+		t.Fatalf("changed after aging = %v", c.Body)
+	}
+	pts := a.expect(a.do("GET", "/store/price-types", tok, nil), 200, "price types").items()
+	pd := a.expect(a.do("POST", "/store/price-documents", tok, map[string]any{
+		"price_type_id": pts[0]["id"], "store_id": store, "items": []map[string]any{{"product_id": cola, "new_price": 16500}},
+	}), 201, "price doc")
+	a.expect(a.do("POST", "/store/price-documents/"+pd.str("id")+"/post", tok, nil), 200, "post price")
+	if c := a.expect(posDo(a, "GET", "/pos/catalog/changed?since="+ver, dt, "", nil), 200, "changed: price"); c.Body["changed"] != true {
+		t.Fatalf("changed after price doc = %v", c.Body)
+	}
+	if d := a.expect(posDo(a, "GET", "/pos/catalog?since="+ver, dt, "", nil), 200, "delta: price"); len(d.Body["products"].([]any)) != 1 ||
+		d.Body["products"].([]any)[0].(map[string]any)["price"] != "16500.00" {
+		t.Fatalf("delta after price doc = %v", d.Body["products"])
+	}
+	pd = a.expect(a.do("POST", "/store/price-documents", tok, map[string]any{
+		"price_type_id": pts[0]["id"], "store_id": store, "items": []map[string]any{{"product_id": cola, "new_price": 15000}},
+	}), 201, "price doc back")
+	a.expect(a.do("POST", "/store/price-documents/"+pd.str("id")+"/post", tok, nil), 200, "post price back")
 
 	// Кассир с ПИНом. Одинаковый ПИН второму сотруднику не дадим.
 	role := a.expect(a.do("POST", "/store/roles", tok, map[string]any{

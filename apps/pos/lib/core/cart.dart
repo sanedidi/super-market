@@ -226,6 +226,25 @@ class Cart {
     return line;
   }
 
+  /// Цена товара изменилась прямо на кассе (F8): строки этого товара в
+  /// открытом чеке — по новой цене (доплаты модификаторов и скидки остаются).
+  /// Строки счёта стола кафе не трогаем — они уже на кухне и в счёте.
+  void reprice(Product p) {
+    for (var i = 0; i < lines.length; i++) {
+      final old = lines[i];
+      if (old.product.id != p.id || old.billItemId != null) continue;
+      var price = p.price;
+      for (final m in old.mods) {
+        price += m.price * m.qty;
+      }
+      final line = CartLine(product: p, qty: old.qty, price: price < 0 ? 0 : price, marks: old.marks, mods: old.mods, comment: old.comment)
+        ..discountBp = old.discountBp
+        ..discountFixed = old.discountFixed;
+      lines[i] = line;
+      if (identical(selected, old)) selected = line;
+    }
+  }
+
   void setQty(CartLine line, int qty) {
     if (qty <= 0) {
       remove(line);

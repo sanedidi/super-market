@@ -39,6 +39,7 @@ func (m *Module) Routes(r chi.Router) {
 	r.Group(func(r chi.Router) {
 		r.Use(m.deviceAuth)
 		r.Get("/pos/catalog", m.catalog)
+		r.Get("/pos/catalog/changed", m.catalogChanged)
 		r.Post("/pos/login", m.login)
 		r.Get("/pos/shifts/current", m.currentShift)
 		r.Post("/pos/shifts", m.openShift)
@@ -60,6 +61,8 @@ func (m *Module) Routes(r chi.Router) {
 		r.Put("/pos/quick-keys", m.setQuickKeys)
 		r.Put("/pos/products/{id}/price", m.setPrice)
 		r.Get("/pos/products/lookup", m.lookup)
+		r.Post("/pos/products/found/preview", m.foundPreview)
+		r.Post("/pos/products/found", m.foundAdd)
 		m.kitchenRoutes(r)
 	})
 	// Панель магазина: кассы, ПИНы, смены, налоговые поля, коды.
@@ -123,6 +126,19 @@ func (m *Module) catalog(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// catalogChanged — лёгкая проверка перед выгрузкой изменений: {"changed": bool}.
+func (m *Module) catalogChanged(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (map[string]bool, error) {
+		v := r.URL.Query().Get("since")
+		t, err := time.Parse(time.RFC3339Nano, strings.ReplaceAll(v, " ", "+"))
+		if err != nil {
+			return nil, apperr.Validation("since: версия из прошлого ответа (RFC 3339)").Uz("since: oldingi javobdagi versiya (RFC 3339)")
+		}
+		changed, err := m.svc.CatalogChanged(r.Context(), pr(r), t)
+		return map[string]bool{"changed": changed}, err
+	})
+}
+
 func (m *Module) setQuickKeys(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in QuickKeysInput) (QuickKeys, error) {
 		return m.svc.SetQuickKeys(r.Context(), pr(r), in)
@@ -138,6 +154,21 @@ func (m *Module) setPrice(w http.ResponseWriter, r *http.Request) {
 func (m *Module) lookup(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (LookupProduct, error) {
 		return m.svc.Lookup(r.Context(), pr(r), r.URL.Query().Get("barcode"))
+	})
+}
+
+// foundPreview — находки tasnif / Open Food Facts в виде для окна кассы.
+func (m *Module) foundPreview(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in FoundPreviewInput) (httpx.List[FoundCandidate], error) {
+		items, err := m.svc.FoundPreview(r.Context(), pr(r), in)
+		return httpx.List[FoundCandidate]{Items: items}, err
+	})
+}
+
+// foundAdd — кассир подтвердил найденный товар («Это он»).
+func (m *Module) foundAdd(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusCreated, "", func(_ string, in FoundAddInput) (FoundAddResult, error) {
+		return m.svc.FoundAdd(r.Context(), pr(r), in)
 	})
 }
 
