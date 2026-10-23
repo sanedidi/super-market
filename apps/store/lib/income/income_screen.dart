@@ -7,18 +7,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../main.dart';
-import '../start/new_items.dart' show NewItemCameraScreen, openNewItemReview, showQueuedSheet;
-import '../start/sheets.dart' show ProductThumb, pickProductSheet, similarSheet;
+import '../start/sheets.dart' show ProductThumb;
 import '../start/start_api.dart';
 import '../start/start_logic.dart';
 import '../start/stock_count.dart' show askShelfCounts;
-import '../start/tasnif.dart' show tasnifBarcodeSheet;
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'income_logic.dart';
 import 'income_scanner.dart';
 import 'income_sheet.dart';
+import 'product_finder.dart';
 
 /// Р3 / Р8 · Приход вручную: поставщик, строки (сканер, поиск, новый товар по
 /// фото) → «Провести». Черновик сохраняется на сервере после каждой строки —
@@ -36,6 +35,7 @@ class _IncomeScreenState extends State<IncomeScreen> {
   late final Api _api = context.read<Api>();
   late final String _storeId = context.read<StoreState>().storeId ?? '';
   late final StartApi _start = StartApi(_api, _storeId);
+  late final ProductFinder _finder = ProductFinder(_start);
 
   String? _docId;
   int? _number;
@@ -118,11 +118,7 @@ class _IncomeScreenState extends State<IncomeScreen> {
   // ---------------------------------------------------------------- данные
 
   /// Товар магазина из «Моих товаров» (null — его нет в магазине).
-  Future<Map<String, dynamic>?> _my(String productId) async {
-    final r = await _api.get('/store/inventory/my-products', {'store_id': _storeId, 'product_id': productId, 'limit': 1}) as Map<String, dynamic>;
-    final items = (r['items'] as List?) ?? const [];
-    return items.isEmpty ? null : (items.first as Map).cast<String, dynamic>();
-  }
+  Future<Map<String, dynamic>?> _my(String productId) => _finder.my(productId);
 
   /// Строка для шторки по товару: из «Моих товаров» или по карточке товара.
   Future<IncomeLine> _info(ProductRef p, {bool isNew = false}) async {
@@ -306,79 +302,15 @@ class _IncomeScreenState extends State<IncomeScreen> {
   }
 
   /// Товар в «Мои товары»; повтор — тоже успех (он уже наш). bind — привязать штрихкод.
-  Future<bool> _addToStore(BuildContext ctx, ProductRef p, {String? bind}) async {
-    try {
-      var o = await _start.add(p.id, source: 'barcode', bind: bind);
-      if (o.kind == AddKind.similar) {
-        if (!ctx.mounted) return false;
-        final yes = await similarSheet(ctx, p, o.similar ?? const {});
-        if (!yes) return false;
-        o = await _start.add(p.id, source: 'barcode', bind: bind, confirmSimilar: true);
-      }
-      return o.kind == AddKind.added || o.kind == AddKind.duplicate;
-    } catch (e) {
-      if (ctx.mounted) showMessage(ctx, e);
-      return false;
-    }
-  }
+  Future<bool> _addToStore(BuildContext ctx, ProductRef p, {String? bind}) => _finder.addToStore(ctx, p, bind: bind);
 
-  /// Запомнить товар, который экраны «Начала работы» добавят в магазин
-  /// (каталог ИКПУ, новый товар по фото, ручная карточка).
-  Future<ProductRef?> _capture(Future<ProductRef?> Function() body) async {
-    ProductRef? got;
-    final prev = _start.afterAdd;
-    _start.afterAdd = (_, p) async {
-      got = p;
-    };
-    try {
-      return await body() ?? got;
-    } finally {
-      _start.afterAdd = prev;
-    }
-  }
-
-  /// Р7 · Штрихкода нет ни в магазине, ни в базе.
-  Future<ProductRef?> _missing(BuildContext ctx, String code) async {
-    final queued = await _start.newItemByBarcode(code);
-    if (!ctx.mounted) return null;
-    if (queued != null) {
-      // Карточка уже в «Новых»: готова — откроется на проверку, подтвердили — в приход.
-      await showQueuedSheet(ctx, _start, queued);
-      return null;
-    }
-    final t = await tasnifBarcodeSheet(ctx, _start, code);
-    if (!ctx.mounted || t == null || t) return null;
-    final r = await pickProductSheet(ctx, _start,
-        info: tr('Штрихкод $code — нет ни в ваших товарах, ни в центральной базе', 'Shtrix-kod $code — na mahsulotlaringizda, na markaziy bazada bor'), code: code);
-    if (!ctx.mounted || r == null) return null;
-    if (r.create) return _newByPhoto(ctx, code);
-    final p = r.product;
-    if (p != null && await _addToStore(ctx, p, bind: r.bind ? code : null)) return p;
-    return null;
-  }
+  /// Р7 · Штрихкода нет ни в магазине, ни в базе (товар ловит [ProductFinder.capture]).
+  Future<ProductRef?> _capture(Future<ProductRef?> Function() body) => _finder.capture(body);
+  Future<ProductRef?> _missing(BuildContext ctx, String code) => _finder.missing(ctx, code);
 
   /// Р7а / Р7б · Новый товар по фото: Super Market заполняет карточку, магазин
-  /// подтверждает — и сразу шторка «В приход». Товар уходит в базу на модерацию.
-  Future<ProductRef?> _newByPhoto(BuildContext ctx, String? code) async {
-    Map<String, dynamic>? sent;
-    final r = await Navigator.of(ctx).push<String>(MaterialPageRoute(builder: (_) => NewItemCameraScreen(start: _start, barcode: code, onSent: (it) => sent = it)));
-    if (!ctx.mounted || r == null) return null;
-    if (r == 'exists') {
-      showMessage(ctx, tr('Этот товар уже в «Новых» — проверьте его карточку', 'Bu mahsulot allaqachon «Yangilar»da — kartochkasini tekshiring'));
-      return null;
-    }
-    final id = sent?['id'];
-    if (r == 'manual' || id == null) return null; // ручную карточку поймает _capture
-    final item = await showDialog<Map<String, dynamic>>(context: ctx, barrierDismissible: false, builder: (_) => _WaitCard(start: _start, id: '$id'));
-    if (!ctx.mounted) return null;
-    if (item == null) {
-      showMessage(ctx, tr('Карточка в «Новых» — добавите товар в приход, когда Super Market её заполнит',
-          'Kartochka «Yangilar»da — Super Market toʻldirgach, mahsulotni kirimga qoʻshasiz'));
-      return null;
-    }
-    await openNewItemReview(ctx, _start, item);
-    return null;
-  }
+  /// подтверждает — и сразу шторка «В приход».
+  Future<ProductRef?> _newByPhoto(BuildContext ctx, String? code) => _finder.newByPhoto(ctx, code);
 
   /// Поиск по названию: свои товары, общая база или новый товар по фото.
   Future<void> _search() async {
@@ -663,77 +595,6 @@ class _LineRow extends StatelessWidget {
           Text(money(l.sum, suffix: false), style: AppText.bodyStrong),
         ]),
       ),
-    );
-  }
-}
-
-/// Р7б · Ждём, пока Super Market заполнит карточку нового товара (до 2 минут).
-class _WaitCard extends StatefulWidget {
-  const _WaitCard({required this.start, required this.id});
-
-  final StartApi start;
-  final String id;
-
-  @override
-  State<_WaitCard> createState() => _WaitCardState();
-}
-
-class _WaitCardState extends State<_WaitCard> {
-  Timer? _timer;
-  int _ticks = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 3), (_) => _poll());
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _poll() async {
-    if (++_ticks > 40) {
-      _timer?.cancel();
-      if (mounted) Navigator.pop(context);
-      return;
-    }
-    try {
-      final it = await widget.start.newItem(widget.id);
-      if (!mounted) return;
-      if (it['status'] != 'processing') {
-        _timer?.cancel();
-        Navigator.pop(context, it);
-      }
-    } catch (_) {
-      // следующая попытка
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: AppColors.white,
-      content: Column(mainAxisSize: MainAxisSize.min, children: [
-        const SizedBox(height: 8),
-        const CircularProgressIndicator(),
-        const SizedBox(height: 18),
-        Text(tr('Super Market заполняет карточку', 'Super Market kartochkani toʻldirmoqda'), style: AppText.bodyStrong, textAlign: TextAlign.center),
-        const SizedBox(height: 6),
-        Text(tr('Обычно до минуты. Потом проверите карточку — и товар сразу в приходе.', 'Odatda bir daqiqagacha. Keyin kartochkani tekshirasiz — mahsulot darhol kirimda.'),
-            style: AppText.small, textAlign: TextAlign.center),
-      ]),
-      actions: [
-        TextButton(
-          onPressed: () {
-            _timer?.cancel();
-            Navigator.pop(context);
-          },
-          child: Text(tr('Не ждать', 'Kutmaslik')),
-        ),
-      ],
     );
   }
 }

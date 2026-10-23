@@ -27,11 +27,40 @@ Widget scanChip(Map<String, dynamic> s) => switch (s['status']) {
       _ => StatusChip(tr('Проверить', 'Tekshirish kerak'), tone: ChipTone.amber),
     };
 
-/// Строка: «24 шт × 11 200».
+/// Строка: «24 шт × 11 200» — на склад, в единицах товара; блоки —
+/// «5 бл × 12 = 60 шт × 7 333».
 String lineQty(Map<String, dynamic> l) {
-  final unit = (l['unit_short'] as String?) ?? (l['unit'] as String? ?? '');
-  return '${_n(l['qty'])}${unit.isEmpty ? '' : ' $unit'} × ${_n(l['price'])}';
+  final unit = lineUnit(l);
+  final pack = num.tryParse('${l['pack'] ?? ''}') ?? 1;
+  final stock = l['stock_qty'] ?? l['qty'];
+  final cost = l['cost'] ?? l['price'];
+  final u = unit.isEmpty ? '' : ' $unit';
+  if (pack != 1 && l['fractional'] != true && l['pack_source'] != 'sum') {
+    return '${_n(l['qty'])} ${tr('бл', 'blok')} × ${_n(pack)} = ${_n(stock)}$u × ${_n(cost)}';
+  }
+  return '${_n(stock)}$u × ${_n(cost)}';
 }
+
+/// Единица товара (или из накладной, если товар не найден).
+String lineUnit(Map<String, dynamic> l) => (l['unit_short'] as String?) ?? (l['unit'] as String? ?? '');
+
+/// Пометка об упаковке строки: «по сумме: 1 уп = 12 кг», «блок по 6 — запомнено».
+String? packNote(Map<String, dynamic> l) {
+  final pack = num.tryParse('${l['pack'] ?? ''}') ?? 1;
+  final unit = lineUnit(l);
+  final src = l['pack_source'] as String? ?? '';
+  if (src == 'guess') return null;
+  if (pack == 1) return src == 'remembered' ? tr('запомнено для поставщика', 'yetkazib beruvchi uchun eslab qolingan') : null;
+  final size = '${numText(pack)}${unit.isEmpty ? '' : ' $unit'}';
+  return switch (src) {
+    'sum' => tr('по сумме: 1 уп = $size', 'summa boʻyicha: 1 qadoq = $size'),
+    'remembered' => tr('блок по $size — запомнено', 'blokda $size — eslab qolingan'),
+    _ => tr('блок по $size', 'blokda $size'),
+  };
+}
+
+/// Число для показа: 11200 → «11 200», 12.5 → «12,5».
+String numText(Object? v) => _n(v);
 
 String _n(Object? v) {
   final n = num.tryParse('${v ?? ''}');

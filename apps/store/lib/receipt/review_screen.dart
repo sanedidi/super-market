@@ -76,6 +76,30 @@ class _ReviewScreenState extends State<ReviewScreen> {
     if (s != null && mounted) setState(() => _s = s);
   }
 
+  /// Н1 · «Новый по фото» прямо из строки.
+  Future<void> _photo(Map<String, dynamic> l) async {
+    if (!_editable) return;
+    final s = await findForLine(context, widget.id, _s!, l);
+    if (s != null && mounted) setState(() => _s = s);
+  }
+
+  /// Н1 · Быстрый ответ «12 штук» / «12 блоков по 6».
+  Future<void> _answerPack(Map<String, dynamic> l, num pack) async {
+    if (!_editable) return;
+    setState(() => _busy = true);
+    try {
+      final s = await context.read<Api>().put('/store/invoice-scans/${widget.id}/lines/${l['line']}', {
+        'pack': '$pack',
+        'remember': _s!['counterparty_id'] != null,
+      }) as Map<String, dynamic>;
+      if (mounted) setState(() => _s = s);
+    } catch (e) {
+      if (mounted) showMessage(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _post({required bool post}) async {
     setState(() => _busy = true);
     try {
@@ -187,6 +211,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
           Wrap(spacing: 8, runSpacing: 8, children: [
             StatusChip('${_count('ok')} ${tr('готово', 'tayyor')}', icon: Icons.check_circle_rounded, tone: ChipTone.green),
             if (_count('check') > 0) StatusChip('${_count('check')} ${tr('проверить', 'tekshirish kerak')}', icon: Icons.error_rounded, tone: ChipTone.amber),
+            if (_count('pack') > 0) StatusChip('${_count('pack')} ${tr('блоки или штуки?', 'blokmi yoki donami?')}', icon: Icons.help_rounded, tone: ChipTone.amber),
             if (_count('missing') > 0) StatusChip('${_count('missing')} ${tr('не найдено', 'topilmadi')}', icon: Icons.help_rounded, tone: ChipTone.red),
             if (_count('skipped') > 0) StatusChip('${_count('skipped')} ${tr('пропущено', 'oʻtkazib yuborildi')}', tone: ChipTone.gray),
           ]),
@@ -195,13 +220,21 @@ class _ReviewScreenState extends State<ReviewScreen> {
       const SizedBox(height: 16),
       AppCard(
         padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Column(children: [for (final l in lines) _LineRow(line: l, onTap: _editable ? () => _line(l) : null)]),
+        child: Column(children: [
+          for (final l in lines)
+            _LineRow(
+              line: l,
+              onTap: _editable ? () => _line(l) : null,
+              onPhoto: _editable && !_busy ? () => _photo(l) : null,
+              onPack: _editable && !_busy ? (n) => _answerPack(l, n) : null,
+            ),
+        ]),
       ),
     ]);
   }
 
   Widget _bottom(Map<String, dynamic> s) {
-    final missing = _count('missing');
+    final missing = _count('missing') + _count('pack');
     final noSupplier = s['counterparty_id'] == null;
     final lines = ((s['lines'] as List?) ?? const []).where((l) => (l as Map)['skipped'] != true).length;
     return Container(
@@ -225,7 +258,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
           Text(
               noSupplier
                   ? tr('Выберите поставщика', 'Yetkazib beruvchini tanlang')
-                  : tr('Сопоставьте или пропустите строки без товара', 'Mahsulotsiz qatorlarni moslang yoki oʻtkazib yuboring'),
+                  : _count('missing') > 0
+                      ? tr('Сопоставьте или пропустите строки без товара', 'Mahsulotsiz qatorlarni moslang yoki oʻtkazib yuboring')
+                      : tr('Ответьте в строках: блоки или штуки?', 'Qatorlarda javob bering: bloklarmi yoki donami?'),
               style: AppText.small),
         ],
       ]),
@@ -267,49 +302,91 @@ class _TotalBanner extends StatelessWidget {
 }
 
 class _LineRow extends StatelessWidget {
-  const _LineRow({required this.line, required this.onTap});
+  const _LineRow({required this.line, required this.onTap, this.onPhoto, this.onPack});
 
   final Map<String, dynamic> line;
   final VoidCallback? onTap;
+
+  /// Товар не найден — «Новый по фото».
+  final VoidCallback? onPhoto;
+
+  /// «Блоки или штуки?» — быстрый ответ: 1 (штуки) или N в блоке.
+  final ValueChanged<num>? onPack;
 
   @override
   Widget build(BuildContext context) {
     final state = line['state'] as String? ?? 'missing';
     final (icon, color) = switch (state) {
       'ok' => (Icons.check_circle_rounded, AppColors.success),
-      'check' => (Icons.error_rounded, AppColors.warningInk),
+      'check' || 'pack' => (state == 'pack' ? Icons.help_rounded : Icons.error_rounded, AppColors.warningInk),
       'skipped' => (Icons.remove_circle_outline_rounded, AppColors.muted),
       _ => (Icons.help_rounded, AppColors.primary),
     };
     final change = (line['price_change'] as num?)?.toInt();
     final productName = line['product_name'] as String?;
-    var sub = lineQty(line);
-    if (change != null && change != 0) {
+    final qty = numText(line['qty']);
+    final pack = num.tryParse('${line['pack'] ?? ''}') ?? 1;
+    var sub = state == 'pack'
+        ? tr('$qty × ${numText(line['price'])} — $qty блоков или $qty штук?', '$qty × ${numText(line['price'])} — $qty blokmi yoki $qty donami?')
+        : lineQty(line);
+    if (change != null && change != 0 && state != 'pack') {
       sub += tr(' · ${change > 0 ? 'дороже' : 'дешевле'} прошлого на ${change.abs()}%', ' · oldingisidan ${change.abs()}% ${change > 0 ? 'qimmat' : 'arzon'}');
     }
+    final note = state == 'skipped' ? null : packNote(line);
     return InkWell(
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Padding(padding: const EdgeInsets.only(top: 2), child: Icon(icon, color: color, size: 22)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(
-                state == 'skipped' ? tr('Пропущена', 'Oʻtkazib yuborilgan') : (productName ?? tr('Не найден в каталоге', 'Katalogda topilmadi')),
-                style: AppText.bodyStrong.copyWith(color: state == 'missing' ? AppColors.primary : (state == 'skipped' ? AppColors.muted : AppColors.ink)),
-              ),
-              Text('«${line['name']}»', style: AppText.small.copyWith(color: AppColors.muted, fontSize: 12)),
-              Text(sub, style: AppText.small.copyWith(fontSize: 12, color: change != null && change.abs() > 5 ? AppColors.warningInk : AppColors.text2)),
+        child: Column(children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Padding(padding: const EdgeInsets.only(top: 2), child: Icon(icon, color: color, size: 22)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(
+                  state == 'skipped' ? tr('Пропущена', 'Oʻtkazib yuborilgan') : (productName ?? tr('Не найден в каталоге', 'Katalogda topilmadi')),
+                  style: AppText.bodyStrong.copyWith(color: state == 'missing' ? AppColors.primary : (state == 'skipped' ? AppColors.muted : AppColors.ink)),
+                ),
+                Text('«${line['name']}»', style: AppText.small.copyWith(color: AppColors.muted, fontSize: 12)),
+                Text(sub,
+                    style: AppText.small.copyWith(
+                        fontSize: 12, color: state == 'pack' || (change != null && change.abs() > 5) ? AppColors.warningInk : AppColors.text2)),
+                if (note != null) ...[
+                  const SizedBox(height: 4),
+                  StatusChip(note, icon: Icons.auto_fix_high_rounded),
+                ],
+              ]),
+            ),
+            const SizedBox(width: 8),
+            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Text(money(line['sum'], suffix: false), style: AppText.bodyStrong.copyWith(color: state == 'skipped' ? AppColors.muted : AppColors.ink)),
+              if (state == 'check') Text(tr('Проверить', 'Tekshirish'), style: AppText.caption.copyWith(color: color)),
             ]),
-          ),
-          const SizedBox(width: 8),
-          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text(money(line['sum'], suffix: false), style: AppText.bodyStrong.copyWith(color: state == 'skipped' ? AppColors.muted : AppColors.ink)),
-            if (state == 'missing' || state == 'check')
-              Text(state == 'missing' ? tr('Выбрать', 'Tanlash') : tr('Проверить', 'Tekshirish'), style: AppText.caption.copyWith(color: color)),
           ]),
+          if (state == 'missing' && onTap != null) ...[
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(child: SmallButton(label: tr('Выбрать', 'Tanlash'), icon: Icons.search_rounded, onPressed: onTap)),
+              const SizedBox(width: 8),
+              Expanded(child: SmallButton(label: tr('Новый по фото', 'Yangi rasm bilan'), icon: Icons.photo_camera_rounded, primary: true, onPressed: onPhoto)),
+            ]),
+          ],
+          if (state == 'pack' && onTap != null) ...[
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(child: SmallButton(label: tr('$qty штук', '$qty dona'), icon: Icons.looks_one_rounded, onPressed: onPack == null ? null : () => onPack!(1))),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SmallButton(
+                  label: pack > 1 ? tr('$qty блоков по ${numText(pack)}', '$qty blok ${numText(pack)} tadan') : tr('$qty блоков…', '$qty blok…'),
+                  icon: Icons.inventory_2_rounded,
+                  primary: true,
+                  // Сколько в блоке не знаем — шторка строки (Н4).
+                  onPressed: pack > 1 ? (onPack == null ? null : () => onPack!(pack)) : onTap,
+                ),
+              ),
+            ]),
+          ],
         ]),
       ),
     );

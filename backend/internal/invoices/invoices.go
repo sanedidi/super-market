@@ -59,21 +59,34 @@ func NewService(pool *pgxpool.Pool, aiSvc *ai.Service, mediaSvc *media.Service, 
 func (s *Service) Sync() { s.run = func(f func()) { f() } }
 
 type Line struct {
-	Line        int     `json:"line"`
-	Name        string  `json:"name"`
-	Barcode     string  `json:"barcode"`
-	Unit        string  `json:"unit"`
-	Qty         string  `json:"qty"`
-	Price       string  `json:"price"`
+	Line    int    `json:"line"`
+	Name    string `json:"name"`
+	Barcode string `json:"barcode"`
+	Unit    string `json:"unit"`
+	// Количество и цена, как в накладной (в единицах накладной).
+	Qty   string `json:"qty"`
+	Price string `json:"price"`
+	// Сумма строки, как прочитана с накладной; null — не прочитана.
+	ReadSum *string `json:"read_sum"`
+	// Единиц товара в единице накладной (блок по 6 → 6) и откуда это известно
+	// (см. pack.go). guess — нужен ответ «блоки или штуки?».
+	Pack       string `json:"pack"`
+	PackSource string `json:"pack_source"`
+	// На склад: qty × pack по цене cost (за единицу товара); sum = stock_qty × cost.
+	StockQty    string  `json:"stock_qty"`
+	Cost        string  `json:"cost"`
 	Sum         string  `json:"sum"`
 	ProductID   *string `json:"product_id"`
 	ProductName *string `json:"product_name"`
 	UnitShort   *string `json:"unit_short"`
+	// Товар продаётся дробно (кг, л).
+	Fractional bool `json:"fractional"`
 	// barcode, alias, name, manual.
 	Match      *string `json:"match"`
 	Confidence int     `json:"confidence"`
 	Skipped    bool    `json:"skipped"`
-	// ok — готово, check — проверить, missing — не найден, skipped — пропущена.
+	// ok — готово, check — проверить, pack — блоки или штуки?, missing — не
+	// найден, skipped — пропущена.
 	State string `json:"state"`
 	// Цена прошлого прихода этого товара и изменение, %.
 	LastPrice   *string `json:"last_price"`
@@ -109,6 +122,8 @@ type Counts struct {
 	OK      int `json:"ok"`
 	Check   int `json:"check"`
 	Missing int `json:"missing"`
+	// Блоки или штуки? — без ответа приход не создать.
+	Pack    int `json:"pack"`
 	Skipped int `json:"skipped"`
 }
 
@@ -281,10 +296,13 @@ func (s *Service) process(ctx context.Context, id, networkID string) error {
 		for i, l := range inv.Lines {
 			m := matchLine(ctx, tx, networkID, cp, l.Name, l.Barcode)
 			_, err := tx.Exec(ctx, `
-				INSERT INTO invoice_scan_lines (scan_id, line, name, barcode, unit, qty, price, product_id, match, confidence)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-				id, i+1, l.Name, l.Barcode, l.Unit, fmtNum(l.Qty, 3), fmtNum(l.Price, 4), m.productID, m.match, m.confidence)
+				INSERT INTO invoice_scan_lines (scan_id, line, name, barcode, unit, qty, price, read_sum, product_id, match, confidence)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+				id, i+1, l.Name, l.Barcode, l.Unit, fmtNum(l.Qty, 3), fmtNum(l.Price, 4), readSum(l), m.productID, m.match, m.confidence)
 			if err != nil {
+				return err
+			}
+			if err := repack(ctx, tx, networkID, id, i+1); err != nil {
 				return err
 			}
 		}
@@ -299,6 +317,15 @@ func (s *Service) notifyAuthor(ctx context.Context, q db.Querier, id, kind strin
 		return err
 	}
 	return push.EnqueueEmployee(ctx, q, emp, kind, title, body, map[string]string{"type": "invoice", "scan_id": id})
+}
+
+// readSum — сумма строки из накладной; не прочитана — null.
+func readSum(l ai.InvoiceLine) *string {
+	if l.Sum <= 0 || l.Sum >= 1e15 {
+		return nil
+	}
+	v := fmtNum(l.Sum, 2)
+	return &v
 }
 
 func fmtNum(v float64, prec int) string {
@@ -430,8 +457,10 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, id string) (Sc
 		return Scan{}, err
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT l.line, l.name, l.barcode, l.unit, l.qty::text, l.price::text, round(l.qty * l.price, 2)::text,
-		       l.product_id, loc(p.name, p.name_uz), loc(u.short_name, u.short_name_uz), l.match, l.confidence, l.skipped,
+		SELECT l.line, l.name, l.barcode, l.unit, l.qty::text, l.price::text, l.read_sum::text, l.pack::text, l.pack_source,
+		       round(l.qty * l.pack, 3)::text, round(coalesce(l.cost, l.price / l.pack), 2)::text,
+		       round(l.qty * l.pack * round(coalesce(l.cost, l.price / l.pack), 2), 2)::text,
+		       l.product_id, loc(p.name, p.name_uz), loc(u.short_name, u.short_name_uz), coalesce(u.is_fractional, false), l.match, l.confidence, l.skipped,
 		       (SELECT i.price::text FROM stock_document_items i JOIN stock_documents d ON d.id = i.document_id
 		         WHERE d.network_id = $2 AND d.type = 'income' AND d.status = 'posted' AND i.product_id = l.product_id
 		           AND i.price IS NOT NULL AND d.currency = $3
@@ -445,7 +474,8 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, id string) (Sc
 	}
 	sc.Lines, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (Line, error) {
 		var l Line
-		err := r.Scan(&l.Line, &l.Name, &l.Barcode, &l.Unit, &l.Qty, &l.Price, &l.Sum, &l.ProductID, &l.ProductName, &l.UnitShort,
+		err := r.Scan(&l.Line, &l.Name, &l.Barcode, &l.Unit, &l.Qty, &l.Price, &l.ReadSum, &l.Pack, &l.PackSource,
+			&l.StockQty, &l.Cost, &l.Sum, &l.ProductID, &l.ProductName, &l.UnitShort, &l.Fractional,
 			&l.Match, &l.Confidence, &l.Skipped, &l.LastPrice)
 		return l, err
 	})
@@ -463,6 +493,8 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, id string) (Sc
 			sc.Counts.Check++
 		case "missing":
 			sc.Counts.Missing++
+		case "pack":
+			sc.Counts.Pack++
 		default:
 			sc.Counts.Skipped++
 		}
@@ -492,13 +524,16 @@ func lineState(l *Line) string {
 	}
 	if l.LastPrice != nil {
 		last, _ := strconv.ParseFloat(*l.LastPrice, 64)
-		cur, _ := strconv.ParseFloat(l.Price, 64)
+		cur, _ := strconv.ParseFloat(l.Cost, 64)
 		if last > 0 {
 			ch := int(math.Round((cur - last) / last * 100))
 			if ch != 0 {
 				l.PriceChange = &ch
 			}
 		}
+	}
+	if l.PackSource == PackGuess {
+		return "pack"
 	}
 	m := ""
 	if l.Match != nil {
@@ -623,7 +658,8 @@ func (s *Service) SetSupplier(ctx context.Context, p *identity.Principal, id str
 				return err
 			}
 		}
-		return nil
+		// У поставщика может быть запомнена упаковка.
+		return repackAll(ctx, tx, p.NetworkID, id)
 	})
 	if err != nil {
 		return Scan{}, err
@@ -632,15 +668,21 @@ func (s *Service) SetSupplier(ctx context.Context, p *identity.Principal, id str
 }
 
 type LineInput struct {
-	ProductID *string      `json:"product_id"`
-	Qty       *money.Qty   `json:"qty"`
-	Price     *money.Price `json:"price"`
-	Skip      *bool        `json:"skip"`
-	// Запомнить название строки для этого поставщика.
+	ProductID *string `json:"product_id"`
+	// Количество и цена в единицах накладной.
+	Qty   *money.Qty   `json:"qty"`
+	Price *money.Price `json:"price"`
+	// Единиц товара в единице накладной (блок по 6 → 6; 1 — как у товара).
+	Pack *money.Qty `json:"pack"`
+	// Цена закупки за единицу товара; без неё — сумма строки / (qty × pack).
+	Cost *money.Price `json:"cost"`
+	Skip *bool        `json:"skip"`
+	// Запомнить название строки (и упаковку) для этого поставщика.
 	Remember bool `json:"remember"`
 }
 
-// SetLine — человек выбрал товар, поправил количество/цену или пропустил строку.
+// SetLine — человек выбрал товар, поправил количество, упаковку или цену,
+// пропустил строку.
 func (s *Service) SetLine(ctx context.Context, p *identity.Principal, id string, line int, in LineInput) (Scan, error) {
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		_, cp, err := s.editable(ctx, tx, p, id)
@@ -648,13 +690,19 @@ func (s *Service) SetLine(ctx context.Context, p *identity.Principal, id string,
 			return err
 		}
 		var name string
-		err = tx.QueryRow(ctx, `SELECT name FROM invoice_scan_lines WHERE scan_id = $1 AND line = $2 FOR UPDATE`, id, line).Scan(&name)
+		var productID *string
+		err = tx.QueryRow(ctx, `SELECT name, product_id FROM invoice_scan_lines WHERE scan_id = $1 AND line = $2 FOR UPDATE`, id, line).Scan(&name, &productID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return apperr.NotFound("строка не найдена").Uz("qator topilmadi")
 		}
 		if err != nil {
 			return err
 		}
+		exec := func(sql string, args ...any) error {
+			_, err := tx.Exec(ctx, sql, append([]any{id, line}, args...)...)
+			return err
+		}
+		changed := false
 		if in.ProductID != nil {
 			var pid string
 			err := tx.QueryRow(ctx, `SELECT p.id FROM products p WHERE p.id::text = $2 AND `+visible, p.NetworkID, *in.ProductID).Scan(&pid)
@@ -664,29 +712,18 @@ func (s *Service) SetLine(ctx context.Context, p *identity.Principal, id string,
 			if err != nil {
 				return err
 			}
-			if _, err := tx.Exec(ctx, `UPDATE invoice_scan_lines SET product_id = $3, match = 'manual', confidence = 100, skipped = false
-				WHERE scan_id = $1 AND line = $2`, id, line, pid); err != nil {
+			changed = productID == nil || *productID != pid
+			productID = &pid
+			if err := exec(`UPDATE invoice_scan_lines SET product_id = $3, match = 'manual', confidence = 100, skipped = false
+				WHERE scan_id = $1 AND line = $2`, pid); err != nil {
 				return err
-			}
-			if in.Remember {
-				if cp == nil {
-					return apperr.Validation("remember: сначала выберите поставщика").Uz("remember: avval yetkazib beruvchini tanlang")
-				}
-				if alias := NormAlias(name); alias != "" {
-					if _, err := tx.Exec(ctx, `
-						INSERT INTO supplier_product_aliases (network_id, counterparty_id, alias, product_id) VALUES ($1, $2, $3, $4)
-						ON CONFLICT (network_id, counterparty_id, alias) DO UPDATE SET product_id = EXCLUDED.product_id, created_at = now()`,
-						p.NetworkID, *cp, alias, pid); err != nil {
-						return err
-					}
-				}
 			}
 		}
 		if in.Qty != nil {
 			if !in.Qty.Valid() {
 				return apperr.Validation("qty: неверное количество").Uz("qty: miqdor notoʻgʻri")
 			}
-			if _, err := tx.Exec(ctx, `UPDATE invoice_scan_lines SET qty = $3 WHERE scan_id = $1 AND line = $2`, id, line, string(*in.Qty)); err != nil {
+			if err := exec(`UPDATE invoice_scan_lines SET qty = $3 WHERE scan_id = $1 AND line = $2`, string(*in.Qty)); err != nil {
 				return err
 			}
 		}
@@ -694,12 +731,50 @@ func (s *Service) SetLine(ctx context.Context, p *identity.Principal, id string,
 			if !in.Price.Valid() {
 				return apperr.Validation("price: неверная цена").Uz("price: narx notoʻgʻri")
 			}
-			if _, err := tx.Exec(ctx, `UPDATE invoice_scan_lines SET price = $3 WHERE scan_id = $1 AND line = $2`, id, line, string(*in.Price)); err != nil {
+			// Цена за единицу накладной: цена за единицу товара — price / pack.
+			if err := exec(`UPDATE invoice_scan_lines SET price = $3, cost = round($3::numeric / pack, 4) WHERE scan_id = $1 AND line = $2`, string(*in.Price)); err != nil {
+				return err
+			}
+		}
+		// Другой товар — упаковка и цена определяются заново (если их не прислали).
+		if changed && in.Pack == nil {
+			if err := repack(ctx, tx, p.NetworkID, id, line); err != nil {
+				return err
+			}
+		}
+		if in.Pack != nil {
+			n, err := strconv.ParseFloat(string(*in.Pack), 64)
+			if !in.Pack.Valid() || err != nil || n <= 0 || n > 1000 {
+				return apperr.Validation("pack: от 1 до 1000").Uz("pack: 1 dan 1000 gacha")
+			}
+			if err := exec(`UPDATE invoice_scan_lines SET pack = $3, pack_source = 'manual' WHERE scan_id = $1 AND line = $2`, string(*in.Pack)); err != nil {
+				return err
+			}
+			if in.Cost == nil {
+				if err := exec(`UPDATE invoice_scan_lines SET cost = round(coalesce(read_sum, qty * price) / nullif(qty * pack, 0), 2)
+					WHERE scan_id = $1 AND line = $2`); err != nil {
+					return err
+				}
+			}
+		}
+		if in.Cost != nil {
+			if !in.Cost.Valid() {
+				return apperr.Validation("cost: неверная цена").Uz("cost: narx notoʻgʻri")
+			}
+			if err := exec(`UPDATE invoice_scan_lines SET cost = $3 WHERE scan_id = $1 AND line = $2`, string(*in.Cost)); err != nil {
 				return err
 			}
 		}
 		if in.Skip != nil {
-			if _, err := tx.Exec(ctx, `UPDATE invoice_scan_lines SET skipped = $3 WHERE scan_id = $1 AND line = $2`, id, line, *in.Skip); err != nil {
+			if err := exec(`UPDATE invoice_scan_lines SET skipped = $3 WHERE scan_id = $1 AND line = $2`, *in.Skip); err != nil {
+				return err
+			}
+		}
+		if in.Remember && productID != nil {
+			if cp == nil {
+				return apperr.Validation("remember: сначала выберите поставщика").Uz("remember: avval yetkazib beruvchini tanlang")
+			}
+			if err := remember(ctx, tx, p.NetworkID, *cp, id, line, name, *productID, in.Pack != nil); err != nil {
 				return err
 			}
 		}
@@ -711,12 +786,68 @@ func (s *Service) SetLine(ctx context.Context, p *identity.Principal, id string,
 	return s.Get(ctx, p, id)
 }
 
+// remember — название строки поставщика → товар (и упаковка: «Кола 1.5 ПЭТ» =
+// блок по 6). Если блок выбрал человек — это и размер блока товара в сети.
+func remember(ctx context.Context, tx pgx.Tx, networkID, cp, scanID string, line int, name, productID string, packSet bool) error {
+	var pack float64
+	var src string
+	var fractional bool
+	if err := tx.QueryRow(ctx, `SELECT l.pack::float8, l.pack_source, u.is_fractional FROM invoice_scan_lines l
+		JOIN products p ON p.id = $3 JOIN units u ON u.id = p.unit_id WHERE l.scan_id = $1 AND l.line = $2`, scanID, line, productID).
+		Scan(&pack, &src, &fractional); err != nil {
+		return err
+	}
+	// Упаковку запоминаем, только когда она известна (не догадка).
+	var aliasPack *string
+	if src != PackGuess {
+		v := fmtNum(pack, 3)
+		aliasPack = &v
+	}
+	if alias := NormAlias(name); alias != "" {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO supplier_product_aliases (network_id, counterparty_id, alias, product_id, pack) VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT (network_id, counterparty_id, alias) DO UPDATE SET product_id = EXCLUDED.product_id, pack = EXCLUDED.pack, created_at = now()`,
+			networkID, cp, alias, productID, aliasPack); err != nil {
+			return err
+		}
+	}
+	if packSet && !fractional && pack >= 2 && pack == math.Trunc(pack) {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO network_product_packs (network_id, product_id, pack) VALUES ($1, $2, $3)
+			ON CONFLICT (network_id, product_id) DO UPDATE SET pack = EXCLUDED.pack, updated_at = now()`,
+			networkID, productID, int(pack)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// repackAll — упаковка всех строк, кроме выбранной человеком.
+func repackAll(ctx context.Context, tx pgx.Tx, networkID, scanID string) error {
+	rows, err := tx.Query(ctx, `SELECT line FROM invoice_scan_lines WHERE scan_id = $1 AND pack_source <> 'manual' ORDER BY line`, scanID)
+	if err != nil {
+		return err
+	}
+	lines, err := pgx.CollectRows(rows, pgx.RowTo[int])
+	if err != nil {
+		return err
+	}
+	for _, n := range lines {
+		if err := repack(ctx, tx, networkID, scanID, n); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type Suggestion struct {
 	ProductID string  `json:"product_id"`
 	Name      string  `json:"name"`
 	Barcode   *string `json:"barcode"`
 	UnitShort string  `json:"unit_short"`
 	Score     int     `json:"score"`
+	// Продаётся дробно (кг, л).
+	Fractional bool `json:"fractional"`
 }
 
 // Suggest — похожие товары для строки (или по строке поиска q).
@@ -740,7 +871,8 @@ func (s *Service) Suggest(ctx context.Context, p *identity.Principal, id string,
 		SELECT p.id, loc(p.name, p.name_uz), (SELECT min(pb.barcode) FROM product_barcodes pb WHERE pb.product_id = p.id),
 		       loc(u.short_name, u.short_name_uz),
 		       round(greatest(similarity(lower(p.name), $2), word_similarity($2, lower(p.name)),
-		                      similarity(lower(p.name_uz), $2), word_similarity($2, lower(p.name_uz))) * 100)::int AS s
+		                      similarity(lower(p.name_uz), $2), word_similarity($2, lower(p.name_uz))) * 100)::int AS s,
+		       u.is_fractional
 		FROM products p JOIN units u ON u.id = p.unit_id
 		WHERE `+visible+` AND (lower(p.name) % $2 OR $2 <% lower(p.name) OR lower(p.name) LIKE '%' || $2 || '%'
 		      OR lower(p.name_uz) % $2 OR $2 <% lower(p.name_uz) OR lower(p.name_uz) LIKE '%' || $2 || '%'
@@ -774,6 +906,8 @@ func (s *Service) CreateDocument(ctx context.Context, p *identity.Principal, id 
 		return sc, apperr.Validation("counterparty_id: выберите поставщика").Uz("counterparty_id: yetkazib beruvchini tanlang")
 	case sc.Counts.Missing > 0:
 		return sc, apperr.Conflict("lines_unmatched", fmt.Sprintf("не сопоставлено строк: %d — выберите товар или пропустите строку", sc.Counts.Missing)).Uz(fmt.Sprintf("mos kelmagan qatorlar: %d — mahsulotni tanlang yoki qatorni oʻtkazib yuboring", sc.Counts.Missing))
+	case sc.Counts.Pack > 0:
+		return sc, apperr.Conflict("lines_pack", fmt.Sprintf("блоки или штуки? — ответьте в строках: %d", sc.Counts.Pack)).Uz(fmt.Sprintf("bloklarmi yoki donami? — qatorlarda javob bering: %d", sc.Counts.Pack))
 	}
 	wh := in.WarehouseID
 	if wh == nil {
@@ -791,8 +925,9 @@ func (s *Service) CreateDocument(ctx context.Context, p *identity.Principal, id 
 		if l.Skipped || l.ProductID == nil {
 			continue
 		}
-		price := money.Price(l.Price)
-		items = append(items, inventory.ItemInput{ProductID: *l.ProductID, Qty: money.Qty(trimZeros(l.Qty)), Price: &price})
+		// На склад — в единицах товара: qty × pack по цене за единицу.
+		price := money.Price(trimZeros(l.Cost))
+		items = append(items, inventory.ItemInput{ProductID: *l.ProductID, Qty: money.Qty(trimZeros(l.StockQty)), Price: &price})
 	}
 	if len(items) == 0 {
 		return sc, apperr.Validation("в накладной нет строк для прихода").Uz("yuk xatida kirim uchun qator yoʻq")

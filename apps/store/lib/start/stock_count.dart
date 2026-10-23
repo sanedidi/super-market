@@ -422,7 +422,8 @@ Map<String, num> receivedOf(List<dynamic> lines) {
   for (final l in lines) {
     if (l is! Map || l['skipped'] == true) continue;
     final id = l['product_id'];
-    final q = num.tryParse('${l['qty'] ?? ''}') ?? 0;
+    // Строка накладной в блоках: на склад пришло qty × pack (stock_qty).
+    final q = num.tryParse('${l['stock_qty'] ?? l['qty'] ?? ''}') ?? 0;
     if (id == null || q <= 0) continue;
     out['$id'] = (out['$id'] ?? 0) + q;
   }
