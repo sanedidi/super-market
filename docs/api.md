@@ -1361,3 +1361,26 @@ SM Курьер, SM Агент) при запуске и при возврате
 
 Версия приложения — `appVersion` в `apps/<app>/lib/version.dart`; тест `test/version_test.dart` сверяет её с
 `pubspec.yaml`.
+
+## Помощник в панели магазина (тест)
+
+Чат владельца с Super Market (Figma «Super Market · Помощник», «Веб-панель · тест», П1–П3). Нужна функция тарифа
+`assistant`; доступ только владельцу сети. Помощник отвечает фоном через ИИ-сервис супер-админа; голосовые
+понимает только Gemini (Vertex AI).
+
+- `GET /store/assistant/messages?store_id=&after=` — чат владельца в магазине (старые сверху, до 200); `after` —
+  только новее сообщения с этим id. Ответ `{items: [Message], pending}`; `pending: true` — помощник ещё отвечает,
+  опрашивайте дальше.
+- `POST /store/assistant/messages` → 202 `{owner, reply}` (reply сразу `pending`). JSON: `{store_id, text?,
+  images?: [url из /store/uploads, до 5], action?}` или multipart: `store_id`, `text?`, `audio` (файл audio/webm,
+  audio/mp4, audio/ogg, до 8 МБ). Фото — всегда приход по накладной. `action` — нажатая кнопка (из блоков ответа):
+  `{type: scan_line, scan_id, line, product_id? | pack? | skip?}`, `{type: scan_supplier, scan_id,
+  counterparty_id? | create}`, `{type: scan_post, scan_id}`; `label` — как показать в чате.
+- `GET /store/assistant/today?store_id=` — что помощник сделал сегодня (`role = system`).
+
+`Message`: `{id, role: owner|assistant|system, kind: text|audio|image|action|done|error, text, transcript
+(расшифровка голосового), lang, images[], blocks[], status: pending|done|failed, scan_id, created_at}`.
+`blocks` — что показать кроме текста: `buttons {items: [{label, send | action | attach, primary}]}` (send —
+отправить текст как сообщение владельца; attach — открыть выбор фото), `card {title, sum, note, status,
+status_kind: warn|error|ok, buttons, line}` (строка накладной или поставщик), `table {columns, rows}`, `link
+{label, href}` (внутри панели), `confirm {label, action, enabled, hint}` — необратимое действие, только кнопкой.

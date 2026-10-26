@@ -20,6 +20,7 @@ export const FEATURE_BY_PATH: Record<string, string> = {
   '/reports/abc-xyz': 'abc_xyz',
   '/crowd': 'crowd',
   '/brand-ads': 'brand_ads',
+  '/assistant': 'assistant',
 }
 
 const soum = (v: string | number) => `${money(v)} ${tr('сум', 'soʻm')}`

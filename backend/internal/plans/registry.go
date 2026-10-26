@@ -35,6 +35,9 @@ const (
 	FeatureShowcaseStats    = "showcase_stats"
 	FeatureShowcaseStatsAll = "showcase_stats_full"
 	FeatureAdsOff           = "ads_off"
+	// FeatureAssistant — помощник в панели магазина (чат: приход, остатки,
+	// что заказать). Пока тест: супер-админ включает в тарифе пилотного магазина.
+	FeatureAssistant = "assistant"
 )
 
 // Лимиты.
@@ -85,6 +88,9 @@ var Features = []Feature{
 	{FeatureInvoiceScans, GroupStore,
 		i18n.Text{RU: "Накладные по фото", UZ: "Rasmdan nakladnoy"},
 		i18n.Text{RU: "Super Market распознаёт накладную поставщика и делает приход", UZ: "Super Market yetkazib beruvchi nakladnoyini taniydi va kirim qiladi"}},
+	{FeatureAssistant, GroupStore,
+		i18n.Text{RU: "Помощник (тест)", UZ: "Yordamchi (sinov)"},
+		i18n.Text{RU: "Чат в панели: приход по накладной, остатки, что заказать — текстом или голосом", UZ: "Paneldagi chat: nakladnoy boʻyicha kirim, qoldiqlar, nima buyurtma qilish — matn yoki ovoz bilan"}},
 	{FeatureReportsPro, GroupReports,
 		i18n.Text{RU: "Расширенные отчёты", UZ: "Kengaytirilgan hisobotlar"},
 		i18n.Text{RU: "Прибыль и убытки, движение денег", UZ: "Foyda va zarar, pul harakati"}},

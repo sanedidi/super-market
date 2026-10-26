@@ -15,6 +15,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/ads"
 	"github.com/sanedidi/super-market/backend/internal/ai"
 	"github.com/sanedidi/super-market/backend/internal/appversions"
+	"github.com/sanedidi/super-market/backend/internal/assistant"
 	"github.com/sanedidi/super-market/backend/internal/billing"
 	"github.com/sanedidi/super-market/backend/internal/cafe"
 	"github.com/sanedidi/super-market/backend/internal/catalog"
@@ -138,9 +139,13 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		}
 		return p.Limit(plans.LimitAIPhotos), nil
 	}
+	sumSvc := summary.NewService(pool, log)
+	// Помощник в панели (тест): чат поверх накладных, остатков и итогов дня.
+	assistSvc := assistant.NewService(pool, aiSvc, mediaSvc, scans, invSvc, sumSvc, log)
 	if InvoicesSync {
 		scans.Sync()
 		startSvc.Sync()
+		assistSvc.Sync()
 	} else {
 		// Карточки «Новых», распознанные до автодобавления, — в «Мои товары».
 		startSvc.SweepNewItems()
@@ -181,7 +186,8 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		i18nadmin.NewModule(i18nadmin.NewService(pool, aiSvc), auth, log),
 		invoices.NewModule(scans, mediaSvc, auth, log),
 		start.NewModule(startSvc, mediaSvc, auth, log),
-		summary.NewModule(summary.NewService(pool, log), auth, log),
+		summary.NewModule(sumSvc, auth, log),
+		assistant.NewModule(assistSvc, auth, log),
 		account.NewModule(account.NewService(pool, idSvc, notify.New(pool, tg, log), log), auth, log),
 		invest.NewModule(invest.NewService(pool), auth, log),
 		appversions.NewModule(appversions.NewService(pool), auth, log),

@@ -255,8 +255,18 @@ func (c Conn) vertexModelList(ctx context.Context) ([]Model, error) {
 
 // vertexGenerate — generateContent: фото (inlineData) + текст, ответ — JSON.
 func (c Conn) vertexGenerate(ctx context.Context, system, prompt string, images []Image) (string, Usage, error) {
-	parts := []map[string]any{}
+	parts := make([]Part, 0, len(images))
 	for _, im := range images {
+		parts = append(parts, Part{MIME: im.MIME, Data: im.Data})
+	}
+	return c.geminiGenerate(ctx, system, prompt, parts)
+}
+
+// geminiGenerate — generateContent у Vertex AI или Gemini API: вложения
+// (фото, аудио, PDF — inlineData) + текст, ответ — JSON.
+func (c Conn) geminiGenerate(ctx context.Context, system, prompt string, attachments []Part) (string, Usage, error) {
+	parts := []map[string]any{}
+	for _, im := range attachments {
 		parts = append(parts, map[string]any{"inlineData": map[string]any{
 			"mimeType": im.MIME, "data": base64.StdEncoding.EncodeToString(im.Data)}})
 	}
@@ -293,6 +303,9 @@ func (c Conn) vertexGenerate(ctx context.Context, system, prompt string, images 
 		} `json:"usageMetadata"`
 	}
 	path := "/publishers/google/models/" + url.PathEscape(c.Model) + ":generateContent"
+	if c.Provider == ProviderGemini {
+		path = "/models/" + url.PathEscape(c.Model) + ":generateContent"
+	}
 	if err := c.do(ctx, http.MethodPost, path, body, &out); err != nil {
 		return "", Usage{}, err
 	}

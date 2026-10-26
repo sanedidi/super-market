@@ -10,6 +10,7 @@ import {
   CalculatorOutlined,
   CrownOutlined,
   LockOutlined,
+  MessageOutlined,
   DashboardOutlined,
   DollarOutlined,
   InboxOutlined,
@@ -60,6 +61,7 @@ import { StoreAdsPage } from './pages/StoreAds'
 import { PosDevicesPage, PosShiftsPage } from './pages/Pos'
 import { ScaleSettingsPage } from './pages/Scales'
 import { DebtSettingsPage, DebtorsPage } from './pages/Debts'
+import { AssistantPage } from './pages/Assistant'
 import { OrderAlerts } from './notify'
 import { FEATURE_BY_PATH, LockedFeature, PlanErrorHost, PlanPage } from './pages/Plan'
 import { MenuPage, StopListPage } from './pages/cafe/Menu'
@@ -79,6 +81,8 @@ type Item = { key: string; label: string; perm?: string | string[]; feature?: st
 // Права совпадают с правами сервера на чтение раздела (docs/api.md, «Права на чтение»).
 const MENU: Item[] = [
   { key: '/', label: tr('Главная', 'Bosh sahifa'), icon: <DashboardOutlined /> },
+  // Помощник (тест): только владелец — право «owner» есть лишь у него (can() у владельца всегда true).
+  { key: '/assistant', label: tr('Помощник · тест', 'Yordamchi · sinov'), icon: <MessageOutlined />, perm: 'owner', feature: 'assistant' },
   { key: '/start', label: tr('Начало работы', 'Ishni boshlash'), icon: <RocketOutlined />, perm: 'inventory.manage' },
   { key: '/orders', label: tr('Онлайн-заказы', 'Onlayn buyurtmalar'), icon: <ShoppingCartOutlined />, perm: 'orders.manage' },
   { key: '/couriers', label: tr('Курьеры', 'Kuryerlar'), icon: <CarOutlined />, perm: 'orders.manage' },
@@ -305,6 +309,7 @@ export function StoreRoutes() {
        <Route element={<Guard />}>
         <Route index element={<DashboardPage />} />
         <Route path="start" element={<StartPage />} />
+        <Route path="assistant" element={<AssistantPage />} />
         <Route path="start/count" element={<StockCountPage />} />
         <Route path="orders" element={<OrdersPage />} />
         <Route path="couriers" element={<CouriersPage />} />

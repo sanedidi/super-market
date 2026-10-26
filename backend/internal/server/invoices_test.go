@@ -23,6 +23,8 @@ type fakeAI struct {
 	reply string
 	calls int
 	last  string // протокол последнего запроса: openai / anthropic
+	// text — отвечать и на запросы без фото (помощник: текстовые сообщения).
+	text bool
 }
 
 func (f *fakeAI) set(reply string) {
@@ -59,7 +61,7 @@ func (f *fakeAI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		raw, _ := json.Marshal(body.Messages)
-		if !strings.Contains(string(raw), "data:image/png;base64,") {
+		if !f.text && !strings.Contains(string(raw), "data:image/png;base64,") {
 			w.WriteHeader(400)
 			return
 		}

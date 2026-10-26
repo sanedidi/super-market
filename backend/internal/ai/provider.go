@@ -237,7 +237,7 @@ func (c Conn) Vision(ctx context.Context, system, prompt string, images []Image)
 	if c.Model == "" {
 		return "", Usage{}, &ErrService{Msg: "не выбрана модель", MsgUz: "model tanlanmagan"}
 	}
-	if c.Provider == ProviderVertex {
+	if c.Provider == ProviderVertex || c.Provider == ProviderGemini {
 		return c.vertexGenerate(ctx, system, prompt, images)
 	}
 	if c.Provider == ProviderAnthropic {
