@@ -507,3 +507,9 @@ func hashRefresh(tok string) []byte {
 
 // ResendIn — через сколько секунд можно снова запросить код (таймер на экране).
 func ResendIn() int { return int(resendCooldown.Seconds()) }
+
+// ServiceToken — короткий токен доступа от имени вошедшего сотрудника: для
+// внутренних вызовов API (помощник в панели ходит в /store/* сам).
+func (s *Service) ServiceToken(p *Principal, ttl time.Duration) (string, error) {
+	return s.signer.Sign(token.Claims{UserID: p.UserID, SessionID: p.SessionID, App: p.App}, ttl)
+}

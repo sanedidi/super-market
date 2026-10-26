@@ -15,9 +15,11 @@ import (
 )
 
 // TestAssistantChat — помощник в панели (Figma «Super Market · Помощник»,
-// «Веб-панель · тест», П1–П3): «пришли товары» → кнопка прикрепить, фото
-// накладной → строки с кнопками, кнопка «выбрать товар», «Провести приход»
-// только кнопкой, остатки таблицей, голосовое без Gemini — понятная ошибка.
+// «Веб-панель · тест», П1–П3): агент с инструментами (search_docs,
+// list_routes, call_api). «пришли товары» → кнопка прикрепить, фото накладной
+// → строки с кнопками, «Провести приход» и удаление — только после кнопки
+// подтверждения, обычная запись — сразу с заметкой в журнал, чтение — таблицей,
+// чужие пути закрыты, голосовое без Gemini — понятная ошибка.
 func TestAssistantChat(t *testing.T) {
 	pool := freshDB(t)
 	ctx := context.Background()
@@ -83,18 +85,21 @@ func TestAssistantChat(t *testing.T) {
 		return a.expect(a.do("POST", "/store/assistant/messages", ownerTok, body), 202, "send")
 	}
 
-	// «пришли товары» → помощник просит накладную, кнопка прикрепления.
-	fai.set(`{"transcript":"","lang":"ru","intent":"income","args":{},"reply":"Прикрепите фото накладной.","buttons":[]}`)
+	// «пришли товары» → помощник просит накладную, кнопка прикрепления (из ответа модели).
+	fai.play(fakeTurn{text: `{"transcript":"","lang":"ru","reply":"Прикрепите фото накладной.","buttons":[{"label":"Прикрепить накладную","attach":true}]}`})
 	r := send(map[string]any{"text": "пришли товары"})
 	if r.str("owner", "kind") != "text" || r.str("reply", "role") != "assistant" {
 		t.Fatalf("send = %v", r.Body)
 	}
 	m := last()
-	if m["role"] != "assistant" || m["text"] != "Прикрепите фото накладной." || m["intent"] == "income" {
+	if m["role"] != "assistant" || m["text"] != "Прикрепите фото накладной." {
 		t.Fatalf("income reply = %v", m)
 	}
 	if bs := blocks(m, "buttons"); len(bs) != 1 || bs[0]["items"].([]any)[0].(map[string]any)["attach"] != true {
 		t.Fatalf("attach button = %v", m["blocks"])
+	}
+	if req := fai.lastRequest(); !strings.Contains(req, `"tools"`) || !strings.Contains(req, "call_api") || !strings.Contains(req, "пришли товары") {
+		t.Fatalf("model request = %s", req)
 	}
 
 	// Товары и поставщик.
@@ -175,55 +180,117 @@ func TestAssistantChat(t *testing.T) {
 		t.Fatalf("confirm enabled = %v", blocks(m, "confirm"))
 	}
 
-	// «проведи» текстом — помощник не проводит, только напоминает про кнопку.
-	fai.set(`{"transcript":"","lang":"ru","intent":"scan_post","args":{},"reply":"","buttons":[]}`)
+	// «проведи» текстом — агент пробует провести через API, сервер не даёт:
+	// needs_confirmation → кнопка подтверждения, накладная не тронута.
+	fai.play(
+		fakeTurn{tool: "call_api", args: map[string]any{"method": "POST", "path": "/store/invoice-scans/" + scanID + "/document",
+			"body": map[string]any{"post": true}, "note": "Провести приход № 347930"}},
+		fakeTurn{text: `{"reply":"Нажмите кнопку — и я проведу приход.","lang":"ru","scan_id":"` + scanID + `"}`},
+	)
 	send(map[string]any{"text": "проведи"})
 	m = last()
-	if !strings.Contains(m["text"].(string), "только кнопкой") {
+	if m["text"] != "Нажмите кнопку — и я проведу приход." {
 		t.Fatalf("post by text = %v", m)
 	}
+	if req := fai.lastRequest(); !strings.Contains(req, "needs_confirmation") {
+		t.Fatalf("tool result not passed to model: %s", req)
+	}
 	a.expect(a.do("GET", "/store/invoice-scans/"+scanID, ownerTok, nil), 200, "scan still ready")
+	confirms := blocks(m, "confirm")
+	var apiConfirm map[string]any
+	for _, c := range confirms {
+		if act := c["action"].(map[string]any); act["type"] == "api" {
+			apiConfirm = c
+		}
+	}
+	if apiConfirm == nil || apiConfirm["enabled"] != true || apiConfirm["label"] != "Провести приход № 347930" {
+		t.Fatalf("api confirm = %v", confirms)
+	}
 
-	// Кнопка «Провести приход» → документ проведён, строка «сделано» в журнале.
-	send(map[string]any{"action": map[string]any{"type": "scan_post", "scan_id": scanID, "label": "Провести приход"}})
+	// Кнопка подтверждения → запрос выполнен, строка «сделано», помощник рассказывает результат.
+	fai.play(fakeTurn{text: `{"reply":"Готово, приход проведён.","lang":"ru","links":[{"label":"Открыть приход","href":"/purchases/income"}]}`})
+	send(map[string]any{"action": apiConfirm["action"]})
 	m = last()
-	if m["text"] != "Готово, остатки обновил." || len(blocks(m, "link")) != 1 {
+	if m["text"] != "Готово, приход проведён." || len(blocks(m, "link")) != 1 {
 		t.Fatalf("posted = %v", m)
+	}
+	if req := fai.lastRequest(); !strings.Contains(req, "HTTP 201") {
+		t.Fatalf("confirm result not passed to model: %s", req)
 	}
 	sc := a.expect(a.do("GET", "/store/invoice-scans/"+scanID, ownerTok, nil), 200, "scan done")
 	if sc.str("status") != "done" || sc.str("document_status") != "posted" {
 		t.Fatalf("scan = %v", sc.Body)
 	}
 	today := a.expect(a.do("GET", "/store/assistant/today?store_id="+storeID, ownerTok, nil), 200, "today").items()
-	if len(today) != 1 || !strings.Contains(today[0]["text"].(string), "проведён") {
+	if len(today) != 1 || today[0]["text"] != "Провести приход № 347930" {
 		t.Fatalf("journal = %v", today)
 	}
 
-	// Остатки: таблица с колой (72 шт после прихода 12 блоков? нет — 12 шт, упаковка 1).
-	fai.set(`{"transcript":"","lang":"ru","intent":"stock","args":{"query":"кола"},"reply":"Вот что нашёл:","buttons":[]}`)
+	// Остатки: агент сам читает my-products и показывает таблицу; результат
+	// запроса доходит до модели.
+	fai.play(
+		fakeTurn{tool: "call_api", args: map[string]any{"method": "GET", "path": "/store/inventory/my-products", "query": map[string]any{"store_id": storeID, "q": "кола"}}},
+		fakeTurn{text: `{"reply":"Вот что нашёл:","lang":"ru","table":{"columns":["Товар","Остаток"],"rows":[["Coca-Cola 1,5 л","12 шт"]]}}`},
+	)
 	send(map[string]any{"text": "сколько колы осталось"})
 	m = last()
 	tbl := blocks(m, "table")
-	if len(tbl) != 1 || !strings.HasPrefix(m["text"].(string), "Вот что нашёл:") {
+	if len(tbl) != 1 || m["text"] != "Вот что нашёл:" {
 		t.Fatalf("stock = %v", m)
 	}
-	row := tbl[0]["rows"].([]any)[0].([]any)
-	if row[0] != "Coca-Cola 1,5 л" || row[1] != "12 шт" {
-		t.Fatalf("stock row = %v", row)
+	if req := fai.lastRequest(); !strings.Contains(req, "Coca-Cola 1,5 л") || !strings.Contains(req, `\"qty\":\"12`) {
+		t.Fatalf("my-products result not passed to model: %s", req)
 	}
 	_ = cola
 
-	// Что заказать и продажи — отвечают без ошибок.
-	fai.set(`{"transcript":"","lang":"ru","intent":"reorder","args":{},"reply":"","buttons":[]}`)
-	send(map[string]any{"text": "что заказать"})
+	// Документация и маршруты; чужие пути (не /store/) закрыты.
+	fai.play(
+		fakeTurn{tool: "list_routes", args: map[string]any{"prefix": "/store/inventory"}},
+		fakeTurn{tool: "search_docs", args: map[string]any{"query": "остатки склад"}},
+		fakeTurn{tool: "call_api", args: map[string]any{"method": "GET", "path": "/admin/ai"}},
+		fakeTurn{text: `{"reply":"ок","lang":"ru"}`},
+	)
+	send(map[string]any{"text": "что умеешь"})
 	if m = last(); m["status"] != "done" {
-		t.Fatalf("reorder = %v", m)
+		t.Fatalf("docs = %v", m)
 	}
-	fai.set(`{"transcript":"","lang":"ru","intent":"sales","args":{"date":""},"reply":"","buttons":[]}`)
-	send(map[string]any{"text": "продажи за сегодня"})
-	if m = last(); m["status"] != "done" || !strings.Contains(m["text"].(string), "Продажи сегодня") {
-		t.Fatalf("sales = %v", m)
+	modelReq := fai.lastRequest()
+	for _, want := range []string{"GET /store/inventory/my-products", "## ", "только /store/"} {
+		if !strings.Contains(modelReq, want) {
+			t.Fatalf("tools: %q not in model request: %s", want, modelReq)
+		}
 	}
+	// Запись без подтверждения: контрагент создаётся сразу, с заметкой в журнале.
+	fai.play(
+		fakeTurn{tool: "call_api", args: map[string]any{"method": "POST", "path": "/store/finance/counterparties",
+			"body": map[string]any{"name": "Абдуллаев ЧП"}, "note": "Завёл поставщика «Абдуллаев ЧП»"}},
+		fakeTurn{text: `{"reply":"Завёл поставщика.","lang":"ru"}`},
+	)
+	send(map[string]any{"text": "заведи поставщика Абдуллаев ЧП"})
+	if m = last(); m["text"] != "Завёл поставщика." {
+		t.Fatalf("create = %v", m)
+	}
+	if req := fai.lastRequest(); !strings.Contains(req, `\"status\":201`) {
+		i := strings.Index(req, `"role":"tool"`); t.Fatalf("create via api: %s", req[max(0, i-50):min(len(req), i+700)])
+	}
+	cps := a.expect(a.do("GET", "/store/finance/counterparties?q=Абдуллаев", ownerTok, nil), 200, "counterparties").items()
+	if len(cps) != 1 {
+		t.Fatalf("counterparty not created: %v", cps)
+	}
+	today = a.expect(a.do("GET", "/store/assistant/today?store_id="+storeID, ownerTok, nil), 200, "today").items()
+	if len(today) != 2 || today[0]["text"] != "Завёл поставщика «Абдуллаев ЧП»" {
+		t.Fatalf("journal = %v", today)
+	}
+	// Удаление — только через кнопку.
+	fai.play(
+		fakeTurn{tool: "call_api", args: map[string]any{"method": "DELETE", "path": "/store/finance/counterparties/" + cps[0]["id"].(string), "note": "Удалить поставщика"}},
+		fakeTurn{text: `{"reply":"Подтвердите кнопкой.","lang":"ru"}`},
+	)
+	send(map[string]any{"text": "удали его"})
+	if m = last(); len(blocks(m, "confirm")) != 1 {
+		t.Fatalf("delete confirm = %v", m)
+	}
+	a.expect(a.do("GET", "/store/finance/counterparties?q=Абдуллаев", ownerTok, nil), 200, "still there")
 
 	// Голосовое при OpenAI — понятная ошибка в чате, а не 500.
 	var ab bytes.Buffer

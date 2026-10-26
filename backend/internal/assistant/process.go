@@ -4,17 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/sanedidi/super-market/backend/internal/ai"
 	"github.com/sanedidi/super-market/backend/internal/identity"
-	"github.com/sanedidi/super-market/backend/internal/inventory"
 	"github.com/sanedidi/super-market/backend/internal/invoices"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
-	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
 )
@@ -29,19 +25,6 @@ type reply struct {
 	args   any
 }
 
-// modelOut — ответ модели (см. systemPrompt).
-type modelOut struct {
-	Transcript string         `json:"transcript"`
-	Lang       string         `json:"lang"`
-	Intent     string         `json:"intent"`
-	Args       map[string]any `json:"args"`
-	Reply      string         `json:"reply"`
-	Buttons    []struct {
-		Label string `json:"label"`
-		Send  string `json:"send"`
-	} `json:"buttons"`
-}
-
 func t(lang, ru, uz string) string { return i18n.Pick(lang, ru, uz) }
 
 // handle — ответ на сообщение владельца.
@@ -54,65 +37,7 @@ func (s *Service) handle(ctx context.Context, p *identity.Principal, in SendInpu
 		// Фото накладной — это всегда приход: модель не нужна.
 		return s.startScan(ctx, p, in.StoreID, lang, in.Images)
 	}
-	sc := s.currentScan(ctx, p, in.StoreID)
-	prompt, err := s.buildPrompt(ctx, p, in.StoreID, lang, in.Text, sc)
-	if err != nil {
-		return reply{}, err
-	}
-	out, err := s.ask(ctx, p, in, prompt)
-	if err != nil {
-		return reply{}, err
-	}
-	if in.Audio != nil {
-		tr := strings.TrimSpace(out.Transcript)
-		if tr == "" {
-			tr = t(lang, "(не расслышал)", "(eshitmadim)")
-		}
-		_, _ = s.pool.Exec(ctx, `UPDATE assistant_messages SET transcript = $2, lang = $3 WHERE id = $1`, owner.ID, tr, out.Lang)
-	}
-	if out.Lang == "ru" || out.Lang == "uz" {
-		lang = out.Lang
-	}
-	r := reply{text: strings.TrimSpace(out.Reply), lang: lang, intent: out.Intent, args: out.Args}
-	if sc != nil {
-		r.scanID = &sc.ID
-	}
-	for i, b := range out.Buttons {
-		if i >= 4 || strings.TrimSpace(b.Label) == "" {
-			break
-		}
-		r.blocks = appendButton(r.blocks, Block{"label": b.Label, "send": firstNonEmpty(b.Send, b.Label)})
-	}
-	switch out.Intent {
-	case "income":
-		r.blocks = []Block{{"type": "buttons", "items": []Block{
-			{"label": t(lang, "Прикрепить накладную", "Nakladnoyni biriktirish"), "attach": true, "primary": true},
-			{"label": t(lang, "Напишу списком", "Roʻyxat bilan yozaman"), "send": t(lang, "Напишу товары списком", "Tovarlarni roʻyxat bilan yozaman")},
-		}}}
-		if r.text == "" {
-			r.text = t(lang, "Отлично. Прикрепите фото накладной — или перечислите товары, что пришло и по сколько.",
-				"Yaxshi. Nakladnoy rasmini biriktiring — yoki qaysi tovar qancha kelganini yozing.")
-		}
-	case "stock":
-		return s.stock(ctx, p, in.StoreID, r, argStr(out.Args, "query"))
-	case "reorder":
-		return s.reorder(ctx, p, in.StoreID, r)
-	case "sales":
-		return s.sales(ctx, p, in.StoreID, r, argStr(out.Args, "date"))
-	case "scan_supplier", "scan_line", "scan_post":
-		if sc == nil {
-			r.text = t(lang, "Сейчас нет накладной в работе. Прикрепите фото накладной — и продолжим.",
-				"Hozir ishlanayotgan nakladnoy yoʻq. Nakladnoy rasmini biriktiring — davom etamiz.")
-			r.blocks = []Block{{"type": "buttons", "items": []Block{{"label": t(lang, "Прикрепить накладную", "Nakladnoyni biriktirish"), "attach": true, "primary": true}}}}
-			return r, nil
-		}
-		return s.scanIntent(ctx, p, in.StoreID, r, sc, out)
-	}
-	if r.text == "" {
-		r.text = t(lang, "Не понял. Скажите, что нужно: приход, остатки, что заказать или продажи за день.",
-			"Tushunmadim. Nima kerakligini ayting: kirim, qoldiqlar, nima buyurtma qilish yoki kunlik sotuvlar.")
-	}
-	return r, nil
+	return s.agent(ctx, p, in, owner, s.currentScan(ctx, p, in.StoreID), "")
 }
 
 func firstNonEmpty(a, b string) string {
@@ -169,41 +94,6 @@ func appendButton(blocks []Block, b Block) []Block {
 	return append(blocks, Block{"type": "buttons", "items": []Block{b}})
 }
 
-// ask — вопрос модели: контекст + текст или аудио; расход — в ai_usage.
-func (s *Service) ask(ctx context.Context, p *identity.Principal, in SendInput, prompt string) (modelOut, error) {
-	conn, err := s.ai.Conn(ctx)
-	if err != nil {
-		return modelOut{}, err
-	}
-	var parts []ai.Part
-	if in.Audio != nil {
-		if !conn.IsGoogle() {
-			return modelOut{}, apperr.Conflict("audio_unsupported",
-				"голосовые понимает только Gemini — супер-админ выбирает Vertex AI в «ИИ-сервисе». Пока напишите текстом.").
-				Uz("ovozli xabarlarni faqat Gemini tushunadi — super-admin «SI xizmati»da Vertex AI ni tanlaydi. Hozircha matn bilan yozing.")
-		}
-		parts = append(parts, *in.Audio)
-	}
-	started := s.now()
-	raw, usage, err := conn.Generate(ctx, systemPrompt, prompt, parts)
-	net, store, emp := p.NetworkID, in.StoreID, p.EmployeeID
-	_ = s.ai.Record(ctx, ai.UsageRecord{Kind: "assistant", NetworkID: &net, StoreID: &store, EmployeeID: &emp,
-		Provider: conn.Provider, Model: conn.Model, Usage: usage, OK: err == nil})
-	if err != nil {
-		return modelOut{}, err
-	}
-	s.log.Info("assistant: model", "ms", s.now().Sub(started).Milliseconds(), "in", usage.Input, "out", usage.Output)
-	js, err := ai.ExtractJSON(raw)
-	if err != nil {
-		return modelOut{}, &ai.ErrService{Msg: "модель ответила не по форме", MsgUz: "model shaklga mos javob bermadi"}
-	}
-	var out modelOut
-	if err := json.Unmarshal(js, &out); err != nil {
-		return modelOut{}, &ai.ErrService{Msg: "модель ответила не по форме", MsgUz: "model shaklga mos javob bermadi"}
-	}
-	return out, nil
-}
-
 // ---------- накладная ----------
 
 // currentScan — накладная, над которой идёт работа в этом чате (ready или
@@ -247,74 +137,6 @@ func (s *Service) startScan(ctx context.Context, p *identity.Principal, storeID,
 		}
 	}
 	return s.renderScan(ctx, p, lang, sc, "")
-}
-
-// scanIntent — владелец ответил по накладной текстом: поставщик, строка, «провести».
-func (s *Service) scanIntent(ctx context.Context, p *identity.Principal, storeID string, r reply, sc *invoices.Scan, out modelOut) (reply, error) {
-	lang := r.lang
-	switch out.Intent {
-	case "scan_supplier":
-		name := argStr(out.Args, "name")
-		id := s.findCounterparty(ctx, p.NetworkID, name)
-		var err error
-		var next invoices.Scan
-		if id != nil {
-			next, err = s.scans.SetSupplier(ctx, p, sc.ID, invoices.SupplierInput{CounterpartyID: id})
-		} else if sc.SupplierName != "" && name != "" && strings.Contains(strings.ToLower(sc.SupplierName), strings.ToLower(name)) {
-			next, err = s.scans.SetSupplier(ctx, p, sc.ID, invoices.SupplierInput{Create: true})
-		} else {
-			return s.renderScan(ctx, p, lang, *sc, t(lang, "Такого поставщика не нашёл — выберите из списка или заведите нового.",
-				"Bunday yetkazib beruvchini topmadim — roʻyxatdan tanlang yoki yangisini kiriting."))
-		}
-		if err != nil {
-			return reply{}, err
-		}
-		return s.renderScan(ctx, p, lang, next, r.text)
-	case "scan_line":
-		line := argInt(out.Args, "line")
-		var l *invoices.Line
-		for i := range sc.Lines {
-			if sc.Lines[i].Line == line {
-				l = &sc.Lines[i]
-			}
-		}
-		if l == nil {
-			return s.renderScan(ctx, p, lang, *sc, t(lang, "Не понял, про какую строку речь — нажмите кнопку у нужной строки.",
-				"Qaysi qator haqida ekanini tushunmadim — kerakli qator tugmasini bosing."))
-		}
-		in := invoices.LineInput{Remember: sc.CounterpartyID != nil}
-		if argBool(out.Args, "skip") {
-			skip := true
-			in.Skip = &skip
-			in.Remember = false
-		}
-		if pack := argStr(out.Args, "pack"); pack != "" {
-			q := money.Qty(pack)
-			in.Pack = &q
-		}
-		if q := argStr(out.Args, "product_query"); q != "" && l.State == "missing" {
-			sug, err := s.scans.Suggest(ctx, p, sc.ID, line, q)
-			if err != nil {
-				return reply{}, err
-			}
-			if len(sug) == 0 || (len(sug) > 1 && sug[0].Score < 90) {
-				return s.renderScan(ctx, p, lang, *sc, t(lang, "Нашёл несколько похожих — выберите кнопкой у строки.",
-					"Bir nechta oʻxshashini topdim — qator tugmasidan tanlang."))
-			}
-			in.ProductID = &sug[0].ProductID
-		}
-		if in.Pack == nil && in.Skip == nil && in.ProductID == nil {
-			return s.renderScan(ctx, p, lang, *sc, r.text)
-		}
-		next, err := s.scans.SetLine(ctx, p, sc.ID, line, in)
-		if err != nil {
-			return reply{}, err
-		}
-		return s.renderScan(ctx, p, lang, next, r.text)
-	default: // scan_post — только кнопкой.
-		return s.renderScan(ctx, p, lang, *sc, t(lang, "Провести приход можно только кнопкой ниже — чтобы ничего не записалось случайно.",
-			"Kirimni faqat pastdagi tugma bilan oʻtkazish mumkin — tasodifan yozilib qolmasligi uchun."))
-	}
 }
 
 // findCounterparty — поставщик по названию (как в накладных: похожесть ≥ 0,5).
@@ -387,8 +209,29 @@ func (s *Service) doAction(ctx context.Context, p *identity.Principal, storeID, 
 			{"label": t(lang, "Ещё приход", "Yana kirim"), "send": t(lang, "Пришли товары", "Tovarlar keldi")},
 		}})
 		return r, nil
+	case "api":
+		// Владелец подтвердил необратимый запрос агента: выполняем и даём
+		// помощнику рассказать результат.
+		tok, err := s.ident.ServiceToken(p, tokenTTL)
+		if err != nil {
+			return reply{}, err
+		}
+		var body map[string]any
+		if len(a.Body) > 0 {
+			_ = json.Unmarshal(a.Body, &body)
+		}
+		status, resp := s.loopback(ctx, tok, lang, strings.ToUpper(a.Method), a.Path, a.Query, body)
+		st := &agentState{p: p, storeID: storeID, token: tok, lang: lang}
+		if status/100 == 2 {
+			s.journal(ctx, st, a.Method, a.Path, a.Note)
+			s.setCurrentScan(ctx, p, storeID, nil)
+		}
+		raw, _ := json.Marshal(resp)
+		note := fmt.Sprintf("[Владелец нажал кнопку «%s». Запрос %s %s выполнен, HTTP %d, ответ: %s] Коротко расскажи владельцу результат; если ошибка — объясни простыми словами.",
+			a.Label, a.Method, a.Path, status, cut(string(raw), 4000))
+		return s.agent(ctx, p, SendInput{StoreID: storeID}, Message{}, nil, note)
 	}
-	return reply{}, apperr.Validation("action.type: scan_line, scan_supplier или scan_post").Uz("action.type: scan_line, scan_supplier yoki scan_post")
+	return reply{}, apperr.Validation("action.type: scan_line, scan_supplier, scan_post или api").Uz("action.type: scan_line, scan_supplier, scan_post yoki api")
 }
 
 // renderScan — накладная в чате: итог, поставщик, строки с вопросами, кнопка
@@ -547,138 +390,4 @@ func trimQty(q string) string {
 		q = strings.TrimRight(strings.TrimRight(q, "0"), ".")
 	}
 	return q
-}
-
-// ---------- остатки, что заказать, продажи ----------
-
-func (s *Service) stock(ctx context.Context, p *identity.Principal, storeID string, r reply, query string) (reply, error) {
-	lang := r.lang
-	f := inventory.MyProductsFilter{StoreID: storeID, Query: query, Page: httpx.Page{Limit: 8}}
-	res, err := s.inv.MyProducts(ctx, p, f)
-	if err != nil {
-		return reply{}, err
-	}
-	if len(res.Items) == 0 {
-		if query == "" {
-			r.text = t(lang, "В магазине пока нет товаров с остатками.", "Doʻkonda hali qoldiqli tovarlar yoʻq.")
-		} else {
-			r.text = fmt.Sprintf(t(lang, "По «%s» ничего не нашёл. Попробуйте другое слово или откройте остатки.", "«%s» boʻyicha hech narsa topmadim. Boshqa soʻz bilan urinib koʻring yoki qoldiqlarni oching."), query)
-			r.blocks = []Block{{"type": "link", "label": t(lang, "Остатки", "Qoldiqlar"), "href": "/stock/balance"}}
-		}
-		return r, nil
-	}
-	if r.text == "" {
-		if query == "" {
-			r.text = t(lang, "Вот что требует внимания:", "Eʼtibor talab qiladiganlar:")
-		} else {
-			r.text = fmt.Sprintf(t(lang, "По «%s» нашёл %d:", "«%s» boʻyicha %d ta topdim:"), query, res.Total)
-		}
-	}
-	rows := [][]string{}
-	for _, it := range res.Items {
-		rows = append(rows, []string{it.Name, qtyText(it, lang), perDay(it), daysText(it, lang)})
-	}
-	r.blocks = append(r.blocks, Block{"type": "table", "columns": []string{t(lang, "Товар", "Tovar"), t(lang, "Остаток", "Qoldiq"), t(lang, "В день", "Kuniga"), t(lang, "Хватит", "Yetadi")}, "rows": rows})
-	if res.Total > len(res.Items) {
-		r.blocks = append(r.blocks, Block{"type": "link", "label": fmt.Sprintf(t(lang, "Все %d в «Остатках»", "Barchasi (%d) «Qoldiqlar»da"), res.Total), "href": "/stock/balance"})
-	}
-	r.blocks = append(r.blocks, Block{"type": "buttons", "items": []Block{{"label": t(lang, "Что заказать?", "Nima buyurtma qilish?"), "send": t(lang, "Что заказать?", "Nima buyurtma qilish kerak?")}}})
-	return r, nil
-}
-
-func qtyText(it inventory.MyProduct, lang string) string {
-	if it.Uncounted {
-		return t(lang, "не посчитан", "sanalmagan")
-	}
-	return trimQty(it.Qty) + " " + it.UnitShort
-}
-
-func perDay(it inventory.MyProduct) string {
-	v, _ := strconv.ParseFloat(it.PerDay, 64)
-	if v <= 0 {
-		return "—"
-	}
-	return "~" + trimQty(it.PerDay)
-}
-
-func daysText(it inventory.MyProduct, lang string) string {
-	q, _ := strconv.ParseFloat(it.Qty, 64)
-	switch {
-	case it.Uncounted:
-		return "—"
-	case q <= 0:
-		return t(lang, "нет", "yoʻq")
-	case it.DaysLeft == nil:
-		return "—"
-	case *it.DaysLeft == 0:
-		return t(lang, "< 1 дня", "< 1 kun")
-	}
-	return fmt.Sprintf(t(lang, "%d дн.", "%d kun"), *it.DaysLeft)
-}
-
-// reorder — что заканчивается (out, low) и сколько заказать: на неделю по
-// скорости продаж, минус остаток.
-func (s *Service) reorder(ctx context.Context, p *identity.Principal, storeID string, r reply) (reply, error) {
-	lang := r.lang
-	items := []inventory.MyProduct{}
-	for _, st := range []string{inventory.MyStatusOut, inventory.MyStatusLow} {
-		res, err := s.inv.MyProducts(ctx, p, inventory.MyProductsFilter{StoreID: storeID, Status: st, Page: httpx.Page{Limit: 10}})
-		if err != nil {
-			return reply{}, err
-		}
-		items = append(items, res.Items...)
-	}
-	if len(items) == 0 {
-		r.text = t(lang, "Пока ничего не заканчивается — остатков хватает.", "Hozircha hech narsa tugamayapti — qoldiqlar yetarli.")
-		return r, nil
-	}
-	if r.text == "" {
-		r.text = fmt.Sprintf(t(lang, "Заканчиваются %d товаров. Заказать на неделю:", "%d ta tovar tugayapti. Bir haftaga buyurtma:"), len(items))
-	}
-	rows := [][]string{}
-	for _, it := range items {
-		per, _ := strconv.ParseFloat(it.PerDay, 64)
-		q, _ := strconv.ParseFloat(it.Qty, 64)
-		order := math.Ceil(per*7 - math.Max(q, 0))
-		orderText := "—"
-		if order > 0 {
-			orderText = strconv.Itoa(int(order)) + " " + it.UnitShort
-		}
-		rows = append(rows, []string{it.Name, qtyText(it, lang), daysText(it, lang), orderText})
-	}
-	r.blocks = append(r.blocks, Block{"type": "table", "columns": []string{t(lang, "Товар", "Tovar"), t(lang, "Остаток", "Qoldiq"), t(lang, "Хватит", "Yetadi"), t(lang, "Заказать", "Buyurtma")}, "rows": rows})
-	r.blocks = append(r.blocks, Block{"type": "link", "label": t(lang, "Все остатки", "Barcha qoldiqlar"), "href": "/stock/balance?status=low"})
-	return r, nil
-}
-
-// sales — продажи за день (сегодня или дата).
-func (s *Service) sales(ctx context.Context, p *identity.Principal, storeID string, r reply, date string) (reply, error) {
-	lang := r.lang
-	if date != "" {
-		if _, err := time.Parse("2006-01-02", date); err != nil {
-			date = ""
-		}
-	}
-	sum, err := s.summary.Day(ctx, p, date, storeID)
-	if err != nil {
-		return reply{}, err
-	}
-	day := t(lang, "сегодня", "bugun")
-	if date != "" && date != s.now().In(tashkent).Format("2006-01-02") {
-		day = t(lang, "за ", "") + date
-	}
-	txt := fmt.Sprintf(t(lang, "Продажи %s: %s сум, %d чеков, средний чек %s сум.", "Sotuvlar (%s): %s soʻm, %d chek, oʻrtacha chek %s soʻm."),
-		day, money.Group(sum.Revenue), sum.SalesCount, money.Group(sum.AvgCheck))
-	if sum.ChangePct != nil {
-		txt += " " + fmt.Sprintf(t(lang, "Это %+d %% к прошлому дню.", "Bu oldingi kunga nisbatan %+d %%."), *sum.ChangePct)
-	}
-	if sum.OrdersCount > 0 {
-		txt += " " + fmt.Sprintf(t(lang, "Онлайн-заказов: %d на %s сум.", "Onlayn buyurtmalar: %d, %s soʻm."), sum.OrdersCount, money.Group(sum.OrdersTotal))
-	}
-	if r.text != "" {
-		txt = r.text + "\n" + txt
-	}
-	r.text = txt
-	r.blocks = []Block{{"type": "link", "label": t(lang, "Подробнее на главной", "Batafsil bosh sahifada"), "href": "/"}}
-	return r, nil
 }

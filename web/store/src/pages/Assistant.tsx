@@ -216,7 +216,7 @@ const HINTS: { icon: ReactNode; send: string; title: string; desc: string }[] = 
   { icon: <SearchOutlined />, send: tr('Сколько колы осталось?', 'Kola qancha qoldi?'), title: tr('«сколько колы осталось»', '«kola qancha qoldi»'), desc: tr('остатки и на сколько дней хватит', 'qoldiqlar va necha kunga yetadi') },
   { icon: <ShoppingCartOutlined />, send: tr('Что заказать?', 'Nima buyurtma qilish kerak?'), title: tr('«что заказать»', '«nima buyurtma qilish»'), desc: tr('что заканчивается', 'nima tugayapti') },
   { icon: <BarChartOutlined />, send: tr('Продажи за сегодня', 'Bugungi sotuvlar'), title: tr('«продажи за сегодня»', '«bugungi sotuvlar»'), desc: tr('выручка, чеки, сравнение', 'tushum, cheklar, taqqoslash') },
-  { icon: <WalletOutlined />, send: tr('Кто мне должен?', 'Kim menga qarz?'), title: tr('«кто мне должен»', '«kim menga qarz»'), desc: tr('пока — в разделе «Долги»', 'hozircha — «Qarzlar» boʻlimida') },
+  { icon: <WalletOutlined />, send: tr('Кто мне должен?', 'Kim menga qarz?'), title: tr('«кто мне должен»', '«kim menga qarz»'), desc: tr('долги покупателей и поставщикам', 'xaridorlar va yetkazib beruvchilar qarzi') },
 ]
 
 function Welcome({ onSend, onAttach }: { onSend: (t: string) => void; onAttach: () => void }) {
@@ -258,8 +258,8 @@ function HowTo({ onSend }: { onSend: (t: string) => void }) {
       <div className="sm-assist-note">
         <AudioOutlined />{' '}
         {tr(
-          'Голос: удерживайте микрофон и говорите по-узбекски или по-русски. Браузер попросит доступ к микрофону один раз.',
-          'Ovoz: mikrofonni bosib turing va oʻzbek yoki rus tilida gapiring. Brauzer mikrofonga ruxsatni bir marta soʻraydi.',
+          'Помощник видит всё, что видите вы в панели, и может делать то же: заводить документы и товары, править карточки, отвечать по накладной. Провести, удалить, деньги и цены — только после вашей кнопки. Голос: удерживайте микрофон и говорите по-узбекски или по-русски.',
+          'Yordamchi panelda siz koʻrgan hamma narsani koʻradi va shu ishlarni qila oladi: hujjat va tovar kiritish, kartochkalarni tuzatish, nakladnoy boʻyicha javob berish. Oʻtkazish, oʻchirish, pul va narxlar — faqat siz tugmani bosganingizdan keyin. Ovoz: mikrofonni bosib turing va oʻzbek yoki rus tilida gapiring.',
         )}
       </div>
     </div>

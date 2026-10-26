@@ -1,16 +1,12 @@
 // Package assistant — помощник в панели магазина (тест; Figma «Super Market ·
 // Помощник», страница «Веб-панель · тест», П1–П3 и «Логика»).
 //
-// Владелец пишет, говорит голосом или прикрепляет фото накладной. Помощник
-// отвечает коротко и даёт кнопки; всё, что он делает, идёт через те же
-// сервисы, что и панель: накладная — invoices (распознавание, строки, приход),
-// остатки и «что заказать» — inventory.MyProducts, продажи — summary.Day.
-// Необратимое («Провести приход») — только кнопкой: текстовое «да» помощник
-// не считает подтверждением.
-//
-// Модель (ИИ-сервис супер-админа) получает инструкцию, контекст магазина и
-// сообщение (текст или аудио) и отвечает JSON: расшифровка, язык, намерение,
-// аргументы, ответ и кнопки. Голосовые понимает только Gemini (Vertex AI).
+// Владелец пишет, говорит голосом или прикрепляет фото накладной. Помощник —
+// агент с инструментами (agent.go): модель сама ходит в API панели от имени
+// владельца (читает всё, пишет черновики, правит), а необратимое — провести,
+// удалить, деньги, цены — только после кнопки подтверждения. Фото накладной
+// идёт в invoices напрямую (startScan), строки с вопросами — карточками с
+// кнопками (process.go). Голосовые понимает только Gemini (Vertex AI).
 package assistant
 
 import (
@@ -18,21 +14,22 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sanedidi/super-market/backend/internal/ai"
 	"github.com/sanedidi/super-market/backend/internal/identity"
-	"github.com/sanedidi/super-market/backend/internal/inventory"
 	"github.com/sanedidi/super-market/backend/internal/invoices"
 	"github.com/sanedidi/super-market/backend/internal/media"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
-	"github.com/sanedidi/super-market/backend/internal/summary"
 )
 
 const (
@@ -49,13 +46,16 @@ const (
 )
 
 type Service struct {
-	pool    *pgxpool.Pool
-	ai      *ai.Service
-	media   *media.Service
-	scans   *invoices.Service
-	inv     *inventory.Service
-	summary *summary.Service
-	log     *slog.Logger
+	pool  *pgxpool.Pool
+	ai    *ai.Service
+	ident *identity.Service
+	media *media.Service
+	scans *invoices.Service
+	log   *slog.Logger
+	// handler — весь сервер: агент ходит в /store/* внутренним запросом
+	// (SetHandler после сборки роутера); routes — его маршруты для list_routes.
+	handler http.Handler
+	routes  []string
 	// run — как выполнять ответ: фоном (сервер) или сразу (тесты).
 	run func(func())
 	now func() time.Time
@@ -63,10 +63,28 @@ type Service struct {
 	scanWait time.Duration
 }
 
-func NewService(pool *pgxpool.Pool, aiSvc *ai.Service, mediaSvc *media.Service, scans *invoices.Service,
-	inv *inventory.Service, sum *summary.Service, log *slog.Logger) *Service {
-	return &Service{pool: pool, ai: aiSvc, media: mediaSvc, scans: scans, inv: inv, summary: sum, log: log,
+func NewService(pool *pgxpool.Pool, aiSvc *ai.Service, ident *identity.Service, mediaSvc *media.Service, scans *invoices.Service,
+	log *slog.Logger) *Service {
+	return &Service{pool: pool, ai: aiSvc, ident: ident, media: mediaSvc, scans: scans, log: log,
 		run: func(f func()) { go f() }, now: time.Now, scanWait: 90 * time.Second}
+}
+
+// SetHandler — сервер для внутренних вызовов API и список его маршрутов
+// /store/* («GET /store/inventory/my-products»).
+func (s *Service) SetHandler(h http.Handler) {
+	s.handler = h
+	s.routes = nil
+	if cr, ok := h.(chi.Routes); ok {
+		_ = chi.Walk(cr, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+			route = strings.TrimPrefix(route, "/api/v1")
+			route = strings.TrimSuffix(route, "/")
+			if strings.HasPrefix(route, "/store/") && !strings.HasPrefix(route, "/store/assistant") {
+				s.routes = append(s.routes, method+" "+route)
+			}
+			return nil
+		})
+	}
+	sort.Strings(s.routes)
 }
 
 // Sync — отвечать прямо в запросе (тесты).
@@ -84,10 +102,16 @@ type Block map[string]any
 // Action — нажатая кнопка: что сделать без модели.
 type Action struct {
 	// scan_line — строка накладной: товар, упаковка или пропустить;
-	// scan_supplier — поставщик накладной; scan_post — провести приход.
-	Type   string `json:"type"`
-	ScanID string `json:"scan_id"`
-	Line   int    `json:"line,omitempty"`
+	// scan_supplier — поставщик накладной; scan_post — провести приход;
+	// api — подтверждённый владельцем запрос агента (Method, Path, Query, Body).
+	Type   string          `json:"type"`
+	ScanID string          `json:"scan_id,omitempty"`
+	Method string          `json:"method,omitempty"`
+	Path   string          `json:"path,omitempty"`
+	Query  map[string]any  `json:"query,omitempty"`
+	Body   json.RawMessage `json:"body,omitempty"`
+	Note   string          `json:"note,omitempty"`
+	Line   int             `json:"line,omitempty"`
 	// Pack — единиц товара в единице накладной («12 блоков по 6» → 6).
 	Pack           *string `json:"pack,omitempty"`
 	ProductID      *string `json:"product_id,omitempty"`
@@ -302,8 +326,14 @@ func (s *Service) Send(ctx context.Context, p *identity.Principal, in SendInput)
 	if in.Text == "" && in.Audio == nil && len(in.Images) == 0 && in.Action == nil {
 		return SendResult{}, apperr.Validation("text: напишите, скажите или прикрепите накладную").Uz("text: yozing, ayting yoki nakladnoyni biriktiring")
 	}
-	if in.Action != nil && !httpx.IsUUID(in.Action.ScanID) {
-		return SendResult{}, apperr.Validation("action.scan_id: накладная не найдена").Uz("action.scan_id: nakladnoy topilmadi")
+	if in.Action != nil {
+		if in.Action.Type == "api" {
+			if err := checkPath(in.Action.Path); err != nil {
+				return SendResult{}, apperr.Validation("action.path: " + err.Error()).Uz("action.path: " + err.Error())
+			}
+		} else if !httpx.IsUUID(in.Action.ScanID) {
+			return SendResult{}, apperr.Validation("action.scan_id: накладная не найдена").Uz("action.scan_id: nakladnoy topilmadi")
+		}
 	}
 	// Модель должна быть подключена до того, как сообщение попадёт в чат.
 	if in.Action == nil {
@@ -317,7 +347,9 @@ func (s *Service) Send(ctx context.Context, p *identity.Principal, in SendInput)
 	case in.Action != nil:
 		own.Kind = "action"
 		own.Text = in.Action.Label
-		own.ScanID = &in.Action.ScanID
+		if in.Action.ScanID != "" {
+			own.ScanID = &in.Action.ScanID
+		}
 		own.Args = in.Action
 	case in.Audio != nil:
 		own.Kind = "audio"
@@ -351,6 +383,11 @@ func (s *Service) respond(ctx context.Context, p *identity.Principal, in SendInp
 		r.text = errText(err, i18n.FromContext(ctx))
 		r.blocks = nil
 		s.log.Warn("assistant", "err", err, "store", in.StoreID)
+		if in.Audio != nil {
+			// Голосовое не расшифровано — чтобы в пузыре не висело «расшифровываю…».
+			_, _ = s.pool.Exec(ctx, `UPDATE assistant_messages SET transcript = $2 WHERE id = $1 AND transcript IS NULL`,
+				owner.ID, i18n.Pick(i18n.FromContext(ctx), "не расшифровано", "tinglab boʻlmadi"))
+		}
 	}
 	if r.lang == "" {
 		r.lang = i18n.FromContext(ctx)

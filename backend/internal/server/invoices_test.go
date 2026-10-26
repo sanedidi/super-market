@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -25,6 +26,32 @@ type fakeAI struct {
 	last  string // протокол последнего запроса: openai / anthropic
 	// text — отвечать и на запросы без фото (помощник: текстовые сообщения).
 	text bool
+	// script — ответы по порядку для помощника с инструментами: вызов функции
+	// (tool, args) или заключительный текст; пустой — отвечает reply.
+	script []fakeTurn
+	// requests — тела запросов к chat/completions (для проверок).
+	requests []string
+}
+
+type fakeTurn struct {
+	text string
+	tool string
+	args map[string]any
+}
+
+func (f *fakeAI) play(turns ...fakeTurn) {
+	f.mu.Lock()
+	f.script = append(f.script, turns...)
+	f.mu.Unlock()
+}
+
+func (f *fakeAI) lastRequest() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.requests) == 0 {
+		return ""
+	}
+	return f.requests[len(f.requests)-1]
 }
 
 func (f *fakeAI) set(reply string) {
@@ -54,20 +81,27 @@ func (f *fakeAI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "GET" && (r.URL.Path == "/v1/models"):
 		_, _ = w.Write([]byte(`{"data":[{"id":"text-embedding-3-small"},{"id":"gpt-4o"},{"id":"claude-sonnet-4-5"}]}`))
 	case r.Method == "POST" && r.URL.Path == "/v1/chat/completions":
-		var body struct {
-			Messages []struct {
-				Content any `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		raw, _ := json.Marshal(body.Messages)
+		raw, _ := io.ReadAll(r.Body)
 		if !f.text && !strings.Contains(string(raw), "data:image/png;base64,") {
 			w.WriteHeader(400)
 			return
 		}
 		f.calls++
 		f.last = "openai"
-		out, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": "```json\n" + f.reply + "\n```"}}},
+		f.requests = append(f.requests, string(raw))
+		msg := map[string]any{"content": "```json\n" + f.reply + "\n```"}
+		if len(f.script) > 0 && strings.Contains(string(raw), `"tools"`) {
+			turn := f.script[0]
+			f.script = f.script[1:]
+			if turn.tool != "" {
+				args, _ := json.Marshal(turn.args)
+				msg = map[string]any{"content": "", "tool_calls": []any{map[string]any{"id": "call_" + strconv.Itoa(f.calls), "type": "function",
+					"function": map[string]any{"name": turn.tool, "arguments": string(args)}}}}
+			} else {
+				msg = map[string]any{"content": turn.text}
+			}
+		}
+		out, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"message": msg}},
 			"usage": map[string]any{"prompt_tokens": 1200, "completion_tokens": 300}})
 		_, _ = w.Write(out)
 	case r.Method == "POST" && r.URL.Path == "/v1/messages":

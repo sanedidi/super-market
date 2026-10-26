@@ -141,7 +141,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 	}
 	sumSvc := summary.NewService(pool, log)
 	// Помощник в панели (тест): чат поверх накладных, остатков и итогов дня.
-	assistSvc := assistant.NewService(pool, aiSvc, mediaSvc, scans, invSvc, sumSvc, log)
+	assistSvc := assistant.NewService(pool, aiSvc, idSvc, mediaSvc, scans, log)
 	if InvoicesSync {
 		scans.Sync()
 		startSvc.Sync()
@@ -192,6 +192,8 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		invest.NewModule(invest.NewService(pool), auth, log),
 		appversions.NewModule(appversions.NewService(pool), auth, log),
 	)
+	// Агент помощника ходит в API панели внутренним запросом — ему нужен весь сервер.
+	assistSvc.SetHandler(h)
 	return &App{Handler: h, Orders: ord, Payments: pay, Billing: bill, Start: startSvc}, nil
 }
 
