@@ -75,13 +75,15 @@ const agentPrompt = `Ты — помощник Super Market: сервис учё
 15. Возврат поставщику («верни 3 блока колы Абдуллаеву») — документ type "supplier_return" в /store/inventory/documents, провести — кнопкой. «Что заказать» — my-products со status=out и low (per_day, days_left): предложи количества на неделю (per_day × 7 − qty) таблицей; «составь заказ» — черновик прихода от этого поставщика с этими количествами (цены — last_cost), провести — когда товар привезут.
 16. done_today в контексте — что ты уже сделал сегодня: не повторяй и опирайся на это, если владелец ссылается на прошлое («тот приход», «как утром»).
 17. Владелец называет товары коротко и по-своему: «kola» — это Coca-Cola, «pepsi» — Pepsi, «sut» — молоко, «non» — хлеб, «tuxum» — яйца, «shakar» — сахар, «un» — мука, «guruch» — рис, «yog'» — масло, «choy» — чай, «suv» — вода, «go'sht» — мясо, «tovuq» — курица, «kartoshka» — картофель, «piyoz» — лук, «sabzi» — морковь, «pishloq» — сыр, «qatiq» — катык, «kolbasa» — колбаса, «sigaret» — сигареты. НИКОГДА не спрашивай «какой товар?», пока не поискал: вызови find_products с 3–6 вариантами (как сказал, кириллицей/латиницей, полным брендом, по-русски и по-узбекски). Сначала смотри aliases в контексте. Нашлось несколько (Coca-Cola 0,5 / 1 / 1,5 л) — следуй hint из ответа: бери самый ходовой или из прошлого прихода и скажи, какой взял, либо спроси кнопками с полными названиями. Когда владелец выбрал или подтвердил товар — remember_alias(его слово, product_id).
+18. Помни, что владелец уже сказал: количество, блоки, цену, поставщика из прошлых сообщений (recent_messages, там же расшифровки голосовых и «[выбрано: id]» у нажатых кнопок). Выбрал товар кнопкой — сразу продолжай приход с уже названными цифрами, не переспрашивай «сколько пришло?».
+19. В базе Super Market бывают почти одинаковые карточки одного товара («Coca-Cola Classic 1,5 л», «Coca-Cola газированный 1,5 л»). Если владелец назвал товар и размер, и все найденные варианты подходят — не спрашивай: бери тот, что в «Моих товарах» (where mine), иначе с наибольшим stores (в скольких магазинах продаётся), и одной фразой скажи, какой взял, с кнопками «Другой товар» на 2–3 альтернативы (ref — их product_id). Спрашивай только когда варианты действительно разные (разный размер, вкус, «без сахара» при том, что владелец этого не уточнял, — спроси кратко).
 
 Страницы панели для ссылок (href): главная «/», остатки «/stock/balance», приход «/purchases/income» и «/purchases/income/{document_id}», товары «/dirs/products», контрагенты «/dirs/counterparties», продажи «/sales/pos», цены «/sales/prices», долги «/debts», заказы «/orders», финансы «/finance/operations», отчёты «/reports/profit-loss», сотрудники «/settings/employees».
 
 Когда всё сделано, ответь ТОЛЬКО JSON без текста вокруг:
 {"transcript": "расшифровка аудио или пусто", "lang": "ru|uz", "reply": "ответ владельцу, 1–4 предложения; цифры — из API",
  "table": {"columns": ["…"], "rows": [["…"]]} или null (до 12 строк, для списков и остатков),
- "buttons": [{"label": "следующий шаг", "send": "что отправится как сообщение"}, {"label": "Прикрепить накладную", "attach": true}, {"label": "Сфотографировать товар", "attach": "product"}] (до 4, можно пусто; attach true — фото накладной, только когда владелец говорит о приходе, не называя товары; attach "product" — фото товара, которого нет в базе),
+ "buttons": [{"label": "следующий шаг", "send": "что отправится как сообщение (человеческим текстом, никогда не id)", "ref": "id товара/документа, если кнопка — выбор из списка"}, {"label": "Прикрепить накладную", "attach": true}, {"label": "Сфотографировать товар", "attach": "product"}] (до 4, можно пусто; attach true — фото накладной, только когда владелец говорит о приходе, не называя товары; attach "product" — фото товара, которого нет в базе),
  "links": [{"label": "Открыть…", "href": "/…"}] (можно пусто),
  "scan_id": "id накладной, если показать её строки" или ""}`
 
@@ -97,6 +99,7 @@ type finalOut struct {
 	Buttons []struct {
 		Label string `json:"label"`
 		Send  string `json:"send"`
+		Ref   string `json:"ref"`
 		// Attach — true: фото накладной; "product": фото товара.
 		Attach any `json:"attach"`
 	} `json:"buttons"`
@@ -138,6 +141,8 @@ func tools() []ai.Tool {
 }
 
 // dangerous — что нельзя без кнопки: удаление и запись в «тяжёлые» разделы.
+var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
 var dangerous = regexp.MustCompile(`/(post|unpost|cancel|payouts?|payments?|handovers?|transfers?|write-off|refunds?|returns?|employees|roles|plan|stores|settings|delivery|debts|operations|cashboxes?|rates|prices?|price-documents|pin|purge|delete|close|open)(/|$)`)
 
 func isDangerous(method, path string, body map[string]any) bool {
@@ -173,6 +178,9 @@ func (s *Service) agent(ctx context.Context, p *identity.Principal, in SendInput
 		return reply{}, err
 	}
 	text := in.Text
+	if ref := strings.TrimSpace(in.Ref); ref != "" {
+		text += " [выбрано: " + ref + "]"
+	}
 	if note != "" {
 		text = note
 	}
@@ -280,7 +288,16 @@ func (s *Service) agent(ctx context.Context, p *identity.Principal, in SendInput
 			r.blocks = appendButton(r.blocks, Block{"label": b.Label, "attach": "product", "primary": true})
 			continue
 		}
-		r.blocks = appendButton(r.blocks, Block{"label": b.Label, "send": firstNonEmpty(b.Send, b.Label)})
+		send, ref := firstNonEmpty(b.Send, b.Label), b.Ref
+		// id в «send» — в чат уйдёт текст кнопки, id — модели.
+		if uuidRe.MatchString(strings.TrimSpace(send)) {
+			ref, send = strings.TrimSpace(send), b.Label
+		}
+		btn := Block{"label": b.Label, "send": send}
+		if ref != "" {
+			btn["ref"] = ref
+		}
+		r.blocks = appendButton(r.blocks, btn)
 	}
 	return r, nil
 }

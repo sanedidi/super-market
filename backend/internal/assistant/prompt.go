@@ -80,18 +80,28 @@ func (s *Service) buildPrompt(ctx context.Context, p *identity.Principal, storeI
 		}
 	}
 	rows.Close()
+	// Голосовое — его расшифровка (text у него пустой); выбор кнопкой — с
+	// тем, что выбрано (ref); у помощника — какие кнопки он предлагал.
 	rows, err = s.pool.Query(ctx, `
 		SELECT role, CASE WHEN role = 'owner' AND transcript IS NOT NULL THEN transcript ELSE text END
-		FROM assistant_messages WHERE store_id = $1 AND employee_id = $2 AND status = 'done' AND role <> 'system' AND text <> ''
-		ORDER BY created_at DESC LIMIT 10`, storeID, p.EmployeeID)
+		         || CASE WHEN args ? 'ref' THEN ' [выбрано: ' || (args->>'ref') || ']' ELSE '' END,
+		       COALESCE((SELECT string_agg(b->>'label', ' | ') FROM jsonb_array_elements(blocks) bl, jsonb_array_elements(COALESCE(bl->'items', '[]')) b
+		                 WHERE role = 'assistant'), '')
+		FROM assistant_messages WHERE store_id = $1 AND employee_id = $2 AND status = 'done' AND role <> 'system'
+		  AND (text <> '' OR transcript IS NOT NULL)
+		ORDER BY created_at DESC LIMIT 12`, storeID, p.EmployeeID)
 	if err != nil {
 		return "", err
 	}
 	for rows.Next() {
 		var m recentMessage
-		if rows.Scan(&m.Role, &m.Text) == nil {
-			if r := []rune(m.Text); len(r) > 300 {
-				m.Text = string(r[:300]) + "…"
+		var buttons string
+		if rows.Scan(&m.Role, &m.Text, &buttons) == nil {
+			if r := []rune(m.Text); len(r) > 400 {
+				m.Text = string(r[:400]) + "…"
+			}
+			if buttons != "" {
+				m.Text += " (кнопки: " + cut(buttons, 400) + ")"
 			}
 			pc.Recent = append([]recentMessage{m}, pc.Recent...)
 		}

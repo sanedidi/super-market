@@ -376,6 +376,28 @@ func TestAssistantChat(t *testing.T) {
 		t.Fatalf("alias not used: %s", aliasReq[max(0, len(aliasReq)-3000):])
 	}
 
+	// Кнопка выбора: модель положила id в send — в чат уйдёт название, id — в ref;
+	// нажатие кнопки доходит до модели с «[выбрано: id]», голосовое — расшифровкой.
+	fai.play(fakeTurn{text: `{"reply":"Какой?","lang":"ru","buttons":[{"label":"Coca-Cola 1,5 л","send":"` + cola + `"}]}`})
+	send(map[string]any{"text": "kola"})
+	btn := blocks(last(), "buttons")[0]["items"].([]any)[0].(map[string]any)
+	if btn["send"] != "Coca-Cola 1,5 л" || btn["ref"] != cola {
+		t.Fatalf("button = %v", btn)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE assistant_messages SET text = '', transcript = '7 blok kola keldi', kind = 'audio'
+		WHERE id = (SELECT id FROM assistant_messages WHERE role = 'owner' ORDER BY created_at DESC LIMIT 1)`); err != nil {
+		t.Fatal(err)
+	}
+	fai.play(fakeTurn{text: `{"reply":"ок","lang":"ru"}`})
+	send(map[string]any{"text": btn["send"], "ref": btn["ref"]})
+	choiceReq := fai.lastRequest()
+	if !strings.Contains(choiceReq, "[выбрано: "+cola+"]") || !strings.Contains(choiceReq, "7 blok kola keldi") || !strings.Contains(choiceReq, "кнопки: Coca-Cola 1,5 л") {
+		t.Fatalf("choice/voice memory: %s", choiceReq[:min(len(choiceReq), 4000)])
+	}
+	if own := messages().items(); own[len(own)-2]["text"] != "Coca-Cola 1,5 л" {
+		t.Fatalf("owner text = %v", own[len(own)-2])
+	}
+
 	// Фото товара, которого нет в базе: Super Market заполняет карточку, товар
 	// добавляется в «Мои товары», помощник продолжает разговор.
 	food := a.expect(a.do("POST", "/admin/catalog/categories", adminTok, map[string]any{"name": "Еда"}), 201, "section").str("id")

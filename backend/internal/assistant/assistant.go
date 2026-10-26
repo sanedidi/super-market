@@ -147,6 +147,9 @@ type SendInput struct {
 	StoreID string   `json:"store_id"`
 	Text    string   `json:"text"`
 	Images  []string `json:"images"`
+	// Ref — что стоит за нажатой кнопкой (id товара и т.п.): в чате —
+	// только текст кнопки, модели — текст и ref.
+	Ref string `json:"ref"`
 	// Kind — что на фото: invoice (накладная, по умолчанию) или product
 	// (товар, которого нет в базе: карточку заполнит Super Market).
 	Kind   string  `json:"kind"`
@@ -367,6 +370,12 @@ func (s *Service) Send(ctx context.Context, p *identity.Principal, in SendInput)
 	case len(in.Images) > 0:
 		own.Kind = "image"
 		own.Args = map[string]any{"kind": in.Kind}
+	}
+	if ref := strings.TrimSpace(in.Ref); ref != "" && in.Action == nil {
+		if len(ref) > 200 {
+			ref = ref[:200]
+		}
+		own.Args = map[string]any{"ref": ref}
 	}
 	owner, err := s.insert(ctx, p, in.StoreID, own)
 	if err != nil {

@@ -32,7 +32,8 @@ type Action = Record<string, unknown> & { type: string; scan_id: string; label?:
 
 /** attach: true — фото накладной, 'product' — фото товара, которого нет в базе. */
 type AttachKind = 'invoice' | 'product'
-type ButtonItem = { label: string; send?: string; action?: Action; attach?: boolean | 'product'; primary?: boolean }
+/** ref — что стоит за кнопкой выбора (id товара): в чат уходит текст, ref — помощнику. */
+type ButtonItem = { label: string; send?: string; ref?: string; action?: Action; attach?: boolean | 'product'; primary?: boolean }
 
 type Block =
   | { type: 'buttons'; items: ButtonItem[] }
@@ -111,7 +112,7 @@ export function AssistantPage() {
     },
     [message, refresh],
   )
-  const sendText = (text: string) => post({ store_id: storeId, text })
+  const sendText = (text: string, ref?: string) => post({ store_id: storeId, text, ref })
   const sendAction = (action: Action) => post({ store_id: storeId, action })
   const sendImages = async (files: File[], kind: AttachKind = attachKind.current) => {
     const images = files.filter((f) => f.type.startsWith('image/')).slice(0, kind === 'product' ? 3 : 5)
@@ -227,7 +228,7 @@ const HINTS: { icon: ReactNode; send: string; title: string; desc: string }[] = 
   { icon: <WalletOutlined />, send: tr('Кто мне должен?', 'Kim menga qarz?'), title: tr('«кто мне должен»', '«kim menga qarz»'), desc: tr('долги покупателей и поставщикам', 'xaridorlar va yetkazib beruvchilar qarzi') },
 ]
 
-function Welcome({ onSend, onAttach }: { onSend: (t: string) => void; onAttach: (kind?: AttachKind) => void }) {
+function Welcome({ onSend, onAttach }: { onSend: (t: string, ref?: string) => void; onAttach: (kind?: AttachKind) => void }) {
   return (
     <div className="sm-assist-row">
       <Avatar />
@@ -249,7 +250,7 @@ function Welcome({ onSend, onAttach }: { onSend: (t: string) => void; onAttach: 
   )
 }
 
-function HowTo({ onSend }: { onSend: (t: string) => void }) {
+function HowTo({ onSend }: { onSend: (t: string, ref?: string) => void }) {
   return (
     <div className="sm-assist-card">
       <div className="sm-assist-card-title">{tr('Что можно сказать', 'Nima deyish mumkin')}</div>
@@ -280,7 +281,7 @@ function Avatar() {
   return <div className="sm-assist-avatar">SM</div>
 }
 
-function Bubble({ m, onSend, onAction, onAttach }: { m: Message; onSend: (t: string) => void; onAction: (a: Action) => void; onAttach: (kind?: AttachKind) => void }) {
+function Bubble({ m, onSend, onAction, onAttach }: { m: Message; onSend: (t: string, ref?: string) => void; onAction: (a: Action) => void; onAttach: (kind?: AttachKind) => void }) {
   if (m.role === 'system') {
     return (
       <div className="sm-assist-system">
@@ -332,7 +333,7 @@ function Bubble({ m, onSend, onAction, onAttach }: { m: Message; onSend: (t: str
   )
 }
 
-function Buttons({ items, onSend, onAction, onAttach }: { items: ButtonItem[]; onSend: (t: string) => void; onAction: (a: Action) => void; onAttach: (kind?: AttachKind) => void }) {
+function Buttons({ items, onSend, onAction, onAttach }: { items: ButtonItem[]; onSend: (t: string, ref?: string) => void; onAction: (a: Action) => void; onAttach: (kind?: AttachKind) => void }) {
   if (!items?.length) return null
   return (
     <div className="sm-assist-chips">
@@ -344,7 +345,7 @@ function Buttons({ items, onSend, onAction, onAttach }: { items: ButtonItem[]; o
           onClick={() => {
             if (it.attach) onAttach(it.attach === 'product' ? 'product' : 'invoice')
             else if (it.action) onAction({ ...it.action, label: it.action.label ?? it.label })
-            else onSend(it.send ?? it.label)
+            else onSend(it.send ?? it.label, it.ref)
           }}
         >
           {it.label}
@@ -354,7 +355,7 @@ function Buttons({ items, onSend, onAction, onAttach }: { items: ButtonItem[]; o
   )
 }
 
-function BlockView({ b, onSend, onAction, onAttach }: { b: Block; onSend: (t: string) => void; onAction: (a: Action) => void; onAttach: (kind?: AttachKind) => void }) {
+function BlockView({ b, onSend, onAction, onAttach }: { b: Block; onSend: (t: string, ref?: string) => void; onAction: (a: Action) => void; onAttach: (kind?: AttachKind) => void }) {
   switch (b.type) {
     case 'buttons':
       return <Buttons items={b.items} onSend={onSend} onAction={onAction} onAttach={onAttach} />
@@ -407,7 +408,7 @@ function BlockView({ b, onSend, onAction, onAttach }: { b: Block; onSend: (t: st
 
 // ------------------------------------------------------------ ввод
 
-function Composer({ busy, onSend, onAttach, onVoice }: { busy: boolean; onSend: (t: string) => void; onAttach: (kind?: AttachKind) => void; onVoice: (b: Blob, mime: string) => Promise<void> }) {
+function Composer({ busy, onSend, onAttach, onVoice }: { busy: boolean; onSend: (t: string, ref?: string) => void; onAttach: (kind?: AttachKind) => void; onVoice: (b: Blob, mime: string) => Promise<void> }) {
   const [text, setText] = useState('')
   const { message } = App.useApp()
   const rec = useRef<{ r: MediaRecorder; chunks: Blob[]; timer: number; stream: MediaStream } | null>(null)

@@ -25,6 +25,9 @@ type foundProduct struct {
 	LastCost     any    `json:"last_cost,omitempty"`
 	LastSupplier any    `json:"last_supplier,omitempty"`
 	Price        any    `json:"price,omitempty"`
+	// Stores — в скольких магазинах Super Market продаётся (для выбора из
+	// почти одинаковых карточек базы).
+	Stores int `json:"stores,omitempty"`
 	// Where — mine (в «Моих товарах»), base (в базе Super Market, не добавлен), alias (так владелец называл раньше).
 	Where string `json:"where"`
 	Query string `json:"query"`
@@ -82,7 +85,9 @@ func (s *Service) findProducts(ctx context.Context, st *agentState, queries []st
 				if added, _ := it["added"].(bool); added {
 					continue
 				}
-				add(foundProduct{ProductID: str(it["product_id"]), Name: str(it["name"]), Unit: str(it["unit_short"]), Price: it["current_price"], Where: "base", Query: q})
+				f := foundProduct{ProductID: str(it["product_id"]), Name: str(it["name"]), Unit: str(it["unit_short"]), Price: it["current_price"], Where: "base", Query: q}
+				_ = s.pool.QueryRow(ctx, `SELECT count(*)::int FROM store_products WHERE product_id = $1::uuid`, f.ProductID).Scan(&f.Stores)
+				add(f)
 			}
 		}
 	}
@@ -99,7 +104,7 @@ func findHint(out []foundProduct) string {
 	case len(out) == 1:
 		return "один товар — бери его"
 	}
-	return "несколько товаров: если владелец не уточнил — выбери тот, что чаще продаётся (per_day) или был в последнем приходе от этого поставщика, и скажи, какой взял (кнопкой можно поменять); если они равноценны — спроси кнопками (send — полное название). После выбора владельца вызови remember_alias"
+	return "несколько товаров: если они подходят под слова владельца одинаково (дубли одной карточки) — не спрашивай: бери where mine, затем с большим per_day или stores, скажи, какой взял, и дай кнопки «другой» (ref — product_id). Спрашивай только если варианты правда разные (размер, вкус). После выбора владельца вызови remember_alias"
 }
 
 func mine(it map[string]any, q string) foundProduct {

@@ -1376,8 +1376,9 @@ SM Курьер, SM Агент) при запуске и при возврате
 - `GET /store/assistant/messages?store_id=&after=` — чат владельца в магазине (старые сверху, до 200); `after` —
   только новее сообщения с этим id. Ответ `{items: [Message], pending}`; `pending: true` — помощник ещё отвечает,
   опрашивайте дальше.
-- `POST /store/assistant/messages` → 202 `{owner, reply}` (reply сразу `pending`). JSON: `{store_id, text?,
-  images?: [url из /store/uploads, до 5], kind?, action?}` или multipart: `store_id`, `text?`, `kind?`, `audio`
+- `POST /store/assistant/messages` → 202 `{owner, reply}` (reply сразу `pending`). JSON: `{store_id, text?, ref?,
+  images?: [url из /store/uploads, до 5], kind?, action?}` (`ref` — что стоит за нажатой кнопкой выбора, например id
+  товара: в чате только текст, помощнику — текст и ref) или multipart: `store_id`, `text?`, `kind?`, `audio`
   (файл audio/webm, audio/mp4, audio/ogg, до 8 МБ). Фото: `kind` пусто или `invoice` — приход по накладной;
   `product` (1–3 фото) — товар, которого нет в базе: Super Market заполняет карточку (`/store/start/new-items`),
   товар добавляется в «Мои товары» («Это он» — товар базы), строка в журнал, и помощник продолжает разговор
@@ -1389,7 +1390,7 @@ SM Курьер, SM Агент) при запуске и при возврате
 
 `Message`: `{id, role: owner|assistant|system, kind: text|audio|image|action|done|error, text, transcript
 (расшифровка голосового), lang, images[], blocks[], status: pending|done|failed, scan_id, created_at}`.
-`blocks` — что показать кроме текста: `buttons {items: [{label, send | action | attach, primary}]}` (send —
+`blocks` — что показать кроме текста: `buttons {items: [{label, send, ref? | action | attach, primary}]}` (send —
 отправить текст как сообщение владельца; attach `true` — фото накладной, `"product"` — фото товара), `card {title, sum, note, status,
 status_kind: warn|error|ok, buttons, line}` (строка накладной или поставщик), `table {columns, rows}`, `link
 {label, href}` (внутри панели), `confirm {label, action, enabled, hint}` — необратимое действие, только кнопкой.
