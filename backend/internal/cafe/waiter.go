@@ -348,14 +348,61 @@ func (s *Service) WaiterOp(ctx context.Context, p *identity.Principal, storeID s
 	return s.applyBillOp(ctx, p, storeID, op, who)
 }
 
+// WaiterDish — блюдо для телефона: касса берёт название и цену из своего
+// каталога, телефону они приходят вместе с меню.
+type WaiterDish struct {
+	ProductID string `json:"product_id"`
+	Name      string `json:"name"`
+	NameRu    string `json:"name_ru"`
+	NameUz    string `json:"name_uz"`
+	Price     string `json:"price"`
+	Image     string `json:"image"`
+}
+
 // WaiterMenu — меню точки для телефона: группы, блюда, модификаторы,
-// стоп-лист (как блок cafe в /pos/catalog).
-func (s *Service) WaiterMenu(ctx context.Context, p *identity.Principal, storeID string) (*PosMenu, error) {
+// стоп-лист (как блок cafe в /pos/catalog) плюс названия, цены и фото.
+type WaiterMenu struct {
+	*PosMenu
+	Items []WaiterDish `json:"items"`
+}
+
+func (s *Service) WaiterMenu(ctx context.Context, p *identity.Principal, storeID string) (WaiterMenu, error) {
 	storeID, _, err := s.waiterStore(ctx, p, storeID)
 	if err != nil {
-		return nil, err
+		return WaiterMenu{}, err
 	}
-	return MenuForPOS(ctx, s.pool, p.NetworkID, storeID)
+	menu, err := MenuForPOS(ctx, s.pool, p.NetworkID, storeID)
+	if err != nil || menu == nil {
+		if err == nil {
+			err = errNotCafe
+		}
+		return WaiterMenu{}, err
+	}
+	out := WaiterMenu{PosMenu: menu, Items: []WaiterDish{}}
+	ids := make([]string, 0, len(menu.Dishes))
+	for _, d := range menu.Dishes {
+		ids = append(ids, d.ProductID)
+	}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	// Цена — как на кассе: цена магазина, цена сети, базовая.
+	rows, err := s.pool.Query(ctx, `
+		SELECT p.id, loc(p.name, p.name_uz), p.name, p.name_uz,
+		       COALESCE(sp.price, np.price, p.base_price, 0)::numeric(14,2)::text, COALESCE(p.images[1], '')
+		FROM products p
+		LEFT JOIN price_types pt ON pt.network_id = $1 AND pt.is_default
+		LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = pt.id AND sp.store_id = $2
+		LEFT JOIN prices np ON np.product_id = p.id AND np.price_type_id = pt.id AND np.store_id IS NULL AND np.network_id = $1
+		WHERE p.id = ANY($3::uuid[])`, p.NetworkID, storeID, ids)
+	if err != nil {
+		return out, err
+	}
+	out.Items, err = pgx.CollectRows(rows, pgx.RowToStructByPos[WaiterDish])
+	if out.Items == nil {
+		out.Items = []WaiterDish{}
+	}
+	return out, err
 }
 
 // WaiterWait — ждать изменения в точке (как касса и экран кухни).

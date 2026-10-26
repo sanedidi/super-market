@@ -61,6 +61,19 @@ class MoreScreen extends StatelessWidget {
           ]),
         ),
         const SizedBox(height: 16),
+        if (st.canWaiter) ...[
+          AppCard(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: ListTile(
+              leading: const Icon(Icons.table_restaurant_rounded, color: AppColors.primary),
+              title: Text(tr('Режим официанта', 'Ofitsiant rejimi'), style: AppText.bodyStrong),
+              subtitle: Text(tr('Столы, заказ у стола, «Готово» с кухни', 'Stollar, stoldagi buyurtma, oshxonadan «Tayyor»'), style: AppText.small),
+              trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
+              onTap: () => st.setWaiterMode(true),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
         if (modules.isNotEmpty) ...[
           AppCard(
             padding: const EdgeInsets.symmetric(horizontal: 4),

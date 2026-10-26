@@ -14,6 +14,7 @@ import 'state.dart';
 import 'ui/theme.dart';
 import 'ui/widgets.dart';
 import 'version.dart';
+import 'waiter/waiter_shell.dart';
 
 // Версия для экранов «Ещё» / профиля — одна на приложение, в version.dart.
 export 'version.dart' show appVersion;
@@ -182,6 +183,8 @@ class _Gate extends StatelessWidget {
         ),
       );
     }
+    // Кафе: режим «Официант» — свои вкладки (Столы · Готово · Брони · Ещё).
+    if (st.waiterMode && st.canWaiter) return WaiterShell(key: ValueKey('waiter-${st.storeId}'));
     return const Shell();
   }
 }

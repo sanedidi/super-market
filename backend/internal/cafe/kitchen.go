@@ -253,8 +253,11 @@ type KitchenTicket struct {
 	ReadyAt     *time.Time    `json:"ready_at"`
 	CancelledAt *time.Time    `json:"cancelled_at"`
 	Items       []KitchenItem `json:"items"`
-	// Ждёт печати на кассе (отправка с телефона, цех без экрана).
-	PrintPending bool `json:"print_pending"`
+	// Ждёт печати на кассе (отправка с телефона, цех без экрана):
+	// send — бегунок (status waiting — «по команде, пока не готовить»),
+	// fire — «ПОДАВАТЬ».
+	PrintPending bool   `json:"print_pending"`
+	PrintKind    string `json:"print_kind"`
 }
 
 // KitchenOrder — заказ на экране кухни: бегунки всех цехов (экран цеха
@@ -338,7 +341,7 @@ func loadOrders(ctx context.Context, q db.Querier, storeID, where string, args .
 	rows, err := q.Query(ctx, `
 		SELECT t.id, t.order_key, COALESCE(t.sale_id::text, ''), t.bill_id, t.table_label, t.waiter_name, t.workshop_id,
 		       t.order_no, t.order_type, t.status, t.cook_minutes, t.cashier_name,
-		       t.paid_at, t.started_at, t.ready_at, t.cancelled_at, t.print_pending
+		       t.paid_at, t.started_at, t.ready_at, t.cancelled_at, t.print_pending, t.print_kind
 		FROM kitchen_tickets t
 		WHERE t.store_id = $1 AND t.order_key IN (SELECT t.order_key FROM kitchen_tickets t WHERE t.store_id = $1 AND (`+where+`))
 		ORDER BY t.paid_at, t.order_key, t.workshop_id NULLS FIRST`, all...)
@@ -354,7 +357,7 @@ func loadOrders(ctx context.Context, q db.Querier, storeID, where string, args .
 		var t KitchenTicket
 		var o KitchenOrder
 		if err := rows.Scan(&t.ID, &o.ID, &o.SaleID, &o.BillID, &o.TableLabel, &o.Waiter, &t.WorkshopID, &o.OrderNo, &o.OrderType,
-			&t.Status, &t.CookMinutes, &o.Cashier, &o.PaidAt, &t.StartedAt, &t.ReadyAt, &t.CancelledAt, &t.PrintPending); err != nil {
+			&t.Status, &t.CookMinutes, &o.Cashier, &o.PaidAt, &t.StartedAt, &t.ReadyAt, &t.CancelledAt, &t.PrintPending, &t.PrintKind); err != nil {
 			return nil, err
 		}
 		t.Items = []KitchenItem{}

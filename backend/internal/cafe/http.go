@@ -99,7 +99,7 @@ func (m *Module) waiterOp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) waiterMenu(w http.ResponseWriter, r *http.Request) {
-	httpx.Respond(w, r, m.log, http.StatusOK, func() (*PosMenu, error) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (WaiterMenu, error) {
 		return m.svc.WaiterMenu(r.Context(), pr(r), storeParam(r))
 	})
 }

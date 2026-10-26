@@ -1250,8 +1250,14 @@ func TestCafeWaiter(t *testing.T) {
 		t.Fatalf("hall = %v", hall.Body)
 	}
 	menu := a.expect(a.do("GET", "/store/cafe/waiter/menu?store_id="+store, azizTok, nil), 200, "menu")
-	if len(menu.Body["dishes"].([]any)) != 2 || menu.str("mode") != "tables" {
+	if len(menu.Body["dishes"].([]any)) != 2 || menu.str("mode") != "tables" || len(menu.Body["items"].([]any)) != 2 {
 		t.Fatalf("menu = %v", menu.Body)
+	}
+	for _, x := range menu.Body["items"].([]any) {
+		it := x.(map[string]any)
+		if (it["product_id"] == plov && (it["name"] != "Плов" || it["price"] != "35000.00")) || (it["product_id"] == tea && it["price"] != "6000.00") {
+			t.Fatalf("menu item = %v", it)
+		}
 	}
 	ws := a.expect(a.do("GET", "/store/cafe/waiter/waiters", azizTok, nil), 200, "waiters").items()
 	if len(ws) != 3 { // владелец + два официанта
@@ -1289,9 +1295,9 @@ func TestCafeWaiter(t *testing.T) {
 
 	// Азиз открывает стол 1 — стол его (О5); стол 2 — кассир на Дилнозу (push ей).
 	b1, b2 := "11111111-0000-4000-8000-000000000001", "11111111-0000-4000-8000-000000000002"
-	open := map[string]any{"id": uid(), "bill_id": b1, "kind": "open", "table_id": tid["1"], "guests": 3}
+	open := map[string]any{"id": uid(), "bill_id": b1, "kind": "open", "table_id": tid["1"], "guests": 3, "comment": " детский стул "}
 	bill := op(azizTok, open, 200, "open")
-	if bill.str("waiter_id") != aziz || bill.Body["mine"] != true || bill.Body["guests"].(float64) != 3 {
+	if bill.str("waiter_id") != aziz || bill.Body["mine"] != true || bill.Body["guests"].(float64) != 3 || bill.str("comment") != "детский стул" {
 		t.Fatalf("bill = %v", bill.Body)
 	}
 	op(azizTok, open, 200, "open again")
@@ -1359,7 +1365,8 @@ func TestCafeWaiter(t *testing.T) {
 	for _, o := range pr {
 		for _, x := range o.(map[string]any)["tickets"].([]any) {
 			tk := x.(map[string]any)
-			if tk["print_pending"] != true || tk["status"] != "served" {
+			// Плов — сразу (выдан, печатает касса), чай — «по команде» (ждёт).
+			if tk["print_pending"] != true || tk["print_kind"] != "send" || (tk["status"] != "served" && tk["status"] != "waiting") {
 				t.Fatalf("print ticket = %v", tk)
 			}
 			ticketIDs = append(ticketIDs, tk["id"].(string))
@@ -1372,7 +1379,33 @@ func TestCafeWaiter(t *testing.T) {
 	if st = a.expect(posDo(a, "GET", "/pos/kitchen/status", posTok, owner, nil), 200, "status 2"); len(st.Body["print"].([]any)) != 0 {
 		t.Fatalf("print after = %v", st.Body["print"])
 	}
+	// Без экрана «по команде» всё равно ждёт команды — у официанта виден «Подать горячее».
+	bill = a.expect(a.do("GET", "/store/cafe/waiter/hall", azizTok, nil), 200, "hall waiting")
+	waitingSeen := false
+	for _, x := range bill.Body["bills"].([]any) {
+		if bb := x.(map[string]any); bb["id"] == b1 {
+			for _, y := range bb["items"].([]any) {
+				if it := y.(map[string]any); it["id"] == teaItem && it["kitchen"] == "waiting" {
+					waitingSeen = true
+				}
+			}
+		}
+	}
+	if !waitingSeen {
+		t.Fatalf("tea not waiting: %v", bill.Body["bills"])
+	}
 	op(azizTok, map[string]any{"bill_id": b1, "kind": "fire"}, 200, "fire")
+	// «ПОДАВАТЬ» — снова в очередь печати кассы.
+	st = a.expect(posDo(a, "GET", "/pos/kitchen/status", posTok, owner, nil), 200, "status fire")
+	pr = st.Body["print"].([]any)
+	if len(pr) != 1 {
+		t.Fatalf("print fire = %v", pr)
+	}
+	fireTk := pr[0].(map[string]any)["tickets"].([]any)
+	if len(fireTk) != 1 || fireTk[0].(map[string]any)["print_kind"] != "fire" || fireTk[0].(map[string]any)["status"] != "served" {
+		t.Fatalf("fire ticket = %v", fireTk)
+	}
+	a.expect(posDo(a, "POST", "/pos/kitchen/printed", posTok, owner, map[string]any{"ticket_ids": []string{fireTk[0].(map[string]any)["id"].(string)}}), 200, "printed fire")
 	bill = op(azizTok, map[string]any{"bill_id": b1, "kind": "serve", "item_id": plovItem}, 200, "serve")
 	for _, x := range bill.Body["items"].([]any) {
 		it := x.(map[string]any)

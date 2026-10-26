@@ -367,6 +367,7 @@ type Bill struct {
 	WaiterID       *string    `json:"waiter_id"`
 	WaiterName     string     `json:"waiter_name"`
 	Guests         int        `json:"guests"`
+	Comment        string     `json:"comment"`
 	Status         string     `json:"status"`
 	ServicePercent string     `json:"service_percent"`
 	PrecheckAt     *time.Time `json:"precheck_at"`
@@ -397,7 +398,7 @@ const transferTTL = 3 * time.Minute
 
 const billSelect = `
 	SELECT b.id, b.table_id, COALESCE(t.number, ''), COALESCE(loc(h.name, h.name_uz), ''), b.waiter_id, COALESCE(e.full_name, ''),
-	       b.guests, b.status, trim_scale(b.service_percent)::text, b.precheck_at, b.version, b.opened_at,
+	       b.guests, b.comment, b.status, trim_scale(b.service_percent)::text, b.precheck_at, b.version, b.opened_at,
 	       COALESCE((SELECT sum(sa.total) FROM sales sa WHERE sa.bill_id = b.id), 0)::numeric(14,2)::text,
 	       CASE WHEN b.transfer_at > now() - interval '3 minutes' THEN b.transfer_to END,
 	       CASE WHEN b.transfer_at > now() - interval '3 minutes' THEN COALESCE(tt.full_name, '') ELSE '' END,
@@ -419,7 +420,7 @@ func loadBills(ctx context.Context, q db.Querier, where string, args ...any) ([]
 	}
 	bills, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Bill, error) {
 		var b Bill
-		err := r.Scan(&b.ID, &b.TableID, &b.TableNumber, &b.HallName, &b.WaiterID, &b.WaiterName, &b.Guests, &b.Status,
+		err := r.Scan(&b.ID, &b.TableID, &b.TableNumber, &b.HallName, &b.WaiterID, &b.WaiterName, &b.Guests, &b.Comment, &b.Status,
 			&b.ServicePercent, &b.PrecheckAt, &b.Version, &b.OpenedAt, &b.Paid,
 			&b.TransferTo, &b.TransferToName, &b.TransferFrom, &b.TransferFromName, &b.TransferReason, &b.TransferAt)
 		b.Items = []BillItem{}
@@ -583,6 +584,7 @@ type BillOp struct {
 	TableID  *string `json:"table_id"`
 	Guests   *int    `json:"guests"`
 	WaiterID *string `json:"waiter_id"`
+	Comment  string  `json:"comment"`
 	// add
 	Item *BillItemInput `json:"item"`
 	// update, remove, cancel
@@ -786,15 +788,19 @@ func openBill(ctx context.Context, tx pgx.Tx, p *identity.Principal, storeID str
 			waiter = op.WaiterID
 		}
 	}
+	comment := strings.TrimSpace(op.Comment)
+	if len([]rune(comment)) > 200 {
+		return nil, apperr.Validation("comment: до 200 символов").Uz("comment: 200 belgigacha")
+	}
 	pct := "0"
 	if service {
 		if err := tx.QueryRow(ctx, `SELECT service_percent::text FROM networks WHERE id = $1`, p.NetworkID).Scan(&pct); err != nil {
 			return nil, err
 		}
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO bills (id, network_id, store_id, table_id, waiter_id, guests, service_percent, opened_at, opened_by, device_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7::numeric, $8, NULLIF($9, '')::uuid, NULLIF($10, '')::uuid)`,
-		op.BillID, p.NetworkID, storeID, *op.TableID, waiter, guests, pct, at, p.EmployeeID, p.DeviceID)
+	_, err = tx.Exec(ctx, `INSERT INTO bills (id, network_id, store_id, table_id, waiter_id, guests, service_percent, opened_at, opened_by, device_id, comment)
+		VALUES ($1, $2, $3, $4, $5, $6, $7::numeric, $8, NULLIF($9, '')::uuid, NULLIF($10, '')::uuid, $11)`,
+		op.BillID, p.NetworkID, storeID, *op.TableID, waiter, guests, pct, at, p.EmployeeID, p.DeviceID, comment)
 	if db.IsUniqueViolation(err, "bills_table_open_key") {
 		return nil, apperr.Conflict("table_busy", "стол "+number+" уже открыт на другой кассе").Uz(number + "-stol boshqa kassada ochilgan")
 	}
@@ -891,13 +897,41 @@ func applyOp(ctx context.Context, tx pgx.Tx, p *identity.Principal, storeID stri
 		return "", sendToKitchen(ctx, tx, p, storeID, op.BillID)
 	case "fire":
 		// «Подать горячее»: блюда «по команде» — в работу, таймер с этой минуты.
-		tag, err := tx.Exec(ctx, `UPDATE kitchen_tickets SET status = 'new', paid_at = now() WHERE bill_id = $1 AND status = 'waiting'`, op.BillID)
+		// Цех без экрана: бегунок «ПОДАВАТЬ» печатает касса (с телефона — по
+		// очереди печати), бегунок считается выданным.
+		screens, all, err := kitchenScreens(ctx, tx, storeID)
 		if err != nil {
 			return "", err
 		}
-		if tag.RowsAffected() > 0 {
-			_, err = tx.Exec(ctx, `UPDATE bill_items SET course = 'now' WHERE bill_id = $1 AND course = 'later' AND status = 'sent'`, op.BillID)
+		rows, err := tx.Query(ctx, `SELECT id, workshop_id FROM kitchen_tickets WHERE bill_id = $1 AND status = 'waiting' FOR UPDATE`, op.BillID)
+		if err != nil {
+			return "", err
 		}
+		type waitingTicket struct {
+			id       string
+			workshop *string
+		}
+		list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (waitingTicket, error) {
+			var t waitingTicket
+			err := r.Scan(&t.id, &t.workshop)
+			return t, err
+		})
+		if err != nil || len(list) == 0 {
+			return "", err
+		}
+		for _, t := range list {
+			screen := all || (t.workshop != nil && screens[*t.workshop])
+			if screen {
+				_, err = tx.Exec(ctx, `UPDATE kitchen_tickets SET status = 'new', paid_at = now() WHERE id = $1`, t.id)
+			} else {
+				_, err = tx.Exec(ctx, `UPDATE kitchen_tickets SET status = 'served', paid_at = now(), served_at = now(),
+					print_pending = $2, print_kind = 'fire' WHERE id = $1`, t.id, p.DeviceID == "")
+			}
+			if err != nil {
+				return "", err
+			}
+		}
+		_, err = tx.Exec(ctx, `UPDATE bill_items SET course = 'now' WHERE bill_id = $1 AND course = 'later' AND status = 'sent'`, op.BillID)
 		return "", err
 	case "cancel":
 		return "", cancelItem(ctx, tx, p, storeID, op)
@@ -1082,16 +1116,18 @@ func sendToKitchen(ctx context.Context, tx pgx.Tx, p *identity.Principal, storeI
 		delete(batches, "later")
 	}
 	for _, g := range groups {
+		// Цех без экрана: бегунок печатает касса и сразу считает его выданным.
+		// «По команде» ждёт команды и без экрана — «Подать горячее» печатает
+		// «ПОДАВАТЬ». Отправка с кассы печатает сама; с телефона официанта —
+		// касса узнаёт из /pos/kitchen/status.
+		screen := all || (g.workshopID != nil && screens[*g.workshopID])
 		status := "served"
-		if all || (g.workshopID != nil && screens[*g.workshopID]) {
+		if g.course == "later" {
+			status = "waiting"
+		} else if screen {
 			status = "new"
-			if g.course == "later" {
-				status = "waiting"
-			}
 		}
-		// Цех без экрана: бегунок печатает касса. Отправка с кассы печатает
-		// сама; с телефона официанта — касса узнаёт из /pos/kitchen/status.
-		printPending := status == "served" && p.DeviceID == ""
+		printPending := !screen && p.DeviceID == ""
 		b := batches[g.course]
 		var ticketID string
 		err := tx.QueryRow(ctx, `

@@ -12,6 +12,7 @@ import '../core/journal.dart';
 import '../core/money.dart';
 import '../printer/escpos.dart';
 import 'bills.dart';
+import 'kitchen_board.dart' show KOrder, KTicket, qtyText;
 import 'menu.dart';
 
 String _hm(DateTime d) {
@@ -155,6 +156,50 @@ Uint8List tableTicket({
   } else if (!later) {
     final ready = at.add(Duration(minutes: workshop.cookMinutes));
     p.line(tr('Норма: ${workshop.cookMinutes} мин → к ${_hm(ready)}', 'Meʼyor: ${workshop.cookMinutes} daq → ${_hm(ready)} gacha'));
+  }
+  p.feed(3).cut();
+  return p.bytes();
+}
+
+/// Бегунок, отправленный с телефона официанта в цех без экрана: касса
+/// получает его из /pos/kitchen/status и печатает. [fire] — «ПОДАВАТЬ».
+Uint8List phoneTicket({
+  required PosSettings s,
+  required KOrder order,
+  required KTicket ticket,
+  required CafeWorkshop workshop,
+  required DateTime at,
+  bool fire = false,
+  int paperMm = 80,
+  int codePage = 17,
+}) {
+  final p = EscPos(paperMm: paperMm, codePage: codePage);
+  p.init().align(PrintAlign.center).bold(true).line(workshop.name.toUpperCase());
+  p.size(2, 2).line(tr('СТОЛ ${order.tableLabel}', '${order.tableLabel}-STOL')).size(1, 1);
+  final later = !fire && ticket.status == 'waiting';
+  if (fire) {
+    p.size(2, 1).line(tr('*** ПОДАВАТЬ ***', '*** BERISH ***')).size(1, 1);
+  } else if (later) {
+    p.line(tr('*** ПО КОМАНДЕ — ПОКА НЕ ГОТОВИТЬ ***', '*** BUYRUQ BOʻYICHA — HOZIR TAYYORLAMANG ***'));
+  }
+  p.bold(false);
+  p.line(_hm(at));
+  if (order.waiter.isNotEmpty) p.line(tr('Официант: ${order.waiter}', 'Ofitsiant: ${order.waiter}'));
+  p.align(PrintAlign.left).dashes();
+  for (final i in ticket.items) {
+    final q = i.qty - i.cancelled;
+    if (q <= 0) continue;
+    p.bold(true).size(1, 2).wrapped('${qtyText(q)} x ${i.name.toUpperCase()}').size(1, 1).bold(false);
+    for (final m in i.mods) {
+      final name = '${m.name}${m.qty > 1 ? ' x${m.qty}' : ''}';
+      p.wrapped(m.action == 'remove' ? '    !! ${name.toUpperCase()} !!' : '    $name');
+    }
+    if (i.note.isNotEmpty) p.wrapped('    » ${i.note}');
+  }
+  p.dashes();
+  if (!later) {
+    final ready = at.add(Duration(minutes: ticket.cookMinutes));
+    p.line(tr('Норма: ${ticket.cookMinutes} мин → к ${_hm(ready)}', 'Meʼyor: ${ticket.cookMinutes} daq → ${_hm(ready)} gacha'));
   }
   p.feed(3).cut();
   return p.bytes();

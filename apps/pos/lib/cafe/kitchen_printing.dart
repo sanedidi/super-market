@@ -17,6 +17,7 @@ import '../data/api.dart';
 import '../data/store.dart';
 import '../printer/transport.dart';
 import 'bills.dart';
+import 'kitchen_board.dart' show KOrder;
 import 'menu.dart';
 import 'tickets.dart';
 
@@ -57,6 +58,10 @@ class KitchenPrinting {
   /// Тесты печати, уже напечатанные: цех → время запроса.
   final Map<String, String> _testsDone = {};
 
+  /// Бегунки с телефона официанта, уже напечатанные («id:send», «id:fire»):
+  /// сервер узнаёт о них следующим запросом, если ответ «напечатано» потерялся.
+  final List<String> _phoneDone = [];
+
   bool _busy = false;
 
   static const _file = 'kitchen_queue.json';
@@ -69,11 +74,15 @@ class KitchenPrinting {
       if (p != null) _queue.add(p);
     }
     (j?['tests'] as Map<String, dynamic>?)?.forEach((k, v) => _testsDone[k] = '$v');
+    for (final e in (j?['phone'] as List?) ?? const []) {
+      _phoneDone.add('$e');
+    }
   }
 
   Future<void> _save() => store.writeJson(_file, {
         'queue': [for (final p in _queue) p.toJson()],
         'tests': _testsDone,
+        'phone': _phoneDone.length > 300 ? _phoneDone.sublist(_phoneDone.length - 300) : _phoneDone,
       });
 
   int pendingFor(String workshopId) => _queue.where((p) => p.workshopId == workshopId).length;
@@ -227,6 +236,55 @@ class KitchenPrinting {
     }
   }
 
+  /// Бегунки, отправленные официантом с телефона в цех без экрана: печатаем
+  /// и сообщаем серверу. Принтер кассы не ответил — повтор в следующий раз;
+  /// принтер цеха по сети — в очередь цеха (как обычные бегунки).
+  Future<void> _printPhone(Catalog cat, CafeMenu menu, List<Map<String, dynamic>> orders) async {
+    if (orders.isEmpty) return;
+    final own = printer();
+    final done = <String>[];
+    for (final o in orders) {
+      final order = KOrder.fromJson(o);
+      final raw = ((o['tickets'] as List?) ?? const []).cast<Map<String, dynamic>>();
+      for (var k = 0; k < raw.length && k < order.tickets.length; k++) {
+        final t = order.tickets[k];
+        final fire = raw[k]['print_kind'] == 'fire';
+        final key = '${t.id}:${fire ? 'fire' : 'send'}';
+        if (_phoneDone.contains(key)) {
+          done.add(t.id);
+          continue;
+        }
+        final w = menu.workshop(t.workshopId);
+        if (w == null || w.id != t.workshopId || w.ticketPrint == 'never') {
+          done.add(t.id);
+          continue;
+        }
+        final target = _target(w);
+        if (!target.enabled) {
+          done.add(t.id);
+          continue;
+        }
+        final bytes = phoneTicket(s: cat.settings, order: order, ticket: t, workshop: w, at: DateTime.now(), fire: fire, paperMm: target.paperMm, codePage: target.codePage);
+        if (w.networkPrinter) {
+          await _sendNetwork(w, bytes);
+        } else if (own.enabled) {
+          try {
+            await sendToPrinter(own, bytes);
+          } catch (_) {
+            continue; // принтер кассы не ответил — повторим следующим tick
+          }
+        }
+        _phoneDone.add(key);
+        done.add(t.id);
+      }
+    }
+    await _save();
+    if (done.isEmpty) return;
+    try {
+      await api.post('/pos/kitchen/printed', {'ticket_ids': done});
+    } catch (_) {}
+  }
+
   /// Раз в синхронизацию: экраны кухни, тесты печати из панели, очередь и
   /// отчёт о принтерах. Без связи — экраны неизвестны (печатаем бегунки).
   Future<void> tick() async {
@@ -259,6 +317,7 @@ class KitchenPrinting {
         }
       }
     }
+    if (st != null) await _printPhone(cat, menu, ((st['print'] as List?) ?? const []).cast<Map<String, dynamic>>());
     await retry();
     if (_report.isNotEmpty && st != null) {
       final body = [

@@ -27,6 +27,10 @@ class StoreState extends ChangeNotifier {
   bool _wasIn = false;
 
   static const _storeKey = 'sm_store_selected';
+  static const _waiterKey = 'sm_waiter_mode';
+
+  /// Режим «Официант» (кафе): столы и заказы вместо магазина.
+  bool waiterMode = false;
 
   void _onAuth() {
     if (api.loggedIn && !_wasIn) {
@@ -38,6 +42,7 @@ class StoreState extends ChangeNotifier {
       stores = const [];
       storeId = null;
       setup = null;
+      waiterMode = false;
       mustChangePassword = false;
       notifyListeners();
     }
@@ -63,6 +68,10 @@ class StoreState extends ChangeNotifier {
         }
       }
       final prefs = await SharedPreferences.getInstance();
+      // Официант кафе без других прав — сразу в режим «Официант»; остальные
+      // переключаются в «Ещё» (выбор запоминается на телефоне).
+      final savedMode = prefs.getBool(_waiterKey);
+      waiterMode = canWaiter && (savedMode ?? onlyWaiter);
       final saved = prefs.getString(_storeKey);
       storeId = stores.any((s) => s['id'] == saved) ? saved : (stores.isEmpty ? null : stores.first['id'] as String);
     } catch (e) {
@@ -85,6 +94,27 @@ class StoreState extends ChangeNotifier {
       if (s['id'] == storeId) return s;
     }
     return null;
+  }
+
+  /// Сеть работает как кафе (тип бизнеса из супер-админа).
+  bool get isCafe => (me?['network'] as Map<String, dynamic>?)?['business_type'] == 'cafe';
+
+  /// Может работать официантом: кафе и право cafe.waiter (у владельца — все).
+  bool get canWaiter => isCafe && can('cafe.waiter');
+
+  /// Только официант: других прав, кроме кассы, нет — режим магазина не нужен.
+  bool get onlyWaiter {
+    if (!canWaiter || me?['is_owner'] == true) return false;
+    const waiterish = {'cafe.waiter', 'sales.pos', 'sales.discount', 'sales.return', 'debts.give'};
+    final perms = (me?['permissions'] as List?) ?? const [];
+    return perms.every((p) => waiterish.contains(p));
+  }
+
+  Future<void> setWaiterMode(bool on) async {
+    waiterMode = on && canWaiter;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_waiterKey, waiterMode);
   }
 
   String get networkName => '${(me?['network'] as Map<String, dynamic>?)?['name'] ?? ''}';
