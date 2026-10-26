@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
@@ -354,4 +355,115 @@ class Wordmark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Text('Super Market', maxLines: 1, softWrap: false, style: tb(size, c: color, h: 1));
+}
+
+/// Кнопки «−» N «+» прямо в строке чека (Figma «Касса · Кол-во в строке чека»).
+/// Кнопки [size]×[size] с зазором под число между ними — палец не перескакивает
+/// на соседнюю. Нажатая — красная; `null` в [onMinus]/[onPlus] — неактивна.
+/// Удержание ≥ 400 мс — автоповтор каждые 150 мс.
+class QtyStepper extends StatelessWidget {
+  const QtyStepper({
+    super.key,
+    required this.value,
+    required this.onMinus,
+    required this.onPlus,
+    this.size = 44,
+    this.width = 150,
+    this.fontSize = 18,
+  });
+
+  final String value;
+  final VoidCallback? onMinus;
+  final VoidCallback? onPlus;
+  final double size;
+  final double width;
+  final double fontSize;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: width,
+        height: size,
+        child: Row(children: [
+          _StepButton('−', size: size, onTap: onMinus),
+          Expanded(child: FitText(value, textAlign: TextAlign.center, style: t(fontSize, w: FontWeight.w600))),
+          _StepButton('+', size: size, onTap: onPlus),
+        ]),
+      );
+}
+
+class _StepButton extends StatefulWidget {
+  const _StepButton(this.symbol, {required this.size, required this.onTap});
+
+  final String symbol;
+  final double size;
+  final VoidCallback? onTap;
+
+  @override
+  State<_StepButton> createState() => _StepButtonState();
+}
+
+class _StepButtonState extends State<_StepButton> {
+  bool _pressed = false;
+  Timer? _repeat;
+
+  void _down(TapDownDetails _) => setState(() => _pressed = true);
+
+  void _up() {
+    _repeat?.cancel();
+    _repeat = null;
+    if (mounted && _pressed) setState(() => _pressed = false);
+  }
+
+  void _hold(LongPressStartDetails _) {
+    // Долгое нажатие отменяет обычный tap — срабатываем сами и повторяем.
+    setState(() => _pressed = true);
+    widget.onTap?.call();
+    _repeat?.cancel();
+    _repeat = Timer.periodic(const Duration(milliseconds: 150), (_) {
+      if (widget.onTap == null) {
+        _up();
+        return;
+      }
+      widget.onTap!();
+    });
+  }
+
+  @override
+  void dispose() {
+    _repeat?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.onTap != null;
+    final bg = _pressed && enabled ? C.brand : C.surface;
+    final fg = !enabled
+        ? C.border
+        : _pressed
+            ? Colors.white
+            : C.tp;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: enabled ? _down : null,
+      onTapUp: enabled ? (_) => _up() : null,
+      onTapCancel: enabled ? _up : null,
+      onTap: widget.onTap,
+      onLongPressStart: enabled ? _hold : null,
+      onLongPressEnd: enabled ? (_) => _up() : null,
+      onLongPressCancel: enabled ? _up : null,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 80),
+        width: widget.size,
+        height: widget.size,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: enabled ? (_pressed ? C.brand : C.border) : C.subtle),
+        ),
+        child: Text(widget.symbol, style: t(widget.size * 0.5, w: FontWeight.w600, c: fg, h: 1)),
+      ),
+    );
+  }
 }

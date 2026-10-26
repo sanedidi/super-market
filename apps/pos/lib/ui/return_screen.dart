@@ -364,20 +364,43 @@ class _ReturnScreenState extends State<ReturnScreen> {
               child: FitText('${it['product_name']}', maxLines: 2, style: t(15, w: FontWeight.w500, c: left == 0 ? C.td : C.tp)),
             ),
           ),
-          SizedBox(
-            width: d == Density.s ? 150 : 190,
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(color: r > 0 ? C.brandSoft : C.keyBg, borderRadius: BorderRadius.circular(6)),
-                child: FitText(
-                  left == 0 ? tr('уже возвращено', 'allaqachon qaytarilgan') : tr('${fmtQty(r)} из ${fmtQty(left)}', '${fmtQty(left)} dan ${fmtQty(r)}'),
-                  textAlign: TextAlign.center,
-                  style: t(13, w: FontWeight.w600, c: r > 0 ? C.brand : C.ts),
+          if (left > 0 && left % 1000 == 0)
+            // Штучный товар: − / + в строке, как на экране продажи.
+            QtyStepper(
+              value: tr('${fmtQty(r)} из ${fmtQty(left)}', '${fmtQty(left)} dan ${fmtQty(r)}'),
+              size: d == Density.s ? 36 : 40,
+              width: d == Density.s ? 150 : 190,
+              fontSize: 14,
+              onMinus: r > 0
+                  ? () => setState(() {
+                        _row = i;
+                        _error = null;
+                        _ret[i] = r - 1000;
+                      })
+                  : null,
+              onPlus: r < left
+                  ? () => setState(() {
+                        _row = i;
+                        _error = null;
+                        _ret[i] = r + 1000;
+                      })
+                  : null,
+            )
+          else
+            SizedBox(
+              width: d == Density.s ? 150 : 190,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(color: r > 0 ? C.brandSoft : C.keyBg, borderRadius: BorderRadius.circular(6)),
+                  child: FitText(
+                    left == 0 ? tr('уже возвращено', 'allaqachon qaytarilgan') : tr('${fmtQty(r)} из ${fmtQty(left)}', '${fmtQty(left)} dan ${fmtQty(r)}'),
+                    textAlign: TextAlign.center,
+                    style: t(13, w: FontWeight.w600, c: r > 0 ? C.brand : C.ts),
+                  ),
                 ),
               ),
             ),
-          ),
           if (d != Density.s) SizedBox(width: 100, child: Text(fmtMoney(parseMoney(it['price'])), textAlign: TextAlign.right, style: t(15, c: C.ts))),
           SizedBox(
             width: 110,

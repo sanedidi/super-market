@@ -699,9 +699,9 @@ class _Cols {
   final double index, code, qty, price, disc, sum;
 
   static _Cols of(Density d) => switch (d) {
-        Density.l => const _Cols(40, 96, 110, 120, 100, 130),
-        Density.m => const _Cols(36, 80, 96, 104, 84, 116),
-        Density.s => const _Cols(32, 0, 90, 96, 0, 110),
+        Density.l => const _Cols(40, 96, 150, 120, 100, 130),
+        Density.m => const _Cols(36, 80, 140, 104, 84, 116),
+        Density.s => const _Cols(32, 0, 130, 96, 0, 110),
       };
 }
 
@@ -837,7 +837,19 @@ class _LineRow extends StatelessWidget {
               child: FitText(name, maxLines: 2, style: t(size, w: selected ? FontWeight.w600 : FontWeight.w500)),
             ),
           ),
-          cell(p.fractional ? '${fmtQty(line.qty)} ${p.unit}' : fmtQty(line.qty), cols.qty, fw: FontWeight.w500),
+          if (enabled && !p.fractional && line.qty > 0)
+            // Кнопки − / + прямо в строке (Figma «Касса · Кол-во в строке чека»):
+            // при 1 «−» неактивна — строку удаляет только «Аннул.»; у маркированного
+            // «+» неактивна — каждую штуку сканируют. Сторно (кол-во < 0) — без кнопок.
+            QtyStepper(
+              value: fmtQty(line.qty),
+              size: d == Density.l ? 44 : 40,
+              width: cols.qty,
+              onMinus: line.qty > 1000 ? () => sale.step(line, -1) : null,
+              onPlus: p.marked ? null : () => sale.step(line, 1),
+            )
+          else
+            cell(p.fractional ? '${fmtQty(line.qty)} ${p.unit}' : fmtQty(line.qty), cols.qty, fw: FontWeight.w500),
           cell(fmtMoney(line.price), cols.price, c: C.t2),
           if (cols.disc > 0) cell(disc, cols.disc, c: line.hasDiscount ? C.error : C.td),
           cell(fmtMoney(line.total), cols.sum, fw: FontWeight.w700),
