@@ -271,7 +271,8 @@ func TestAssistantChat(t *testing.T) {
 		t.Fatalf("create = %v", m)
 	}
 	if req := fai.lastRequest(); !strings.Contains(req, `\"status\":201`) {
-		i := strings.Index(req, `"role":"tool"`); t.Fatalf("create via api: %s", req[max(0, i-50):min(len(req), i+700)])
+		i := strings.Index(req, `"role":"tool"`)
+		t.Fatalf("create via api: %s", req[max(0, i-50):min(len(req), i+700)])
 	}
 	cps := a.expect(a.do("GET", "/store/finance/counterparties?q=Абдуллаев", ownerTok, nil), 200, "counterparties").items()
 	if len(cps) != 1 {
