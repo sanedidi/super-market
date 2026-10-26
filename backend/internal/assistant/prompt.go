@@ -22,8 +22,13 @@ type promptContext struct {
 	Stores  []map[string]string `json:"stores,omitempty"`
 	Scan    *scanContext        `json:"current_scan,omitempty"`
 	Recent  []recentMessage     `json:"recent_messages"`
-	Message string              `json:"owner_message,omitempty"`
-	Hints   map[string]string   `json:"hints,omitempty"`
+	// DoneToday — что помощник уже сделал сегодня (журнал), чтобы не
+	// повторять и помнить длинный разговор.
+	DoneToday []string `json:"done_today,omitempty"`
+	// Aliases — как владелец называет товары: «kola → Coca-Cola 1,5 л».
+	Aliases []string          `json:"aliases,omitempty"`
+	Message string            `json:"owner_message,omitempty"`
+	Hints   map[string]string `json:"hints,omitempty"`
 }
 
 type scanContext struct {
@@ -92,6 +97,20 @@ func (s *Service) buildPrompt(ctx context.Context, p *identity.Principal, storeI
 		}
 	}
 	rows.Close()
+	if drows, err := s.pool.Query(ctx, `
+		SELECT to_char(created_at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') || ' ' || text FROM assistant_messages
+		WHERE store_id = $1 AND role = 'system'
+		  AND created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Tashkent') AT TIME ZONE 'Asia/Tashkent'
+		ORDER BY created_at DESC LIMIT 20`, storeID); err == nil {
+		for drows.Next() {
+			var line string
+			if drows.Scan(&line) == nil {
+				pc.DoneToday = append(pc.DoneToday, line)
+			}
+		}
+		drows.Close()
+	}
+	pc.Aliases = s.aliases(ctx, p.NetworkID)
 	if sc != nil && sc.Status == invoices.StatusReady {
 		c := &scanContext{ID: sc.ID, Supplier: sc.SupplierName, Number: sc.InvoiceNumber, Total: sc.LinesTotal, Lines: len(sc.Lines), Open: []scanLineContext{}}
 		if sc.CounterpartyName != nil {

@@ -74,3 +74,19 @@ func TestWhere(t *testing.T) {
 		t.Fatalf("empty = %s", got)
 	}
 }
+
+func TestTranslit(t *testing.T) {
+	for in, want := range map[string]string{"kola": "кола", "sut": "сут", "coca cola": "кока кола", "o'rik": "ўрик", "choy": "чой", "shakar": "шакар"} {
+		if got := Lat2Cyr(in); got != want {
+			t.Errorf("Lat2Cyr(%q) = %q, want %q", in, got, want)
+		}
+	}
+	for in, want := range map[string]string{"молоко": "moloko", "чай": "chay", "шоколад": "shokolad", "қатиқ": "qatiq"} {
+		if got := Cyr2Lat(in); got != want {
+			t.Errorf("Cyr2Lat(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if _, ok := otherScript("kola кола"); ok {
+		t.Error("mixed script must not be transliterated")
+	}
+}

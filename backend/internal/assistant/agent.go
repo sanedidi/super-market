@@ -47,6 +47,7 @@ const agentPrompt = `Ты — помощник Super Market: сервис учё
 Инструменты:
 - search_docs(query) — документация API панели (разделы). Вызывай, когда не уверен в пути, параметрах или формате тела.
 - list_routes(prefix) — список маршрутов /store/… (метод и путь). Пути с {id} — подставь id из данных.
+- find_products(queries) — найти товар по словам владельца сразу по нескольким вариантам; remember_alias(word, product_id) — запомнить, как владелец называет товар.
 - call_api(method, path, query, body, note) — запрос к API от имени владельца. Всегда передавай store_id (из контекста), если запрос про магазин. Ответ — статус и тело JSON. Длинные списки обрезаются: пользуйся фильтрами (q, status, limit, даты).
 
 Правила:
@@ -58,7 +59,7 @@ const agentPrompt = `Ты — помощник Super Market: сервис учё
 6. Если накладная в работе (current_scan), работай с ней через /store/invoice-scans/{id}/… и в ответе укажи scan_id — владелец увидит карточки строк с кнопками.
 7. Не больше 12 вызовов на одно сообщение. Не ходи по кругу.
 8. Приход без накладной. Если владелец сам называет товар и количество («7 blok kola keldi», «пришло 20 молока по 12 000») — НЕ проси накладную, а сделай ручной приход:
-   а) найди товар: GET /store/inventory/my-products?store_id=…&q=слово (в ответе product_id, unit_short, last_cost — прошлая цена закупки, pack — штук в блоке, warehouse_id — склад);
+   а) найди товар через find_products (правило 17); склад — warehouse_id из GET /store/inventory/my-products?store_id=…&limit=1;
    б) блоки → штуки: «7 блоков» = 7 × pack; pack не известен — спроси, сколько штук в блоке, и запомни ответ: PUT /store/inventory/my-products/{product_id}/pack {"pack": 6} с note «Запомнил: … — блок по 6»; цену не назвали — возьми last_cost, нет и её — спроси;
    в) поставщик: из сообщения; не назван — last_supplier товара из my-products (у кого брали в прошлый раз), иначе единственный в suppliers; не ясно — спроси кнопками;
    г) создай черновик: POST /store/inventory/documents {"type":"income","warehouse_id":…,"counterparty_id":…,"items":[{"product_id":…,"qty":"42","price":"7333"}]} с note «Черновик прихода: …»;
@@ -73,6 +74,7 @@ const agentPrompt = `Ты — помощник Super Market: сервис учё
 14. Ошибка в уже проведённом приходе («отмени», «там было не 7, а 70»): проведённый документ не правится и не отменяется — исправляй встречным документом: записали лишнее — списание (type "write_off", reason «ошибка прихода») или возврат поставщику; записали меньше — ещё один приход на разницу. Объясни владельцу, что сделаешь, создай черновик, провести — кнопкой.
 15. Возврат поставщику («верни 3 блока колы Абдуллаеву») — документ type "supplier_return" в /store/inventory/documents, провести — кнопкой. «Что заказать» — my-products со status=out и low (per_day, days_left): предложи количества на неделю (per_day × 7 − qty) таблицей; «составь заказ» — черновик прихода от этого поставщика с этими количествами (цены — last_cost), провести — когда товар привезут.
 16. done_today в контексте — что ты уже сделал сегодня: не повторяй и опирайся на это, если владелец ссылается на прошлое («тот приход», «как утром»).
+17. Владелец называет товары коротко и по-своему: «kola» — это Coca-Cola, «pepsi» — Pepsi, «sut» — молоко, «non» — хлеб, «tuxum» — яйца, «shakar» — сахар, «un» — мука, «guruch» — рис, «yog'» — масло, «choy» — чай, «suv» — вода, «go'sht» — мясо, «tovuq» — курица, «kartoshka» — картофель, «piyoz» — лук, «sabzi» — морковь, «pishloq» — сыр, «qatiq» — катык, «kolbasa» — колбаса, «sigaret» — сигареты. НИКОГДА не спрашивай «какой товар?», пока не поискал: вызови find_products с 3–6 вариантами (как сказал, кириллицей/латиницей, полным брендом, по-русски и по-узбекски). Сначала смотри aliases в контексте. Нашлось несколько (Coca-Cola 0,5 / 1 / 1,5 л) — следуй hint из ответа: бери самый ходовой или из прошлого прихода и скажи, какой взял, либо спроси кнопками с полными названиями. Когда владелец выбрал или подтвердил товар — remember_alias(его слово, product_id).
 
 Страницы панели для ссылок (href): главная «/», остатки «/stock/balance», приход «/purchases/income» и «/purchases/income/{document_id}», товары «/dirs/products», контрагенты «/dirs/counterparties», продажи «/sales/pos», цены «/sales/prices», долги «/debts», заказы «/orders», финансы «/finance/operations», отчёты «/reports/profit-loss», сотрудники «/settings/employees».
 
@@ -119,6 +121,11 @@ func tools() []ai.Tool {
 			Params: obj(map[string]any{"query": str("2–5 ключевых слов, например «приход документ строки» или «остатки склад»")}, "query")},
 		{Name: "list_routes", Description: "Маршруты API панели магазина (метод и путь) — все /store/… или по префиксу.",
 			Params: obj(map[string]any{"prefix": str("начало пути, например /store/inventory (пусто — все)")})},
+		{Name: "find_products", Description: "Найти товар по словам владельца сразу по нескольким вариантам названия: как он называл раньше, «Мои товары», потом база Super Market. Возвращает product_id, name, unit, qty, per_day, pack, last_cost, last_supplier, where (alias | mine | base).",
+			Params: obj(map[string]any{"queries": map[string]any{"type": "array", "items": map[string]any{"type": "string"},
+				"description": "2–6 вариантов: слово владельца как есть, другой письменностью, полным брендом, по-русски и по-узбекски — например [\"kola\", \"кола\", \"coca-cola\", \"cola\"] или [\"sut\", \"молоко\"]"}}, "queries")},
+		{Name: "remember_alias", Description: "Запомнить, как владелец называет товар («kola» → Coca-Cola 1,5 л): в следующий раз find_products вернёт его первым.",
+			Params: obj(map[string]any{"word": str("слово владельца, как он сказал"), "product_id": str("id выбранного товара")}, "word", "product_id")},
 		{Name: "call_api", Description: "Вызвать API панели от имени владельца. Чтение свободно; запись — с note; необратимое вернёт needs_confirmation и покажет владельцу кнопку.",
 			Params: obj(map[string]any{
 				"method": map[string]any{"type": "string", "enum": []string{"GET", "POST", "PUT", "PATCH", "DELETE"}},
@@ -294,6 +301,21 @@ func (s *Service) runTool(ctx context.Context, st *agentState, call ai.ToolCall)
 		return searchDocs(argStr(call.Args, "query"), maxToolOutput)
 	case "list_routes":
 		return s.listRoutes(argStr(call.Args, "prefix"))
+	case "find_products":
+		qs := []string{}
+		if raw, ok := call.Args["queries"].([]any); ok {
+			for _, q := range raw {
+				if v, ok := q.(string); ok {
+					qs = append(qs, v)
+				}
+			}
+		}
+		if q := argStr(call.Args, "query"); q != "" {
+			qs = append(qs, q)
+		}
+		return s.findProducts(ctx, st, qs)
+	case "remember_alias":
+		return s.rememberAlias(ctx, st, argStr(call.Args, "word"), argStr(call.Args, "product_id"))
 	case "call_api":
 		return s.toolCallAPI(ctx, st, call.Args)
 	}

@@ -352,6 +352,30 @@ func TestAssistantChat(t *testing.T) {
 		t.Fatalf("doc = %v", d.Body)
 	}
 
+	// «kola» (латиницей) находит Coca-Cola: поиск пробует другую письменность («кола»).
+	if mp := a.expect(a.do("GET", "/store/inventory/my-products?store_id="+storeID+"&q=kola", ownerTok, nil), 200, "kola").items(); len(mp) != 1 || mp[0]["name"] != "Coca-Cola 1,5 л" {
+		t.Fatalf("kola = %v", mp)
+	}
+	// find_products по вариантам + remember_alias → в следующий раз alias первым и в контексте.
+	fai.play(
+		fakeTurn{tool: "find_products", args: map[string]any{"queries": []string{"kola", "кола", "coca-cola"}}},
+		fakeTurn{tool: "remember_alias", args: map[string]any{"word": "Kola", "product_id": cola}},
+		fakeTurn{text: `{"reply":"Это Coca-Cola 1,5 л.","lang":"uz"}`},
+	)
+	send(map[string]any{"text": "kola qancha qoldi"})
+	if req := fai.lastRequest(); !strings.Contains(req, "Coca-Cola 1,5 л") || !strings.Contains(req, `\"where\":\"mine\"`) || !strings.Contains(req, `{\"ok\": true}`) {
+		t.Fatalf("find_products/remember_alias: %s", req[max(0, len(req)-3000):])
+	}
+	fai.play(
+		fakeTurn{tool: "find_products", args: map[string]any{"queries": []string{"KOLA"}}},
+		fakeTurn{text: `{"reply":"ок","lang":"uz"}`},
+	)
+	send(map[string]any{"text": "kola"})
+	aliasReq := fai.lastRequest()
+	if !strings.Contains(aliasReq, `kola → Coca-Cola 1,5 л`) || !strings.Contains(aliasReq, `\"where\":\"alias\"`) {
+		t.Fatalf("alias not used: %s", aliasReq[max(0, len(aliasReq)-3000):])
+	}
+
 	// Фото товара, которого нет в базе: Super Market заполняет карточку, товар
 	// добавляется в «Мои товары», помощник продолжает разговор.
 	food := a.expect(a.do("POST", "/admin/catalog/categories", adminTok, map[string]any{"name": "Еда"}), 201, "section").str("id")

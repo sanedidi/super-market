@@ -149,8 +149,15 @@ func Filter(p, raw string, args *[]any) string {
 		return "true"
 	}
 	conds := []string{}
-	if t := Text(raw); !t.Empty() {
-		conds = append(conds, fmt.Sprintf("EXISTS (SELECT 1 FROM product_search s WHERE s.product_id = %s.id AND %s)", p, t.Where("s", args)))
+	text := Text(raw)
+	if !text.Empty() {
+		conds = append(conds, fmt.Sprintf("EXISTS (SELECT 1 FROM product_search s WHERE s.product_id = %s.id AND %s)", p, text.Where("s", args)))
+	}
+	// И в другой письменности: «kola» находит «Coca-Cola» (через «кола»).
+	if alt, ok := otherScript(raw); ok {
+		if t := Text(alt); !t.Empty() && t.phrase() != text.phrase() {
+			conds = append(conds, fmt.Sprintf("EXISTS (SELECT 1 FROM product_search s WHERE s.product_id = %s.id AND %s)", p, t.Where("s", args)))
+		}
 	}
 	if LooksLikeBarcode(raw) {
 		conds = append(conds, fmt.Sprintf("EXISTS (SELECT 1 FROM product_barcodes pb WHERE pb.product_id = %s.id AND pb.barcode = %s)", p, arg(args, raw)))
@@ -227,6 +234,13 @@ func resolve(ctx context.Context, q db.Querier, raw string, sc Scope) (Match, er
 		cands = append(cands, text)
 	}
 	if alt, ok := SwapLayout(raw); ok {
+		if t := Text(alt); !t.Empty() && t.phrase() != text.phrase() {
+			cands = append(cands, t)
+		}
+	}
+	// Та же речь в другой письменности: «kola» → «кола» (у «Coca-Cola» в
+	// search_text есть «кока кола»).
+	if alt, ok := otherScript(raw); ok {
 		if t := Text(alt); !t.Empty() && t.phrase() != text.phrase() {
 			cands = append(cands, t)
 		}
