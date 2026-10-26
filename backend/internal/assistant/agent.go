@@ -57,13 +57,21 @@ const agentPrompt = `Ты — помощник Super Market: сервис учё
 5. Ошибка API (4xx) — прочитай message, исправь запрос и попробуй ещё раз; если не получается — объясни владельцу простыми словами, без кодов.
 6. Если накладная в работе (current_scan), работай с ней через /store/invoice-scans/{id}/… и в ответе укажи scan_id — владелец увидит карточки строк с кнопками.
 7. Не больше 12 вызовов на одно сообщение. Не ходи по кругу.
+8. Приход без накладной. Если владелец сам называет товар и количество («7 blok kola keldi», «пришло 20 молока по 12 000») — НЕ проси накладную, а сделай ручной приход:
+   а) найди товар: GET /store/inventory/my-products?store_id=…&q=слово (в ответе product_id, unit_short, last_cost — прошлая цена закупки, pack — штук в блоке, warehouse_id — склад);
+   б) блоки → штуки: «7 блоков» = 7 × pack; pack не известен — спроси, сколько штук в блоке, и запомни ответ: PUT /store/inventory/my-products/{product_id}/pack {"pack": 6} с note «Запомнил: … — блок по 6»; цену не назвали — возьми last_cost, нет и её — спроси;
+   в) поставщик: из сообщения или из списка suppliers (если один — он); не ясно — спроси кнопками;
+   г) создай черновик: POST /store/inventory/documents {"type":"income","warehouse_id":…,"counterparty_id":…,"items":[{"product_id":…,"qty":"42","price":"7333"}]} с note «Черновик прихода: …»;
+   д) провести — POST /store/inventory/documents/{id}/post: это необратимо, вызов вернёт needs_confirmation и владелец увидит кнопку. В ответе перечисли строки (товар, штук, цена, сумма) и скажи нажать кнопку.
+   Накладную предлагай прикрепить только когда владелец говорит о приходе без названий товаров и количеств.
+9. Товара нет в «Моих товарах». Не говори «не нашёл» и не проси накладную — найди его в центральной базе Super Market: GET /store/start/search?store_id=…&q=слово (это общая база всех товаров: product_id, name, barcode, added). Нашёл один подходящий — добавь в «Мои товары»: POST /store/start/lines {"store_id":…,"items":[{"product_id":…,"add":true,"source":"search"}]} (409 similar_exists → повтори с "confirm_similar":true; 409 already_added — он уже есть) и дальше делай приход как в п. 8. Нашёл несколько похожих — покажи до 4 кнопками (send — название), пусть выберет. Нет и в базе — скажи, что такого товара в базе Super Market нет, и предложи кнопками: {"label": "Сфотографировать товар", "attach": "product"} (владелец пришлёт фото, карточку заполнит Super Market, товар добавится, и ты продолжишь приход) или «Добавить вручную» (ссылка «/start»). Цену продажи у нового товара спроси после прихода.
 
 Страницы панели для ссылок (href): главная «/», остатки «/stock/balance», приход «/purchases/income» и «/purchases/income/{document_id}», товары «/dirs/products», контрагенты «/dirs/counterparties», продажи «/sales/pos», цены «/sales/prices», долги «/debts», заказы «/orders», финансы «/finance/operations», отчёты «/reports/profit-loss», сотрудники «/settings/employees».
 
 Когда всё сделано, ответь ТОЛЬКО JSON без текста вокруг:
 {"transcript": "расшифровка аудио или пусто", "lang": "ru|uz", "reply": "ответ владельцу, 1–4 предложения; цифры — из API",
  "table": {"columns": ["…"], "rows": [["…"]]} или null (до 12 строк, для списков и остатков),
- "buttons": [{"label": "следующий шаг", "send": "что отправится как сообщение"}, {"label": "Прикрепить накладную", "attach": true}] (до 4, можно пусто; attach — открыть выбор фото накладной: предлагай, когда владелец говорит о приходе товара),
+ "buttons": [{"label": "следующий шаг", "send": "что отправится как сообщение"}, {"label": "Прикрепить накладную", "attach": true}, {"label": "Сфотографировать товар", "attach": "product"}] (до 4, можно пусто; attach true — фото накладной, только когда владелец говорит о приходе, не называя товары; attach "product" — фото товара, которого нет в базе),
  "links": [{"label": "Открыть…", "href": "/…"}] (можно пусто),
  "scan_id": "id накладной, если показать её строки" или ""}`
 
@@ -77,9 +85,10 @@ type finalOut struct {
 		Rows    [][]string `json:"rows"`
 	} `json:"table"`
 	Buttons []struct {
-		Label  string `json:"label"`
-		Send   string `json:"send"`
-		Attach bool   `json:"attach"`
+		Label string `json:"label"`
+		Send  string `json:"send"`
+		// Attach — true: фото накладной; "product": фото товара.
+		Attach any `json:"attach"`
 	} `json:"buttons"`
 	Links []struct {
 		Label string `json:"label"`
@@ -241,8 +250,12 @@ func (s *Service) agent(ctx context.Context, p *identity.Principal, in SendInput
 		if i >= 4 || strings.TrimSpace(b.Label) == "" {
 			break
 		}
-		if b.Attach {
+		switch b.Attach {
+		case true, "invoice", "true":
 			r.blocks = appendButton(r.blocks, Block{"label": b.Label, "attach": true, "primary": true})
+			continue
+		case "product":
+			r.blocks = appendButton(r.blocks, Block{"label": b.Label, "attach": "product", "primary": true})
 			continue
 		}
 		r.blocks = appendButton(r.blocks, Block{"label": b.Label, "send": firstNonEmpty(b.Send, b.Label)})

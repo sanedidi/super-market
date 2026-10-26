@@ -293,6 +293,39 @@ func TestAssistantChat(t *testing.T) {
 	}
 	a.expect(a.do("GET", "/store/finance/counterparties?q=Абдуллаев", ownerTok, nil), 200, "still there")
 
+	// Блок товара: помощник запоминает «кола — блок по 6» (PUT …/pack), my-products отдаёт pack.
+	a.expect(a.do("PUT", "/store/inventory/my-products/"+cola+"/pack", ownerTok, map[string]any{"pack": 6}), 200, "pack")
+	if mp := a.expect(a.do("GET", "/store/inventory/my-products?store_id="+storeID+"&q=Coca", ownerTok, nil), 200, "my-products").items(); len(mp) != 1 || mp[0]["pack"] != "6" {
+		t.Fatalf("pack in my-products = %v", mp)
+	}
+	a.expect(a.do("PUT", "/store/inventory/my-products/"+cola+"/pack", ownerTok, map[string]any{"pack": 5000}), 400, "bad pack")
+
+	// Фото товара, которого нет в базе: Super Market заполняет карточку, товар
+	// добавляется в «Мои товары», помощник продолжает разговор.
+	food := a.expect(a.do("POST", "/admin/catalog/categories", adminTok, map[string]any{"name": "Еда"}), 201, "section").str("id")
+	sweets := a.expect(a.do("POST", "/admin/catalog/categories", adminTok, map[string]any{"name": "Сладости", "parent_id": food}), 201, "subcategory").str("id")
+	fai.set(`{"product":true,"name":"Печенье Rahat, 200 г","name_uz":"Rahat pechenyesi, 200 g","brand":"Rahat","unit":"шт","description":"","confidence":"high","match":"` + sweets + `","alternatives":[]}`)
+	fai.play(fakeTurn{text: `{"reply":"Товар «Печенье Rahat, 200 г» добавил. Сколько пришло и по какой цене?","lang":"ru"}`})
+	r = send(map[string]any{"images": []string{up["url"].(string)}, "kind": "product"})
+	if r.str("owner", "kind") != "image" {
+		t.Fatalf("product photo send = %v", r.Body)
+	}
+	m = last()
+	if m["status"] != "done" || m["text"] != "Товар «Печенье Rahat, 200 г» добавил. Сколько пришло и по какой цене?" {
+		t.Fatalf("product photo reply = %v", m)
+	}
+	if req := fai.lastRequest(); !strings.Contains(req, "Super Market заполнил карточку: «Печенье Rahat, 200 г»") {
+		t.Fatalf("product note not passed to model: %s", req)
+	}
+	// Магазин ещё в «Начале работы» — товар встал в его черновик (в работающем магазине — сразу в товары).
+	if sr := a.expect(a.do("GET", "/store/start/search?store_id="+storeID+"&q=Rahat", ownerTok, nil), 200, "search").items(); len(sr) != 1 || sr[0]["added"] != true {
+		t.Fatalf("product not added: %v", sr)
+	}
+	today = a.expect(a.do("GET", "/store/assistant/today?store_id="+storeID, ownerTok, nil), 200, "today").items()
+	if len(today) != 3 || !strings.HasPrefix(today[0]["text"].(string), "Новый товар «Печенье Rahat, 200 г»") {
+		t.Fatalf("journal = %v", today)
+	}
+
 	// Голосовое при OpenAI — понятная ошибка в чате, а не 500.
 	var ab bytes.Buffer
 	aw := multipart.NewWriter(&ab)

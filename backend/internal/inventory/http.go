@@ -27,6 +27,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/stock", m.stock)
 		r.Get("/stock/summary", m.stockSummary)
 		r.Get("/my-products", m.myProducts)
+		r.Put("/my-products/{id}/pack", m.setPack)
 		r.Get("/movements", m.movements)
 		docs := m.auth.Allow(identity.PermInventoryManage)
 		r.With(docs).Get("/documents", m.list)
@@ -58,6 +59,13 @@ func (m *Module) myProducts(w http.ResponseWriter, r *http.Request) {
 			StoreID: q.Get("store_id"), Status: q.Get("status"), CategoryID: q.Get("category_id"), ProductID: q.Get("product_id"),
 			Query: q.Get("q"), Order: q.Get("order"), Page: httpx.PageFrom(r),
 		})
+	})
+}
+
+// setPack — штук в блоке у товара («блок по 6»): помощник и панель.
+func (m *Module) setPack(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in PackInput) (MyProduct, error) {
+		return m.svc.SetPack(r.Context(), pr(r), id, in)
 	})
 }
 

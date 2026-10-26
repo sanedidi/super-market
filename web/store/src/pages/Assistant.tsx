@@ -9,10 +9,11 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { App, Button, Spin, Tag, Typography } from 'antd'
+import { App, Button, Dropdown, Spin, Tag, Typography } from 'antd'
 import {
   AudioOutlined,
   BarChartOutlined,
+  CameraOutlined,
   CheckCircleFilled,
   ExportOutlined,
   InboxOutlined,
@@ -29,7 +30,9 @@ import { useStore } from '../ctx'
 
 type Action = Record<string, unknown> & { type: string; scan_id: string; label?: string }
 
-type ButtonItem = { label: string; send?: string; action?: Action; attach?: boolean; primary?: boolean }
+/** attach: true — фото накладной, 'product' — фото товара, которого нет в базе. */
+type AttachKind = 'invoice' | 'product'
+type ButtonItem = { label: string; send?: string; action?: Action; attach?: boolean | 'product'; primary?: boolean }
 
 type Block =
   | { type: 'buttons'; items: ButtonItem[] }
@@ -67,6 +70,11 @@ export function AssistantPage() {
   const { message } = App.useApp()
   const [busy, setBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const attachKind = useRef<AttachKind>('invoice')
+  const openAttach = (kind: AttachKind = 'invoice') => {
+    attachKind.current = kind
+    fileRef.current?.click()
+  }
 
   const chat = useQuery({
     queryKey: [PATH, storeId],
@@ -105,17 +113,17 @@ export function AssistantPage() {
   )
   const sendText = (text: string) => post({ store_id: storeId, text })
   const sendAction = (action: Action) => post({ store_id: storeId, action })
-  const sendImages = async (files: File[]) => {
-    const images = files.filter((f) => f.type.startsWith('image/')).slice(0, 5)
+  const sendImages = async (files: File[], kind: AttachKind = attachKind.current) => {
+    const images = files.filter((f) => f.type.startsWith('image/')).slice(0, kind === 'product' ? 3 : 5)
     if (!images.length) {
-      message.warning(tr('Прикрепите фото накладной (jpg или png).', 'Nakladnoy rasmini biriktiring (jpg yoki png).'))
+      message.warning(tr('Прикрепите фото (jpg или png).', 'Rasm biriktiring (jpg yoki png).'))
       return
     }
     setBusy(true)
     try {
       const urls: string[] = []
       for (const f of images) urls.push(await api.upload(f, f.name))
-      await api.post(PATH, { store_id: storeId, images: urls })
+      await api.post(PATH, { store_id: storeId, images: urls, kind })
       refresh()
     } catch (e) {
       message.error(errorText(e))
@@ -150,7 +158,7 @@ export function AssistantPage() {
         onChange={(e) => {
           const files = Array.from(e.target.files ?? [])
           e.target.value = ''
-          void sendImages(files)
+          void sendImages(files, attachKind.current)
         }}
       />
       <div className="sm-assist">
@@ -159,21 +167,21 @@ export function AssistantPage() {
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault()
-            void sendImages(Array.from(e.dataTransfer.files))
+            void sendImages(Array.from(e.dataTransfer.files), 'invoice')
           }}
         >
           <div className="sm-assist-messages">
             {chat.isLoading && <Spin style={{ display: 'block', margin: '48px auto' }} />}
             {chat.error && <LoadError error={chat.error} retry={() => chat.refetch()} />}
             {chat.data && items.length === 0 && (
-              <Welcome onSend={sendText} onAttach={() => fileRef.current?.click()} />
+              <Welcome onSend={sendText} onAttach={openAttach} />
             )}
             {items.map((m) => (
-              <Bubble key={m.id} m={m} onSend={sendText} onAction={sendAction} onAttach={() => fileRef.current?.click()} />
+              <Bubble key={m.id} m={m} onSend={sendText} onAction={sendAction} onAttach={openAttach} />
             ))}
             <ScrollAnchor dep={items.length + (pending ? 1 : 0)} />
           </div>
-          <Composer busy={busy || !!pending} onSend={sendText} onAttach={() => fileRef.current?.click()} onVoice={sendVoice} />
+          <Composer busy={busy || !!pending} onSend={sendText} onAttach={openAttach} onVoice={sendVoice} />
         </div>
         <div className="sm-assist-side">
           <HowTo onSend={sendText} />
@@ -219,7 +227,7 @@ const HINTS: { icon: ReactNode; send: string; title: string; desc: string }[] = 
   { icon: <WalletOutlined />, send: tr('Кто мне должен?', 'Kim menga qarz?'), title: tr('«кто мне должен»', '«kim menga qarz»'), desc: tr('долги покупателей и поставщикам', 'xaridorlar va yetkazib beruvchilar qarzi') },
 ]
 
-function Welcome({ onSend, onAttach }: { onSend: (t: string) => void; onAttach: () => void }) {
+function Welcome({ onSend, onAttach }: { onSend: (t: string) => void; onAttach: (kind?: AttachKind) => void }) {
   return (
     <div className="sm-assist-row">
       <Avatar />
@@ -231,7 +239,7 @@ function Welcome({ onSend, onAttach }: { onSend: (t: string) => void; onAttach: 
           )}
         </div>
         <div className="sm-assist-chips">
-          <Button type="primary" icon={<PaperClipOutlined />} onClick={onAttach}>{tr('Прикрепить накладную', 'Nakladnoyni biriktirish')}</Button>
+          <Button type="primary" icon={<PaperClipOutlined />} onClick={() => onAttach('invoice')}>{tr('Прикрепить накладную', 'Nakladnoyni biriktirish')}</Button>
           {HINTS.slice(0, 4).map((h) => (
             <Button key={h.send} icon={h.icon} onClick={() => onSend(h.send)}>{h.send}</Button>
           ))}
@@ -272,7 +280,7 @@ function Avatar() {
   return <div className="sm-assist-avatar">SM</div>
 }
 
-function Bubble({ m, onSend, onAction, onAttach }: { m: Message; onSend: (t: string) => void; onAction: (a: Action) => void; onAttach: () => void }) {
+function Bubble({ m, onSend, onAction, onAttach }: { m: Message; onSend: (t: string) => void; onAction: (a: Action) => void; onAttach: (kind?: AttachKind) => void }) {
   if (m.role === 'system') {
     return (
       <div className="sm-assist-system">
@@ -284,6 +292,9 @@ function Bubble({ m, onSend, onAction, onAttach }: { m: Message; onSend: (t: str
     return (
       <div className="sm-assist-row sm-assist-row-owner">
         <div className="sm-assist-bubble sm-assist-owner">
+          {m.kind === 'image' && m.images.length > 0 && (
+            <div className="sm-assist-muted" style={{ color: '#ffd6d9' }}>{tr('Фото', 'Rasm')}</div>
+          )}
           {m.kind === 'audio' && (
             <div className="sm-assist-voice">
               <AudioOutlined /> {tr('Голосовое', 'Ovozli xabar')}
@@ -321,7 +332,7 @@ function Bubble({ m, onSend, onAction, onAttach }: { m: Message; onSend: (t: str
   )
 }
 
-function Buttons({ items, onSend, onAction, onAttach }: { items: ButtonItem[]; onSend: (t: string) => void; onAction: (a: Action) => void; onAttach: () => void }) {
+function Buttons({ items, onSend, onAction, onAttach }: { items: ButtonItem[]; onSend: (t: string) => void; onAction: (a: Action) => void; onAttach: (kind?: AttachKind) => void }) {
   if (!items?.length) return null
   return (
     <div className="sm-assist-chips">
@@ -329,9 +340,9 @@ function Buttons({ items, onSend, onAction, onAttach }: { items: ButtonItem[]; o
         <Button
           key={i}
           type={it.primary ? 'primary' : 'default'}
-          icon={it.attach ? <PaperClipOutlined /> : undefined}
+          icon={it.attach === 'product' ? <CameraOutlined /> : it.attach ? <PaperClipOutlined /> : undefined}
           onClick={() => {
-            if (it.attach) onAttach()
+            if (it.attach) onAttach(it.attach === 'product' ? 'product' : 'invoice')
             else if (it.action) onAction({ ...it.action, label: it.action.label ?? it.label })
             else onSend(it.send ?? it.label)
           }}
@@ -343,7 +354,7 @@ function Buttons({ items, onSend, onAction, onAttach }: { items: ButtonItem[]; o
   )
 }
 
-function BlockView({ b, onSend, onAction, onAttach }: { b: Block; onSend: (t: string) => void; onAction: (a: Action) => void; onAttach: () => void }) {
+function BlockView({ b, onSend, onAction, onAttach }: { b: Block; onSend: (t: string) => void; onAction: (a: Action) => void; onAttach: (kind?: AttachKind) => void }) {
   switch (b.type) {
     case 'buttons':
       return <Buttons items={b.items} onSend={onSend} onAction={onAction} onAttach={onAttach} />
@@ -396,7 +407,7 @@ function BlockView({ b, onSend, onAction, onAttach }: { b: Block; onSend: (t: st
 
 // ------------------------------------------------------------ ввод
 
-function Composer({ busy, onSend, onAttach, onVoice }: { busy: boolean; onSend: (t: string) => void; onAttach: () => void; onVoice: (b: Blob, mime: string) => Promise<void> }) {
+function Composer({ busy, onSend, onAttach, onVoice }: { busy: boolean; onSend: (t: string) => void; onAttach: (kind?: AttachKind) => void; onVoice: (b: Blob, mime: string) => Promise<void> }) {
   const [text, setText] = useState('')
   const { message } = App.useApp()
   const rec = useRef<{ r: MediaRecorder; chunks: Blob[]; timer: number; stream: MediaStream } | null>(null)
@@ -461,7 +472,18 @@ function Composer({ busy, onSend, onAttach, onVoice }: { busy: boolean; onSend: 
 
   return (
     <div className="sm-assist-composer">
-      <Button icon={<PaperClipOutlined />} onClick={onAttach} title={tr('Прикрепить накладную', 'Nakladnoyni biriktirish')} />
+      <Dropdown
+        menu={{
+          items: [
+            { key: 'invoice', icon: <PaperClipOutlined />, label: tr('Фото накладной — сделать приход', 'Nakladnoy rasmi — kirim qilish') },
+            { key: 'product', icon: <CameraOutlined />, label: tr('Фото товара — новый товар в базу', 'Tovar rasmi — bazaga yangi tovar') },
+          ],
+          onClick: ({ key }) => onAttach(key as AttachKind),
+        }}
+        trigger={['click']}
+      >
+        <Button icon={<PaperClipOutlined />} title={tr('Прикрепить фото', 'Rasm biriktirish')} />
+      </Dropdown>
       <input
         className="sm-assist-input"
         value={recording ? '' : text}

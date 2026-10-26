@@ -142,7 +142,10 @@ type SendInput struct {
 	StoreID string   `json:"store_id"`
 	Text    string   `json:"text"`
 	Images  []string `json:"images"`
-	Action  *Action  `json:"action"`
+	// Kind — что на фото: invoice (накладная, по умолчанию) или product
+	// (товар, которого нет в базе: карточку заполнит Super Market).
+	Kind   string  `json:"kind"`
+	Action *Action `json:"action"`
 	// Audio — голосовое (multipart, поле audio); не из JSON.
 	Audio *ai.Part `json:"-"`
 }
@@ -355,6 +358,7 @@ func (s *Service) Send(ctx context.Context, p *identity.Principal, in SendInput)
 		own.Kind = "audio"
 	case len(in.Images) > 0:
 		own.Kind = "image"
+		own.Args = map[string]any{"kind": in.Kind}
 	}
 	owner, err := s.insert(ctx, p, in.StoreID, own)
 	if err != nil {

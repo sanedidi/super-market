@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 
@@ -57,6 +58,9 @@ type MyProduct struct {
 	// приход в «SM Магазин» подставляет её в новую строку. Тоже только с
 	// правом «Склад» или «Отчёты».
 	LastCost *string `json:"last_cost,omitempty"`
+	// Pack — штук в блоке у этого товара в сети (запомнено из накладных:
+	// «12 блоков по 6» → 6); null — блок не известен.
+	Pack *string `json:"pack"`
 }
 
 type MyProductsFilter struct {
@@ -229,11 +233,12 @@ func (s *Service) MyProducts(ctx context.Context, p *identity.Principal, f MyPro
 		       (SELECT trim_scale(i.price)::text FROM stock_document_items i JOIN stock_documents d ON d.id = i.document_id
 		         WHERE d.network_id = $%d AND d.type = 'income' AND d.status = 'posted' AND d.currency = 'UZS'
 		           AND i.product_id = y.id AND i.price IS NOT NULL
-		         ORDER BY d.posted_at DESC LIMIT 1)
+		         ORDER BY d.posted_at DESC LIMIT 1),
+		       (SELECT trim_scale(pk.pack)::text FROM network_product_packs pk WHERE pk.network_id = $%d AND pk.product_id = y.id)
 		FROM y
 		WHERE $%d = '' OR status = $%d
 		ORDER BY %s
-		LIMIT %d OFFSET %d`, netArg, statusArg, statusArg, order, f.Page.Limit, f.Page.Offset), productsearch.Args(args)...)
+		LIMIT %d OFFSET %d`, netArg, netArg, statusArg, statusArg, order, f.Page.Limit, f.Page.Offset), productsearch.Args(args)...)
 	if err != nil {
 		return out, err
 	}
@@ -242,11 +247,54 @@ func (s *Service) MyProducts(ctx context.Context, p *identity.Principal, f MyPro
 		var avg, last *string
 		var cost string
 		err := r.Scan(&it.ProductID, &it.Name, &it.Image, &it.Barcode, &it.Category, &it.UnitShort, &it.IsFractional, &it.Price,
-			&it.Uncounted, &it.Qty, &it.PerDay, &it.DaysLeft, &it.Status, &avg, &cost, &last)
+			&it.Uncounted, &it.Qty, &it.PerDay, &it.DaysLeft, &it.Status, &avg, &cost, &last, &it.Pack)
 		if sees {
 			it.AvgCost, it.StockCost, it.LastCost = avg, &cost, last
 		}
 		return it, err
 	})
 	return out, err
+}
+
+// PackInput — штук в блоке у товара в сети («блок колы — 6»).
+type PackInput struct {
+	Pack int `json:"pack"`
+}
+
+// SetPack — запомнить (или забыть: pack 0/1) размер блока товара: приход
+// «7 блоков» считается как 7 × pack; накладные подставляют его сами.
+func (s *Service) SetPack(ctx context.Context, p *identity.Principal, productID string, in PackInput) (MyProduct, error) {
+	if err := p.Require(identity.PermInventoryManage); err != nil {
+		return MyProduct{}, err
+	}
+	if !httpx.IsUUID(productID) {
+		return MyProduct{}, apperr.NotFound("товар не найден").Uz("mahsulot topilmadi")
+	}
+	if in.Pack < 0 || in.Pack > 1000 {
+		return MyProduct{}, apperr.Validation("pack: от 2 до 1000 (0 — забыть)").Uz("pack: 2 dan 1000 gacha (0 — unutish)")
+	}
+	var ok bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM products p WHERE p.id = $2 AND (p.network_id IS NULL OR p.network_id = $1) AND p.is_active)`,
+		p.NetworkID, productID).Scan(&ok); err != nil {
+		return MyProduct{}, err
+	}
+	if !ok {
+		return MyProduct{}, apperr.NotFound("товар не найден").Uz("mahsulot topilmadi")
+	}
+	var err error
+	if in.Pack < 2 {
+		_, err = s.pool.Exec(ctx, `DELETE FROM network_product_packs WHERE network_id = $1 AND product_id = $2`, p.NetworkID, productID)
+	} else {
+		_, err = s.pool.Exec(ctx, `INSERT INTO network_product_packs (network_id, product_id, pack) VALUES ($1, $2, $3)
+			ON CONFLICT (network_id, product_id) DO UPDATE SET pack = EXCLUDED.pack, updated_at = now()`, p.NetworkID, productID, in.Pack)
+	}
+	if err != nil {
+		return MyProduct{}, err
+	}
+	out := MyProduct{ProductID: productID}
+	if in.Pack >= 2 {
+		v := strconv.Itoa(in.Pack)
+		out.Pack = &v
+	}
+	return out, nil
 }

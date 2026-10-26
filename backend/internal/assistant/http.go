@@ -83,7 +83,7 @@ func (m *Module) send(w http.ResponseWriter, r *http.Request) {
 			}
 			return SendResult{}, apperr.Validation("multipart: не удалось прочитать форму").Uz("multipart: formani oʻqib boʻlmadi")
 		}
-		in := SendInput{StoreID: r.FormValue("store_id"), Text: r.FormValue("text")}
+		in := SendInput{StoreID: r.FormValue("store_id"), Text: r.FormValue("text"), Kind: r.FormValue("kind")}
 		f, hdr, err := r.FormFile("audio")
 		if err == nil {
 			defer f.Close()

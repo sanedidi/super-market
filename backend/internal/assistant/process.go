@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +34,8 @@ func (s *Service) handle(ctx context.Context, p *identity.Principal, in SendInpu
 	switch {
 	case in.Action != nil:
 		return s.doAction(ctx, p, in.StoreID, lang, *in.Action)
+	case len(in.Images) > 0 && in.Kind == "product":
+		return s.startProduct(ctx, p, in, lang)
 	case len(in.Images) > 0:
 		// Фото накладной — это всегда приход: модель не нужна.
 		return s.startScan(ctx, p, in.StoreID, lang, in.Images)
@@ -390,4 +393,118 @@ func trimQty(q string) string {
 		q = strings.TrimRight(strings.TrimRight(q, "0"), ".")
 	}
 	return q
+}
+
+// ---------- фото товара ----------
+
+// startProduct — владелец прислал фото товара, которого нет в базе: карточку
+// заполняет Super Market (start/new-items), товар добавляется в «Мои
+// товары», и агент продолжает то, что владелец просил (обычно — приход).
+func (s *Service) startProduct(ctx context.Context, p *identity.Principal, in SendInput, lang string) (reply, error) {
+	tok, err := s.ident.ServiceToken(p, tokenTTL)
+	if err != nil {
+		return reply{}, err
+	}
+	status, resp := s.loopback(ctx, tok, lang, http.MethodPost, "/store/start/new-items", nil,
+		map[string]any{"store_id": in.StoreID, "images": in.Images})
+	item, _ := resp.(map[string]any)
+	if status/100 != 2 {
+		return reply{}, apiErr(status, item, lang)
+	}
+	id, _ := item["id"].(string)
+	deadline := s.now().Add(3 * time.Minute)
+	for item["status"] == "processing" && s.now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return reply{}, ctx.Err()
+		case <-time.After(3 * time.Second):
+		}
+		status, resp = s.loopback(ctx, tok, lang, http.MethodGet, "/store/start/new-items/"+id, nil, nil)
+		item, _ = resp.(map[string]any)
+	}
+	again := Block{"type": "buttons", "items": []Block{
+		{"label": t(lang, "Сфотографировать ещё раз", "Yana suratga olish"), "attach": "product", "primary": true},
+		{"label": t(lang, "Заполнить вручную", "Qoʻlda toʻldirish"), "send": t(lang, "Заполню карточку вручную", "Kartochkani qoʻlda toʻldiraman")}}}
+	link := Block{"type": "link", "label": t(lang, "Открыть «Начало работы»", "«Ishni boshlash»ni ochish"), "href": "/start"}
+	switch item["status"] {
+	case "processing":
+		return reply{text: t(lang, "Super Market ещё заполняет карточку — это бывает долго. Напишите мне через минуту «готово?».",
+			"Super Market hali kartochkani toʻldiryapti — bu uzoq boʻlishi mumkin. Bir daqiqadan keyin «tayyormi?» deb yozing."), lang: lang, blocks: []Block{link}}, nil
+	case "failed":
+		msg, _ := item["error"].(string)
+		return reply{text: t(lang, "Не смог распознать товар по фото: ", "Rasmdan tovarni taniy olmadim: ") + msg, lang: lang, blocks: []Block{again, link}}, nil
+	}
+	res, _ := item["result"].(map[string]any)
+	body := map[string]any{"store_id": in.StoreID}
+	name, _ := res["name"].(string)
+	if m, ok := res["match"].(map[string]any); ok && m != nil {
+		body["product_id"] = m["product_id"]
+		if n, _ := m["name"].(string); n != "" {
+			name = n
+		}
+	} else {
+		for _, k := range []string{"name", "name_uz", "description", "unit_id"} {
+			if v, _ := res[k].(string); v != "" {
+				body[k] = v
+			}
+		}
+		if v, _ := res["brand_id"].(string); v != "" {
+			body["brand_id"] = v
+		} else if v, _ := res["brand"].(string); v != "" {
+			body["brand_name"] = v
+		}
+		if sg, ok := res["suggestion"].(map[string]any); ok && sg != nil {
+			if c, ok := sg["category"].(map[string]any); ok && c != nil {
+				body["category_id"] = c["id"]
+			} else if nc, ok := sg["new"].(map[string]any); ok && nc != nil {
+				body["new_category"] = nc
+			}
+			if body["name_uz"] == nil {
+				if v, _ := sg["name_uz"].(string); v != "" {
+					body["name_uz"] = v
+				}
+			}
+		}
+		body["images"] = in.Images
+	}
+	status, resp = s.loopback(ctx, tok, lang, http.MethodPost, "/store/start/new-items/"+id+"/confirm", nil, body)
+	out, _ := resp.(map[string]any)
+	productID, _ := out["product_id"].(string)
+	if status/100 != 2 {
+		if e, ok := out["error"].(map[string]any); ok && e["code"] == "already_added" {
+			if d, ok := e["details"].(map[string]any); ok {
+				productID, _ = d["product_id"].(string)
+			}
+		}
+		if productID == "" {
+			// Не хватило категории или права — карточка ждёт в «Новых».
+			return reply{text: t(lang, "Super Market заполнил карточку «"+name+"», но добавить сам не смог: ", "Super Market «"+name+"» kartochkasini toʻldirdi, lekin oʻzi qoʻsha olmadi: ") +
+				apiErr(status, out, lang).Error() + t(lang, " Проверьте её во вкладке «Новые» в «Начале работы».", " Uni «Ishni boshlash»dagi «Yangilar» boʻlimida tekshiring."),
+				lang: lang, blocks: []Block{link}}, nil
+		}
+	}
+	s.journalText(ctx, p, in.StoreID, lang, t(lang, "Новый товар «"+name+"» — карточку заполнил Super Market, добавлен в «Мои товары»",
+		"Yangi tovar «"+name+"» — kartochkani Super Market toʻldirdi, «Mening tovarlarim»ga qoʻshildi"))
+	where := "товар добавлен в «Мои товары»"
+	if d, _ := out["direct"].(bool); !d && status/100 == 2 {
+		where = "магазин ещё в «Начале работы», товар встал в его черновик (в товары магазина попадёт после «Записать и закрыть», ссылка /start) — приход документом до этого может не пройти"
+	}
+	note := fmt.Sprintf("[Владелец прислал фото товара. Super Market заполнил карточку: «%s» (product_id %s), %s. Посмотри recent_messages: если владелец до этого просил приход этого товара — сделай его по правилу 8 (количество из его слов, цену закупки и поставщика спроси, если не назывались); если ничего не просил — скажи, что товар добавлен, и спроси цену продажи.]", name, productID, where)
+	return s.agent(ctx, p, SendInput{StoreID: in.StoreID}, Message{}, nil, note)
+}
+
+// apiErr — ошибка ответа API понятными словами.
+func apiErr(status int, body map[string]any, lang string) error {
+	msg := ""
+	if e, ok := body["error"].(map[string]any); ok {
+		msg, _ = e["message"].(string)
+	}
+	if msg == "" {
+		msg = fmt.Sprintf("HTTP %d", status)
+	}
+	return apperr.New(status, "assistant_api", msg).Uz(msg)
+}
+
+func (s *Service) journalText(ctx context.Context, p *identity.Principal, storeID, lang, text string) {
+	_, _ = s.insert(ctx, p, storeID, newMsg{Role: RoleSystem, Kind: "done", Text: text, Lang: lang})
 }

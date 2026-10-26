@@ -319,7 +319,8 @@ orders? (within | not_within | never), days? (1–365)}` — город в пр�
 | POST | `/documents/{id}/post` | провести; 409 `insufficient_stock` с `details.product_id/available/required`, если товара не хватает — тогда ничего не меняется |
 | GET | `/stock?warehouse_id=&store_id=&product_id=&q=&limit=&offset=` | остатки с `avg_cost`, `total_cost`, `avg_cost_usd` |
 | GET | `/stock/summary?warehouse_id=&store_id=&product_id=&q=` | итоги по всем строкам фильтра: `positions` (склад × товар), `products`, `cost_value` (себестоимость, UZS) |
-| GET | `/my-products?store_id=&status=ok\|low\|out\|unknown&category_id=&product_id=&q=&order=attention\|name&limit=&offset=` | «Мои товары и остатки» («SM Магазин», право `inventory.manage`): все товары магазина (`store_products`, в том числе закончившиеся и «не посчитан») с остатком на основном складе → `{items: [{product_id, name, image, barcode, category, unit_short, is_fractional, price, qty, uncounted, per_day, days_left, status, avg_cost, stock_cost}], total, counts {all, ok, low, out, uncounted}, categories [{id, name, products}], warehouse_id, stock_cost}`. `status`: `out` — 0, `low` — не хватит на 3 дня продаж (28 дней), `unknown` — «Остаток не посчитан», `ok`. `counts` — по поиску и категории (подкатегории раздела тоже), без фильтра статуса. `order=attention` (по умолчанию) — закончились, мало, хватает, не посчитан. `avg_cost`, `stock_cost` — только с правом «Склад» или «Отчёты»; история — `/movements` с `warehouse_id` |
+| GET | `/my-products?store_id=&status=ok\|low\|out\|unknown&category_id=&product_id=&q=&order=attention\|name&limit=&offset=` | «Мои товары и остатки» («SM Магазин», право `inventory.manage`): все товары магазина (`store_products`, в том числе закончившиеся и «не посчитан») с остатком на основном складе → `{items: [{product_id, name, image, barcode, category, unit_short, is_fractional, price, qty, uncounted, per_day, days_left, status, avg_cost, stock_cost, last_cost, pack}], total, counts {all, ok, low, out, uncounted}, categories [{id, name, products}], warehouse_id, stock_cost}`. `status`: `out` — 0, `low` — не хватит на 3 дня продаж (28 дней), `unknown` — «Остаток не посчитан», `ok`. `counts` — по поиску и категории (подкатегории раздела тоже), без фильтра статуса. `order=attention` (по умолчанию) — закончились, мало, хватает, не посчитан. `avg_cost`, `stock_cost`, `last_cost` (цена закупки в последнем проведённом приходе) — только с правом «Склад» или «Отчёты»; `pack` — штук в блоке у товара в сети (запомнено из накладных, null — не известно); история — `/movements` с `warehouse_id` |
+| PUT | `/my-products/{product_id}/pack` | штук в блоке у товара в сети («блок колы — 6»): `{pack}` (2–1000; 0 — забыть) → `{product_id, pack}`. Приход «7 блоков» считается как 7 × pack; накладные подставляют блок сами (как `remember` в строке накладной). Право `inventory.manage` |
 | GET | `/movements?warehouse_id=&product_id=&limit=&offset=` | история движения, новые сверху; с `product_id` — ещё `balance_after` (остаток после операции, верен на любой странице) |
 
 Цена в строке (`price`) — до 4 знаков после точки (`"1234.5678"`), так же и в ответе.
@@ -1375,8 +1376,11 @@ SM Курьер, SM Агент) при запуске и при возврате
   только новее сообщения с этим id. Ответ `{items: [Message], pending}`; `pending: true` — помощник ещё отвечает,
   опрашивайте дальше.
 - `POST /store/assistant/messages` → 202 `{owner, reply}` (reply сразу `pending`). JSON: `{store_id, text?,
-  images?: [url из /store/uploads, до 5], action?}` или multipart: `store_id`, `text?`, `audio` (файл audio/webm,
-  audio/mp4, audio/ogg, до 8 МБ). Фото — всегда приход по накладной. `action` — нажатая кнопка (из блоков ответа):
+  images?: [url из /store/uploads, до 5], kind?, action?}` или multipart: `store_id`, `text?`, `kind?`, `audio`
+  (файл audio/webm, audio/mp4, audio/ogg, до 8 МБ). Фото: `kind` пусто или `invoice` — приход по накладной;
+  `product` (1–3 фото) — товар, которого нет в базе: Super Market заполняет карточку (`/store/start/new-items`),
+  товар добавляется в «Мои товары» («Это он» — товар базы), строка в журнал, и помощник продолжает разговор
+  (обычно — приход этого товара). `action` — нажатая кнопка (из блоков ответа):
   `{type: scan_line, scan_id, line, product_id? | pack? | skip?}`, `{type: scan_supplier, scan_id,
   counterparty_id? | create}`, `{type: scan_post, scan_id}`, `{type: api, method, path, query?, body?, note?}`
   (подтверждённый запрос агента; путь — только `/store/*`); `label` — как показать в чате.
@@ -1385,6 +1389,6 @@ SM Курьер, SM Агент) при запуске и при возврате
 `Message`: `{id, role: owner|assistant|system, kind: text|audio|image|action|done|error, text, transcript
 (расшифровка голосового), lang, images[], blocks[], status: pending|done|failed, scan_id, created_at}`.
 `blocks` — что показать кроме текста: `buttons {items: [{label, send | action | attach, primary}]}` (send —
-отправить текст как сообщение владельца; attach — открыть выбор фото), `card {title, sum, note, status,
+отправить текст как сообщение владельца; attach `true` — фото накладной, `"product"` — фото товара), `card {title, sum, note, status,
 status_kind: warn|error|ok, buttons, line}` (строка накладной или поставщик), `table {columns, rows}`, `link
 {label, href}` (внутри панели), `confirm {label, action, enabled, hint}` — необратимое действие, только кнопкой.
