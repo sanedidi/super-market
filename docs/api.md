@@ -1379,7 +1379,8 @@ SM Курьер, SM Агент) при запуске и при возврате
 - `POST /store/assistant/messages` → 202 `{owner, reply}` (reply сразу `pending`). JSON: `{store_id, text?, ref?,
   images?: [url из /store/uploads, до 5], kind?, action?}` (`ref` — что стоит за нажатой кнопкой выбора, например id
   товара: в чате только текст, помощнику — текст и ref) или multipart: `store_id`, `text?`, `kind?`, `audio`
-  (файл audio/webm, audio/mp4, audio/ogg, до 8 МБ). Фото: `kind` пусто или `invoice` — приход по накладной;
+  (файл wav, m4a, aac, webm, ogg, mp3 до 8 МБ; тип — по Content-Type части, иначе по расширению имени: «SM Магазин»
+  шлёт `voice.wav`, 16 кГц моно). Фото: `kind` пусто или `invoice` — приход по накладной;
   `product` (1–3 фото) — товар, которого нет в базе: Super Market заполняет карточку (`/store/start/new-items`),
   товар добавляется в «Мои товары» («Это он» — товар базы), строка в журнал, и помощник продолжает разговор
   (обычно — приход этого товара). `action` — нажатая кнопка (из блоков ответа):

@@ -142,11 +142,11 @@ export function AssistantPage() {
   const items = chat.data?.items ?? []
   return (
     <>
-      <PageTitle title={tr('Помощник', 'Yordamchi')} />
+      <PageTitle title={tr('Шахзод — помощник', 'Shahzod — yordamchi')} />
       <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
         {tr(
-          'Напишите, скажите или прикрепите накладную — помощник Super Market сделает приход, покажет остатки, подскажет, что заказать.',
-          'Yozing, ayting yoki nakladnoyni biriktiring — Super Market yordamchisi kirim qiladi, qoldiqlarni koʻrsatadi, nima buyurtma qilishni aytadi.',
+          'Напишите, скажите или прикрепите накладную — Шахзод сделает приход, покажет остатки, подскажет, что заказать.',
+          'Yozing, ayting yoki nakladnoyni biriktiring — Shahzod kirim qiladi, qoldiqlarni koʻrsatadi, nima buyurtma qilishni aytadi.',
         )}
         <Tag color="green" style={{ marginLeft: 8 }}>{tr('Тестовый режим · только владелец', 'Sinov rejimi · faqat egasi')}</Tag>
       </Typography.Paragraph>
@@ -235,8 +235,8 @@ function Welcome({ onSend, onAttach }: { onSend: (t: string, ref?: string) => vo
       <div className="sm-assist-bubble sm-assist-bot">
         <div>
           {tr(
-            'Салом! Я помощник Super Market. Скажите, что нужно сделать — приход, остатки, что заказать, продажи. Можно написать, сказать голосом или сразу прикрепить накладную.',
-            'Salom! Men Super Market yordamchisiman. Nima kerakligini ayting — kirim, qoldiqlar, nima buyurtma qilish, sotuvlar. Yozishingiz, ovoz bilan aytishingiz yoki darrov nakladnoy biriktirishingiz mumkin.',
+            'Салом! Я Шахзод, помощник Super Market. Скажите, что нужно сделать — приход, остатки, что заказать, продажи. Можно написать, сказать голосом или сразу прикрепить накладную.',
+            'Salom! Men Shahzod, Super Market yordamchisiman. Nima kerakligini ayting — kirim, qoldiqlar, nima buyurtma qilish, sotuvlar. Yozishingiz, ovoz bilan aytishingiz yoki darrov nakladnoy biriktirishingiz mumkin.',
           )}
         </div>
         <div className="sm-assist-chips">
@@ -278,7 +278,7 @@ function HowTo({ onSend }: { onSend: (t: string, ref?: string) => void }) {
 // ------------------------------------------------------------ сообщения
 
 function Avatar() {
-  return <div className="sm-assist-avatar">SM</div>
+  return <div className="sm-assist-avatar">{tr('Ш', 'Sh')}</div>
 }
 
 function Bubble({ m, onSend, onAction, onAttach }: { m: Message; onSend: (t: string, ref?: string) => void; onAction: (a: Action) => void; onAttach: (kind?: AttachKind) => void }) {

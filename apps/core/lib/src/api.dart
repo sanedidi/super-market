@@ -190,6 +190,31 @@ class Api extends ChangeNotifier {
     return _decode(res);
   }
 
+  /// Форма с файлом (multipart): поля [fields] и файл в поле [fileField] —
+  /// например голосовое помощнику: POST /store/assistant/messages
+  /// {store_id, audio}. Тип файла сервер берёт по расширению [filename].
+  Future<dynamic> multipart(String path, Map<String, String> fields, String fileField, List<int> bytes, String filename, {bool retry = true}) async {
+    http.Response res;
+    try {
+      final req = http.MultipartRequest('POST', Uri.parse('$baseUrl$path'));
+      if (_access != null) req.headers['Authorization'] = 'Bearer $_access';
+      req.headers['Accept-Language'] = Lang.instance.code;
+      req.fields.addAll(fields);
+      req.files.add(http.MultipartFile.fromBytes(fileField, bytes, filename: filename));
+      res = await http.Response.fromStream(await _http.send(req).timeout(const Duration(seconds: 90)));
+    } on TimeoutException {
+      throw ApiError(0, 'network', tr('Сервер не отвечает', 'Server javob bermayapti'));
+    } catch (_) {
+      throw ApiError(0, 'network', tr('Нет связи с сервером', 'Server bilan aloqa yoʻq'));
+    }
+    if (res.statusCode == 401 && retry && _refresh != null) {
+      _refreshing ??= _doRefresh().whenComplete(() => _refreshing = null);
+      if (await _refreshing!) return multipart(path, fields, fileField, bytes, filename, retry: false);
+      await _save(null);
+    }
+    return _decode(res);
+  }
+
   Future<dynamic> get(String path, [Map<String, dynamic>? query]) => _send('GET', path, query: query);
   Future<dynamic> post(String path, [Object? body]) => _send('POST', path, body: body ?? const {});
   Future<dynamic> put(String path, Object body) => _send('PUT', path, body: body);

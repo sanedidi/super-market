@@ -1,7 +1,7 @@
 name: sm_store
 description: Super Market Магазин — первая настройка магазина, начало работы (фото полок, штрихкоды), приход по фото накладной, склад, заказы и финансы магазина.
 publish_to: none
-version: 0.9.3+26
+version: 0.9.4+27
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -27,6 +27,9 @@ dependencies:
   flutter_map: ^8.1.1
   latlong2: ^0.9.1
   geolocator: ^13.0.1
+  # Шахзод: голосовое — удерживать микрофон (WAV 16 кГц во временный файл).
+  record: ^6.0.0
+  path_provider: ^2.1.4
 
 # latlong2 (карта в первой настройке) и flutter_localizations должны
 # сойтись на одной версии intl — берём ту, что закреплена во Flutter SDK.

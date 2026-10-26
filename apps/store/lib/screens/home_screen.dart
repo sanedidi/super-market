@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import '../assistant/assistant_hint.dart';
 import '../dashboard/home_dashboard.dart';
 import '../income/income_entry.dart';
 import '../kassa/kassa_screen.dart';
@@ -18,10 +19,16 @@ import 'store_picker.dart';
 /// М1 · Главная: новые заказы, выручка за сегодня, быстрые действия.
 /// С правом «Отчёты» — Д1: графики, динамика, ABC/XYZ (dashboard/home_dashboard.dart).
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.onTab});
+  const HomeScreen({super.key, required this.onTab, required this.onOrders, this.onAssistant});
 
-  /// Переключить вкладку (1 — заказы, 2 — склад).
+  /// Переключить вкладку (2 — склад).
   final void Function(int) onTab;
+
+  /// Открыть заказы: вкладкой или (у владельца с помощником) отдельным экраном.
+  final VoidCallback onOrders;
+
+  /// Открыть Шахзода (null — помощник не показывается).
+  final VoidCallback? onAssistant;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -120,7 +127,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if ((_newOrders ?? 0) > 0) ...[
             AppCard(
               color: AppColors.primary,
-              onTap: () => widget.onTab(1),
+              onTap: widget.onOrders,
               child: Row(children: [
                 const IconBox(Icons.notifications_active_rounded, bg: AppColors.white, fg: AppColors.primary),
                 const SizedBox(width: 12),
@@ -165,6 +172,7 @@ class _HomeScreenState extends State<HomeScreen> {
             // Приход, Склад, Итоги дня — сразу под «Продать», над графиками.
             _actions(canIncome),
             const SizedBox(height: 16),
+            if (widget.onAssistant != null) AssistantHomeHint(onTap: widget.onAssistant!),
             if (_courierCash != null) ...[_courierCash!, const SizedBox(height: 16)],
             HomeDashboard(
               key: ValueKey('dash-${st.storeId}-$_gen'),
@@ -201,6 +209,20 @@ class _HomeScreenState extends State<HomeScreen> {
           onTap: canIncome ? () => openIncomeChooser(context) : null,
         ),
       ),
+      // М1 · «Заказы» — у владельца с помощником вместо вкладки, со счётчиком новых.
+      if (widget.onAssistant != null && context.read<StoreState>().can('orders.manage')) ...[
+        const SizedBox(width: 8),
+        Expanded(
+          child: _MiniAction(
+            icon: Icons.receipt_long_rounded,
+            label: tr('Заказы', 'Buyurtmalar'),
+            bg: AppColors.warningSoft,
+            fg: AppColors.warningInk,
+            badge: _newOrders,
+            onTap: widget.onOrders,
+          ),
+        ),
+      ],
       const SizedBox(width: 8),
       Expanded(child: _MiniAction(icon: Icons.inventory_2_rounded, label: tr('Склад', 'Ombor'), bg: AppColors.blueSoft, fg: AppColors.blue, onTap: () => widget.onTab(2))),
       const SizedBox(width: 8),
@@ -273,13 +295,16 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _MiniAction extends StatelessWidget {
-  const _MiniAction({required this.icon, required this.label, required this.bg, required this.fg, required this.onTap});
+  const _MiniAction({required this.icon, required this.label, required this.bg, required this.fg, required this.onTap, this.badge});
 
   final IconData icon;
   final String label;
   final Color bg;
   final Color fg;
   final VoidCallback? onTap;
+
+  /// Красный счётчик на иконке (новые заказы); null или 0 — нет.
+  final int? badge;
 
   @override
   Widget build(BuildContext context) {
@@ -289,7 +314,12 @@ class _MiniAction extends StatelessWidget {
         onTap: onTap,
         padding: const EdgeInsets.fromLTRB(6, 12, 6, 10),
         child: Column(children: [
-          IconBox(icon, bg: bg, fg: fg, size: 38, iconSize: 20, radius: 12),
+          Badge(
+            isLabelVisible: (badge ?? 0) > 0,
+            label: Text('${badge ?? 0}'),
+            backgroundColor: AppColors.primary,
+            child: IconBox(icon, bg: bg, fg: fg, size: 38, iconSize: 20, radius: 12),
+          ),
           const SizedBox(height: 6),
           Text(label, style: AppText.caption.copyWith(fontSize: 12, color: AppColors.dark), maxLines: 1, overflow: TextOverflow.ellipsis),
         ]),

@@ -19,7 +19,7 @@ name = sys.argv[1]
 p = 'android/app/src/main/AndroidManifest.xml'
 s = open(p, encoding='utf-8').read()
 s = re.sub(r'android:label="[^"]*"', f'android:label="{name}"', s, count=1)
-perms = ['INTERNET', 'CAMERA', 'VIBRATE', 'POST_NOTIFICATIONS', 'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION']
+perms = ['INTERNET', 'CAMERA', 'RECORD_AUDIO', 'VIBRATE', 'POST_NOTIFICATIONS', 'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION']
 add = ''.join(f'    <uses-permission android:name="android.permission.{x}"/>\n' for x in perms
               if f'android.permission.{x}"' not in s)
 s = s.replace('<application', add + '    <application', 1)
@@ -60,6 +60,7 @@ d['CFBundleDisplayName'] = sys.argv[1]
 d['NSCameraUsageDescription'] = 'Сфотографировать накладную поставщика, чтобы сделать приход'
 d['NSPhotoLibraryUsageDescription'] = 'Выбрать фото накладной из галереи'
 d['NSFaceIDUsageDescription'] = 'Входить в приложение магазина по Face ID вместо кода'
+d['NSMicrophoneUsageDescription'] = 'Говорить с помощником Шахзодом голосом: «пришли товары», «сколько колы осталось»'
 d['NSLocationWhenInUseUsageDescription'] = 'Поставить метку магазина на карте там, где вы сейчас'
 schemes = set(d.get('LSApplicationQueriesSchemes', []))
 schemes.update(['https', 'tg'])

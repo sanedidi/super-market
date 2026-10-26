@@ -9,9 +9,12 @@ import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'order_screen.dart';
 
-/// Вкладка «Заказы»: онлайн-заказы магазина по этапам.
+/// «Заказы»: онлайн-заказы магазина по этапам. У владельца с помощником —
+/// открываются с главной ([pushed]: своя шапка с «Назад»), у остальных — вкладка.
 class OrdersScreen extends StatefulWidget {
-  const OrdersScreen({super.key});
+  const OrdersScreen({super.key, this.pushed = false});
+
+  final bool pushed;
 
   @override
   State<OrdersScreen> createState() => _OrdersScreenState();
@@ -89,6 +92,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
       _by.clear();
       WidgetsBinding.instance.addPostFrameCallback((_) => _load());
     }
+    if (widget.pushed) {
+      return Scaffold(appBar: AppBar(title: Text(tr('Заказы', 'Buyurtmalar'))), body: _content(st));
+    }
+    return _content(st);
+  }
+
+  Widget _content(StoreState st) {
     if (!st.can('orders.manage')) {
       return SafeArea(
         child: EmptyState(icon: Icons.lock_outline_rounded, title: tr('Нет доступа к заказам', 'Buyurtmalarga kirish huquqi yoʻq'), text: tr('Нужно право «Онлайн-заказы».', '«Onlayn buyurtmalar» huquqi kerak.')),
@@ -100,8 +110,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       child: RefreshIndicator(
         onRefresh: _load,
         child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
-          Text(tr('Заказы', 'Buyurtmalar'), style: AppText.h1),
-          const SizedBox(height: 16),
+          if (!widget.pushed) ...[Text(tr('Заказы', 'Buyurtmalar'), style: AppText.h1), const SizedBox(height: 16)],
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(children: [

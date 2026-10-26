@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"path"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -67,6 +68,28 @@ func audioMIME(ct string) string {
 	return mt
 }
 
+// audioByName — тип по расширению, если клиент прислал файл без типа
+// (Flutter: application/octet-stream).
+func audioByName(name string) string {
+	switch strings.ToLower(path.Ext(name)) {
+	case ".wav":
+		return "audio/wav"
+	case ".m4a", ".mp4":
+		return "audio/mp4"
+	case ".aac":
+		return "audio/aac"
+	case ".webm":
+		return "audio/webm"
+	case ".ogg", ".opus":
+		return "audio/ogg"
+	case ".mp3":
+		return "audio/mp3"
+	case ".flac":
+		return "audio/flac"
+	}
+	return ""
+}
+
 func (m *Module) send(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/") {
 		httpx.RespondBody(w, r, m.log, http.StatusAccepted, "", func(_ string, in SendInput) (SendResult, error) {
@@ -93,7 +116,10 @@ func (m *Module) send(w http.ResponseWriter, r *http.Request) {
 			}
 			mt := audioMIME(hdr.Header.Get("Content-Type"))
 			if mt == "" {
-				return SendResult{}, apperr.Validation("audio: ожидается аудио (audio/webm, audio/mp4, audio/ogg)").Uz("audio: audio kutilmoqda (audio/webm, audio/mp4, audio/ogg)")
+				mt = audioByName(hdr.Filename)
+			}
+			if mt == "" {
+				return SendResult{}, apperr.Validation("audio: ожидается аудио (wav, m4a, aac, webm, ogg, mp3)").Uz("audio: audio kutilmoqda (wav, m4a, aac, webm, ogg, mp3)")
 			}
 			in.Audio = &ai.Part{MIME: mt, Data: data}
 		}
