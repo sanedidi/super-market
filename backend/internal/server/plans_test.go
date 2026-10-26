@@ -22,7 +22,7 @@ func TestPlans(t *testing.T) {
 
 	// Реестр функций и лимитов для экрана тарифов.
 	reg := a.expect(a.do("GET", "/admin/plans/registry", adminTok, nil), 200, "registry")
-	if len(reg.Body["features"].([]any)) < 10 || len(reg.Body["limits"].([]any)) != 9 || len(reg.Body["groups"].([]any)) != 4 {
+	if len(reg.Body["features"].([]any)) < 10 || len(reg.Body["limits"].([]any)) != 10 || len(reg.Body["groups"].([]any)) != 4 {
 		t.Fatalf("registry = %v", reg.Body)
 	}
 	a.expect(a.do("PATCH", "/admin/plans/start", adminTok, map[string]any{"features": []string{"debts", "teleport"}}), 400, "unknown feature")

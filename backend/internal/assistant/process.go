@@ -114,6 +114,25 @@ func (s *Service) currentScan(ctx context.Context, p *identity.Principal, storeI
 	return &sc
 }
 
+// currentDocument — черновик документа чата (id); проведённого или
+// удалённого — нет.
+func (s *Service) currentDocument(ctx context.Context, p *identity.Principal, storeID string) string {
+	var id *string
+	err := s.pool.QueryRow(ctx, `
+		SELECT c.document_id FROM assistant_chats c JOIN stock_documents d ON d.id = c.document_id
+		WHERE c.store_id = $1 AND c.employee_id = $2 AND d.status = 'draft'`, storeID, p.EmployeeID).Scan(&id)
+	if err != nil || id == nil {
+		return ""
+	}
+	return *id
+}
+
+func (s *Service) setCurrentDocument(ctx context.Context, p *identity.Principal, storeID string, id *string) {
+	_, _ = s.pool.Exec(ctx, `
+		INSERT INTO assistant_chats (store_id, employee_id, document_id) VALUES ($1, $2, $3)
+		ON CONFLICT (store_id, employee_id) DO UPDATE SET document_id = EXCLUDED.document_id, updated_at = now()`, storeID, p.EmployeeID, id)
+}
+
 func (s *Service) setCurrentScan(ctx context.Context, p *identity.Principal, storeID string, scanID *string) {
 	_, _ = s.pool.Exec(ctx, `
 		INSERT INTO assistant_chats (store_id, employee_id, scan_id) VALUES ($1, $2, $3)
@@ -223,11 +242,30 @@ func (s *Service) doAction(ctx context.Context, p *identity.Principal, storeID, 
 		if len(a.Body) > 0 {
 			_ = json.Unmarshal(a.Body, &body)
 		}
-		status, resp := s.loopback(ctx, tok, lang, strings.ToUpper(a.Method), a.Path, a.Query, body)
 		st := &agentState{p: p, storeID: storeID, token: tok, lang: lang}
+		// Проведение документа: перечитать — его могли поправить в панели.
+		if a.Expect != "" {
+			if docPath, ok := strings.CutSuffix(a.Path, "/post"); ok {
+				_, cur := s.loopback(ctx, tok, lang, http.MethodGet, docPath, nil, nil)
+				doc, _ := cur.(map[string]any)
+				if got := docExpect(doc); got != a.Expect {
+					if st, _ := doc["status"].(string); st != "" && st != "draft" {
+						return reply{text: t(lang, "Этот документ уже не черновик — проводить нечего.", "Bu hujjat endi qoralama emas — oʻtkazadigan narsa yoʻq."), lang: lang}, nil
+					}
+					a.Expect = got
+					return reply{text: t(lang, "Документ изменился с момента кнопки (поменялись строки или сумма). Посмотрите ещё раз и подтвердите заново.",
+						"Tugma bosilganidan beri hujjat oʻzgargan (qatorlar yoki summa). Yana koʻrib, qayta tasdiqlang."), lang: lang,
+						blocks: []Block{{"type": "confirm", "label": a.Label, "action": a, "enabled": true}}}, nil
+				}
+			}
+		}
+		status, resp := s.loopback(ctx, tok, lang, strings.ToUpper(a.Method), a.Path, a.Query, body)
 		if status/100 == 2 {
 			s.journal(ctx, st, a.Method, a.Path, a.Note)
 			s.setCurrentScan(ctx, p, storeID, nil)
+			if strings.HasSuffix(a.Path, "/post") || a.Method == http.MethodDelete {
+				s.setCurrentDocument(ctx, p, storeID, nil)
+			}
 		}
 		raw, _ := json.Marshal(resp)
 		note := fmt.Sprintf("[Владелец нажал кнопку «%s». Запрос %s %s выполнен, HTTP %d, ответ: %s] Коротко расскажи владельцу результат; если ошибка — объясни простыми словами.",
@@ -507,4 +545,17 @@ func apiErr(status int, body map[string]any, lang string) error {
 
 func (s *Service) journalText(ctx context.Context, p *identity.Principal, storeID, lang, text string) {
 	_, _ = s.insert(ctx, p, storeID, newMsg{Role: RoleSystem, Kind: "done", Text: text, Lang: lang})
+}
+
+// docExpect — слепок документа для проверки перед проведением: итого и число строк.
+func docExpect(doc map[string]any) string {
+	if doc == nil {
+		return ""
+	}
+	total, _ := doc["total"].(string)
+	n, _ := doc["items_count"].(float64)
+	if items, ok := doc["items"].([]any); ok {
+		n = float64(len(items))
+	}
+	return fmt.Sprintf("%s|%d", total, int(n))
 }

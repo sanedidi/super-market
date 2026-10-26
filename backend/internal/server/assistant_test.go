@@ -300,6 +300,58 @@ func TestAssistantChat(t *testing.T) {
 	}
 	a.expect(a.do("PUT", "/store/inventory/my-products/"+cola+"/pack", ownerTok, map[string]any{"pack": 5000}), 400, "bad pack")
 
+	// Приход со слов владельца: черновик через API, он — «в работе» у чата
+	// (попадает в контекст), провести — кнопкой; документ поправили в
+	// панели — кнопка просит подтвердить заново.
+	wh := a.expect(a.do("GET", "/store/inventory/my-products?store_id="+storeID+"&q=Coca", ownerTok, nil), 200, "warehouse").str("warehouse_id")
+	supplierID := cps[0]["id"].(string)
+	fai.play(
+		fakeTurn{tool: "call_api", args: map[string]any{"method": "POST", "path": "/store/inventory/documents", "note": "Черновик прихода: Coca-Cola 42 шт по 7 333",
+			"body": map[string]any{"type": "income", "warehouse_id": wh, "counterparty_id": supplierID, "items": []map[string]any{{"product_id": cola, "qty": "42", "price": "7333"}}}}},
+		fakeTurn{text: `{"reply":"Записал 7 блоков по 6 = 42 штуки по 7 333. Провести?","lang":"ru"}`},
+	)
+	send(map[string]any{"text": "7 blok kola keldi"})
+	if m = last(); m["text"] != "Записал 7 блоков по 6 = 42 штуки по 7 333. Провести?" {
+		t.Fatalf("draft = %v", m)
+	}
+	docs := a.expect(a.do("GET", "/store/inventory/documents?store_id="+storeID+"&type=income&status=draft", ownerTok, nil), 200, "drafts").items()
+	if len(docs) != 1 {
+		t.Fatalf("drafts = %v", docs)
+	}
+	docID := docs[0]["id"].(string)
+	fai.play(
+		fakeTurn{tool: "call_api", args: map[string]any{"method": "POST", "path": "/store/inventory/documents/" + docID + "/post", "note": "Провести приход колы"}},
+		fakeTurn{text: `{"reply":"Нажмите кнопку.","lang":"ru"}`},
+	)
+	send(map[string]any{"text": "проведи"})
+	m = last()
+	if req := fai.lastRequest(); !strings.Contains(req, "current_document") || !strings.Contains(req, docID) {
+		t.Fatalf("draft not in context: %s", req[:min(len(req), 300)])
+	}
+	confirms = blocks(m, "confirm")
+	if len(confirms) != 1 || confirms[0]["action"].(map[string]any)["expect"] == "" {
+		t.Fatalf("post confirm = %v", confirms)
+	}
+	postAct := confirms[0]["action"]
+	// Поправили количество в панели → кнопка не проводит, просит подтвердить заново.
+	a.expect(a.do("PATCH", "/store/inventory/documents/"+docID, ownerTok, map[string]any{"items": []map[string]any{{"product_id": cola, "qty": "48", "price": "7333"}}}), 200, "edit draft")
+	send(map[string]any{"action": postAct})
+	m = last()
+	if !strings.Contains(m["text"].(string), "изменился") || len(blocks(m, "confirm")) != 1 {
+		t.Fatalf("changed doc = %v", m)
+	}
+	if d := a.expect(a.do("GET", "/store/inventory/documents/"+docID, ownerTok, nil), 200, "doc"); d.str("status") != "draft" {
+		t.Fatalf("doc posted despite change: %v", d.Body)
+	}
+	fai.play(fakeTurn{text: `{"reply":"Провёл: 48 штук колы.","lang":"ru"}`})
+	send(map[string]any{"action": blocks(m, "confirm")[0]["action"]})
+	if m = last(); m["text"] != "Провёл: 48 штук колы." {
+		t.Fatalf("posted = %v", m)
+	}
+	if d := a.expect(a.do("GET", "/store/inventory/documents/"+docID, ownerTok, nil), 200, "doc"); d.str("status") != "posted" {
+		t.Fatalf("doc = %v", d.Body)
+	}
+
 	// Фото товара, которого нет в базе: Super Market заполняет карточку, товар
 	// добавляется в «Мои товары», помощник продолжает разговор.
 	food := a.expect(a.do("POST", "/admin/catalog/categories", adminTok, map[string]any{"name": "Еда"}), 201, "section").str("id")
@@ -322,7 +374,7 @@ func TestAssistantChat(t *testing.T) {
 		t.Fatalf("product not added: %v", sr)
 	}
 	today = a.expect(a.do("GET", "/store/assistant/today?store_id="+storeID, ownerTok, nil), 200, "today").items()
-	if len(today) != 3 || !strings.HasPrefix(today[0]["text"].(string), "Новый товар «Печенье Rahat, 200 г»") {
+	if len(today) != 5 || !strings.HasPrefix(today[0]["text"].(string), "Новый товар «Печенье Rahat, 200 г»") {
 		t.Fatalf("journal = %v", today)
 	}
 

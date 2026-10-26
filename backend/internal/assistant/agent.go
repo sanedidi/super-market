@@ -60,11 +60,19 @@ const agentPrompt = `Ты — помощник Super Market: сервис учё
 8. Приход без накладной. Если владелец сам называет товар и количество («7 blok kola keldi», «пришло 20 молока по 12 000») — НЕ проси накладную, а сделай ручной приход:
    а) найди товар: GET /store/inventory/my-products?store_id=…&q=слово (в ответе product_id, unit_short, last_cost — прошлая цена закупки, pack — штук в блоке, warehouse_id — склад);
    б) блоки → штуки: «7 блоков» = 7 × pack; pack не известен — спроси, сколько штук в блоке, и запомни ответ: PUT /store/inventory/my-products/{product_id}/pack {"pack": 6} с note «Запомнил: … — блок по 6»; цену не назвали — возьми last_cost, нет и её — спроси;
-   в) поставщик: из сообщения или из списка suppliers (если один — он); не ясно — спроси кнопками;
+   в) поставщик: из сообщения; не назван — last_supplier товара из my-products (у кого брали в прошлый раз), иначе единственный в suppliers; не ясно — спроси кнопками;
    г) создай черновик: POST /store/inventory/documents {"type":"income","warehouse_id":…,"counterparty_id":…,"items":[{"product_id":…,"qty":"42","price":"7333"}]} с note «Черновик прихода: …»;
    д) провести — POST /store/inventory/documents/{id}/post: это необратимо, вызов вернёт needs_confirmation и владелец увидит кнопку. В ответе перечисли строки (товар, штук, цена, сумма) и скажи нажать кнопку.
    Накладную предлагай прикрепить только когда владелец говорит о приходе без названий товаров и количеств.
 9. Товара нет в «Моих товарах». Не говори «не нашёл» и не проси накладную — найди его в центральной базе Super Market: GET /store/start/search?store_id=…&q=слово (это общая база всех товаров: product_id, name, barcode, added). Нашёл один подходящий — добавь в «Мои товары»: POST /store/start/lines {"store_id":…,"items":[{"product_id":…,"add":true,"source":"search"}]} (409 similar_exists → повтори с "confirm_similar":true; 409 already_added — он уже есть) и дальше делай приход как в п. 8. Нашёл несколько похожих — покажи до 4 кнопками (send — название), пусть выберет. Нет и в базе — скажи, что такого товара в базе Super Market нет, и предложи кнопками: {"label": "Сфотографировать товар", "attach": "product"} (владелец пришлёт фото, карточку заполнит Super Market, товар добавится, и ты продолжишь приход) или «Добавить вручную» (ссылка «/start»). Цену продажи у нового товара спроси после прихода.
+10. Проверяй цифры, прежде чем записывать. Цена при блоках («7 блоков по 9 000») — за блок или за штуку? Если неясно — спроси кнопками «9 000 за блок» / «9 000 за штуку» (кроме случая, когда цена близка к last_cost за штуку). Цена отличается от last_cost больше чем на 25 % — переспроси: «в прошлый раз было 7 333, точно 73 000?». Количество от 50 штук или сумма от 2 000 000 сум из голосового — повтори цифрами и попроси подтвердить кнопкой «Да, верно», только потом создавай черновик. Если за последние минуты уже есть черновик или приход с тем же товаром и количеством (current_document, recent_messages) — спроси, это та же поставка или новая, а не создавай второй.
+11. Правки «нет, не 7, а 8», «убери фанту», «добавь ещё хлеб» — это про current_document: правь его PATCH /store/inventory/documents/{id} (items целиком), не создавай новый.
+12. Новый поставщик («от Ахмада»): перед POST /store/finance/counterparties проверь похожих — GET /store/finance/counterparties?q=первое слово имени (и suppliers в контексте): «Ахмад», «Ahmad», «Ахмад ака» — скорее всего один человек; есть похожий — спроси кнопками «это он?» / «новый», не плоди дубли.
+13. Магазины: чат привязан к магазину store_id (store). Если владелец назвал другой магазин из stores — сделай там (его id в store_id запросов) и скажи явно «сделал в магазине …»; если магазин не понятен — спроси кнопками.
+
+14. Ошибка в уже проведённом приходе («отмени», «там было не 7, а 70»): проведённый документ не правится и не отменяется — исправляй встречным документом: записали лишнее — списание (type "write_off", reason «ошибка прихода») или возврат поставщику; записали меньше — ещё один приход на разницу. Объясни владельцу, что сделаешь, создай черновик, провести — кнопкой.
+15. Возврат поставщику («верни 3 блока колы Абдуллаеву») — документ type "supplier_return" в /store/inventory/documents, провести — кнопкой. «Что заказать» — my-products со status=out и low (per_day, days_left): предложи количества на неделю (per_day × 7 − qty) таблицей; «составь заказ» — черновик прихода от этого поставщика с этими количествами (цены — last_cost), провести — когда товар привезут.
+16. done_today в контексте — что ты уже сделал сегодня: не повторяй и опирайся на это, если владелец ссылается на прошлое («тот приход», «как утром»).
 
 Страницы панели для ссылок (href): главная «/», остатки «/stock/balance», приход «/purchases/income» и «/purchases/income/{document_id}», товары «/dirs/products», контрагенты «/dirs/counterparties», продажи «/sales/pos», цены «/sales/prices», долги «/debts», заказы «/orders», финансы «/finance/operations», отчёты «/reports/profit-loss», сотрудники «/settings/employees».
 
@@ -164,6 +172,13 @@ func (s *Service) agent(ctx context.Context, p *identity.Principal, in SendInput
 	prompt, err := s.buildPrompt(ctx, p, in.StoreID, lang, text, sc)
 	if err != nil {
 		return reply{}, err
+	}
+	// Черновик документа в работе — модели вместе с контекстом.
+	if docID := s.currentDocument(ctx, p, in.StoreID); docID != "" {
+		if st, doc := s.loopback(ctx, tok, lang, http.MethodGet, "/store/inventory/documents/"+docID, nil, nil); st == 200 {
+			b, _ := json.Marshal(doc)
+			prompt += "\n\nЧерновик документа в работе (current_document, GET /store/inventory/documents/" + docID + "):\n" + cut(string(b), 6000)
+		}
 	}
 	first := ai.ChatMsg{Role: "user", Text: prompt}
 	if in.Audio != nil {
@@ -335,12 +350,26 @@ func (s *Service) toolCallAPI(ctx context.Context, st *agentState, args map[stri
 		if body != nil {
 			raw, _ = json.Marshal(body)
 		}
-		st.pending = append(st.pending, Action{Type: "api", Method: method, Path: path, Query: query, Body: raw, Note: note, Label: label})
+		act := Action{Type: "api", Method: method, Path: path, Query: query, Body: raw, Note: note, Label: label}
+		if docPath, ok := strings.CutSuffix(path, "/post"); ok && strings.HasPrefix(docPath, "/store/inventory/documents/") {
+			_, cur := s.loopback(ctx, st.token, st.lang, http.MethodGet, docPath, nil, nil)
+			doc, _ := cur.(map[string]any)
+			act.Expect = docExpect(doc)
+		}
+		st.pending = append(st.pending, act)
 		return toolReply{NeedsConfirmation: true, Hint: "это необратимое действие: владелец увидит кнопку «" + label + "» и подтвердит сам. Скажи ему нажать кнопку."}.String()
 	}
 	status, resp := s.loopback(ctx, st.token, st.lang, method, path, query, body)
 	if method != http.MethodGet && status/100 == 2 {
 		s.journal(ctx, st, method, path, note)
+	}
+	if status/100 == 2 && strings.HasPrefix(path, "/store/inventory/documents") {
+		// Создан или поправлен черновик — он теперь «в работе» у чата.
+		if m, ok := resp.(map[string]any); ok {
+			if id, _ := m["id"].(string); id != "" && m["status"] == "draft" {
+				s.setCurrentDocument(ctx, st.p, st.storeID, &id)
+			}
+		}
 	}
 	if strings.HasPrefix(path, "/store/invoice-scans/") {
 		if id := strings.SplitN(strings.TrimPrefix(path, "/store/invoice-scans/"), "/", 2)[0]; id != "" {

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -61,6 +62,14 @@ type MyProduct struct {
 	// Pack — штук в блоке у этого товара в сети (запомнено из накладных:
 	// «12 блоков по 6» → 6); null — блок не известен.
 	Pack *string `json:"pack"`
+	// LastSupplier — у кого брали в последнем проведённом приходе (с правом
+	// «Склад» или «Отчёты»).
+	LastSupplier *LastSupplier `json:"last_supplier,omitempty"`
+}
+
+type LastSupplier struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type MyProductsFilter struct {
@@ -234,22 +243,31 @@ func (s *Service) MyProducts(ctx context.Context, p *identity.Principal, f MyPro
 		         WHERE d.network_id = $%d AND d.type = 'income' AND d.status = 'posted' AND d.currency = 'UZS'
 		           AND i.product_id = y.id AND i.price IS NOT NULL
 		         ORDER BY d.posted_at DESC LIMIT 1),
-		       (SELECT trim_scale(pk.pack)::text FROM network_product_packs pk WHERE pk.network_id = $%d AND pk.product_id = y.id)
+		       (SELECT trim_scale(pk.pack)::text FROM network_product_packs pk WHERE pk.network_id = $%d AND pk.product_id = y.id),
+		       (SELECT c.id::text || '|' || c.name FROM stock_document_items i JOIN stock_documents d ON d.id = i.document_id
+		         JOIN counterparties c ON c.id = d.counterparty_id
+		         WHERE d.network_id = $%d AND d.type = 'income' AND d.status = 'posted' AND i.product_id = y.id
+		         ORDER BY d.posted_at DESC LIMIT 1)
 		FROM y
 		WHERE $%d = '' OR status = $%d
 		ORDER BY %s
-		LIMIT %d OFFSET %d`, netArg, netArg, statusArg, statusArg, order, f.Page.Limit, f.Page.Offset), productsearch.Args(args)...)
+		LIMIT %d OFFSET %d`, netArg, netArg, netArg, statusArg, statusArg, order, f.Page.Limit, f.Page.Offset), productsearch.Args(args)...)
 	if err != nil {
 		return out, err
 	}
 	out.Items, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (MyProduct, error) {
 		var it MyProduct
-		var avg, last *string
+		var avg, last, sup *string
 		var cost string
 		err := r.Scan(&it.ProductID, &it.Name, &it.Image, &it.Barcode, &it.Category, &it.UnitShort, &it.IsFractional, &it.Price,
-			&it.Uncounted, &it.Qty, &it.PerDay, &it.DaysLeft, &it.Status, &avg, &cost, &last, &it.Pack)
+			&it.Uncounted, &it.Qty, &it.PerDay, &it.DaysLeft, &it.Status, &avg, &cost, &last, &it.Pack, &sup)
 		if sees {
 			it.AvgCost, it.StockCost, it.LastCost = avg, &cost, last
+			if sup != nil {
+				if id, name, ok := strings.Cut(*sup, "|"); ok {
+					it.LastSupplier = &LastSupplier{ID: id, Name: name}
+				}
+			}
 		}
 		return it, err
 	})

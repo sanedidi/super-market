@@ -53,6 +53,9 @@ const (
 	// LimitAIPhotos — фото, которые Super Market делает магазину сам
 	// (нормализация фото новых товаров и строк инвентаризации), в месяц.
 	LimitAIPhotos = "ai_photos"
+	// LimitAssistant — сообщений помощнику в месяц (каждое — несколько
+	// запросов к модели).
+	LimitAssistant = "ai_assistant"
 )
 
 // Feature — функция, которую можно включить в тариф.
@@ -140,6 +143,9 @@ var Limits = []Limit{
 	{LimitAIPhotos, GroupStore,
 		i18n.Text{RU: "Фото от Super Market в месяц", UZ: "Oyiga Super Market rasmlari"},
 		i18n.Text{RU: "Super Market сам делает чистое фото новых товаров и товаров без фото на инвентаризации", UZ: "Super Market yangi mahsulotlar va inventarizatsiyadagi rasmsiz mahsulotlarning toza rasmini oʻzi tayyorlaydi"}, 0, ptr(300)},
+	{LimitAssistant, GroupStore,
+		i18n.Text{RU: "Сообщений помощнику в месяц", UZ: "Oyiga yordamchiga xabarlar"},
+		i18n.Text{RU: "Чат «Помощник»: текст, голос и фото — каждое сообщение считается", UZ: "«Yordamchi» chati: matn, ovoz va rasm — har bir xabar hisoblanadi"}, 0, ptr(1500)},
 	{LimitCouriers, GroupDelivery,
 		i18n.Text{RU: "Своих курьеров", UZ: "Oʻz kuryerlari"},
 		i18n.Text{RU: "Сотрудников с правом доставки", UZ: "Yetkazib berish huquqiga ega xodimlar"}, 0, nil},

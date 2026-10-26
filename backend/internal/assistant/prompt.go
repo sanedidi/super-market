@@ -13,14 +13,17 @@ import (
 
 // promptContext — что модель должна знать о магазине и разговоре.
 type promptContext struct {
-	Today     string            `json:"today"`
-	Store     string            `json:"store"`
-	Lang      string            `json:"ui_lang"`
-	Suppliers []string          `json:"suppliers"`
-	Scan      *scanContext      `json:"current_scan,omitempty"`
-	Recent    []recentMessage   `json:"recent_messages"`
-	Message   string            `json:"owner_message,omitempty"`
-	Hints     map[string]string `json:"hints,omitempty"`
+	Today     string   `json:"today"`
+	Store     string   `json:"store"`
+	Lang      string   `json:"ui_lang"`
+	Suppliers []string `json:"suppliers"`
+	// Stores — магазины сети {id, name}; текущий — Store/StoreID.
+	StoreID string              `json:"store_id"`
+	Stores  []map[string]string `json:"stores,omitempty"`
+	Scan    *scanContext        `json:"current_scan,omitempty"`
+	Recent  []recentMessage     `json:"recent_messages"`
+	Message string              `json:"owner_message,omitempty"`
+	Hints   map[string]string   `json:"hints,omitempty"`
 }
 
 type scanContext struct {
@@ -50,7 +53,17 @@ type recentMessage struct {
 // последние реплики и само сообщение.
 func (s *Service) buildPrompt(ctx context.Context, p *identity.Principal, storeID, lang, text string, sc *invoices.Scan) (string, error) {
 	pc := promptContext{Today: s.now().In(tashkent).Format("2006-01-02"), Lang: lang, Suppliers: []string{}, Recent: []recentMessage{}, Message: text}
+	pc.StoreID = storeID
 	_ = s.pool.QueryRow(ctx, `SELECT name FROM stores WHERE id = $1`, storeID).Scan(&pc.Store)
+	if srows, err := s.pool.Query(ctx, `SELECT id, name FROM stores WHERE network_id = $1 AND is_active ORDER BY name LIMIT 20`, p.NetworkID); err == nil {
+		for srows.Next() {
+			var id, name string
+			if srows.Scan(&id, &name) == nil && p.CanAccessStore(id) {
+				pc.Stores = append(pc.Stores, map[string]string{"id": id, "name": name})
+			}
+		}
+		srows.Close()
+	}
 	rows, err := s.pool.Query(ctx, `SELECT name FROM counterparties WHERE network_id = $1 AND is_active ORDER BY name LIMIT 30`, p.NetworkID)
 	if err != nil {
 		return "", err

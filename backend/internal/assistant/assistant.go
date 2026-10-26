@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sort"
@@ -27,6 +28,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/invoices"
 	"github.com/sanedidi/super-market/backend/internal/media"
+	"github.com/sanedidi/super-market/backend/internal/plans"
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
@@ -111,7 +113,10 @@ type Action struct {
 	Query  map[string]any  `json:"query,omitempty"`
 	Body   json.RawMessage `json:"body,omitempty"`
 	Note   string          `json:"note,omitempty"`
-	Line   int             `json:"line,omitempty"`
+	// Expect — для проведения документа: «итого|строк» на момент кнопки;
+	// документ изменился — проводить нельзя, показываем заново.
+	Expect string `json:"expect,omitempty"`
+	Line   int    `json:"line,omitempty"`
 	// Pack — единиц товара в единице накладной («12 блоков по 6» → 6).
 	Pack           *string `json:"pack,omitempty"`
 	ProductID      *string `json:"product_id,omitempty"`
@@ -344,6 +349,9 @@ func (s *Service) Send(ctx context.Context, p *identity.Principal, in SendInput)
 			return SendResult{}, err
 		}
 	}
+	if err := s.checkLimit(ctx, p); err != nil {
+		return SendResult{}, err
+	}
 	lang := i18n.FromContext(ctx)
 	own := newMsg{Role: RoleOwner, Kind: "text", Text: in.Text, Lang: lang, Images: in.Images}
 	switch {
@@ -416,4 +424,29 @@ func errText(err error, lang string) string {
 		return i18n.Pick(lang, "Сервис Super Market не ответил: ", "Super Market xizmati javob bermadi: ") + msg
 	}
 	return i18n.Pick(lang, "Что-то пошло не так, попробуйте ещё раз.", "Nimadir xato ketdi, yana urinib koʻring.")
+}
+
+// checkLimit — сообщений помощнику в месяц по тарифу сети.
+func (s *Service) checkLimit(ctx context.Context, p *identity.Principal) error {
+	pl, err := plans.Effective(ctx, s.pool, p.NetworkID)
+	if err != nil {
+		return err
+	}
+	lim := pl.Limit(plans.LimitAssistant)
+	if lim == nil {
+		return nil
+	}
+	var used int
+	if err := s.pool.QueryRow(ctx, `
+		SELECT count(*)::int FROM assistant_messages
+		WHERE network_id = $1 AND role = 'owner'
+		  AND created_at >= date_trunc('month', now() AT TIME ZONE 'Asia/Tashkent') AT TIME ZONE 'Asia/Tashkent'`, p.NetworkID).Scan(&used); err != nil {
+		return err
+	}
+	if used >= *lim {
+		return apperr.Conflict("assistant_limit", fmt.Sprintf("сообщения помощнику на этот месяц закончились (%d по тарифу «%s»)", *lim, pl.Name)).
+			Uz(fmt.Sprintf("bu oy uchun yordamchiga xabarlar tugadi (%d ta, «%s» tarifi)", *lim, pl.Name)).
+			WithDetails(map[string]any{"limit": *lim, "used": used, "plan": pl.Key})
+	}
+	return nil
 }
