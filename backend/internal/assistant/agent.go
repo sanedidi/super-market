@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -66,7 +67,7 @@ const agentPrompt = `Тебя зовут Шахзод — ты помощник 
    Всё недостающее спрашивай ОДНИМ сообщением (цена и поставщик вместе), а не по одному вопросу.
    д) цена продажи: в том же сообщении или в итоге черновика покажи текущую цену продажи (price из my-products) и наценку к новой закупке; спроси «Цену продажи оставить 13 000 или поменять?» кнопками. Если продажа ниже закупки или наценка меньше 10 % — предупреди и предложи цену с прежней наценкой;
    е) когда всё известно — черновик: POST /store/inventory/documents {"type":"income","warehouse_id":…,"counterparty_id":…,"items":[{"product_id":…,"qty":"42","price":"7333"}]} с note «Черновик прихода: …»; затем POST /store/inventory/documents/{id}/post с button «Провести приход · 308 000» — сервер покажет кнопку. Сам кнопку «Провести» в buttons не добавляй;
-   ж) новая цена продажи — черновик «Установки цен»: POST /store/price-documents {"price_type_id": (GET /store/price-types — первый/основной), "store_id":…, "items":[{"product_id":…,"new_price":"14000"}]} с note, затем POST /store/price-documents/{id}/post с button «Установить цену 14 000» — тоже кнопкой.
+   ж) новая цена продажи — черновик «Установки цен»: POST /store/price-documents {"price_type_id": (GET /store/price-types — первый/основной), "store_id":…, "items":[{"product_id":…,"new_price":"14000"}]} с note, note — «Цена продажи Coca-Cola 1,5 л: 14 000» и button «Установить цену 14 000». Кнопку проведения сервер покажет сам. Черновик НЕ меняет цену на кассе: пока владелец не нажал кнопку, пиши «нажмите „Установить цену 14 000“», а не «изменил».
    Накладную предлагай прикрепить только когда владелец говорит о приходе без названий товаров и количеств.
 9. Товара нет в «Моих товарах». Не говори «не нашёл» и не проси накладную — найди его в центральной базе Super Market: GET /store/start/search?store_id=…&q=слово (это общая база всех товаров: product_id, name, barcode, added). Нашёл один подходящий — добавь в «Мои товары»: POST /store/start/lines {"store_id":…,"items":[{"product_id":…,"add":true,"source":"search"}]} (409 similar_exists → повтори с "confirm_similar":true; 409 already_added — он уже есть) и дальше делай приход как в п. 8. Нашёл несколько похожих — покажи до 4 кнопками (send — название), пусть выберет. Нет и в базе — скажи, что такого товара в базе Super Market нет, и предложи кнопками: {"label": "Сфотографировать товар", "attach": "product"} (владелец пришлёт фото, карточку заполнит Super Market, товар добавится, и ты продолжишь приход) или «Добавить вручную» (ссылка «/start»). Цену продажи у нового товара спроси после прихода.
 10. Проверяй цифры, прежде чем записывать. Цена при блоках («7 блоков по 9 000») — за блок или за штуку? Если неясно — спроси кнопками «9 000 за блок» / «9 000 за штуку» (кроме случая, когда цена близка к last_cost за штуку). Цена отличается от last_cost больше чем на 25 % — переспроси: «в прошлый раз было 7 333, точно 73 000?». Количество от 50 штук или сумма от 2 000 000 сум из голосового — повтори цифрами и попроси подтвердить кнопкой «Да, верно», только потом создавай черновик. Если за последние минуты уже есть черновик или приход с тем же товаром и количеством (current_document, recent_messages) — спроси, это та же поставка или новая, а не создавай второй.
@@ -88,6 +89,7 @@ const agentPrompt = `Тебя зовут Шахзод — ты помощник 
    - списание (write_off): С какого склада и причина (reason: просрочка, бой, порча, ошибка);
    - возврат от покупателя делается на кассе — скажи об этом и дай ссылку на «/sales/returns».
    Склады магазина — warehouses в контексте. Один склад — не спрашивай, но назови его в итоге («на склад Основной»). Несколько — спроси кнопками (send — название склада, ref — id), склад по умолчанию — первым. Владелец назвал другой магазин сети — склады того магазина: GET /store/warehouses?store_id=…. Спрашивай «откуда/куда» в том же сообщении, что цену и поставщика, — одним вопросом, не по очереди.
+21. Честность о сделанном. Пока владелец не нажал кнопку подтверждения, действие НЕ выполнено: не пиши «изменил», «провёл», «удалил», «оплатил» — пиши «готово к подтверждению, нажмите …». Цены, остатки и суммы называй только из свежего ответа API (цена продажи — поле price в GET /store/inventory/my-products), никогда из черновиков и не по памяти разговора.
 
 Страницы панели для ссылок (href): главная «/», остатки «/stock/balance», приход «/purchases/income» и «/purchases/income/{document_id}», товары «/dirs/products», контрагенты «/dirs/counterparties», продажи «/sales/pos», цены «/sales/prices», долги «/debts», заказы «/orders», финансы «/finance/operations», отчёты «/reports/profit-loss», сотрудники «/settings/employees».
 
@@ -227,10 +229,24 @@ func (s *Service) agent(ctx context.Context, p *identity.Principal, in SendInput
 	var out finalOut
 	calls := 0
 	for step := 0; ; step++ {
-		rep, u, err := conn.Chat(ctx, agentPrompt, msgs, tools())
-		net, store, emp := p.NetworkID, in.StoreID, p.EmployeeID
-		_ = s.ai.Record(ctx, ai.UsageRecord{Kind: "assistant", NetworkID: &net, StoreID: &store, EmployeeID: &emp,
-			Provider: conn.Provider, Model: conn.Model, Usage: u, OK: err == nil})
+		var rep ai.ChatReply
+		var err error
+		for try := 0; ; try++ {
+			var u ai.Usage
+			rep, u, err = conn.Chat(ctx, agentPrompt, msgs, tools())
+			net, store, emp := p.NetworkID, in.StoreID, p.EmployeeID
+			_ = s.ai.Record(ctx, ai.UsageRecord{Kind: "assistant", NetworkID: &net, StoreID: &store, EmployeeID: &emp,
+				Provider: conn.Provider, Model: conn.Model, Usage: u, OK: err == nil})
+			// Перегрузка Google (429/5xx) или пустой ответ — повторяем сами, владелец не видит.
+			if err == nil || try >= len(s.retryWait) || !retryable(err) {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return reply{}, ctx.Err()
+			case <-time.After(s.retryWait[try]):
+			}
+		}
 		if err != nil {
 			return reply{}, err
 		}
@@ -426,11 +442,11 @@ func (s *Service) toolCallAPI(ctx context.Context, st *agentState, args map[stri
 			doc, _ := cur.(map[string]any)
 			act.Expect = docExpect(doc)
 		}
-		st.pending = append(st.pending, act)
+		st.addPending(act)
 		return toolReply{NeedsConfirmation: true, Hint: "это необратимое действие: владелец увидит кнопку «" + label + "» и подтвердит сам. Скажи ему нажать кнопку."}.String()
 	}
 	status, resp := s.loopback(ctx, st.token, st.lang, method, path, query, body)
-	if method != http.MethodGet && status/100 == 2 {
+	if method != http.MethodGet && status/100 == 2 && !priceDocRe.MatchString(path) {
 		s.journal(ctx, st, method, path, note)
 	}
 	if status/100 == 2 && strings.HasPrefix(path, "/store/inventory/documents") {
@@ -441,12 +457,84 @@ func (s *Service) toolCallAPI(ctx context.Context, st *agentState, args map[stri
 			}
 		}
 	}
+	if status/100 == 2 && method != http.MethodGet && method != http.MethodDelete && priceDocRe.MatchString(path) {
+		// Черновик цен ничего не меняет на кассе — сразу даём кнопку «Установить цену».
+		if m, ok := resp.(map[string]any); ok && m["status"] == "draft" {
+			if id, _ := m["id"].(string); id != "" {
+				label := button
+				if label == "" {
+					label = priceLabel(st.lang, m)
+				}
+				st.addPending(Action{Type: "api", Method: http.MethodPost, Path: "/store/price-documents/" + id + "/post", Note: note, Label: label})
+				return toolReply{Status: status, Body: resp, Hint: "это только ЧЕРНОВИК: цена на кассе ещё старая. Владелец увидит кнопку «" + label +
+					"» — скажи нажать её. НЕ пиши, что цена изменена, пока он не нажал."}.String()
+			}
+		}
+	}
 	if strings.HasPrefix(path, "/store/invoice-scans/") {
 		if id := strings.SplitN(strings.TrimPrefix(path, "/store/invoice-scans/"), "/", 2)[0]; id != "" {
 			st.scanTouched = id
 		}
 	}
 	return toolReply{Status: status, Body: resp}.String()
+}
+
+// priceDocRe — черновик «Установки цен» (создание или правка, не проведение).
+var priceDocRe = regexp.MustCompile(`^/store/price-documents(/[^/]+)?$`)
+
+// addPending — кнопка подтверждения; одно действие — одна кнопка.
+func (st *agentState) addPending(a Action) {
+	for i, c := range st.pending {
+		if c.Method == a.Method && c.Path == a.Path {
+			if a.Label != "" {
+				st.pending[i].Label = a.Label
+			}
+			return
+		}
+	}
+	st.pending = append(st.pending, a)
+}
+
+// priceLabel — «Установить цену 13 000» по черновику цен.
+func priceLabel(lang string, doc map[string]any) string {
+	items, _ := doc["items"].([]any)
+	if len(items) == 1 {
+		if it, ok := items[0].(map[string]any); ok {
+			if p, _ := it["new_price"].(string); p != "" {
+				return t(lang, "Установить цену ", "Narxni oʻrnatish: ") + groupDigits(p)
+			}
+		}
+	}
+	return t(lang, "Установить новые цены", "Yangi narxlarni oʻrnatish")
+}
+
+// groupDigits — «13000.00» → «13 000».
+func groupDigits(v string) string {
+	v = strings.TrimSpace(v)
+	if i := strings.IndexByte(v, '.'); i >= 0 && strings.Trim(v[i+1:], "0") == "" {
+		v = v[:i]
+	}
+	intPart, frac := v, ""
+	if i := strings.IndexByte(v, '.'); i >= 0 {
+		intPart, frac = v[:i], v[i:]
+	}
+	var b strings.Builder
+	for i, r := range intPart {
+		if i > 0 && (len(intPart)-i)%3 == 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteRune(r)
+	}
+	return b.String() + frac
+}
+
+// retryable — временная ошибка модели: перегрузка, сбой Google или пустой ответ.
+func retryable(err error) bool {
+	var se *ai.ErrService
+	if !errors.As(err, &se) {
+		return false
+	}
+	return se.Status == 429 || se.Status >= 500 || se.Temporary || strings.Contains(se.Msg, "пустой ответ")
 }
 
 func checkPath(path string) error {

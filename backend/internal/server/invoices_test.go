@@ -31,6 +31,8 @@ type fakeAI struct {
 	script []fakeTurn
 	// requests — тела запросов к chat/completions (для проверок).
 	requests []string
+	// fail — статусы, которыми ответить на ближайшие запросы помощника (429 и т. п.).
+	fail []int
 }
 
 type fakeTurn struct {
@@ -84,6 +86,13 @@ func (f *fakeAI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		if !f.text && !strings.Contains(string(raw), "data:image/png;base64,") {
 			w.WriteHeader(400)
+			return
+		}
+		if len(f.fail) > 0 && strings.Contains(string(raw), `"tools"`) {
+			code := f.fail[0]
+			f.fail = f.fail[1:]
+			w.WriteHeader(code)
+			_, _ = w.Write([]byte(`{"error":{"message":"Resource exhausted. Please try again later."}}`))
 			return
 		}
 		f.calls++

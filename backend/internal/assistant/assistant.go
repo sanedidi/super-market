@@ -63,12 +63,15 @@ type Service struct {
 	now func() time.Time
 	// scanWait — сколько ждать распознавание накладной в одном ответе.
 	scanWait time.Duration
+	// retryWait — паузы перед повтором, если модель перегружена (429) или ответила пусто.
+	retryWait []time.Duration
 }
 
 func NewService(pool *pgxpool.Pool, aiSvc *ai.Service, ident *identity.Service, mediaSvc *media.Service, scans *invoices.Service,
 	log *slog.Logger) *Service {
 	return &Service{pool: pool, ai: aiSvc, ident: ident, media: mediaSvc, scans: scans, log: log,
-		run: func(f func()) { go f() }, now: time.Now, scanWait: 90 * time.Second}
+		run: func(f func()) { go f() }, now: time.Now, scanWait: 90 * time.Second,
+		retryWait: []time.Duration{2 * time.Second, 6 * time.Second}}
 }
 
 // SetHandler — сервер для внутренних вызовов API и список его маршрутов
@@ -90,7 +93,11 @@ func (s *Service) SetHandler(h http.Handler) {
 }
 
 // Sync — отвечать прямо в запросе (тесты).
-func (s *Service) Sync() { s.run = func(f func()) { f() }; s.scanWait = 2 * time.Second }
+func (s *Service) Sync() {
+	s.run = func(f func()) { f() }
+	s.scanWait = 2 * time.Second
+	s.retryWait = []time.Duration{0, 0}
+}
 
 // Block — что показать в сообщении кроме текста (панель рисует по type):
 //
@@ -425,6 +432,10 @@ func errText(err error, lang string) string {
 		return i18n.Pick(lang, "Не получилось: ", "Chiqmadi: ") + ae.Text(lang)
 	}
 	var se *ai.ErrService
+	if errors.As(err, &se) && (se.Status == 429 || se.Status >= 500 || se.Temporary || strings.Contains(se.Msg, "пустой ответ")) {
+		return i18n.Pick(lang, "Шахзод сейчас перегружен — повторите, пожалуйста, через минуту.",
+			"Shahzod hozir band — iltimos, bir daqiqadan soʻng qayta yozing.")
+	}
 	if errors.As(err, &se) {
 		msg := se.Msg
 		if lang == "uz" && se.MsgUz != "" {

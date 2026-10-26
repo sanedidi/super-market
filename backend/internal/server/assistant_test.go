@@ -359,6 +359,45 @@ func TestAssistantChat(t *testing.T) {
 		t.Fatalf("doc = %v", d.Body)
 	}
 
+	// Новая цена продажи: черновик «Установки цен» не меняет цену — сервер сам
+	// даёт кнопку «Установить цену 13 000», журнал пишется только после неё.
+	// Заодно: Google ответил 429 — помощник повторил сам, владелец ошибки не видит.
+	pts := a.expect(a.do("GET", "/store/price-types", ownerTok, nil), 200, "price types").items()
+	priceBefore := func() any {
+		mp := a.expect(a.do("GET", "/store/inventory/my-products?store_id="+storeID+"&q=Coca", ownerTok, nil), 200, "price").items()
+		return mp[0]["price"]
+	}
+	was := priceBefore()
+	fai.mu.Lock()
+	fai.fail = []int{429}
+	fai.mu.Unlock()
+	fai.play(
+		fakeTurn{tool: "call_api", args: map[string]any{"method": "POST", "path": "/store/price-documents", "note": "Цена продажи колы: 13 000",
+			"body": map[string]any{"price_type_id": pts[0]["id"], "store_id": storeID, "items": []map[string]any{{"product_id": cola, "new_price": "13000"}}}}},
+		fakeTurn{text: `{"reply":"Нажмите «Установить цену 13 000».","lang":"ru"}`},
+	)
+	send(map[string]any{"text": "колу теперь продаем по 13000"})
+	m = last()
+	confirms = blocks(m, "confirm")
+	if m["status"] != "done" || len(confirms) != 1 || confirms[0]["label"] != "Установить цену 13 000" {
+		t.Fatalf("price confirm = %v", m)
+	}
+	if req := fai.lastRequest(); !strings.Contains(req, "ЧЕРНОВИК") {
+		t.Fatalf("draft hint not passed: %s", req[:min(len(req), 300)])
+	}
+	if p := priceBefore(); p != was {
+		t.Fatalf("price changed before confirm: %v → %v", was, p)
+	}
+	todayBefore := len(a.expect(a.do("GET", "/store/assistant/today?store_id="+storeID, ownerTok, nil), 200, "today").items())
+	fai.play(fakeTurn{text: `{"reply":"Готово: кола теперь 13 000.","lang":"ru"}`})
+	send(map[string]any{"action": confirms[0]["action"]})
+	if p := priceBefore(); p == nil || !strings.HasPrefix(p.(string), "13000") {
+		t.Fatalf("price after confirm = %v", p)
+	}
+	if n := len(a.expect(a.do("GET", "/store/assistant/today?store_id="+storeID, ownerTok, nil), 200, "today").items()); n != todayBefore+1 {
+		t.Fatalf("journal after price = %d, before %d", n, todayBefore)
+	}
+
 	// «kola» (латиницей) находит Coca-Cola: поиск пробует другую письменность («кола»).
 	if mp := a.expect(a.do("GET", "/store/inventory/my-products?store_id="+storeID+"&q=kola", ownerTok, nil), 200, "kola").items(); len(mp) != 1 || mp[0]["name"] != "Coca-Cola 1,5 л" {
 		t.Fatalf("kola = %v", mp)
@@ -427,7 +466,7 @@ func TestAssistantChat(t *testing.T) {
 		t.Fatalf("product not added: %v", sr)
 	}
 	today = a.expect(a.do("GET", "/store/assistant/today?store_id="+storeID, ownerTok, nil), 200, "today").items()
-	if len(today) != 5 || !strings.HasPrefix(today[0]["text"].(string), "Новый товар «Печенье Rahat, 200 г»") {
+	if len(today) != 6 || !strings.HasPrefix(today[0]["text"].(string), "Новый товар «Печенье Rahat, 200 г»") {
 		t.Fatalf("journal = %v", today)
 	}
 
