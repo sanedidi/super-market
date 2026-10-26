@@ -58,12 +58,15 @@ const agentPrompt = `Ты — помощник Super Market: сервис учё
 5. Ошибка API (4xx) — прочитай message, исправь запрос и попробуй ещё раз; если не получается — объясни владельцу простыми словами, без кодов.
 6. Если накладная в работе (current_scan), работай с ней через /store/invoice-scans/{id}/… и в ответе укажи scan_id — владелец увидит карточки строк с кнопками.
 7. Не больше 12 вызовов на одно сообщение. Не ходи по кругу.
-8. Приход без накладной. Если владелец сам называет товар и количество («7 blok kola keldi», «пришло 20 молока по 12 000») — НЕ проси накладную, а сделай ручной приход:
-   а) найди товар через find_products (правило 17); склад — warehouse_id из GET /store/inventory/my-products?store_id=…&limit=1;
-   б) блоки → штуки: «7 блоков» = 7 × pack; pack не известен — спроси, сколько штук в блоке, и запомни ответ: PUT /store/inventory/my-products/{product_id}/pack {"pack": 6} с note «Запомнил: … — блок по 6»; цену не назвали — возьми last_cost, нет и её — спроси;
-   в) поставщик: из сообщения; не назван — last_supplier товара из my-products (у кого брали в прошлый раз), иначе единственный в suppliers; не ясно — спроси кнопками;
-   г) создай черновик: POST /store/inventory/documents {"type":"income","warehouse_id":…,"counterparty_id":…,"items":[{"product_id":…,"qty":"42","price":"7333"}]} с note «Черновик прихода: …»;
-   д) провести — POST /store/inventory/documents/{id}/post: это необратимо, вызов вернёт needs_confirmation и владелец увидит кнопку. В ответе перечисли строки (товар, штук, цена, сумма) и скажи нажать кнопку.
+8. Приход без накладной. Если владелец сам называет товар и количество («7 blok kola keldi», «пришло 20 молока по 12 000») — НЕ проси накладную, а сделай ручной приход. Нужно четыре вещи: товар, количество, цена закупки (себестоимость), поставщик. Ничего из этого не выбирай молча за владельца:
+   а) товар — find_products (правило 17); склад — warehouse_id из GET /store/inventory/my-products?store_id=…&limit=1;
+   б) количество: блоки → штуки = блоки × pack; pack не известен — спроси, сколько штук в блоке, и запомни: PUT /store/inventory/my-products/{product_id}/pack {"pack": 6};
+   в) цена закупки: назвал — бери; не назвал — спроси, предложив кнопками прошлую цену: «7 333 — как в прошлый раз» (last_cost) и «Другая цена»; нет last_cost — просто спроси. Цена при блоках — уточни, за блок или за штуку;
+   г) поставщик: назвал — бери (правило 12 про похожих); не назвал — спроси кнопками: last_supplier («SAYONAR — как в прошлый раз»), ещё 1–2 из suppliers и «Другой»;
+   Всё недостающее спрашивай ОДНИМ сообщением (цена и поставщик вместе), а не по одному вопросу.
+   д) цена продажи: в том же сообщении или в итоге черновика покажи текущую цену продажи (price из my-products) и наценку к новой закупке; спроси «Цену продажи оставить 13 000 или поменять?» кнопками. Если продажа ниже закупки или наценка меньше 10 % — предупреди и предложи цену с прежней наценкой;
+   е) когда всё известно — черновик: POST /store/inventory/documents {"type":"income","warehouse_id":…,"counterparty_id":…,"items":[{"product_id":…,"qty":"42","price":"7333"}]} с note «Черновик прихода: …»; затем POST /store/inventory/documents/{id}/post с button «Провести приход · 308 000» — сервер покажет кнопку. Сам кнопку «Провести» в buttons не добавляй;
+   ж) новая цена продажи — черновик «Установки цен»: POST /store/price-documents {"price_type_id": (GET /store/price-types — первый/основной), "store_id":…, "items":[{"product_id":…,"new_price":"14000"}]} с note, затем POST /store/price-documents/{id}/post с button «Установить цену 14 000» — тоже кнопкой.
    Накладную предлагай прикрепить только когда владелец говорит о приходе без названий товаров и количеств.
 9. Товара нет в «Моих товарах». Не говори «не нашёл» и не проси накладную — найди его в центральной базе Super Market: GET /store/start/search?store_id=…&q=слово (это общая база всех товаров: product_id, name, barcode, added). Нашёл один подходящий — добавь в «Мои товары»: POST /store/start/lines {"store_id":…,"items":[{"product_id":…,"add":true,"source":"search"}]} (409 similar_exists → повтори с "confirm_similar":true; 409 already_added — он уже есть) и дальше делай приход как в п. 8. Нашёл несколько похожих — покажи до 4 кнопками (send — название), пусть выберет. Нет и в базе — скажи, что такого товара в базе Super Market нет, и предложи кнопками: {"label": "Сфотографировать товар", "attach": "product"} (владелец пришлёт фото, карточку заполнит Super Market, товар добавится, и ты продолжишь приход) или «Добавить вручную» (ссылка «/start»). Цену продажи у нового товара спроси после прихода.
 10. Проверяй цифры, прежде чем записывать. Цена при блоках («7 блоков по 9 000») — за блок или за штуку? Если неясно — спроси кнопками «9 000 за блок» / «9 000 за штуку» (кроме случая, когда цена близка к last_cost за штуку). Цена отличается от last_cost больше чем на 25 % — переспроси: «в прошлый раз было 7 333, точно 73 000?». Количество от 50 штук или сумма от 2 000 000 сум из голосового — повтори цифрами и попроси подтвердить кнопкой «Да, верно», только потом создавай черновик. Если за последние минуты уже есть черновик или приход с тем же товаром и количеством (current_document, recent_messages) — спроси, это та же поставка или новая, а не создавай второй.
@@ -136,14 +139,26 @@ func tools() []ai.Tool {
 				"query":  map[string]any{"type": "object", "description": "параметры запроса, например {\"store_id\": \"…\", \"q\": \"кола\", \"limit\": 20}", "properties": map[string]any{}},
 				"body":   map[string]any{"type": "object", "description": "тело JSON для POST/PUT/PATCH", "properties": map[string]any{}},
 				"note":   str("для записи: одной фразой, что сделал — попадёт в журнал владельца"),
+				"button": str("для необратимого: подпись кнопки в повелительном наклонении, например «Провести приход · 308 000» или «Установить цену 14 000»"),
 			}, "method", "path")},
 	}
 }
 
 // dangerous — что нельзя без кнопки: удаление и запись в «тяжёлые» разделы.
+// confirmLike — кнопка модели, которая лишь повторяет подтверждение текстом.
+func confirmLike(s string) bool {
+	s = strings.ToLower(s)
+	for _, w := range []string{"провест", "провед", "подтверд", "установить цен", "oʻtkaz", "o'tkaz", "otkaz", "tasdiq"} {
+		if strings.Contains(s, w) {
+			return true
+		}
+	}
+	return false
+}
+
 var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
-var dangerous = regexp.MustCompile(`/(post|unpost|cancel|payouts?|payments?|handovers?|transfers?|write-off|refunds?|returns?|employees|roles|plan|stores|settings|delivery|debts|operations|cashboxes?|rates|prices?|price-documents|pin|purge|delete|close|open)(/|$)`)
+var dangerous = regexp.MustCompile(`/(post|unpost|cancel|payouts?|payments?|handovers?|transfers?|write-off|refunds?|returns?|employees|roles|plan|stores|settings|delivery|debts|operations|cashboxes?|rates|prices?|pin|purge|delete|close|open)(/|$)`)
 
 func isDangerous(method, path string, body map[string]any) bool {
 	if method == http.MethodDelete {
@@ -280,6 +295,10 @@ func (s *Service) agent(ctx context.Context, p *identity.Principal, in SendInput
 		if i >= 4 || strings.TrimSpace(b.Label) == "" {
 			break
 		}
+		// «Провести» — только настоящей кнопкой подтверждения, не текстом.
+		if len(st.pending) > 0 && confirmLike(b.Label+" "+b.Send) {
+			continue
+		}
 		switch b.Attach {
 		case true, "invoice", "true":
 			r.blocks = appendButton(r.blocks, Block{"label": b.Label, "attach": true, "primary": true})
@@ -372,6 +391,7 @@ func (s *Service) toolCallAPI(ctx context.Context, st *agentState, args map[stri
 	query, _ := args["query"].(map[string]any)
 	body, _ := args["body"].(map[string]any)
 	note := argStr(args, "note")
+	button := argStr(args, "button")
 	if err := checkPath(path); err != nil {
 		return toolReply{Error: err.Error()}.String()
 	}
@@ -381,9 +401,12 @@ func (s *Service) toolCallAPI(ctx context.Context, st *agentState, args map[stri
 		return toolReply{Error: "method: GET, POST, PUT, PATCH или DELETE"}.String()
 	}
 	if isDangerous(method, path, body) {
-		label := note
+		label := button
+		if label == "" && note != "" {
+			label = t(st.lang, "Подтвердить: ", "Tasdiqlash: ") + note
+		}
 		if label == "" {
-			label = method + " " + path
+			label = t(st.lang, "Подтвердить", "Tasdiqlash")
 		}
 		var raw json.RawMessage
 		if body != nil {

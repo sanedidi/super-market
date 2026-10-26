@@ -184,8 +184,8 @@ func TestAssistantChat(t *testing.T) {
 	// needs_confirmation → кнопка подтверждения, накладная не тронута.
 	fai.play(
 		fakeTurn{tool: "call_api", args: map[string]any{"method": "POST", "path": "/store/invoice-scans/" + scanID + "/document",
-			"body": map[string]any{"post": true}, "note": "Провести приход № 347930"}},
-		fakeTurn{text: `{"reply":"Нажмите кнопку — и я проведу приход.","lang":"ru","scan_id":"` + scanID + `"}`},
+			"body": map[string]any{"post": true}, "note": "Приход № 347930 проведён", "button": "Провести приход № 347930"}},
+		fakeTurn{text: `{"reply":"Нажмите кнопку — и я проведу приход.","lang":"ru","scan_id":"` + scanID + `","buttons":[{"label":"Провести приход","send":"провести приход"},{"label":"Что заказать?","send":"Что заказать?"}]}`},
 	)
 	send(map[string]any{"text": "проведи"})
 	m = last()
@@ -206,6 +206,10 @@ func TestAssistantChat(t *testing.T) {
 	if apiConfirm == nil || apiConfirm["enabled"] != true || apiConfirm["label"] != "Провести приход № 347930" {
 		t.Fatalf("api confirm = %v", confirms)
 	}
+	// Кнопка модели «Провести приход» (текстом) убрана — остаётся только подтверждение.
+	if bs := blocks(m, "buttons"); len(bs) != 1 || len(bs[0]["items"].([]any)) != 1 {
+		t.Fatalf("model confirm-like button not dropped: %v", bs)
+	}
 
 	// Кнопка подтверждения → запрос выполнен, строка «сделано», помощник рассказывает результат.
 	fai.play(fakeTurn{text: `{"reply":"Готово, приход проведён.","lang":"ru","links":[{"label":"Открыть приход","href":"/purchases/income"}]}`})
@@ -222,7 +226,7 @@ func TestAssistantChat(t *testing.T) {
 		t.Fatalf("scan = %v", sc.Body)
 	}
 	today := a.expect(a.do("GET", "/store/assistant/today?store_id="+storeID, ownerTok, nil), 200, "today").items()
-	if len(today) != 1 || today[0]["text"] != "Провести приход № 347930" {
+	if len(today) != 1 || today[0]["text"] != "Приход № 347930 проведён" {
 		t.Fatalf("journal = %v", today)
 	}
 
