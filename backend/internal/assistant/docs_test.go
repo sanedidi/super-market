@@ -32,3 +32,16 @@ func TestSearchDocs(t *testing.T) {
 		t.Fatal("isDangerous")
 	}
 }
+
+func TestSectionLink(t *testing.T) {
+	l := sectionLink("uz", "Kassadan sotish uchun «Sotuvlar» boʻlimiga oʻting. Men bu yerdan sotuvni amalga oshira olmayman.")
+	if l == nil || l["href"] != "/sales/pos" || l["label"] != "Sotuvlarni ochish" {
+		t.Fatalf("uz = %v", l)
+	}
+	if l := sectionLink("ru", "Долги смотрите в разделе «Долги»."); l == nil || l["href"] != "/debts" {
+		t.Fatalf("ru = %v", l)
+	}
+	if l := sectionLink("ru", "Остаток колы — 34 шт."); l != nil {
+		t.Fatalf("no go-words, but link = %v", l)
+	}
+}

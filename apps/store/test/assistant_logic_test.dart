@@ -47,5 +47,6 @@ void main() {
     expect(placeFor('/orders'), AppPlace.orders);
     expect(placeFor('/stock/balance?status=low'), AppPlace.stock);
     expect(placeFor('/purchases/income/123'), isNull);
+    expect(panelUrl('/sales/pos'), 'https://store.super-market.uz/sales/pos');
   });
 }

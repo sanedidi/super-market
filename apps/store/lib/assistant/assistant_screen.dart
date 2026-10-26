@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../lock/app_lock.dart';
@@ -361,8 +362,17 @@ class _AssistantScreenState extends State<AssistantScreen> {
           builder: (_) => Scaffold(appBar: AppBar(title: Text(tr('Склад', 'Ombor'))), body: const WarehouseScreen()),
         ));
       case null:
-        _snack(tr('Это открывается в панели магазина на компьютере', 'Bu kompyuterdagi doʻkon panelida ochiladi'));
+        // В приложении такого экрана нет — открываем панель магазина в браузере.
+        _openPanel(href);
     }
+  }
+
+  Future<void> _openPanel(String href) async {
+    var ok = false;
+    try {
+      ok = await launchUrl(Uri.parse(panelUrl(href)), mode: LaunchMode.externalApplication);
+    } catch (_) {}
+    if (!ok) _snack(tr('Это открывается в панели магазина на компьютере', 'Bu kompyuterdagi doʻkon panelida ochiladi'));
   }
 
   void _onButton(AssistButton b) {
@@ -591,7 +601,6 @@ class _AssistantScreenState extends State<AssistantScreen> {
         );
     }
     if (b is LinkBlock) {
-        if (placeFor(b.href) == null) return const SizedBox.shrink();
         return InkWell(
           onTap: () => _open(b.href),
           child: Row(mainAxisSize: MainAxisSize.min, children: [

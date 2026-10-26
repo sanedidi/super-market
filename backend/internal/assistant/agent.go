@@ -90,6 +90,7 @@ const agentPrompt = `Тебя зовут Шахзод — ты помощник 
    - возврат от покупателя делается на кассе — скажи об этом и дай ссылку на «/sales/returns».
    Склады магазина — warehouses в контексте. Один склад — не спрашивай, но назови его в итоге («на склад Основной»). Несколько — спроси кнопками (send — название склада, ref — id), склад по умолчанию — первым. Владелец назвал другой магазин сети — склады того магазина: GET /store/warehouses?store_id=…. Спрашивай «откуда/куда» в том же сообщении, что цену и поставщика, — одним вопросом, не по очереди.
 21. Честность о сделанном. Пока владелец не нажал кнопку подтверждения, действие НЕ выполнено: не пиши «изменил», «провёл», «удалил», «оплатил» — пиши «готово к подтверждению, нажмите …». Цены, остатки и суммы называй только из свежего ответа API (цена продажи — поле price в GET /store/inventory/my-products), никогда из черновиков и не по памяти разговора.
+22. Никаких тупиков. Если что-то делается не здесь или ты не можешь сделать это сам — ВСЕГДА дай links на нужный раздел и, если можешь, кнопку ближайшего действия, которое сделаешь сам. Пример: «20ta kola sotildi» — продажа проводится только на кассе (продать отсюда нельзя). Уточни кнопками: «Продали мимо кассы — убрать 20 шт с остатка» (списание write_off с reason «продажа мимо кассы», кнопкой подтверждения) и «Показать продажи колы за сегодня» (отчёт), плюс ссылка «/sales/pos». Не отвечай голым «перейдите в раздел».
 
 Страницы панели для ссылок (href): главная «/», остатки «/stock/balance», приход «/purchases/income» и «/purchases/income/{document_id}», товары «/dirs/products», контрагенты «/dirs/counterparties», продажи «/sales/pos», цены «/sales/prices», долги «/debts», заказы «/orders», финансы «/finance/operations», отчёты «/reports/profit-loss», сотрудники «/settings/employees».
 
@@ -295,6 +296,12 @@ func (s *Service) agent(ctx context.Context, p *identity.Principal, in SendInput
 			r.blocks = append(r.blocks, Block{"type": "link", "label": l.Label, "href": l.Href})
 		}
 	}
+	// «Перейдите в раздел…» без ссылки — добавим ссылку сами, чтобы был переход.
+	if len(out.Links) == 0 && len(st.pending) == 0 {
+		if l := sectionLink(lang, r.text); l != nil {
+			r.blocks = append(r.blocks, l)
+		}
+	}
 	// Накладная: карточки строк с кнопками, как в панели.
 	scanID := out.ScanID
 	if scanID == "" && st.scanTouched != "" {
@@ -477,6 +484,51 @@ func (s *Service) toolCallAPI(ctx context.Context, st *agentState, args map[stri
 		}
 	}
 	return toolReply{Status: status, Body: resp}.String()
+}
+
+// panelSections — разделы панели: слова в ответе → ссылка.
+var panelSections = []struct {
+	words  []string
+	href   string
+	ru, uz string
+}{
+	{[]string{"касс", "продаж", "kassa", "sotuv"}, "/sales/pos", "Открыть продажи", "Sotuvlarni ochish"},
+	{[]string{"цены", "установка цен", "narxlar"}, "/sales/prices", "Открыть цены", "Narxlarni ochish"},
+	{[]string{"долг", "qarz"}, "/debts", "Открыть долги", "Qarzlarni ochish"},
+	{[]string{"заказ", "buyurtma"}, "/orders", "Открыть заказы", "Buyurtmalarni ochish"},
+	{[]string{"приход", "kirim"}, "/purchases/income", "Открыть приходы", "Kirimlarni ochish"},
+	{[]string{"остат", "склад", "qoldiq", "ombor"}, "/stock/balance", "Открыть остатки", "Qoldiqlarni ochish"},
+	{[]string{"финанс", "moliya"}, "/finance/operations", "Открыть финансы", "Moliyani ochish"},
+	{[]string{"отчёт", "отчет", "hisobot"}, "/reports/profit-loss", "Открыть отчёты", "Hisobotlarni ochish"},
+	{[]string{"сотрудник", "xodim"}, "/settings/employees", "Открыть сотрудников", "Xodimlarni ochish"},
+	{[]string{"контрагент", "taʼminotchi", "kontragent"}, "/dirs/counterparties", "Открыть контрагентов", "Kontragentlarni ochish"},
+	{[]string{"товары", "mahsulotlar", "tovarlar"}, "/dirs/products", "Открыть товары", "Mahsulotlarni ochish"},
+}
+
+// goWords — ответ отправляет владельца в другой раздел или говорит «здесь не могу».
+var goWords = []string{"перейдите", "откройте", "в разделе", "в раздел", "не могу", "o'ting", "oching", "bo'lim", "olmayman", "qila olmayman"}
+
+// sectionLink — ссылка на раздел, куда ответ отправляет владельца (nil — не отправляет).
+func sectionLink(lang, text string) Block {
+	low := strings.ToLower(strings.NewReplacer("ʻ", "'", "’", "'", "`", "'", "ʼ", "'").Replace(text))
+	sent := false
+	for _, w := range goWords {
+		if strings.Contains(low, w) {
+			sent = true
+			break
+		}
+	}
+	if !sent {
+		return nil
+	}
+	for _, sec := range panelSections {
+		for _, w := range sec.words {
+			if strings.Contains(low, w) {
+				return Block{"type": "link", "label": t(lang, sec.ru, sec.uz), "href": sec.href}
+			}
+		}
+	}
+	return nil
 }
 
 // priceDocRe — черновик «Установки цен» (создание или правка, не проведение).

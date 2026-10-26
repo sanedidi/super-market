@@ -167,6 +167,11 @@ AppPlace? placeFor(String href) {
   return null;
 }
 
+/// Панель магазина в браузере — для разделов, которых нет в приложении.
+const panelBase = 'https://store.super-market.uz';
+
+String panelUrl(String href) => panelBase + (href.startsWith('/') ? href : '/$href');
+
 /// Голосовое: сколько секунд можно записывать и короче чего не отправлять.
 const maxVoiceSeconds = 60;
 const minVoiceMillis = 700;
