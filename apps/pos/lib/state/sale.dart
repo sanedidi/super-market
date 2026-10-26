@@ -625,6 +625,8 @@ class SaleController extends ChangeNotifier {
       case Cmd.dish:
       case Cmd.unknown:
       case Cmd.found:
+      case Cmd.scalePick:
+      case Cmd.weigh:
         break; // только навигация: окна «В долг», погашения долга и цены открывает экран продажи
       case Cmd.returns:
       case Cmd.shiftMenu:
