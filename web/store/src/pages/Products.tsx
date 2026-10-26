@@ -2,6 +2,7 @@
 // Центральная база видна только в поиске при добавлении («Начало работы»,
 // приход, установка цен); свои товары сети уходят на модерацию.
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Alert, Button, Card, Col, Form, Input, Modal, Radio, Row, Select, Space, Table, Tabs, Tag, Tooltip, Typography, type TableColumnType } from 'antd'
 import { InfoCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import { DeleteButton, FormTranslate, ImageUpload, LoadError, PageTitle, ProductTree, ProductViewSwitch, RemoteSelect, api, getLang, interactive, money, tr, useAction, usePaged, useProductView } from '@sm/shared'
@@ -11,8 +12,10 @@ import type { DictItem, Product } from '../types'
 import { FlavorMenu, childrenOf, useVariantGroups, variantNameCell, variantPriceCell, variantStockCell, type VRow } from './variants'
 import { OwnVariantsTab, useOwnGroups } from './OwnVariants'
 import { UnknownGoodsTab, useUnknownGoods, type UnknownGood } from './UnknownGoods'
+import { NoBarcodeTab, ScalesTab, SellModeModal, useScaleCounts, type SellTarget } from './Scales'
 
-type Tab = 'goods' | 'variants' | 'unknown'
+type Tab = 'goods' | 'scales' | 'nobarcode' | 'variants' | 'unknown'
+const TABS: Tab[] = ['goods', 'scales', 'nobarcode', 'variants', 'unknown']
 
 /** Новый товар из «Без карточки»: название с кассы, штрихкод и цена. */
 type Prefill = { name: string; barcode: string; price: string }
@@ -57,12 +60,24 @@ function spanLoading(cols: TableColumnType<VRow>[]): TableColumnType<VRow>[] {
 
 export function ProductsPage() {
   // Вкладки «Товары» и «Вариации» (Figma «Панель магазина · Вариации своих товаров», В1).
-  const [tab, setTab] = useState<Tab>('goods')
+  // «На весах» и «Без штрихкода» (Figma «Панель · Весы и товары без штрихкода», В1, В3).
+  const [search, setSearch] = useSearchParams()
+  const qTab = search.get('tab') as Tab | null
+  const [tab, setTabState] = useState<Tab>(qTab && TABS.includes(qTab) ? qTab : 'goods')
+  const setTab = (t: Tab) => {
+    setTabState(t)
+    const next = new URLSearchParams(search)
+    if (t === 'goods') next.delete('tab')
+    else next.set('tab', t)
+    setSearch(next, { replace: true })
+  }
+  const [sell, setSell] = useState<SellTarget | null>(null)
   const proposed = useOwnGroups('proposed', 1).data?.counts.proposed ?? 0
   const { storeId, can } = useStore()
   // «Без карточки» (Figma ПБ1): что касса продала неизвестным товаром.
   const seeUnknown = can('catalog.manage') || can('prices.manage') || can('reports.view')
   const unknown = useUnknownGoods(storeId || undefined, seeUnknown).data?.length ?? 0
+  const counts = useScaleCounts(storeId || undefined, seeUnknown).data
   const [prefill, setPrefill] = useState<Prefill | null>(null)
   const [q, setQ] = useState('')
   const [categoryId, setCategoryId] = useState<string>()
@@ -107,14 +122,23 @@ export function ProductsPage() {
   })
   const editCol: TableColumnType<VRow> = {
     key: 'edit',
-    width: 190,
+    width: 320,
     align: 'right',
     render: (_, row) => {
       if (row.kind === 'flavor') return prices ? <FlavorMenu r={row} v={variants} /> : null
       if (row.kind !== 'product') return null
       const r = row.product
+      const sellBtn = (
+        <Tooltip title={tr('Штучно или на развес, номер на весах, штрихкод', 'Donalab yoki tortib, tarozi raqami, shtrix-kod')}>
+          <Button size="small" onClick={() => setSell({ id: r.id, name: r.name, price: r.price ?? undefined })}>
+            {tr('Как продаётся', 'Qanday sotiladi')}
+          </Button>
+        </Tooltip>
+      )
+      if (manage && !r.network_id) return sellBtn
       return manage && r.network_id ? (
         <Space size={8}>
+          {sellBtn}
           <Button
             size="small"
             onClick={() => {
@@ -199,6 +223,32 @@ export function ProductsPage() {
             onChange={(k) => setTab(k as Tab)}
             items={[
               { key: 'goods', label: tr('Товары', 'Mahsulotlar') },
+              ...(seeUnknown
+                ? [
+                    {
+                      key: 'scales',
+                      label: (
+                        <span>
+                          {tr('На весах', 'Tarozida')}
+                          {!!counts?.scales && (
+                            <Tag color={counts.to_update > 0 ? 'orange' : undefined} bordered={false} style={{ marginLeft: 6, marginInlineEnd: 0 }}>
+                              {counts.scales}
+                            </Tag>
+                          )}
+                        </span>
+                      ),
+                    },
+                    {
+                      key: 'nobarcode',
+                      label: (
+                        <span>
+                          {tr('Без штрихкода', 'Shtrix-kodsiz')}
+                          {!!counts?.no_barcode && <Tag bordered={false} style={{ marginLeft: 6, marginInlineEnd: 0 }}>{counts.no_barcode}</Tag>}
+                        </span>
+                      ),
+                    },
+                  ]
+                : []),
               {
                 key: 'variants',
                 label: (
@@ -249,7 +299,11 @@ export function ProductsPage() {
           </>
         )}
       </PageTitle>
-      {tab === 'unknown' ? (
+      {tab === 'scales' ? (
+        <ScalesTab onOpen={setSell} />
+      ) : tab === 'nobarcode' ? (
+        <NoBarcodeTab onOpen={setSell} />
+      ) : tab === 'unknown' ? (
         <UnknownGoodsTab
           onCreate={(g: UnknownGood) => {
             setEditing(null)
@@ -315,6 +369,7 @@ export function ProductsPage() {
         </>
       )}
       <ProductModal open={open} editing={editing} prefill={prefill} onClose={() => setOpen(false)} />
+      <SellModeModal target={sell} onClose={() => setSell(null)} />
     </>
   )
 }

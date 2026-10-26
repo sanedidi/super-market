@@ -186,8 +186,8 @@ func (s *Service) SaveSettings(ctx context.Context, p *identity.Principal, in Ne
 		return NetworkSettings{}, apperr.Validation("weight_prefixes: не больше 10").Uz("weight_prefixes: koʻpi bilan 10 ta")
 	}
 	for _, x := range in.WeightPrefixes {
-		if !prefixRe.MatchString(x) {
-			return NetworkSettings{}, apperr.Validation("weight_prefixes: две цифры от 20 до 29").Uz("weight_prefixes: 20 dan 29 gacha ikki xonali son")
+		if err := checkScalePrefix(x); err != nil {
+			return NetworkSettings{}, err
 		}
 	}
 	if in.WeightPrefixes == nil {
@@ -197,7 +197,7 @@ func (s *Service) SaveSettings(ctx context.Context, p *identity.Principal, in Ne
 	if len([]rune(in.ReceiptHeader)) > 500 || len([]rune(in.ReceiptFooter)) > 500 {
 		return NetworkSettings{}, apperr.Validation("текст чека: до 500 символов").Uz("chek matni: 500 belgigacha")
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE networks SET pos_weight_prefixes = $2, receipt_header = $3, receipt_footer = $4 WHERE id = $1`,
+	if _, err := s.pool.Exec(ctx, `UPDATE networks SET pos_weight_prefixes = $2, receipt_header = $3, receipt_footer = $4, pos_settings_at = now() WHERE id = $1`,
 		p.NetworkID, in.WeightPrefixes, in.ReceiptHeader, in.ReceiptFooter); err != nil {
 		return NetworkSettings{}, err
 	}

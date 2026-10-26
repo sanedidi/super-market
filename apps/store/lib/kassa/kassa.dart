@@ -242,10 +242,14 @@ class Kassa extends ChangeNotifier {
       if (marked == null) return NotFound(mark.gtin);
       return add(marked, mark: marked.marked ? mark.raw : null);
     }
-    final w = parseWeight(code, catalog.settings.weightPrefixes);
+    final st = catalog.settings;
+    final w = parseWeight(code, st.weightPrefixes, digits: st.scaleItemDigits, step: st.scaleWeightStep, sum: st.scaleValue == 'sum');
     if (w != null) {
       final weighed = catalog.byPlu(w.plu);
-      if (weighed != null) return add(weighed, qty: w.grams);
+      if (weighed != null) {
+        final qty = w.sum > 0 ? qtyForSum(w.sum, weighed.price) : w.grams;
+        if (qty > 0) return add(weighed, qty: qty);
+      }
     }
     final p = catalog.byBarcode(code);
     if (p == null) {

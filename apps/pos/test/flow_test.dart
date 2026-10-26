@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:sm_pos/core/codes.dart';
 import 'package:sm_pos/core/money.dart';
 import 'package:sm_pos/core/pin.dart';
 import 'package:sm_pos/data/api.dart';
@@ -23,6 +24,10 @@ class FakeServer {
 
   /// Магазин даёт в долг.
   bool debts = false;
+
+  /// В каталоге весовая хурма без номера на весах; номера, запомненные кассой.
+  bool scales = false;
+  final List<Map<String, dynamic>> plus = [];
 
   /// Сервер не принимает цены (500) — цена из очереди ждёт.
   bool priceDown = false;
@@ -74,6 +79,7 @@ class FakeServer {
             {'id': 'bread', 'name': 'Хлеб', 'unit': 'шт', 'price': '6000.00', 'barcodes': ['4601234567893'], 'ikpu': '10000000000000000', 'vat_rate': '12.00', 'plu': 1},
             {'id': 'banana', 'name': 'Бананы', 'unit': 'кг', 'fractional': true, 'price': '24000.00', 'barcodes': [], 'plu': 10},
             if (unpriced) {'id': 'water', 'name': 'Вода', 'unit': 'шт', 'price': '0.00', 'barcodes': ['4780000000011']},
+            if (scales) {'id': 'persimmon', 'name': 'Хурма', 'unit': 'кг', 'fractional': true, 'price': '22000.00', 'barcodes': []},
           ],
           'quick': {'pinned': ['banana'], 'top': ['bread', 'banana']},
           'cashiers': [
@@ -113,6 +119,9 @@ class FakeServer {
           'created': true,
           'product': {'id': 'coke', 'name': body['name'], 'unit': 'шт', 'price': body['price'], 'barcodes': [body['barcode']], 'ikpu': '02202002001010021', 'vat_rate': '12.00', 'active': true},
         });
+      case 'POST /pos/scales/plu':
+        plus.add({...body, 'cashier': c});
+        return _json(200, {'id': body['product_id'], 'name': 'Хурма', 'unit': 'кг', 'fractional': true, 'price': '22000.00', 'barcodes': [], 'plu': body['plu'], 'active': true});
       case 'POST /pos/shifts':
         shifts.add(body);
         return _json(201, {'id': 'srv-shift', 'number': 7});
@@ -548,9 +557,12 @@ void main() {
     expect(sale.cart.lines.single.qty, 4000);
     expect(sale.inCart('bread'), 4000);
 
-    // Весовой без веса — подсказка; «1,25» и плитка — 1,25 кг.
+    // Весовой без веса — окно ввода веса (Figma К3); «1,25» и плитка — 1,25 кг.
+    final opened = <Cmd>[];
+    sale.onNavigate = opened.add;
     sale.tapProduct(banana);
-    expect(sale.msg?.kind, MsgKind.error);
+    expect(opened, [Cmd.weigh]);
+    expect(sale.takeWeighPending()?.id, 'banana');
     expect(sale.cart.count, 1);
     await sale.pad('1');
     await sale.pad(',');
@@ -580,6 +592,53 @@ void main() {
     expect(sale.searching, isFalse);
     expect(sale.cart.lineOf('bread')!.qty, 5000);
 
+    sale.dispose();
+  });
+
+  test('весы: наклейка — цена из Super Market, незнакомый номер — выбрать и запомнить, вес с плитки', () async {
+    server.scales = true;
+    await pos.activate('ABCD2345');
+    pos.login(pos.catalog.cashiers.single, '1234');
+    await pos.openShift(0);
+    await until(() => !pos.syncing);
+    final sale = SaleController(pos);
+    final opened = <Cmd>[];
+    sale.onNavigate = opened.add;
+    Future<void> scan(String code) async {
+      for (var i = 0; i < code.length; i++) {
+        sale.char(code[i], Duration(milliseconds: i * 5));
+      }
+      await sale.command(Cmd.enter);
+    }
+
+    // К1: №10 — бананы, 1,234 кг × 24 000 = 29 616.
+    await scan('2200010012347');
+    final line = sale.cart.lineOf('banana')!;
+    expect(line.qty, 1234);
+    expect(lineSum(line.price, line.qty), 2961600);
+    expect(sale.msg!.note, contains('наклейка с весов · №10'));
+
+    // К2: №27 нет в каталоге — окно выбора; хурма без номера — первая.
+    await scan('2200027004502');
+    expect(opened, [Cmd.scalePick]);
+    final st = sale.takeScalePending()!;
+    expect([st.plu, st.weight.grams], [27, 450]);
+    final hurma = sale.scaleCandidates('').first;
+    expect(hurma.id, 'persimmon');
+    expect(await sale.pickForSticker(st, hurma, remember: true), isNull);
+    expect(server.plus.single, {'product_id': 'persimmon', 'plu': 27, 'cashier': 'e1'});
+    expect(sale.cart.lineOf('persimmon')!.qty, 450);
+
+    // Следующая наклейка №27 — сразу в чек, без окна.
+    await scan('2200027004502');
+    expect(opened.length, 1);
+    expect(sale.cart.lineOf('persimmon')!.qty, 900);
+
+    // К3: весовой с плитки — окно веса, «850» — граммы.
+    sale.tapProduct(pos.catalog.byId('banana')!);
+    expect(opened.last, Cmd.weigh);
+    expect(sale.addWeighed(sale.takeWeighPending()!, weighQty('850')), isNull);
+    expect(sale.cart.lineOf('banana')!.qty, 1234 + 850);
     sale.dispose();
   });
 

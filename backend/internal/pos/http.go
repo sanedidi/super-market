@@ -61,6 +61,8 @@ func (m *Module) Routes(r chi.Router) {
 		r.Put("/pos/quick-keys", m.setQuickKeys)
 		r.Put("/pos/products/{id}/price", m.setPrice)
 		r.Get("/pos/products/lookup", m.lookup)
+		// Весы: кассир выбрал товар к незнакомому номеру на наклейке (Figma К2).
+		r.Post("/pos/scales/plu", m.rememberPLU)
 		r.Post("/pos/products/found/preview", m.foundPreview)
 		r.Post("/pos/products/found", m.foundAdd)
 		m.kitchenRoutes(r)
@@ -86,6 +88,16 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/store/pos/cashiers", m.cashiers)
 		r.Put("/store/pos/products/{id}/tax", m.setTax)
 		r.Put("/store/pos/products/{id}/plu", m.setPLU)
+		// Весы и товары без штрихкода (Figma «Панель · Весы и товары без штрихкода»).
+		r.Get("/store/scales/settings", m.getScaleSettings)
+		r.Put("/store/scales/settings", m.saveScaleSettings)
+		r.Get("/store/scales/products", m.scaleProducts)
+		r.Get("/store/scales/counts", m.scaleCounts)
+		r.Post("/store/scales/entered", m.scaleEntered)
+		r.Get("/store/products/{id}/sell-mode", m.getSellMode)
+		r.Put("/store/products/{id}/sell-mode", m.setSellMode)
+		r.Get("/store/scales/no-barcode", m.noBarcode)
+		r.Post("/store/own-barcodes", m.ownBarcodes)
 		r.Put("/store/pos/payment-methods/{id}/kind", m.setKind)
 		r.Get("/store/pos/settings", m.getSettings)
 		// Товары → «Без карточки»: что касса продала неизвестным товаром.
@@ -497,5 +509,69 @@ func (m *Module) debtPayment(w http.ResponseWriter, r *http.Request) {
 func (m *Module) phone(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in PhoneInput) (PhoneKassa, error) {
 		return m.svc.Phone(r.Context(), pr(r), in)
+	})
+}
+
+// ------------------------------------------------- весы и свои штрихкоды
+
+func (m *Module) rememberPLU(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in RememberPLUInput) (CatalogProduct, error) {
+		return m.svc.RememberPLU(r.Context(), pr(r), in)
+	})
+}
+
+func (m *Module) getScaleSettings(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (ScaleSettings, error) {
+		return m.svc.GetScaleSettings(r.Context(), pr(r))
+	})
+}
+
+func (m *Module) saveScaleSettings(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in ScaleSettings) (ScaleSettings, error) {
+		return m.svc.SaveScaleSettings(r.Context(), pr(r), in)
+	})
+}
+
+func (m *Module) scaleProducts(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (ScaleList, error) {
+		return m.svc.ScaleProducts(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+	})
+}
+
+func (m *Module) scaleCounts(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (ScaleCounts, error) {
+		return m.svc.ScaleCountsFor(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+	})
+}
+
+func (m *Module) scaleEntered(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in ScaleEnteredInput) (map[string]any, error) {
+		return m.svc.MarkScaleEntered(r.Context(), pr(r), in)
+	})
+}
+
+func (m *Module) getSellMode(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (SellMode, error) {
+		return m.svc.GetSellMode(r.Context(), pr(r), id)
+	})
+}
+
+func (m *Module) setSellMode(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in SellModeInput) (SellMode, error) {
+		return m.svc.SetSellMode(r.Context(), pr(r), id, in)
+	})
+}
+
+func (m *Module) noBarcode(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[NoBarcodeItem], error) {
+		items, err := m.svc.NoBarcodeProducts(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+		return httpx.List[NoBarcodeItem]{Items: items}, err
+	})
+}
+
+func (m *Module) ownBarcodes(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in OwnBarcodesInput) (httpx.List[OwnBarcode], error) {
+		items, err := m.svc.IssueOwnBarcodes(r.Context(), pr(r), in)
+		return httpx.List[OwnBarcode]{Items: items}, err
 	})
 }

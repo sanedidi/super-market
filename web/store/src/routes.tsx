@@ -58,6 +58,7 @@ import { CrowdPage } from './pages/Crowd'
 import { ShowcasePage } from './pages/Showcase'
 import { StoreAdsPage } from './pages/StoreAds'
 import { PosDevicesPage, PosShiftsPage } from './pages/Pos'
+import { ScaleSettingsPage } from './pages/Scales'
 import { DebtSettingsPage, DebtorsPage } from './pages/Debts'
 import { OrderAlerts } from './notify'
 import { FEATURE_BY_PATH, LockedFeature, PlanErrorHost, PlanPage } from './pages/Plan'
@@ -174,6 +175,7 @@ const MENU: Item[] = [
     children: [
       { key: '/settings/stores', label: tr('Магазины', 'Doʻkonlar'), perm: 'stores.manage' },
       { key: '/settings/delivery', label: tr('Доставка', 'Yetkazib berish'), perm: 'stores.manage' },
+      { key: '/settings/scales', label: tr('Весы', 'Tarozi'), perm: ['stores.manage', 'catalog.manage'] },
       { key: '/settings/debts', label: tr('Долги покупателей', 'Xaridorlar qarzlari'), perm: ['debts.manage', 'debts.give'], feature: 'debts' },
       { key: '/settings/roles', label: tr('Роли', 'Rollar'), perm: 'staff.manage' },
       { key: '/settings/employees', label: tr('Сотрудники', 'Xodimlar'), perm: 'staff.manage' },
@@ -353,6 +355,7 @@ export function StoreRoutes() {
 
         <Route path="settings/stores" element={<StoresPage />} />
         <Route path="settings/delivery" element={<DeliveryPage />} />
+        <Route path="settings/scales" element={<ScaleSettingsPage />} />
         <Route path="settings/roles" element={<RolesPage />} />
         <Route path="settings/employees" element={<EmployeesPage />} />
 

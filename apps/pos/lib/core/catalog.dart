@@ -256,6 +256,9 @@ class PosSettings {
     this.receiptHeader = '',
     this.receiptFooter = '',
     this.weightPrefixes = const ['22'],
+    this.scaleItemDigits = 5,
+    this.scaleValue = 'weight',
+    this.scaleWeightStep = 1,
     this.debtEnabled = false,
     this.deviceKind = 'pos',
     this.workshopId,
@@ -271,6 +274,12 @@ class PosSettings {
   final String receiptHeader;
   final String receiptFooter;
   final List<String> weightPrefixes;
+
+  /// Формат наклейки весов («Настройки → Весы»): цифр в номере товара (4–6),
+  /// что в штрихкоде — weight (вес) или sum (сумма), шаг веса в граммах.
+  final int scaleItemDigits;
+  final String scaleValue;
+  final int scaleWeightStep;
 
   /// Магазин даёт в долг: показывать «В долг» кассиру с правом.
   final bool debtEnabled;
@@ -291,6 +300,9 @@ class PosSettings {
         receiptHeader: j['receipt_header'] as String? ?? '',
         receiptFooter: j['receipt_footer'] as String? ?? '',
         weightPrefixes: ((j['weight_prefixes'] as List?) ?? const ['22']).map((e) => '$e').toList(),
+        scaleItemDigits: (j['scale_item_digits'] as num?)?.toInt() ?? 5,
+        scaleValue: j['scale_value'] as String? ?? 'weight',
+        scaleWeightStep: (j['scale_weight_step'] as num?)?.toInt() ?? 1,
         debtEnabled: j['debt_enabled'] == true,
         deviceKind: j['device_kind'] as String? ?? 'pos',
         workshopId: j['workshop_id'] as String?,
@@ -307,6 +319,9 @@ class PosSettings {
         'receipt_header': receiptHeader,
         'receipt_footer': receiptFooter,
         'weight_prefixes': weightPrefixes,
+        'scale_item_digits': scaleItemDigits,
+        'scale_value': scaleValue,
+        'scale_weight_step': scaleWeightStep,
         'debt_enabled': debtEnabled,
         'device_kind': deviceKind,
         'workshop_id': workshopId,

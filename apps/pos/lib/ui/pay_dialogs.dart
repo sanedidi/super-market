@@ -4,6 +4,7 @@ import 'package:sm_core/sm_core.dart' show Lang, parseClientQr, tr;
 
 import '../core/cart.dart';
 import '../core/catalog.dart';
+import '../core/codes.dart' show weighQty;
 import '../core/debts.dart';
 import '../core/money.dart';
 import '../data/api.dart';
@@ -53,6 +54,14 @@ Future<void> showDiscountDialog(BuildContext context, SaleController sale, {requ
     showDialog<void>(context: context, builder: (_) => _DiscountDialog(sale: sale, all: all));
 
 // ------------------------------------------------------------------ каркас
+
+/// Весы: номер с наклейки не найден — выбрать товар один раз (Figma К2).
+Future<void> showScalePickDialog(BuildContext context, SaleController sale, ScaleSticker sticker) =>
+    showDialog<void>(context: context, builder: (_) => _ScalePickDialog(sale: sale, sticker: sticker));
+
+/// Весовой товар с плитки без наклейки — ввод веса (Figma К3).
+Future<void> showWeighDialog(BuildContext context, SaleController sale, Product product) =>
+    showDialog<void>(context: context, builder: (_) => _WeighDialog(sale: sale, product: product));
 
 /// Белое окно по центру: заголовок слева, «К оплате» справа.
 class _Shell extends StatelessWidget {
@@ -2720,6 +2729,327 @@ class _FoundDialogState extends State<_FoundDialog> with _PriceWithPin<_FoundDia
           if (error != null) ...[
             const SizedBox(height: 10),
             Text(error!, style: t(13, w: FontWeight.w600, c: C.error)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ------------------------------------------------------------------- весы
+
+/// «Весы: товар №27 не найден» (Figma К2): наклейка с номером, которого нет в
+/// каталоге. Кассир выбирает весовой товар (поиск — буквами с клавиатуры или
+/// F2 · экранная клавиатура), «Запомнить» — следующие наклейки касса добавит
+/// сама, владелец увидит номер в «Товары → На весах».
+class _ScalePickDialog extends StatefulWidget {
+  const _ScalePickDialog({required this.sale, required this.sticker});
+
+  final SaleController sale;
+  final ScaleSticker sticker;
+
+  @override
+  State<_ScalePickDialog> createState() => _ScalePickDialogState();
+}
+
+class _ScalePickDialogState extends State<_ScalePickDialog> {
+  String _q = '';
+  bool _letters = false;
+  bool _latin = Lang.instance.isUz;
+  bool _remember = true;
+  bool _busy = false;
+  int _sel = 0;
+  String? _error;
+  List<Product> _items = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _items = widget.sale.scaleCandidates('').take(5).toList();
+  }
+
+  void _query(String q) => setState(() {
+        _q = q;
+        _items = widget.sale.scaleCandidates(q).take(5).toList();
+        _sel = 0;
+        _error = null;
+      });
+
+  void _key(String k) {
+    if (k == '⌫') {
+      if (_q.isNotEmpty) _query(_q.substring(0, _q.length - 1));
+      return;
+    }
+    if (_q.length >= 40 || (k == ' ' && (_q.isEmpty || _q.endsWith(' ')))) return;
+    _query(_q + k.toLowerCase());
+  }
+
+  Product? get _picked => _items.isEmpty ? null : _items[_sel.clamp(0, _items.length - 1)];
+
+  Future<void> _submit() async {
+    final p = _picked;
+    if (p == null || _busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final err = await widget.sale.pickForSticker(widget.sticker, p, remember: _remember && p.plu == null);
+    if (!mounted) return;
+    if (err == null) {
+      Navigator.of(context).pop();
+    } else {
+      setState(() {
+        _busy = false;
+        _error = err;
+      });
+    }
+  }
+
+  KeyEventResult _onKey(KeyEvent e) {
+    if (e is KeyUpEvent) return KeyEventResult.ignored;
+    final k = e.logicalKey;
+    if (isEnter(e)) {
+      _submit();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.arrowDown || k == LogicalKeyboardKey.arrowUp) {
+      if (_items.isNotEmpty) {
+        setState(() => _sel = (_sel + (k == LogicalKeyboardKey.arrowDown ? 1 : -1)).clamp(0, _items.length - 1));
+      }
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.f2) {
+      setState(() => _letters = !_letters);
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.backspace) {
+      _key('⌫');
+      return KeyEventResult.handled;
+    }
+    final ch = printable(e);
+    if (ch == null) return KeyEventResult.ignored; // Esc закрывает окно сам
+    _key(ch);
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.sticker;
+    final picked = _picked;
+    final pickedQty = picked == null ? 0 : s.qtyFor(picked);
+    final what = s.weight.sum > 0
+        ? tr('сумма ${fmtMoney(s.weight.sum * 100)}', 'summa ${fmtMoney(s.weight.sum * 100)}')
+        : tr('вес ${fmtQty(s.weight.grams)} кг', 'vazn ${fmtQty(s.weight.grams)} kg');
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (_, e) => _onKey(e),
+      child: _Shell(
+        width: 680,
+        title: tr('Весы: товар №${s.plu} не найден', 'Tarozi: №${s.plu} mahsulot topilmadi'),
+        subtitle: tr('Наклейка ${s.code} · $what. В Super Market нет весового товара с номером ${s.plu} — выберите, что это за товар.',
+            'Yorliq ${s.code} · $what. Super Marketda №${s.plu} raqamli tortiladigan mahsulot yoʻq — bu qaysi mahsulot ekanini tanlang.'),
+        children: [
+          GestureDetector(
+            onTap: () => setState(() => _letters = !_letters),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: C.brand, width: 2)),
+              child: Row(children: [
+                Text(tr('Поиск:', 'Qidirish:'), style: t(16, w: FontWeight.w500, c: C.ts)),
+                const SizedBox(width: 12),
+                Expanded(child: FitText(_q.isEmpty ? tr('начните печатать название', 'nomini yoza boshlang') : '$_q|', style: _q.isEmpty ? t(16, c: C.td) : t(20, w: FontWeight.w600))),
+                Text(_letters ? tr('F2 · скрыть', 'F2 · yashirish') : tr('F2 · клавиатура', 'F2 · klaviatura'), style: t(12, w: FontWeight.w600, c: C.td)),
+              ]),
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (_items.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 18),
+              child: Text(tr('Весовых товаров не нашли. Проверьте название или заведите товар «на развес» в панели.', 'Tortiladigan mahsulot topilmadi. Nomini tekshiring yoki panelda «tortib» sotiladigan mahsulot oching.'),
+                  style: t(15, c: C.ts)),
+            )
+          else
+            for (var i = 0; i < _items.length; i++) _row(_items[i], i == _sel.clamp(0, _items.length - 1), () => setState(() => _sel = i)),
+          const SizedBox(height: 10),
+          if (picked != null)
+            GestureDetector(
+              onTap: picked.plu == null ? () => setState(() => _remember = !_remember) : null,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: picked.plu == null && _remember ? C.successSoft : C.subtle,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: C.border),
+                ),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Icon(picked.plu == null && _remember ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded, size: 20, color: picked.plu == null ? C.success : C.td),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      picked.plu == null
+                          ? tr('Запомнить: №${s.plu} на весах = ${picked.name}. Следующие наклейки №${s.plu} касса добавит сама, владелец увидит это в «Товары → На весах».',
+                              'Eslab qolish: tarozida №${s.plu} = ${picked.name}. Keyingi №${s.plu} yorliqlarini kassa oʻzi qoʻshadi, egasi buni «Mahsulotlar → Tarozida»da koʻradi.')
+                          : tr('У «${picked.name}» уже №${picked.plu} на весах — добавим без запоминания. Номер меняет владелец в панели.',
+                              '«${picked.name}»da tarozida №${picked.plu} bor — eslab qolmasdan qoʻshamiz. Raqamni egasi panelda oʻzgartiradi.'),
+                      style: t(13, c: C.t2),
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+          if (_letters) ...[
+            const SizedBox(height: 12),
+            _Letters(
+              latin: _latin,
+              onKey: _key,
+              onSwitch: () => setState(() => _latin = !_latin),
+              onDone: () => setState(() => _letters = false),
+            ),
+          ],
+          const SizedBox(height: 12),
+          _Footer(
+            back: tr('Отмена', 'Bekor qilish'),
+            primary: picked == null
+                ? tr('Выберите товар', 'Mahsulotni tanlang')
+                : tr('Добавить ${fmtQty(pickedQty)} кг · ${fmtMoney(lineSum(picked.price, pickedQty))}', '${fmtQty(pickedQty)} kg · ${fmtMoney(lineSum(picked.price, pickedQty))} qoʻshish'),
+            onPrimary: picked == null ? null : _submit,
+            busy: _busy,
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 10),
+            Text(_error!, style: t(12, c: C.error)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _row(Product p, bool selected, VoidCallback onTap) {
+    final qty = widget.sticker.qtyFor(p);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        color: selected ? C.brandSoft : C.surface,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          onDoubleTap: () {
+            onTap();
+            _submit();
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: selected ? C.brand : C.border, width: selected ? 2 : 1)),
+            child: Row(children: [
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  FitText(p.name, style: t(17, w: FontWeight.w600)),
+                  Text(p.plu == null ? tr('без номера на весах', 'tarozida raqamsiz') : tr('№${p.plu} на весах', 'tarozida №${p.plu}'), style: t(12, c: C.ts)),
+                ]),
+              ),
+              const SizedBox(width: 12),
+              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                Text('${fmtMoney(p.price)} / ${p.unit}', style: t(14, c: C.ts)),
+                Text('= ${fmtMoney(lineSum(p.price, qty))}', style: t(18, w: FontWeight.w700)),
+              ]),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Ввод веса (Figma К3): весовой товар с плитки «Быстрые товары» без наклейки.
+class _WeighDialog extends StatefulWidget {
+  const _WeighDialog({required this.sale, required this.product});
+
+  final SaleController sale;
+  final Product product;
+
+  @override
+  State<_WeighDialog> createState() => _WeighDialogState();
+}
+
+class _WeighDialogState extends State<_WeighDialog> {
+  final _input = _Input(max: 5, decimals: 3);
+  String? _error;
+
+  int get _qty => weighQty(_input.value);
+
+  void _key(String k) {
+    if (_input.key(k == '.' ? ',' : k)) setState(() => _error = null);
+  }
+
+  void _preset(int qty) => setState(() {
+        _input.value = fmtQty(qty);
+        _error = null;
+      });
+
+  void _submit() {
+    final err = widget.sale.addWeighed(widget.product, _qty);
+    if (err == null) {
+      Navigator.of(context).pop();
+    } else {
+      setState(() => _error = err);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.product;
+    final qty = _qty;
+    final sum = lineSum(p.price, qty);
+    Widget chip(int q) => Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: _Btn(
+              onTap: () => _preset(q),
+              color: qty == q ? C.brandSoft : C.surface,
+              border: qty == q ? C.brand : C.border,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Center(child: Text('${fmtQty(q)} ${p.unit}', style: t(17, w: FontWeight.w600))),
+            ),
+          ),
+        );
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (_, e) => _keys(e, onEnter: qty > 0 ? _submit : () {}, onChar: _key),
+      child: _Shell(
+        width: 560,
+        title: p.name,
+        subtitle: tr('С плитки «Быстрые товары» · весовой · ${fmtMoney(p.price)} за ${p.unit}', '«Tezkor mahsulotlar» tugmasidan · tortiladigan · 1 ${p.unit} — ${fmtMoney(p.price)}'),
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: C.brand, width: 2)),
+            child: Row(children: [
+              Expanded(child: Text(tr('Вес', 'Vazn'), style: t(16, w: FontWeight.w500, c: C.ts))),
+              Text(qty > 0 ? '${fmtQty(qty)} ${p.unit}' : '— ${p.unit}', style: t(40, w: FontWeight.w800)),
+            ]),
+          ),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: Text(qty > 0 ? '${fmtQty(qty)} ${p.unit} × ${fmtMoney(p.price)}' : '', style: t(15, c: C.ts))),
+            Text(qty > 0 ? '= ${fmtMoney(sum)}' : '', style: t(22, w: FontWeight.w700)),
+          ]),
+          const SizedBox(height: 10),
+          Row(children: [for (final q in const [500, 1000, 1500, 2000]) chip(q)]),
+          const SizedBox(height: 10),
+          _Pad(onKey: _key, extra: ','),
+          const SizedBox(height: 10),
+          _Note(text: tr('Наберите вес на цифровой клавиатуре. Можно граммами: 850 → 0,850 кг.', 'Vaznni raqamli klaviaturada tering. Grammda ham boʻladi: 850 → 0,850 kg.')),
+          const SizedBox(height: 12),
+          _Footer(
+            back: tr('Отмена', 'Bekor qilish'),
+            primary: qty > 0 ? tr('Добавить ${fmtMoney(sum)}', '${fmtMoney(sum)} qoʻshish') : tr('Добавить', 'Qoʻshish'),
+            onPrimary: qty > 0 ? _submit : null,
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 10),
+            Text(_error!, style: t(12, c: C.error)),
           ],
         ],
       ),

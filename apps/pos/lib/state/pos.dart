@@ -866,6 +866,23 @@ class PosController extends ChangeNotifier {
     return priced;
   }
 
+  /// Весы (Figma К2): номер с наклейки теперь у этого товара — сервер
+  /// запоминает, касса сразу находит следующие наклейки. Без связи — ApiError.
+  Future<Product> rememberPlu(Product p, int plu) async {
+    try {
+      final res = await api.send('POST', '/pos/scales/plu', body: {'product_id': p.id, 'plu': plu}, cashier: cashier?.id) as Map<String, dynamic>;
+      online = true;
+      final saved = Product.fromJson(res);
+      catalog.put(saved);
+      await _keepCatalog();
+      notifyListeners();
+      return saved;
+    } on ApiError catch (e) {
+      _netError(e);
+      rethrow;
+    }
+  }
+
   /// Цены, поставленные без связи, ещё в очереди — каталог с сервера их не
   /// знает (или загружен заново целиком): вернуть их товарам без цены.
   void _applyQueuedPrices() {

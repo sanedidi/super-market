@@ -12,7 +12,7 @@ import '../data/open_sources.dart';
 import 'pos.dart';
 
 /// Команды быстрого режима — клавиши, которые не печатают символ.
-enum Cmd { enter, esc, del, backspace, up, down, star, pay, qty, item, search, discountLine, discountAll, hold, returns, orders, shiftMenu, debtQr, debtPay, price, dish, unknown, changePrice, found }
+enum Cmd { enter, esc, del, backspace, up, down, star, pay, qty, item, search, discountLine, discountAll, hold, returns, orders, shiftMenu, debtQr, debtPay, price, dish, unknown, changePrice, found, scalePick, weigh }
 
 enum SaleMode { sale, paid, held }
 
@@ -34,6 +34,19 @@ class PendingPrice {
   final Product product;
   final int qty;
   final String? mark;
+}
+
+/// Наклейка с весов, номера которой нет в каталоге (Figma К2): кассир
+/// выбирает товар, касса может запомнить номер.
+class ScaleSticker {
+  ScaleSticker(this.code, this.weight);
+  final String code;
+  final WeightCode weight;
+
+  int get plu => weight.plu;
+
+  /// Количество (тысячные) для товара [p]: вес с наклейки или сумма ÷ цена.
+  int qtyFor(Product p) => weight.sum > 0 ? qtyForSum(weight.sum, p.price) : weight.grams;
 }
 
 /// Чек пробит: что показать до следующего покупателя.
@@ -201,6 +214,68 @@ class SaleController extends ChangeNotifier {
     return r;
   }
 
+  /// Наклейка с незнакомым номером: окно «Весы: товар не найден» (Cmd.scalePick).
+  ScaleSticker? _scalePending;
+
+  ScaleSticker? takeScalePending() {
+    final r = _scalePending;
+    _scalePending = null;
+    return r;
+  }
+
+  /// Весовой товар с плитки без набранного веса: окно ввода веса (Cmd.weigh).
+  Product? _weighPending;
+
+  Product? takeWeighPending() {
+    final r = _weighPending;
+    _weighPending = null;
+    return r;
+  }
+
+  /// Товары, из которых кассир выбирает к наклейке: весовые, по запросу
+  /// (пусто — сначала без номера на весах).
+  List<Product> scaleCandidates(String q) {
+    if (q.trim().isNotEmpty) {
+      return catalog.search(q, limit: 200).where((p) => p.fractional && p.active).take(30).toList();
+    }
+    final list = catalog.products.where((p) => p.fractional && p.active).toList()
+      ..sort((a, b) {
+        final byPlu = (a.plu == null ? 0 : 1) - (b.plu == null ? 0 : 1);
+        return byPlu != 0 ? byPlu : a.name.compareTo(b.name);
+      });
+    return list.take(30).toList();
+  }
+
+  /// Кассир выбрал товар к наклейке (К2). [remember] — запомнить номер на
+  /// сервере (только товару без номера). Возвращает ошибку или null.
+  Future<String?> pickForSticker(ScaleSticker s, Product p, {required bool remember}) async {
+    var product = p;
+    var note = tr('Наклейка с весов · №${s.plu} · выбрано вручную', 'Tarozi yorligʻi · №${s.plu} · qoʻlda tanlandi');
+    if (remember && p.plu == null) {
+      try {
+        product = await pos.rememberPlu(p, s.plu);
+        note = tr('✓ №${s.plu} на весах = ${p.name} — касса запомнила', '✓ tarozida №${s.plu} = ${p.name} — kassa eslab qoldi');
+      } on ApiError catch (e) {
+        if (!e.isNetwork) return e.message;
+        note = tr('Нет связи — номер не запомнен, товар добавлен', 'Aloqa yoʻq — raqam eslab qolinmadi, mahsulot qoʻshildi');
+      }
+    }
+    final qty = s.qtyFor(product);
+    if (qty <= 0) return tr('Не получилось посчитать вес — у товара нет цены', 'Vaznni hisoblab boʻlmadi — mahsulot narxi yoʻq');
+    _add(product, qty: qty, note: note);
+    notifyListeners();
+    return null;
+  }
+
+  /// Вес с окна ввода (К3): товар в чек.
+  String? addWeighed(Product p, int qty) {
+    if (qty <= 0) return tr('Наберите вес', 'Vaznni tering');
+    if (qty > 999999) return tr('Слишком большой вес', 'Vazn juda katta');
+    _add(p, qty: qty, note: tr('С плитки «Быстрые товары» · весовой', '«Tezkor mahsulotlar» tugmasidan · tortiladigan'));
+    notifyListeners();
+    return null;
+  }
+
   /// Нет связи: окно цены предупреждает, что цена уйдёт из очереди.
   bool get online => pos.online;
 
@@ -363,8 +438,9 @@ class SaleController extends ChangeNotifier {
         return;
       }
     } else if (p.fractional) {
-      _error(tr('Наберите вес и нажмите плитку ещё раз', 'Vaznni tering va tugmani yana bosing'), note: tr('${p.name} · например 1,25 — это 1 кг 250 г', '${p.name} · masalan, 1,25 — bu 1 kg 250 g'), sound: false);
-      notifyListeners();
+      // Без наклейки и без набранного веса — окно ввода веса (Figma К3).
+      _weighPending = p;
+      onNavigate?.call(Cmd.weigh);
       return;
     }
     _add(p, qty: qty);
@@ -671,18 +747,32 @@ class SaleController extends ChangeNotifier {
       _error(tr('Товар не найден: ${mark.gtin}', 'Mahsulot topilmadi: ${mark.gtin}'), note: tr('Код маркировки', 'Markirovka kodi'), right: tr('Поиск: F2', 'Qidirish: F2'));
       return false;
     }
-    final w = parseWeight(code, catalog.settings.weightPrefixes);
+    final st = catalog.settings;
+    final w = parseWeight(code, st.weightPrefixes, digits: st.scaleItemDigits, step: st.scaleWeightStep, sum: st.scaleValue == 'sum');
     if (w != null) {
       final p = catalog.byPlu(w.plu);
       if (p == null) {
-        _error(tr('Весовой товар с кодом ${w.plu} не найден', '${w.plu} kodli tortiladigan mahsulot topilmadi'), note: tr('Этикетка весов', 'Tarozi yorligʻi'), right: tr('Поиск: F2', 'Qidirish: F2'));
+        // Номера нет — кассир один раз выбирает товар (Figma К2).
+        if (mode == SaleMode.held || catalog.cafe != null) {
+          _error(tr('Весовой товар №${w.plu} не найден', '№${w.plu} tortiladigan mahsulot topilmadi'), note: tr('Наклейка с весов', 'Tarozi yorligʻi'), right: tr('Поиск: F2', 'Qidirish: F2'));
+          return false;
+        }
+        _scalePending = ScaleSticker(code, w);
+        msg = SaleMsg(MsgKind.info, tr('Весы: товар №${w.plu} не найден', 'Tarozi: №${w.plu} mahsulot topilmadi'), note: tr('Выберите товар — касса запомнит номер', 'Mahsulotni tanlang — kassa raqamni eslab qoladi'));
+        onSound?.call(false);
+        onNavigate?.call(Cmd.scalePick);
         return false;
       }
       if (!p.fractional) {
         _error(tr('«${p.name}» — штучный товар, а этикетка весовая', '«${p.name}» — donalab sotiladi, yorliq esa tarozidan'));
         return false;
       }
-      _add(p, qty: w.grams);
+      final qty = ScaleSticker(code, w).qtyFor(p);
+      if (qty <= 0) {
+        _error(tr('Не получилось посчитать вес — у товара нет цены', 'Vaznni hisoblab boʻlmadi — mahsulot narxi yoʻq'), note: p.name);
+        return false;
+      }
+      _add(p, qty: qty, note: tr('✓ наклейка с весов · №${w.plu} · цена из Super Market', '✓ tarozi yorligʻi · №${w.plu} · narx Super Marketdan'));
       return true;
     }
     final p = catalog.byBarcode(code);
@@ -769,7 +859,7 @@ class SaleController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _add(Product p, {int qty = 1000, String? mark}) {
+  void _add(Product p, {int qty = 1000, String? mark, String? note}) {
     if (!p.active) {
       _error(tr('Товар снят с продажи', 'Mahsulot sotuvdan olingan'), note: p.name);
       return;
@@ -795,9 +885,12 @@ class SaleController extends ChangeNotifier {
       msg = SaleMsg(
         MsgKind.ok,
         p.name,
-        note: p.unknown
-            ? tr('Неизвестный товар · ${p.unknownBarcode} · нет в базе', 'Nomaʼlum mahsulot · ${p.unknownBarcode} · bazada yoʻq')
-            : p.ikpu.isEmpty ? tr('Только что отсканировано · нет ИКПУ — заполните в панели', 'Hozirgina skanerlandi · MXIK yoʻq — panelda toʻldiring') : tr('Только что отсканировано', 'Hozirgina skanerlandi'),
+        note: note ??
+            (p.unknown
+                ? tr('Неизвестный товар · ${p.unknownBarcode} · нет в базе', 'Nomaʼlum mahsulot · ${p.unknownBarcode} · bazada yoʻq')
+                : p.ikpu.isEmpty
+                    ? tr('Только что отсканировано · нет ИКПУ — заполните в панели', 'Hozirgina skanerlandi · MXIK yoʻq — panelda toʻldiring')
+                    : tr('Только что отсканировано', 'Hozirgina skanerlandi')),
         right: fmtMoney(lineSum(line.price, qty)),
         rightNote: '$q ${fmtMoney(line.price)}',
       );

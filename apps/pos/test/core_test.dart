@@ -118,6 +118,32 @@ void main() {
       expect(validEan13('4601234567893'), isTrue);
     });
 
+    test('формат наклейки весов из «Настройки → Весы»', () {
+      const code = '2200010012347'; // 22 · 00010 · 01234 · 7
+      final w = parseWeight(code, ['22'])!;
+      expect([w.plu, w.grams, w.sum], [10, 1234, 0]);
+      // Номер из 4 цифр — вес из 6.
+      final w4 = parseWeight(code, ['22'], digits: 4)!;
+      expect([w4.plu, w4.grams], [1, 1234]);
+      // Вес шагами по 10 г.
+      expect(parseWeight(code, ['22'], step: 10)!.grams, 12340);
+      // В штрихкоде сумма: 1 234 сума, вес — сумма ÷ цена.
+      final ws = parseWeight(code, ['22'], sum: true)!;
+      expect([ws.grams, ws.sum], [0, 1234]);
+      expect(qtyForSum(29616, 2400000), 1234); // 29 616 сум ÷ 24 000 за кг = 1,234 кг
+      expect(qtyForSum(100, 0), 0);
+      // Весы выключены — префиксов нет, наклейку не разбираем.
+      expect(parseWeight(code, const []), isNull);
+    });
+
+    test('вес с клавиатуры: килограммы или граммы', () {
+      expect(weighQty('0,850'), 850);
+      expect(weighQty('850'), 850);
+      expect(weighQty('2'), 2000);
+      expect(weighQty('1,5'), 1500);
+      expect(weighQty(''), 0);
+    });
+
     test('DataMatrix', () {
       final m = parseMark('\u001d0104601234567893215Ab7xQ\u001d93abcd');
       expect(m, isNotNull);

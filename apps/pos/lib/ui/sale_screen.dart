@@ -84,6 +84,12 @@ class _SaleScreenState extends State<SaleScreen> {
       case Cmd.found:
         final g = sale.takeFoundPending();
         if (g != null) await showFoundDialog(context, sale, g);
+      case Cmd.scalePick:
+        final st = sale.takeScalePending();
+        if (st != null) await showScalePickDialog(context, sale, st);
+      case Cmd.weigh:
+        final p = sale.takeWeighPending();
+        if (p != null) await showWeighDialog(context, sale, p);
       case Cmd.qty:
         await showQtyDialog(context, sale);
       case Cmd.item:

@@ -1,3 +1,5 @@
+import 'money.dart' show parseQty;
+
 // Копия apps/pos/lib/core/codes.dart — касса в телефоне («SM Магазин») считает
 // так же, как POS. Меняете здесь — поменяйте и там.
 
@@ -5,20 +7,44 @@
 // код маркировки DataMatrix.
 
 /// Этикетка весов: EAN-13 вида PP CCCCC WWWWW K — префикс, код товара (PLU),
-/// вес в граммах, контрольная цифра.
+/// вес в граммах, контрольная цифра. Формат задаёт панель («Настройки → Весы»):
+/// [digits] цифр в номере товара (4–6), вес в шагах [step] граммов (1 или 10)
+/// или — если [sum] — сумма в сумах вместо веса.
 class WeightCode {
-  WeightCode(this.plu, this.grams);
+  WeightCode(this.plu, this.grams, {this.sum = 0});
   final int plu;
+
+  /// Вес в граммах (0 — в штрихкоде сумма).
   final int grams;
+
+  /// Сумма в сумах из штрихкода (режим «Сумма»), иначе 0.
+  final int sum;
 }
 
-WeightCode? parseWeight(String code, List<String> prefixes) {
+WeightCode? parseWeight(String code, List<String> prefixes, {int digits = 5, int step = 1, bool sum = false}) {
   if (code.length != 13 || !_digits.hasMatch(code)) return null;
   if (!prefixes.contains(code.substring(0, 2))) return null;
   if (!validEan13(code)) return null;
-  final grams = int.parse(code.substring(7, 12));
-  if (grams == 0) return null;
-  return WeightCode(int.parse(code.substring(2, 7)), grams);
+  if (digits < 4 || digits > 6) digits = 5;
+  final value = int.parse(code.substring(2 + digits, 12));
+  if (value == 0) return null;
+  final plu = int.parse(code.substring(2, 2 + digits));
+  if (sum) return WeightCode(plu, 0, sum: value);
+  return WeightCode(plu, value * (step == 10 ? 10 : 1));
+}
+
+/// Вес (тысячные кг) по сумме с наклейки: сумма ÷ цена за кг. [price] — в
+/// тийинах за единицу, [sum] — в сумах.
+int qtyForSum(int sum, int price) => price <= 0 ? 0 : (sum * 100 * 1000 + price ~/ 2) ~/ price;
+
+/// Вес из набранного: «0,850» — кг; целое число от 50 — граммы («850» →
+/// 0,850 кг), меньше 50 — килограммы («2» → 2 кг). Тысячные кг.
+int weighQty(String typed) {
+  final v = typed.trim();
+  if (v.isEmpty) return 0;
+  if (v.contains(',') || v.contains('.')) return parseQty(v);
+  final n = int.tryParse(v) ?? 0;
+  return n >= 50 ? n : n * 1000;
 }
 
 final _digits = RegExp(r'^[0-9]+$');

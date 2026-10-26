@@ -21,7 +21,7 @@ import 'ui/theme.dart';
 
 /// Адрес API задаётся при сборке: flutter build windows --dart-define=API_URL=https://…/api/v1
 const apiUrl = String.fromEnvironment('API_URL', defaultValue: 'https://api.super-market.uz/api/v1');
-const appVersion = '0.4.2';
+const appVersion = '0.4.3';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

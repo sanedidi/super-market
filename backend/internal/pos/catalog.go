@@ -77,6 +77,11 @@ type Settings struct {
 	ReceiptHeader  string   `json:"receipt_header"`
 	ReceiptFooter  string   `json:"receipt_footer"`
 	WeightPrefixes []string `json:"weight_prefixes"`
+	// Формат наклейки весов: цифр в номере товара (4–6), что в штрихкоде —
+	// вес (weight) или сумма (sum), шаг веса в граммах (1 или 10).
+	ScaleItemDigits int    `json:"scale_item_digits"`
+	ScaleValue      string `json:"scale_value"`
+	ScaleWeightStep int    `json:"scale_weight_step"`
 	// «Даёт в долг»: показывать ли кассиру продажу в долг.
 	DebtEnabled bool `json:"debt_enabled"`
 	// Вид устройства (pos, kitchen, display) и цех экрана кухни: панель может
@@ -140,6 +145,9 @@ func (s *Service) CatalogChanged(ctx context.Context, p *identity.Principal, sin
 		               WHERE pr.network_id = $1 AND pr.updated_at > $3
 		                 AND (pr.store_id IS NULL OR pr.store_id = $2))
 		    OR EXISTS (SELECT 1 FROM pos_plu pl WHERE pl.network_id = $1 AND pl.updated_at > $3)
+		    OR EXISTS (SELECT 1 FROM own_barcodes ob WHERE ob.network_id = $1 AND ob.created_at > $3)
+		    -- Настройки сети (формат наклейки весов, шапка чека) — приходят в каталоге целиком.
+		    OR EXISTS (SELECT 1 FROM networks n WHERE n.id = $1 AND n.pos_settings_at > $3)
 		    OR EXISTS (SELECT 1 FROM store_products sp WHERE sp.store_id = $2 AND sp.added_at > $3)
 		    OR EXISTS (SELECT 1 FROM products pp
 		               WHERE pp.updated_at > $3
@@ -160,7 +168,8 @@ const catalogProductsSQL = `
 		SELECT p.id, loc(p.name, p.name_uz), loc(u.short_name, u.short_name_uz), u.is_fractional,
 		       p.is_active AND (p.moderation_status = 'approved' OR p.network_id = $1),
 		       COALESCE(sp.price, np.price, p.base_price)::text,
-		       COALESCE((SELECT array_agg(b.barcode ORDER BY b.barcode) FROM product_barcodes b WHERE b.product_id = p.id), '{}'),
+		       COALESCE((SELECT array_agg(b.barcode ORDER BY b.barcode) FROM product_barcodes b WHERE b.product_id = p.id), '{}')
+		         || CASE WHEN ob.barcode IS NULL THEN '{}'::text[] ELSE ARRAY[ob.barcode] END,
 		       p.ikpu, p.package_code, p.vat_rate::text, p.is_marked, pl.plu,
 		       COALESCE(p.images[1], ''),
 		       COALESCE(loc(c2.name, c2.name_uz), loc(c1.name, c1.name_uz), loc(c.name, c.name_uz), ''),
@@ -179,6 +188,8 @@ const catalogProductsSQL = `
 		LEFT JOIN prices sp ON sp.product_id = p.id AND sp.price_type_id = $3 AND sp.store_id = $2
 		LEFT JOIN prices np ON np.product_id = p.id AND np.price_type_id = $3 AND np.store_id IS NULL AND np.network_id = $1
 		LEFT JOIN pos_plu pl ON pl.network_id = $1 AND pl.product_id = p.id
+		-- Свой штрихкод сети «20…» (товар без заводского, Figma «Без штрихкода»).
+		LEFT JOIN own_barcodes ob ON ob.network_id = $1 AND ob.product_id = p.id
 		LEFT JOIN store_products mine ON mine.store_id = $2 AND mine.product_id = p.id
 		WHERE (p.network_id IS NULL OR p.network_id = $1)
 		  -- Только товары магазина («Мои товары»: добавил сам, пришли приходом,
@@ -188,7 +199,8 @@ const catalogProductsSQL = `
 		  -- «Неизвестный товар».
 		  AND (mine.product_id IS NOT NULL OR np.price IS NOT NULL OR pl.plu IS NOT NULL)
 		  AND ($4::timestamptz IS NULL OR p.updated_at > $4 OR u.updated_at > $4 OR sp.updated_at > $4
-		       OR np.updated_at > $4 OR pl.updated_at > $4 OR vg.updated_at > $4 OR mine.added_at > $4)
+		       OR np.updated_at > $4 OR pl.updated_at > $4 OR vg.updated_at > $4 OR mine.added_at > $4
+		       OR ob.created_at > $4)
 		  AND ($5::uuid IS NULL OR p.id = $5)`
 
 // catalogProduct — один товар в том виде, в каком его получает касса.
@@ -221,13 +233,17 @@ func (s *Service) Catalog(ctx context.Context, p *identity.Principal, since *tim
 	}
 	out.Version = out.Version.UTC()
 	err := s.pool.QueryRow(ctx, `
-		SELECT d.id, d.name, st.id, st.name, COALESCE(st.address, ''), n.name, n.receipt_header, n.receipt_footer, n.pos_weight_prefixes,
+		SELECT d.id, d.name, st.id, st.name, COALESCE(st.address, ''), n.name, n.receipt_header, n.receipt_footer,
+		       -- Весы выключены в «Настройки → Весы» — наклейки касса не разбирает.
+		       CASE WHEN n.scales_enabled THEN n.pos_weight_prefixes ELSE '{}'::text[] END,
+		       n.scale_item_digits, n.scale_value, n.scale_weight_step,
 		       st.debt_enabled AND network_has_feature(n.id, 'debts'), (SELECT sh.id FROM pos_shifts sh WHERE sh.device_id = d.id AND sh.closed_at IS NULL),
 		       d.kind, d.workshop_id, (SELECT loc(w.name, w.name_uz) FROM workshops w WHERE w.id = d.workshop_id)
 		FROM pos_devices d JOIN stores st ON st.id = d.store_id JOIN networks n ON n.id = d.network_id
 		WHERE d.id = $1`, p.DeviceID).Scan(&out.Settings.DeviceID, &out.Settings.DeviceName, &out.Settings.StoreID,
 		&out.Settings.StoreName, &out.Settings.StoreAddress, &out.Settings.NetworkName, &out.Settings.ReceiptHeader,
-		&out.Settings.ReceiptFooter, &out.Settings.WeightPrefixes, &out.Settings.DebtEnabled, &out.OpenShiftID,
+		&out.Settings.ReceiptFooter, &out.Settings.WeightPrefixes,
+		&out.Settings.ScaleItemDigits, &out.Settings.ScaleValue, &out.Settings.ScaleWeightStep, &out.Settings.DebtEnabled, &out.OpenShiftID,
 		&out.Settings.DeviceKind, &out.Settings.WorkshopID, &out.Settings.WorkshopName)
 	if err != nil {
 		return out, err

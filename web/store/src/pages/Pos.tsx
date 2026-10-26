@@ -16,7 +16,6 @@ import {
   Modal,
   Popconfirm,
   Row,
-  Select,
   Space,
   Table,
   Tag,
@@ -24,6 +23,7 @@ import {
 } from 'antd'
 import { KeyOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
+import { Link } from 'react-router-dom'
 import { DeleteButton, LoadError, PageTitle, api, dateTime, money, tr, useAction, useItem, useList, usePaged } from '@sm/shared'
 import { useStore } from '../ctx'
 import { NeedStore } from '../ui'
@@ -385,13 +385,13 @@ function SettingsCard() {
   if (!settings.data) return <LoadError error={settings.error} retry={() => settings.refetch()} />
   const readOnly = !can('stores.manage')
   return (
-    <Card title={tr('Чек и весы (для всей сети)', 'Chek va tarozi (butun tarmoq uchun)')}>
+    <Card title={tr('Чек (для всей сети)', 'Chek (butun tarmoq uchun)')}>
       <Form
         form={form}
         layout="vertical"
         disabled={readOnly}
         initialValues={settings.data}
-        onFinish={(v) => save.mutate({ ...v, weight_prefixes: v.weight_prefixes ?? [] })}
+        onFinish={(v) => save.mutate({ ...v, weight_prefixes: settings.data?.weight_prefixes ?? ['22'] })}
       >
         <Form.Item
           name="receipt_header"
@@ -403,16 +403,11 @@ function SettingsCard() {
         <Form.Item name="receipt_footer" label={tr('Текст внизу чека', 'Chek pastidagi matn')}>
           <Input.TextArea rows={2} maxLength={500} placeholder={tr('Спасибо за покупку!', 'Xaridingiz uchun rahmat!')} />
         </Form.Item>
-        <Form.Item
-          name="weight_prefixes"
-          label={tr('Префиксы весовых этикеток', 'Tarozi yorliqlari prefikslari')}
-          extra={tr(
-            'Первые 2 цифры штрихкода, который печатают весы (обычно 22). Код товара на этикетке = короткий код (PLU).',
-            'Tarozi chop etadigan shtrix-kodning birinchi 2 raqami (odatda 22). Yorliqdagi mahsulot kodi = qisqa kod (PLU).',
-          )}
-        >
-          <Select mode="tags" tokenSeparators={[',', ' ']} options={['20', '21', '22', '23', '24', '25', '26', '27', '28', '29'].map((v) => ({ value: v }))} />
-        </Form.Item>
+        <Typography.Paragraph type="secondary">
+          {tr('Весы с наклейками: формат штрихкода — в ', 'Yorliqli tarozi: shtrix-kod formati — ')}
+          <Link to="/settings/scales">{tr('Настройки → Весы', 'Sozlamalar → Tarozi')}</Link>
+          {tr(', номера товаров — в «Товары → На весах».', ', mahsulot raqamlari — «Mahsulotlar → Tarozida».')}
+        </Typography.Paragraph>
         {!readOnly && (
           <Button type="primary" htmlType="submit" loading={save.isPending}>
             {tr('Сохранить', 'Saqlash')}
