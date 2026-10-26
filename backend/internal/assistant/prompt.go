@@ -20,8 +20,11 @@ type promptContext struct {
 	// Stores — магазины сети {id, name}; текущий — Store/StoreID.
 	StoreID string              `json:"store_id"`
 	Stores  []map[string]string `json:"stores,omitempty"`
-	Scan    *scanContext        `json:"current_scan,omitempty"`
-	Recent  []recentMessage     `json:"recent_messages"`
+	// Warehouses — склады текущего магазина {id, name, default}: откуда/куда
+	// для прихода, возврата, перемещения, списания.
+	Warehouses []map[string]any `json:"warehouses,omitempty"`
+	Scan       *scanContext     `json:"current_scan,omitempty"`
+	Recent     []recentMessage  `json:"recent_messages"`
 	// DoneToday — что помощник уже сделал сегодня (журнал), чтобы не
 	// повторять и помнить длинный разговор.
 	DoneToday []string `json:"done_today,omitempty"`
@@ -119,6 +122,18 @@ func (s *Service) buildPrompt(ctx context.Context, p *identity.Principal, storeI
 			}
 		}
 		drows.Close()
+	}
+	if wrows, err := s.pool.Query(ctx, `
+		SELECT w.id::text, w.name, w.id = s.default_warehouse_id FROM warehouses w JOIN stores s ON s.id = w.store_id
+		WHERE w.store_id = $1 AND w.is_active ORDER BY w.id = s.default_warehouse_id DESC, w.name LIMIT 20`, storeID); err == nil {
+		for wrows.Next() {
+			var id, name string
+			var def bool
+			if wrows.Scan(&id, &name, &def) == nil {
+				pc.Warehouses = append(pc.Warehouses, map[string]any{"id": id, "name": name, "default": def})
+			}
+		}
+		wrows.Close()
 	}
 	pc.Aliases = s.aliases(ctx, p.NetworkID)
 	if sc != nil && sc.Status == invoices.StatusReady {

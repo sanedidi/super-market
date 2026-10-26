@@ -259,6 +259,9 @@ func TestAssistantChat(t *testing.T) {
 		t.Fatalf("docs = %v", m)
 	}
 	modelReq := fai.lastRequest()
+	if !strings.Contains(modelReq, `\"warehouses\":[{\"default\":true`) || !strings.Contains(modelReq, "Откуда и куда") {
+		t.Fatalf("warehouses / from-to rule not in model request")
+	}
 	for _, want := range []string{"GET /store/inventory/my-products", "## ", "только /store/"} {
 		if !strings.Contains(modelReq, want) {
 			t.Fatalf("tools: %q not in model request: %s", want, modelReq)
