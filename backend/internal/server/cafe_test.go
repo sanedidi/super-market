@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/sanedidi/super-market/backend/internal/identity"
 )
 
@@ -1175,5 +1177,325 @@ func TestCafeTables(t *testing.T) {
 	}
 	if items != 45 || seqs != 45 {
 		t.Fatalf("items = %d, distinct seq = %d", items, seqs)
+	}
+}
+
+// Этап 6: официант в телефоне — право cafe.waiter, свои столы, приём заказа
+// с гостями и «по команде», печать бегунка через кассу, «Несу», передача
+// стола (принять / отклонить / просрочено), зоны на смену, «Мои продажи»,
+// push-уведомления, конфликт версий.
+func TestCafeWaiter(t *testing.T) {
+	pool := freshDB(t)
+	cfg := testConfig()
+	cfg.DevOTPCode = "111111"
+	a := newAPI(t, cfg, pool, nil)
+	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
+	a.expect(a.do("POST", "/admin/networks", adminTok, map[string]any{
+		"name": "Кафе", "kind": "single", "owner_phone": "+998900000002", "owner_name": "В", "business_type": "cafe",
+	}), 201, "cafe")
+	tok, _ := a.login("+998900000002", identity.AppStore)
+	store := a.expect(a.do("POST", "/store/stores", tok, map[string]any{"name": "Кафе 1"}), 201, "store").str("id")
+	hot := a.expect(a.do("POST", "/store/cafe/menu-groups", tok, map[string]any{"name": "Горячее"}), 201, "hot").str("id")
+	plov := a.expect(a.do("POST", "/store/cafe/dishes", tok, map[string]any{
+		"kind": "dish", "name": "Плов", "price": 35000, "menu_code": 12, "menu_group_id": hot, "ikpu": "10202001001000000",
+	}), 201, "plov").str("id")
+	tea := a.expect(a.do("POST", "/store/cafe/dishes", tok, map[string]any{
+		"kind": "dish", "name": "Чай", "price": 6000, "menu_code": 40, "menu_group_id": hot, "ikpu": "10202001001000000",
+	}), 201, "tea").str("id")
+	a.expect(a.do("PATCH", "/store/cafe/settings", tok, map[string]any{"cafe_mode": "tables", "service_percent": "10", "waiter_own_tables": true}), 200, "settings")
+	table := func(n string, x int) map[string]any {
+		return map[string]any{"number": n, "seats": 4, "shape": "rect", "x": x, "y": 0, "w": 2, "h": 2}
+	}
+	lay := a.expect(a.do("PUT", "/store/cafe/halls", tok, map[string]any{"store_id": store, "halls": []map[string]any{
+		{"name": "Зал", "tables": []map[string]any{table("1", 0), table("2", 3), table("3", 6)}},
+	}}), 200, "layout").items()
+	tid := map[string]string{}
+	for _, x := range lay[0]["tables"].([]any) {
+		tt := x.(map[string]any)
+		tid[tt["number"].(string)] = tt["id"].(string)
+	}
+
+	// Официанты: Азиз и Дилноза (право cafe.waiter), продавец без права.
+	roleW := a.expect(a.do("POST", "/store/roles", tok, map[string]any{"name": "Официант", "permissions": []string{identity.PermCafeWaiter}}), 201, "role").str("id")
+	roleS := a.expect(a.do("POST", "/store/roles", tok, map[string]any{"name": "Продавец", "permissions": []string{identity.PermSalesPOS}}), 201, "role seller").str("id")
+	aziz := a.expect(a.do("POST", "/store/employees", tok, map[string]any{"phone": "+998900000301", "full_name": "Азиз", "role_id": roleW, "store_ids": []string{store}}), 201, "aziz").str("id")
+	dil := a.expect(a.do("POST", "/store/employees", tok, map[string]any{"phone": "+998900000302", "full_name": "Дилноза", "role_id": roleW, "store_ids": []string{store}}), 201, "dil").str("id")
+	a.expect(a.do("POST", "/store/employees", tok, map[string]any{"phone": "+998900000303", "full_name": "Продавец", "role_id": roleS, "store_ids": []string{store}}), 201, "seller")
+	azizTok, _ := a.login("+998900000301", identity.AppStore)
+	dilTok, _ := a.login("+998900000302", identity.AppStore)
+	sellerTok, _ := a.login("+998900000303", identity.AppStore)
+	for _, e := range []string{aziz, dil} {
+		if _, err := pool.Exec(context.Background(), `INSERT INTO devices (user_id, token, platform, app)
+			SELECT user_id, 'waiter-'||$1::text, 'android', 'store' FROM employees WHERE id = $1::uuid`, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pushes := func(employee string) []string {
+		rows, err := pool.Query(context.Background(), `SELECT o.title FROM notifications_outbox o JOIN employees e ON e.user_id = o.user_id
+			WHERE e.id = $1 AND o.kind = 'staff_notice' ORDER BY o.created_at, o.title`, employee)
+		if err != nil {
+			t.Fatal(err)
+		}
+		list, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			t.Fatal(err)
+		}
+		return list
+	}
+
+	a.expect(a.do("GET", "/store/cafe/waiter/hall", sellerTok, nil), 403, "no permission")
+	hall := a.expect(a.do("GET", "/store/cafe/waiter/hall", azizTok, nil), 200, "hall")
+	if hall.str("store_id") != store || hall.str("me") != aziz || hall.Body["senior"] != false || hall.Body["waiter_own_tables"] != true ||
+		len(hall.Body["tables"].([]any)) != 3 || len(hall.Body["bills"].([]any)) != 0 {
+		t.Fatalf("hall = %v", hall.Body)
+	}
+	menu := a.expect(a.do("GET", "/store/cafe/waiter/menu?store_id="+store, azizTok, nil), 200, "menu")
+	if len(menu.Body["dishes"].([]any)) != 2 || menu.str("mode") != "tables" {
+		t.Fatalf("menu = %v", menu.Body)
+	}
+	ws := a.expect(a.do("GET", "/store/cafe/waiter/waiters", azizTok, nil), 200, "waiters").items()
+	if len(ws) != 3 { // владелец + два официанта
+		t.Fatalf("waiters = %v", ws)
+	}
+
+	n := 0
+	uid := func() string {
+		n++
+		return fmt.Sprintf("00000000-0000-4000-8000-%012d", n)
+	}
+	op := func(tok string, body map[string]any, want int, what string) resp {
+		if _, ok := body["id"]; !ok {
+			body["id"] = uid()
+		}
+		return a.expect(a.do("POST", "/store/cafe/waiter/ops?store_id="+store, tok, body), want, what)
+	}
+	// Зоны на смену: только старший (владелец).
+	a.expect(a.do("PUT", "/store/cafe/waiter/zones", azizTok, map[string]any{"store_id": store,
+		"assignments": []map[string]any{{"table_id": tid["2"], "waiter_id": dil}}}), 403, "zones by waiter")
+	a.expect(a.do("PUT", "/store/cafe/waiter/zones", tok, map[string]any{"store_id": store,
+		"assignments": []map[string]any{{"table_id": tid["2"], "waiter_id": "x"}}}), 400, "zones bad waiter")
+	// Владелец — без права cafe.waiter в роли, но владелец может всё.
+	z := a.expect(a.do("PUT", "/store/cafe/waiter/zones", tok, map[string]any{"store_id": store,
+		"assignments": []map[string]any{{"table_id": tid["2"], "waiter_id": dil}, {"table_id": tid["3"], "waiter_id": dil}}}), 200, "zones")
+	if z.Body["senior"] != true {
+		t.Fatalf("owner senior = %v", z.Body)
+	}
+	for _, x := range z.Body["tables"].([]any) {
+		tt := x.(map[string]any)
+		if (tt["number"] == "2" || tt["number"] == "3") && tt["waiter_id"] != dil {
+			t.Fatalf("zone table = %v", tt)
+		}
+	}
+
+	// Азиз открывает стол 1 — стол его (О5); стол 2 — кассир на Дилнозу (push ей).
+	b1, b2 := "11111111-0000-4000-8000-000000000001", "11111111-0000-4000-8000-000000000002"
+	open := map[string]any{"id": uid(), "bill_id": b1, "kind": "open", "table_id": tid["1"], "guests": 3}
+	bill := op(azizTok, open, 200, "open")
+	if bill.str("waiter_id") != aziz || bill.Body["mine"] != true || bill.Body["guests"].(float64) != 3 {
+		t.Fatalf("bill = %v", bill.Body)
+	}
+	op(azizTok, open, 200, "open again")
+	d := a.expect(a.do("POST", "/store/pos/devices", tok, map[string]any{"store_id": store, "name": "Касса"}), 201, "device")
+	posTok := a.expect(a.do("POST", "/pos/activate", "", map[string]any{"code": d.str("activation_code")}), 200, "activate").str("token")
+	var owner string
+	for _, e := range a.expect(a.do("GET", "/store/employees", tok, nil), 200, "employees").items() {
+		if e["full_name"] == "В" {
+			owner = e["id"].(string)
+		}
+	}
+	a.expect(a.do("PUT", "/store/pos/pins/"+owner, tok, map[string]any{"pin": "9999"}), 200, "pin")
+	a.expect(posDo(a, "POST", "/pos/shifts", posTok, owner, map[string]any{"client_uid": "shift-w-01"}), 201, "shift")
+	// Касса открывает стол 2: официант — Дилноза из зоны на смену.
+	pb := a.expect(posDo(a, "POST", "/pos/bills/ops", posTok, owner, map[string]any{"id": uid(), "bill_id": b2, "kind": "open", "table_id": tid["2"], "guests": 2}), 200, "pos open")
+	if pb.str("waiter_id") != dil {
+		t.Fatalf("pos bill waiter = %v", pb.Body)
+	}
+	if got := pushes(dil); len(got) != 1 || got[0] != "Стол 2 открыт" {
+		t.Fatalf("dil pushes = %v", got)
+	}
+
+	// Азизу чужой стол 2 — серый: без позиций, нельзя добавить; «попросить» — push Дилнозе.
+	hall = a.expect(a.do("GET", "/store/cafe/waiter/hall", azizTok, nil), 200, "hall 2")
+	for _, x := range hall.Body["bills"].([]any) {
+		b := x.(map[string]any)
+		if b["id"] == b2 && (b["mine"] != false || b["subtotal"] != "" || len(b["items"].([]any)) != 0) {
+			t.Fatalf("foreign bill = %v", b)
+		}
+	}
+	// guest 0 — «Всем»: поле не передаётся (блюдо на стол).
+	add := func(billID, id, product string, qty int, course string, guest int) map[string]any {
+		item := map[string]any{"id": id, "product_id": product, "qty": qty, "price": 35000, "course": course}
+		if guest > 0 {
+			item["guest"] = guest
+		}
+		return map[string]any{"bill_id": billID, "kind": "add", "item": item}
+	}
+	op(azizTok, add(b2, uid(), plov, 1, "now", 1), 403, "add to foreign")
+	op(azizTok, map[string]any{"bill_id": b2, "kind": "cancel", "item_id": uid()}, 403, "cancel from phone")
+	op(azizTok, map[string]any{"bill_id": b2, "kind": "request"}, 200, "request table")
+	if got := pushes(dil); len(got) != 2 || got[1] != "Азиз просит стол 2" {
+		t.Fatalf("dil pushes = %v", got)
+	}
+
+	// Приём заказа: плов Г1 и Г2 сразу, чай — всем, по команде.
+	plovItem, teaItem := uid(), uid()
+	op(azizTok, add(b1, plovItem, plov, 2, "now", 1), 200, "add plov")
+	op(azizTok, add(b1, teaItem, tea, 3, "later", 0), 200, "add tea")
+	bill = op(azizTok, map[string]any{"bill_id": b1, "kind": "update", "item_id": teaItem, "guest": 2}, 200, "tea guest")
+	v := int(bill.Body["version"].(float64))
+	stale := v - 1
+	op(azizTok, map[string]any{"bill_id": b1, "kind": "guests", "guests": 4, "expected_version": stale}, 409, "stale version")
+	bill = op(azizTok, map[string]any{"bill_id": b1, "kind": "guests", "guests": 4, "expected_version": v}, 200, "fresh version")
+	op(azizTok, map[string]any{"bill_id": b1, "kind": "serve", "item_id": plovItem}, 409, "serve before send")
+	bill = op(azizTok, map[string]any{"bill_id": b1, "kind": "send"}, 200, "send")
+	// Экрана кухни нет — бегунок ждёт печати на кассе.
+	st := a.expect(posDo(a, "GET", "/pos/kitchen/status", posTok, owner, nil), 200, "status")
+	// Две отправки: «сразу» и «по команде» — по бегунку в каждой.
+	pr := st.Body["print"].([]any)
+	if len(pr) != 2 {
+		t.Fatalf("print = %v", pr)
+	}
+	var ticketIDs []string
+	for _, o := range pr {
+		for _, x := range o.(map[string]any)["tickets"].([]any) {
+			tk := x.(map[string]any)
+			if tk["print_pending"] != true || tk["status"] != "served" {
+				t.Fatalf("print ticket = %v", tk)
+			}
+			ticketIDs = append(ticketIDs, tk["id"].(string))
+		}
+	}
+	if len(ticketIDs) != 2 {
+		t.Fatalf("print tickets = %v", ticketIDs)
+	}
+	a.expect(posDo(a, "POST", "/pos/kitchen/printed", posTok, owner, map[string]any{"ticket_ids": ticketIDs}), 200, "printed")
+	if st = a.expect(posDo(a, "GET", "/pos/kitchen/status", posTok, owner, nil), 200, "status 2"); len(st.Body["print"].([]any)) != 0 {
+		t.Fatalf("print after = %v", st.Body["print"])
+	}
+	op(azizTok, map[string]any{"bill_id": b1, "kind": "fire"}, 200, "fire")
+	bill = op(azizTok, map[string]any{"bill_id": b1, "kind": "serve", "item_id": plovItem}, 200, "serve")
+	for _, x := range bill.Body["items"].([]any) {
+		it := x.(map[string]any)
+		if it["id"] == plovItem && (it["served_at"] == nil || it["kitchen"] != "served") {
+			t.Fatalf("served item = %v", it)
+		}
+	}
+
+	// Готово на кухне → push официанту стола.
+	k := a.expect(a.do("POST", "/store/pos/devices", tok, map[string]any{"store_id": store, "name": "Кухня", "kind": "kitchen"}), 201, "kds")
+	kdsTok := a.expect(a.do("POST", "/pos/activate", "", map[string]any{"code": k.str("activation_code")}), 200, "activate kds").str("token")
+	b3 := "11111111-0000-4000-8000-000000000003"
+	op(dilTok, map[string]any{"id": uid(), "bill_id": b3, "kind": "open", "table_id": tid["3"]}, 200, "dil opens 3")
+	op(dilTok, add(b3, uid(), plov, 1, "now", 1), 200, "dil adds")
+	op(dilTok, map[string]any{"bill_id": b3, "kind": "send"}, 200, "dil sends")
+	board := a.expect(posDo(a, "GET", "/pos/kitchen/board", kdsTok, "", nil), 200, "board").Body["orders"].([]any)
+	var key string
+	for _, x := range board {
+		if o := x.(map[string]any); o["bill_id"] == b3 {
+			key = o["id"].(string)
+		}
+	}
+	if key == "" {
+		t.Fatalf("board = %v", board)
+	}
+	a.expect(posDo(a, "POST", "/pos/kitchen/orders/"+key+"/action", kdsTok, "", map[string]any{"action": "ready"}), 200, "ready")
+	if got := pushes(dil); len(got) != 3 || got[2] != "Стол 3: готово — заберите" {
+		t.Fatalf("dil pushes = %v", got)
+	}
+
+	// Передача стола 1 Дилнозе: отклонила → стол у Азиза; снова → приняла.
+	op(dilTok, map[string]any{"bill_id": b1, "kind": "transfer", "to_waiter_id": aziz}, 403, "transfer foreign")
+	op(azizTok, map[string]any{"bill_id": b1, "kind": "transfer", "to_waiter_id": aziz}, 400, "transfer to self")
+	bill = op(azizTok, map[string]any{"bill_id": b1, "kind": "transfer", "to_waiter_id": dil, "reason": "ухожу на перерыв"}, 200, "transfer")
+	if bill.str("transfer_to") != dil || bill.str("transfer_from") != aziz || bill.str("transfer_reason") != "ухожу на перерыв" || bill.str("waiter_id") != aziz {
+		t.Fatalf("transfer = %v", bill.Body)
+	}
+	op(azizTok, map[string]any{"bill_id": b1, "kind": "accept"}, 409, "accept by sender")
+	bill = op(dilTok, map[string]any{"bill_id": b1, "kind": "decline"}, 200, "decline")
+	if bill.Body["transfer_to"] != nil || bill.str("waiter_id") != aziz {
+		t.Fatalf("after decline = %v", bill.Body)
+	}
+	op(azizTok, map[string]any{"bill_id": b1, "kind": "transfer", "to_waiter_id": dil}, 200, "transfer 2")
+	// Просрочено — 3 минуты прошли.
+	if _, err := pool.Exec(context.Background(), `UPDATE bills SET transfer_at = now() - interval '4 minutes' WHERE id = $1`, b1); err != nil {
+		t.Fatal(err)
+	}
+	op(dilTok, map[string]any{"bill_id": b1, "kind": "accept"}, 409, "accept expired")
+	op(azizTok, map[string]any{"bill_id": b1, "kind": "transfer", "to_waiter_id": dil}, 200, "transfer 3")
+	bill = op(dilTok, map[string]any{"bill_id": b1, "kind": "accept"}, 200, "accept")
+	if bill.str("waiter_id") != dil || bill.Body["mine"] != true || bill.Body["transfer_to"] != nil {
+		t.Fatalf("after accept = %v", bill.Body)
+	}
+	if got := pushes(aziz); len(got) != 2 || got[0] != "Стол 1 остался у вас" || got[1] != "Стол 1 передан" {
+		t.Fatalf("aziz pushes = %v", got)
+	}
+	op(azizTok, add(b1, uid(), plov, 1, "now", 1), 403, "add after handover")
+
+	// Пустой стол без официанта: «взять» и закрыть без оплаты самому.
+	b4 := "11111111-0000-4000-8000-000000000004"
+	a.expect(posDo(a, "POST", "/pos/bills/ops", posTok, owner, map[string]any{"id": uid(), "bill_id": b4, "kind": "open", "table_id": tid["1"]}), 409, "table 1 busy")
+	op(dilTok, map[string]any{"bill_id": b1, "kind": "void"}, 400, "void with sent items needs reason")
+	op(dilTok, map[string]any{"bill_id": b1, "kind": "void", "reason": "гости ушли"}, 403, "void with sent items needs senior")
+	bill = op(tok, map[string]any{"bill_id": b1, "kind": "void", "reason": "гости ушли"}, 200, "owner voids")
+	if bill.str("status") != "void" {
+		t.Fatalf("void = %v", bill.Body)
+	}
+	a.expect(posDo(a, "POST", "/pos/bills/ops", posTok, owner, map[string]any{"id": uid(), "bill_id": b4, "kind": "open", "table_id": tid["1"], "waiter_id": ""}), 200, "open without waiter")
+	bill = op(azizTok, map[string]any{"bill_id": b4, "kind": "take"}, 200, "take")
+	if bill.str("waiter_id") != aziz {
+		t.Fatalf("take = %v", bill.Body)
+	}
+	op(dilTok, map[string]any{"bill_id": b4, "kind": "take"}, 409, "take taken")
+	bill = op(azizTok, map[string]any{"bill_id": b4, "kind": "void"}, 200, "void empty")
+	if bill.str("status") != "void" {
+		t.Fatalf("void empty = %v", bill.Body)
+	}
+
+	// Ожидание событий: версия уже больше — ответ сразу.
+	w := a.expect(a.do("GET", "/store/cafe/waiter/wait?store_id="+store+"&v=0", azizTok, nil), 200, "wait")
+	if w.Body["version"].(float64) < 1 {
+		t.Fatalf("wait = %v", w.Body)
+	}
+
+	// Мои продажи: оплата стола 3 на кассе — в отчёте Дилнозы.
+	cat := a.expect(posDo(a, "GET", "/pos/catalog", posTok, "", nil), 200, "catalog")
+	var cash string
+	for _, x := range cat.Body["payment_methods"].([]any) {
+		if m := x.(map[string]any); m["kind"] == "cash" {
+			cash = m["id"].(string)
+		}
+	}
+	shift := sqlStr(t, pool, `SELECT id::text FROM pos_shifts WHERE closed_at IS NULL LIMIT 1`)
+	b3bill := a.expect(a.do("GET", "/store/cafe/waiter/hall", dilTok, nil), 200, "hall dil")
+	var b3item string
+	for _, x := range b3bill.Body["bills"].([]any) {
+		if b := x.(map[string]any); b["id"] == b3 {
+			b3item = b["items"].([]any)[0].(map[string]any)["id"].(string)
+		}
+	}
+	a.expect(posDo(a, "POST", "/pos/sales", posTok, owner, map[string]any{
+		"client_uid": "w-pay-0001", "shift_id": shift, "bill_id": b3, "service_amount": "3500.00",
+		"items":    []map[string]any{{"product_id": plov, "qty": 1, "price": 35000, "bill_item_id": b3item}},
+		"payments": []map[string]any{{"payment_method_id": cash, "amount": "38500.00"}},
+	}), 201, "pay b3")
+	ms := a.expect(a.do("GET", "/store/cafe/waiter/my-sales?store_id="+store, dilTok, nil), 200, "my sales")
+	if ms.Body["bills"].(float64) != 1 || ms.str("total") != "38500.00" || ms.str("service") != "3500.00" || ms.Body["open"].(float64) != 1 {
+		t.Fatalf("my sales = %v", ms.Body)
+	}
+	a.expect(a.do("GET", "/store/cafe/waiter/my-sales?store_id="+store+"&date=2026-1-1", dilTok, nil), 400, "bad date")
+
+	// «Как вчера»: вчерашние зоны → сегодня.
+	if _, err := pool.Exec(context.Background(), `UPDATE cafe_shift_waiters SET day = day - 1`); err != nil {
+		t.Fatal(err)
+	}
+	z = a.expect(a.do("PUT", "/store/cafe/waiter/zones", tok, map[string]any{"store_id": store, "like_yesterday": true}), 200, "like yesterday")
+	zones := 0
+	for _, x := range z.Body["tables"].([]any) {
+		if x.(map[string]any)["waiter_id"] == dil {
+			zones++
+		}
+	}
+	if zones != 2 {
+		t.Fatalf("like yesterday tables = %v", z.Body["tables"])
 	}
 }

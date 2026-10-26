@@ -154,7 +154,8 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		aiPhoto.StartWorker(context.Background())
 		startSvc.OnOwnAdded = func(networkID string) { varSvc.StartNetSuggest(context.Background(), networkID) }
 	}
-	cafeSvc := cafe.NewService(pool)
+	cafeSvc := cafe.NewService(pool).WithNotifier(notify.New(pool, tg, log))
+	storeEvents := events.NewHub(pool, log)
 	h := httpx.NewRouter(log, pool,
 		identity.NewModule(idSvc, auth, log),
 		tenant.NewModule(tenantSvc, auth, log),
@@ -165,9 +166,9 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		inventory.NewModule(invSvc, auth, log),
 		supply.NewModule(supplySvc, idSvc, auth, log),
 		sales.NewModule(salesSvc, auth, log),
-		cafe.NewModule(cafeSvc, auth, log),
+		cafe.NewModule(cafeSvc, auth, log).WithHub(storeEvents),
 		pos.NewModule(pos.NewService(pool, salesSvc).WithDebts(debtSvc).WithCatalog(catSvc), auth, log).
-			WithKitchen(cafeSvc, events.NewHub(pool, log)),
+			WithKitchen(cafeSvc, storeEvents),
 		debts.NewModule(debtSvc, auth, log),
 		orders.NewModule(ord, dlv, pay, auth, log),
 		billing.NewModule(bill, auth, log),

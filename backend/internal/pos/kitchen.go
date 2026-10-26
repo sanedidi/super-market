@@ -33,6 +33,7 @@ func (m *Module) kitchenRoutes(r chi.Router) {
 	r.Get("/pos/kitchen/wait", m.kitchenWait)
 	r.Get("/pos/kitchen/status", m.kitchenStatus)
 	r.Post("/pos/kitchen/printers", m.kitchenPrinters)
+	r.Post("/pos/kitchen/printed", m.kitchenPrinted)
 	// Кафе со столами: зал, столы, открытые счета; операции со счётом.
 	r.Get("/pos/hall", m.hall)
 	r.Post("/pos/bills/ops", m.billOp)
@@ -109,5 +110,12 @@ func (m *Module) kitchenStatus(w http.ResponseWriter, r *http.Request) {
 func (m *Module) kitchenPrinters(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in []cafe.PrinterReport) (map[string]bool, error) {
 		return map[string]bool{"ok": true}, m.kitchen.ReportPrinters(r.Context(), pr(r), in)
+	})
+}
+
+// kitchenPrinted — касса напечатала бегунки, отправленные с телефона официанта.
+func (m *Module) kitchenPrinted(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in cafe.PrintedInput) (map[string]bool, error) {
+		return map[string]bool{"ok": true}, m.kitchen.Printed(r.Context(), pr(r), in)
 	})
 }

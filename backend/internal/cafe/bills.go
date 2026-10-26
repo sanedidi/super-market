@@ -85,9 +85,12 @@ func loadLayout(ctx context.Context, q db.Querier, storeID string) ([]LayoutHall
 		idx[h.ID] = i
 	}
 	rows, err = q.Query(ctx, `
-		SELECT t.id, t.hall_id, t.number, t.seats, t.shape, t.x, t.y, t.w, t.h, t.waiter_id, e.full_name, t.bookable, t.service,
+		SELECT t.id, t.hall_id, t.number, t.seats, t.shape, t.x, t.y, t.w, t.h, COALESCE(sw.waiter_id, t.waiter_id), e.full_name,
+		       t.bookable, t.service,
 		       EXISTS (SELECT 1 FROM bills b WHERE b.table_id = t.id AND b.status = 'open')
-		FROM cafe_tables t LEFT JOIN employees e ON e.id = t.waiter_id
+		FROM cafe_tables t
+		LEFT JOIN cafe_shift_waiters sw ON sw.table_id = t.id AND sw.day = `+todaySQL+`
+		LEFT JOIN employees e ON e.id = COALESCE(sw.waiter_id, t.waiter_id)
 		WHERE t.store_id = $1 AND t.is_active
 		ORDER BY t.y, t.x, t.number`, storeID)
 	if err != nil {
@@ -352,6 +355,8 @@ type BillItem struct {
 	PaidQty      string     `json:"paid_qty"`
 	// Состояние на кухне: waiting, new, cooking, ready, served, cancelled; "" — не на кухне.
 	Kitchen string `json:"kitchen"`
+	// «Несу» — официант отнёс блюдо гостям (этап 6).
+	ServedAt *time.Time `json:"served_at"`
 }
 
 type Bill struct {
@@ -375,16 +380,37 @@ type Bill struct {
 	Paid     string `json:"paid"`
 	// Сколько позиций готово на кухне — зелёная рамка стола.
 	Ready int `json:"ready"`
+	// Передача стола (О6 → О7): кому предложено, кто передаёт, почему, когда;
+	// пусто — передачи нет или она просрочена (3 минуты).
+	TransferTo       *string    `json:"transfer_to"`
+	TransferToName   string     `json:"transfer_to_name"`
+	TransferFrom     *string    `json:"transfer_from"`
+	TransferFromName string     `json:"transfer_from_name"`
+	TransferReason   string     `json:"transfer_reason"`
+	TransferAt       *time.Time `json:"transfer_at"`
+	// Для телефона официанта: мой стол (кассе — всегда true).
+	Mine bool `json:"mine"`
 }
+
+// transferTTL — сколько ждём ответа на передачу стола.
+const transferTTL = 3 * time.Minute
 
 const billSelect = `
 	SELECT b.id, b.table_id, COALESCE(t.number, ''), COALESCE(loc(h.name, h.name_uz), ''), b.waiter_id, COALESCE(e.full_name, ''),
 	       b.guests, b.status, trim_scale(b.service_percent)::text, b.precheck_at, b.version, b.opened_at,
-	       COALESCE((SELECT sum(sa.total) FROM sales sa WHERE sa.bill_id = b.id), 0)::numeric(14,2)::text
+	       COALESCE((SELECT sum(sa.total) FROM sales sa WHERE sa.bill_id = b.id), 0)::numeric(14,2)::text,
+	       CASE WHEN b.transfer_at > now() - interval '3 minutes' THEN b.transfer_to END,
+	       CASE WHEN b.transfer_at > now() - interval '3 minutes' THEN COALESCE(tt.full_name, '') ELSE '' END,
+	       CASE WHEN b.transfer_at > now() - interval '3 minutes' THEN b.transfer_from END,
+	       CASE WHEN b.transfer_at > now() - interval '3 minutes' THEN COALESCE(tf.full_name, '') ELSE '' END,
+	       CASE WHEN b.transfer_at > now() - interval '3 minutes' THEN b.transfer_reason ELSE '' END,
+	       CASE WHEN b.transfer_at > now() - interval '3 minutes' THEN b.transfer_at END
 	FROM bills b
 	LEFT JOIN cafe_tables t ON t.id = b.table_id
 	LEFT JOIN halls h ON h.id = t.hall_id
-	LEFT JOIN employees e ON e.id = b.waiter_id`
+	LEFT JOIN employees e ON e.id = b.waiter_id
+	LEFT JOIN employees tt ON tt.id = b.transfer_to
+	LEFT JOIN employees tf ON tf.id = b.transfer_from`
 
 func loadBills(ctx context.Context, q db.Querier, where string, args ...any) ([]Bill, error) {
 	rows, err := q.Query(ctx, billSelect+` WHERE `+where+` ORDER BY b.opened_at`, args...)
@@ -394,8 +420,10 @@ func loadBills(ctx context.Context, q db.Querier, where string, args ...any) ([]
 	bills, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Bill, error) {
 		var b Bill
 		err := r.Scan(&b.ID, &b.TableID, &b.TableNumber, &b.HallName, &b.WaiterID, &b.WaiterName, &b.Guests, &b.Status,
-			&b.ServicePercent, &b.PrecheckAt, &b.Version, &b.OpenedAt, &b.Paid)
+			&b.ServicePercent, &b.PrecheckAt, &b.Version, &b.OpenedAt, &b.Paid,
+			&b.TransferTo, &b.TransferToName, &b.TransferFrom, &b.TransferFromName, &b.TransferReason, &b.TransferAt)
 		b.Items = []BillItem{}
+		b.Mine = true
 		return b, err
 	})
 	if err != nil || len(bills) == 0 {
@@ -411,7 +439,7 @@ func loadBills(ctx context.Context, q db.Querier, where string, args ...any) ([]
 		SELECT i.bill_id, i.id, i.seq, i.product_id, loc(i.name, i.name_uz), trim_scale(i.qty)::text, i.price::text, i.mods, i.note, i.guest,
 		       i.course, i.status, i.sent_at, trim_scale(i.cancelled_qty)::text, trim_scale(i.paid_qty)::text,
 		       COALESCE((SELECT t.status FROM kitchen_ticket_items ki JOIN kitchen_tickets t ON t.id = ki.ticket_id
-		                 WHERE ki.bill_item_id = i.id ORDER BY t.created_at DESC LIMIT 1), '')
+		                 WHERE ki.bill_item_id = i.id ORDER BY t.created_at DESC LIMIT 1), ''), i.served_at
 		FROM bill_items i WHERE i.bill_id = ANY($1::uuid[]) ORDER BY i.bill_id, i.seq`, ids)
 	if err != nil {
 		return nil, err
@@ -422,8 +450,11 @@ func loadBills(ctx context.Context, q db.Querier, where string, args ...any) ([]
 		var it BillItem
 		var mods []byte
 		if err := rows.Scan(&billID, &it.ID, &it.Seq, &it.ProductID, &it.Name, &it.Qty, &it.Price, &mods, &it.Note, &it.Guest,
-			&it.Course, &it.Status, &it.SentAt, &it.CancelledQty, &it.PaidQty, &it.Kitchen); err != nil {
+			&it.Course, &it.Status, &it.SentAt, &it.CancelledQty, &it.PaidQty, &it.Kitchen, &it.ServedAt); err != nil {
 			return nil, err
+		}
+		if it.ServedAt != nil && (it.Kitchen == "ready" || it.Kitchen == "new" || it.Kitchen == "cooking") {
+			it.Kitchen = "served"
 		}
 		it.Mods = []BillMod{}
 		_ = json.Unmarshal(mods, &it.Mods)
@@ -489,10 +520,15 @@ func (s *Service) Hall(ctx context.Context, p *identity.Principal) (HallState, e
 	if err != nil {
 		return HallState{}, err
 	}
+	return s.hallState(ctx, p.NetworkID, storeID)
+}
+
+func (s *Service) hallState(ctx context.Context, networkID, storeID string) (HallState, error) {
 	out := HallState{Halls: []PosHall{}, Tables: []LayoutTable{}, Bills: []Bill{}}
 	var bt string
+	var err error
 	if err := s.pool.QueryRow(ctx, `SELECT business_type, cafe_mode, trim_scale(service_percent)::text, waiter_own_tables,
-		precheck_required, void_senior_only, service_ikpu FROM networks WHERE id = $1`, p.NetworkID).
+		precheck_required, void_senior_only, service_ikpu FROM networks WHERE id = $1`, networkID).
 		Scan(&bt, &out.Mode, &out.ServicePercent, &out.WaiterOwnTables, &out.PrecheckRequired, &out.VoidSeniorOnly, &out.ServiceIKPU); err != nil {
 		return out, err
 	}
@@ -564,7 +600,26 @@ type BillOp struct {
 	ToBillID  *string    `json:"to_bill_id"`
 	NewBillID *string    `json:"new_bill_id"`
 	Items     []MoveItem `json:"items"`
+	// transfer (официант): кому передать стол; причина — в Reason.
+	ToWaiterID string `json:"to_waiter_id"`
+	// Если задано и счёт с тех пор изменился (другая касса или телефон) —
+	// 409 bill_changed с текущим счётом; клиент показывает и повторяет.
+	ExpectedVersion *int `json:"expected_version"`
 }
+
+// actor — от чьего имени операция: касса (по умолчанию) или официант с
+// телефона (ограниченный набор операций, свои столы).
+type actor struct {
+	waiter bool
+	me     string // employee_id официанта
+	senior bool   // старший: видит и ведёт все столы, назначает зоны
+	own    bool   // настройка «официант видит только свои столы»
+}
+
+var errBillChanged = apperr.Conflict("bill_changed", "счёт изменился на другом устройстве — обновите").Uz("hisob boshqa qurilmada oʻzgardi — yangilang")
+
+// todaySQL — рабочий день кафе (по Ташкенту).
+const todaySQL = `(now() AT TIME ZONE 'Asia/Tashkent')::date`
 
 var errBillClosed = apperr.Conflict("bill_closed", "счёт уже закрыт").Uz("hisob allaqachon yopilgan")
 
@@ -581,6 +636,15 @@ func (s *Service) ApplyOp(ctx context.Context, p *identity.Principal, op BillOp)
 	if err := p.Require(identity.PermSalesPOS); err != nil {
 		return Bill{}, err
 	}
+	return s.applyBillOp(ctx, p, storeID, op, actor{})
+}
+
+func (s *Service) applyBillOp(ctx context.Context, p *identity.Principal, storeID string, op BillOp, who actor) (Bill, error) {
+	if who.waiter {
+		if err := waiterAllowed(op.Kind); err != nil {
+			return Bill{}, err
+		}
+	}
 	if !httpx.IsUUID(op.ID) || !httpx.IsUUID(op.BillID) {
 		return Bill{}, apperr.Validation("id, bill_id: uuid операции и счёта").Uz("id, bill_id: amal va hisob uuid")
 	}
@@ -589,7 +653,9 @@ func (s *Service) ApplyOp(ctx context.Context, p *identity.Principal, op BillOp)
 		at = *op.At
 	}
 	resultBill := op.BillID
-	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+	var pushes []waiterPush
+	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		pushes = pushes[:0]
 		var done bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM bill_events WHERE id = $1)`, op.ID).Scan(&done); err != nil {
 			return err
@@ -598,12 +664,17 @@ func (s *Service) ApplyOp(ctx context.Context, p *identity.Principal, op BillOp)
 			return nil
 		}
 		if op.Kind == "open" {
-			if err := openBill(ctx, tx, p, storeID, op, at); err != nil {
+			ps, err := openBill(ctx, tx, p, storeID, op, at, who)
+			if err != nil {
 				return err
 			}
+			pushes = append(pushes, ps...)
 		} else {
 			var status string
-			err := tx.QueryRow(ctx, `SELECT status FROM bills WHERE id = $1 AND store_id = $2 FOR UPDATE`, op.BillID, storeID).Scan(&status)
+			var version int
+			var waiter *string
+			err := tx.QueryRow(ctx, `SELECT status, version, waiter_id FROM bills WHERE id = $1 AND store_id = $2 FOR UPDATE`, op.BillID, storeID).
+				Scan(&status, &version, &waiter)
 			if errors.Is(err, pgx.ErrNoRows) {
 				return apperr.NotFound("счёт не найден").Uz("hisob topilmadi")
 			}
@@ -613,8 +684,26 @@ func (s *Service) ApplyOp(ctx context.Context, p *identity.Principal, op BillOp)
 			if status != "open" {
 				return errBillClosed
 			}
-			next, err := applyOp(ctx, tx, p, storeID, op)
-			if err != nil {
+			if op.ExpectedVersion != nil && *op.ExpectedVersion != version {
+				return errBillChanged
+			}
+			if who.waiter {
+				if err := waiterOwns(op.Kind, waiter, who); err != nil {
+					return err
+				}
+				// Старший с телефона подтверждает сам (ПИН не нужен — он вошёл).
+				if who.senior && op.ApproverID == "" {
+					op.ApproverID = who.me
+				}
+			}
+			var next string
+			if isWaiterOp(op.Kind) {
+				ps, err := waiterOp(ctx, tx, p, storeID, op, who, waiter)
+				if err != nil {
+					return err
+				}
+				pushes = append(pushes, ps...)
+			} else if next, err = applyOp(ctx, tx, p, storeID, op); err != nil {
 				return err
 			}
 			if next != "" {
@@ -636,43 +725,63 @@ func (s *Service) ApplyOp(ctx context.Context, p *identity.Principal, op BillOp)
 	if err != nil {
 		return Bill{}, err
 	}
-	return loadBill(ctx, s.pool, storeID, resultBill)
+	s.sendPushes(ctx, pushes)
+	bill, err := loadBill(ctx, s.pool, storeID, resultBill)
+	if err == nil && who.waiter {
+		bill.Mine = bill.WaiterID != nil && *bill.WaiterID == who.me
+	}
+	return bill, err
 }
 
-func openBill(ctx context.Context, tx pgx.Tx, p *identity.Principal, storeID string, op BillOp, at time.Time) error {
+func openBill(ctx context.Context, tx pgx.Tx, p *identity.Principal, storeID string, op BillOp, at time.Time, who actor) ([]waiterPush, error) {
 	var exists bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM bills WHERE id = $1)`, op.BillID).Scan(&exists); err != nil {
-		return err
+		return nil, err
 	}
 	if exists {
-		return nil
+		return nil, nil
 	}
 	if op.TableID == nil || !httpx.IsUUID(*op.TableID) {
-		return apperr.Validation("table_id: стол не найден").Uz("table_id: stol topilmadi")
+		return nil, apperr.Validation("table_id: стол не найден").Uz("table_id: stol topilmadi")
 	}
 	var number string
 	var service bool
 	var waiter *string
-	err := tx.QueryRow(ctx, `SELECT number, service, waiter_id FROM cafe_tables WHERE id = $1 AND store_id = $2 AND is_active FOR UPDATE`,
+	// Официант стола: назначенный на смену (О8), иначе постоянный из панели.
+	err := tx.QueryRow(ctx, `
+		SELECT t.number, t.service, COALESCE(sw.waiter_id, t.waiter_id)
+		FROM cafe_tables t LEFT JOIN cafe_shift_waiters sw ON sw.table_id = t.id AND sw.day = `+todaySQL+`
+		WHERE t.id = $1 AND t.store_id = $2 AND t.is_active FOR UPDATE OF t`,
 		*op.TableID, storeID).Scan(&number, &service, &waiter)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return apperr.Validation("table_id: стол не найден").Uz("table_id: stol topilmadi")
+		return nil, apperr.Validation("table_id: стол не найден").Uz("table_id: stol topilmadi")
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	guests := 1
 	if op.Guests != nil {
 		guests = *op.Guests
 	}
 	if guests < 1 || guests > 99 {
-		return apperr.Validation("guests: гостей — от 1 до 99").Uz("guests: mehmonlar — 1 dan 99 gacha")
+		return nil, apperr.Validation("guests: гостей — от 1 до 99").Uz("guests: mehmonlar — 1 dan 99 gacha")
 	}
-	if op.WaiterID != nil {
+	if who.waiter {
+		// Кто открыл стол — того и стол (О5). Старший может открыть на другого.
+		if op.WaiterID != nil && *op.WaiterID != "" && who.senior {
+			if err := checkEmployee(ctx, tx, p.NetworkID, *op.WaiterID); err != nil {
+				return nil, err
+			}
+			waiter = op.WaiterID
+		} else {
+			me := who.me
+			waiter = &me
+		}
+	} else if op.WaiterID != nil {
 		if *op.WaiterID == "" {
 			waiter = nil
 		} else if err := checkEmployee(ctx, tx, p.NetworkID, *op.WaiterID); err != nil {
-			return err
+			return nil, err
 		} else {
 			waiter = op.WaiterID
 		}
@@ -680,16 +789,23 @@ func openBill(ctx context.Context, tx pgx.Tx, p *identity.Principal, storeID str
 	pct := "0"
 	if service {
 		if err := tx.QueryRow(ctx, `SELECT service_percent::text FROM networks WHERE id = $1`, p.NetworkID).Scan(&pct); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO bills (id, network_id, store_id, table_id, waiter_id, guests, service_percent, opened_at, opened_by, device_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7::numeric, $8, NULLIF($9, '')::uuid, NULLIF($10, '')::uuid)`,
 		op.BillID, p.NetworkID, storeID, *op.TableID, waiter, guests, pct, at, p.EmployeeID, p.DeviceID)
 	if db.IsUniqueViolation(err, "bills_table_open_key") {
-		return apperr.Conflict("table_busy", "стол "+number+" уже открыт на другой кассе").Uz(number + "-stol boshqa kassada ochilgan")
+		return nil, apperr.Conflict("table_busy", "стол "+number+" уже открыт на другой кассе").Uz(number + "-stol boshqa kassada ochilgan")
 	}
-	return err
+	if err != nil {
+		return nil, err
+	}
+	// Стол открыли с кассы (или старший) на официанта — ему push.
+	if waiter != nil && *waiter != p.EmployeeID {
+		return []waiterPush{tableOpenedPush(*waiter, number, guests)}, nil
+	}
+	return nil, nil
 }
 
 func checkEmployee(ctx context.Context, q db.Querier, networkID, id string) error {
@@ -973,14 +1089,17 @@ func sendToKitchen(ctx context.Context, tx pgx.Tx, p *identity.Principal, storeI
 				status = "waiting"
 			}
 		}
+		// Цех без экрана: бегунок печатает касса. Отправка с кассы печатает
+		// сама; с телефона официанта — касса узнаёт из /pos/kitchen/status.
+		printPending := status == "served" && p.DeviceID == ""
 		b := batches[g.course]
 		var ticketID string
 		err := tx.QueryRow(ctx, `
 			INSERT INTO kitchen_tickets (network_id, store_id, bill_id, batch, workshop_id, order_type, status, cook_minutes, cashier_name,
-			                             paid_at, served_at, order_key, table_label, waiter_name)
-			VALUES ($1, $2, $3, $4, $5, 'here', $6, $7, $8, now(), CASE WHEN $6 = 'served' THEN now() END, $11, $9, $10)
+			                             paid_at, served_at, order_key, table_label, waiter_name, print_pending)
+			VALUES ($1, $2, $3, $4, $5, 'here', $6, $7, $8, now(), CASE WHEN $6 = 'served' THEN now() END, $11, $9, $10, $12)
 			RETURNING id`,
-			p.NetworkID, storeID, billID, b, g.workshopID, status, g.cook, cashier, number, waiter, billID+"-"+strconv.Itoa(b)).Scan(&ticketID)
+			p.NetworkID, storeID, billID, b, g.workshopID, status, g.cook, cashier, number, waiter, billID+"-"+strconv.Itoa(b), printPending).Scan(&ticketID)
 		if err != nil {
 			return err
 		}
@@ -1250,7 +1369,7 @@ func moveItems(ctx context.Context, tx pgx.Tx, p *identity.Principal, storeID st
 			return "", err
 		}
 		g := 1
-		if err := openBill(ctx, tx, p, storeID, BillOp{BillID: *op.NewBillID, TableID: op.ToTableID, Guests: &g, WaiterID: waiter}, time.Now()); err != nil {
+		if _, err := openBill(ctx, tx, p, storeID, BillOp{BillID: *op.NewBillID, TableID: op.ToTableID, Guests: &g, WaiterID: waiter}, time.Now(), actor{}); err != nil {
 			return "", err
 		}
 		target = *op.NewBillID

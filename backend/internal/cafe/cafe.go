@@ -44,6 +44,8 @@ const DishCategoryID = "00000000-0000-0000-0000-0000000caf01"
 type Service struct {
 	pool *pgxpool.Pool
 	now  func() time.Time
+	// Push официантам (этап 6); nil — без уведомлений.
+	notifier Notifier
 }
 
 func NewService(pool *pgxpool.Pool) *Service { return &Service{pool: pool, now: time.Now} }

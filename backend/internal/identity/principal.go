@@ -46,6 +46,7 @@ const (
 	PermDebtsGive            = "debts.give"            // продажа в долг на кассе
 	PermDebtsManage          = "debts.manage"          // долги покупателей: оплата, лимиты, списание, настройки
 	PermPOSSettings          = "pos.settings"          // настройка кассы: быстрые кнопки
+	PermCafeWaiter           = "cafe.waiter"           // официант кафе: столы и заказы с телефона
 )
 
 // PermissionInfo — право с понятным названием для экрана ролей.
@@ -85,6 +86,7 @@ var Permissions = []PermissionInfo{
 	{PermDebtsGive, "Продажа в долг на кассе", "Kassada qarzga sotish"},
 	{PermDebtsManage, "Долги покупателей: оплата, лимиты, списание", "Xaridorlar qarzlari: toʻlov, limitlar, hisobdan chiqarish"},
 	{PermPOSSettings, "Настройка кассы: быстрые кнопки", "Kassa sozlamalari: tezkor tugmalar"},
+	{PermCafeWaiter, "Официант кафе: столы и заказы с телефона", "Kafe ofitsianti: telefondan stollar va buyurtmalar"},
 }
 
 func knownPermission(code string) bool {

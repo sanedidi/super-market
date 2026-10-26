@@ -3,10 +3,13 @@ package cafe
 import (
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
+	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
+	"github.com/sanedidi/super-market/backend/internal/platform/events"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 )
 
@@ -14,10 +17,17 @@ type Module struct {
 	svc  *Service
 	auth *identity.Authenticator
 	log  *slog.Logger
+	hub  *events.Hub
 }
 
 func NewModule(svc *Service, auth *identity.Authenticator, log *slog.Logger) *Module {
 	return &Module{svc: svc, auth: auth, log: log}
+}
+
+// WithHub — ожидание событий точки телефоном официанта (тот же hub, что у кассы).
+func (m *Module) WithHub(hub *events.Hub) *Module {
+	m.hub = hub
+	return m
 }
 
 func pr(r *http.Request) *identity.Principal { return identity.FromContext(r.Context()) }
@@ -62,6 +72,65 @@ func (m *Module) Routes(r chi.Router) {
 
 		r.Get("/halls", m.layout)
 		r.Put("/halls", m.saveLayout)
+
+		// Официант в телефоне (этап 6).
+		r.Get("/waiter/hall", m.waiterHall)
+		r.Post("/waiter/ops", m.waiterOp)
+		r.Get("/waiter/menu", m.waiterMenu)
+		r.Get("/waiter/wait", m.waiterWait)
+		r.Get("/waiter/waiters", m.waiterList)
+		r.Put("/waiter/zones", m.waiterZones)
+		r.Get("/waiter/my-sales", m.waiterMySales)
+	})
+}
+
+func storeParam(r *http.Request) string { return r.URL.Query().Get("store_id") }
+
+func (m *Module) waiterHall(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (WaiterHall, error) {
+		return m.svc.WaiterHall(r.Context(), pr(r), storeParam(r))
+	})
+}
+
+func (m *Module) waiterOp(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in BillOp) (Bill, error) {
+		return m.svc.WaiterOp(r.Context(), pr(r), storeParam(r), in)
+	})
+}
+
+func (m *Module) waiterMenu(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (*PosMenu, error) {
+		return m.svc.WaiterMenu(r.Context(), pr(r), storeParam(r))
+	})
+}
+
+func (m *Module) waiterWait(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (map[string]int64, error) {
+		if m.hub == nil {
+			return nil, apperr.New(503, "no_events", "ожидание событий недоступно").Uz("hodisalarni kutish mavjud emas")
+		}
+		after, _ := strconv.ParseInt(r.URL.Query().Get("v"), 10, 64)
+		v, err := m.svc.WaiterWait(r.Context(), pr(r), m.hub, storeParam(r), after)
+		return map[string]int64{"version": v}, err
+	})
+}
+
+func (m *Module) waiterList(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[WaiterInfo], error) {
+		items, err := m.svc.WaiterList(r.Context(), pr(r), storeParam(r))
+		return httpx.List[WaiterInfo]{Items: items}, err
+	})
+}
+
+func (m *Module) waiterZones(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in ZoneInput) (WaiterHall, error) {
+		return m.svc.SetZones(r.Context(), pr(r), in)
+	})
+}
+
+func (m *Module) waiterMySales(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (MySales, error) {
+		return m.svc.MySales(r.Context(), pr(r), storeParam(r), r.URL.Query().Get("date"))
 	})
 }
 
