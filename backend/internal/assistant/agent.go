@@ -110,18 +110,97 @@ type finalOut struct {
 		Columns []string   `json:"columns"`
 		Rows    [][]string `json:"rows"`
 	} `json:"table"`
-	Buttons []struct {
-		Label string `json:"label"`
-		Send  string `json:"send"`
-		Ref   string `json:"ref"`
-		// Attach — true: фото накладной; "product": фото товара.
-		Attach any `json:"attach"`
-	} `json:"buttons"`
-	Links []struct {
-		Label string `json:"label"`
-		Href  string `json:"href"`
-	} `json:"links"`
-	ScanID string `json:"scan_id"`
+	Buttons []outButton `json:"buttons"`
+	Links   []outLink   `json:"links"`
+	ScanID  string      `json:"scan_id"`
+}
+
+type outButton struct {
+	Label string `json:"label"`
+	Send  string `json:"send"`
+	Ref   string `json:"ref"`
+	// Attach — true: фото накладной; "product": фото товара.
+	Attach any `json:"attach"`
+}
+
+type outLink struct {
+	Label string `json:"label"`
+	Href  string `json:"href"`
+}
+
+var looseKeyRe = regexp.MustCompile(`^(transcript|lang|reply|buttons|links|scan_id|table)\s*:\s*(.*)$`)
+var looseItemRe = regexp.MustCompile(`^\s*(-\s+)?(label|send|ref|attach|href)\s*:\s*(.*)$`)
+
+// parseLoose — модель иногда отвечает не JSON, а «transcript: … reply: … buttons: - label: …».
+// Разбираем такой текст, чтобы владелец не увидел служебные поля. ok=false — это не он.
+func parseLoose(text string) (finalOut, bool) {
+	var out finalOut
+	var key string
+	var reply []string
+	found := false
+	for _, line := range strings.Split(strings.ReplaceAll(text, "\r", ""), "\n") {
+		trim := strings.TrimSpace(line)
+		if m := looseKeyRe.FindStringSubmatch(trim); m != nil && !strings.HasPrefix(line, " ") {
+			key, found = m[1], true
+			v := strings.Trim(strings.TrimSpace(m[2]), `"`)
+			switch key {
+			case "transcript":
+				out.Transcript = v
+			case "lang":
+				out.Lang = v
+			case "reply":
+				if v != "" {
+					reply = append(reply, v)
+				}
+			case "scan_id":
+				out.ScanID = v
+			}
+			continue
+		}
+		switch key {
+		case "reply":
+			reply = append(reply, line)
+		case "buttons", "links":
+			m := looseItemRe.FindStringSubmatch(line)
+			if m == nil {
+				continue
+			}
+			v := strings.Trim(strings.TrimSpace(m[3]), `"`)
+			if key == "links" {
+				if m[1] != "" || len(out.Links) == 0 {
+					out.Links = append(out.Links, outLink{})
+				}
+				l := &out.Links[len(out.Links)-1]
+				switch m[2] {
+				case "label":
+					l.Label = v
+				case "href":
+					l.Href = v
+				}
+				continue
+			}
+			if m[1] != "" || len(out.Buttons) == 0 {
+				out.Buttons = append(out.Buttons, outButton{})
+			}
+			b := &out.Buttons[len(out.Buttons)-1]
+			switch m[2] {
+			case "label":
+				b.Label = v
+			case "send":
+				b.Send = v
+			case "ref":
+				b.Ref = v
+			case "attach":
+				if v == "true" {
+					b.Attach = true
+				} else if v != "" && v != "false" {
+					b.Attach = v
+				}
+			}
+		}
+	}
+	out.Reply = strings.TrimSpace(strings.Join(reply, "\n"))
+	return out, found && out.Reply != ""
 }
 
 func tools() []ai.Tool {
@@ -229,6 +308,7 @@ func (s *Service) agent(ctx context.Context, p *identity.Principal, in SendInput
 	st := &agentState{p: p, storeID: in.StoreID, token: tok, lang: lang}
 	var out finalOut
 	calls := 0
+	repaired := false
 	for step := 0; ; step++ {
 		var rep ai.ChatReply
 		var err error
@@ -253,10 +333,22 @@ func (s *Service) agent(ctx context.Context, p *identity.Principal, in SendInput
 		}
 		if len(rep.Calls) == 0 {
 			js, err := ai.ExtractJSON(rep.Text)
-			if err != nil || json.Unmarshal(js, &out) != nil {
-				// Модель ответила текстом, не JSON — покажем как есть.
-				out = finalOut{Reply: strings.TrimSpace(rep.Text)}
+			if err == nil && json.Unmarshal(js, &out) == nil {
+				break
 			}
+			if lo, ok := parseLoose(rep.Text); ok {
+				out = lo
+				break
+			}
+			if !repaired {
+				// Не JSON — один раз просим повторить тот же ответ в нужном формате.
+				repaired = true
+				msgs = append(msgs, ai.ChatMsg{Role: "model", Text: rep.Text},
+					ai.ChatMsg{Role: "user", Text: "Твой ответ не в формате. Повтори ТОТ ЖЕ ответ строго одним JSON-объектом {\"transcript\",\"lang\",\"reply\",\"table\",\"buttons\",\"links\",\"scan_id\"} без текста вокруг."})
+				continue
+			}
+			// Модель так и не ответила JSON — покажем текст как есть.
+			out = finalOut{Reply: strings.TrimSpace(rep.Text)}
 			break
 		}
 		if calls += len(rep.Calls); calls > maxToolCalls {

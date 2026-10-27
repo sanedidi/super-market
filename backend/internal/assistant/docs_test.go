@@ -45,3 +45,29 @@ func TestSectionLink(t *testing.T) {
 		t.Fatalf("no go-words, but link = %v", l)
 	}
 }
+
+func TestParseLoose(t *testing.T) {
+	text := `transcript: 1.5 litrlik koladan 20 ta blok keldi. Prikhod qilib qo'yish kerak.
+reply: Напиток Coca-Cola Classic, 1,5 л товарining bir blokdagi donasi 6 qilib belgilandi.
+Sotib olish narxi qancha?
+Yetkazib beruvchi kim?
+buttons:
+- label: 12 000 — avvalgidek
+  send: 12000
+- label: SAYONAR — avvalgidek
+  send: SAYONAR
+links: []`
+	out, ok := parseLoose(text)
+	if !ok || out.Transcript != "1.5 litrlik koladan 20 ta blok keldi. Prikhod qilib qo'yish kerak." {
+		t.Fatalf("loose = %+v", out)
+	}
+	if !strings.HasSuffix(out.Reply, "Yetkazib beruvchi kim?") || strings.Contains(out.Reply, "buttons") {
+		t.Fatalf("reply = %q", out.Reply)
+	}
+	if len(out.Buttons) != 2 || out.Buttons[1].Label != "SAYONAR — avvalgidek" || out.Buttons[0].Send != "12000" || len(out.Links) != 0 {
+		t.Fatalf("buttons = %+v links = %+v", out.Buttons, out.Links)
+	}
+	if _, ok := parseLoose("Просто текст без полей."); ok {
+		t.Fatal("plain text parsed as loose")
+	}
+}
