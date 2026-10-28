@@ -92,12 +92,15 @@ Future<String?> tasnifPhoto(Api api, String ikpu) async {
 
 /// Добавить вариант из каталога ИКПУ в «Мои товары». true — добавлен.
 /// preview — строка ответа /store/start/tasnif/preview, record — запись tasnif.
-Future<bool> addFromTasnif(BuildContext context, StartApi start, Map<String, dynamic> record, Map<String, dynamic> preview) async {
+/// code — штрихкод, по которому искали (сканер): сервер запишет его товару,
+/// даже если у записи tasnif штрихкода нет.
+Future<bool> addFromTasnif(BuildContext context, StartApi start, Map<String, dynamic> record, Map<String, dynamic> preview, {String? code}) async {
   final ikpu = '${preview['ikpu']}';
-  final barcode = preview['barcode'] as String?;
+  final scanned = code != null && isGtin(code) ? code.trim() : null;
+  final barcode = (preview['barcode'] as String?) ?? scanned;
   final known = preview['product_id'] != null && preview['image'] != null;
   final image = known ? null : await tasnifPhoto(start.api, ikpu);
-  final body = <String, dynamic>{'item': pickTasnif(record), if (image != null) 'image': image};
+  final body = <String, dynamic>{'item': pickTasnif(record), if (image != null) 'image': image, if (scanned != null) 'barcode': scanned};
   if (!context.mounted) return false;
   var p = ProductRef(id: '${preview['product_id'] ?? ikpu}', name: '${preview['name']}', image: (preview['image'] as String?) ?? image, barcode: barcode);
   for (var attempt = 0; attempt < 3; attempt++) {
@@ -268,7 +271,7 @@ class _TasnifResultsState extends State<TasnifResults> {
     final idx = (it['index'] as num).toInt();
     if (idx >= _records.length) return;
     setState(() => _busy = idx);
-    final ok = await addFromTasnif(context, widget.start, _records[idx], it);
+    final ok = await addFromTasnif(context, widget.start, _records[idx], it, code: isGtin(widget.q) ? widget.q : null);
     if (!mounted) return;
     setState(() => _busy = null);
     if (ok) {
@@ -487,7 +490,7 @@ Future<bool?> tasnifBarcodeSheet(BuildContext context, StartApi start, String co
   if (r == null || !context.mounted) return null;
   if (!r) return false;
   final idx = (it['index'] as num).toInt();
-  return await addFromTasnif(context, start, records[idx], it) ? true : null;
+  return await addFromTasnif(context, start, records[idx], it, code: code) ? true : null;
 }
 
 /// Шторка категории (как Т4a/Т4b в веб-панели): предложение Super Market —

@@ -134,6 +134,10 @@ type TasnifAddInput struct {
 	// UnitID — единица нового товара (по умолчанию шт, весовые — кг).
 	UnitID         string `json:"unit_id"`
 	ConfirmSimilar bool   `json:"confirm_similar"`
+	// Barcode — штрихкод, по которому искали в tasnif (сканер прихода, «Начала
+	// работы»). У записи tasnif его часто нет или он другой — без него товар
+	// потом не находится сканером.
+	Barcode string `json:"barcode"`
 }
 
 // CategoryRef — подкатегория: раздел и название на обоих языках.
@@ -180,6 +184,10 @@ func (s *Service) AddTasnif(ctx context.Context, p *identity.Principal, in Tasni
 		return out, apperr.Validation("image: ожидается ссылка http(s)").Uz("image: http(s) havola boʻlishi kerak")
 	}
 	nameUz := strings.TrimSpace(in.NameUz)
+	scanned := strings.TrimSpace(in.Barcode)
+	if scanned != "" && !barcodeRe.MatchString(scanned) {
+		return out, apperr.Validation("barcode: неверный штрихкод").Uz("barcode: shtrix-kod notoʻgʻri")
+	}
 	needCategory := false
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		st, err := s.store(ctx, tx, p, in.StoreID)
@@ -193,6 +201,15 @@ func (s *Service) AddTasnif(ctx context.Context, p *identity.Principal, in Tasni
 		pid, err := existingProduct(ctx, tx, p.NetworkID, it)
 		if err != nil {
 			return err
+		}
+		if pid == "" && it.Barcode() == "" && scanned != "" {
+			// У записи tasnif штрихкода нет — новый товар создаётся с отсканированным.
+			it.InternationalCode = scanned
+			if it.Barcode() != "" {
+				if pid, err = existingProduct(ctx, tx, p.NetworkID, it); err != nil {
+					return err
+				}
+			}
 		}
 		if pid == "" && it.Barcode() != "" {
 			// Штрихкод занят своим товаром другой сети.
@@ -234,6 +251,12 @@ func (s *Service) AddTasnif(ctx context.Context, p *identity.Principal, in Tasni
 				return err
 			}
 			out.Created = true
+		}
+		// Отсканированный штрихкод — к товару (уже есть — ничего не делает).
+		if scanned != "" && scanned != it.Barcode() && p.Can(identity.PermCatalogManage) {
+			if err := bindBarcode(ctx, tx, p, pid, scanned); err != nil {
+				return err
+			}
 		}
 		out.ProductID = pid
 		draft, direct, err := s.target(ctx, tx, p, st)

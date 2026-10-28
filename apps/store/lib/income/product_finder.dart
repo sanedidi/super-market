@@ -115,6 +115,22 @@ class ProductFinder {
           'Kartochka «Yangilar»da — Super Market toʻldirgach, mahsulot «Mahsulotlarim»da paydo boʻladi'));
       return null;
     }
+    // Пока ждали, Super Market сам добавил товар в «Мои товары» — карточку не
+    // открываем (подтверждение упало бы с «товар уже добавлен»), сразу в приход.
+    if (item['status'] == 'done' && item['product_id'] != null) {
+      final res = (item['result'] as Map?)?.cast<String, dynamic>() ?? const {};
+      final images = (item['images'] as List?) ?? const [];
+      final code = '${item['barcode'] ?? ''}';
+      final ref = ProductRef(
+        id: '${item['product_id']}',
+        name: '${res['name'] ?? ''}',
+        image: images.isEmpty ? null : '${images.first}',
+        barcode: code.isEmpty ? null : code,
+        unit: res['unit_short'] as String?,
+      );
+      await start.afterAdd?.call(ctx, ref);
+      return ref;
+    }
     await openNewItemReview(ctx, start, item);
     return null;
   }

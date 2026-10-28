@@ -40,6 +40,8 @@ function pick(r: TasnifRecord) {
 type Payload = {
   item: ReturnType<typeof pick>
   image?: string | null
+  /** Штрихкод, по которому искали: сервер запишет его товару, даже если у записи tasnif его нет. */
+  barcode?: string
   category_id?: string
   new_category?: NewCategory
   name_uz?: string
@@ -147,7 +149,8 @@ export function TasnifBlock({ q, onMissingBarcode, onNew }: { q: string; onMissi
     try {
       // Фото из tasnif — новому товару или товару базы без фото.
       const image = it.product_id && it.image ? null : await tasnifPhoto(it.ikpu)
-      await submit({ item: pick(rec), image }, { name: it.name, image: it.image, barcode: it.barcode }, it.ikpu)
+      const code = gtin ? q.trim() : undefined
+      await submit({ item: pick(rec), image, ...(code ? { barcode: code } : {}) }, { name: it.name, image: it.image, barcode: it.barcode ?? code ?? null }, it.ikpu)
     } finally {
       clearTimeout(t)
       setSlow(false)

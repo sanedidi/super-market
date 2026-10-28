@@ -390,8 +390,10 @@ class _NewProductScreenState extends State<NewProductScreen> {
         images.add(res['url'] as String);
       }
       if (clean != null && _keepOwn) images.add(clean);
+      final scanned = _barcode.text.trim();
       final body = productId != null
-          ? <String, dynamic>{'product_id': productId}
+          // «Это он»: штрихкод из поля — к найденному товару (пустой — тот, что в карточке).
+          ? <String, dynamic>{'product_id': productId, if (scanned.isNotEmpty) 'barcode': scanned}
           : <String, dynamic>{
               'name': nameRu.isNotEmpty ? nameRu : nameUz,
               if (nameUz.isNotEmpty) 'name_uz': nameUz,
