@@ -26,6 +26,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 	"github.com/sanedidi/super-market/backend/internal/platform/logger"
 	"github.com/sanedidi/super-market/backend/internal/platform/telegram"
+	"github.com/sanedidi/super-market/backend/internal/pos"
 	"github.com/sanedidi/super-market/backend/internal/productsearch"
 	"github.com/sanedidi/super-market/backend/internal/push"
 	"github.com/sanedidi/super-market/backend/internal/server"
@@ -129,6 +130,8 @@ func run() error {
 		{Name: "billing", Run: billing.NewService(pool, notify.New(pool, sender, log), log).Tick},
 		// Долги покупателей: напоминание в день оплаты (10:00), за 3 дня и после срока.
 		{Name: "debt_reminders", Run: debts.NewService(pool, nil, "", cfg.JWTSecret, nil, log).Tick},
+		// Смены касс, открытые дольше 20 часов, — закрыть по расчёту (кассир не закрыл день).
+		{Name: "pos_shifts_autoclose", Run: pos.NewService(pool, nil).AutoCloseStale},
 	}
 
 	log.Info("worker запущен", "interval", cfg.WorkerInterval, "jobs", len(jobs))

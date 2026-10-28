@@ -200,7 +200,7 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
       _Tile(Icons.north_rounded, tr('Изъятие', 'Olish'), tr('2 · инкассация', '2 · inkassatsiya'), () => setState(() => _move = 'out')),
       _Tile(Icons.bar_chart_rounded, tr('X-отчёт', 'X-hisobot'), tr('3 · без закрытия', '3 · yopmasdan'), _showX),
       _Tile(Icons.people_outline_rounded, tr('Сменить кассира', 'Kassirni almashtirish'), tr('4 · вход по ПИН', '4 · PIN bilan kirish'), _changeCashier),
-      _Tile(Icons.power_settings_new_rounded, tr('Закрыть смену', 'Smenani yopish'), tr('5 · Z-отчёт', '5 · Z-hisobot'), _close, danger: true),
+      _Tile(Icons.power_settings_new_rounded, tr('Закрыть день', 'Kunni yopish'), tr('5 · отчёт за день', '5 · kunlik hisobot'), _close, danger: true),
       _Tile(Icons.print_outlined, tr('Оборудование', 'Uskunalar'), tr('6 · принтер, ящик, ФМ', '6 · printer, gʻaladon, FM'), _equipment),
       if (pos.canTakeDebtPayment) _Tile(Icons.menu_book_outlined, tr('Погашение долга', 'Qarzni toʻlash'), tr('7 · наличные или карта', '7 · naqd yoki karta'), _debtPayment),
       if (pos.canQuickKeys) _Tile(Icons.bolt_rounded, tr('Быстрые кнопки', 'Tezkor tugmalar'), tr('8 · настройка', '8 · sozlash'), _quickKeys),
@@ -379,8 +379,8 @@ class _Tile {
   final bool danger;
 }
 
-/// X-отчёт: продажи, возвраты, оплаты, движение наличных. Сколько должно
-/// быть в ящике — не показываем: кассир узнает после пересчёта при закрытии.
+/// X-отчёт: продажи, возвраты, оплаты, движение наличных. Сколько в ящике по
+/// расчёту — на экране «Закрыть день».
 class XReportView extends StatelessWidget {
   const XReportView({super.key, required this.report});
 
@@ -448,8 +448,8 @@ class XReportView extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(color: C.subtle, borderRadius: BorderRadius.circular(8)),
             child: Text(
-                tr('Сколько должно быть в ящике, кассир увидит только после пересчёта при закрытии смены',
-                    'Gʻaladonda qancha boʻlishi kerakligini kassir faqat smenani yopishda sanab chiqqach koʻradi'),
+                tr('Сколько в ящике по расчёту — на экране «Закрыть день» (5)',
+                    'Hisob boʻyicha gʻaladonda qancha — «Kunni yopish» (5) ekranida'),
                 style: t(12, c: C.ts)),
           ),
         ]),

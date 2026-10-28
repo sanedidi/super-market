@@ -141,7 +141,7 @@ class _HallScreenState extends State<HallScreen> {
       (Icons.undo_rounded, tr('Возврат · F9', 'Qaytarish · F9'), () => _push(const ReturnScreen())),
       (Icons.receipt_long_rounded, tr('Меню смены, X-отчёт · F11', 'Smena menyusi, X-hisobot · F11'), () => _push(const ShiftMenuScreen())),
       if (pos.canTakeDebtPayment) (Icons.account_balance_wallet_outlined, tr('Погашение долга', 'Qarzni toʻlash'), () => showDebtPaymentDialog(context, pos)),
-      (Icons.lock_clock_rounded, tr('Закрыть смену · Z-отчёт', 'Smenani yopish · Z-hisobot'), () => _push(const CloseShiftScreen())),
+      (Icons.lock_clock_rounded, tr('Закрыть день · отчёт', 'Kunni yopish · hisobot'), () => _push(const CloseShiftScreen())),
       (Icons.person_outline_rounded, tr('Сменить кассира', 'Kassirni almashtirish'), () => pos.logout()),
       (Icons.print_rounded, tr('Оборудование: принтер, сканер', 'Uskunalar: printer, skaner'), () => _push(const EquipmentScreen())),
       (Icons.translate_rounded, 'Til · Язык · ${Lang.names[Lang.instance.code] ?? ''}', () async {

@@ -395,10 +395,9 @@ func TestPOS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Закрытие: расхождение без причины не принимаем.
-	a.expect(posDo(a, "POST", "/pos/shifts/"+shift+"/close", dt, cashier, map[string]any{"counted_cash": 200000}), 400, "diff without reason")
+	// Закрытие с пересчётом: причина расхождения — по желанию, закрытие не задерживает.
 	cl := a.expect(posDo(a, "POST", "/pos/shifts/"+shift+"/close", dt, cashier, map[string]any{
-		"counted_cash": 200000, "diff_reason": "сдача без мелочи",
+		"counted_cash": 200000,
 	}), 200, "close")
 	if cl.str("diff") != "-3000.00" || cl.str("expected_cash") != "203000.00" || cl.Body["closed_at"] == nil {
 		t.Fatalf("closed = %v", cl.Body)
@@ -410,7 +409,7 @@ func TestPOS(t *testing.T) {
 
 	// Панель: смена с расхождением, касса активна.
 	shifts := a.expect(a.do("GET", "/store/pos/shifts", tok, nil), 200, "shifts").items()
-	if len(shifts) != 1 || shifts[0]["diff"] != "-3000.00" || shifts[0]["diff_reason"] != "сдача без мелочи" {
+	if len(shifts) != 1 || shifts[0]["diff"] != "-3000.00" || shifts[0]["diff_reason"] != "" {
 		t.Fatalf("shifts = %v", shifts)
 	}
 	devs := a.expect(a.do("GET", "/store/pos/devices", tok, nil), 200, "devices").items()
@@ -447,7 +446,7 @@ func TestPOS(t *testing.T) {
 		kinds = append(kinds, e["kind"].(string))
 	}
 	if got := strings.Join(kinds, ","); got != "open,cash_out,return,close" ||
-		evs[1]["title"] != "Изъятие 30 000" || evs[3]["title"] != "Смена закрыта: недостача 3 000" || evs[3]["note"] != "сдача без мелочи" {
+		evs[1]["title"] != "Изъятие 30 000" || evs[3]["title"] != "Смена закрыта: недостача 3 000" || evs[3]["note"] != "причину кассир не указал" {
 		t.Fatalf("events = %s %v", got, evs)
 	}
 	cashierTok, _ := a.login("+998900000006", identity.AppStore)
@@ -515,9 +514,8 @@ func TestPOS(t *testing.T) {
 		cur.Body["shift"].(map[string]any)["report"].(map[string]any)["expected_cash"] != "50000.00" {
 		t.Fatalf("current stale = %v", cur.Body)
 	}
-	a.expect(posDo(a, "POST", "/pos/shifts/"+stale+"/close", dt, cashier, map[string]any{}), 400, "close without count")
 	sc := a.expect(posDo(a, "POST", "/pos/shifts/"+stale+"/close", dt, cashier, map[string]any{"stale": true}), 200, "close stale")
-	if sc.str("closed_via") != "pos_stale" || sc.str("counted_cash") != "50000.00" || sc.str("diff") != "0.00" {
+	if sc.str("closed_via") != "pos_auto" || sc.str("counted_cash") != "50000.00" || sc.str("diff") != "0.00" {
 		t.Fatalf("close stale = %v", sc.Body)
 	}
 	fresh := a.expect(posDo(a, "POST", "/pos/shifts", dt, cashier, map[string]any{"client_uid": "stale-shift-0002"}), 201, "open after stale").str("id")

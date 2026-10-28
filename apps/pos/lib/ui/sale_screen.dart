@@ -289,7 +289,7 @@ class _SaleScreenState extends State<SaleScreen> {
           if (_idle()) _debtPayment();
         }),
       _Action(tr('X-отчёт', 'X-hisobot'), tr('X-отчёт', 'X-hisobot'), tr('меню смены', 'smena menyusi'), () => sale.command(Cmd.shiftMenu)),
-      _Action(tr('Закрыть смену', 'Smenani yopish'), tr('Закрыть смену', 'Smenani yopish'), tr('Z-отчёт', 'Z-hisobot'), () {
+      _Action(tr('Закрыть день', 'Kunni yopish'), tr('Закрыть день', 'Kunni yopish'), tr('отчёт за день', 'kunlik hisobot'), () {
         if (_idle()) _closeShift();
       }),
       _Action(tr('Сменить кассира', 'Kassirni almashtirish'), tr('Кассир', 'Kassir'), tr('вход по ПИН', 'PIN bilan kirish'), () {

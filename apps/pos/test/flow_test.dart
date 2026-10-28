@@ -268,12 +268,32 @@ void main() {
 
     // Закрытие: пересчитали на 1 000 меньше.
     await pos.closeShift(20000000 + 3588000 - 100000, 'Сдача без мелочи');
-    expect(pos.stage, Stage.login);
+    // Кассир остаётся: «День закрыт» (ЗД5), размен на завтра — пересчитанная сумма.
+    expect(pos.stage, Stage.openShift);
+    expect(pos.lastDay!.left, 20000000 + 3588000 - 100000);
     await until(() => !pos.syncing);
     await pos.sync();
     await until(() => pos.queue == 0);
     expect(server.closes.single['counted_cash'], '234880.00');
     sale.dispose();
+  });
+
+  test('закрыть день без пересчёта: сумма по расчёту, counted_cash не уходит', () async {
+    await pos.activate('ABCD2345');
+    pos.login(pos.catalog.cashiers.firstWhere((c) => c.id == 'e1'), '1234');
+    await pos.openShift(5000000);
+    await until(() => !pos.syncing);
+    await pos.sync();
+    await until(() => pos.queue == 0);
+    await pos.closeShift(null, '');
+    expect(pos.stage, Stage.openShift);
+    expect(pos.lastDay!.left, 5000000);
+    expect(await pos.openingCashGuess(), 5000000);
+    await until(() => !pos.syncing);
+    await pos.sync();
+    await until(() => pos.queue == 0);
+    expect(server.closes.single.containsKey('counted_cash'), isFalse);
+    expect(server.closes.single['diff_reason'], '');
   });
 
   test('товар без цены: окно цены, цена на сервер и в каталог, потом в чек', () async {

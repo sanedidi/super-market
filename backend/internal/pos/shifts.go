@@ -39,8 +39,9 @@ type Shift struct {
 	CountedCash  *string    `json:"counted_cash"`
 	Diff         *string    `json:"diff"`
 	DiffReason   string     `json:"diff_reason"`
-	// Откуда закрыта: pos — на кассе, pos_stale — касса закрыла свою старую
-	// смену, оставшуюся открытой на сервере, panel — в панели магазина.
+	// Как закрыта: pos — с кассы с пересчётом, pos_quick — с кассы без
+	// пересчёта (по расчёту), pos_auto — касса закрыла вчерашнюю смену сама
+	// при «Начать день», auto — сервер (открыта дольше 20 часов), panel — в панели.
 	ClosedVia *string `json:"closed_via"`
 	// Чеков и выручка смены — для списков («Продажи сегодня» по сменам).
 	SalesCount int     `json:"sales_count"`
@@ -210,6 +211,11 @@ func (s *Service) OpenShift(ctx context.Context, p *identity.Principal, in OpenI
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
+		// Смена этой кассы открыта дольше 20 часов — закрываем её по расчёту
+		// (auto), и новая открывается без 409.
+		if _, err := s.autoCloseShifts(ctx, tx, `device_id = $1`, p.DeviceID); err != nil {
+			return err
+		}
 		var open string
 		err = tx.QueryRow(ctx, `SELECT id FROM pos_shifts WHERE device_id = $1 AND closed_at IS NULL`, p.DeviceID).Scan(&open)
 		if err == nil {
@@ -308,21 +314,25 @@ type CloseInput struct {
 	CountedCash money.Amount `json:"counted_cash"`
 	DiffReason  string       `json:"diff_reason"`
 	ClosedAt    *time.Time   `json:"closed_at"`
-	// Stale — касса закрывает свою старую смену, которая осталась открытой на
-	// сервере (Z-отчёт не дошёл, сервер не принимает новую смену). Пересчёта
-	// нет: без counted_cash сумма в ящике — по расчёту, расхождение 0.
+	// Stale — касса закрывает вчерашнюю смену сама при «Начать день» (на кассе
+	// или на сервере осталась открытой): pos_auto. Без counted_cash (кассир не
+	// пересчитывал ящик) сумма в ящике — по расчёту, расхождение 0.
 	Stale bool `json:"stale"`
 }
 
-// CloseShift закрывает смену: кассир пересчитал наличные, сервер сравнивает
-// с ожидаемым. Расхождение без причины не принимается. Повтор — та же смена.
+// CloseShift закрывает смену («Закрыть день»): пересчёт по желанию — без
+// counted_cash по расчёту; с пересчётом сервер сравнивает с ожидаемым,
+// причина расхождения по желанию (закрытие не задерживает). Повтор — та же смена.
 func (s *Service) CloseShift(ctx context.Context, p *identity.Principal, shiftID string, in CloseInput) (Shift, error) {
 	if err := requireCashier(p); err != nil {
 		return Shift{}, err
 	}
 	via := "pos"
-	if in.Stale {
-		via = "pos_stale"
+	switch {
+	case in.Stale:
+		via = "pos_auto"
+	case strings.TrimSpace(string(in.CountedCash)) == "":
+		via = "pos_quick"
 	}
 	return s.closeShift(ctx, p, shiftID, in, via)
 }
@@ -342,7 +352,10 @@ func (s *Service) StoreCloseShift(ctx context.Context, p *identity.Principal, sh
 }
 
 func (s *Service) closeShift(ctx context.Context, p *identity.Principal, shiftID string, in CloseInput, via string) (Shift, error) {
-	byExpected := in.Stale && strings.TrimSpace(string(in.CountedCash)) == ""
+	// Касса: пересчёт и причина — по желанию («Закрыть день»). Панель: владелец
+	// вводит сумму, расхождение — с причиной.
+	fromPOS := via != "panel"
+	byExpected := fromPOS && strings.TrimSpace(string(in.CountedCash)) == ""
 	if !byExpected && (!in.CountedCash.Valid() || money.D(string(in.CountedCash)).Sign() < 0) {
 		return Shift{}, apperr.Validation("counted_cash: посчитанная сумма в ящике").Uz("counted_cash: qutidagi sanalgan summa")
 	}
@@ -377,7 +390,7 @@ func (s *Service) closeShift(ctx context.Context, p *identity.Principal, shiftID
 			counted = r.ExpectedCash
 		}
 		diff := money.D(counted).Sub(money.D(r.ExpectedCash))
-		if diff.Sign() != 0 && in.DiffReason == "" {
+		if !fromPOS && diff.Sign() != 0 && in.DiffReason == "" {
 			return apperr.Validation("diff_reason: укажите причину расхождения").Uz("diff_reason: farq sababini kiriting").
 				WithDetails(map[string]any{"expected_cash": r.ExpectedCash, "diff": diff.Money()})
 		}
@@ -469,4 +482,55 @@ func (s *Service) LeftInDrawer(ctx context.Context, p *identity.Principal) (*str
 	}
 	v := bal.Fixed(0)
 	return &v, nil
+}
+
+// AutoCloseAfter — смена, открытая дольше, закрывается сервером сама по
+// расчёту (closed_via = auto): кассир не закрыл день, утром новая смена
+// открывается без 409 (Figma «Касса · Закрыть день», «Логика», п. 5).
+const AutoCloseAfter = 20 * time.Hour
+
+// AutoCloseStale — задача воркера: закрыть по расчёту все смены, открытые
+// дольше 20 часов.
+func (s *Service) AutoCloseStale(ctx context.Context) error {
+	return db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		_, err := s.autoCloseShifts(ctx, tx, `true`)
+		return err
+	})
+}
+
+// autoCloseShifts закрывает по расчёту открытые дольше AutoCloseAfter смены,
+// подходящие под условие where (аргументы — с $2). Расхождение 0, закрыл —
+// никто (closed_by пусто), closed_via = auto.
+func (s *Service) autoCloseShifts(ctx context.Context, tx pgx.Tx, where string, args ...any) (int, error) {
+	q := `SELECT id FROM pos_shifts WHERE closed_at IS NULL AND opened_at < $1 AND (` + where + `) ORDER BY opened_at FOR UPDATE SKIP LOCKED`
+	if len(args) > 0 {
+		q = `SELECT id FROM pos_shifts WHERE closed_at IS NULL AND opened_at < $2 AND (` + where + `) ORDER BY opened_at FOR UPDATE SKIP LOCKED`
+	}
+	rows, err := tx.Query(ctx, q, append(args, s.now().Add(-AutoCloseAfter))...)
+	if err != nil {
+		return 0, err
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return 0, err
+	}
+	for _, id := range ids {
+		rows, err := tx.Query(ctx, shiftSelect+` WHERE sh.id = $1`, id)
+		if err != nil {
+			return 0, err
+		}
+		sh, err := pgx.CollectExactlyOneRow(rows, scanShift)
+		if err != nil {
+			return 0, err
+		}
+		r, err := s.report(ctx, tx, sh)
+		if err != nil {
+			return 0, err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE pos_shifts SET closed_at = now(), expected_cash = $2::numeric,
+			counted_cash = $2::numeric, diff = 0, diff_reason = '', closed_via = 'auto' WHERE id = $1`, id, r.ExpectedCash); err != nil {
+			return 0, err
+		}
+	}
+	return len(ids), nil
 }

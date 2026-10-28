@@ -146,8 +146,18 @@ class PosController extends ChangeNotifier {
   Stage _deviceStage() => switch (catalog.settings.deviceKind) {
         'kitchen' => Stage.kitchen,
         'display' => Stage.display,
-        _ => cashier == null ? Stage.login : (shift == null ? Stage.openShift : Stage.work),
+        _ => cashier == null ? Stage.login : (shift == null || shiftStale ? Stage.openShift : Stage.work),
       };
+
+  /// Смена кассы открыта дольше 20 часов — вчера день не закрыли. После входа
+  /// касса показывает «День закрыт» и при «Начать день» закрывает её сама по
+  /// расчёту (Figma ЗД3; на сервере такая смена закрывается автоматически).
+  bool get shiftStale => shift != null && _now().difference(shift!.openedAt) > const Duration(hours: 20);
+
+  /// Последний закрытый день на этой кассе (Figma ЗД5): номер, чеков,
+  /// выручка, кто закрыл, сколько оставили в ящике, напечатан ли отчёт.
+  /// Нужен экрану «День закрыт» и размену следующего дня без связи.
+  ClosedDay? lastDay;
 
   /// Чековый принтер и последняя ошибка печати (показывается в верхней строке).
   PrinterConfig printer = PrinterConfig();
@@ -167,7 +177,7 @@ class PosController extends ChangeNotifier {
   /// Можно ли сейчас продавать; иначе — причина.
   String? get saleBlocked {
     if (shiftLimit?.state == LimitState.blocked) {
-      return tr('Смена идёт больше 24 часов — закройте смену (Z-отчёт)', 'Smena 24 soatdan beri davom etmoqda — smenani yoping (Z-hisobot)');
+      return tr('Смена идёт больше 24 часов — закройте день', 'Smena 24 soatdan beri davom etmoqda — kunni yoping');
     }
     if (offlineLimit.state == LimitState.blocked) {
       return tr('Касса без связи больше 24 часов — подключите интернет, чтобы отправить чеки', 'Kassa 24 soatdan beri aloqasiz — cheklarni yuborish uchun internetga ulaning');
@@ -205,6 +215,7 @@ class PosController extends ChangeNotifier {
         _closedServerShifts.add('$id');
       }
       (st['server_numbers'] as Map<String, dynamic>?)?.forEach((k, v) => serverNumbers[k] = v as int);
+      if (st['last_day'] is Map) lastDay = ClosedDay.fromJson(st['last_day'] as Map<String, dynamic>);
     }
     printer = PrinterConfig.fromJson(await store.readJson('printer.json'));
     await outbox.load();
@@ -254,6 +265,7 @@ class PosController extends ChangeNotifier {
         'held': [for (final h in held) h.toJson()],
         'closed_shifts': _closedServerShifts.toList(),
         'server_numbers': serverNumbers,
+        'last_day': lastDay?.toJson(),
       });
 
   String _journalName(String shiftUid) => 'journal${Platform.pathSeparator}$shiftUid.jsonl';
@@ -432,7 +444,7 @@ class PosController extends ChangeNotifier {
     }
     if (!c.can(Perm.pos)) return tr('Нет права работать на кассе', 'Kassada ishlash huquqi yoʻq');
     cashier = c;
-    stage = shift == null ? Stage.openShift : Stage.work;
+    stage = shift == null || shiftStale ? Stage.openShift : Stage.work;
     notifyListeners();
     if (shift == null) unawaited(_adoptServerShift());
     return null;
@@ -543,6 +555,14 @@ class PosController extends ChangeNotifier {
     return null;
   }
 
+  /// «Продолжить вчерашнюю смену» (ЗД3, редкий случай): смена кассы открыта
+  /// дольше 20 часов, но кассир продолжает её — к продаже.
+  void continueShift() {
+    if (shift == null) return;
+    stage = Stage.work;
+    notifyListeners();
+  }
+
   /// «Продолжить смену №N» при открытии смены (НП4): касса берёт серверную смену.
   Future<void> continueServerShift(ServerShift sh) async {
     _closedServerShifts.remove(sh.id);
@@ -601,9 +621,11 @@ class PosController extends ChangeNotifier {
     unawaited(sync());
   }
 
-  /// Закрыть смену: пересчёт кассира и причина расхождения. Дальше — вход
-  /// следующего кассира и новая смена.
-  Future<void> closeShift(int counted, String reason) async {
+  /// Закрыть день (смену): [counted] — пересчёт кассира, null — не считали,
+  /// сумма в ящике по расчёту. Причина расхождения — по желанию. [auto] —
+  /// касса закрывает вчерашнюю смену сама при «Начать день» (pos_auto).
+  /// Кассир остаётся на кассе: дальше экран «День закрыт» (Figma ЗД5).
+  Future<void> closeShift(int? counted, String reason, {bool auto = false}) async {
     final s = shift!;
     final now = _now();
     FiscalResult? z;
@@ -630,18 +652,45 @@ class PosController extends ChangeNotifier {
         )));
     await outbox.add('shift_close', {
       'shift_uid': s.uid,
-      'counted_cash': counted,
+      if (counted != null) 'counted_cash': counted,
       'diff_reason': reason,
       'closed_at': now.toUtc().toIso8601String(),
+      if (auto) 'stale': true,
     }, cashier!.id, at: now);
     if (s.serverId != null) _closedServerShifts.add(s.serverId!);
+    lastDay = ClosedDay(
+      number: s.number,
+      salesCount: rep.salesCount,
+      salesTotal: rep.salesTotal,
+      closedBy: cashier!.name,
+      closedAt: now,
+      left: counted ?? rep.expectedCash,
+      printed: printer.enabled,
+      auto: auto,
+    );
     shift = null;
     journal.clear();
     await _saveState();
-    cashier = null;
-    stage = Stage.login;
+    stage = cashier == null ? Stage.login : Stage.openShift;
     notifyListeners();
     unawaited(sync());
+  }
+
+  /// Размен на начало дня: сколько оставили в ящике (сервер знает и про сдачу
+  /// кассы в «SM Магазин»); без связи — что осталось при закрытии на этой кассе.
+  Future<int> openingCashGuess() async {
+    if (online) {
+      try {
+        final res = await api.get('/pos/shifts/current', cashier: cashier?.id) as Map<String, dynamic>;
+        // Смены на сервере нет — он знает, сколько в ящике (и сдачу кассы тоже).
+        // Есть — закрытие этой кассы ещё в очереди: берём своё.
+        final v = res['left_in_drawer'];
+        if (res['shift'] == null && v != null) return parseMoney(v);
+      } catch (_) {
+        // без связи — как оставили на кассе
+      }
+    }
+    return lastDay?.left ?? 0;
   }
 
   // ----------------------------------------------------------- продажа
@@ -1077,7 +1126,7 @@ class PosController extends ChangeNotifier {
 
   /// Погашение долга на кассе: журнал смены, очередь, квитанция. Без сервера.
   Future<DebtPaymentRecord> recordDebtPayment({required DebtorView who, required int amount, required PayMethod method}) async {
-    if (shiftLimit?.state == LimitState.blocked) throw CartError(tr('Смена идёт больше 24 часов — закройте смену (Z-отчёт)', 'Smena 24 soatdan beri davom etmoqda — smenani yoping (Z-hisobot)'));
+    if (shiftLimit?.state == LimitState.blocked) throw CartError(tr('Смена идёт больше 24 часов — закройте день', 'Smena 24 soatdan beri davom etmoqda — kunni yoping'));
     if (amount <= 0) throw CartError(tr('Наберите сумму', 'Summani tering'));
     if (amount > who.debt) throw CartError(tr('Сумма больше долга ${fmtMoney(who.debt)}', 'Summa qarzdan (${fmtMoney(who.debt)}) koʻp'));
     final r = DebtPaymentRecord(
@@ -1139,7 +1188,7 @@ class PosController extends ChangeNotifier {
     required Cashier by,
   }) async {
     await sync();
-    final blocked = shiftLimit?.state == LimitState.blocked ? tr('Смена идёт больше 24 часов — закройте смену (Z-отчёт)', 'Smena 24 soatdan beri davom etmoqda — smenani yoping (Z-hisobot)') : null;
+    final blocked = shiftLimit?.state == LimitState.blocked ? tr('Смена идёт больше 24 часов — закройте день', 'Smena 24 soatdan beri davom etmoqda — kunni yoping') : null;
     if (blocked != null) throw ApiError(409, 'shift_expired', blocked);
     final shiftId = shift!.serverId ?? outbox.shiftIds[shift!.uid];
     if (shiftId == null) throw ApiError(0, 'network', tr('Смена ещё не дошла до сервера — нужен интернет', 'Smena hali serverga yetib bormadi — internet kerak'));
@@ -1238,4 +1287,53 @@ class PriceError implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// Закрытый день на кассе — для экрана «День закрыт» (Figma ЗД5).
+class ClosedDay {
+  ClosedDay({
+    required this.number,
+    required this.salesCount,
+    required this.salesTotal,
+    required this.closedBy,
+    required this.closedAt,
+    required this.left,
+    required this.printed,
+    this.auto = false,
+  });
+
+  final int? number;
+  final int salesCount;
+  final int salesTotal;
+  final String closedBy;
+  final DateTime closedAt;
+
+  /// Осталось в ящике: пересчитано или по расчёту — размен на завтра.
+  final int left;
+  final bool printed;
+
+  /// Закрыт кассой сам при «Начать день».
+  final bool auto;
+
+  Map<String, dynamic> toJson() => {
+        'number': number,
+        'sales_count': salesCount,
+        'sales_total': salesTotal,
+        'closed_by': closedBy,
+        'closed_at': closedAt.toUtc().toIso8601String(),
+        'left': left,
+        'printed': printed,
+        'auto': auto,
+      };
+
+  factory ClosedDay.fromJson(Map<String, dynamic> j) => ClosedDay(
+        number: (j['number'] as num?)?.toInt(),
+        salesCount: (j['sales_count'] as num?)?.toInt() ?? 0,
+        salesTotal: (j['sales_total'] as num?)?.toInt() ?? 0,
+        closedBy: j['closed_by'] as String? ?? '',
+        closedAt: DateTime.tryParse(j['closed_at'] as String? ?? '')?.toLocal() ?? DateTime.now(),
+        left: (j['left'] as num?)?.toInt() ?? 0,
+        printed: j['printed'] == true,
+        auto: j['auto'] == true,
+      );
 }

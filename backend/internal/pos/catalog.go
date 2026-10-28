@@ -84,6 +84,8 @@ type Settings struct {
 	ScaleWeightStep int    `json:"scale_weight_step"`
 	// «Даёт в долг»: показывать ли кассиру продажу в долг.
 	DebtEnabled bool `json:"debt_enabled"`
+	// «Требовать пересчёт при закрытии дня» (Figma ЗД4).
+	RequireRecount bool `json:"require_recount"`
 	// Вид устройства (pos, kitchen, display) и цех экрана кухни: панель может
 	// поменять цех, устройство узнаёт об этом при синхронизации.
 	DeviceKind   string  `json:"device_kind"`
@@ -238,13 +240,14 @@ func (s *Service) Catalog(ctx context.Context, p *identity.Principal, since *tim
 		       CASE WHEN n.scales_enabled THEN n.pos_weight_prefixes ELSE '{}'::text[] END,
 		       n.scale_item_digits, n.scale_value, n.scale_weight_step,
 		       st.debt_enabled AND network_has_feature(n.id, 'debts'), (SELECT sh.id FROM pos_shifts sh WHERE sh.device_id = d.id AND sh.closed_at IS NULL),
-		       d.kind, d.workshop_id, (SELECT loc(w.name, w.name_uz) FROM workshops w WHERE w.id = d.workshop_id)
+		       d.kind, d.workshop_id, (SELECT loc(w.name, w.name_uz) FROM workshops w WHERE w.id = d.workshop_id),
+		       n.pos_require_recount
 		FROM pos_devices d JOIN stores st ON st.id = d.store_id JOIN networks n ON n.id = d.network_id
 		WHERE d.id = $1`, p.DeviceID).Scan(&out.Settings.DeviceID, &out.Settings.DeviceName, &out.Settings.StoreID,
 		&out.Settings.StoreName, &out.Settings.StoreAddress, &out.Settings.NetworkName, &out.Settings.ReceiptHeader,
 		&out.Settings.ReceiptFooter, &out.Settings.WeightPrefixes,
 		&out.Settings.ScaleItemDigits, &out.Settings.ScaleValue, &out.Settings.ScaleWeightStep, &out.Settings.DebtEnabled, &out.OpenShiftID,
-		&out.Settings.DeviceKind, &out.Settings.WorkshopID, &out.Settings.WorkshopName)
+		&out.Settings.DeviceKind, &out.Settings.WorkshopID, &out.Settings.WorkshopName, &out.Settings.RequireRecount)
 	if err != nil {
 		return out, err
 	}

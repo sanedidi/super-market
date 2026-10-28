@@ -139,6 +139,7 @@ class TopBar extends StatelessWidget {
       if (d != Density.s) s.storeName,
       s.deviceName,
       if (d != Density.s && shift != null) tr('Смена №${shift.number ?? '·'}', 'Smena №${shift.number ?? '·'}'),
+      if (d != Density.s && shift == null && pos.cashier != null) tr('день закрыт', 'kun yopilgan'),
       if (pos.cashier != null) pos.cashier!.name,
     ].where((x) => x.isNotEmpty).join('  ·  ');
     final items = <Widget>[
@@ -262,9 +263,9 @@ class LimitBanner extends StatelessWidget {
         bg: C.warningSoft,
         fg: C.warning,
         title: tr('Смена идёт ${fmtDuration(sh.age)}.', 'Smena ${fmtDuration(sh.age)} davom etmoqda.'),
-        text: tr('Через ${fmtDuration(sh.left)} касса перестанет продавать — закройте смену и напечатайте Z-отчёт.',
-            '${fmtDuration(sh.left)} dan keyin kassa sotishni toʻxtatadi — smenani yoping va Z-hisobotni chop eting.'),
-        action: tr('Закрыть смену · F11', 'Smenani yopish · F11'),
+        text: tr('Через ${fmtDuration(sh.left)} касса перестанет продавать — закройте день.',
+            '${fmtDuration(sh.left)} dan keyin kassa sotishni toʻxtatadi — kunni yoping.'),
+        action: tr('Закрыть день · F11', 'Kunni yopish · F11'),
         onAction: onCloseShift,
       );
     }
@@ -367,7 +368,7 @@ class LimitLock extends StatelessWidget {
               (tr('Чеков за смену', 'Smenadagi cheklar'), '${pos.report.salesCount}'),
               (tr('Отложенные чеки', 'Kechiktirilgan cheklar'), tr('сохранятся', 'saqlanib qoladi')),
             ],
-            tr('Закрыть смену · Enter', 'Smenani yopish · Enter'),
+            tr('Закрыть день · Enter', 'Kunni yopish · Enter'),
             onCloseShift,
             tr('Сменить кассира', 'Kassirni almashtirish'),
           )

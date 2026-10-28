@@ -284,9 +284,16 @@ func (s *Service) ShiftEvents(ctx context.Context, p *identity.Principal, id str
 			if sh.ClosedByName != nil {
 				who = " · " + *sh.ClosedByName
 			}
-			via := i18n.Pick(lang, "закрыта в панели", "panelda yopilgan")
-			if *sh.ClosedVia == "pos_stale" {
-				via = i18n.Pick(lang, "закрыта с кассы: Z-отчёт не дошёл до сервера, сумма по расчёту", "kassadan yopilgan: Z-hisobot serverga yetmagan, summa hisob boʻyicha")
+			var via string
+			switch *sh.ClosedVia {
+			case "pos_quick":
+				via = i18n.Pick(lang, "закрыта с кассы без пересчёта, сумма по расчёту", "kassadan sanamasdan yopilgan, summa hisob boʻyicha")
+			case "pos_auto":
+				via = i18n.Pick(lang, "закрыта с кассы при начале дня: вчера день не закрыли, сумма по расчёту", "kun boshlanganda kassadan yopilgan: kecha kun yopilmagan, summa hisob boʻyicha")
+			case "auto":
+				via = i18n.Pick(lang, "закрыта автоматически: открыта дольше 20 часов, сумма по расчёту", "avtomatik yopilgan: 20 soatdan koʻp ochiq turgan, summa hisob boʻyicha")
+			default:
+				via = i18n.Pick(lang, "закрыта в панели", "panelda yopilgan")
 			}
 			if ev.Note == "" || (sh.Diff != nil && money.D(*sh.Diff).Sign() == 0) {
 				ev.Note = via + who

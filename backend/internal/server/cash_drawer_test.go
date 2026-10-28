@@ -89,9 +89,9 @@ func TestCashDrawer(t *testing.T) {
 	if d.str("amount") != "200000.00" || d.str("ledger") != "200000.00" {
 		t.Fatalf("drawer after handover = %v", d.Body)
 	}
-	// Кассир закрывает смену: в ящике ровно 200 000 — расхождения нет.
-	closed := a.expect(posDo(a, "POST", "/pos/shifts/"+shift+"/close", dt, cashier, map[string]any{"counted_cash": 200000}), 200, "close")
-	if closed.str("diff") != "0.00" {
+	// Кассир закрывает день без пересчёта: в ящике по расчёту 200 000, расхождения нет.
+	closed := a.expect(posDo(a, "POST", "/pos/shifts/"+shift+"/close", dt, cashier, map[string]any{}), 200, "close")
+	if closed.str("diff") != "0.00" || closed.str("counted_cash") != "200000.00" || closed.str("closed_via") != "pos_quick" {
 		t.Fatalf("closed = %v", closed.Body)
 	}
 	// Следующая смена: касса подставит размен 200 000.

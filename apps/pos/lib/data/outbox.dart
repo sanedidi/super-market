@@ -220,9 +220,12 @@ class Outbox {
       case 'shift_close': {
         final id = _shiftId(b['shift_uid'] as String);
         await api.post('/pos/shifts/$id/close', {
-          'counted_cash': moneyApi(b['counted_cash'] as int),
+          // Без counted_cash — не пересчитывали: сервер закроет по расчёту.
+          if (b['counted_cash'] != null) 'counted_cash': moneyApi((b['counted_cash'] as num).toInt()),
           'diff_reason': b['diff_reason'] ?? '',
           'closed_at': b['closed_at'],
+          // Касса закрыла вчерашнюю смену сама при «Начать день» (pos_auto).
+          if (b['stale'] == true) 'stale': true,
         }, cashier: item.cashier);
       }
       default: {

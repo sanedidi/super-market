@@ -267,7 +267,7 @@ class _CafeSaleScreenState extends State<CafeSaleScreen> {
         (Icons.account_balance_wallet_outlined, tr('Погашение долга', 'Qarzni toʻlash'), () {
           if (_idle()) showDebtPaymentDialog(context, pos);
         }),
-      (Icons.lock_clock_rounded, tr('Закрыть смену · Z-отчёт', 'Smenani yopish · Z-hisobot'), () {
+      (Icons.lock_clock_rounded, tr('Закрыть день · отчёт', 'Kunni yopish · hisobot'), () {
         if (_idle()) _push(const CloseShiftScreen());
       }),
       (Icons.person_outline_rounded, tr('Сменить кассира', 'Kassirni almashtirish'), () {

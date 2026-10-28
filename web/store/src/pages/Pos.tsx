@@ -17,6 +17,7 @@ import {
   Popconfirm,
   Row,
   Space,
+  Switch,
   Table,
   Tag,
   Typography,
@@ -95,8 +96,12 @@ interface Shift {
   counted_cash: string | null
   diff: string | null
   diff_reason: string
-  /** pos — Z-отчёт на кассе, pos_stale — касса закрыла зависшую смену, panel — в панели. */
-  closed_via: 'pos' | 'pos_stale' | 'panel' | null
+  /**
+   * Как закрыта (Figma «Касса · Закрыть день», «Логика», п. 8): pos — с кассы с пересчётом,
+   * pos_quick — с кассы без пересчёта, pos_auto — касса закрыла вчерашнюю смену сама при
+   * «Начать день», auto — сервер (открыта дольше 20 часов), panel — в панели.
+   */
+  closed_via: 'pos' | 'pos_quick' | 'pos_auto' | 'auto' | 'panel' | null
   report?: ShiftReport
 }
 
@@ -104,6 +109,8 @@ interface PosSettings {
   weight_prefixes: string[]
   receipt_header: string
   receipt_footer: string
+  /** «Требовать пересчёт при закрытии дня» (Figma ЗД4), по умолчанию выключено. */
+  require_recount?: boolean
 }
 
 /** Код XXXX-XXXX крупно — его вводят на кассе. */
@@ -391,7 +398,9 @@ function SettingsCard() {
         layout="vertical"
         disabled={readOnly}
         initialValues={settings.data}
-        onFinish={(v) => save.mutate({ ...v, weight_prefixes: settings.data?.weight_prefixes ?? ['22'] })}
+        onFinish={(v) =>
+          save.mutate({ ...v, weight_prefixes: settings.data?.weight_prefixes ?? ['22'], require_recount: settings.data?.require_recount ?? false })
+        }
       >
         <Form.Item
           name="receipt_header"
@@ -418,6 +427,47 @@ function SettingsCard() {
   )
 }
 
+// Figma «Касса · Закрыть день» (ЗД4, «Логика», п. 3): по умолчанию кассир закрывает
+// день одной кнопкой, по расчёту; включено — касса сразу ведёт в пересчёт ящика.
+function CloseDayCard() {
+  const { can } = useStore()
+  const settings = useItem<PosSettings>('/store/pos/settings')
+  const save = useAction((v: PosSettings) => api.put<PosSettings>('/store/pos/settings', v), {
+    invalidate: [['/store/pos/settings']],
+    success: tr('Настройка сохранена — кассы получат её при синхронизации', 'Sozlama saqlandi — kassalar uni sinxronizatsiyada oladi'),
+  })
+  if (!settings.data) return null
+  const on = settings.data.require_recount ?? false
+  return (
+    <Card title={tr('Закрытие дня (для всей сети)', 'Kunni yopish (butun tarmoq uchun)')}>
+      <Flex gap={12} align="flex-start">
+        <Switch
+          checked={on}
+          disabled={!can('stores.manage')}
+          loading={save.isPending}
+          onChange={(v) => save.mutate({ ...settings.data!, require_recount: v })}
+        />
+        <div>
+          <Typography.Text strong>{tr('Требовать пересчёт при закрытии дня', 'Kunni yopishda sanashni talab qilish')}</Typography.Text>
+          <div>
+            <Typography.Text type="secondary">
+              {on
+                ? tr(
+                    'Кассир пересчитывает ящик и набирает сумму, касса сверяет её с расчётом. Расхождение закрытие не задерживает — оно видно в «Сменах» и в Финансах.',
+                    'Kassir gʻaladonni sanab, summani teradi, kassa uni hisob bilan solishtiradi. Farq yopishga xalaqit bermaydi — u «Smenalar» va Moliyada koʻrinadi.',
+                  )
+                : tr(
+                    'Выключено: «Закрыть день» — одна кнопка, сумма в ящике по расчёту. Пересчитать ящик кассир может по желанию (F2).',
+                    'Oʻchirilgan: «Kunni yopish» — bitta tugma, gʻaladondagi summa hisob boʻyicha. Kassir xohlasa gʻaladonni sanashi mumkin (F2).',
+                  )}
+            </Typography.Text>
+          </div>
+        </div>
+      </Flex>
+    </Card>
+  )
+}
+
 export function PosDevicesPage() {
   return (
     <NeedStore>
@@ -434,6 +484,7 @@ export function PosDevicesPage() {
           <Flex vertical gap={16}>
             <DevicesCard />
             <SettingsCard />
+            <CloseDayCard />
           </Flex>
         </Col>
         <Col xs={24} xl={10}>
@@ -449,11 +500,31 @@ export function PosDevicesPage() {
 /** Сколько часов открыта смена. */
 const openHours = (s: Shift) => Math.max(0, dayjs().diff(dayjs(s.opened_at), 'hour'))
 
-/** Откуда закрыта смена, если не Z-отчётом на кассе. */
+/** Как закрыта смена (Figma «Касса · Закрыть день», «Логика», п. 8). */
 function closedVia(s: Shift) {
-  if (s.closed_via === 'pos_stale') return tr('закрыта с кассы: Z-отчёт не дошёл до сервера', 'kassadan yopilgan: Z-hisobot serverga yetmagan')
-  if (s.closed_via === 'panel') return tr('закрыта в панели', 'panelda yopilgan')
+  switch (s.closed_via) {
+    case 'pos':
+      return tr('с кассы · пересчёт', 'kassadan · sanab')
+    case 'pos_quick':
+      return tr('с кассы · без пересчёта', 'kassadan · sanamasdan')
+    case 'pos_auto':
+      return tr('с кассы при начале дня · по расчёту', 'kun boshida kassadan · hisob boʻyicha')
+    case 'auto':
+      return tr('автоматически', 'avtomatik')
+    case 'panel':
+      return tr('из панели', 'paneldan')
+  }
   return ''
+}
+
+/** Ящик пересчитывали: кассир на кассе или владелец в панели. */
+const recounted = (s: Shift) => s.closed_via === 'pos' || s.closed_via === 'panel'
+
+/** «автоматически» подсвечено — кассир не закрывал день сам. */
+function ClosedViaTag({ s }: { s: Shift }) {
+  if (!s.closed_via) return null
+  const color = s.closed_via === 'auto' ? 'orange' : s.closed_via === 'pos_auto' ? 'gold' : s.closed_via === 'panel' ? 'blue' : 'default'
+  return <Tag color={color}>{closedVia(s)}</Tag>
 }
 
 // Figma «Панель · Смены — закрыть зависшую смену кассы» (П1, П2): смена осталась
@@ -607,7 +678,10 @@ function ShiftMoney({ shift: s, report: r }: { shift: Shift; report: ShiftReport
           <div style={{ borderTop: '1px solid #E8E8EB', marginTop: 6, paddingTop: 4 }}>
             <MoneyLine sign="=" strong label={tr('Должно быть в ящике', 'Gʻaladonda boʻlishi kerak')} value={s.expected_cash ?? r.expected_cash} />
           </div>
-          {s.counted_cash !== null && <MoneyLine label={tr('Посчитано при закрытии', 'Yopishda sanaldi')} value={s.counted_cash} />}
+          {s.counted_cash !== null && recounted(s) && <MoneyLine label={tr('Посчитано при закрытии', 'Yopishda sanaldi')} value={s.counted_cash} />}
+          {s.closed_at && !recounted(s) && (
+            <Typography.Text type="secondary">{tr('Ящик не пересчитывали — сумма по расчёту', 'Gʻaladon sanalmagan — summa hisob boʻyicha')}</Typography.Text>
+          )}
           {s.diff !== null && Number(s.diff) !== 0 && (
             <Typography.Text type="danger">
               {tr('Расхождение', 'Farq')} {money(s.diff)}
@@ -730,23 +804,22 @@ export function PosShiftsPage() {
               key: 'c',
               render: (_, r) =>
                 r.closed_at ? (
-                  <Space direction="vertical" size={0}>
-                    {dateTime(r.closed_at)}
-                    {closedVia(r) && (
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        {closedVia(r)}
-                      </Typography.Text>
-                    )}
-                  </Space>
+                  dateTime(r.closed_at)
                 ) : openHours(r) >= 12 ? (
                   <Tag color="red">{tr(`открыта ${openHours(r)} ч`, `${openHours(r)} soat ochiq`)}</Tag>
                 ) : (
                   <Tag color="blue">{tr('Открыта', 'Ochiq')}</Tag>
                 ),
             },
+            { title: tr('Как закрыта', 'Qanday yopilgan'), key: 'via', render: (_, r) => <ClosedViaTag s={r} /> },
             { title: tr('Размен', 'Mayda pul'), dataIndex: 'opening_cash', align: 'right', render: (v: string) => money(v) },
             { title: tr('Должно быть', 'Boʻlishi kerak'), dataIndex: 'expected_cash', align: 'right', render: (v: string | null) => (v === null ? '—' : money(v)) },
-            { title: tr('Посчитано', 'Sanaldi'), dataIndex: 'counted_cash', align: 'right', render: (v: string | null) => (v === null ? '—' : money(v)) },
+            {
+              title: tr('Посчитано', 'Sanaldi'),
+              key: 'counted',
+              align: 'right',
+              render: (_, r) => (r.counted_cash === null || !recounted(r) ? '—' : money(r.counted_cash)),
+            },
             {
               title: tr('Расхождение', 'Farq'),
               key: 'd',

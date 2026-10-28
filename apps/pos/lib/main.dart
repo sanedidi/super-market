@@ -15,13 +15,13 @@ import 'data/store.dart';
 import 'state/pos.dart';
 import 'ui/activation_screen.dart';
 import 'ui/login_screen.dart';
-import 'ui/open_shift_screen.dart';
+import 'ui/day_closed_screen.dart';
 import 'ui/sale_screen.dart';
 import 'ui/theme.dart';
 
 /// Адрес API задаётся при сборке: flutter build windows --dart-define=API_URL=https://…/api/v1
 const apiUrl = String.fromEnvironment('API_URL', defaultValue: 'https://api.super-market.uz/api/v1');
-const appVersion = '0.4.3';
+const appVersion = '0.4.5';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -63,7 +63,7 @@ class PosApp extends StatelessWidget {
                 Stage.loading => const Scaffold(body: Center(child: CircularProgressIndicator())),
                 Stage.activate => const ActivationScreen(),
                 Stage.login => const LoginScreen(),
-                Stage.openShift => const OpenShiftScreen(),
+                Stage.openShift => const DayClosedScreen(),
                 Stage.work => cafe ? (hall ? const HallScreen() : const CafeSaleScreen()) : const SaleScreen(),
                 Stage.kitchen => const KitchenScreen(),
                 Stage.display => const DisplayScreen(),

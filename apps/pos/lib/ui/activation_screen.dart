@@ -127,7 +127,7 @@ class _Steps extends StatelessWidget {
       dash,
       step(2, tr('Вход кассира', 'Kassir kirishi'), false),
       dash,
-      step(3, tr('Открытие смены', 'Smenani ochish'), false),
+      step(3, tr('Начать день', 'Kunni boshlash'), false),
     ]);
   }
 }

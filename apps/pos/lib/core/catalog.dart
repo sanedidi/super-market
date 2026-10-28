@@ -260,6 +260,7 @@ class PosSettings {
     this.scaleValue = 'weight',
     this.scaleWeightStep = 1,
     this.debtEnabled = false,
+    this.requireRecount = false,
     this.deviceKind = 'pos',
     this.workshopId,
     this.workshopName,
@@ -284,6 +285,10 @@ class PosSettings {
   /// Магазин даёт в долг: показывать «В долг» кассиру с правом.
   final bool debtEnabled;
 
+  /// «Требовать пересчёт при закрытии дня» (панель → Касса → Настройки, Figma
+  /// ЗД4): Enter на «Закрыть день» ведёт в пересчёт ящика.
+  final bool requireRecount;
+
   /// Вид устройства: pos — касса, kitchen — экран кухни (workshopId — цех,
   /// null — все цеха), display — экран выдачи для гостей.
   final String deviceKind;
@@ -304,6 +309,7 @@ class PosSettings {
         scaleValue: j['scale_value'] as String? ?? 'weight',
         scaleWeightStep: (j['scale_weight_step'] as num?)?.toInt() ?? 1,
         debtEnabled: j['debt_enabled'] == true,
+        requireRecount: j['require_recount'] == true,
         deviceKind: j['device_kind'] as String? ?? 'pos',
         workshopId: j['workshop_id'] as String?,
         workshopName: j['workshop_name'] as String?,
@@ -323,6 +329,7 @@ class PosSettings {
         'scale_value': scaleValue,
         'scale_weight_step': scaleWeightStep,
         'debt_enabled': debtEnabled,
+        'require_recount': requireRecount,
         'device_kind': deviceKind,
         'workshop_id': workshopId,
         'workshop_name': workshopName,

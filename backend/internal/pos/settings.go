@@ -167,14 +167,20 @@ type NetworkSettings struct {
 	WeightPrefixes []string `json:"weight_prefixes"`
 	ReceiptHeader  string   `json:"receipt_header"`
 	ReceiptFooter  string   `json:"receipt_footer"`
+	// «Требовать пересчёт при закрытии дня»: касса не закрывает день одной
+	// кнопкой — Enter ведёт в пересчёт ящика (Figma ЗД4). Расхождение и тут
+	// не блокирует. Не прислали (старая панель) — не меняем.
+	RequireRecount *bool `json:"require_recount"`
 }
 
 var prefixRe = regexp.MustCompile(`^2[0-9]$`)
 
 func (s *Service) GetSettings(ctx context.Context, p *identity.Principal) (NetworkSettings, error) {
 	var out NetworkSettings
-	err := s.pool.QueryRow(ctx, `SELECT pos_weight_prefixes, receipt_header, receipt_footer FROM networks WHERE id = $1`,
-		p.NetworkID).Scan(&out.WeightPrefixes, &out.ReceiptHeader, &out.ReceiptFooter)
+	var recount bool
+	err := s.pool.QueryRow(ctx, `SELECT pos_weight_prefixes, receipt_header, receipt_footer, pos_require_recount FROM networks WHERE id = $1`,
+		p.NetworkID).Scan(&out.WeightPrefixes, &out.ReceiptHeader, &out.ReceiptFooter, &recount)
+	out.RequireRecount = &recount
 	return out, err
 }
 
@@ -197,8 +203,9 @@ func (s *Service) SaveSettings(ctx context.Context, p *identity.Principal, in Ne
 	if len([]rune(in.ReceiptHeader)) > 500 || len([]rune(in.ReceiptFooter)) > 500 {
 		return NetworkSettings{}, apperr.Validation("текст чека: до 500 символов").Uz("chek matni: 500 belgigacha")
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE networks SET pos_weight_prefixes = $2, receipt_header = $3, receipt_footer = $4, pos_settings_at = now() WHERE id = $1`,
-		p.NetworkID, in.WeightPrefixes, in.ReceiptHeader, in.ReceiptFooter); err != nil {
+	if _, err := s.pool.Exec(ctx, `UPDATE networks SET pos_weight_prefixes = $2, receipt_header = $3, receipt_footer = $4,
+		pos_require_recount = COALESCE($5, pos_require_recount), pos_settings_at = now() WHERE id = $1`,
+		p.NetworkID, in.WeightPrefixes, in.ReceiptHeader, in.ReceiptFooter, in.RequireRecount); err != nil {
 		return NetworkSettings{}, err
 	}
 	return s.GetSettings(ctx, p)
