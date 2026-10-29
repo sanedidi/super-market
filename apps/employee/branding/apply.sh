@@ -64,6 +64,10 @@ d['CFBundleDisplayName'] = sys.argv[1]
 d['NSCameraUsageDescription'] = 'Сканировать штрихкоды товаров и фотографировать брак при списании'
 d['NSPhotoLibraryUsageDescription'] = 'Выбрать фото товара или накладной из галереи'
 d['NSFaceIDUsageDescription'] = 'Входить в приложение по Face ID вместо кода'
+# Камера, микрофон и геолокация есть в общих экранах «SM Магазин» (помощник, точка магазина) —
+# App Store требует описание для каждого разрешения, которое есть в приложении.
+d['NSMicrophoneUsageDescription'] = 'Голосовые сообщения помощнику магазина'
+d['NSLocationWhenInUseUsageDescription'] = 'Показать магазин на карте'
 schemes = set(d.get('LSApplicationQueriesSchemes', []))
 schemes.update(['https', 'tg', 'tel'])
 d['LSApplicationQueriesSchemes'] = sorted(schemes)
@@ -76,6 +80,9 @@ d['UIBackgroundModes'] = sorted(modes)
 with open(p, 'wb') as f:
     plistlib.dump(d, f)
 PY
+  # Манифест конфиденциальности (требование App Store): файл + ресурс цели Runner.
+  cp branding/ios/PrivacyInfo.xcprivacy ios/Runner/PrivacyInfo.xcprivacy
+  python3 ../scripts/ios_add_resource.py ios PrivacyInfo.xcprivacy
   cat > ios/Runner/Runner.entitlements <<'ENT'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

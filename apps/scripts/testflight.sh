@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Сборка и загрузка в TestFlight одной командой: покупатель (client), «SM Магазин» (store),
-# «SM Курьер» (courier). Нужны Mac, Flutter 3.44 и Xcode 26, вход в Xcode под Apple ID команды
+# «SM Курьер» (courier), «SM Сотрудник» (employee), «SM Агент» (distributor). Нужны Mac, Flutter 3.44 и Xcode 26, вход в Xcode под Apple ID команды
 # (Xcode → Settings → Accounts) — или ключ App Store Connect API (см. ниже).
 #
 #   bash apps/scripts/testflight.sh                 # все три приложения
@@ -44,7 +44,7 @@ build="${BUILD:-$(date +%Y%m%d%H%M)}"
 
 ok=() failed=()
 for app in "${apps[@]}"; do
-  case "$app" in client|store|courier) ;; *) echo "Неизвестное приложение: $app (client, store, courier)"; exit 1 ;; esac
+  case "$app" in client|store|courier|employee|distributor) ;; *) echo "Неизвестное приложение: $app (client, store, courier, employee, distributor)"; exit 1 ;; esac
   dir="$root/apps/$app"
   echo
   echo "=== $app · $(grep '^version:' "$dir/pubspec.yaml") · сборка iOS $build"
