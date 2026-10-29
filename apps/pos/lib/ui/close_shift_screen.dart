@@ -153,7 +153,7 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
       // Начали набирать цифры — это пересчёт.
       if (digit) {
         _startCount();
-        _type(ch!);
+        _type(ch);
         return true;
       }
       return false;
@@ -170,7 +170,7 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
       return true;
     }
     if (digit) {
-      _type(ch!);
+      _type(ch);
       return true;
     }
     return false;
