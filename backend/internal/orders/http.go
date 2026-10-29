@@ -98,6 +98,10 @@ func (m *Module) Routes(r chi.Router) {
 		r.With(manage).Get("/store/orders/{id}", m.storeGet)
 		r.Post("/store/orders/{id}/accept", m.act(m.svc.Accept))
 		r.Post("/store/orders/{id}/start-picking", m.act(m.svc.StartPicking))
+		r.Post("/store/orders/{id}/take", m.take)
+		r.Post("/store/orders/{id}/lines/{line}/pick", m.pickLine)
+		r.Post("/store/orders/{id}/lines/{line}/remove", m.removeLine)
+		r.Post("/store/orders/{id}/handed", m.act(m.svc.Handed))
 		r.Post("/store/orders/{id}/picked", m.picked)
 		r.Post("/store/orders/{id}/start-delivery", m.act(m.svc.StartDelivery))
 		r.Post("/store/orders/{id}/delivered", m.act(m.svc.Delivered))
@@ -556,9 +560,48 @@ func (m *Module) act(fn func(context.Context, *identity.Principal, string) (Orde
 func (m *Module) picked(w http.ResponseWriter, r *http.Request) {
 	type body struct {
 		Items []PickLine `json:"items"`
+		Bags  *int       `json:"bags"`
 	}
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in body) (Order, error) {
+		if in.Bags != nil {
+			return m.svc.Picked(r.Context(), pr(r), id, in.Items, *in.Bags)
+		}
 		return m.svc.Picked(r.Context(), pr(r), id, in.Items)
+	})
+}
+
+// SM Сотрудник: сборка заказа (С6–С9).
+func (m *Module) take(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (Order, error) {
+		return m.svc.Take(r.Context(), pr(r), id)
+	})
+}
+
+func lineParam(r *http.Request) (int, error) {
+	n, err := strconv.Atoi(chi.URLParam(r, "line"))
+	if err != nil || n <= 0 {
+		return 0, apperr.NotFound("строка заказа не найдена").Uz("buyurtma qatori topilmadi")
+	}
+	return n, nil
+}
+
+func (m *Module) pickLine(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in PickLineInput) (Order, error) {
+		line, err := lineParam(r)
+		if err != nil {
+			return Order{}, err
+		}
+		return m.svc.PickLine(r.Context(), pr(r), id, line, in)
+	})
+}
+
+func (m *Module) removeLine(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in RemoveLineInput) (RemoveLineResult, error) {
+		line, err := lineParam(r)
+		if err != nil {
+			return RemoveLineResult{}, err
+		}
+		return m.svc.RemoveLine(r.Context(), pr(r), id, line, in)
 	})
 }
 

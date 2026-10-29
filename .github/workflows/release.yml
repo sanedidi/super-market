@@ -1,8 +1,8 @@
 name: release
 
-# Сборки для Google Play: AAB приложений покупателя (client), магазина (store) и курьера
+# Сборки для Google Play: AAB приложений покупателя (client), магазина (store), сотрудника (employee) и курьера
 # (courier), подписанные ключом загрузки (upload key) из секретов репозитория.
-# Артефакты: client-aab, store-aab, courier-aab. Подробно — docs/release.md.
+# Артефакты: client-aab, store-aab, courier-aab, employee-aab. Подробно — docs/release.md.
 #
 # Запуск: Actions → release → Run workflow, или тег v* (git tag v1.2.0 && git push origin v1.2.0).
 # versionCode = номер запуска workflow (растёт с каждым запуском), либо число из поля build_number.
@@ -43,6 +43,9 @@ jobs:
             create: true
           - app: courier
             project: sm_courier
+            create: true
+          - app: employee
+            project: sm_employee
             create: true
     defaults:
       run:

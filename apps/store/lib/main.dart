@@ -6,6 +6,7 @@ import 'package:sm_core/sm_core.dart';
 
 import 'lock/app_lock.dart';
 import 'lock/pin_screens.dart';
+import 'login/employee_app.dart';
 import 'login/password_login.dart';
 import 'push.dart';
 import 'screens/shell.dart';
@@ -185,6 +186,9 @@ class _Gate extends StatelessWidget {
     }
     // Кафе: режим «Официант» — свои вкладки (Столы · Готово · Брони · Ещё).
     if (st.waiterMode && st.canWaiter) return WaiterShell(key: ValueKey('waiter-${st.storeId}'));
+    // «SM Магазин» — только для владельца: сотрудники работают в «SM Сотрудник».
+    // Официанты кафе пока остаются здесь (режим «Официант»).
+    if (!st.ownerApp) return const EmployeeAppScreen();
     return const Shell();
   }
 }

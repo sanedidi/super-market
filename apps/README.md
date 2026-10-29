@@ -6,7 +6,9 @@ apps/
   client/   приложение покупателя (Android, iOS)
   pos/      касса (Windows, Android): быстрый режим, работа без интернета
   courier/  приложение курьера магазина (Android, iOS)
-  store/    приложение магазина: приход по фото накладной, склад (Android, iOS)
+  store/    приложение магазина (владелец): приход по фото накладной, склад (Android, iOS)
+  employee/ «SM Сотрудник» — приложение работника магазина: продажа, сканер цены и остатка,
+            сборка заказов, пересчёт, списание, задачи (Android, iOS)
 ```
 
 ## Приложение покупателя (apps/client)
@@ -165,3 +167,23 @@ API и медиа — `https://api.super-market.uz`, поэтому исключ
 **iPhone:** `bash apps/store/branding/build_ios.sh` (создаёт папки платформ, настраивает камеру и подпись,
 проверяет код `flutter analyze`, собирает архив и открывает его в Xcode → Distribute App).
 Bundle ID — `uz.supermarket.smStore`, запись в App Store Connect нужно создать перед первой загрузкой.
+
+
+## «SM Сотрудник» (apps/employee)
+
+Приложение продавцов, кассиров, кладовщиков и сборщиков (Figma «Super Market · SM Сотрудник»). Кассу, приход,
+вход, код-замок и сканер берёт из `apps/store` (зависимость `sm_store`), поэтому правки «SM Магазин» сразу
+работают и здесь. Сборка в CI — метка `[build: employee]` (APK в артефакте `employee-android`), AAB для Google
+Play — workflow `release`, iOS — `bash apps/employee/branding/build_ios.sh` на Mac.
+
+```sh
+cd apps/employee
+flutter create --platforms=android,ios --org uz.supermarket --project-name sm_employee .
+rm -f test/widget_test.dart
+bash branding/apply.sh
+flutter pub get
+flutter run
+```
+
+Пуши: приложение нужно зарегистрировать в Firebase (`super-market-c7b84`: Android `uz.supermarket.sm_employee`,
+iOS `uz.supermarket.smEmployee`) и вписать `appId` в `lib/firebase_options.dart` — пока он пустой, пуши выключены.

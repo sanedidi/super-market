@@ -170,6 +170,8 @@ export type StockDocument = {
   posted_at: string | null
   created_at: string
   items_count: number
+  // Фото к документу: списание из «SM Сотрудник» — брак, просрочка.
+  photos?: string[]
   items?: StockDocItem[]
 }
 

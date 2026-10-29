@@ -62,6 +62,12 @@ type OrderItem struct {
 	FromOtherWarehouse bool    `json:"from_other_warehouse"`
 	// Цена до скидки по акции (null — скидки не было).
 	OldPrice *string `json:"old_price"`
+	// Сборка в «SM Сотрудник»: сколько уже отсканировано, штрихкоды товара
+	// (сканер сверяет сам), весовой ли товар (подтверждается наклейкой весов), фото.
+	PickedQty    string   `json:"picked_qty"`
+	Barcodes     []string `json:"barcodes"`
+	IsFractional bool     `json:"is_fractional"`
+	Image        *string  `json:"image"`
 }
 
 type HistoryEntry struct {
@@ -118,12 +124,21 @@ type Order struct {
 	// До какого момента нужно оплатить (только для «ожидает оплаты»).
 	PaymentDeadline *time.Time `json:"payment_deadline,omitempty"`
 	// Для супер-админа: оплачен, но магазин не принял вовремя.
-	AcceptOverdue bool           `json:"accept_overdue,omitempty"`
-	CancelReason  string         `json:"cancel_reason"`
-	FiscalStatus  string         `json:"fiscal_status"`
-	CreatedAt     time.Time      `json:"created_at"`
-	Items         []OrderItem    `json:"items,omitempty"`
-	History       []HistoryEntry `json:"history,omitempty"`
+	AcceptOverdue bool `json:"accept_overdue,omitempty"`
+	// Сборщик (SM Сотрудник): кто взял заказ в сборку и когда; прогресс —
+	// строк всего и собрано; пакетов для курьера; когда передал курьеру.
+	PickerID         *string        `json:"picker_id"`
+	PickerName       *string        `json:"picker_name"`
+	PickingStartedAt *time.Time     `json:"picking_started_at"`
+	ItemsCount       int            `json:"items_count"`
+	PickedCount      int            `json:"picked_count"`
+	Bags             *int           `json:"bags"`
+	HandedAt         *time.Time     `json:"handed_at"`
+	CancelReason     string         `json:"cancel_reason"`
+	FiscalStatus     string         `json:"fiscal_status"`
+	CreatedAt        time.Time      `json:"created_at"`
+	Items            []OrderItem    `json:"items,omitempty"`
+	History          []HistoryEntry `json:"history,omitempty"`
 }
 
 const orderSelect = `
@@ -137,8 +152,13 @@ const orderSelect = `
 	       o.eta_at, o.cancel_reason, o.fiscal_status, o.created_at,
 	       o.crowd_courier_id, cu.phone, o.crowd_pickup_until,
 	       (o.status = 'picked' AND o.courier_id IS NULL AND o.crowd_courier_id IS NULL AND (s.crowd_enabled AND network_has_feature(s.network_id, 'crowd'))
-	        AND o.payment_provider <> 'cash' AND o.picked_at > now() - make_interval(mins => (SELECT wait_minutes FROM crowd_settings)))
+	        AND o.payment_provider <> 'cash' AND o.picked_at > now() - make_interval(mins => (SELECT wait_minutes FROM crowd_settings))),
+	       o.picker_id, pe.full_name, o.picking_started_at,
+	       (SELECT count(*) FROM order_items oi WHERE oi.order_id = o.id)::int,
+	       (SELECT count(*) FROM order_items oi WHERE oi.order_id = o.id AND oi.picked_qty >= oi.qty)::int,
+	       o.bags, o.handed_at
 	FROM orders o JOIN stores s ON s.id = o.store_id
+	LEFT JOIN employees pe ON pe.id = o.picker_id
 	LEFT JOIN employees ce ON ce.id = o.courier_id
 	LEFT JOIN crowd_couriers cc ON cc.user_id = o.crowd_courier_id
 	LEFT JOIN users cu ON cu.id = o.crowd_courier_id`
@@ -150,7 +170,8 @@ func scanOrder(row pgx.CollectableRow) (Order, error) {
 		&o.Lat, &o.Lng, &o.DistanceM, &o.CustomerPhone, &o.Comment, &o.PaymentProvider, &o.PaymentStatus,
 		&o.PaidAt, &o.AcceptedAt, &o.DeliveredAt, &o.DeliveryFrom, &o.DeliveryTo,
 		&o.CourierID, &o.CourierName, &o.EtaAt, &o.CancelReason, &o.FiscalStatus, &o.CreatedAt,
-		&o.CrowdCourierID, &o.CrowdCourierPhone, &o.CrowdPickupUntil, &o.CrowdOpen)
+		&o.CrowdCourierID, &o.CrowdCourierPhone, &o.CrowdPickupUntil, &o.CrowdOpen,
+		&o.PickerID, &o.PickerName, &o.PickingStartedAt, &o.ItemsCount, &o.PickedCount, &o.Bags, &o.HandedAt)
 	o.StatusTitle = statusTitles[o.Status].RU
 	o.DeliveryMode = "staff"
 	if o.CrowdCourierID != nil {
@@ -197,7 +218,10 @@ func (s *Service) getOrder(ctx context.Context, q db.Querier, id string) (Order,
 	rows, err = q.Query(ctx, `
 		SELECT i.line, i.product_id, loc(p.name, p.name_uz), loc(u.short_name, u.short_name_uz), i.qty::text, i.price::text, i.total::text,
 		       i.picked_warehouse_id, i.from_other_warehouse,
-		       CASE WHEN i.regular_price > i.price THEN i.regular_price::text END
+		       CASE WHEN i.regular_price > i.price THEN i.regular_price::text END,
+		       trim_scale(i.picked_qty)::text,
+		       COALESCE((SELECT array_agg(pb.barcode ORDER BY pb.barcode) FROM product_barcodes pb WHERE pb.product_id = p.id), '{}'),
+		       u.is_fractional, p.images[1]
 		FROM order_items i JOIN products p ON p.id = i.product_id JOIN units u ON u.id = p.unit_id
 		WHERE i.order_id = $1 ORDER BY i.line`, id)
 	if err != nil {
@@ -442,7 +466,8 @@ type PickLine struct {
 
 // Picked — заказ собран: резерв снимается, товар списывается по FIFO со склада
 // по умолчанию или с указанного для строки склада (с отметкой «взят с другого склада»).
-func (s *Service) Picked(ctx context.Context, p *identity.Principal, id string, lines []PickLine) (Order, error) {
+// bags — сколько пакетов получилось (курьер увидит, сколько забрать; nil — не указано).
+func (s *Service) Picked(ctx context.Context, p *identity.Principal, id string, lines []PickLine, bags ...int) (Order, error) {
 	if err := p.Require(identity.PermOrdersManage); err != nil {
 		return Order{}, err
 	}
@@ -459,6 +484,20 @@ func (s *Service) Picked(ctx context.Context, p *identity.Principal, id string, 
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		o, err := lockOrder(ctx, tx, id, StatusAccepted, StatusPicking)
 		if err != nil {
+			return err
+		}
+		if err := checkPicker(ctx, tx, p, id); err != nil {
+			return err
+		}
+		if len(bags) > 0 {
+			if bags[0] < 0 || bags[0] > 99 {
+				return apperr.Validation("bags: от 0 до 99").Uz("bags: 0 dan 99 gacha")
+			}
+			if _, err := tx.Exec(ctx, `UPDATE orders SET bags = $2 WHERE id = $1`, id, bags[0]); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.Exec(ctx, `UPDATE orders SET picker_id = COALESCE(picker_id, $2) WHERE id = $1`, id, p.EmployeeID); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `DELETE FROM stock_reservations WHERE order_id = $1`, id); err != nil {

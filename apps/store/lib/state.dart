@@ -117,6 +117,10 @@ class StoreState extends ChangeNotifier {
     await prefs.setBool(_waiterKey, waiterMode);
   }
 
+  /// Можно работать в «SM Магазин»: владелец сети или официант кафе. Остальным
+  /// сотрудникам — приложение «SM Сотрудник».
+  bool get ownerApp => me?['is_owner'] == true || canWaiter;
+
   String get networkName => '${(me?['network'] as Map<String, dynamic>?)?['name'] ?? ''}';
 
   /// Есть ли право (владелец может всё).

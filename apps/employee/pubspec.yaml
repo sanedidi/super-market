@@ -1,0 +1,49 @@
+name: sm_employee
+description: Super Market Сотрудник — приложение работника магазина (продавец, кассир, кладовщик, сборщик заказов) — продажа, цена и остаток по скану, сборка онлайн-заказов, пересчёт, списание, задачи.
+publish_to: none
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  sm_core:
+    path: ../core
+  # Касса в телефоне, приход (сканер и накладная), вход, код-замок, сканер —
+  # из приложения магазина: у сотрудника всё работает так же, как в «SM Магазин».
+  sm_store:
+    path: ../store
+  provider: ^6.1.2
+  shared_preferences: ^2.3.2
+  mobile_scanner: ^7.0.0
+  image_picker: ^1.1.2
+  url_launcher: ^6.3.0
+  # Пуши: Firebase своего приложения (firebase_messaging приходит из sm_store).
+  firebase_core: ^4.0.0
+
+# Как в apps/store: latlong2 и flutter_localizations должны сойтись на intl из Flutter SDK.
+dependency_overrides:
+  intl: any
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+        - asset: assets/fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700

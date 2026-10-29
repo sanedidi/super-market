@@ -43,7 +43,7 @@ func TestAppVersions(t *testing.T) {
 	if c := a.expect(a.do("GET", "/public/app-version?app=store&platform=ios&version=0.9.0", "", nil), 200, "empty check"); c.Body["update"] != false {
 		t.Fatalf("empty check = %v", c.Body)
 	}
-	if l := a.expect(a.do("GET", "/admin/app-versions", adminTok, nil), 200, "list").items(); len(l) != 8 || l[2]["app"] != "store" || l[2]["platform"] != "ios" || l[2]["latest"] != "" {
+	if l := a.expect(a.do("GET", "/admin/app-versions", adminTok, nil), 200, "list").items(); len(l) != 10 || l[2]["app"] != "store" || l[2]["platform"] != "ios" || l[2]["latest"] != "" {
 		t.Fatalf("list = %v", l)
 	}
 

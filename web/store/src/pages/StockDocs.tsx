@@ -1,7 +1,7 @@
 // Складские документы: один список и один редактор на все виды (type).
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Alert, App, Button, Card, Col, Form, Input, Popconfirm, Row, Segmented, Select, Space, Table, Typography } from 'antd'
+import { Alert, App, Button, Card, Col, Form, Image, Input, Popconfirm, Row, Segmented, Select, Space, Table, Typography } from 'antd'
 import { CheckOutlined, CloseOutlined, DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 import {
   DeleteButton,
@@ -445,6 +445,17 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
               {d.posted_at && ` · ${tr('проведён', 'oʻtkazilgan')} ${dateTime(d.posted_at)}`}
               {d.rate && ` · ${tr('курс', 'kurs')} ${money(d.rate)}`}
             </Typography.Text>
+          )}
+          {d && (d.photos?.length ?? 0) > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <Image.PreviewGroup>
+                <Space wrap>
+                  {d.photos!.map((u) => (
+                    <Image key={u} src={u} width={96} height={96} style={{ objectFit: 'cover', borderRadius: 8 }} />
+                  ))}
+                </Space>
+              </Image.PreviewGroup>
+            </div>
           )}
         </Form>
       </Card>

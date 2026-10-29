@@ -1395,3 +1395,38 @@ SM Курьер, SM Агент) при запуске и при возврате
 отправить текст как сообщение владельца; attach `true` — фото накладной, `"product"` — фото товара), `card {title, sum, note, status,
 status_kind: warn|error|ok, buttons, line}` (строка накладной или поставщик), `table {columns, rows}`, `link
 {label, href}` (внутри панели), `confirm {label, action, enabled, hint}` — необратимое действие, только кнопкой.
+
+## «SM Сотрудник» — приложение работника магазина
+
+Figma «Super Market · SM Сотрудник» (С1–С13). Вход — `/auth/store/login` логином и паролем, которые выдаёт
+владелец (`/store/employees/{id}/login`); токен тот же, что у «SM Магазин» (`app=store`). Разделы — по правам роли:
+`sales.pos` → «Продать» (касса в телефоне, `/store/pos/phone` — чеки от имени сотрудника), `inventory.manage` →
+«Приход», «Пересчёт», «Списание», автозадачи; `orders.manage` → «Заказы» и сборка; `sales.return` → «Возврат»;
+`prices.manage` → «Цена» в сканере. «SM Магазин» — только для владельца (и официантов кафе): остальным
+сотрудникам приложение показывает «Для сотрудников — „SM Сотрудник“». Версия приложения — `app=employee`.
+
+Сборка заказа (С6–С9), право `orders.manage`. В заказе: `picker_id`, `picker_name`, `picking_started_at`,
+`items_count`, `picked_count` (строк собрано целиком), `bags`, `handed_at`; в строках `picked_qty`, `barcodes`,
+`is_fractional`, `image`. Заказ в сборке у другого сотрудника — 409 `taken` (`details.picker_id`, `picker_name`;
+владелец может доделать).
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| POST | `/store/orders/{id}/take` | «Взять в сборку»: оплаченный заказ сразу принимается, принятый — в сборку; закрепляется за сотрудником |
+| POST | `/store/orders/{id}/lines/{line}/pick` | `{qty}` — сколько собрано в строке (скан, наклейка весов, нажатие); больше заказанного не записывается; 0 — снять |
+| POST | `/store/orders/{id}/lines/{line}/remove` | «Нет на полке» → убрать строку: `{zero_stock?}` → `{order, zero_stocked}`. Резерв снимается, сумма и деньги заказа в балансе пересчитываются, покупателю — пуш «Заказ №… изменён», в истории — заметка. `zero_stock` (с правом `inventory.manage`) — инвентаризация товара с фактом 0, проводится сразу: покупатели перестают его видеть. Пока только у заказов «наличными курьеру» (оплаченный картой — 409 `card_paid`); последняя строка — 409 `last_line` (отмените заказ) |
+| POST | `/store/orders/{id}/picked` | как раньше + `{bags}` (0–99) — пакетов для курьера |
+| POST | `/store/orders/{id}/handed` | «Передал курьеру» (собран или в пути): `handed_at` и заметка в истории; курьер подтверждает у себя |
+
+Сотрудник (`/store/staff/*`):
+
+| Метод | Путь | Право | Описание |
+| --- | --- | --- | --- |
+| GET | `/store/staff/glance?store_id=&code=` или `&product_id=` | любое из `sales.pos`, `inventory.manage`, `orders.manage`, `prices.manage` | шторка сканера (С5): `{product_id, name, image, barcode, category, unit_short, is_fractional, in_store, price (касса; null — не задана), price_changed_at, qty, uncounted, short (продано сверх остатка после подсчёта), sold_7d, days_left, weight (кг с наклейки весов), can_price, can_count}`. `code` — штрихкод, наклейка весов (префикс сети · номер на весах · вес) или код маркировки (01 + GTIN). Цены закупки нет. Не нашли — 404 |
+| GET | `/store/staff/tasks?store_id=` | то же | автозадачи (видят `inventory.manage` и владелец, у остальных — нули): `{negative, uncounted, price_tags, price_tags_changed_at, incoming [{document_id, number, supplier, supplier_id, items_count, total, created_at}] (приходы от агентов ждут приёмки), done [{kind, title, at}] (что сотрудник сделал сегодня), open}`. Товары в минусе и непосчитанные — списками `/store/start/count/items?set=negative\|uncounted`, пересчёт — `POST /store/start/count` (проводится сразу) |
+| GET | `/store/staff/price-tags?store_id=` | `inventory.manage` или `prices.manage` | «Поменять ценники»: цена на кассе поменялась документом цен за 30 дней (первая цена товара — не в счёт), ценник не отмечен: `{items: [{product_id, name, image, barcode, unit_short, old_price, price, changed_at}]}` |
+| POST | `/store/staff/price-tags` | то же | `{store_id, product_ids}` (1–500) — «ценник поменял» → `{marked}`; товар уходит из задачи до следующей смены цены |
+| POST | `/store/staff/write-off` | `inventory.manage` | списание (С11), проводится сразу: `{store_id, product_id, qty, reason: expired\|defect\|broken\|spoiled\|other, photos: [url из /store/uploads, ≥1], comment}` (`other` — с комментарием) → 201 `{document {id, number}, product (как glance)}`. Не хватает по учёту — 409 `insufficient_stock` |
+| GET | `/store/staff/day?store_id=` | любое из прав выше | «Мой день» (С13): `{sales, receipts, average, orders_picked, write_offs, counted}` за сегодня (Ташкент) |
+
+Складские документы: поле `photos` (до 6 ссылок) в `POST/PATCH /store/inventory/documents` и в ответе.

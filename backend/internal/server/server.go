@@ -46,6 +46,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/reports"
 	"github.com/sanedidi/super-market/backend/internal/sales"
 	"github.com/sanedidi/super-market/backend/internal/setup"
+	"github.com/sanedidi/super-market/backend/internal/staff"
 	"github.com/sanedidi/super-market/backend/internal/start"
 	"github.com/sanedidi/super-market/backend/internal/summary"
 	"github.com/sanedidi/super-market/backend/internal/supply"
@@ -192,6 +193,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		account.NewModule(account.NewService(pool, idSvc, notify.New(pool, tg, log), log), auth, log),
 		invest.NewModule(invest.NewService(pool), auth, log),
 		appversions.NewModule(appversions.NewService(pool), auth, log),
+		staff.NewModule(staff.NewService(pool, invSvc), auth, log),
 	)
 	// Агент помощника ходит в API панели внутренним запросом — ему нужен весь сервер.
 	assistSvc.SetHandler(h)

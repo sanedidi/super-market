@@ -108,6 +108,7 @@ type Document struct {
 	PostedAt     *time.Time `json:"posted_at"`
 	CreatedAt    time.Time  `json:"created_at"`
 	ItemsCount   int        `json:"items_count"`
+	Photos       []string   `json:"photos"`
 	Items        []Item     `json:"items,omitempty"`
 }
 
@@ -116,7 +117,7 @@ const docSelect = `
 	       d.counterparty_id, c.name, d.currency, d.rate::text, d.reason, d.note, CASE WHEN d.status = 'draft' THEN COALESCE((SELECT sum(i.qty * i.price) FROM stock_document_items i WHERE i.document_id = d.id), 0)::numeric(18,2) ELSE d.total END::text,
 	       e.full_name, d.posted_at, d.created_at,
 	       (SELECT count(*) FROM stock_document_items i WHERE i.document_id = d.id)::int,
-	       d.to_store_id, ts.name, d.supply_order_id, d.source_shipment_id, d.received_at, d.received_diff::text
+	       d.to_store_id, ts.name, d.supply_order_id, d.source_shipment_id, d.received_at, d.received_diff::text, d.photos
 	FROM stock_documents d
 	LEFT JOIN stores ts     ON ts.id = d.to_store_id
 	JOIN warehouses w       ON w.id = d.warehouse_id
@@ -129,7 +130,7 @@ func scanDoc(row pgx.CollectableRow) (Document, error) {
 	err := row.Scan(&d.ID, &d.Type, &d.Number, &d.Status, &d.WarehouseID, &d.WarehouseName, &d.StoreID,
 		&d.ToWarehouseID, &d.ToWarehouseName, &d.CounterpartyID, &d.CounterpartyName, &d.Currency, &d.Rate,
 		&d.Reason, &d.Note, &d.Total, &d.CreatedBy, &d.PostedAt, &d.CreatedAt, &d.ItemsCount,
-		&d.ToStoreID, &d.ToStoreName, &d.SupplyOrderID, &d.SourceShipmentID, &d.ReceivedAt, &d.ReceivedDiff)
+		&d.ToStoreID, &d.ToStoreName, &d.SupplyOrderID, &d.SourceShipmentID, &d.ReceivedAt, &d.ReceivedDiff, &d.Photos)
 	d.TypeTitle = typeTitles[d.Type].RU
 	return d, err
 }
@@ -226,6 +227,31 @@ type Input struct {
 	Reason    *string      `json:"reason"`
 	Note      *string      `json:"note"`
 	Items     *[]ItemInput `json:"items"`
+	// Photos — фото к документу (ссылки из /store/uploads, до 6): списание
+	// из «SM Сотрудник» — брак, просрочка.
+	Photos *[]string `json:"photos"`
+}
+
+// checkPhotos — до 6 ссылок на загруженные фото.
+func checkPhotos(photos *[]string) ([]string, error) {
+	out := []string{}
+	if photos == nil {
+		return out, nil
+	}
+	if len(*photos) > 6 {
+		return nil, apperr.Validation("photos: не больше 6 фото").Uz("photos: 6 tadan koʻp boʻlmasin")
+	}
+	for _, u := range *photos {
+		u = strings.TrimSpace(u)
+		if u == "" {
+			continue
+		}
+		if len(u) > 1000 || !(strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://")) {
+			return nil, apperr.Validation("photos: неверная ссылка на фото").Uz("photos: rasm havolasi notoʻgʻri")
+		}
+		out = append(out, u)
+	}
+	return out, nil
 }
 
 // Create создаёт черновик документа.
@@ -300,13 +326,17 @@ func (s *Service) CreateTx(ctx context.Context, tx pgx.Tx, p *identity.Principal
 	if in.Note != nil {
 		note = strings.TrimSpace(*in.Note)
 	}
+	photos, err := checkPhotos(in.Photos)
+	if err != nil {
+		return "", err
+	}
 	var id string
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO stock_documents (network_id, type, number, warehouse_id, to_warehouse_id, counterparty_id,
-		                             currency, reason, note, created_by, to_store_id, supply_order_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+		                             currency, reason, note, created_by, to_store_id, supply_order_id, photos)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
 		p.NetworkID, in.Type, n, *in.WarehouseID, in.ToWarehouseID, in.CounterpartyID,
-		currency, reason, note, p.EmployeeID, in.ToStoreID, supplyOrderID).Scan(&id); err != nil {
+		currency, reason, note, p.EmployeeID, in.ToStoreID, supplyOrderID, photos).Scan(&id); err != nil {
 		return "", err
 	}
 	if in.Items != nil {
@@ -461,6 +491,15 @@ func (s *Service) Update(ctx context.Context, p *identity.Principal, id string, 
 		}
 		if err := s.checkHeader(ctx, tx, p, merged); err != nil {
 			return err
+		}
+		if in.Photos != nil {
+			photos, err := checkPhotos(in.Photos)
+			if err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `UPDATE stock_documents SET photos = $2 WHERE id = $1`, id, photos); err != nil {
+				return err
+			}
 		}
 		if _, err := tx.Exec(ctx, `
 			UPDATE stock_documents SET counterparty_id = $2, currency = $3, reason = $4, note = COALESCE($5, note)
