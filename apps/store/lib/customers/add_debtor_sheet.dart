@@ -269,7 +269,7 @@ class _AddDebtorSheetState extends State<AddDebtorSheet> {
               _Hint(
                 Icons.event_outlined,
                 _debt > 0 && d?['due_date'] != null
-                    ? tr('Срок прежний: вернуть до ${shortDate(d['due_date'])}', 'Muddat oʻsha: ${shortDate(d['due_date'])} gacha qaytarish')
+                    ? tr('Срок прежний: вернуть до ${shortDate(d!['due_date'])}', 'Muddat oʻsha: ${shortDate(d['due_date'])} gacha qaytarish')
                     : _termDays != null
                         ? tr('Вернуть до ${shortDate(DateTime.now().add(Duration(days: _termDays!)).toIso8601String())} — срок $_termDays дней из настроек долгов',
                             '${shortDate(DateTime.now().add(Duration(days: _termDays!)).toIso8601String())} gacha qaytarish — qarz sozlamalaridagi $_termDays kunlik muddat')
