@@ -491,6 +491,111 @@ String? printable(KeyEvent e) {
 
 bool isEnter(KeyEvent e) => e.logicalKey == LogicalKeyboardKey.enter || e.logicalKey == LogicalKeyboardKey.numpadEnter;
 
+/// Подсказка, когда сканер «напечатал» штрихкод в поле суммы, цены или
+/// количества: в поле его не записали.
+String get scanRejected => tr('Это штрихкод — в поле его не записали. Цифры наберите руками',
+    'Bu shtrix-kod — maydonga yozilmadi. Raqamlarni qoʻlda tering');
+
+/// Сканер в поле с цифрами (сумма, цена, количество, пересчёт ящика):
+/// штрихкод не должен стать суммой, а его Enter — подтверждением.
+///
+/// Сканер «печатает» код быстрее [maxGap] на символ — человек так не может.
+/// Перед каждой «пачкой» символов экран отдаёт снимок своих полей
+/// ([snapshot] возвращает, как их вернуть). Как только пачка дотянула до
+/// [minLength] быстрых символов — это сканер: поля откатываются, остаток кода
+/// и его Enter глотаются, а код целиком уходит в [onScan] (там экран пишет
+/// подсказку или, например, ищет покупателя по QR).
+///
+/// В обработчике клавиш — первой строкой: `if (_scan.key(e)) return …handled;`
+class ScanGuard {
+  ScanGuard({
+    required this.snapshot,
+    required this.onScan,
+    this.maxGap = const Duration(milliseconds: 50),
+    this.minLength = 6,
+  });
+
+  final VoidCallback Function() snapshot;
+  final void Function(String code) onScan;
+  final Duration maxGap;
+  final int minLength;
+
+  /// Сканер без Enter в конце: код кончился, если символов нет столько.
+  static const _tail = Duration(milliseconds: 200);
+
+  /// Часы на случай, если платформа не даёт время события.
+  static final _clock = Stopwatch()..start();
+
+  Duration? _last;
+  String _burst = '';
+  VoidCallback? _restore;
+  bool _scanning = false;
+  Timer? _timer;
+
+  /// true — событие съел сканер, экрану его не обрабатывать.
+  bool key(KeyEvent e) {
+    if (e is KeyUpEvent) return false;
+    // Shift сканер жмёт сам для заглавных букв кода — пачку не прерывает.
+    if (e.logicalKey == LogicalKeyboardKey.shiftLeft || e.logicalKey == LogicalKeyboardKey.shiftRight) return _scanning;
+    final at = e.timeStamp == Duration.zero ? _clock.elapsed : e.timeStamp;
+    final ch = printable(e);
+    if (_scanning) {
+      if (isEnter(e)) {
+        _finish();
+        return true;
+      }
+      if (ch != null && e is KeyDownEvent) {
+        _burst += ch;
+        _last = at;
+        _wait();
+        return true;
+      }
+      _finish(); // другая клавиша — код кончился, её обрабатывает экран
+    }
+    // Удержанная клавиша («0000…») — это человек.
+    if (ch == null || e is KeyRepeatEvent) {
+      _reset();
+      return false;
+    }
+    final last = _last;
+    if (last == null || at - last > maxGap) {
+      _burst = '';
+      _restore = snapshot();
+    }
+    _burst += ch;
+    _last = at;
+    if (_burst.length < minLength) return false;
+    _restore?.call();
+    _restore = null;
+    _scanning = true;
+    _wait();
+    return true;
+  }
+
+  void _wait() {
+    _timer?.cancel();
+    _timer = Timer(_tail, _finish);
+  }
+
+  void _finish() {
+    _timer?.cancel();
+    _timer = null;
+    if (!_scanning) return;
+    final code = _burst;
+    _reset();
+    onScan(code);
+  }
+
+  void _reset() {
+    _scanning = false;
+    _burst = '';
+    _last = null;
+    _restore = null;
+  }
+
+  void dispose() => _timer?.cancel();
+}
+
 /// Цифровая клавиатура на экране — для планшета и мышки.
 class NumPad extends StatelessWidget {
   const NumPad({super.key, required this.onDigit, required this.onBackspace, this.extra});

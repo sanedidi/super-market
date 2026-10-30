@@ -243,9 +243,11 @@ class _Input {
   }
 }
 
-/// Клавиши окна: Enter, Esc и печатаемые символы.
-KeyEventResult _keys(KeyEvent e, {required VoidCallback onEnter, required void Function(String ch) onChar}) {
+/// Клавиши окна: Enter, Esc и печатаемые символы. [scan] — штрихкод со
+/// сканера не попадает в поле и не нажимает Enter ([ScanGuard]).
+KeyEventResult _keys(KeyEvent e, {required VoidCallback onEnter, required void Function(String ch) onChar, ScanGuard? scan}) {
   if (e is KeyUpEvent) return KeyEventResult.ignored;
+  if (scan != null && scan.key(e)) return KeyEventResult.handled;
   final k = e.logicalKey;
   if (isEnter(e)) {
     onEnter();
@@ -262,6 +264,28 @@ KeyEventResult _keys(KeyEvent e, {required VoidCallback onEnter, required void F
   }
   return KeyEventResult.ignored; // Esc закрывает окно сам
 }
+
+/// Сканер в окне с полями [fields]: штрихкод не становится суммой —
+/// поля откатываются, в окне — подсказка через [onError].
+ScanGuard _guard(State s, List<_Input> fields, void Function(String text) onError, {void Function(String code)? onCode}) => ScanGuard(
+      snapshot: () {
+        final before = [for (final f in fields) f.value];
+        return () {
+          for (var i = 0; i < fields.length; i++) {
+            fields[i].value = before[i];
+          }
+        };
+      },
+      onScan: (code) {
+        if (!s.mounted) return;
+        SystemSound.play(SystemSoundType.alert);
+        if (onCode != null) {
+          onCode(code);
+        } else {
+          onError(scanRejected);
+        }
+      },
+    );
 
 // ------------------------------------------------------------------ оплата
 
@@ -287,6 +311,18 @@ class _PayScreenState extends State<PayScreen> {
   /// Сканер печатает QR покупателя («99…», 20 цифр) — копим отдельно от суммы.
   String _raw = '';
   Duration? _rawAt;
+
+  /// Сканер в окне оплаты: QR покупателя — в долг, штрихкод товара — не сумма.
+  late final _scan = _guard(this, [_input], (t) => setState(() => _error = t), onCode: (code) {
+    _raw = '';
+    final qr = parseClientQr(code);
+    if (qr != null) {
+      setState(() => _input.value = '');
+      _debt(qr: qr.payload);
+    } else {
+      setState(() => _error = scanRejected);
+    }
+  });
 
   SaleController get sale => widget.sale;
   int get _amount => parseMoney(_input.value);
@@ -385,6 +421,7 @@ class _PayScreenState extends State<PayScreen> {
 
   KeyEventResult _onKey(FocusNode _, KeyEvent e) {
     if (e is KeyUpEvent) return KeyEventResult.ignored;
+    if (_scan.key(e)) return KeyEventResult.handled;
     final k = e.logicalKey;
     final at = _rawAt;
     if (at != null && e.timeStamp - at > const Duration(milliseconds: 500)) _raw = '';
@@ -781,6 +818,7 @@ class _QtyDialog extends StatefulWidget {
 class _QtyDialogState extends State<_QtyDialog> {
   late final _Input _input;
   String? _error;
+  late final _scan = _guard(this, [_input], (t) => setState(() => _error = t));
 
   @override
   void initState() {
@@ -810,7 +848,7 @@ class _QtyDialogState extends State<_QtyDialog> {
     final p = line.product;
     return Focus(
       autofocus: true,
-      onKeyEvent: (_, e) => _keys(e, onEnter: _submit, onChar: _key),
+      onKeyEvent: (_, e) => _keys(e, onEnter: _submit, onChar: _key, scan: _scan),
       child: _Shell(
         width: 520,
         title: tr('Количество', 'Miqdor'),
@@ -854,6 +892,7 @@ class _PriceDialogState extends State<_PriceDialog> {
   final _input = _Input(max: 9);
   bool _busy = false;
   String? _error;
+  late final _scan = _guard(this, [_input], (t) => setState(() => _error = t));
 
   void _key(String k) {
     if (_busy) return;
@@ -886,7 +925,7 @@ class _PriceDialogState extends State<_PriceDialog> {
     final ready = can && parseMoney(_input.value) > 0;
     return Focus(
       autofocus: true,
-      onKeyEvent: (_, e) => _keys(e, onEnter: ready ? _submit : () {}, onChar: _key),
+      onKeyEvent: (_, e) => _keys(e, onEnter: ready ? _submit : () {}, onChar: _key, scan: _scan),
       child: _Shell(
         width: 520,
         title: tr('У товара нет цены', 'Mahsulot narxi yoʻq'),
@@ -984,6 +1023,23 @@ class _UnknownDialogState extends State<_UnknownDialog> {
   bool _latin = Lang.instance.isUz;
   String? _error;
 
+  /// Повторный скан — не цена и не название.
+  late final _scan = ScanGuard(
+    snapshot: () {
+      final price = _price.value, name = _name, naming = _naming;
+      return () {
+        _price.value = price;
+        _name = name;
+        _naming = naming;
+      };
+    },
+    onScan: (_) {
+      if (!mounted) return;
+      SystemSound.play(SystemSoundType.alert);
+      setState(() => _error = scanRejected);
+    },
+  );
+
   int get _value => parseMoney(_price.value);
 
   void _priceKey(String k) {
@@ -1025,6 +1081,7 @@ class _UnknownDialogState extends State<_UnknownDialog> {
 
   KeyEventResult _onKey(KeyEvent e) {
     if (e is KeyUpEvent) return KeyEventResult.ignored;
+    if (_scan.key(e)) return KeyEventResult.handled;
     final k = e.logicalKey;
     if (isEnter(e)) {
       _submit();
@@ -1220,6 +1277,7 @@ class _DiscountDialogState extends State<_DiscountDialog> {
   late bool _all = widget.all;
   bool _percent = true;
   String? _error;
+  late final _scan = _guard(this, [_input], (t) => setState(() => _error = t));
 
   void _key(String k) {
     if (k == '%') {
@@ -1259,7 +1317,7 @@ class _DiscountDialogState extends State<_DiscountDialog> {
           Navigator.of(context).pop();
           return KeyEventResult.handled;
         }
-        return _keys(e, onEnter: _submit, onChar: _key);
+        return _keys(e, onEnter: _submit, onChar: _key, scan: _scan);
       },
       child: _Shell(
         width: 560,
@@ -1323,6 +1381,7 @@ class _ItemDialog extends StatefulWidget {
 class _ItemDialogState extends State<_ItemDialog> {
   late final _Input _input;
   String? _error;
+  late final _scan = _guard(this, [_input], (t) => setState(() => _error = t));
 
   CartLine get line => widget.line;
   bool get _weight => line.product.fractional;
@@ -1435,7 +1494,7 @@ class _ItemDialogState extends State<_ItemDialog> {
           _key('-');
           return KeyEventResult.handled;
         }
-        return _keys(e, onEnter: _done, onChar: _key);
+        return _keys(e, onEnter: _done, onChar: _key, scan: _scan);
       },
       child: _Shell(
         width: 620,
@@ -1558,6 +1617,17 @@ class _DebtDialogState extends State<_DebtDialog> {
   String _burst = '';
   String _phoneBefore = '';
   String _amountBefore = '';
+
+  /// Номер и сумма: QR покупателя — ищем его, штрихкод товара — не сумма долга.
+  late final _scan = _guard(this, [_phone, _amount], (t) => setState(() => _error = t), onCode: (code) {
+    _burst = '';
+    final qr = parseClientQr(code);
+    if (qr != null) {
+      _lookupQr(qr.payload);
+    } else {
+      setState(() => _error = scanRejected);
+    }
+  });
 
   String _restKind = 'cash';
   String? _channel;
@@ -1866,6 +1936,8 @@ class _DebtDialogState extends State<_DebtDialog> {
           }
           return KeyEventResult.ignored;
         }
+        // На шаге «Отсканируйте QR» сканер — по делу; дальше — номер и сумма.
+        if (!qrStage && _scan.key(e)) return KeyEventResult.handled;
         final ch = printable(e);
         if (ch != null && ch != ' ') _track(ch);
         if (qrStage) {
@@ -2253,6 +2325,28 @@ mixin _PriceWithPin<T extends StatefulWidget> on State<T> {
   bool busy = false;
   String? error;
 
+  /// Скан в окне цены — не новая цена и не ПИН (иначе Enter сканера
+  /// сохранил бы штрихкод ценой во всём магазине).
+  late final scan = ScanGuard(
+    snapshot: () {
+      final p = price.value, n = pin;
+      final more = snapshotMore();
+      return () {
+        price.value = p;
+        pin = n;
+        more();
+      };
+    },
+    onScan: (_) {
+      if (!mounted) return;
+      SystemSound.play(SystemSoundType.alert);
+      setState(() => error = scanRejected);
+    },
+  );
+
+  /// Другие поля окна для отката скана; вернуть — как их восстановить.
+  VoidCallback snapshotMore() => () {};
+
   SaleController get saleCtl;
   bool get needPin => !saleCtl.canPrice;
   int get value => parseMoney(price.value);
@@ -2366,6 +2460,7 @@ class _ChangePriceDialogState extends State<_ChangePriceDialog> with _PriceWithP
 
   KeyEventResult _onKey(KeyEvent e) {
     if (e is KeyUpEvent) return KeyEventResult.ignored;
+    if (scan.key(e)) return KeyEventResult.handled;
     final k = e.logicalKey;
     if (needPin && (k == LogicalKeyboardKey.tab || k == LogicalKeyboardKey.arrowUp || k == LogicalKeyboardKey.arrowDown)) {
       setState(() => pinField = !pinField);
@@ -2462,6 +2557,15 @@ class _FoundDialogState extends State<_FoundDialog> with _PriceWithPin<_FoundDia
 
   FoundCandidate get _c => _items[_sel];
 
+  @override
+  VoidCallback snapshotMore() {
+    final name = _name, edited = _edited;
+    return () {
+      _name = name;
+      _edited = edited;
+    };
+  }
+
   void _select(int i) {
     if (busy || i < 0 || i >= _items.length) return;
     setState(() {
@@ -2531,6 +2635,7 @@ class _FoundDialogState extends State<_FoundDialog> with _PriceWithPin<_FoundDia
 
   KeyEventResult _onKey(KeyEvent e) {
     if (e is KeyUpEvent) return KeyEventResult.ignored;
+    if (scan.key(e)) return KeyEventResult.handled;
     final k = e.logicalKey;
     if (isEnter(e)) {
       _submit();
@@ -2976,6 +3081,7 @@ class _WeighDialog extends StatefulWidget {
 class _WeighDialogState extends State<_WeighDialog> {
   final _input = _Input(max: 5, decimals: 3);
   String? _error;
+  late final _scan = _guard(this, [_input], (t) => setState(() => _error = t));
 
   int get _qty => weighQty(_input.value);
 
@@ -3016,7 +3122,7 @@ class _WeighDialogState extends State<_WeighDialog> {
         );
     return Focus(
       autofocus: true,
-      onKeyEvent: (_, e) => _keys(e, onEnter: qty > 0 ? _submit : () {}, onChar: _key),
+      onKeyEvent: (_, e) => _keys(e, onEnter: qty > 0 ? _submit : () {}, onChar: _key, scan: _scan),
       child: _Shell(
         width: 560,
         title: p.name,

@@ -44,6 +44,24 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
   bool _busy = false;
   String? _error;
 
+  /// Сканер на этом экране: штрихкод не становится суммой в ящике, а его
+  /// Enter не сверяет и не закрывает день.
+  late final _scan = ScanGuard(
+    snapshot: () {
+      final input = _input, counting = _counting, revealed = _revealed;
+      return () {
+        _input = input;
+        _counting = counting;
+        _revealed = revealed;
+      };
+    },
+    onScan: (_) {
+      if (!mounted) return;
+      SystemSound.play(SystemSoundType.alert);
+      setState(() => _error = scanRejected);
+    },
+  );
+
   int get _counted => parseMoney(_input);
 
   bool get _required => context.read<PosController>().catalog.settings.requireRecount;
@@ -52,6 +70,12 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
   void initState() {
     super.initState();
     _counting = context.read<PosController>().catalog.settings.requireRecount;
+  }
+
+  @override
+  void dispose() {
+    _scan.dispose();
+    super.dispose();
   }
 
   void _type(String d) {
@@ -133,6 +157,7 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
 
   bool _onKey(KeyEvent e) {
     if (_busy) return true;
+    if (_scan.key(e)) return true;
     final k = e.logicalKey;
     final ch = printable(e);
     if (k == LogicalKeyboardKey.escape) {

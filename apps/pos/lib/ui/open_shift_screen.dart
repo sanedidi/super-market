@@ -21,6 +21,26 @@ class _OpenShiftScreenState extends State<OpenShiftScreen> {
   String _input = '';
   bool _busy = false;
   String? _error;
+
+  /// Штрихкод со сканера — не размен в ящике.
+  late final _scan = ScanGuard(
+    snapshot: () {
+      final input = _input;
+      return () => _input = input;
+    },
+    onScan: (_) {
+      if (!mounted) return;
+      SystemSound.play(SystemSoundType.alert);
+      setState(() => _error = scanRejected);
+    },
+  );
+
+  @override
+  void dispose() {
+    _scan.dispose();
+    super.dispose();
+  }
+
   // Размен, оставленный при сдаче кассы (Figma «Финансы понятно», Ф2):
   // подставляем его, кассиру вводить не нужно.
   String? _left;
@@ -92,6 +112,7 @@ class _OpenShiftScreenState extends State<OpenShiftScreen> {
   }
 
   bool _onKey(KeyEvent e) {
+    if (_scan.key(e)) return true;
     final k = e.logicalKey;
     if (isEnter(e)) {
       _open();
@@ -111,7 +132,10 @@ class _OpenShiftScreenState extends State<OpenShiftScreen> {
     }
     final ch = printable(e);
     if (ch != null && RegExp(r'^[0-9]$').hasMatch(ch) && _input.length < 10) {
-      setState(() => _input += ch);
+      setState(() {
+        _input += ch;
+        _error = null;
+      });
       return true;
     }
     return false;
@@ -184,7 +208,12 @@ class _OpenShiftScreenState extends State<OpenShiftScreen> {
   }
 
   void _onDigit(String d) {
-    if (_input.length < 10) setState(() => _input += d);
+    if (_input.length < 10) {
+      setState(() {
+        _input += d;
+        _error = null;
+      });
+    }
   }
 
   void _back() {

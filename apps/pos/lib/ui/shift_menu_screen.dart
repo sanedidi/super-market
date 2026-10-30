@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -29,6 +31,41 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
   String? _move;
   String _input = '';
   String? _error;
+
+  /// Пункт меню цифрой срабатывает через миг: если следом летят ещё цифры —
+  /// это сканер (штрихкод «4780…» не должен сменить кассира или закрыть день).
+  Timer? _pending;
+  late final _menuScan = ScanGuard(
+    minLength: 2,
+    snapshot: () => () {
+      _pending?.cancel();
+      _pending = null;
+    },
+    onScan: _scanned,
+  );
+
+  /// Сумма внесения/изъятия: штрихкод — не сумма, его Enter — не «провести».
+  late final _amountScan = ScanGuard(
+    snapshot: () {
+      final input = _input;
+      return () => _input = input;
+    },
+    onScan: _scanned,
+  );
+
+  void _scanned(String _) {
+    if (!mounted) return;
+    SystemSound.play(SystemSoundType.alert);
+    setState(() => _error = scanRejected);
+  }
+
+  @override
+  void dispose() {
+    _pending?.cancel();
+    _menuScan.dispose();
+    _amountScan.dispose();
+    super.dispose();
+  }
 
   PosController get pos => context.read<PosController>();
 
@@ -137,6 +174,7 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
     final k = e.logicalKey;
     final ch = printable(e);
     if (_move != null) {
+      if (_amountScan.key(e)) return true;
       if (isEnter(e)) {
         _confirmMove();
       } else if (k == LogicalKeyboardKey.escape) {
@@ -152,10 +190,22 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
       }
       return true;
     }
+    if (_menuScan.key(e)) return true;
     if (k == LogicalKeyboardKey.escape || k == LogicalKeyboardKey.f11) {
       Navigator.of(context).pop();
       return true;
     }
+    if (ch == null || !RegExp(r'^[0-9]$').hasMatch(ch) || (ch == '0' && pos.failed == 0)) return false;
+    _pending?.cancel();
+    _pending = Timer(const Duration(milliseconds: 80), () {
+      _pending = null;
+      if (mounted && _move == null) _menu(ch);
+    });
+    return true;
+  }
+
+  /// Пункт меню по цифре.
+  void _menu(String ch) {
     switch (ch) {
       case '1':
         setState(() => _move = 'in');
@@ -176,12 +226,8 @@ class _ShiftMenuScreenState extends State<ShiftMenuScreen> {
       case '9':
         _language();
       case '0':
-        if (pos.failed == 0) return false;
-        showRejectedDialog(context);
-      default:
-        return false;
+        if (pos.failed > 0) showRejectedDialog(context);
     }
-    return true;
   }
 
   @override
