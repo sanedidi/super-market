@@ -174,8 +174,13 @@ class _SaleScreenState extends State<SaleScreen> {
   /// Плитка группы вариаций: окно выбора веса и вкуса (Figma «Ва4»).
   Future<void> _openGroup(QuickTile tile) async {
     if (sale.busy || sale.mode == SaleMode.held) return;
+    String cart() => '${sale.cart.count}:${sale.cart.subtotal}';
+    final before = cart();
     await showVariantDialog(context, sale, tile);
-    if (mounted) _focus.requestFocus();
+    if (!mounted) return;
+    // Вкус выбран и попал в чек — «Быстрые товары» закрываются; Esc в окне вкусов — остаёмся.
+    if (cart() != before) _setQuick(false);
+    _focus.requestFocus();
   }
 
   Future<void> _closeShift() async {
@@ -1368,7 +1373,11 @@ class _QuickOverlayState extends State<_QuickOverlay> {
             product: p,
             pinned: pinned.contains(p.id),
             inCart: sale.inCart(p.id),
-            onTap: () => sale.tapProduct(p),
+            // Выбрал товар — окно закрывается сразу, кассир снова видит чек.
+            onTap: () {
+              sale.tapProduct(p);
+              widget.onClose();
+            },
             onLongPress: widget.onQuickKeys,
           );
         }
