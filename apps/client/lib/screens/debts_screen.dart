@@ -442,11 +442,13 @@ class _EntryTile extends StatelessWidget {
           '${tr('Оплата', 'Toʻlov')}${'${e['detail'] ?? ''}'.isNotEmpty ? ' · ${'${e['detail']}'.toLowerCase()}' : ''}'
         ),
       'return' => (Icons.assignment_return_rounded, tr('Возврат товара', 'Mahsulot qaytarildi')),
+      'manual' => (Icons.edit_note_rounded, tr('Долг записан магазином', 'Qarzni doʻkon yozdi')),
       _ => (Icons.remove_circle_outline_rounded, tr('Долг списан магазином', 'Doʻkon qarzni hisobdan chiqardi')),
     };
     final sub = [
       if (at != null) _short(at),
       if (e['doc_type'] == 'sale' && no != null) tr('чек № $no', 'chek № $no'),
+      if (e['doc_type'] == 'manual' && '${e['detail'] ?? ''}'.isNotEmpty) '${e['detail']}',
     ].join(' · ');
     final sale = e['sale'] as Map<String, dynamic>?;
     final items = ((sale?['items'] as List?) ?? const []).cast<Map<String, dynamic>>();

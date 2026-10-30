@@ -330,11 +330,12 @@ class _EntryRow extends StatelessWidget {
       'sale' => (Icons.shopping_basket_outlined, '${tr('В долг', 'Qarzga')}${no != null ? ' · ${tr('чек', 'chek')} № $no' : ''}'),
       'payment' => (Icons.payments_outlined, '${tr('Оплата', 'Toʻlov')}${'${e['detail'] ?? ''}'.isNotEmpty ? ' · ${e['detail']}' : ''}'),
       'return' => (Icons.assignment_return_outlined, '${tr('Возврат', 'Qaytarish')}${no != null ? ' № $no' : ''}'),
+      'manual' => (Icons.edit_note_rounded, '${tr('Внесён вручную', 'Qoʻlda kiritilgan')}${no != null ? ' № $no' : ''}'),
       _ => (Icons.remove_circle_outline_rounded, tr('Списание', 'Hisobdan chiqarish')),
     };
     final sub = [
       dateTime(e['created_at']),
-      if (e['doc_type'] == 'sale' || e['doc_type'] == 'return' || e['doc_type'] == 'writeoff')
+      if (e['doc_type'] == 'sale' || e['doc_type'] == 'return' || e['doc_type'] == 'writeoff' || e['doc_type'] == 'manual')
         if ('${e['detail'] ?? ''}'.isNotEmpty) '${e['detail']}',
       if ('${e['employee'] ?? ''}'.isNotEmpty) '${e['employee']}',
     ].join(' · ');

@@ -224,8 +224,8 @@ func (s *Service) ClientDispute(ctx context.Context, p *identity.Principal, entr
 		if err != nil {
 			return err
 		}
-		if docType != DocSale {
-			return apperr.Validation("оспорить можно только покупку в долг").Uz("faqat qarzga qilingan xarid ustidan eʼtiroz bildirish mumkin")
+		if docType != DocSale && docType != DocManual {
+			return apperr.Validation("оспорить можно только запись долга").Uz("faqat qarz yozuvi ustidan eʼtiroz bildirish mumkin")
 		}
 		tag, err := tx.Exec(ctx, `
 			INSERT INTO debt_disputes (network_id, entry_id, user_id, comment) VALUES ($1, $2, $3, $4)

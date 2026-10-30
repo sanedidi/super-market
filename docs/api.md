@@ -1080,7 +1080,7 @@ options: [{product_id, weight, flavor, image, price, old_price, discount_percent
 ## Долги покупателей
 
 Магазин продаёт «в долг» покупателю по номеру телефона. Долг считается по журналу `debt_entries`
-(продажа +, оплата −, возврат −, списание −) отдельно по каждой паре «покупатель — магазин»; покупатель
+(продажа +, долг вручную +, оплата −, возврат −, списание −) отдельно по каждой паре «покупатель — магазин»; покупатель
 один на сеть. Срок — `term_days` с первой покупки в долг после последнего нуля. Признак магазина
 `debt_enabled` («Даёт в долг») только показывает или прячет кнопку «В долг» на кассе — покупателям его не отдаём.
 
@@ -1109,6 +1109,8 @@ options: [{product_id, weight, flavor, image, price, old_price, discount_percent
 | GET | `/store/debtors?store_id=&status=all\|overdue\|blocked\|unverified\|disputes&q=` | `debts.manage` или `debts.give` | `items [Balance]`: `debtor_id, phone, full_name, store_id, store_name, amount, limit, available, blocked, verified, since, due_date, overdue_days, last_paid_at, last_reminder_at, open_disputes` — по сумме долга |
 | GET | `/store/debtors/summary?store_id=` | то же | `total, count, overdue, overdue_count, unverified, open_disputes, given_today, given_today_count, paid_today, paid_today_cash, paid_today_other` |
 | GET | `/store/debtors/{id}?store_id=` | то же | карточка: `phone, full_name, credit_limit, blocked, verified, note, has_app, stores [Balance], entries [{id, store_id, store_name, doc_type, doc_id, number, amount, balance, detail, employee, dispute_status, created_at}], sales_count, sales_amount` |
+| GET | `/store/debtors/lookup?store_id=&phone=` | `debts.manage` | для «Добавить должника»: ответ как `GET /pos/debtors` по магазину `store_id` |
+| POST | `/store/debtors` | `debts.manage` | старый долг вручную (например, из тетради): `{store_id, phone, full_name, amount, note}` → `{id, number, debtor_id, phone, full_name, store_id, amount, balance, limit, over_limit, blocked, created, due_date}`. Касса, остатки и прибыль не меняются, в журнале — запись `doc_type = manual` (`detail` — комментарий). Номер уже есть — сумма прибавляется к его долгу, имя не перезаписывается; новому номеру нужно `full_name`. Лимит и стоп-лист не останавливают: `over_limit = true`. Покупателю — push «Записали в долг», запись можно оспорить. «Даёт в долг» не нужен |
 | PATCH | `/store/debtors/{id}` | `debts.manage` | `{full_name, credit_limit (null — по настройкам сети), blocked, note}` |
 | POST | `/store/debtors/{id}/remind` | `debts.manage` | `{store_id}` → `{sent_at, next_at}`; 409 `no_debt`, `no_app`, `too_soon` (не чаще раза в сутки) |
 | POST | `/store/debt-payments` | `debts.manage` | `{debtor_id, store_id, amount, payment_method_id, note}` → `{id, number, amount, payment_method, payment_kind, balance, paid_at}`; деньги — в кассу способа оплаты |
@@ -1124,7 +1126,7 @@ options: [{product_id, weight, flavor, image, price, old_price, discount_percent
 |---|---|---|
 | GET | `/client/debts` | долги по номеру аккаунта во всех сетях: `{total, next_due, stores [{store_id, name, address, phone, logo_url, lat, lng, amount, since, due_date, overdue_days}]}` |
 | GET | `/client/debts/{store_id}` | то же по магазину + `entries [{id, doc_type, number, amount, balance, detail, dispute_status, created_at, sale?: {total, paid, debt, items [{name, qty, unit, total}]}}]` |
-| POST | `/client/debts/entries/{id}/dispute` | `{comment}` — «Это не я» по покупке в долг; владельцу push `{type: debt_dispute, entry_id}`; 409 `already_disputed` |
+| POST | `/client/debts/entries/{id}/dispute` | `{comment}` — «Это не я» по покупке в долг или долгу, внесённому вручную; владельцу push `{type: debt_dispute, entry_id}`; 409 `already_disputed` |
 | GET | `/client/qr` | «Мой QR-код»: `{qr_id, secret (hex), prefix: "99", step: 30, digits: 8, server_time (unix мс)}`. Секрет выдаётся при первом запросе, приложение хранит его и считает QR без интернета |
 | GET | `/client/qr/recent?since=<RFC 3339>` | покупка в долг после `since` (не раньше 10 минут назад) — экран QR показывает «Записано в долг»: `{entry: {id, store_id, store_name, number, amount, created_at, balance, due_date} \| null}` |
 

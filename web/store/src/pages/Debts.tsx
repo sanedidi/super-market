@@ -67,7 +67,7 @@ interface Entry {
   id: number
   store_id: string
   store_name: string
-  doc_type: 'sale' | 'payment' | 'return' | 'writeoff'
+  doc_type: 'sale' | 'payment' | 'return' | 'writeoff' | 'manual'
   number: number | null
   amount: string
   balance: string
@@ -143,6 +143,7 @@ const DOC: Record<Entry['doc_type'], string> = {
   payment: tr('Оплата', 'Toʻlov'),
   return: tr('Возврат', 'Qaytarish'),
   writeoff: tr('Списание', 'Hisobdan chiqarish'),
+  manual: tr('Внесён вручную', 'Qoʻlda kiritilgan'),
 }
 
 type Status = 'all' | 'overdue' | 'unverified' | 'blocked' | 'disputes'

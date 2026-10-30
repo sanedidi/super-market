@@ -158,15 +158,16 @@ type DebtorCard struct {
 // entriesSQL — журнал покупателя с остатком после каждой записи. $1 — покупатель, $2 — магазины.
 const entriesSQL = `
 	SELECT e.id, e.store_id, st.name, e.doc_type, e.doc_id,
-	       COALESCE(sl.number, dp.number, cr.number, wo.number),
+	       COALESCE(sl.number, dp.number, cr.number, wo.number, dm.number),
 	       e.amount::text,
 	       (sum(e.amount) OVER (PARTITION BY e.store_id ORDER BY e.created_at, e.id))::numeric(18,2)::text,
 	       CASE e.doc_type
 	            WHEN 'sale' THEN (SELECT count(*) FROM sale_items si WHERE si.sale_id = sl.id)::text || loc(' поз. · чек ', ' poz. · chek ') || sl.total::numeric(18,0)::text
 	            WHEN 'payment' THEN COALESCE(pm.name, '')
 	            WHEN 'return' THEN loc('возврат по чеку № ', 'chek boʻyicha qaytarish № ') || COALESCE((SELECT s2.number FROM sales s2 WHERE s2.id = cr.sale_id)::text, '')
-	            WHEN 'writeoff' THEN wo.reason END,
-	       COALESCE(es.full_name, ep.full_name, er.full_name, ew.full_name, ''),
+	            WHEN 'writeoff' THEN wo.reason
+	            WHEN 'manual' THEN dm.note END,
+	       COALESCE(es.full_name, ep.full_name, er.full_name, ew.full_name, em.full_name, ''),
 	       COALESCE((SELECT dd.status FROM debt_disputes dd WHERE dd.entry_id = e.id ORDER BY dd.created_at DESC LIMIT 1), ''),
 	       e.created_at
 	FROM debt_entries e
@@ -180,6 +181,8 @@ const entriesSQL = `
 	LEFT JOIN employees er ON er.id = cr.created_by
 	LEFT JOIN debt_writeoffs wo ON e.doc_type = 'writeoff' AND wo.id = e.doc_id
 	LEFT JOIN employees ew ON ew.id = wo.created_by
+	LEFT JOIN debt_manual dm ON e.doc_type = 'manual' AND dm.id = e.doc_id
+	LEFT JOIN employees em ON em.id = dm.created_by
 	WHERE e.debtor_id = $1 AND ($2::uuid[] IS NULL OR e.store_id = ANY($2))`
 
 func scanEntry(r pgx.CollectableRow) (Entry, error) {
@@ -590,14 +593,16 @@ type Dispute struct {
 }
 
 const disputeSelect = `
-	SELECT dd.id, e.id, d.id, d.full_name, d.phone, st.id, st.name, e.amount::text, e.doc_type, sl.number, dd.comment, dd.status,
-	       COALESCE(emp.full_name, ''), e.created_at, dd.created_at, dd.resolved_at
+	SELECT dd.id, e.id, d.id, d.full_name, d.phone, st.id, st.name, e.amount::text, e.doc_type, COALESCE(sl.number, dm.number), dd.comment, dd.status,
+	       COALESCE(emp.full_name, emd.full_name, ''), e.created_at, dd.created_at, dd.resolved_at
 	FROM debt_disputes dd
 	JOIN debt_entries e ON e.id = dd.entry_id
 	JOIN debtors d ON d.id = e.debtor_id
 	JOIN stores st ON st.id = e.store_id
 	LEFT JOIN sales sl ON e.doc_type = 'sale' AND sl.id = e.doc_id
-	LEFT JOIN employees emp ON emp.id = sl.cashier_id`
+	LEFT JOIN employees emp ON emp.id = sl.cashier_id
+	LEFT JOIN debt_manual dm ON e.doc_type = 'manual' AND dm.id = e.doc_id
+	LEFT JOIN employees emd ON emd.id = dm.created_by`
 
 func (s *Service) Disputes(ctx context.Context, p *identity.Principal, storeID, status string) ([]Dispute, error) {
 	if err := p.Require(identity.PermDebtsManage); err != nil {

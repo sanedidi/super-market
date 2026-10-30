@@ -248,7 +248,7 @@ func confirmLike(s string) bool {
 
 var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
-var dangerous = regexp.MustCompile(`/(post|unpost|cancel|payouts?|payments?|handovers?|transfers?|write-off|refunds?|returns?|employees|roles|plan|stores|settings|delivery|debts|operations|cashboxes?|rates|prices?|pin|purge|delete|close|open)(/|$)`)
+var dangerous = regexp.MustCompile(`/(post|unpost|cancel|payouts?|payments?|handovers?|transfers?|write-off|refunds?|returns?|employees|roles|plan|stores|settings|delivery|debts|debtors|operations|cashboxes?|rates|prices?|pin|purge|delete|close|open)(/|$)`)
 
 func isDangerous(method, path string, body map[string]any) bool {
 	if method == http.MethodDelete {

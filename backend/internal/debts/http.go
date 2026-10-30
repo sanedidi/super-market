@@ -29,6 +29,8 @@ func (m *Module) Routes(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppStore), m.auth.Feature(plans.FeatureDebts))
 		r.Get("/store/debtors", m.list)
 		r.Get("/store/debtors/summary", m.summary)
+		r.Get("/store/debtors/lookup", m.lookup)
+		r.Post("/store/debtors", m.addManual)
 		r.Get("/store/debtors/{id}", m.card)
 		r.Patch("/store/debtors/{id}", m.update)
 		r.Post("/store/debtors/{id}/remind", m.remind)
@@ -66,6 +68,19 @@ func (m *Module) list(w http.ResponseWriter, r *http.Request) {
 func (m *Module) summary(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (Summary, error) {
 		return m.svc.Summary(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+	})
+}
+
+func (m *Module) lookup(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (Lookup, error) {
+		q := r.URL.Query()
+		return m.svc.StoreLookup(r.Context(), pr(r), q.Get("store_id"), q.Get("phone"))
+	})
+}
+
+func (m *Module) addManual(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusCreated, "", func(_ string, in ManualInput) (Manual, error) {
+		return m.svc.AddManual(r.Context(), pr(r), in)
 	})
 }
 

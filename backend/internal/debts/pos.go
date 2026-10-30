@@ -44,8 +44,13 @@ func (s *Service) Lookup(ctx context.Context, p *identity.Principal, rawPhone st
 	if err != nil {
 		return out, err
 	}
-	storeID := p.StoreIDs[0]
-	st, err := loadSettings(ctx, s.pool, p.NetworkID)
+	return s.lookup(ctx, p.NetworkID, p.StoreIDs[0], ph)
+}
+
+// lookup — покупатель по номеру в магазине (касса и «Добавить должника»).
+func (s *Service) lookup(ctx context.Context, networkID, storeID, ph string) (Lookup, error) {
+	var out Lookup
+	st, err := loadSettings(ctx, s.pool, networkID)
 	if err != nil {
 		return out, err
 	}
@@ -54,7 +59,7 @@ func (s *Service) Lookup(ctx context.Context, p *identity.Principal, rawPhone st
 		return out, err
 	}
 	var id string
-	err = s.pool.QueryRow(ctx, `SELECT id FROM debtors WHERE network_id = $1 AND phone = $2`, p.NetworkID, ph).Scan(&id)
+	err = s.pool.QueryRow(ctx, `SELECT id FROM debtors WHERE network_id = $1 AND phone = $2`, networkID, ph).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return out, nil
 	}
@@ -62,7 +67,7 @@ func (s *Service) Lookup(ctx context.Context, p *identity.Principal, rawPhone st
 		return out, err
 	}
 	out.Found = true
-	list, err := s.balances(ctx, s.pool, p.NetworkID, []string{storeID}, &id, "")
+	list, err := s.balances(ctx, s.pool, networkID, []string{storeID}, &id, "")
 	if err != nil {
 		return out, err
 	}
@@ -71,7 +76,7 @@ func (s *Service) Lookup(ctx context.Context, p *identity.Principal, rawPhone st
 	} else {
 		// Покупатель есть в сети, но в этом магазине долга не было.
 		b := Balance{DebtorID: id, StoreID: storeID, Amount: "0.00"}
-		limit, blocked, verified, err := effectiveLimit(ctx, s.pool, p.NetworkID, id)
+		limit, blocked, verified, err := effectiveLimit(ctx, s.pool, networkID, id)
 		if err != nil {
 			return out, err
 		}

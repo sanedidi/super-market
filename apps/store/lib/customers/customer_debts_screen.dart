@@ -8,10 +8,12 @@ import '../control/cashiers_screen.dart' show initials, plural;
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
+import 'add_debtor_sheet.dart';
 import 'debt_settings_screen.dart';
 import 'debtor_screen.dart';
 
 // Долги покупателей (Figma С1): кто должен магазину, просрочка, споры.
+// «Добавить должника» — старый долг вручную (Figma «SM Магазин · Долг вручную», Р1–Р6).
 
 const _months = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 const _monthsUz = ['yan', 'fev', 'mar', 'apr', 'may', 'iyn', 'iyl', 'avg', 'sen', 'okt', 'noy', 'dek'];
@@ -96,6 +98,24 @@ class _CustomerDebtsScreenState extends State<CustomerDebtsScreen> {
     if (mounted) _load();
   }
 
+  /// Р2–Р6: шторка «Новый должник», после записи — список заново и сообщение.
+  Future<void> _add() async {
+    final store = context.read<StoreState>().storeId;
+    if (store == null) return;
+    final res = await showAddDebtorSheet(context, store);
+    if (res == null || !mounted) return;
+    final name = '${res['full_name'] ?? ''}'.trim();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(tr('Записано в долг · ${money(res['amount'])}${name.isNotEmpty ? ' · $name' : ''}',
+          'Qarzga yozildi · ${money(res['amount'])}${name.isNotEmpty ? ' · $name' : ''}')),
+    ));
+    setState(() {
+      _status = 'all';
+      _items = null;
+    });
+    _load();
+  }
+
   int _count(String f) {
     final s = _sum;
     if (s == null) return 0;
@@ -116,6 +136,12 @@ class _CustomerDebtsScreenState extends State<CustomerDebtsScreen> {
     final count = (s?['count'] as num?)?.toInt() ?? 0;
     final overdueCount = (s?['overdue_count'] as num?)?.toInt() ?? 0;
     return Scaffold(
+      bottomNavigationBar: st.can('debts.manage')
+          ? SafeArea(
+              minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: BigButton(label: tr('Добавить должника', 'Qarzdor qoʻshish'), icon: Icons.person_add_alt_rounded, height: 52, onPressed: _add),
+            )
+          : null,
       appBar: AppBar(
         title: _search
             ? TextField(
@@ -207,7 +233,8 @@ class _CustomerDebtsScreenState extends State<CustomerDebtsScreen> {
               icon: Icons.handshake_outlined,
               title: _status == 'all' ? tr('Покупатели ничего не должны', 'Xaridorlarning qarzi yoʻq') : tr('Никого нет', 'Hech kim yoʻq'),
               text: _status == 'all'
-                  ? tr('Продажа в долг — на кассе, кнопка «В долг». Включается в настройках.', 'Qarzga sotish — kassada, «Qarzga» tugmasi. Sozlamalarda yoqiladi.')
+                  ? tr('Продажа в долг — на кассе, кнопка «В долг». Старый долг из тетради — кнопка «Добавить должника».',
+                      'Qarzga sotish — kassada, «Qarzga» tugmasi. Daftardagi eski qarz — «Qarzdor qoʻshish» tugmasi.')
                   : null,
             )
           else
