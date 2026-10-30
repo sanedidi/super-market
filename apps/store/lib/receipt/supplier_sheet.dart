@@ -5,9 +5,12 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../main.dart';
+import '../state.dart';
 import '../ui/theme.dart';
+import '../ui/widgets.dart';
 
-/// Выбор поставщика накладной: из списка или завести распознанного.
+/// Выбор поставщика накладной: из списка, завести распознанного или
+/// «Новый поставщик» прямо здесь (как в ручном приходе).
 Future<Map<String, dynamic>?> pickSupplier(BuildContext context, String scanId, Map<String, dynamic> scan) {
   return showModalBottomSheet<Map<String, dynamic>>(
     context: context,
@@ -68,8 +71,33 @@ class _SupplierSheetState extends State<_SupplierSheet> {
     }
   }
 
+  /// «Новый поставщик» — название вручную, сразу выбирается в накладной.
+  Future<void> _create() async {
+    final api = context.read<Api>();
+    final name = await promptSheet(context,
+        title: tr('Новый поставщик', 'Yangi yetkazib beruvchi'),
+        text: tr('Название фирмы или имя агента', 'Firma nomi yoki agent ismi'),
+        confirm: tr('Добавить', 'Qoʻshish'),
+        hint: tr('Например, Coca-Cola Bottlers', 'Masalan, Coca-Cola Bottlers'));
+    if (name == null || name.trim().isEmpty || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final c = await api.post('/store/finance/counterparties', {'name': name.trim()}) as Map<String, dynamic>;
+      if (!mounted) return;
+      setState(() => _busy = false);
+      await _set({'counterparty_id': c['id']});
+    } catch (e) {
+      if (mounted) {
+        setState(() => _busy = false);
+        showMessage(context, e);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final st = context.read<StoreState>();
+    final canCreate = st.can('counterparties.manage') || st.can('inventory.manage');
     final scanned = (widget.scan['supplier_name'] as String?) ?? '';
     final inn = (widget.scan['supplier_inn'] as String?) ?? '';
     return Padding(
@@ -102,6 +130,14 @@ class _SupplierSheetState extends State<_SupplierSheet> {
               decoration: InputDecoration(prefixIcon: const Icon(Icons.search_rounded), hintText: tr('Поиск поставщика', 'Yetkazib beruvchini qidirish')),
             ),
             const SizedBox(height: 8),
+            if (canCreate)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                enabled: !_busy,
+                leading: const IconBox(Icons.add_business_rounded, bg: AppColors.primarySoft, fg: AppColors.primary, size: 40, iconSize: 22, radius: 12),
+                title: Text(tr('Новый поставщик', 'Yangi yetkazib beruvchi'), style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
+                onTap: _create,
+              ),
             if (_items == null)
               const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()))
             else if (_items!.isEmpty)

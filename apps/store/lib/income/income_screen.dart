@@ -659,7 +659,9 @@ class _SupplierSheetState extends State<_SupplierSheet> {
   @override
   Widget build(BuildContext context) {
     final items = _items;
-    final canCreate = context.read<StoreState>().can('counterparties.manage');
+    // Нового поставщика заводит и сотрудник, принимающий приход («SM Сотрудник»).
+    final st = context.read<StoreState>();
+    final canCreate = st.can('counterparties.manage') || st.can('inventory.manage');
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Text(tr('Поставщик', 'Yetkazib beruvchi'), style: AppText.h3),
       const SizedBox(height: 12),

@@ -179,7 +179,14 @@ type CounterpartyInput struct {
 }
 
 func (s *Service) SaveCounterparty(ctx context.Context, p *identity.Principal, id string, in CounterpartyInput) (Counterparty, error) {
-	if err := p.Require(identity.PermCounterpartiesManage); err != nil {
+	// Нового поставщика заводит и тот, кто принимает приход (сотрудник склада
+	// в «SM Сотрудник» — прямо в приходе, как владелец в «SM Магазин»);
+	// менять существующих — только с правом «Контрагенты».
+	perm := p.Require(identity.PermCounterpartiesManage)
+	if id == "" {
+		perm = p.RequireAny(identity.PermCounterpartiesManage, identity.PermInventoryManage)
+	}
+	if err := perm; err != nil {
 		return Counterparty{}, err
 	}
 	name := trim(in.Name)

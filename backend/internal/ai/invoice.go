@@ -18,6 +18,8 @@ type Invoice struct {
 	Currency     string        `json:"currency"`
 	Total        *float64      `json:"total"`
 	Lines        []InvoiceLine `json:"lines"`
+	// Скидка поставщика на всю накладную, % (уже учтена в строках).
+	Discount float64 `json:"discount"`
 }
 
 type InvoiceLine struct {
@@ -27,6 +29,9 @@ type InvoiceLine struct {
 	Qty     float64 `json:"qty"`
 	Price   float64 `json:"price"`
 	Sum     float64 `json:"sum"`
+	// Скидка поставщика по строке, % (наценка — минус); price и sum — уже со
+	// скидкой, т.е. то, что магазин реально платит.
+	Discount float64 `json:"discount"`
 }
 
 const invoiceSystem = `Ты читаешь товарные накладные (счёт-фактуры) магазинов Узбекистана на русском, узбекском или английском.
@@ -44,6 +49,12 @@ const invoicePrompt = `На фото — одна накладная (стран
 qty, price и sum — ровно как напечатано в колонках «Кол-во», «Цена», «Сумма», ничего не пересчитывай:
 даже если qty × price ≠ sum (например, в наименовании «12 кг», qty 1, цена за кг) — так и верни, по сумме разберёмся сами.
 unit — как в колонке «Ед. изм.» (шт, кг, блок, кор, уп…), пусто, если колонки нет.
+Скидки поставщика: если у строки есть скидка или наценка (колонки «Цена без скидки», «Скидка %», «Сумма скидки»,
+«Цена со скидкой» и т.п.) — добавь в строку "discount": скидка в процентах (наценка — отрицательным числом)
+и "net_price": цена за единицу ПОСЛЕ скидки, как напечатана (нет такой колонки — null);
+price — цена ДО скидки, sum — сумма строки как напечатана (до или после скидки — как в накладной).
+Если скидка одна на всю накладную (строка «Скидка 5%» внизу, а в строках её нет) — верни её в "discount" верхнего уровня, в процентах.
+total — именно «к оплате» (после всех скидок), а не «Итого» до скидки.
 Не придумывай строки, которых нет. Строки итогов, НДС и подписи — не товары.`
 
 // ReadInvoice — распознать накладную. Токены возвращаются и при ошибке разбора:
@@ -71,13 +82,16 @@ func ParseInvoice(text string) (Invoice, error) {
 		Currency     any `json:"currency"`
 		Total        any `json:"total"`
 		Lines        []struct {
-			Name    any `json:"name"`
-			Barcode any `json:"barcode"`
-			Unit    any `json:"unit"`
-			Qty     any `json:"qty"`
-			Price   any `json:"price"`
-			Sum     any `json:"sum"`
+			Name     any `json:"name"`
+			Barcode  any `json:"barcode"`
+			Unit     any `json:"unit"`
+			Qty      any `json:"qty"`
+			Price    any `json:"price"`
+			Sum      any `json:"sum"`
+			Discount any `json:"discount"`
+			NetPrice any `json:"net_price"`
 		} `json:"lines"`
+		Discount any `json:"discount"`
 	}
 	if err := json.Unmarshal(raw, &loose); err != nil {
 		return Invoice{}, &ErrService{Msg: "модель вернула данные накладной в неверном виде", MsgUz: "model yuk xati maʼlumotlarini notoʻgʻri koʻrinishda qaytardi"}
@@ -100,6 +114,8 @@ func ParseInvoice(text string) (Invoice, error) {
 		line.Qty, _ = num(l.Qty)
 		line.Price, _ = num(l.Price)
 		line.Sum, _ = num(l.Sum)
+		line.Discount, _ = num(l.Discount)
+		netPrice, _ := num(l.NetPrice)
 		if line.Name == "" {
 			continue
 		}
@@ -116,11 +132,20 @@ func ParseInvoice(text string) (Invoice, error) {
 		if len(line.Barcode) < 8 || len(line.Barcode) > 14 {
 			line.Barcode = ""
 		}
+		// Модель положила в price цену уже со скидкой — вернём цену до скидки.
+		if netPrice > 0 && line.Discount > 0 && line.Discount < 100 && math.Abs(netPrice-line.Price) <= line.Price*0.001 {
+			line.Price = netPrice / (1 - line.Discount/100)
+		}
+		line.Discount = discountRate(line.Price, netPrice, line.Discount)
 		inv.Lines = append(inv.Lines, line)
 		if len(inv.Lines) == 300 {
 			break
 		}
 	}
+	if d, ok := num(loose.Discount); ok && d > 0 && d < 100 {
+		inv.Discount = d
+	}
+	applyDiscounts(&inv)
 	if len(inv.Lines) == 0 {
 		return inv, &ErrService{Msg: "на фото не найдено строк с товарами — переснимите накладную ровнее", MsgUz: "rasmda mahsulotli qatorlar topilmadi — yuk xatini tekisroq qilib qayta suratga oling"}
 	}
@@ -184,4 +209,59 @@ func normDate(s string) string {
 		return s[6:10] + "-" + s[3:5] + "-" + s[0:2]
 	}
 	return ""
+}
+
+// discountRate — скидка строки в %: по цене после скидки (точнее) или по
+// проценту; странное (≥ 100% или наценка больше 100%) — без скидки.
+func discountRate(price, netPrice, pct float64) float64 {
+	d := pct
+	if price > 0 && netPrice > 0 && netPrice != price {
+		d = (1 - netPrice/price) * 100
+	}
+	if d >= 100 || d < -100 || math.Abs(d) < 0.001 {
+		return 0
+	}
+	return math.Round(d*10000) / 10000
+}
+
+// applyDiscounts — цены и суммы строк со скидкой поставщика: магазин платит
+// цену после скидки, она и есть цена закупки. Сумма строки в накладной бывает
+// и до скидки (колонка «Сумма» = кол-во × цена без скидки, скидка — итогом
+// внизу), и после — смотрим, на что она похожа.
+func applyDiscounts(inv *Invoice) {
+	// Скидка одна на всю накладную — тем строкам, где своей нет.
+	if inv.Discount > 0 {
+		for i := range inv.Lines {
+			if inv.Lines[i].Discount == 0 {
+				inv.Lines[i].Discount = inv.Discount
+			}
+		}
+	}
+	// Суммы строк в накладной уже со скидкой: их итог = «к оплате».
+	var printed float64
+	for _, l := range inv.Lines {
+		printed += l.Sum
+	}
+	sumsNet := inv.Total != nil && *inv.Total > 0 && math.Abs(printed-*inv.Total) <= *inv.Total*0.005
+	for i := range inv.Lines {
+		l := &inv.Lines[i]
+		if l.Discount == 0 {
+			continue
+		}
+		f := 1 - l.Discount/100
+		if l.Sum > 0 {
+			gross := l.Qty * l.Price
+			net := gross * f
+			switch {
+			case gross > 0 && math.Abs(l.Sum-net) <= net*0.005:
+				// Уже со скидкой.
+			case gross > 0 && math.Abs(l.Sum-gross) <= gross*0.005:
+				l.Sum = math.Round(l.Sum*f*100) / 100
+			case !sumsNet:
+				// Кол-во × цена ≠ сумма (упаковки): решает итог накладной.
+				l.Sum = math.Round(l.Sum*f*100) / 100
+			}
+		}
+		l.Price = math.Round(l.Price*f*10000) / 10000
+	}
 }
