@@ -107,13 +107,16 @@ class _Shell extends StatelessWidget {
 
 /// Кнопки внизу окна: «Esc · Назад» и красная «Enter · …».
 class _Footer extends StatelessWidget {
-  const _Footer({required this.back, this.primary, this.onPrimary, this.busy = false, this.onBack});
+  const _Footer({required this.back, this.primary, this.onPrimary, this.busy = false, this.onBack, this.enter = true});
 
   final String back;
   final VoidCallback? onBack;
   final String? primary;
   final VoidCallback? onPrimary;
   final bool busy;
+
+  /// Плашка «Enter» на красной кнопке; false — Enter занят другим (например, «Готово» на буквах).
+  final bool enter;
 
   @override
   Widget build(BuildContext context) => Row(children: [
@@ -136,10 +139,14 @@ class _Footer extends StatelessWidget {
                 onTap: busy ? null : onPrimary,
                 color: C.brand,
                 child: Row(children: [
-                  const KeyBadge('Enter', dark: true, size: 52),
-                  const SizedBox(width: 12),
+                  if (enter) ...[
+                    const KeyBadge('Enter', dark: true, size: 52),
+                    const SizedBox(width: 12),
+                  ] else
+                    const SizedBox(height: 52),
                   Expanded(
                     child: Text(busy ? tr('Сохраняем…', 'Saqlanmoqda…') : primary!,
+                        textAlign: enter ? TextAlign.start : TextAlign.center,
                         maxLines: 1, overflow: TextOverflow.ellipsis, style: t(19, w: FontWeight.w700, c: Colors.white)),
                   ),
                 ]),
@@ -1197,12 +1204,15 @@ class _UnknownDialogState extends State<_UnknownDialog> {
 /// Буквенная клавиатура окна: цифры, кириллица или латиница, пробел,
 /// Ғ Қ / Oʻ Gʻ и «Готово» (обратно к цене).
 class _Letters extends StatelessWidget {
-  const _Letters({required this.latin, required this.onKey, required this.onSwitch, required this.onDone});
+  const _Letters({required this.latin, required this.onKey, required this.onSwitch, required this.onDone, this.done});
 
   final bool latin;
   final void Function(String k) onKey;
   final VoidCallback onSwitch;
   final VoidCallback onDone;
+
+  /// Подпись тёмной клавиши справа внизу; по умолчанию — «К цене · F2».
+  final String? done;
 
   static const _cyr = [
     ['Й', 'Ц', 'У', 'К', 'Е', 'Н', 'Г', 'Ш', 'Щ', 'З', 'Х'],
@@ -1253,7 +1263,7 @@ class _Letters extends StatelessWidget {
             key('Oʻ', () => onKey('oʻ'), color: grey, fs: 16),
             key('Gʻ', () => onKey('gʻ'), color: grey, fs: 16),
           ],
-          key(tr('К цене · F2', 'Narxga · F2'), onDone, flex: 5, color: C.dark, textColor: Colors.white, fs: 14),
+          key(done ?? tr('К цене · F2', 'Narxga · F2'), onDone, flex: 5, color: C.dark, textColor: Colors.white, fs: 14),
         ]),
       ]),
     );
@@ -1634,6 +1644,12 @@ class _DebtDialogState extends State<_DebtDialog> {
   bool _busy = false;
   String? _error;
 
+  /// Имя нового покупателя (Figma «ВИ1–ВИ2»): внизу буквенная клавиатура
+  /// вместо цифр. Открывается сама, когда у покупателя нет имени; «Готово ·
+  /// Enter» — обратно к цифрам суммы.
+  bool _letters = false;
+  bool _latin = Lang.instance.isUz;
+
   @override
   void initState() {
     super.initState();
@@ -1703,11 +1719,12 @@ class _DebtDialogState extends State<_DebtDialog> {
         _who = w;
         _busy = false;
         _name.text = w.name;
+        _letters = _needsName(w);
         if (sale.method('cash') == null) _restKind = 'card';
       });
       // Новый покупатель — сразу в поле имени, иначе цифры идут в сумму.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) (w.found && w.name.isNotEmpty ? _keysFocus : _nameFocus).requestFocus();
+        if (mounted) (_letters ? _nameFocus : _keysFocus).requestFocus();
       });
     } catch (e) {
       _fail(e);
@@ -1728,13 +1745,14 @@ class _DebtDialogState extends State<_DebtDialog> {
         _byPhone = false;
         _busy = false;
         _name.text = w.name;
+        _letters = _needsName(w);
         _amount.value = '';
         _channel = null;
         _code.clear();
         if (sale.method('cash') == null) _restKind = 'card';
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _keysFocus.requestFocus();
+        if (mounted) (_letters ? _nameFocus : _keysFocus).requestFocus();
       });
     } catch (e) {
       _fail(e);
@@ -1870,11 +1888,53 @@ class _DebtDialogState extends State<_DebtDialog> {
       _lookup();
     } else if (_codeFocus.hasFocus && _code.text.trim().isNotEmpty) {
       _verify();
-    } else if (_nameFocus.hasFocus) {
-      _keysFocus.requestFocus();
+    } else if (_letters || _nameFocus.hasFocus) {
+      _nameDone();
     } else {
       _pay();
     }
+  }
+
+  /// Поле имени: нет имени в магазине (новый номер или покупатель без имени).
+  static bool _needsName(DebtorView w) => !w.found || w.name.isEmpty;
+
+  /// Буква, цифра, пробел или ⌫ с экранной клавиатуры — в имя. Первая буква
+  /// и буква после пробела — заглавные (как в «Товара нет в базе»).
+  void _nameKey(String k) {
+    final s = _name.text;
+    String next;
+    if (k == '⌫') {
+      if (s.isEmpty) return;
+      next = s.substring(0, s.length - 1);
+    } else {
+      if (s.length >= 60) return;
+      if (k == ' ' && (s.isEmpty || s.endsWith(' '))) return;
+      final up = s.isEmpty || s.endsWith(' ');
+      next = s + (up ? k.toUpperCase() : k.toLowerCase());
+    }
+    _name.value = TextEditingValue(text: next, selection: TextSelection.collapsed(offset: next.length));
+    setState(() => _error = null);
+    _nameFocus.requestFocus();
+  }
+
+  /// «Готово · Enter»: буквы прячутся, внизу снова цифры для суммы долга.
+  void _nameDone() {
+    final w = _who;
+    if (w != null && !w.found && _name.text.trim().isEmpty) {
+      setState(() => _error = tr('Впишите имя покупателя', 'Xaridorning ismini yozing'));
+      _nameFocus.requestFocus();
+      return;
+    }
+    setState(() {
+      _letters = false;
+      _error = null;
+    });
+    _keysFocus.requestFocus();
+  }
+
+  /// Нажали на поле имени — снова буквы.
+  void _openLetters() {
+    if (!_letters) setState(() => _letters = true);
   }
 
   void _key(String k) {
@@ -1892,6 +1952,7 @@ class _DebtDialogState extends State<_DebtDialog> {
     setState(() {
       _who = null;
       _byPhone = false;
+      _letters = false;
       _phone.value = '';
       _amount.value = '';
       _channel = null;
@@ -1936,6 +1997,19 @@ class _DebtDialogState extends State<_DebtDialog> {
           }
           return KeyEventResult.ignored;
         }
+        // Открыты буквы, а поле имени без фокуса — буквы и Enter всё равно в имя.
+        if (w != null && _letters) {
+          if (isEnter(e)) {
+            _enter();
+          } else if (e.logicalKey == LogicalKeyboardKey.backspace) {
+            _nameKey('⌫');
+          } else {
+            final c = printable(e);
+            if (c == null) return KeyEventResult.ignored;
+            _nameKey(c);
+          }
+          return KeyEventResult.handled;
+        }
         // На шаге «Отсканируйте QR» сканер — по делу; дальше — номер и сумма.
         if (!qrStage && _scan.key(e)) return KeyEventResult.handled;
         final ch = printable(e);
@@ -1953,6 +2027,8 @@ class _DebtDialogState extends State<_DebtDialog> {
         return _keys(e, onEnter: _enter, onChar: _key);
       },
       child: _Shell(
+        // С буквенной клавиатурой окно шире (как «Товара нет в базе»).
+        width: w != null && _letters ? 1040 : 720,
         title: tr('В долг', 'Qarzga'),
         subtitle: w != null
             ? fmtUzPhone(w.phone)
@@ -2161,8 +2237,16 @@ class _DebtDialogState extends State<_DebtDialog> {
               : TextField(
                   controller: _name,
                   focusNode: _nameFocus,
+                  // Буквы — с экранной клавиатуры кассы или с обычной; системная не нужна.
+                  keyboardType: TextInputType.none,
+                  maxLength: 60,
+                  onTap: _openLetters,
                   onChanged: (_) => setState(() => _error = null),
-                  decoration: InputDecoration(labelText: tr('Имя покупателя', 'Xaridorning ismi'), hintText: tr('Как к нему обращаться', 'Unga qanday murojaat qilish')),
+                  decoration: InputDecoration(
+                    labelText: tr('Имя покупателя', 'Xaridorning ismi') + (w.found ? '' : ' *'),
+                    hintText: tr('Как к нему обращаться', 'Unga qanday murojaat qilish'),
+                    counterText: '',
+                  ),
                 ),
         ),
         const SizedBox(width: 12),
@@ -2179,6 +2263,11 @@ class _DebtDialogState extends State<_DebtDialog> {
         fact(tr('Лимит', 'Limit'), fmtMoney(w.limit)),
         const SizedBox(width: 10),
         fact(tr('Свободно', 'Boʻsh'), fmtMoney(w.available), c: w.available >= sale.due ? C.success : C.warning),
+        // На буквах большого поля суммы нет — сумма карточкой, менять — после «Готово».
+        if (_letters) ...[
+          const SizedBox(width: 10),
+          fact(tr('В долг', 'Qarzga'), debt > 0 ? fmtMoney(debt) : '—'),
+        ],
       ]),
       if (w.dueDate != null && w.debt > 0) ...[
         const SizedBox(height: 6),
@@ -2188,7 +2277,30 @@ class _DebtDialogState extends State<_DebtDialog> {
         const SizedBox(height: 6),
         Text(tr('Нет связи: долг из каталога кассы и чеков этой смены', 'Aloqa yoʻq: qarz kassa katalogi va shu smena cheklaridan olindi'), style: t(12, c: C.warning)),
       ],
-      if (newNumber && w.online) ...[
+      if (newNumber && w.online && _letters && _channel == null) ...[
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+          decoration: BoxDecoration(color: C.warningSoft, borderRadius: BorderRadius.circular(12)),
+          child: Row(children: [
+            Expanded(
+              child: Text(
+                tr('Без подтверждения — до ${fmtMoney(w.unverifiedLimit)}. С кодом лимит ${fmtMoney(w.defaultLimit)}.',
+                    'Tasdiqlashsiz — ${fmtMoney(w.unverifiedLimit)} gacha. Kod bilan limit ${fmtMoney(w.defaultLimit)}.'),
+                style: t(13, w: FontWeight.w600, c: C.warning),
+              ),
+            ),
+            const SizedBox(width: 10),
+            _Btn(
+              onTap: _busy ? null : _sendCode,
+              color: C.surface,
+              border: C.borderStrong,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              child: Text(tr('Отправить код', 'Kodni yuborish'), style: t(14, w: FontWeight.w600)),
+            ),
+          ]),
+        ),
+      ] else if (newNumber && w.online) ...[
         const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.all(12),
@@ -2236,40 +2348,56 @@ class _DebtDialogState extends State<_DebtDialog> {
           ]),
         ),
       ],
-      const SizedBox(height: 12),
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: C.brand, width: 2)),
-        child: Column(children: [
-          Row(children: [
-            Expanded(child: Text(tr('В долг', 'Qarzga'), style: t(16, w: FontWeight.w500, c: C.ts))),
-            Text(debt > 0 ? fmtMoney(debt) : '—', style: t(36, w: FontWeight.w800, c: _amount.value.isEmpty ? C.tp : C.brand)),
+      if (!_letters) ...[
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          decoration: BoxDecoration(color: C.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: C.brand, width: 2)),
+          child: Column(children: [
+            Row(children: [
+              Expanded(child: Text(tr('В долг', 'Qarzga'), style: t(16, w: FontWeight.w500, c: C.ts))),
+              Text(debt > 0 ? fmtMoney(debt) : '—', style: t(36, w: FontWeight.w800, c: _amount.value.isEmpty ? C.tp : C.brand)),
+            ]),
+            if (rest > 0 && debt > 0)
+              Row(children: [
+                Expanded(child: Text(_restKind == 'cash' ? tr('Остаток наличными', 'Qoldiq naqd') : tr('Остаток картой', 'Qoldiq kartadan'), style: t(16, w: FontWeight.w600, c: C.ts))),
+                Text(fmtMoney(rest), style: t(28, w: FontWeight.w800)),
+              ]),
+            if (debt > 0)
+              Row(children: [
+                Expanded(child: Text(tr('Долг станет', 'Qarz boʻladi'), style: t(13, c: C.ts))),
+                Text(fmtMoney(w.debt + debt), style: t(16, w: FontWeight.w700, c: C.brand)),
+              ]),
           ]),
-          if (rest > 0 && debt > 0)
-            Row(children: [
-              Expanded(child: Text(_restKind == 'cash' ? tr('Остаток наличными', 'Qoldiq naqd') : tr('Остаток картой', 'Qoldiq kartadan'), style: t(16, w: FontWeight.w600, c: C.ts))),
-              Text(fmtMoney(rest), style: t(28, w: FontWeight.w800)),
-            ]),
-          if (debt > 0)
-            Row(children: [
-              Expanded(child: Text(tr('Долг станет', 'Qarz boʻladi'), style: t(13, c: C.ts))),
-              Text(fmtMoney(w.debt + debt), style: t(16, w: FontWeight.w700, c: C.brand)),
-            ]),
-        ]),
-      ),
-      if (rest > 0 && debt > 0) ...[
+        ),
+        if (rest > 0 && debt > 0) ...[
+          const SizedBox(height: 10),
+          Row(children: [restBtn('cash', tr('Остаток наличными', 'Qoldiq naqd')), const SizedBox(width: 10), restBtn('card', tr('Остаток картой', 'Qoldiq kartadan'))]),
+        ],
         const SizedBox(height: 10),
-        Row(children: [restBtn('cash', tr('Остаток наличными', 'Qoldiq naqd')), const SizedBox(width: 10), restBtn('card', tr('Остаток картой', 'Qoldiq kartadan'))]),
+        _Pad(onKey: _key),
+      ] else ...[
+        const SizedBox(height: 12),
+        _Letters(
+          latin: _latin,
+          onKey: _nameKey,
+          onSwitch: () => setState(() => _latin = !_latin),
+          onDone: _nameDone,
+          done: tr('Готово · Enter', 'Tayyor · Enter'),
+        ),
       ],
-      const SizedBox(height: 10),
-      _Pad(onKey: _key),
       const SizedBox(height: 12),
       _Footer(
         back: w.viaQr ? tr('Другой покупатель', 'Boshqa xaridor') : tr('Другой номер', 'Boshqa raqam'),
         onBack: _back,
-        primary: rest > 0 && debt > 0 ? tr('Пробить · ${fmtMoney(debt)} в долг + ${fmtMoney(rest)}', 'Chiqarish · ${fmtMoney(debt)} qarzga + ${fmtMoney(rest)}') : tr('Пробить в долг · ${fmtMoney(debt)}', 'Qarzga chiqarish · ${fmtMoney(debt)}'),
+        primary: _letters && !w.found && _name.text.trim().isEmpty
+            ? tr('Впишите имя — потом «Готово · Enter»', 'Ismni yozing — keyin «Tayyor · Enter»')
+            : rest > 0 && debt > 0
+                ? tr('Пробить · ${fmtMoney(debt)} в долг + ${fmtMoney(rest)}', 'Chiqarish · ${fmtMoney(debt)} qarzga + ${fmtMoney(rest)}')
+                : tr('Пробить в долг · ${fmtMoney(debt)}', 'Qarzga chiqarish · ${fmtMoney(debt)}'),
         onPrimary: problem == null ? _pay : null,
         busy: _busy,
+        enter: !_letters,
       ),
       const SizedBox(height: 10),
       Text(_error ?? problem ?? tr('Цифры — другая сумма в долг, остаток — наличными или картой. Покупатель увидит долг в приложении.', 'Raqamlar — qarzga boshqa summa, qoldiq — naqd yoki kartadan. Xaridor qarzni ilovada koʻradi.'),

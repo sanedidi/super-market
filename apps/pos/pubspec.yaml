@@ -1,7 +1,7 @@
 name: sm_pos
 description: Касса Super Market для Windows и Android. Продаёт без интернета, чеки досылаются сами.
 publish_to: none
-version: 0.4.7+12
+version: 0.4.8+13
 
 environment:
   sdk: ">=3.6.0 <4.0.0"
