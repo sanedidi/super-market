@@ -23,16 +23,18 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/apperr"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
 	"github.com/sanedidi/super-market/backend/internal/platform/money"
+	"github.com/sanedidi/super-market/backend/internal/reports"
 )
 
 type Service struct {
 	pool *pgxpool.Pool
 	inv  *inventory.Service
+	rep  *reports.Service
 	now  func() time.Time
 }
 
-func NewService(pool *pgxpool.Pool, inv *inventory.Service) *Service {
-	return &Service{pool: pool, inv: inv, now: time.Now}
+func NewService(pool *pgxpool.Pool, inv *inventory.Service, rep *reports.Service) *Service {
+	return &Service{pool: pool, inv: inv, rep: rep, now: time.Now}
 }
 
 // store — магазин сотрудника: основной склад и тип цены кассы.
@@ -67,7 +69,7 @@ func (s *Service) store(ctx context.Context, p *identity.Principal, storeID stri
 // ------------------------------------------------------------ сканер (С5)
 
 // Glance — шторка сканера: цена продажи, остаток, продажи. Цену закупки и
-// прибыль сотрудник не видит.
+// прибыль сотрудник не видит — только «не задана» (С5б), если она нужна.
 type Glance struct {
 	ProductID    string  `json:"product_id"`
 	Name         string  `json:"name"`
@@ -94,6 +96,14 @@ type Glance struct {
 	// Что можно сделать из шторки: «Цена» (prices.manage), «Пересчитать» и «Списать» (inventory.manage).
 	CanPrice bool `json:"can_price"`
 	CanCount bool `json:"can_count"`
+	// NoCost — цена закупки не задана (только с правом «Склад», иначе поля нет):
+	// stock — остаток без цены, sold — продано без себестоимости.
+	NoCost *NoCost `json:"no_cost,omitempty"`
+}
+
+type NoCost struct {
+	Stock string `json:"stock"`
+	Sold  string `json:"sold"`
 }
 
 // GlanceInput — код со сканера (штрихкод, наклейка весов, код маркировки) или товар.
@@ -176,7 +186,26 @@ func (s *Service) Glance(ctx context.Context, p *identity.Principal, in GlanceIn
 	}
 	g.CanPrice = p.Can(identity.PermPricesManage)
 	g.CanCount = p.Can(identity.PermInventoryManage)
+	if g.CanCount && s.rep != nil {
+		stock, sold, err := s.rep.MissingCost(ctx, p.NetworkID, st.ID, g.ProductID)
+		if err != nil {
+			return Glance{}, err
+		}
+		if money.D(stock).Sign() > 0 || money.D(sold).Sign() > 0 {
+			g.NoCost = &NoCost{Stock: stock, Sold: sold}
+		}
+	}
 	return g, nil
+}
+
+// SetCost — «Поставить» цену закупки из шторки сканера (С5в): только с правом
+// «Склад» и только там, где её нет (остаток без цены и проданные без
+// себестоимости чеки). Уже заданную цену меняет приход.
+func (s *Service) SetCost(ctx context.Context, p *identity.Principal, in reports.CostInput) (reports.CostResult, error) {
+	if err := p.Require(identity.PermInventoryManage); err != nil {
+		return reports.CostResult{}, err
+	}
+	return s.rep.SetCost(ctx, p, in)
 }
 
 // resolve — товар по коду со сканера: штрихкод товара, наклейка весов

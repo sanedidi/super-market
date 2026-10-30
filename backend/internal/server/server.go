@@ -117,6 +117,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 	debtSvc := debts.NewService(pool, smsSender, cfg.DevOTPCode, cfg.JWTSecret, sales.CheckShiftTime, log)
 	fcm := PushSender(cfg, log)
 	invSvc := inventory.NewService(pool)
+	repSvc := reports.NewService(pool)
 	finSvc := finance.NewService(pool)
 	supplySvc := supply.NewService(pool, invSvc, log).WithFinance(finSvc).WithNotifier(notify.New(pool, tg, log))
 	mediaSvc := MediaService(cfg)
@@ -175,7 +176,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		billing.NewModule(bill, auth, log),
 		planapi.NewModule(pool, auth, log, ord.ForgetHomes),
 		ads.NewModule(ads.NewService(pool), auth, log),
-		reports.NewModule(reports.NewService(pool), auth, log),
+		reports.NewModule(repSvc, auth, log),
 		profile.NewModule(profile.NewService(pool, profile.Links{
 			Support: supportURL(cfg), Privacy: cfg.PrivacyURL, Offer: cfg.OfferURL, Bot: botURL(cfg),
 			CourierTerms: cfg.CourierTermsURL, CourierApp: cfg.CourierAppURL,
@@ -193,7 +194,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		account.NewModule(account.NewService(pool, idSvc, notify.New(pool, tg, log), log), auth, log),
 		invest.NewModule(invest.NewService(pool), auth, log),
 		appversions.NewModule(appversions.NewService(pool), auth, log),
-		staff.NewModule(staff.NewService(pool, invSvc), auth, log),
+		staff.NewModule(staff.NewService(pool, invSvc, repSvc), auth, log),
 	)
 	// Агент помощника ходит в API панели внутренним запросом — ему нужен весь сервер.
 	assistSvc.SetHandler(h)

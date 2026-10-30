@@ -157,3 +157,17 @@ func (s *Service) SetCost(ctx context.Context, p *identity.Principal, in CostInp
 	})
 	return out, err
 }
+
+// MissingCost — сколько товара в магазине без цены закупки: остаток в партиях
+// без цены и продано без себестоимости (шторка сканера «SM Сотрудник», С5б).
+// Нули — цена закупки есть везде, ставить нечего.
+func (s *Service) MissingCost(ctx context.Context, networkID, storeID, productID string) (stock, sold string, err error) {
+	err = s.pool.QueryRow(ctx, `
+		SELECT trim_scale(COALESCE((SELECT sum(b.qty_remaining) FROM batches b
+		         WHERE b.product_id = $3 AND b.unit_cost = 0 AND b.qty_remaining > 0
+		           AND b.warehouse_id IN (SELECT id FROM warehouses WHERE store_id = $2)), 0))::text,
+		       trim_scale(COALESCE((SELECT sum(si.qty) FROM sale_items si JOIN sales sl ON sl.id = si.sale_id
+		         WHERE sl.network_id = $1 AND sl.store_id = $2 AND si.product_id = $3 AND `+noCostLine+`), 0))::text`,
+		networkID, storeID, productID).Scan(&stock, &sold)
+	return stock, sold, err
+}

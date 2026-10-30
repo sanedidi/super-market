@@ -7,6 +7,7 @@ import 'package:sm_store/state.dart';
 import 'package:sm_store/ui/theme.dart';
 import 'package:sm_store/ui/widgets.dart';
 
+import 'cost.dart';
 import 'logic.dart';
 import 'price.dart';
 import 'recount.dart';
@@ -188,7 +189,8 @@ Future<void> openGlanceScanner(BuildContext context) {
 }
 
 /// Шторка товара: цена продажи, остаток, продано за 7 дней, на сколько хватит;
-/// кнопки Цена / Пересчитать / Списать / Ценник. Цену закупки сотрудник не видит.
+/// кнопки Цена / Пересчитать / Списать / Ценник. Цену закупки сотрудник не видит —
+/// кладовщик видит только «не задана» и может её поставить (С5б).
 Future<void> showGlance(BuildContext context, Map<String, dynamic> g) async {
   final action = await showSheet<String>(context, (ctx) => _GlanceSheet(g: g));
   if (action == null || !context.mounted) return;
@@ -205,6 +207,12 @@ Future<void> showGlance(BuildContext context, Map<String, dynamic> g) async {
       await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => WriteOffScreen(product: g)));
     case 'tag':
       await markPriceTag(context, g);
+    case 'cost':
+      final saved = await setCost(context, g);
+      if (saved && context.mounted) {
+        final fresh = await fetchGlance(context, productId: '${g['product_id']}');
+        if (fresh != null && context.mounted) await showGlance(context, fresh);
+      }
   }
 }
 
@@ -292,6 +300,10 @@ class _GlanceSheet extends StatelessWidget {
         const SizedBox(width: 8),
         kpi(tr('Хватит на', 'Yetadi'), days == null ? '—' : tr('~$days дн.', '~$days kun')),
       ]),
+      if (g['no_cost'] != null) ...[
+        const SizedBox(height: 10),
+        NoCostRow(onSet: () => Navigator.of(context).pop('cost')),
+      ],
       const SizedBox(height: 14),
       Row(children: [
         if (g['can_price'] == true) ...[act(Icons.edit_rounded, tr('Цена', 'Narx'), 'price'), const SizedBox(width: 8)],

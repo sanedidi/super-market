@@ -8,6 +8,7 @@ import (
 
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/platform/httpx"
+	"github.com/sanedidi/super-market/backend/internal/reports"
 )
 
 type Module struct {
@@ -28,6 +29,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/price-tags", m.priceTags)
 		r.Post("/price-tags", m.markTags)
 		r.Post("/write-off", m.writeOff)
+		r.Post("/cost", m.setCost)
 		r.Get("/day", m.day)
 	})
 }
@@ -69,5 +71,11 @@ func (m *Module) writeOff(w http.ResponseWriter, r *http.Request) {
 func (m *Module) day(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (Day, error) {
 		return m.svc.Day(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+	})
+}
+
+func (m *Module) setCost(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in reports.CostInput) (reports.CostResult, error) {
+		return m.svc.SetCost(r.Context(), pr(r), in)
 	})
 }

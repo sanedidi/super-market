@@ -227,6 +227,38 @@ func TestStaffApp(t *testing.T) {
 		t.Fatalf("tasks counted = %v", tk.Body)
 	}
 
+	// Цена закупки (С5б/С5в): у колы она есть — строки нет; товар без цены
+	// закупки (остаток с «Начала работы») — «не задана», ставит кладовщик.
+	if g := a.expect(a.do("GET", "/store/staff/glance?store_id="+store+"&product_id="+cola, dTok, nil), 200, "cola cost"); g.Body["no_cost"] != nil {
+		t.Fatalf("cola no_cost = %v", g.Body)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE batches SET unit_cost = 0, unit_cost_usd = 0 WHERE product_id = $1 AND warehouse_id = $2`, sugar, wh); err != nil {
+		t.Fatal(err)
+	}
+	g = a.expect(a.do("GET", "/store/staff/glance?store_id="+store+"&product_id="+sugar, dTok, nil), 200, "sugar cost")
+	if nc, _ := g.Body["no_cost"].(map[string]any); nc == nil || nc["stock"] != "3" {
+		t.Fatalf("sugar no_cost = %v", g.Body)
+	}
+	if g := a.expect(a.do("GET", "/store/staff/glance?store_id="+store+"&product_id="+sugar, nTok, nil), 200, "cashier cost"); hasCostKey(g.Body) {
+		t.Fatalf("cashier sees cost = %v", g.Body)
+	}
+	cost := map[string]any{"store_id": store, "product_id": sugar, "cost": 9500}
+	a.expect(a.do("POST", "/store/staff/cost", nTok, cost), 403, "cashier cost")
+	a.expect(a.do("POST", "/store/staff/cost", aTok, cost), 403, "picker cost")
+	a.expect(a.do("POST", "/store/staff/cost", dTok, map[string]any{"store_id": store, "product_id": sugar, "cost": 0}), 400, "zero cost")
+	a.expect(a.do("POST", "/store/staff/cost", dTok, cost), 200, "set cost")
+	if g := a.expect(a.do("GET", "/store/staff/glance?store_id="+store+"&product_id="+sugar, dTok, nil), 200, "sugar after"); g.Body["no_cost"] != nil {
+		t.Fatalf("sugar after = %v", g.Body)
+	}
+	if c := sqlStr(t, pool, `SELECT trim_scale(min(unit_cost))::text FROM batches WHERE product_id = $1 AND warehouse_id = $2 AND qty_remaining > 0`, sugar, wh); c != "9500" {
+		t.Fatalf("sugar batch cost = %s", c)
+	}
+	// Уже заданную цену «Поставить» не меняет — её меняет приход.
+	a.expect(a.do("POST", "/store/staff/cost", dTok, map[string]any{"store_id": store, "product_id": sugar, "cost": 1}), 200, "set again")
+	if c := sqlStr(t, pool, `SELECT trim_scale(max(unit_cost))::text FROM batches WHERE product_id = $1 AND warehouse_id = $2`, sugar, wh); c != "9500" {
+		t.Fatalf("cost overwritten = %s", c)
+	}
+
 	// Мой день.
 	day := a.expect(a.do("GET", "/store/staff/day?store_id="+store, dTok, nil), 200, "day")
 	if day.Body["orders_picked"] != 1.0 || day.Body["write_offs"] != 1.0 || day.Body["counted"] != 2.0 || day.Body["receipts"] != 0.0 {
