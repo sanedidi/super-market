@@ -8,6 +8,7 @@ import 'package:sm_core/sm_core.dart';
 import '../finance/finance_logic.dart';
 import '../main.dart';
 import '../state.dart';
+import '../suppliers/new_supplier.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 
@@ -355,7 +356,15 @@ class _SupplierPickerState extends State<_SupplierPicker> {
         _debounce = Timer(const Duration(milliseconds: 300), _search);
       },
       items: _items,
-      empty: tr('Поставщик не найден. Новых поставщиков заводите в панели магазина.', 'Yetkazib beruvchi topilmadi. Yangilarini doʻkon panelida qoʻshing.'),
+      empty: tr('Поставщик не найден', 'Yetkazib beruvchi topilmadi'),
+      header: canCreateSupplier(context)
+          ? NewSupplierTile(
+              query: _q.text,
+              onTap: () async {
+                final c = await createSupplier(context, name: _q.text);
+                if (c != null && context.mounted) Navigator.of(context).pop(c);
+              })
+          : null,
       tile: (c) => ListTile(
         contentPadding: EdgeInsets.zero,
         title: Text('${c['name']}', style: AppText.bodyStrong),
@@ -436,7 +445,11 @@ class _PickerFrame extends StatelessWidget {
     required this.items,
     required this.empty,
     required this.tile,
+    this.header,
   });
+
+  /// Над списком — например, «Новый поставщик».
+  final Widget? header;
 
   final String title;
   final TextEditingController controller;
@@ -465,6 +478,7 @@ class _PickerFrame extends StatelessWidget {
               decoration: InputDecoration(prefixIcon: const Icon(Icons.search_rounded), hintText: hint),
             ),
             const SizedBox(height: 8),
+            if (header != null) header!,
             Expanded(
               child: list == null
                   ? const Center(child: CircularProgressIndicator())

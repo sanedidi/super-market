@@ -21,8 +21,8 @@ import {
   usePaged,
 } from '@sm/shared'
 import { useStore } from '../ctx'
-import { NeedStore, Num, ProductSelect, trimNum, unitPrice } from '../ui'
-import type { Counterparty, StockDocType, StockDocument, Warehouse } from '../types'
+import { CounterpartySelect, NeedStore, Num, ProductSelect, trimNum, unitPrice } from '../ui'
+import type { StockDocType, StockDocument, Warehouse } from '../types'
 
 export const docPaths: Record<StockDocType, string> = {
   income: '/purchases/income',
@@ -404,9 +404,7 @@ export function StockDocEditor({ type }: { type: StockDocType }) {
             {spec.counterparty && (
               <Col xs={24} md={12} lg={8}>
                 <Form.Item name="counterparty_id" label={tr('Поставщик', 'Yetkazib beruvchi')} rules={[{ required: true, message: tr('Выберите поставщика', 'Yetkazib beruvchini tanlang') }]}>
-                  <RemoteSelect<Counterparty>
-                    path="/store/finance/counterparties"
-                    search
+                  <CounterpartySelect
                     filter={(c) => c.is_active || c.id === d?.counterparty_id}
                     selectedLabel={d?.counterparty_name ?? undefined}
                     placeholder={tr('Поиск по названию или телефону', 'Nomi yoki telefon boʻyicha qidirish')}

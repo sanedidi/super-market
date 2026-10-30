@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -91,6 +92,12 @@ type Line struct {
 	// Цена прошлого прихода этого товара и изменение, %.
 	LastPrice   *string `json:"last_price"`
 	PriceChange *int    `json:"price_change"`
+	// Скидка поставщика (Figma С1–С3): цена без скидки за единицу накладной и
+	// за единицу товара, скидка в % и в сумах; null — скидки нет.
+	ListPrice   *string `json:"list_price"`
+	ListCost    *string `json:"list_cost"`
+	Discount    *string `json:"discount"`
+	DiscountSum *string `json:"discount_sum"`
 }
 
 type Scan struct {
@@ -105,6 +112,9 @@ type Scan struct {
 	Currency         string    `json:"currency"`
 	InvoiceTotal     *string   `json:"invoice_total"`
 	LinesTotal       string    `json:"lines_total"`
+	// Скидка поставщика по строкам и сумма строк без скидки.
+	DiscountTotal string `json:"discount_total"`
+	GrossTotal    string `json:"gross_total"`
 	TotalMatches     *bool     `json:"total_matches"`
 	CounterpartyID   *string   `json:"counterparty_id"`
 	CounterpartyName *string   `json:"counterparty_name"`
@@ -309,9 +319,9 @@ func (s *Service) process(ctx context.Context, id, networkID string) error {
 		for i, l := range inv.Lines {
 			m := matchLine(ctx, tx, networkID, cp, l.Name, l.Barcode)
 			_, err := tx.Exec(ctx, `
-				INSERT INTO invoice_scan_lines (scan_id, line, name, barcode, unit, qty, price, read_sum, product_id, match, confidence)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-				id, i+1, l.Name, l.Barcode, l.Unit, fmtNum(l.Qty, 3), fmtNum(l.Price, 4), readSum(l), m.productID, m.match, m.confidence)
+				INSERT INTO invoice_scan_lines (scan_id, line, name, barcode, unit, qty, price, read_sum, product_id, match, confidence, list_price)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+				id, i+1, l.Name, l.Barcode, l.Unit, fmtNum(l.Qty, 3), fmtNum(l.Price, 4), readSum(l), m.productID, m.match, m.confidence, listPrice(l))
 			if err != nil {
 				return err
 			}
@@ -330,6 +340,15 @@ func (s *Service) notifyAuthor(ctx context.Context, q db.Querier, id, kind strin
 		return err
 	}
 	return push.EnqueueEmployee(ctx, q, emp, kind, title, body, map[string]string{"type": "invoice", "scan_id": id})
+}
+
+// listPrice — цена без скидки, если у строки есть скидка поставщика; иначе null.
+func listPrice(l ai.InvoiceLine) *string {
+	if l.Discount <= 0 || l.ListPrice <= l.Price || l.ListPrice >= 1e15 {
+		return nil
+	}
+	v := fmtNum(l.ListPrice, 4)
+	return &v
 }
 
 // readSum — сумма строки из накладной; не прочитана — null.
@@ -396,14 +415,70 @@ func matchLine(ctx context.Context, q db.Querier, networkID string, counterparty
 			return match{productID: &id, match: strp("alias"), confidence: 100}
 		}
 	}
-	var sim float64
-	// Похожее название — русское или узбекское.
-	err := q.QueryRow(ctx, `SELECT p.id, greatest(similarity(lower(p.name), $2), similarity(lower(p.name_uz), $2)) AS s FROM products p
-		WHERE `+visible+` AND (lower(p.name) % $2 OR lower(p.name_uz) % $2) ORDER BY s DESC, p.name LIMIT 1`, networkID, strings.ToLower(name)).Scan(&id, &sim)
-	if err == nil {
+	// Похожее название — русское или узбекское. Вес или объём в названии
+	// должен совпасть: «Lay's сметана 48*20гр» — не пачка 225 г.
+	rows, err := q.Query(ctx, `SELECT p.id, p.name, p.name_uz, greatest(similarity(lower(p.name), $2), similarity(lower(p.name_uz), $2)) AS s FROM products p
+		WHERE `+visible+` AND (lower(p.name) % $2 OR lower(p.name_uz) % $2) ORDER BY s DESC, p.name LIMIT 10`, networkID, strings.ToLower(name))
+	if err != nil {
+		return match{}
+	}
+	defer rows.Close()
+	want, hasSize := SizeOf(name)
+	for rows.Next() {
+		var pn, pnUz string
+		var sim float64
+		if rows.Scan(&id, &pn, &pnUz, &sim) != nil {
+			return match{}
+		}
+		if hasSize {
+			got, ok := SizeOf(pn)
+			if !ok {
+				got, ok = SizeOf(pnUz)
+			}
+			if ok && !sameSize(want, got) {
+				continue
+			}
+		}
 		return match{productID: &id, match: strp("name"), confidence: int(math.Round(sim * 100))}
 	}
 	return match{}
+}
+
+// Size — вес или объём из названия в граммах или миллилитрах.
+type Size struct {
+	V    float64
+	Kind byte // 'g' — вес, 'l' — объём
+}
+
+var sizeRe = regexp.MustCompile(`(\d+(?:[.,]\d+)?)\s*(кг|kg|гр|gr|г|g|мл|ml|л|l)(?:[^\p{L}]|$)`)
+
+// SizeOf — последний вес/объём в названии: «Lay's 48*20гр» → 20 г, «Кола 1,5 л» → 1500 мл.
+func SizeOf(name string) (Size, bool) {
+	m := sizeRe.FindAllStringSubmatch(strings.ToLower(name), -1)
+	if len(m) == 0 {
+		return Size{}, false
+	}
+	last := m[len(m)-1]
+	v, err := strconv.ParseFloat(strings.ReplaceAll(last[1], ",", "."), 64)
+	if err != nil || v <= 0 {
+		return Size{}, false
+	}
+	switch last[2] {
+	case "кг", "kg":
+		return Size{v * 1000, 'g'}, true
+	case "гр", "gr", "г", "g":
+		return Size{v, 'g'}, true
+	case "л", "l":
+		return Size{v * 1000, 'l'}, true
+	}
+	return Size{v, 'l'}, true
+}
+
+func sameSize(a, b Size) bool {
+	if a.Kind != b.Kind {
+		return true // вес против объёма — не сравниваем
+	}
+	return math.Abs(a.V-b.V) <= math.Max(a.V, b.V)*0.02
 }
 
 func matchCounterparty(ctx context.Context, q db.Querier, networkID, name, inn string) *string {
@@ -477,7 +552,11 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, id string) (Sc
 		       (SELECT i.price::text FROM stock_document_items i JOIN stock_documents d ON d.id = i.document_id
 		         WHERE d.network_id = $2 AND d.type = 'income' AND d.status = 'posted' AND i.product_id = l.product_id
 		           AND i.price IS NOT NULL AND d.currency = $3
-		         ORDER BY d.posted_at DESC LIMIT 1)
+		         ORDER BY d.posted_at DESC LIMIT 1),
+		       l.list_price::text,
+		       -- Без скидки за единицу товара: цена закупки × (без скидки / со скидкой).
+		       (CASE WHEN l.price > 0 THEN round(coalesce(l.cost, l.price / l.pack) * l.list_price / l.price, 2)
+		             ELSE round(l.list_price / l.pack, 2) END)::text
 		FROM invoice_scan_lines l
 		LEFT JOIN products p ON p.id = l.product_id
 		LEFT JOIN units u ON u.id = p.unit_id
@@ -489,16 +568,19 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, id string) (Sc
 		var l Line
 		err := r.Scan(&l.Line, &l.Name, &l.Barcode, &l.Unit, &l.Qty, &l.Price, &l.ReadSum, &l.Pack, &l.PackSource,
 			&l.StockQty, &l.Cost, &l.Sum, &l.ProductID, &l.ProductName, &l.UnitShort, &l.Fractional,
-			&l.Match, &l.Confidence, &l.Skipped, &l.LastPrice)
+			&l.Match, &l.Confidence, &l.Skipped, &l.LastPrice, &l.ListPrice, &l.ListCost)
 		return l, err
 	})
 	if err != nil {
 		return sc, err
 	}
-	var total float64
+	var total, discount float64
 	for i := range sc.Lines {
 		l := &sc.Lines[i]
 		l.State = lineState(l)
+		if d, ok := lineDiscount(l); ok && !l.Skipped {
+			discount += d
+		}
 		switch l.State {
 		case "ok":
 			sc.Counts.OK++
@@ -517,6 +599,8 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, id string) (Sc
 		}
 	}
 	sc.LinesTotal = strconv.FormatFloat(math.Round(total*100)/100, 'f', 2, 64)
+	sc.DiscountTotal = strconv.FormatFloat(math.Round(discount*100)/100, 'f', 2, 64)
+	sc.GrossTotal = strconv.FormatFloat(math.Round((total+discount)*100)/100, 'f', 2, 64)
 	if sc.InvoiceTotal != nil {
 		t, _ := strconv.ParseFloat(*sc.InvoiceTotal, 64)
 		ok := math.Abs(t-total) < 1
@@ -526,6 +610,34 @@ func (s *Service) Get(ctx context.Context, p *identity.Principal, id string) (Sc
 		sc.Lines = []Line{}
 	}
 	return sc, nil
+}
+
+// lineDiscount — скидка строки в % и в сумах (заполняет Discount, DiscountSum);
+// вернёт сумму скидки.
+func lineDiscount(l *Line) (float64, bool) {
+	if l.ListPrice == nil {
+		return 0, false
+	}
+	list, _ := strconv.ParseFloat(*l.ListPrice, 64)
+	price, _ := strconv.ParseFloat(l.Price, 64)
+	stock, _ := strconv.ParseFloat(l.StockQty, 64)
+	sum, _ := strconv.ParseFloat(l.Sum, 64)
+	listCost := 0.0
+	if l.ListCost != nil {
+		listCost, _ = strconv.ParseFloat(*l.ListCost, 64)
+	}
+	if list <= 0 || list <= price {
+		l.ListPrice, l.ListCost = nil, nil
+		return 0, false
+	}
+	pct := strconv.FormatFloat(math.Round((1-price/list)*10000)/100, 'f', -1, 64)
+	d := math.Round((stock*listCost-sum)*100) / 100
+	if d < 0 {
+		d = 0
+	}
+	ds := strconv.FormatFloat(d, 'f', 2, 64)
+	l.Discount, l.DiscountSum = &pct, &ds
+	return d, true
 }
 
 func lineState(l *Line) string {
@@ -689,7 +801,9 @@ type LineInput struct {
 	Pack *money.Qty `json:"pack"`
 	// Цена закупки за единицу товара; без неё — сумма строки / (qty × pack).
 	Cost *money.Price `json:"cost"`
-	Skip *bool        `json:"skip"`
+	// Цена без скидки за единицу накладной (С2); "" или 0 — скидки нет.
+	ListPrice *money.Price `json:"list_price"`
+	Skip      *bool        `json:"skip"`
 	// Запомнить название строки (и упаковку) для этого поставщика.
 	Remember bool `json:"remember"`
 }
@@ -775,6 +889,18 @@ func (s *Service) SetLine(ctx context.Context, p *identity.Principal, id string,
 				return apperr.Validation("cost: неверная цена").Uz("cost: narx notoʻgʻri")
 			}
 			if err := exec(`UPDATE invoice_scan_lines SET cost = $3 WHERE scan_id = $1 AND line = $2`, string(*in.Cost)); err != nil {
+				return err
+			}
+		}
+		if in.ListPrice != nil {
+			var v *string
+			if s := strings.TrimSpace(string(*in.ListPrice)); s != "" && s != "0" {
+				if !in.ListPrice.Valid() {
+					return apperr.Validation("list_price: неверная цена без скидки").Uz("list_price: chegirmasiz narx notoʻgʻri")
+				}
+				v = &s
+			}
+			if err := exec(`UPDATE invoice_scan_lines SET list_price = $3 WHERE scan_id = $1 AND line = $2`, v); err != nil {
 				return err
 			}
 		}
@@ -940,7 +1066,13 @@ func (s *Service) CreateDocument(ctx context.Context, p *identity.Principal, id 
 		}
 		// На склад — в единицах товара: qty × pack по цене за единицу.
 		price := money.Price(trimZeros(l.Cost))
-		items = append(items, inventory.ItemInput{ProductID: *l.ProductID, Qty: money.Qty(trimZeros(l.StockQty)), Price: &price})
+		it := inventory.ItemInput{ProductID: *l.ProductID, Qty: money.Qty(trimZeros(l.StockQty)), Price: &price}
+		// Скидка поставщика: цена без скидки — за единицу товара.
+		if l.ListCost != nil {
+			lc := money.Price(trimZeros(*l.ListCost))
+			it.ListPrice = &lc
+		}
+		items = append(items, it)
 	}
 	if len(items) == 0 {
 		return sc, apperr.Validation("в накладной нет строк для прихода").Uz("yuk xatida kirim uchun qator yoʻq")

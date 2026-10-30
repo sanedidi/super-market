@@ -11,7 +11,7 @@ import 'package:sm_core/sm_core.dart';
 import '../main.dart' show showMessage;
 import '../receipt/receipt_logic.dart' show parseNum;
 import '../start/scanner.dart';
-import '../start/sheets.dart' show ProductThumb, fillSheet;
+import '../start/sheets.dart' show ProductThumb, fieldNum, fillSheet;
 import '../start/start_api.dart';
 import '../start/start_logic.dart' show ProductRef, goods;
 import '../start/start_screen.dart';
@@ -575,7 +575,11 @@ class _ProductStockScreenState extends State<ProductStockScreen> {
           barcode: it['barcode'] as String?,
           unit: it['unit_short'] as String?,
           fractional: it['is_fractional'] == true,
-        ));
+        ),
+        price: it['price']?.toString(),
+        // Остаток показываем и «не посчитанный» — он пришёл приходом.
+        qty: it['qty']?.toString(),
+        cost: it['avg_cost']?.toString());
     if (mounted) _load();
   }
 
@@ -724,6 +728,14 @@ class _CountSheet extends StatefulWidget {
 class _CountSheetState extends State<_CountSheet> {
   final _c = TextEditingController();
   bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Текущий остаток — сразу в поле и выделен: совпадает — «Записать», нет — набрать поверх.
+    final q = fieldNum(widget.item['qty']);
+    if (q.isNotEmpty) _c.value = TextEditingValue(text: q, selection: TextSelection(baseOffset: 0, extentOffset: q.length));
+  }
 
   @override
   void dispose() {

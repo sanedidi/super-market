@@ -140,15 +140,28 @@ Future<AddResult> addToMyGoods(BuildContext context, StartApi start, ProductRef 
 /// «Цена и остаток» — сразу после «Добавить товар» в «Моих товарах»: цена
 /// продажи, сколько есть (пусто — «Остаток не посчитан») и цена закупки.
 /// «Позже» — товар остаётся без цены, касса спросит её при продаже.
-Future<void> fillSheet(BuildContext context, StartApi start, ProductRef p) {
-  return showSheet<void>(context, (_) => _FillSheet(start: start, product: p));
+/// Что о товаре уже известно (цена продажи, остаток, цена закупки) — сразу
+/// в полях; сохраняется только то, что поменяли.
+Future<void> fillSheet(BuildContext context, StartApi start, ProductRef p, {String? price, String? qty, String? cost}) {
+  return showSheet<void>(context, (_) => _FillSheet(start: start, product: p, price: price, qty: qty, cost: cost));
+}
+
+/// Число для поля ввода: «45000.00» → «45000», «1.500» → «1.5»; нет — пусто.
+String fieldNum(Object? v) {
+  final n = num.tryParse('${v ?? ''}');
+  if (n == null) return '';
+  if (n == n.roundToDouble()) return n.toInt().toString();
+  return n.toString();
 }
 
 class _FillSheet extends StatefulWidget {
-  const _FillSheet({required this.start, required this.product});
+  const _FillSheet({required this.start, required this.product, this.price, this.qty, this.cost});
 
   final StartApi start;
   final ProductRef product;
+
+  /// Уже известное: цена продажи, остаток (null — не посчитан), цена закупки.
+  final String? price, qty, cost;
 
   @override
   State<_FillSheet> createState() => _FillSheetState();
@@ -159,6 +172,18 @@ class _FillSheetState extends State<_FillSheet> {
   final _qty = TextEditingController();
   final _cost = TextEditingController();
   bool _busy = false;
+  late final String _price0 = fieldNum(widget.price), _qty0 = fieldNum(widget.qty), _cost0 = fieldNum(widget.cost);
+
+  /// Остаток уже есть — количество меняется пересчётом, цена закупки — из приходов.
+  bool get _hasStock => (num.tryParse(_qty0) ?? 0) > 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _price.text = _price0;
+    _qty.text = _qty0;
+    _cost.text = _cost0;
+  }
 
   @override
   void dispose() {
@@ -177,7 +202,7 @@ class _FillSheetState extends State<_FillSheet> {
       return v;
     }
 
-    final String? price, qty, cost;
+    String? price, qty, cost;
     try {
       price = read(_price, sellPriceWord());
       qty = read(_qty, tr('Количество', 'Miqdor'));
@@ -186,13 +211,23 @@ class _FillSheetState extends State<_FillSheet> {
       showMessage(context, e.message);
       return;
     }
-    if (price == null && qty == null) {
+    // Не поменяли — не отправляем.
+    bool same(String? v, String was) => v == null ? was.isEmpty : num.tryParse(v) == num.tryParse(was);
+    if (same(price, _price0)) price = null;
+    final qtyChanged = !same(qty, _qty0);
+    // Остаток уже есть — новое количество записывается пересчётом.
+    final recount = _hasStock && qtyChanged && qty != null;
+    if (!qtyChanged || recount) qty = null;
+    if (price == null && qty == null && !recount) {
       Navigator.pop(context);
       return;
     }
     setState(() => _busy = true);
     try {
-      await widget.start.fill(widget.product.id, price: price, qty: qty, cost: qty == null ? null : cost);
+      if (recount) await widget.start.count({widget.product.id: read(_qty, '')!});
+      if (price != null || qty != null) {
+        await widget.start.fill(widget.product.id, price: price, qty: qty, cost: qty == null ? null : cost);
+      }
       if (!mounted) return;
       showMessage(context, tr('${widget.product.name} — сохранено', '${widget.product.name} — saqlandi'));
       Navigator.pop(context);
@@ -226,7 +261,9 @@ class _FillSheetState extends State<_FillSheet> {
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Expanded(child: NumField(label: tr('Сколько есть, ${p.unit}', 'Qancha bor, ${p.unit}'), controller: _qty, hint: tr('не посчитан', 'sanalmagan'), decimal: p.fractional)),
         const SizedBox(width: 10),
-        Expanded(child: NumField(label: tr('Цена закупки', 'Xarid narxi'), controller: _cost, hint: tr('по желанию', 'ixtiyoriy'), digitsOnly: true)),
+        Expanded(
+            child: NumField(
+                label: tr('Цена закупки', 'Xarid narxi'), controller: _cost, hint: tr('по желанию', 'ixtiyoriy'), digitsOnly: true, enabled: !_hasStock)),
       ]),
       const SizedBox(height: 16),
       SheetButton(label: tr('Сохранить', 'Saqlash'), busy: _busy, onPressed: _save),

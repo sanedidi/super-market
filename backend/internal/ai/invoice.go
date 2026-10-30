@@ -32,6 +32,8 @@ type InvoiceLine struct {
 	// Скидка поставщика по строке, % (наценка — минус); price и sum — уже со
 	// скидкой, т.е. то, что магазин реально платит.
 	Discount float64 `json:"discount"`
+	// Цена за единицу без скидки; 0 — скидки нет.
+	ListPrice float64 `json:"list_price"`
 }
 
 const invoiceSystem = `Ты читаешь товарные накладные (счёт-фактуры) магазинов Узбекистана на русском, узбекском или английском.
@@ -49,10 +51,15 @@ const invoicePrompt = `На фото — одна накладная (стран
 qty, price и sum — ровно как напечатано в колонках «Кол-во», «Цена», «Сумма», ничего не пересчитывай:
 даже если qty × price ≠ sum (например, в наименовании «12 кг», qty 1, цена за кг) — так и верни, по сумме разберёмся сами.
 unit — как в колонке «Ед. изм.» (шт, кг, блок, кор, уп…), пусто, если колонки нет.
+Если колонки «Ед. изм.» нет — добавь в строку "qty_unit": в чём считается «Кол-во»: "шт" (штуки, пачки, бутылки),
+"упак" (блоки, коробки, упаковки) или пусто, если не понять. Подсказки: колонка веса строки (3 пачки по 20 г = 0,06 кг — штуки),
+цена за единицу (пачка чипсов 20 г стоит тысячи, коробка из 48 — сотни тысяч). «48*20гр» в названии — это сколько штук в коробке,
+а не то, что пришли коробки.
 Скидки поставщика: если у строки есть скидка или наценка (колонки «Цена без скидки», «Скидка %», «Сумма скидки»,
 «Цена со скидкой» и т.п.) — добавь в строку "discount": скидка в процентах (наценка — отрицательным числом)
 и "net_price": цена за единицу ПОСЛЕ скидки, как напечатана (нет такой колонки — null);
 price — цена ДО скидки, sum — сумма строки как напечатана (до или после скидки — как в накладной).
+Скидка 100% — товар бесплатно (бонус): так и верни "discount": 100, "net_price": 0.
 Если скидка одна на всю накладную (строка «Скидка 5%» внизу, а в строках её нет) — верни её в "discount" верхнего уровня, в процентах.
 total — именно «к оплате» (после всех скидок), а не «Итого» до скидки.
 Не придумывай строки, которых нет. Строки итогов, НДС и подписи — не товары.`
@@ -90,6 +97,7 @@ func ParseInvoice(text string) (Invoice, error) {
 			Sum      any `json:"sum"`
 			Discount any `json:"discount"`
 			NetPrice any `json:"net_price"`
+			QtyUnit  any `json:"qty_unit"`
 		} `json:"lines"`
 		Discount any `json:"discount"`
 	}
@@ -111,6 +119,10 @@ func ParseInvoice(text string) (Invoice, error) {
 	}
 	for _, l := range loose.Lines {
 		line := InvoiceLine{Name: str(l.Name, 300), Barcode: digits(str(l.Barcode, 40)), Unit: str(l.Unit, 20)}
+		// Колонки «Ед. изм.» нет, но видно, что считали штуками — единица «шт».
+		if line.Unit == "" && strings.EqualFold(str(l.QtyUnit, 20), "шт") {
+			line.Unit = "шт"
+		}
 		line.Qty, _ = num(l.Qty)
 		line.Price, _ = num(l.Price)
 		line.Sum, _ = num(l.Sum)
@@ -120,7 +132,8 @@ func ParseInvoice(text string) (Invoice, error) {
 			continue
 		}
 		// Нет цены — из суммы и количества.
-		if line.Price == 0 && line.Qty > 0 && line.Sum > 0 {
+		free := line.Discount >= 100
+		if line.Price == 0 && line.Qty > 0 && line.Sum > 0 && !free {
 			line.Price = math.Round(line.Sum/line.Qty*100) / 100
 		}
 		if line.Qty <= 0 && line.Price > 0 && line.Sum > 0 {
@@ -218,7 +231,8 @@ func discountRate(price, netPrice, pct float64) float64 {
 	if price > 0 && netPrice > 0 && netPrice != price {
 		d = (1 - netPrice/price) * 100
 	}
-	if d >= 100 || d < -100 || math.Abs(d) < 0.001 {
+	// 100% — бесплатно (бонус поставщика): цена и сумма 0.
+	if d > 100 || d < -100 || math.Abs(d) < 0.001 {
 		return 0
 	}
 	return math.Round(d*10000) / 10000
@@ -249,6 +263,7 @@ func applyDiscounts(inv *Invoice) {
 			continue
 		}
 		f := 1 - l.Discount/100
+		l.ListPrice = l.Price
 		if l.Sum > 0 {
 			gross := l.Qty * l.Price
 			net := gross * f

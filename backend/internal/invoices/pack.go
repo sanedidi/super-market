@@ -95,6 +95,10 @@ func GuessPack(in PackIn) (float64, string) {
 			return n, PackGuess
 		}
 	}
+	// В накладной прямо сказано «шт» — пришли штуки, «48*20гр» в названии — размер коробки.
+	if pieceUnit(in.Unit) {
+		return 1, PackNone
+	}
 	byUnit := packUnit(in.Unit)
 	if in.NetPack > 1 {
 		if byUnit {
@@ -116,6 +120,12 @@ func GuessPack(in PackIn) (float64, string) {
 }
 
 var packUnitRe = regexp.MustCompile(`^(бл|блок|упак|уп|кор|короб|коробка|ящ|ящик|пач|пачка|спайка|blok|quti|upak|karobka|box|pack|pk|ctn)\.?$`)
+
+var pieceUnitRe = regexp.MustCompile(`^(шт|штук|штука|dona|ta|pcs|pc)\.?$`)
+
+func pieceUnit(u string) bool {
+	return pieceUnitRe.MatchString(strings.ToLower(strings.TrimSpace(u)))
+}
 
 func packUnit(u string) bool {
 	return packUnitRe.MatchString(strings.ToLower(strings.TrimSpace(u)))

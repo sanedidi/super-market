@@ -18,8 +18,8 @@ import {
   usePaged,
 } from '@sm/shared'
 import { useStore } from '../ctx'
-import { Num, RangeFilter, Signed, docTypeTitles, kindTitles, thisMonth, type Range } from '../ui'
-import type { Cashbox, CashOperation, CashTransfer, Counterparty, Entry, Rate, Reason } from '../types'
+import { CounterpartySelect, Num, RangeFilter, Signed, docTypeTitles, kindTitles, thisMonth, type Range } from '../ui'
+import type { Cashbox, CashOperation, CashTransfer, Entry, Rate, Reason } from '../types'
 
 const cashboxLabel = (c: Cashbox) => `${c.name} (${c.currency})${c.store_name ? ' · ' + c.store_name : ''}`
 
@@ -253,9 +253,7 @@ function OperationModal({ open, onClose }: { open: boolean; onClose: () => void 
           </Form.Item>
         ) : (
           <Form.Item name="counterparty_id" label={tr('Контрагент', 'Kontragent')} rules={[{ required: true, message: tr('Выберите контрагента', 'Kontragentni tanlang') }]}>
-            <RemoteSelect<Counterparty>
-              path="/store/finance/counterparties"
-              search
+            <CounterpartySelect
               placeholder={tr('Поиск по названию или телефону', 'Nomi yoki telefon boʻyicha qidirish')}
               filter={(c) => c.is_active}
               label={(c) => `${c.name} · ${tr('сальдо', 'saldo')} ${money(c.balance)}`}

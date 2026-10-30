@@ -1,10 +1,12 @@
 // Общие элементы страниц панели магазина.
 import { useEffect, useState, type ReactNode } from 'react'
-import { Alert, DatePicker, InputNumber, Select, Typography, type InputNumberProps, type SelectProps } from 'antd'
+import { Alert, App, Button, DatePicker, Divider, InputNumber, Select, Typography, type InputNumberProps, type SelectProps } from 'antd'
+import { PlusOutlined } from '@ant-design/icons'
+import { useQueryClient } from '@tanstack/react-query'
 import dayjs, { type Dayjs } from 'dayjs'
-import { useList, money, tr } from '@sm/shared'
+import { api, errorText, useList, money, tr } from '@sm/shared'
 import { useStore } from './ctx'
-import type { Product } from './types'
+import type { Counterparty, Product } from './types'
 
 export type Range = [Dayjs, Dayjs]
 
@@ -161,4 +163,87 @@ export function trimNum(v: string | null | undefined, digits = 2): string | null
   const n = Number(v)
   if (Number.isNaN(n)) return v
   return String(Number(n.toFixed(digits)))
+}
+
+/**
+ * Выбор поставщика (контрагента) с поиском на сервере и «Добавить «…»» прямо
+ * в списке: набрали название, которого нет, — поставщик заводится и сразу выбран.
+ */
+export function CounterpartySelect({
+  value,
+  onChange,
+  selectedLabel,
+  label,
+  filter,
+  ...props
+}: {
+  value?: string
+  onChange?: (id: string, c?: Counterparty) => void
+  selectedLabel?: ReactNode
+  label?: (c: Counterparty) => ReactNode
+  filter?: (c: Counterparty) => boolean
+} & Omit<SelectProps, 'value' | 'onChange' | 'options'>) {
+  const { message } = App.useApp()
+  const qc = useQueryClient()
+  const [q, setQ] = useState('')
+  const [debounced, setDebounced] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [created, setCreated] = useState<Counterparty | null>(null)
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(q.trim()), 300)
+    return () => clearTimeout(t)
+  }, [q])
+  const { data, isFetching } = useList<Counterparty>('/store/finance/counterparties', { q: debounced || undefined, limit: 50 })
+  const items = (data ?? []).filter((c) => (filter ? filter(c) : c.is_active || c.id === value))
+  const options = items.map((c) => ({ value: c.id, label: label ? label(c) : c.name }))
+  if (value && !options.some((o) => o.value === value)) {
+    options.unshift({ value, label: created?.id === value ? created.name : (selectedLabel ?? value) })
+  }
+  const name = q.trim()
+  const exact = items.some((c) => c.name.trim().toLowerCase() === name.toLowerCase())
+  const add = async () => {
+    if (!name) return
+    setBusy(true)
+    try {
+      const c = await api.post<Counterparty>('/store/finance/counterparties', { name })
+      setCreated(c)
+      setQ('')
+      void qc.invalidateQueries({ queryKey: ['/store/finance/counterparties'] })
+      onChange?.(c.id, c)
+      message.success(tr(`Поставщик «${c.name}» добавлен`, `«${c.name}» yetkazib beruvchisi qoʻshildi`))
+    } catch (e) {
+      message.error(errorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Select
+      showSearch
+      value={value || undefined}
+      filterOption={false}
+      searchValue={q}
+      onSearch={setQ}
+      loading={isFetching || busy}
+      options={options as SelectProps['options']}
+      onChange={(id: string) => onChange?.(id, items.find((c) => c.id === id))}
+      style={{ minWidth: 200 }}
+      popupRender={(menu) => (
+        <>
+          {menu}
+          <Divider style={{ margin: '6px 0' }} />
+          {name && !exact ? (
+            <Button type="link" icon={<PlusOutlined />} loading={busy} onClick={add} style={{ width: '100%', textAlign: 'left' }}>
+              {tr(`Добавить «${name}» — новый поставщик`, `«${name}» — yangi yetkazib beruvchi qoʻshish`)}
+            </Button>
+          ) : (
+            <Typography.Text type="secondary" style={{ display: 'block', padding: '4px 12px' }}>
+              {tr('Нет нужного — наберите название и добавьте', 'Kerakli yoʻq — nomini yozing va qoʻshing')}
+            </Typography.Text>
+          )}
+        </>
+      )}
+      {...props}
+    />
+  )
 }

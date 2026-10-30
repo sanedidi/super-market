@@ -41,6 +41,9 @@ func TestGuessPack(t *testing.T) {
 		{"unit block, net pack", PackIn{Qty: 3, Price: 50000, Unit: "бл", NetPack: 12}, 12, PackProduct},
 		{"weight, no sum", PackIn{Qty: 5.2, Price: 30000, Fractional: true, Name: "Сыр 12"}, 1, PackNone},
 		{"plain", PackIn{Qty: 10, Price: 4000, ReadSum: 40000, Name: "Вода питьевая 1,5 л"}, 1, PackNone},
+		// УТММ-878576: «Lay's 48*20гр», 3 шт × 4 200 — штуки, а не 3 коробки по 48.
+		{"pieces unit beats name", PackIn{Qty: 3, Price: 4200, ReadSum: 12600, Unit: "шт", Name: "Lay's - Сметана зелень 48*20гр"}, 1, PackNone},
+		{"no unit, name pack", PackIn{Qty: 3, Price: 4200, ReadSum: 12600, Name: "Lay's - Сметана зелень 48*20гр"}, 48, PackGuess},
 	}
 	for _, c := range cases {
 		p, s := GuessPack(c.in)
@@ -56,5 +59,27 @@ func TestGuessPack(t *testing.T) {
 	}
 	if c := lineCost(12, 84000, 0, 6); c != 14000 {
 		t.Errorf("cost without sum = %v", c)
+	}
+}
+
+func TestSizeOf(t *testing.T) {
+	for name, want := range map[string]float64{
+		"Lay's - Сметана зелень 48*20гр":      20,
+		"Чипсы Lay's сметана и зелень, 225 г": 225,
+		"Кола 1,5 л":     1500,
+		"Fruzo, 120 g":   120,
+		"Окорочка 12 кг": 12000,
+	} {
+		if got, ok := SizeOf(name); !ok || got.V != want {
+			t.Errorf("SizeOf(%q) = %v %v, want %v", name, got, ok, want)
+		}
+	}
+	if _, ok := SizeOf("Хлеб белый"); ok {
+		t.Error("no size expected")
+	}
+	a, _ := SizeOf("Lay's 48*20гр")
+	b, _ := SizeOf("Lay's 225 г")
+	if sameSize(a, b) {
+		t.Error("20 г ≠ 225 г")
 	}
 }

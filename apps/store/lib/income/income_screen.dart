@@ -12,6 +12,7 @@ import '../start/start_api.dart';
 import '../start/start_logic.dart';
 import '../start/stock_count.dart' show askShelfCounts;
 import '../state.dart';
+import '../suppliers/new_supplier.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'income_logic.dart';
@@ -638,30 +639,17 @@ class _SupplierSheetState extends State<_SupplierSheet> {
   }
 
   Future<void> _create() async {
-    final api = context.read<Api>();
-    final name = await promptSheet(context,
-        title: tr('Новый поставщик', 'Yangi yetkazib beruvchi'),
-        text: tr('Название фирмы или имя агента', 'Firma nomi yoki agent ismi'),
-        confirm: tr('Добавить', 'Qoʻshish'),
-        hint: tr('Например, Coca-Cola Bottlers', 'Masalan, Coca-Cola Bottlers'));
-    if (name == null || name.trim().isEmpty || !mounted) return;
     setState(() => _busy = true);
-    try {
-      final c = await api.post('/store/finance/counterparties', {'name': name.trim()}) as Map<String, dynamic>;
-      if (mounted) Navigator.pop(context, c);
-    } catch (e) {
-      if (mounted) showMessage(context, e);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    final c = await createSupplier(context, name: _q.text);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (c != null) Navigator.pop(context, c);
   }
 
   @override
   Widget build(BuildContext context) {
     final items = _items;
-    // Нового поставщика заводит и сотрудник, принимающий приход («SM Сотрудник»).
-    final st = context.read<StoreState>();
-    final canCreate = st.can('counterparties.manage') || st.can('inventory.manage');
+    final canCreate = canCreateSupplier(context);
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Text(tr('Поставщик', 'Yetkazib beruvchi'), style: AppText.h3),
       const SizedBox(height: 12),
@@ -674,14 +662,7 @@ class _SupplierSheetState extends State<_SupplierSheet> {
         decoration: InputDecoration(prefixIcon: const Icon(Icons.search_rounded), hintText: tr('Название, телефон или ИНН', 'Nomi, telefon yoki STIR')),
       ),
       const SizedBox(height: 8),
-      if (canCreate)
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          enabled: !_busy,
-          leading: const IconBox(Icons.add_business_rounded, bg: AppColors.primarySoft, fg: AppColors.primary, size: 40, iconSize: 22, radius: 12),
-          title: Text(tr('Новый поставщик', 'Yangi yetkazib beruvchi'), style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
-          onTap: _create,
-        ),
+      if (canCreate) NewSupplierTile(query: _q.text, enabled: !_busy, onTap: _create),
       if (items == null)
         const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()))
       else if (items.isEmpty)
