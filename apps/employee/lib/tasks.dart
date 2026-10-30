@@ -5,6 +5,7 @@ import 'package:sm_store/state.dart';
 import 'package:sm_store/suppliers/income_screen.dart';
 import 'package:sm_store/ui/theme.dart';
 import 'package:sm_store/ui/widgets.dart';
+import 'package:sm_store/stock/my_products.dart' show ProductLink;
 
 import 'logic.dart';
 import 'recount.dart';
@@ -358,7 +359,7 @@ class _CheckStockScreenState extends State<CheckStockScreen> {
                     child: AppCard(
                       padding: const EdgeInsets.all(12),
                       child: Row(children: [
-                        ProductThumb(image: it['image'] as String?, size: 44, fractional: it['is_fractional'] == true),
+                        ProductLink(productId: '${it['product_id']}', name: '${it['name']}', image: it['image'] as String?, child: ProductThumb(image: it['image'] as String?, size: 44, fractional: it['is_fractional'] == true)),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -474,7 +475,7 @@ class _PriceTagsScreenState extends State<PriceTagsScreen> {
                       Icon(_picked.contains('${it['product_id']}') ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
                           color: _picked.contains('${it['product_id']}') ? AppColors.primary : AppColors.muted),
                       const SizedBox(width: 10),
-                      ProductThumb(image: it['image'] as String?, size: 44),
+                      ProductLink(productId: '${it['product_id']}', name: '${it['name']}', image: it['image'] as String?, child: ProductThumb(image: it['image'] as String?, size: 44)),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

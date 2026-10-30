@@ -8,6 +8,7 @@ import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'courier_picker.dart';
+import '../stock/my_products.dart' show ProductLink;
 
 /// Тон плашки статуса заказа.
 ChipTone orderTone(String s) => switch (s) {
@@ -239,7 +240,7 @@ class _OrderScreenState extends State<OrderScreen> {
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('${it['product_name']}', style: AppText.bodyStrong),
+                  ProductLink(productId: '${it['product_id']}', name: '${it['product_name']}', image: null, child: Text('${it['product_name']}', style: AppText.bodyStrong)),
                   Text('${qty(it['qty'], '${it['unit_short'] ?? ''}')} × ${money(it['price'])}', style: AppText.small),
                 ]),
               ),

@@ -75,6 +75,8 @@ type Item struct {
 	Qty         string  `json:"qty"`
 	Price       *string `json:"price"`
 	ExpectedQty *string `json:"expected_qty"`
+	// Цена без скидки поставщика; null — без скидки.
+	ListPrice *string `json:"list_price"`
 }
 
 type Document struct {
@@ -104,12 +106,14 @@ type Document struct {
 	Reason       string     `json:"reason"`
 	Note         string     `json:"note"`
 	Total        string     `json:"total"`
-	CreatedBy    string     `json:"created_by"`
-	PostedAt     *time.Time `json:"posted_at"`
-	CreatedAt    time.Time  `json:"created_at"`
-	ItemsCount   int        `json:"items_count"`
-	Photos       []string   `json:"photos"`
-	Items        []Item     `json:"items,omitempty"`
+	// Скидка поставщика по документу (приход): сумма строк без скидки − total.
+	Discount   string     `json:"discount"`
+	CreatedBy  string     `json:"created_by"`
+	PostedAt   *time.Time `json:"posted_at"`
+	CreatedAt  time.Time  `json:"created_at"`
+	ItemsCount int        `json:"items_count"`
+	Photos     []string   `json:"photos"`
+	Items      []Item     `json:"items,omitempty"`
 }
 
 const docSelect = `
@@ -117,7 +121,9 @@ const docSelect = `
 	       d.counterparty_id, c.name, d.currency, d.rate::text, d.reason, d.note, CASE WHEN d.status = 'draft' THEN COALESCE((SELECT sum(i.qty * i.price) FROM stock_document_items i WHERE i.document_id = d.id), 0)::numeric(18,2) ELSE d.total END::text,
 	       e.full_name, d.posted_at, d.created_at,
 	       (SELECT count(*) FROM stock_document_items i WHERE i.document_id = d.id)::int,
-	       d.to_store_id, ts.name, d.supply_order_id, d.source_shipment_id, d.received_at, d.received_diff::text, d.photos
+	       d.to_store_id, ts.name, d.supply_order_id, d.source_shipment_id, d.received_at, d.received_diff::text, d.photos,
+	       COALESCE((SELECT sum(i.qty * (i.list_price - i.price)) FROM stock_document_items i
+	                  WHERE i.document_id = d.id AND i.list_price IS NOT NULL AND i.price IS NOT NULL), 0)::numeric(18,2)::text
 	FROM stock_documents d
 	LEFT JOIN stores ts     ON ts.id = d.to_store_id
 	JOIN warehouses w       ON w.id = d.warehouse_id
@@ -130,7 +136,7 @@ func scanDoc(row pgx.CollectableRow) (Document, error) {
 	err := row.Scan(&d.ID, &d.Type, &d.Number, &d.Status, &d.WarehouseID, &d.WarehouseName, &d.StoreID,
 		&d.ToWarehouseID, &d.ToWarehouseName, &d.CounterpartyID, &d.CounterpartyName, &d.Currency, &d.Rate,
 		&d.Reason, &d.Note, &d.Total, &d.CreatedBy, &d.PostedAt, &d.CreatedAt, &d.ItemsCount,
-		&d.ToStoreID, &d.ToStoreName, &d.SupplyOrderID, &d.SourceShipmentID, &d.ReceivedAt, &d.ReceivedDiff, &d.Photos)
+		&d.ToStoreID, &d.ToStoreName, &d.SupplyOrderID, &d.SourceShipmentID, &d.ReceivedAt, &d.ReceivedDiff, &d.Photos, &d.Discount)
 	d.TypeTitle = typeTitles[d.Type].RU
 	return d, err
 }
@@ -198,7 +204,8 @@ func (s *Service) get(ctx context.Context, q db.Querier, p *identity.Principal, 
 		return Document{}, err
 	}
 	rows, err = q.Query(ctx, `
-		SELECT i.line, i.product_id, loc(p.name, p.name_uz), loc(u.short_name, u.short_name_uz), i.qty::text, i.price::text, i.expected_qty::text
+		SELECT i.line, i.product_id, loc(p.name, p.name_uz), loc(u.short_name, u.short_name_uz), i.qty::text, i.price::text, i.expected_qty::text,
+		       i.list_price::text
 		FROM stock_document_items i
 		JOIN products p ON p.id = i.product_id
 		JOIN units u    ON u.id = p.unit_id
@@ -214,6 +221,8 @@ type ItemInput struct {
 	ProductID string       `json:"product_id"`
 	Qty       money.Qty    `json:"qty"`
 	Price     *money.Price `json:"price"` // до 4 знаков: себестоимость и цены в USD
+	// Приход: цена без скидки поставщика (price — со скидкой); пусто — без скидки.
+	ListPrice *money.Price `json:"list_price"`
 }
 
 type Input struct {
@@ -439,13 +448,26 @@ func (s *Service) replaceItems(ctx context.Context, tx pgx.Tx, p *identity.Princ
 		} else if it.Price != nil {
 			return apperr.Validation("items: у этого документа нет цен (строка " + line + ")").Uz("items: bu hujjatda narxlar yoʻq (" + line + "-qator)")
 		}
+		// Скидка поставщика — только в приходе: цена без скидки не меньше цены.
+		var listPrice *string
+		if it.ListPrice != nil && *it.ListPrice != "" {
+			if docType != TypeIncome || price == nil || !it.ListPrice.Valid() {
+				return apperr.Validation("items: цена без скидки — только в приходе (строка " + line + ")").Uz("items: chegirmasiz narx — faqat kirimda (" + line + "-qator)")
+			}
+			lp, _ := strconv.ParseFloat(string(*it.ListPrice), 64)
+			pp, _ := strconv.ParseFloat(*price, 64)
+			if lp > pp {
+				v := string(*it.ListPrice)
+				listPrice = &v
+			}
+		}
 		tag, err := tx.Exec(ctx, `
-			INSERT INTO stock_document_items (document_id, line, product_id, qty, price)
-			SELECT $1, $2, p.id, $3::numeric, $4::numeric FROM products p
+			INSERT INTO stock_document_items (document_id, line, product_id, qty, price, list_price)
+			SELECT $1, $2, p.id, $3::numeric, $4::numeric, $7::numeric FROM products p
 			JOIN units u ON u.id = p.unit_id
 			WHERE p.id = $5 AND (p.network_id IS NULL OR p.network_id = $6)
 			  AND (u.is_fractional OR $3::numeric = trunc($3::numeric))`,
-			docID, i+1, string(it.Qty), price, it.ProductID, p.NetworkID)
+			docID, i+1, string(it.Qty), price, it.ProductID, p.NetworkID, listPrice)
 		if err != nil {
 			return err
 		}

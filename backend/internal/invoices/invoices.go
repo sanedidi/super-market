@@ -101,20 +101,20 @@ type Line struct {
 }
 
 type Scan struct {
-	ID               string    `json:"id"`
-	StoreID          string    `json:"store_id"`
-	Status           string    `json:"status"`
-	Images           []string  `json:"images"`
-	SupplierName     string    `json:"supplier_name"`
-	SupplierINN      string    `json:"supplier_inn"`
-	InvoiceNumber    string    `json:"invoice_number"`
-	InvoiceDate      *string   `json:"invoice_date"`
-	Currency         string    `json:"currency"`
-	InvoiceTotal     *string   `json:"invoice_total"`
-	LinesTotal       string    `json:"lines_total"`
+	ID            string   `json:"id"`
+	StoreID       string   `json:"store_id"`
+	Status        string   `json:"status"`
+	Images        []string `json:"images"`
+	SupplierName  string   `json:"supplier_name"`
+	SupplierINN   string   `json:"supplier_inn"`
+	InvoiceNumber string   `json:"invoice_number"`
+	InvoiceDate   *string  `json:"invoice_date"`
+	Currency      string   `json:"currency"`
+	InvoiceTotal  *string  `json:"invoice_total"`
+	LinesTotal    string   `json:"lines_total"`
 	// Скидка поставщика по строкам и сумма строк без скидки.
-	DiscountTotal string `json:"discount_total"`
-	GrossTotal    string `json:"gross_total"`
+	DiscountTotal    string    `json:"discount_total"`
+	GrossTotal       string    `json:"gross_total"`
 	TotalMatches     *bool     `json:"total_matches"`
 	CounterpartyID   *string   `json:"counterparty_id"`
 	CounterpartyName *string   `json:"counterparty_name"`
@@ -319,9 +319,9 @@ func (s *Service) process(ctx context.Context, id, networkID string) error {
 		for i, l := range inv.Lines {
 			m := matchLine(ctx, tx, networkID, cp, l.Name, l.Barcode)
 			_, err := tx.Exec(ctx, `
-				INSERT INTO invoice_scan_lines (scan_id, line, name, barcode, unit, qty, price, read_sum, product_id, match, confidence, list_price)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-				id, i+1, l.Name, l.Barcode, l.Unit, fmtNum(l.Qty, 3), fmtNum(l.Price, 4), readSum(l), m.productID, m.match, m.confidence, listPrice(l))
+				INSERT INTO invoice_scan_lines (scan_id, line, name, barcode, unit, qty, price, read_sum, product_id, match, confidence, list_price, qty_in)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+				id, i+1, l.Name, l.Barcode, l.Unit, fmtNum(l.Qty, 3), fmtNum(l.Price, 4), readSum(l), m.productID, m.match, m.confidence, listPrice(l), l.QtyIn)
 			if err != nil {
 				return err
 			}

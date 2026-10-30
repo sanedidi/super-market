@@ -12,6 +12,7 @@ import '../start/stock_count.dart' show askShelfCounts;
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
+import '../stock/my_products.dart' show ProductLink;
 
 String _q(num v) => v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
@@ -274,11 +275,11 @@ class _SupplyIncomeScreenState extends State<SupplyIncomeScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(children: [
-        const ProductThumb(null, size: 40),
+        ProductLink(productId: '${it['product_id']}', name: '${it['product_name']}', image: null, child: const ProductThumb(null, size: 40)),
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${it['product_name']}', style: AppText.bodyStrong),
+            ProductLink(productId: '${it['product_id']}', name: '${it['product_name']}', image: null, child: Text('${it['product_name']}', style: AppText.bodyStrong)),
             Text(
                 [
                   '${qty(shipped, unit)} × ${money(it['price'], suffix: false)}',

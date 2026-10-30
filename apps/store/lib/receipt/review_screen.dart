@@ -12,6 +12,7 @@ import 'line_sheet.dart';
 import 'processing_screen.dart';
 import 'receipt_logic.dart';
 import 'supplier_sheet.dart';
+import '../stock/my_products.dart' show ProductLink;
 
 /// П3 · Проверка прихода: поставщик, итог, строки → «Провести».
 class ReviewScreen extends StatefulWidget {
@@ -221,7 +222,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
           ),
           if (s['total_matches'] != null) ...[
             const SizedBox(height: 12),
-            _TotalBanner(ok: s['total_matches'] == true, invoice: s['invoice_total'], lines: s['lines_total']),
+            _TotalBanner(ok: s['total_matches'] == true, invoice: s['invoice_total'], lines: s['lines_total'], discount: s['discount_total'], gross: s['gross_total']),
           ],
           const SizedBox(height: 12),
           Wrap(spacing: 8, runSpacing: 8, children: [
@@ -230,6 +231,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
             if (_count('pack') > 0) StatusChip('${_count('pack')} ${tr('блоки или штуки?', 'blokmi yoki donami?')}', icon: Icons.help_rounded, tone: ChipTone.amber),
             if (_count('missing') > 0) StatusChip('${_count('missing')} ${tr('не найдено', 'topilmadi')}', icon: Icons.help_rounded, tone: ChipTone.red),
             if (_count('skipped') > 0) StatusChip('${_count('skipped')} ${tr('пропущено', 'oʻtkazib yuborildi')}', tone: ChipTone.gray),
+            if (lines.any((l) => l['discount'] != null && l['skipped'] != true))
+              StatusChip('${lines.where((l) => l['discount'] != null && l['skipped'] != true).length} ${tr('со скидкой', 'chegirmali')}',
+                  icon: Icons.sell_rounded, tone: ChipTone.red),
           ]),
         ]),
       ),
@@ -258,7 +262,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
       decoration: const BoxDecoration(color: AppColors.white, boxShadow: [BoxShadow(color: Color(0x0F000000), blurRadius: 16, offset: Offset(0, -4))]),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Row(children: [
-          Text('${tr('Позиций', 'Pozitsiyalar')}: $lines', style: AppText.small),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('${tr('Позиций', 'Pozitsiyalar')}: $lines', style: AppText.small),
+            if ((num.tryParse('${s['discount_total'] ?? ''}') ?? 0) > 0)
+              Text(tr('скидка −${money(s['discount_total'], suffix: false)}', 'chegirma −${money(s['discount_total'], suffix: false)}'),
+                  style: AppText.small.copyWith(color: AppColors.primary, fontWeight: FontWeight.w600)),
+          ]),
           const Spacer(),
           Text(money(s['lines_total']), style: AppText.h3),
         ]),
@@ -285,11 +294,15 @@ class _ReviewScreenState extends State<ReviewScreen> {
 }
 
 class _TotalBanner extends StatelessWidget {
-  const _TotalBanner({required this.ok, required this.invoice, required this.lines});
+  const _TotalBanner({required this.ok, required this.invoice, required this.lines, this.discount, this.gross});
 
   final bool ok;
   final Object? invoice;
   final Object? lines;
+
+  /// С1 · Скидка поставщика по строкам и сумма без скидки.
+  final Object? discount;
+  final Object? gross;
 
   @override
   Widget build(BuildContext context) {
@@ -310,11 +323,25 @@ class _TotalBanner extends StatelessWidget {
                     : tr('в накладной ${money(invoice)}, по строкам ${money(lines)} — проверьте строки',
                         'yuk xatida ${money(invoice)}, qatorlar boʻyicha ${money(lines)} — qatorlarni tekshiring'),
                 style: AppText.small.copyWith(color: fg)),
+            if ((num.tryParse('${discount ?? ''}') ?? 0) > 0) ...[
+              const SizedBox(height: 8),
+              _row(tr('Без скидки', 'Chegirmasiz'), money(gross, suffix: false), fg, FontWeight.w500),
+              _row(tr('Скидка поставщика', 'Yetkazib beruvchi chegirmasi'), '−${money(discount, suffix: false)}', fg, FontWeight.w700),
+              _row(tr('К оплате', 'Toʻlovga'), money(lines, suffix: false), fg, FontWeight.w700),
+            ],
           ]),
         ),
       ]),
     );
   }
+
+  Widget _row(String k, String v, Color c, FontWeight w) => Padding(
+        padding: const EdgeInsets.only(top: 2),
+        child: Row(children: [
+          Expanded(child: Text(k, style: AppText.small.copyWith(color: c))),
+          Text(v, style: AppText.small.copyWith(color: c, fontWeight: w)),
+        ]),
+      );
 }
 
 class _LineRow extends StatelessWidget {
@@ -349,6 +376,7 @@ class _LineRow extends StatelessWidget {
       sub += tr(' · ${change > 0 ? 'дороже' : 'дешевле'} прошлого на ${change.abs()}%', ' · oldingisidan ${change.abs()}% ${change > 0 ? 'qimmat' : 'arzon'}');
     }
     final note = state == 'skipped' ? null : packNote(line);
+    final discount = state == 'skipped' ? null : line['discount'];
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -359,9 +387,13 @@ class _LineRow extends StatelessWidget {
             const SizedBox(width: 10),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(
-                  state == 'skipped' ? tr('Пропущена', 'Oʻtkazib yuborilgan') : (productName ?? tr('Не найден в каталоге', 'Katalogda topilmadi')),
-                  style: AppText.bodyStrong.copyWith(color: state == 'missing' ? AppColors.primary : (state == 'skipped' ? AppColors.muted : AppColors.ink)),
+                ProductLink(
+                  productId: state == 'skipped' ? null : line['product_id'] as String?,
+                  name: productName,
+                  child: Text(
+                    state == 'skipped' ? tr('Пропущена', 'Oʻtkazib yuborilgan') : (productName ?? tr('Не найден в каталоге', 'Katalogda topilmadi')),
+                    style: AppText.bodyStrong.copyWith(color: state == 'missing' ? AppColors.primary : (state == 'skipped' ? AppColors.muted : AppColors.ink)),
+                  ),
                 ),
                 Text('«${line['name']}»', style: AppText.small.copyWith(color: AppColors.muted, fontSize: 12)),
                 Text(sub,
@@ -371,11 +403,23 @@ class _LineRow extends StatelessWidget {
                   const SizedBox(height: 4),
                   StatusChip(note, icon: Icons.auto_fix_high_rounded),
                 ],
+                // С1 · Скидка поставщика: % и цена без скидки — зачёркнутая.
+                if (discount != null) ...[
+                  const SizedBox(height: 4),
+                  Wrap(spacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                    StatusChip(tr('скидка ${numText(discount)}%', 'chegirma ${numText(discount)}%'), icon: Icons.sell_rounded, tone: ChipTone.red),
+                    Text(tr('${numText(line['list_cost'])} за ${lineUnit(line)}', '${lineUnit(line)} ${numText(line['list_cost'])}'),
+                        style: AppText.small.copyWith(fontSize: 12, color: AppColors.muted, decoration: TextDecoration.lineThrough)),
+                  ]),
+                ],
               ]),
             ),
             const SizedBox(width: 8),
             Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
               Text(money(line['sum'], suffix: false), style: AppText.bodyStrong.copyWith(color: state == 'skipped' ? AppColors.muted : AppColors.ink)),
+              if (discount != null && state != 'skipped')
+                Text(money((num.tryParse('${line['sum']}') ?? 0) + (num.tryParse('${line['discount_sum']}') ?? 0), suffix: false),
+                    style: AppText.small.copyWith(fontSize: 12, color: AppColors.muted, decoration: TextDecoration.lineThrough)),
               if (state == 'check') Text(tr('Проверить', 'Tekshirish'), style: AppText.caption.copyWith(color: color)),
             ]),
           ]),

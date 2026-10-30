@@ -11,6 +11,7 @@ import '../main.dart' show showMessage;
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
+import '../stock/my_products.dart' show ProductLink;
 
 String _q(num v) => v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
@@ -345,7 +346,7 @@ class _PriceRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(children: [
-        ProductThumb('${it['image'] ?? ''}'),
+        ProductLink(productId: '${it['product_id']}', name: '${it['name']}', image: it['image'] as String?, child: ProductThumb('${it['image'] ?? ''}')),
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -437,11 +438,11 @@ class _SupplyOrderDetailScreenState extends State<SupplyOrderDetailScreen> {
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       child: Row(children: [
-                        ProductThumb('${it['image'] ?? ''}', size: 40),
+                        ProductLink(productId: '${it['product_id']}', name: '${it['name']}', image: it['image'] as String?, child: ProductThumb('${it['image'] ?? ''}', size: 40)),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text('${it['name']}', style: AppText.bodyStrong),
+                            ProductLink(productId: '${it['product_id']}', name: '${it['name']}', image: it['image'] as String?, child: Text('${it['name']}', style: AppText.bodyStrong)),
                             Text('${qty(it['qty'], '${it['unit'] ?? ''}')} × ${money(it['price'])}', style: AppText.small),
                             if (shipped && n(it['ship_qty']) != n(it['qty']))
                               Text(tr('Отгружено ${qty(it['ship_qty'])}', '${qty(it['ship_qty'])} joʻnatildi'), style: AppText.small.copyWith(color: AppColors.warningInk)),

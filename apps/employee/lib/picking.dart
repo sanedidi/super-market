@@ -5,6 +5,7 @@ import 'package:sm_core/sm_core.dart';
 import 'package:sm_store/state.dart';
 import 'package:sm_store/ui/theme.dart';
 import 'package:sm_store/ui/widgets.dart';
+import 'package:sm_store/stock/my_products.dart' show ProductLink;
 import 'package:url_launcher/url_launcher.dart';
 
 import 'logic.dart';
@@ -307,7 +308,7 @@ class _LineRow extends StatelessWidget {
       onTap: onTap,
       color: picked ? AppColors.successSoft : AppColors.white,
       child: Row(children: [
-        ProductThumb(image: it['image'] as String?, size: 48, fractional: fractional),
+        ProductLink(productId: '${it['product_id']}', name: '${it['product_name']}', image: it['image'] as String?, child: ProductThumb(image: it['image'] as String?, size: 48, fractional: fractional)),
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -355,7 +356,7 @@ class _MissingSheetState extends State<_MissingSheet> {
       SheetHeader(title: tr('Нет на полке?', 'Javonda yoʻqmi?')),
       const SizedBox(height: 14),
       Row(children: [
-        ProductThumb(image: it['image'] as String?, size: 48, fractional: it['is_fractional'] == true),
+        ProductLink(productId: '${it['product_id']}', name: '${it['product_name']}', image: it['image'] as String?, child: ProductThumb(image: it['image'] as String?, size: 48, fractional: it['is_fractional'] == true)),
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

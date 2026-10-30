@@ -49,7 +49,7 @@ func TestParseInvoiceDiscount(t *testing.T) {
 
 	// УТММ-878576: «Зелёный лук 19*140гр» — скидка 100% (бонус), цены со скидкой нет.
 	inv, err = ParseInvoice(`{"total":20850,"lines":[{"name":"Lay's - Зелёный лук 19*140гр","qty":1,"price":20850,"discount":100,"qty_unit":"шт"}]}`)
-	if err != nil || inv.Lines[0].Price != 0 || inv.Lines[0].Sum != 0 || inv.Lines[0].Unit != "шт" {
+	if err != nil || inv.Lines[0].Price != 0 || inv.Lines[0].Sum != 0 || inv.Lines[0].QtyIn != "pcs" {
 		t.Fatalf("free: %+v %v", inv.Lines, err)
 	}
 }

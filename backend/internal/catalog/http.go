@@ -45,6 +45,9 @@ func (m *Module) Routes(r chi.Router) {
 		r.Delete("/admin/products/{id}", m.adminDeleteProduct)
 		r.Post("/admin/products/{id}/approve", m.approve)
 		r.Post("/admin/products/{id}/reject", m.reject)
+		r.Get("/admin/product-suggestions", m.adminSuggestions)
+		r.Post("/admin/product-suggestions/{id}/approve", m.reviewSuggestion(true))
+		r.Post("/admin/product-suggestions/{id}/reject", m.reviewSuggestion(false))
 
 		r.Get("/admin/banners", m.listBanners)
 		r.Post("/admin/banners", m.createBanner)
@@ -70,6 +73,9 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/store/products", m.storeCreateProduct)
 		r.Get("/store/products/{id}", m.storeGetProduct)
 		r.Patch("/store/products/{id}", m.storeUpdateProduct)
+		// Изменить товар: исправление товара общей базы — на проверку супер-админу.
+		r.Post("/store/products/{id}/suggestion", m.storeSuggest)
+		r.Get("/store/products/{id}/suggestions", m.storeSuggestions)
 		r.Delete("/store/products/{id}", m.storeDel(m.svc.StoreDeleteProduct))
 
 		r.Get("/store/price-types", m.listPriceTypes)
@@ -247,6 +253,37 @@ func (m *Module) storeGetProduct(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (Product, error) {
 		return m.svc.StoreGetProduct(r.Context(), pr(r), id)
 	})
+}
+
+func (m *Module) storeSuggest(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusCreated, "id", func(id string, in SuggestInput) (Suggestion, error) {
+		return m.svc.StoreSuggest(r.Context(), pr(r), id, in)
+	})
+}
+
+func (m *Module) storeSuggestions(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (httpx.List[Suggestion], error) {
+		items, err := m.svc.StoreSuggestions(r.Context(), pr(r), id)
+		return httpx.List[Suggestion]{Items: items}, err
+	})
+}
+
+func (m *Module) adminSuggestions(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[Suggestion], error) {
+		items, err := m.svc.AdminSuggestions(r.Context(), r.URL.Query().Get("status"), httpx.PageFrom(r))
+		return httpx.List[Suggestion]{Items: items}, err
+	})
+}
+
+func (m *Module) reviewSuggestion(approve bool) http.HandlerFunc {
+	type body struct {
+		Reason string `json:"reason"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in body) (Suggestion, error) {
+			return m.svc.AdminReviewSuggestion(r.Context(), id, approve, in.Reason)
+		})
+	}
 }
 
 func (m *Module) storeUpdateProduct(w http.ResponseWriter, r *http.Request) {

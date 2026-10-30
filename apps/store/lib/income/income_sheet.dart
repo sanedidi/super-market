@@ -11,10 +11,13 @@ import 'income_logic.dart';
 
 /// Что решили в шторке строки.
 class IncomeSheetResult {
-  const IncomeSheetResult({this.qty = '', this.cost = '', this.sale, this.remove = false});
+  const IncomeSheetResult({this.qty = '', this.cost = '', this.listPrice, this.sale, this.remove = false});
 
   final String qty;
   final String cost;
+
+  /// Цена без скидки поставщика (null — без скидки); cost — уже со скидкой.
+  final String? listPrice;
 
   /// Новая цена продажи (null — не меняется).
   final String? sale;
@@ -47,6 +50,8 @@ class _IncomeSheetState extends State<_IncomeSheet> {
   late bool _add = widget.existing != null && !widget.edit;
   late final _qty = TextEditingController(text: _initialQty());
   late final _cost = TextEditingController(text: _initialCost());
+  // Скидка поставщика, %: цена закупки в поле — как в накладной, на склад — со скидкой.
+  late final _disc = TextEditingController(text: _ex.discount == null ? '' : plainNum(_ex.discount));
   late final _sale = TextEditingController(text: plainNum(_ex.newSale ?? _ex.salePrice ?? widget.line.salePrice));
 
   IncomeLine get _ex => widget.existing ?? widget.line;
@@ -58,7 +63,7 @@ class _IncomeSheetState extends State<_IncomeSheet> {
 
   String _initialCost() {
     final ex = widget.existing;
-    if (ex != null && ex.cost.isNotEmpty) return ex.cost;
+    if (ex != null && ex.cost.isNotEmpty) return ex.discount != null ? plainNum(ex.listPrice) : ex.cost;
     return plainNum(widget.line.lastCost);
   }
 
@@ -67,6 +72,7 @@ class _IncomeSheetState extends State<_IncomeSheet> {
     super.initState();
     _cost.addListener(_changed);
     _qty.addListener(_changed);
+    _disc.addListener(_changed);
   }
 
   void _changed() => setState(() {});
@@ -75,6 +81,7 @@ class _IncomeSheetState extends State<_IncomeSheet> {
   void dispose() {
     _qty.dispose();
     _cost.dispose();
+    _disc.dispose();
     _sale.dispose();
     super.dispose();
   }
@@ -106,6 +113,11 @@ class _IncomeSheetState extends State<_IncomeSheet> {
       showMessage(context, tr('Укажите цену закупки', 'Xarid narxini kiriting'));
       return;
     }
+    final d = _discount;
+    if (_disc.text.trim().isNotEmpty && d == null) {
+      showMessage(context, tr('Скидка: от 0 до 100%', 'Chegirma: 0 dan 100% gacha'));
+      return;
+    }
     final saleText = _sale.text.trim();
     final sale = saleText.isEmpty ? null : parseNum(saleText);
     if (saleText.isNotEmpty && sale == null) {
@@ -116,7 +128,18 @@ class _IncomeSheetState extends State<_IncomeSheet> {
     // Новая цена продажи — только если её поменяли.
     final was = num.tryParse(widget.line.salePrice ?? '');
     final changed = sale != null && (was == null || num.parse(sale) != was);
-    Navigator.pop(context, IncomeSheetResult(qty: plainNum(total), cost: plainNum(cost), sale: changed ? plainNum(sale) : null));
+    final net = d == null ? num.parse(cost) : (num.parse(cost) * (1 - d / 100) * 100).round() / 100;
+    Navigator.pop(
+        context,
+        IncomeSheetResult(
+            qty: plainNum(total), cost: plainNum(net), listPrice: d == null ? null : plainNum(cost), sale: changed ? plainNum(sale) : null));
+  }
+
+  /// Скидка, % из поля; пусто или 0 — без скидки.
+  num? get _discount {
+    final v = num.tryParse(_disc.text.replaceAll(',', '.').replaceAll(' ', ''));
+    if (v == null || v <= 0 || v > 100) return null;
+    return v;
   }
 
   @override
@@ -124,7 +147,10 @@ class _IncomeSheetState extends State<_IncomeSheet> {
     final l = widget.line;
     final ex = widget.existing;
     final canPrice = context.read<StoreState>().can('prices.manage');
-    final change = IncomeLine(productId: l.productId, name: l.name, cost: parseNum(_cost.text) ?? '', lastCost: l.lastCost).costChange;
+    final d = _discount;
+    final entered = num.tryParse(parseNum(_cost.text) ?? '');
+    final net = entered == null ? null : (d == null ? entered : entered * (1 - d / 100));
+    final change = IncomeLine(productId: l.productId, name: l.name, cost: net == null ? '' : plainNum((net * 100).round() / 100), lastCost: l.lastCost).costChange;
     final willBe = _willBe();
     final sub = ex != null && !widget.edit
         ? tr('Этот товар уже есть в приходе', 'Bu mahsulot kirimda allaqachon bor')
@@ -181,7 +207,9 @@ class _IncomeSheetState extends State<_IncomeSheet> {
       const SizedBox(height: 12),
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Expanded(child: NumField(label: tr('Цена закупки, сум *', 'Xarid narxi, soʻm *'), controller: _cost)),
-        const SizedBox(width: 12),
+        const SizedBox(width: 8),
+        SizedBox(width: 84, child: NumField(label: tr('Скидка, %', 'Chegirma, %'), controller: _disc, hint: '—')),
+        const SizedBox(width: 8),
         Expanded(
           child: NumField(
             label: tr('Цена продажи, сум', 'Sotish narxi, soʻm'),
@@ -191,6 +219,12 @@ class _IncomeSheetState extends State<_IncomeSheet> {
           ),
         ),
       ]),
+      if (d != null && net != null) ...[
+        const SizedBox(height: 8),
+        Text(tr('Со скидкой ${plainNum(d)}%: ${money((net * 100).round() / 100)} за $_unit — это и будет цена закупки',
+                '${plainNum(d)}% chegirma bilan: $_unit uchun ${money((net * 100).round() / 100)} — xarid narxi shu boʻladi'),
+            style: AppText.small.copyWith(fontSize: 12, color: AppColors.primary)),
+      ],
       const SizedBox(height: 10),
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Icon(change != null && change.abs() > 5 ? Icons.warning_amber_rounded : Icons.info_outline_rounded,

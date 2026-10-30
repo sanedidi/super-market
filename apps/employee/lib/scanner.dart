@@ -6,6 +6,7 @@ import 'package:sm_store/start/scanner.dart';
 import 'package:sm_store/state.dart';
 import 'package:sm_store/ui/theme.dart';
 import 'package:sm_store/ui/widgets.dart';
+import 'package:sm_store/stock/my_products.dart' show ProductLink;
 
 import 'cost.dart';
 import 'logic.dart';
@@ -256,7 +257,7 @@ class _GlanceSheet extends StatelessWidget {
         : (short > 0 ? '−${qty(short, unit)}' : qty(g['qty'], unit));
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Row(children: [
-        ProductThumb(image: g['image'] as String?, size: 56, fractional: g['is_fractional'] == true),
+        ProductLink(productId: '${g['product_id']}', name: '${g['name']}', image: g['image'] as String?, child: ProductThumb(image: g['image'] as String?, size: 56, fractional: g['is_fractional'] == true)),
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

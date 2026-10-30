@@ -19,6 +19,7 @@ import '../state.dart';
 import '../suppliers/reorder_screen.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
+import 'product_edit_screen.dart';
 import 'stock_logic.dart';
 
 const _path = '/store/inventory/my-products';
@@ -221,7 +222,7 @@ class _MyProductsScreenState extends State<MyProductsScreen> {
   }
 
   Future<void> _scan() async {
-    final code = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const _BarcodeScreen()));
+    final code = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const BarcodeScanScreen()));
     if (code == null || !mounted) return;
     _q.text = code;
     await _load();
@@ -472,14 +473,14 @@ class _ProductRow extends StatelessWidget {
 }
 
 /// Сканер штрихкода для поиска в «Моих товарах»: возвращает код.
-class _BarcodeScreen extends StatefulWidget {
-  const _BarcodeScreen();
+class BarcodeScanScreen extends StatefulWidget {
+  const BarcodeScanScreen({super.key});
 
   @override
-  State<_BarcodeScreen> createState() => _BarcodeScreenState();
+  State<BarcodeScanScreen> createState() => _BarcodeScanScreenState();
 }
 
-class _BarcodeScreenState extends State<_BarcodeScreen> {
+class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
   late final MobileScannerController _scanner = barcodeScanner();
   bool _done = false;
 
@@ -534,6 +535,8 @@ class ProductStockScreen extends StatefulWidget {
 class _ProductStockScreenState extends State<ProductStockScreen> {
   late Map<String, dynamic> _it = widget.item;
   List<Map<String, dynamic>>? _moves;
+  // И3 · Исправление товара общей базы на проверке.
+  Map<String, dynamic>? _pending;
 
   @override
   void initState() {
@@ -541,9 +544,26 @@ class _ProductStockScreenState extends State<ProductStockScreen> {
     _load();
   }
 
+  /// И1 · Карандаш — «Изменить товар».
+  Future<void> _edit() async {
+    final r = await openProductEdit(context, widget.storeId, _it);
+    if (!mounted || r == null) return;
+    switch (r) {
+      case ProductEditResult.removed:
+        Navigator.of(context).pop();
+      case ProductEditResult.count:
+        await _count();
+      case ProductEditResult.saved:
+        await _load();
+    }
+  }
+
   Future<void> _load() async {
     final api = context.read<Api>();
     final id = '${_it['product_id']}';
+    api.list('/store/products/$id/suggestions').then((l) {
+      if (mounted) setState(() => _pending = l.where((s) => s['status'] == 'pending').firstOrNull);
+    }, onError: (_) {});
     try {
       final r = await api.get(_path, {'store_id': widget.storeId, 'product_id': id, 'limit': 1}) as Map<String, dynamic>;
       final items = ((r['items'] as List?) ?? const []).cast<Map<String, dynamic>>();
@@ -607,7 +627,9 @@ class _ProductStockScreenState extends State<ProductStockScreen> {
           ),
         );
     return Scaffold(
-      appBar: AppBar(backgroundColor: AppColors.bg, title: Text(tr('Товар', 'Mahsulot'))),
+      appBar: AppBar(backgroundColor: AppColors.bg, title: Text(tr('Товар', 'Mahsulot')), actions: [
+        IconButton(tooltip: tr('Изменить товар', 'Mahsulotni tahrirlash'), icon: const Icon(Icons.edit_rounded), onPressed: _moves == null ? null : _edit),
+      ]),
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24), children: [
@@ -621,6 +643,23 @@ class _ProductStockScreenState extends State<ProductStockScreen> {
               ]),
             ),
           ]),
+          if (_pending != null) ...[
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color: AppColors.warningSoft, borderRadius: BorderRadius.circular(16)),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Icon(Icons.schedule_rounded, color: AppColors.warningInk, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(tr('Исправление на проверке', 'Tuzatish tekshiruvda'), style: AppText.bodyStrong.copyWith(color: AppColors.warningInk, fontSize: 14)),
+                    Text(suggestionText(_pending!), style: AppText.small.copyWith(color: AppColors.warningInk, fontSize: 12)),
+                  ]),
+                ),
+              ]),
+            ),
+          ],
           const SizedBox(height: 14),
           Container(
             padding: const EdgeInsets.all(16),
@@ -786,5 +825,37 @@ class _CountSheetState extends State<_CountSheet> {
       const SizedBox(height: 10),
       SheetButton(label: tr('Отмена', 'Bekor qilish'), primary: false, onPressed: _busy ? null : () => Navigator.pop(context, false)),
     ]);
+  }
+}
+
+/// Карточка товара (О3) из любого места, где показан товар: список, приход,
+/// накладная, заказ, задача. Карандаш на ней — «Изменить товар».
+Future<void> openProductCard(BuildContext context, {required String productId, String? name, String? image}) async {
+  final storeId = context.read<StoreState>().storeId;
+  if (storeId == null || productId.isEmpty) return;
+  await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => ProductStockScreen(storeId: storeId, warehouseId: '', item: {'product_id': productId, 'name': name ?? '', 'image': image})));
+}
+
+/// Нажатие на товар (фото или название) — карточка товара, оттуда карандаш —
+/// «Изменить товар». В строках, где нажатие на строку уже что-то делает
+/// (правка количества), оборачивается только фото.
+class ProductLink extends StatelessWidget {
+  const ProductLink({super.key, required this.productId, this.name, this.image, required this.child});
+
+  final String? productId;
+  final String? name;
+  final String? image;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final id = productId ?? '';
+    if (id.isEmpty || id == 'null') return child;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => openProductCard(context, productId: id, name: name, image: image),
+      child: child,
+    );
   }
 }

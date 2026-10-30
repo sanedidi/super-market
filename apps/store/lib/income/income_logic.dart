@@ -15,6 +15,7 @@ class IncomeLine {
     this.fractional = false,
     this.qty = '',
     this.cost = '',
+    this.listPrice,
     this.salePrice,
     this.newSale,
     this.lastCost,
@@ -32,8 +33,18 @@ class IncomeLine {
   /// Сколько пришло.
   String qty;
 
-  /// Цена закупки за единицу — цена строки документа.
+  /// Цена закупки за единицу — цена строки документа (со скидкой поставщика).
   String cost;
+
+  /// Цена без скидки поставщика (null — скидки нет).
+  String? listPrice;
+
+  /// Скидка поставщика, % (null — нет).
+  num? get discount {
+    final l = num.tryParse(listPrice ?? ''), c = num.tryParse(cost);
+    if (l == null || c == null || l <= 0 || c >= l) return null;
+    return ((1 - c / l) * 10000).round() / 100;
+  }
 
   /// Цена продажи в магазине сейчас (null — не задана).
   String? salePrice;
@@ -80,9 +91,15 @@ class IncomeLine {
         unit: '${i['unit_short'] ?? ''}',
         qty: plainNum(i['qty']),
         cost: plainNum(i['price']),
+        listPrice: i['list_price'] == null ? null : plainNum(i['list_price']),
       );
 
-  Map<String, dynamic> toItem() => {'product_id': productId, 'qty': qty, 'price': cost};
+  Map<String, dynamic> toItem() => {
+        'product_id': productId,
+        'qty': qty,
+        'price': cost,
+        if ((listPrice ?? '').isNotEmpty) 'list_price': listPrice,
+      };
 }
 
 /// «24.000» → «24», «11200.50» → «11200.5», null → «».

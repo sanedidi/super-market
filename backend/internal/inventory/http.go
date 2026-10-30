@@ -28,6 +28,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/stock/summary", m.stockSummary)
 		r.Get("/my-products", m.myProducts)
 		r.Put("/my-products/{id}/pack", m.setPack)
+		r.Delete("/my-products/{id}", m.removeMyProduct)
 		r.Get("/movements", m.movements)
 		docs := m.auth.Allow(identity.PermInventoryManage)
 		r.With(docs).Get("/documents", m.list)
@@ -63,6 +64,12 @@ func (m *Module) myProducts(w http.ResponseWriter, r *http.Request) {
 }
 
 // setPack — штук в блоке у товара («блок по 6»): помощник и панель.
+func (m *Module) removeMyProduct(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (map[string]bool, error) {
+		return map[string]bool{"removed": true}, m.svc.RemoveMyProduct(r.Context(), pr(r), r.URL.Query().Get("store_id"), id)
+	})
+}
+
 func (m *Module) setPack(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in PackInput) (MyProduct, error) {
 		return m.svc.SetPack(r.Context(), pr(r), id, in)

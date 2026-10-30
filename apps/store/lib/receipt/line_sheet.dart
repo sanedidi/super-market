@@ -75,6 +75,9 @@ class _LineSheetState extends State<_LineSheet> {
   late final _qty = TextEditingController();
   late final _cost = TextEditingController();
   late final _pack = TextEditingController();
+  // С2 · Скидка поставщика: цена без скидки за единицу товара и скидка, %.
+  late final _list = TextEditingController();
+  late final _pct = TextEditingController();
   List<Map<String, dynamic>>? _items;
   // null — «блоки или штуки?» без ответа; true — в упаковках по _pack.
   bool? _blocks;
@@ -105,7 +108,33 @@ class _LineSheetState extends State<_LineSheet> {
     _cost.text = numText(_line['cost'] ?? _line['price']).replaceAll(' ', '');
     _blocks = _line['pack_source'] == 'guess' ? null : pack != 1;
     _pack.text = pack > 1 ? numText(pack).replaceAll(' ', '') : '';
+    _list.text = _line['list_cost'] == null ? '' : numText(_line['list_cost']).replaceAll(' ', '');
+    _pct.text = _line['discount'] == null ? '' : numText(_line['discount']).replaceAll(' ', '');
   }
+
+  num? _val(TextEditingController c) => num.tryParse(c.text.replaceAll(',', '.').replaceAll(' ', ''));
+
+  /// Цена без скидки поменялась — пересчитать %.
+  void _onList(String _) {
+    final list = _val(_list), cost = _val(_cost);
+    setState(() => _pct.text = list != null && list > 0 && cost != null && list > cost ? _fmt((1 - cost / list) * 100) : '');
+  }
+
+  /// Скидка, % поменялась — пересчитать цену со скидкой (или без, если её нет).
+  void _onPct(String _) {
+    final pct = _val(_pct), list = _val(_list), cost = _val(_cost);
+    setState(() {
+      if (pct == null || pct <= 0 || pct > 100) return;
+      if (list != null && list > 0) {
+        _cost.text = _fmt(list * (1 - pct / 100));
+      } else if (cost != null && pct < 100) {
+        _list.text = _fmt(cost / (1 - pct / 100));
+      }
+    });
+  }
+
+  /// Цена со скидкой поменялась — пересчитать %.
+  void _onCost(String _) => _onList('');
 
   @override
   void dispose() {
@@ -114,6 +143,8 @@ class _LineSheetState extends State<_LineSheet> {
     _qty.dispose();
     _cost.dispose();
     _pack.dispose();
+    _list.dispose();
+    _pct.dispose();
     super.dispose();
   }
 
@@ -170,6 +201,9 @@ class _LineSheetState extends State<_LineSheet> {
       final q = num.tryParse(_line['qty'].toString()) ?? 0;
       final pack = _packValue ?? 1;
       if (q > 0 && pack > 0) _cost.text = _fmt(_invoiceSum / (q * pack));
+      // Скидка в % та же — цена без скидки за единицу товара тоже меняется.
+      final pct = _val(_pct), cost = _val(_cost);
+      if (pct != null && pct > 0 && pct < 100 && cost != null) _list.text = _fmt(cost / (1 - pct / 100));
     });
   }
 
@@ -190,6 +224,11 @@ class _LineSheetState extends State<_LineSheet> {
     final n = num.tryParse(_pack.text.replaceAll(',', '.').replaceAll(' ', ''));
     if (n == null || n <= 0 || (!_fractional && n != n.roundToDouble())) return null;
     return n;
+  }
+
+  String _fmt4(num v) {
+    final r = (v * 10000).round() / 10000;
+    return r == r.roundToDouble() ? r.toInt().toString() : r.toString();
   }
 
   String _fmt(num v) {
@@ -213,6 +252,15 @@ class _LineSheetState extends State<_LineSheet> {
     if (_line['match'] != 'manual') body['product_id'] = _line['product_id'];
     if (_line['pack_source'] == 'guess' || pack != _num(_line['pack'])) body['pack'] = _fmt(pack);
     if (_remember && _scan['counterparty_id'] != null) body['remember'] = true;
+    // Скидка поставщика: цена без скидки — за единицу накладной, в той же
+    // пропорции, что и цена со скидкой (сервер так же считает её за единицу товара).
+    final list = _val(_list), c = num.tryParse(cost) ?? 0;
+    if (list != null && list > c) {
+      final price = _num(_line['price']);
+      body['list_price'] = _fmt4(price > 0 && c > 0 ? price * list / c : list * pack);
+    } else if (_line['list_price'] != null) {
+      body['list_price'] = '';
+    }
     final s = await _put(body);
     if (s != null && mounted) Navigator.of(context).pop(s);
   }
@@ -432,11 +480,40 @@ class _LineSheetState extends State<_LineSheet> {
           child: TextField(
             controller: _cost,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            onChanged: (_) => setState(() {}),
+            onChanged: _onCost,
             decoration: InputDecoration(labelText: tr('Цена закупки, за $_unit', 'Xarid narxi, $_unit uchun')),
           ),
         ),
       ]),
+      const SizedBox(height: 12),
+      // С2 · Скидка поставщика: цена без скидки и % — второе считается само.
+      Row(children: [
+        Expanded(
+          child: TextField(
+            controller: _list,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onChanged: _onList,
+            decoration: InputDecoration(labelText: tr('Цена без скидки, за $_unit', 'Chegirmasiz narx, $_unit uchun'), hintText: tr('если была скидка', 'chegirma boʻlsa')),
+          ),
+        ),
+        const SizedBox(width: 12),
+        SizedBox(
+          width: 104,
+          child: TextField(
+            controller: _pct,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onChanged: _onPct,
+            decoration: InputDecoration(labelText: tr('Скидка', 'Chegirma'), suffixText: '%'),
+          ),
+        ),
+      ]),
+      if ((_val(_list) ?? 0) > cost && stock != null) ...[
+        const SizedBox(height: 6),
+        Text(
+            tr('Скидка по строке −${money(stock * ((_val(_list) ?? 0) - cost))} · цена закупки — со скидкой',
+                'Qator boʻyicha chegirma −${money(stock * ((_val(_list) ?? 0) - cost))} · xarid narxi — chegirma bilan'),
+            style: AppText.small.copyWith(color: AppColors.primary)),
+      ],
       const SizedBox(height: 12),
       if (stock != null)
         Container(

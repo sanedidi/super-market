@@ -42,7 +42,7 @@ func TestGuessPack(t *testing.T) {
 		{"weight, no sum", PackIn{Qty: 5.2, Price: 30000, Fractional: true, Name: "Сыр 12"}, 1, PackNone},
 		{"plain", PackIn{Qty: 10, Price: 4000, ReadSum: 40000, Name: "Вода питьевая 1,5 л"}, 1, PackNone},
 		// УТММ-878576: «Lay's 48*20гр», 3 шт × 4 200 — штуки, а не 3 коробки по 48.
-		{"pieces unit beats name", PackIn{Qty: 3, Price: 4200, ReadSum: 12600, Unit: "шт", Name: "Lay's - Сметана зелень 48*20гр"}, 1, PackNone},
+		{"pieces unit beats name", PackIn{Qty: 3, Price: 4200, ReadSum: 12600, QtyIn: "pcs", Name: "Lay's - Сметана зелень 48*20гр"}, 1, PackNone},
 		{"no unit, name pack", PackIn{Qty: 3, Price: 4200, ReadSum: 12600, Name: "Lay's - Сметана зелень 48*20гр"}, 48, PackGuess},
 	}
 	for _, c := range cases {

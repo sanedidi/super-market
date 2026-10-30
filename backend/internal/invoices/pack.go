@@ -42,6 +42,8 @@ type PackIn struct {
 	Name    string
 	// Единица в накладной («шт», «блок», «кор»).
 	Unit string
+	// В чём считано «Кол-во» по смыслу строки: pcs, pack или "".
+	QtyIn string
 	// Товар продаётся дробно (кг, л).
 	Fractional bool
 	// Запомнено для поставщика (по названию строки).
@@ -95,8 +97,9 @@ func GuessPack(in PackIn) (float64, string) {
 			return n, PackGuess
 		}
 	}
-	// В накладной прямо сказано «шт» — пришли штуки, «48*20гр» в названии — размер коробки.
-	if pieceUnit(in.Unit) {
+	// По смыслу строки пришли штуки (вес строки, цена за штуку) — «48*20гр»
+	// в названии лишь размер коробки.
+	if in.QtyIn == "pcs" {
 		return 1, PackNone
 	}
 	byUnit := packUnit(in.Unit)
@@ -120,12 +123,6 @@ func GuessPack(in PackIn) (float64, string) {
 }
 
 var packUnitRe = regexp.MustCompile(`^(бл|блок|упак|уп|кор|короб|коробка|ящ|ящик|пач|пачка|спайка|blok|quti|upak|karobka|box|pack|pk|ctn)\.?$`)
-
-var pieceUnitRe = regexp.MustCompile(`^(шт|штук|штука|dona|ta|pcs|pc)\.?$`)
-
-func pieceUnit(u string) bool {
-	return pieceUnitRe.MatchString(strings.ToLower(strings.TrimSpace(u)))
-}
 
 func packUnit(u string) bool {
 	return packUnitRe.MatchString(strings.ToLower(strings.TrimSpace(u)))
@@ -172,23 +169,23 @@ func lineCost(qty, price, readSum, pack float64) float64 {
 // выбора товара или поставщика).
 func repack(ctx context.Context, q db.Querier, networkID, scanID string, line int) error {
 	var (
-		name, unit, currency, alias string
-		qty, price                  float64
-		readSum                     *float64
-		productID, cp               *string
+		name, unit, currency, alias, qtyIn string
+		qty, price                         float64
+		readSum                            *float64
+		productID, cp                      *string
 	)
 	// Сумма строки не прочитана, а строка в накладной одна — её сумма и есть
 	// «Итого» накладной (так же с накладными, распознанными до 23 окт 2026).
-	err := q.QueryRow(ctx, `SELECT l.name, l.unit, l.qty::float8, l.price::float8,
+	err := q.QueryRow(ctx, `SELECT l.name, l.unit, l.qty_in, l.qty::float8, l.price::float8,
 		       COALESCE(l.read_sum, CASE WHEN (SELECT count(*) FROM invoice_scan_lines x WHERE x.scan_id = l.scan_id) = 1
 		                                 THEN s.invoice_total END)::float8,
 		       l.product_id, s.counterparty_id, s.currency
 		FROM invoice_scan_lines l JOIN invoice_scans s ON s.id = l.scan_id WHERE l.scan_id = $1 AND l.line = $2`, scanID, line).
-		Scan(&name, &unit, &qty, &price, &readSum, &productID, &cp, &currency)
+		Scan(&name, &unit, &qtyIn, &qty, &price, &readSum, &productID, &cp, &currency)
 	if err != nil {
 		return err
 	}
-	in := PackIn{Qty: qty, Price: price, Name: name, Unit: unit}
+	in := PackIn{Qty: qty, Price: price, Name: name, Unit: unit, QtyIn: qtyIn}
 	if readSum != nil {
 		in.ReadSum = *readSum
 	}

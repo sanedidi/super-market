@@ -104,12 +104,14 @@ type StatementLine struct {
 }
 
 type Statement struct {
-	Counterparty Counterparty    `json:"counterparty"`
-	From         time.Time       `json:"from"`
-	To           time.Time       `json:"to"`
-	Opening      string          `json:"opening"`
-	Closing      string          `json:"closing"`
-	Items        []StatementLine `json:"items"` // новые сверху
+	Counterparty Counterparty `json:"counterparty"`
+	From         time.Time    `json:"from"`
+	To           time.Time    `json:"to"`
+	Opening      string       `json:"opening"`
+	Closing      string       `json:"closing"`
+	// Скидки поставщика в проведённых приходах за период (Figma С3).
+	Discount string          `json:"discount"`
+	Items    []StatementLine `json:"items"` // новые сверху
 }
 
 // CounterpartyStatement — акт сверки за период [from, to).
@@ -135,6 +137,12 @@ func (s *Service) CounterpartyStatement(ctx context.Context, p *identity.Princip
 	}
 	if err := s.pool.QueryRow(ctx, `SELECT COALESCE(sum(amount), 0)::numeric(18,2)::text FROM counterparty_entries
 		WHERE counterparty_id = $1 AND created_at < $2`, id, st.From).Scan(&st.Opening); err != nil {
+		return st, err
+	}
+	if err := s.pool.QueryRow(ctx, `SELECT COALESCE(sum(i.qty * (i.list_price - i.price)), 0)::numeric(18,2)::text
+		FROM stock_document_items i JOIN stock_documents d ON d.id = i.document_id
+		WHERE d.counterparty_id = $1 AND d.type = 'income' AND d.status = 'posted' AND i.list_price IS NOT NULL
+		  AND d.posted_at >= $2 AND d.posted_at < $3`, id, st.From, st.To).Scan(&st.Discount); err != nil {
 		return st, err
 	}
 	bal := money.D(st.Opening)

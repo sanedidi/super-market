@@ -188,6 +188,16 @@ class _SupplierScreenState extends State<SupplierScreen> {
           const SizedBox(height: 4),
           Text(tr('На начало ${money(st['opening'])} · на конец ${money(st['closing'])}', 'Boshida ${money(st['opening'])} · oxirida ${money(st['closing'])}'),
               style: AppText.small),
+          // С3 · Скидки поставщика в приходах за период.
+          if ((num.tryParse('${st['discount'] ?? ''}') ?? 0) > 0) ...[
+            const SizedBox(height: 8),
+            Row(children: [
+              const Icon(Icons.sell_rounded, size: 18, color: AppColors.primary),
+              const SizedBox(width: 8),
+              Expanded(child: Text(tr('Скидки от поставщика за период', 'Davr ichida yetkazib beruvchi chegirmalari'), style: AppText.small)),
+              Text(money(st['discount']), style: AppText.bodyStrong.copyWith(color: AppColors.primary)),
+            ]),
+          ],
           const SizedBox(height: 6),
           if (items.isEmpty)
             Padding(

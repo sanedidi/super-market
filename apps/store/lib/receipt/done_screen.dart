@@ -14,6 +14,7 @@ class DoneScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final posted = scan['document_status'] == 'posted';
+    final discount = num.tryParse('${scan['discount_total'] ?? ''}') ?? 0;
     final lines = ((scan['lines'] as List?) ?? const []).where((l) => (l as Map)['skipped'] != true).length;
     final changed = ((scan['lines'] as List?) ?? const []).where((l) {
       final c = ((l as Map)['price_change'] as num?)?.abs() ?? 0;
@@ -42,7 +43,11 @@ class DoneScreen extends StatelessWidget {
           AppCard(
             child: Column(children: [
               row(tr('Позиций', 'Pozitsiyalar'), '$lines'),
-              row(tr('Сумма', 'Summa'), money(scan['lines_total'])),
+              if (discount > 0) ...[
+                row(tr('Без скидки', 'Chegirmasiz'), money(scan['gross_total'])),
+                row(tr('Скидка поставщика', 'Yetkazib beruvchi chegirmasi'), '−${money(scan['discount_total'])}', color: AppColors.primary),
+              ],
+              row(discount > 0 ? tr('К оплате', 'Toʻlovga') : tr('Сумма', 'Summa'), money(scan['lines_total'])),
               if (posted) row(tr('Долг поставщику', 'Yetkazib beruvchiga qarz'), '+ ${money(scan['lines_total'])}'),
               if (changed > 0)
                 row(tr('Цена закупки изменилась', 'Xarid narxi oʻzgardi'), tr('$changed — проверьте цены продажи', '$changed ta — sotuv narxlarini tekshiring'),

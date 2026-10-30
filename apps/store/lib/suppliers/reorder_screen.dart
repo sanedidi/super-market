@@ -12,6 +12,7 @@ import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'order_screen.dart';
 import 'suppliers_screen.dart';
+import '../stock/my_products.dart' show ProductLink;
 
 String _q(num v) => v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
@@ -161,11 +162,11 @@ class _Group extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(children: [
-              ProductThumb('${it['image'] ?? ''}', size: 40),
+              ProductLink(productId: '${it['product_id']}', name: '${it['name']}', image: it['image'] as String?, child: ProductThumb('${it['image'] ?? ''}', size: 40)),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('${it['name']}', style: AppText.bodyStrong, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ProductLink(productId: '${it['product_id']}', name: '${it['name']}', image: it['image'] as String?, child: Text('${it['name']}', style: AppText.bodyStrong, maxLines: 1, overflow: TextOverflow.ellipsis)),
                   Text(stockLine({...it, 'carried': true}), style: AppText.small.copyWith(color: stockColor(it))),
                 ]),
               ),

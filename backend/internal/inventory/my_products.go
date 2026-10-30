@@ -316,3 +316,31 @@ func (s *Service) SetPack(ctx context.Context, p *identity.Principal, productID 
 	}
 	return out, nil
 }
+
+// RemoveMyProduct — «Убрать из «Моих товаров»» (Figma «Изменить товар», И1).
+// С остатком нельзя: сначала списать или пересчитать в 0. Товар вернётся сам
+// с первым приходом.
+func (s *Service) RemoveMyProduct(ctx context.Context, p *identity.Principal, storeID, productID string) error {
+	if err := p.RequireAny(identity.PermCatalogManage, identity.PermInventoryManage); err != nil {
+		return err
+	}
+	if !httpx.IsUUID(productID) || !httpx.IsUUID(storeID) || !p.CanAccessStore(storeID) {
+		return apperr.NotFound("товар не найден").Uz("mahsulot topilmadi")
+	}
+	var left bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM batches b JOIN warehouses w ON w.id = b.warehouse_id
+		WHERE w.store_id = $1 AND b.product_id = $2 AND b.qty_remaining > 0)`, storeID, productID).Scan(&left); err != nil {
+		return err
+	}
+	if left {
+		return apperr.Conflict("stock_left", "у товара есть остаток — сначала спишите его или пересчитайте в 0").Uz("mahsulotda qoldiq bor — avval hisobdan chiqaring yoki 0 ga sanang")
+	}
+	tag, err := s.pool.Exec(ctx, `DELETE FROM store_products WHERE store_id = $1 AND product_id = $2 AND network_id = $3`, storeID, productID, p.NetworkID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return apperr.NotFound("товара нет в «Моих товарах»").Uz("mahsulot «Mahsulotlarim»da yoʻq")
+	}
+	return nil
+}

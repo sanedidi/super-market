@@ -8,6 +8,7 @@ import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'finance_logic.dart';
+import '../stock/my_products.dart' show ProductLink;
 
 /// Ф4 · Товары, проданные без цены закупки: пока они есть, прибыль не
 /// посчитать. Цена закупки сохраняется сразу — и для остатка, и для уже
@@ -124,7 +125,7 @@ class _NoCostScreenState extends State<NoCostScreen> {
                       child: Row(children: [
                         Expanded(
                           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text('${it['name']}', style: AppText.bodyStrong),
+                            ProductLink(productId: '${it['product_id']}', name: '${it['name']}', image: null, child: Text('${it['name']}', style: AppText.bodyStrong)),
                             Text(
                                 tr('продано ${qty(it['qty'], '${it['unit_short'] ?? ''}')} · ${money(it['revenue'])}',
                                     'sotildi ${qty(it['qty'], '${it['unit_short'] ?? ''}')} · ${money(it['revenue'])}'),

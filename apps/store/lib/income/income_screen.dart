@@ -19,6 +19,7 @@ import 'income_logic.dart';
 import 'income_scanner.dart';
 import 'income_sheet.dart';
 import 'product_finder.dart';
+import '../stock/my_products.dart' show ProductLink;
 
 /// Р3 / Р8 · Приход вручную: поставщик, строки (сканер, поиск, новый товар по
 /// фото) → «Провести». Черновик сохраняется на сервере после каждой строки —
@@ -230,7 +231,8 @@ class _IncomeScreenState extends State<IncomeScreen> {
       final l = ex ?? info;
       l
         ..qty = r.qty
-        ..cost = r.cost;
+        ..cost = r.cost
+        ..listPrice = r.listPrice;
       if (r.sale != null) l.newSale = r.sale;
       if (ex == null) _lines.add(l);
     });
@@ -247,7 +249,8 @@ class _IncomeScreenState extends State<IncomeScreen> {
       } else {
         l
           ..qty = r.qty
-          ..cost = r.cost;
+          ..cost = r.cost
+          ..listPrice = r.listPrice;
         if (r.sale != null) l.newSale = r.sale;
       }
     });
@@ -574,6 +577,7 @@ class _LineRow extends StatelessWidget {
     final parts = <String>[
       if (l.isNew) tr('новый товар', 'yangi mahsulot'),
       '${qty(l.qty, unit)} × ${money(l.cost, suffix: false)}',
+      if (l.discount != null) tr('скидка ${plainNum(l.discount)}%', 'chegirma ${plainNum(l.discount)}%'),
       if (change != null && change != 0)
         tr('${change > 0 ? 'дороже' : 'дешевле'} прошлого на ${change.abs()}%', 'oldingisidan ${change.abs()}% ${change > 0 ? 'qimmat' : 'arzon'}'),
       if (l.newSale != null) tr('продажа → ${money(l.newSale, suffix: false)}', 'sotuv → ${money(l.newSale, suffix: false)}'),
@@ -583,7 +587,7 @@ class _LineRow extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         child: Row(children: [
-          ProductThumb(l.image, size: 44),
+          ProductLink(productId: l.productId, name: l.name, image: l.image, child: ProductThumb(l.image, size: 44)),
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

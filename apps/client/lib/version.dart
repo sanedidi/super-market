@@ -2,7 +2,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 /// Версия приложения — та же, что в pubspec.yaml (сверяет test/version_test.dart).
 /// По ней сервер решает, показать ли шторку «Есть обновление» (sm_core UpdateCheck).
-const appVersion = '0.9.2';
+const appVersion = '0.9.3';
 
 /// Код приложения для /public/app-version.
 const appId = 'client';

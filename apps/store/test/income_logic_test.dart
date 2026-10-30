@@ -20,6 +20,11 @@ void main() {
     final d = IncomeLine.fromItem({'product_id': 'a', 'product_name': 'Coca-Cola 1,5 л', 'unit_short': 'шт', 'qty': '24.000', 'price': '11200.0000'});
     expect([d.qty, d.cost, d.sum], ['24', '11200', '268800.00']);
     expect(d.toItem(), {'product_id': 'a', 'qty': '24', 'price': '11200'});
+    expect(d.discount, null);
+    // Скидка поставщика 6%: цена без скидки уходит в документ рядом с ценой.
+    final s = IncomeLine.fromItem({'product_id': 's', 'product_name': 'Palmolive', 'unit_short': 'шт', 'qty': '6.000', 'price': '9964.1600', 'list_price': '10600.1700'});
+    expect(s.discount, 6);
+    expect(s.toItem(), {'product_id': 's', 'qty': '6', 'price': '9964.16', 'list_price': '10600.17'});
     // Прошлая цена закупки важнее средней себестоимости; не посчитан — остаток неизвестен.
     final m = IncomeLine.fromMy({'product_id': 'b', 'name': 'Sprite', 'price': '15000.00', 'qty': '6', 'avg_cost': '9000', 'last_cost': '9500', 'uncounted': false});
     expect([m.salePrice, m.lastCost, m.shelf], ['15000.00', '9500', '6']);
