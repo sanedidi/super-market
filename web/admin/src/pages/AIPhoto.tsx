@@ -4,7 +4,7 @@
 // Ключ хранится на сервере зашифрованным и обратно не показывается.
 import { useEffect, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Alert, App, AutoComplete, Badge, Button, Card, Checkbox, Col, Flex, Image, Input, InputNumber, Modal, Row, Segmented, Space, Statistic, Switch, Tag, Typography, Upload } from 'antd'
+import { Alert, App, AutoComplete, Badge, Button, Card, Checkbox, Col, Flex, Image, Input, InputNumber, Modal, Popconfirm, Row, Segmented, Space, Statistic, Switch, Tag, Typography, Upload } from 'antd'
 import {
   ArrowRightOutlined,
   CameraOutlined,
@@ -26,6 +26,7 @@ import type { Plan } from './Plans'
 import { Hint, ProviderCard, Step, VERTEX_REGIONS, isGoogleVertexURL, parseServiceAccount, vertexProject, vertexRegion, vertexURL } from './AI'
 import { usePhotoJob, usd } from '../photoJob'
 import { REASONS, type StoreSummary } from './StorePhotos'
+import { PhotoTabs } from './WebPhotos'
 
 type Mode = 'gemini' | 'vertex'
 type Background = 'white' | 'light' | 'transparent'
@@ -60,6 +61,8 @@ interface PhotoSettings {
   store_cost_usd: number
   store_networks: number
   store_top: { network_id: string; name: string; photos: number; used: number; limit: number | null; cost_usd: number }[]
+  // «Фото из сети»: «чужие» фото каталога заменяются настоящими.
+  web: { check: boolean; auto: boolean; limit_usd: number; has_serper: boolean; serper_last4: string; check_model: string }
 }
 
 /** Лимит тарифа «Фото от Super Market в месяц» и его значение по умолчанию. */
@@ -372,6 +375,112 @@ function StorePhotosCard({ s, models, onSaved }: { s: PhotoSettings; models: Mod
             Подробно — <Link to="/ai?tab=usage">«ИИ-сервис» → Расход</Link>, строка «фото магазинов».
           </Hint>
           <Button size="large" type="primary" loading={busy} disabled={!dirty} onClick={save}>
+            Сохранить
+          </Button>
+        </Flex>
+      </Space>
+    </Card>
+  )
+}
+
+/** Блок 6 «Фото из сети» (Figma ФС3): проверка каталога, Open Food Facts, ключ Serper, «ставить сразу», лимит. */
+function WebPhotosCard({ s, onSaved }: { s: PhotoSettings; onSaved: () => void }) {
+  const { message } = App.useApp()
+  const w = s.web
+  const [check, setCheck] = useState(w.check)
+  const [auto, setAuto] = useState(w.auto)
+  const [limit, setLimit] = useState<number | null>(w.limit_usd)
+  const [key, setKey] = useState<string | null>(null) // null — ключ не меняем
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    setCheck(w.check)
+    setAuto(w.auto)
+    setLimit(w.limit_usd)
+    setKey(null)
+  }, [w])
+  const dirty = check !== w.check || auto !== w.auto || limit !== w.limit_usd || (key !== null && key.trim() !== '')
+
+  const save = async (body: Record<string, unknown>) => {
+    setBusy(true)
+    try {
+      await api.put<PhotoSettings>('/admin/ai-photo/web', body)
+      message.success('Сохранено')
+      onSaved()
+    } catch (e) {
+      message.error(errorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const submit = () => {
+    const body: Record<string, unknown> = { check, auto, limit_usd: limit ?? 0 }
+    if (key !== null && key.trim()) body.serper_key = key.trim()
+    void save(body)
+  }
+
+  return (
+    <Card id="web" style={{ marginTop: 24 }} styles={{ body: { padding: 24 } }}>
+      <Space direction="vertical" size={0} style={{ width: '100%' }}>
+        <Flex align="center" gap={10} style={{ paddingBottom: 12 }}>
+          <Typography.Text strong style={{ fontSize: 16, flex: 1 }}>
+            Фото из сети
+          </Typography.Text>
+          <Link to="/ai-photo/web" style={{ fontWeight: 700 }}>
+            Открыть «Фото из сети» →
+          </Link>
+        </Flex>
+        {!s.configured && <Alert style={{ marginBottom: 12 }} type="warning" showIcon message="Сначала подключите Gemini выше — без него фото каталога не проверяются." />}
+        <SettingRow
+          title="Проверять фото каталога"
+          text="Gemini проверяет, тот ли товар на фото и лицевая ли сторона. Новые товары из каталога ИКПУ — сразу при импорте, вся база — один раз в фоне. В лимит фото магазинов не входит."
+        >
+          <Switch checked={check} onChange={setCheck} />
+        </SettingRow>
+        <SettingRow title="Open Food Facts" text="Открытая база упаковок. Ищем по штрихкоду — всегда первым, бесплатно. Узбекских товаров там мало, поэтому дальше — Google.">
+          <Tag color="green" icon={<CheckCircleFilled />}>
+            Без ключа
+          </Tag>
+        </SettingRow>
+        <SettingRow
+          title="Ключ Serper — поиск картинок Google"
+          text="serper.dev → API key. ≈ 0,001 $ за поиск. Без ключа ищем только в Open Food Facts. Ключ хранится зашифрованным."
+        >
+          {key === null && w.has_serper ? (
+            <Space>
+              <Tag color="green" icon={<CheckCircleFilled />} style={{ marginInlineEnd: 0 }}>
+                …{w.serper_last4}
+              </Tag>
+              <Button type="link" danger style={{ padding: 0 }} onClick={() => setKey('')}>
+                Заменить
+              </Button>
+              <Popconfirm title="Убрать ключ Serper?" description="Искать будем только в Open Food Facts" okText="Убрать" cancelText="Нет" onConfirm={() => save({ serper_key: '' })}>
+                <Button type="link" style={{ padding: 0, color: '#667085' }}>
+                  Убрать
+                </Button>
+              </Popconfirm>
+            </Space>
+          ) : (
+            <Input.Password
+              style={{ width: 240 }}
+              prefix={<KeyOutlined />}
+              placeholder="Вставьте ключ Serper"
+              value={key ?? ''}
+              onChange={(e) => setKey(e.target.value)}
+              autoComplete="off"
+            />
+          )}
+        </SettingRow>
+        <SettingRow
+          title="Ставить найденное фото сразу"
+          text="Если Gemini подтвердил название, бренд и штрихкод. Выключите — найденные фото будут ждать вашего решения в «Фото из сети»."
+        >
+          <Switch checked={auto} onChange={setAuto} />
+        </SettingRow>
+        <SettingRow title="Лимит расходов" text="Поиск + Gemini для фото из сети. Дошли до лимита — проверка встаёт на паузу до следующего месяца.">
+          <InputNumber style={{ width: 160 }} min={0} max={100000} value={limit} onChange={(v) => setLimit(v === null ? null : Number(v))} addonAfter="$ в месяц" />
+        </SettingRow>
+        <Flex justify="flex-end" style={{ borderTop: '1px solid #EAECF0', paddingTop: 16 }}>
+          <Button size="large" type="primary" loading={busy} disabled={!dirty || limit === null} onClick={submit}>
             Сохранить
           </Button>
         </Flex>
@@ -755,6 +864,7 @@ function PhotoConnection() {
             </Space>
           </Card>
           {s && <StorePhotosCard s={s} models={models} onSaved={() => refetch()} />}
+          {s && <WebPhotosCard s={s} onSaved={() => refetch()} />}
         </Col>
         <Col xs={24} xl={8}>
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -831,6 +941,17 @@ function PhotoConnection() {
                     <Hint>Super Market сам делает чистое фото нового товара и товара без фото на инвентаризации — блок слева</Hint>
                   </div>
                 </div>
+                <div>
+                  <Typography.Text strong>
+                    <LinkOutlined /> Фото из сети
+                  </Typography.Text>{' '}
+                  {s?.configured && s.web.check ? <Tag color="green">включено</Tag> : <Tag>выключено</Tag>}
+                  <div>
+                    <Hint>
+                      Чертёж, крышку, оборот и не тот товар в каталоге Super Market заменяет настоящим фото из интернета — <Link to="/ai-photo/web">«Фото из сети»</Link>
+                    </Hint>
+                  </div>
+                </div>
               </Space>
             </Card>
             <Alert
@@ -903,9 +1024,12 @@ export function AIPhoto() {
       <PageTitle
         title="ИИ для фото"
         tabs={
-          <Typography.Text type="secondary" style={{ display: 'block', padding: '0 16px 12px' }}>
-            Gemini генерирует и редактирует фото товаров. Приход по фото накладной и сопоставление с каталогом остаются на «ИИ-сервис»
-          </Typography.Text>
+          <>
+            <Typography.Text type="secondary" style={{ display: 'block', padding: '0 16px 8px' }}>
+              Gemini генерирует и редактирует фото товаров. Приход по фото накладной и сопоставление с каталогом остаются на «ИИ-сервис»
+            </Typography.Text>
+            <PhotoTabs active="settings" />
+          </>
         }
       />
       <PhotoConnection />

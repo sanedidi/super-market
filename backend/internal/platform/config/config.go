@@ -103,6 +103,11 @@ type Config struct {
 	// TasnifURL — каталог ИКПУ (фото для импортированных товаров), PhotosPerProduct — сколько фото брать.
 	TasnifURL        string
 	PhotosPerProduct int
+	// «Фото из сети»: Open Food Facts и Serper (поиск картинок Google);
+	// PhotoWebAllowPrivate — скачивать фото и из внутренней сети (только тесты).
+	OpenFoodFactsURL     string
+	SerperURL            string
+	PhotoWebAllowPrivate bool
 }
 
 const devJWTSecret = "dev-secret-do-not-use-in-production"
@@ -148,12 +153,14 @@ func Load(getenv func(string) string) (Config, error) {
 		CourierTermsURL:  getenv("COURIER_TERMS_URL"),
 		CourierAppURL:    getenv("COURIER_APP_URL"),
 
-		S3Endpoint:   strings.TrimRight(getenv("S3_ENDPOINT"), "/"),
-		S3AccessKey:  getenv("S3_ACCESS_KEY"),
-		S3SecretKey:  getenv("S3_SECRET_KEY"),
-		S3Bucket:     valueOr(getenv("S3_BUCKET"), "media"),
-		MediaBaseURL: strings.TrimRight(getenv("MEDIA_BASE_URL"), "/"),
-		TasnifURL:    valueOr(strings.TrimRight(getenv("TASNIF_URL"), "/"), "https://tasnif.soliq.uz"),
+		S3Endpoint:       strings.TrimRight(getenv("S3_ENDPOINT"), "/"),
+		S3AccessKey:      getenv("S3_ACCESS_KEY"),
+		S3SecretKey:      getenv("S3_SECRET_KEY"),
+		S3Bucket:         valueOr(getenv("S3_BUCKET"), "media"),
+		MediaBaseURL:     strings.TrimRight(getenv("MEDIA_BASE_URL"), "/"),
+		TasnifURL:        valueOr(strings.TrimRight(getenv("TASNIF_URL"), "/"), "https://tasnif.soliq.uz"),
+		OpenFoodFactsURL: strings.TrimRight(getenv("OPENFOODFACTS_URL"), "/"),
+		SerperURL:        strings.TrimRight(getenv("SERPER_URL"), "/"),
 	}
 
 	var errs []error

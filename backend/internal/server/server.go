@@ -124,6 +124,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 	aiSvc := ai.NewService(pool, cfg.JWTSecret)
 	aiPhoto := ai.NewPhotoService(aiSvc, mediaSvc, log)
 	aiPhoto.Sync = InvoicesSync
+	aiPhoto.OFFURL, aiPhoto.SerperURL, aiPhoto.WebAllowPrivate = cfg.OpenFoodFactsURL, cfg.SerperURL, cfg.PhotoWebAllowPrivate
 	scans := invoices.NewService(pool, aiSvc, mediaSvc, invSvc, log)
 	catSvc := catalog.NewService(pool)
 	tenantSvc := tenant.NewService(pool)
@@ -154,6 +155,8 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		// Группы вариаций своих товаров: раз в день и после «Провести все».
 		varSvc.StartDaily()
 		aiPhoto.StartWorker(context.Background())
+		// Фото из сети: «чужие» фото каталога — настоящими.
+		aiPhoto.StartWebWorker(context.Background())
 		startSvc.OnOwnAdded = func(networkID string) { varSvc.StartNetSuggest(context.Background(), networkID) }
 	}
 	cafeSvc := cafe.NewService(pool).WithNotifier(notify.New(pool, tg, log))

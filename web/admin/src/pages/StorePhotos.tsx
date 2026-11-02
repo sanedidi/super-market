@@ -6,12 +6,13 @@
 import { useState, type CSSProperties, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { App, Button, Card, DatePicker, Drawer, Empty, Flex, Image, Input, Segmented, Select, Space, Table, Tag, Typography } from 'antd'
-import { ArrowLeftOutlined, LoadingOutlined, ReloadOutlined } from '@ant-design/icons'
+import { LoadingOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Link, useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
 import { LoadError, PageTitle, api, dateTime, errorText, useItem } from '@sm/shared'
 import { useInterval, useUrlState } from '../hooks'
 import { usd } from '../photoJob'
+import { PhotoTabs } from './WebPhotos'
 
 // ─── Данные ───────────────────────────────────────────────────────────────
 
@@ -299,10 +300,7 @@ export function StorePhotos() {
 
   return (
     <>
-      <Link to="/ai-photo" style={{ color: C.mute, fontSize: 13 }}>
-        <ArrowLeftOutlined /> ИИ для фото
-      </Link>
-      <PageTitle title="Фото магазинов">
+      <PageTitle title="Фото магазинов" tabs={<PhotoTabs active="store" />}>
         <Space wrap>
           <DatePicker
             picker="month"

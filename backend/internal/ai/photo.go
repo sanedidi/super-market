@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"image/color"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -98,6 +99,8 @@ type PhotoSettings struct {
 	StoreCostUSD  float64    `json:"store_cost_usd"`
 	StoreNetworks int        `json:"store_networks"`
 	StoreTop      []StoreTop `json:"store_top"`
+	// Web — блок «Фото из сети».
+	Web WebSettings `json:"web"`
 }
 
 type photoRow struct {
@@ -118,6 +121,14 @@ type PhotoService struct {
 
 	// Фото для магазинов (photo_store.go).
 	worker storeWorker
+	// Фото из сети (photo_web.go): воркер, адреса поиска (в тестах — свои).
+	webWorker webWorker
+	OFFURL    string
+	SerperURL string
+	// WebAllowPrivate — скачивать фото и из внутренней сети (только тесты).
+	WebAllowPrivate bool
+	webClientOnce   sync.Once
+	webHTTP         *http.Client
 	// Limit — лимит тарифа сети «Фото от Super Market» в месяц; nil — без лимита.
 	Limit func(ctx context.Context, q db.Querier, networkID string) (*int, error)
 	// OnStoreDone — положить готовое фото (карточка «Новых» или товар) и
@@ -163,7 +174,11 @@ func (s *PhotoService) Get(ctx context.Context) (PhotoSettings, error) {
 		return r.PhotoSettings, err
 	}
 	r.StoreTop = []StoreTop{}
-	err = s.storeMonth(ctx, &r.PhotoSettings)
+	if err = s.storeMonth(ctx, &r.PhotoSettings); err != nil {
+		return r.PhotoSettings, err
+	}
+	w, err := s.webLoad(ctx)
+	r.Web = w.WebSettings
 	return r.PhotoSettings, err
 }
 

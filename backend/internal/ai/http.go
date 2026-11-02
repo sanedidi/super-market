@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"time"
@@ -53,6 +54,17 @@ func (m *Module) Routes(r chi.Router) {
 			r.Post("/admin/ai-photo/store/jobs/{id}/retry", m.storeJobRetry)
 			r.Post("/admin/ai-photo/store/jobs/{id}/redo", m.storeJobRedo)
 			r.Post("/admin/ai-photo/store/retry-failed", m.storeRetryFailed)
+			// Фото из сети: «чужие» фото каталога заменяются настоящими.
+			r.Put("/admin/ai-photo/web", m.webSave)
+			r.Get("/admin/ai-photo/web/summary", m.webSummary)
+			r.Get("/admin/ai-photo/web/jobs", m.webJobs)
+			r.Get("/admin/ai-photo/web/jobs/{id}", m.webJob)
+			r.Post("/admin/ai-photo/web/jobs/{id}/revert", m.webAction(m.photo.RevertWeb))
+			r.Post("/admin/ai-photo/web/jobs/{id}/apply", m.webAction(m.photo.ApplyWeb))
+			r.Post("/admin/ai-photo/web/jobs/{id}/research", m.webAction(m.photo.ResearchWeb))
+			r.Post("/admin/ai-photo/web/jobs/{id}/pick", m.webPick)
+			r.Post("/admin/ai-photo/web/retry-not-found", m.webRetryNotFound)
+			r.Post("/admin/ai-photo/web/check", m.webCheckProduct)
 		}
 	})
 	// Автоперевод двуязычных полей: панель и приложение магазина, супер-админ.
@@ -211,5 +223,71 @@ func (m *Module) storeRetryFailed(w http.ResponseWriter, r *http.Request) {
 			return RetryFailedResult{}, apperr.Validation("network_id: неверный id").Uz("network_id: id notoʻgʻri")
 		}
 		return m.photo.RetryFailed(r.Context(), in)
+	})
+}
+
+// ------------------------------------------------------------ Фото из сети
+
+func (m *Module) webSave(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in WebSettingsInput) (PhotoSettings, error) {
+		return m.photo.SaveWeb(r.Context(), identity.FromContext(r.Context()).UserID, in)
+	})
+}
+
+func (m *Module) webSummary(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (WebSummary, error) { return m.photo.WebSummary(r.Context()) })
+}
+
+func (m *Module) webJobs(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (WebJobsPage, error) {
+		q := r.URL.Query()
+		p := httpx.PageFrom(r)
+		page, err := m.photo.WebJobs(r.Context(), WebJobsFilter{Status: q.Get("status"), Query: q.Get("q"), Limit: p.Limit, Offset: p.Offset})
+		for i := range page.Items {
+			page.Items[i] = m.photo.WebJobURLs(r, page.Items[i])
+		}
+		return page, err
+	})
+}
+
+func (m *Module) webJob(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (WebJobRow, error) {
+		j, err := m.photo.WebJob(r.Context(), id)
+		return m.photo.WebJobURLs(r, j), err
+	})
+}
+
+// webAction — «Вернуть старое», «Поставить», «Поискать ещё».
+func (m *Module) webAction(fn func(context.Context, string) (WebJobRow, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (WebJobRow, error) {
+			j, err := fn(r.Context(), id)
+			return m.photo.WebJobURLs(r, j), err
+		})
+	}
+}
+
+// webPick — поставить выбранное из найденных или своё фото.
+func (m *Module) webPick(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in WebPickInput) (WebJobRow, error) {
+		j, err := m.photo.PickWeb(r.Context(), id, in)
+		return m.photo.WebJobURLs(r, j), err
+	})
+}
+
+func (m *Module) webRetryNotFound(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (RetryNotFoundResult, error) { return m.photo.RetryNotFound(r.Context()) })
+}
+
+// webCheckProduct — проверить фото товара сейчас.
+func (m *Module) webCheckProduct(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in struct {
+		ProductID string `json:"product_id"`
+	}) (WebJobRow, error) {
+		if !httpx.IsUUID(in.ProductID) {
+			return WebJobRow{}, apperr.Validation("product_id: неверный id").Uz("product_id: id notoʻgʻri")
+		}
+		j, err := m.photo.CheckProductWeb(r.Context(), in.ProductID)
+		return m.photo.WebJobURLs(r, j), err
 	})
 }

@@ -36,6 +36,7 @@ import { Wishes } from './pages/Wishes'
 import { AISettings } from './pages/AI'
 import { AIPhoto } from './pages/AIPhoto'
 import { StorePhotos } from './pages/StorePhotos'
+import { WebPhotos } from './pages/WebPhotos'
 import { Translations } from './pages/Translations'
 import { Notifications, PushCampaign, PushNew } from './pages/Push'
 import { InvestNowBadge, InvestVisitors } from './pages/InvestVisitors'
@@ -98,6 +99,7 @@ const menu: MenuItem[] = [
 
 // Подстраницы, которых нет в меню, — подписи вкладок.
 tabLabels['/ai-photo/store'] = 'Фото магазинов'
+tabLabels['/ai-photo/web'] = 'Фото из сети'
 
 export function AdminRoutes() {
   return (
@@ -131,6 +133,7 @@ export function AdminRoutes() {
         <Route path="ai" element={<AISettings />} />
         <Route path="ai-photo" element={<AIPhoto />} />
         <Route path="ai-photo/store" element={<StorePhotos />} />
+        <Route path="ai-photo/web" element={<WebPhotos />} />
         <Route path="translations" element={<Translations />} />
         <Route path="app-versions" element={<AppVersions />} />
         <Route path="invest" element={<InvestVisitors />} />
