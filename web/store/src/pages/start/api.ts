@@ -226,41 +226,6 @@ export type LinesResult = { lines: Line[]; totals: Totals; skipped: string[] }
  */
 export type ScanResult = { status: 'line' | 'product' | 'none'; code: string; line: Line | null; product: SearchItem | null }
 
-export type Candidate = {
-  product_id: string
-  name: string
-  image: string | null
-  unit_short: string
-  current_price: string
-  barcode: string | null
-  score: number
-}
-
-export type PhotoItem = {
-  n: number
-  name: string
-  brand: string
-  barcode: string
-  qty: string
-  state: 'found' | 'choose' | 'missing'
-  product: Candidate | null
-  candidates: Candidate[]
-  brand_id: string | null
-  category_id: string | null
-  in_draft: boolean
-}
-
-export type Photo = {
-  id: string
-  store_id: string
-  status: 'processing' | 'ready' | 'failed'
-  error: string
-  images: string[]
-  items: PhotoItem[]
-  counts: { found: number; choose: number; missing: number }
-  created_at: string
-}
-
 export type PostResult = {
   draft_id: string
   products: number

@@ -78,7 +78,7 @@ class _StartCountScreenState extends State<StartCountScreen> {
   /// Сканер поверх камеры: найденный товар открывает шторку количества и цен.
   Future<void> _scan() async {
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(builder: (_) => StartCameraScreen(start: widget.start, mode: StartMode.barcode, inventory: true)),
+      MaterialPageRoute(builder: (_) => StartCameraScreen(start: widget.start, inventory: true)),
     );
     if (mounted) _load();
   }

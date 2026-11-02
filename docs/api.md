@@ -24,7 +24,7 @@
   Если русское поле не передано при создании или пустое, а перевод есть — перевод пишется и в русское поле.
   В PATCH поле без значения не меняется, как и остальные поля. Бренды не переводятся.
 - **Поиск** по названию (`q`) ищет и по русскому, и по узбекскому названию: товары (покупатель, панель,
-  супер-админ, остатки, «Начало работы»), категории в справочнике; сопоставление строк накладной и фото полок —
+  супер-админ, остатки, «Начало работы»), категории в справочнике; сопоставление строк накладной —
   тоже по обоим.
 
 ## Вход (этап 1)
@@ -907,7 +907,7 @@ options: [{product_id, weight, flavor, image, price, old_price, discount_percent
 | PUT | `/admin/ai` | `{provider, base_url, api_key?, model}` — пустой `api_key` оставляет сохранённый (только для того же сервиса и адреса). Ключ шифруется (AES-GCM от `JWT_SECRET`) |
 | POST | `/admin/ai/models` | `{provider, base_url, api_key?}` → `items [{id, vision}]` — модели ключа; `vision` по названию (`null` — неизвестно) |
 | POST | `/admin/ai/test` | `{}` — проверить сохранённое (результат записывается) или `{provider, base_url, api_key, model}` — проверить введённое. Модель читает тестовую накладную → `{ok, message, ms}` |
-| GET | `/admin/ai/usage` | `?from=&to=` (YYYY-MM-DD, `to` не включается; по умолчанию — текущий месяц), `group=network\|store\|employee`, `network_id?` → `{totals {requests, invoices, photos, errors, tests, input_tokens, output_tokens, cost_uzs}, days [{date, requests, input_tokens, output_tokens, cost_uzs}], items [{id, name, sub, network_id, stores, employees, requests, invoices, photos, errors, input_tokens, output_tokens, cost_uzs, share}], prices, model}`; `photos` — фото полок «Начала работы». Строка с пустым `id` — проверки подключения |
+| GET | `/admin/ai/usage` | `?from=&to=` (YYYY-MM-DD, `to` не включается; по умолчанию — текущий месяц), `group=network\|store\|employee`, `network_id?` → `{totals {requests, invoices, photos, errors, tests, input_tokens, output_tokens, cost_uzs}, days [{date, requests, input_tokens, output_tokens, cost_uzs}], items [{id, name, sub, network_id, stores, employees, requests, invoices, photos, errors, input_tokens, output_tokens, cost_uzs, share}], prices, model}`; `photos` — фото полок «Начала работы» (распознавание полок удалено в ноябре 2026, остались старые записи). Строка с пустым `id` — проверки подключения |
 | PUT | `/admin/ai/prices` | `{price_in, price_out, currency: USD\|RUB\|UZS, rate_uzs}` — цена за 1 млн токенов; стоимость запроса фиксируется в момент запроса |
 
 Ошибки сервиса — 502 `ai_error` с понятным текстом («ключ не подходит…», «закончились средства…»).
@@ -969,7 +969,7 @@ options: [{product_id, weight, flavor, image, price, old_price, discount_percent
 
 Магазин заводит товары, которые у него уже есть. Один открытый черновик на основной склад магазина — общий для
 панели и приложения. Нет основного склада — 409 `no_warehouse`. Товары: общий каталог и свои товары сети.
-Два шага: «Мои товары» (поиск по центральной базе, сканер, фото полок; без количества и цен) и «Инвентаризация:
+Два шага: «Мои товары» (поиск по центральной базе, сканер, каталог ИКПУ, новый товар по фото; без количества и цен) и «Инвентаризация:
 Начало работы» (количество и цена продажи обязательны, можно 0; себестоимость — по желанию). «Записать и закрыть»
 проводит черновик один раз — дальше товары заводятся обычными документами.
 
@@ -998,9 +998,6 @@ options: [{product_id, weight, flavor, image, price, old_price, discount_percent
 | POST | `/store/start/new-items/retry-all` | «Распознать заново» все нераспознанные карточки магазина разом: `{store_id}` → 202 `{count}`. Карточки `failed` (и зависшие «распознаётся») снова `processing`; Super Market распознаёт их в фоне по 3 одновременно, не вышло снова — опять `failed`. ИИ не подключён — 409 `ai_not_configured` |
 | POST | `/store/start/new-items/confirm-all` | «Провести все в «Мои товары»»: `{store_id, dry_run?, limit?}` → `{ready, existing, added, remaining, left {no_category, duplicate, barcode, processing, failed, other}}`. Проводятся карточки `ready` как их заполнил Super Market: тот же штрихкод в базе — товар базы (`existing`), остальное — новый товар (право `catalog.manage`), в том числе «тот же товар, другой штрихкод?» и с сомнениями. Остаются: нет категории из дерева, дубль более ранней карточки (в том числе уже добавленной — у такой карточки после прогона `result.match` — её товар), неверная контрольная цифра штрихкода, распознаётся / не удалось. `dry_run` — только посчитать. За вызов — до `limit` (≤ 100) карточек; клиент повторяет, пока `remaining > 0` |
 | DELETE | `/store/start/new-items/{id}` | убрать карточку (товар не создаётся) |
-| POST | `/store/start/photos` | `{store_id, images: [url, …до 6]}` (из `POST /store/uploads`) → 202, `processing`; Super Market ищет товары в фоне. 409 `ai_not_configured` |
-| GET | `/store/start/photos/{id}` | `{status (processing, ready, failed), error, images, counts {found, choose, missing}, items [{n, name, brand, barcode, qty, state, product, candidates [{product_id, name, image, unit_short, current_price, barcode, score}], brand_id, category_id, in_draft}]}` |
-| POST | `/store/start/photos/{id}/retry` | распознать заново |
 | GET | `/store/start/scan?store_id=&code=` | шаг 2 — что делать со штрихкодом: `{status, code, line, product}`. `line` — товар уже в «Моих товарах» (строка документа: сразу количество и цены), `product` — есть в центральной базе, но не добавлен (предложить «Добавить и заполнить»), `none` — нет нигде (дальше каталог ИКПУ или новый товар по фото, как на шаге 1) |
 | POST | `/store/start/mode` | «Как начнём?»: `{store_id, mode: stock\|prices}` → черновик (создаётся сам). `stock` — «Сразу с остатками» (количество и цена продажи по каждому товару), `prices` — «Только товары и цены» (количество не нужно, у товаров «Остаток не посчитан»). `mode` в черновике: null — магазин ещё не выбрал (панель и «SM Магазин» показывают «Как начнём?»); черновики, начатые до выбора, — `stock`. Режим можно сменить, пока «Начало работы» не записано. В `totals` ещё `no_qty`, `no_price`; `unfilled` в режиме `prices` — строки без цены продажи, `only=no_qty` — строки без количества |
 | POST | `/store/start/step` | `{store_id, step: 1\|2}` → черновик. 1 — выбор товаров, 2 — инвентаризация. Шаг общий для веб-панели и «SM Магазин»: на шаге 2 кнопка «Штрихкод» на главной открывает ввод количества и цен, а не добавление товара |
@@ -1012,8 +1009,6 @@ options: [{product_id, weight, flavor, image, price, old_price, discount_percent
 | POST | `/store/start/fill` | «Цена и остаток» товара, только что добавленного в магазин из «Моих товаров» («Добавить товар»): `{store_id, product_id, price?, qty?, cost?}`. `price` (право `prices.manage`) — документ цен магазина; `qty` с `cost` — оприходование, товар становится посчитанным (только пока остатка нет, иначе 409 `stock_exists` — считайте «Посчитать»). Товара нет в магазине — 404 → `{product_id}` |
 | POST | `/store/start/count` | записать подсчёт: `{store_id, items: [{product_id, qty}]}` (1–500, сколько сейчас на полке, ≥ 0) → `{document {id, number}, counted, summary}`. Это инвентаризация основного склада (излишек — оприходование по последней себестоимости, недостача — списание); любая проведённая инвентаризация снимает с товаров «Остаток не посчитан». У агентов («SM Агент») непосчитанный товар — статус `unknown` («не посчитан»), в «Что заказать» он не попадает |
 
-Фото: модель перечисляет товары и штуки → поиск по штрихкоду (100%), иначе по похожему названию (pg_trgm, +15 за бренд).
-`found` — лучший ≥ 70 и отрыв от второго ≥ 8; `choose` — есть похожие ≥ 35; `missing` — нет. Расход — в `ai_usage` (`kind = shelf`).
 Повторное проведение после сбоя пропускает уже проведённые строки. Покупатель видит товар, когда он в общем каталоге,
 активен и есть в наличии на складе магазина.
 

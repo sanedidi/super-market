@@ -241,8 +241,8 @@ function StartBlock() {
                     `«Mahsulotlarim»da ${n} ta — miqdor va narxlarni kiriting va «Yozish va yopish»ni bosing, shunda mahsulotlar omborda va xaridorlarda paydo boʻladi.`,
                   )
                 : tr(
-                    'Добавьте товары, которые уже есть в магазине: найдите их в центральной базе по названию или штрихкоду, или загрузите фото полок.',
-                    'Doʻkonda bor mahsulotlarni qoʻshing: ularni markaziy bazadan nomi yoki shtrix-kodi boʻyicha toping yoki javon rasmlarini yuklang.',
+                    'Добавьте товары, которые уже есть в магазине: найдите их в центральной базе по названию или штрихкоду.',
+                    'Doʻkonda bor mahsulotlarni qoʻshing: ularni markaziy bazadan nomi yoki shtrix-kodi boʻyicha toping.',
                   )}
             </Typography.Text>
           </div>

@@ -58,22 +58,10 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/photo-quota", m.photoQuota)
 		r.Post("/new-items/{id}/confirm", m.confirmNewItem)
 		r.Delete("/new-items/{id}", m.deleteNewItem)
-		r.Post("/photos", m.createPhoto)
-		r.Get("/photos/{id}", m.getPhoto)
-		r.Post("/photos/{id}/retry", m.retryPhoto)
 	})
 }
 
 func pr(r *http.Request) *identity.Principal { return identity.FromContext(r.Context()) }
-
-func (m *Module) urls(r *http.Request) func(Photo, error) (Photo, error) {
-	return func(ph Photo, err error) (Photo, error) {
-		for i, k := range ph.Images {
-			ph.Images[i] = m.media.URL(r, k)
-		}
-		return ph, err
-	}
-}
 
 func (m *Module) get(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (Draft, error) {
@@ -115,24 +103,6 @@ type modeInput struct {
 func (m *Module) setMode(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in modeInput) (Draft, error) {
 		return m.svc.SetMode(r.Context(), pr(r), in.StoreID, in.Mode)
-	})
-}
-
-func (m *Module) createPhoto(w http.ResponseWriter, r *http.Request) {
-	httpx.RespondBody(w, r, m.log, http.StatusAccepted, "", func(_ string, in PhotoInput) (Photo, error) {
-		return m.urls(r)(m.svc.CreatePhoto(r.Context(), pr(r), in))
-	})
-}
-
-func (m *Module) getPhoto(w http.ResponseWriter, r *http.Request) {
-	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (Photo, error) {
-		return m.urls(r)(m.svc.GetPhoto(r.Context(), pr(r), id))
-	})
-}
-
-func (m *Module) retryPhoto(w http.ResponseWriter, r *http.Request) {
-	httpx.RespondID(w, r, m.log, http.StatusAccepted, "id", func(id string) (Photo, error) {
-		return m.urls(r)(m.svc.RetryPhoto(r.Context(), pr(r), id))
 	})
 }
 

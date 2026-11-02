@@ -112,13 +112,6 @@ class StartApi {
   /// Поиск по центральной базе: название (uz / ru) или штрихкод; added — уже в «Моих товарах».
   Future<List<Map<String, dynamic>>> searchBase(String q) => api.list('/store/start/search', {'store_id': storeId, 'q': q, 'limit': 30});
 
-  Future<Map<String, dynamic>> createPhoto(List<String> images) async =>
-      await api.post('/store/start/photos', {'store_id': storeId, 'images': images}) as Map<String, dynamic>;
-
-  Future<Map<String, dynamic>> photo(String id) async => await api.get('/store/start/photos/$id') as Map<String, dynamic>;
-
-  Future<void> retryPhoto(String id) => api.post('/store/start/photos/$id/retry');
-
   /// Варианты из каталога ИКПУ: названия по правилам каталога и отметки
   /// «уже есть в базе» / «уже добавлен» (records — записи tasnif как есть).
   Future<List<Map<String, dynamic>>> tasnifPreview(List<Map<String, dynamic>> records) async {

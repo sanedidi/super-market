@@ -1,11 +1,7 @@
 package server_test
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"mime/multipart"
-	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
@@ -15,7 +11,7 @@ import (
 )
 
 // TestStart — «Начало работы»: магазин добавляет товары, которые у него есть
-// (штрихкод, каталог, фото полки), правит цены и проводит — товары на складе,
+// (штрихкод, каталог, поиск), правит цены и проводит — товары на складе,
 // цены магазина установлены, покупатель их видит.
 func TestStart(t *testing.T) {
 	pool := freshDB(t)
@@ -23,9 +19,6 @@ func TestStart(t *testing.T) {
 	s3 := &fakeS3{buckets: map[string]bool{}, objects: map[string][]byte{}, types: map[string]string{}}
 	s3srv := httptest.NewServer(s3)
 	t.Cleanup(s3srv.Close)
-	fai := &fakeAI{key: "sk-start-key"}
-	aisrv := httptest.NewServer(fai)
-	t.Cleanup(aisrv.Close)
 
 	cfg := testConfig()
 	cfg.DevOTPCode = "111111"
@@ -123,71 +116,7 @@ func TestStart(t *testing.T) {
 	if s := search("coca 1,5"); s[0]["added"] != true {
 		t.Fatalf("added flags = %v", s)
 	}
-	// Фото полки: ИИ ещё не подключён.
-	upload := func() string {
-		t.Helper()
-		var body bytes.Buffer
-		mw := multipart.NewWriter(&body)
-		fw, _ := mw.CreateFormFile("file", "shelf.png")
-		_, _ = fw.Write(tinyPNG)
-		_ = mw.Close()
-		req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/v1/store/uploads", &body)
-		req.Header.Set("Content-Type", mw.FormDataContentType())
-		req.Header.Set("Authorization", "Bearer "+ownerTok)
-		res, err := srv.Client().Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer res.Body.Close()
-		out := map[string]any{}
-		_ = json.NewDecoder(res.Body).Decode(&out)
-		return out["url"].(string)
-	}
-	img := upload()
-	a.expect(a.do("POST", "/store/start/photos", ownerTok, map[string]any{"store_id": storeID, "images": []string{img}}), 409, "ai off")
-	a.expect(a.do("PUT", "/admin/ai", adminTok, map[string]any{"provider": "openai", "base_url": aisrv.URL + "/v1", "api_key": fai.key, "model": "gpt-4o"}), 200, "ai on")
-
-	fai.set(`{"items":[{"name":"Напиток Coca-Cola 1,5 л","brand":"Coca-Cola","qty":6},
-	 {"name":"Fanta","brand":"Fanta","barcode":"","qty":"4"},
-	 {"name":"Напиток Coca-Cola Zero 1 л","brand":"Coca-Cola","barcode":"5449000054227","qty":3},
-	 {"name":"Квас Navruz 1,5 л","brand":"Navruz","qty":2},
-	 {"name":"Напиток Coca-Cola 1,5 л","qty":2}]}`)
-	ph := a.expect(a.do("POST", "/store/start/photos", ownerTok, map[string]any{"store_id": storeID, "images": []string{img}}), 202, "photo")
-	if ph.str("status") != "ready" {
-		t.Fatalf("photo = %v", ph.Body)
-	}
-	items := ph.Body["items"].([]any)
-	item := func(i int) map[string]any { return items[i].(map[string]any) }
-	if len(items) != 4 {
-		t.Fatalf("items = %v", items)
-	}
-	if it := item(0); it["state"] != "found" || it["product"].(map[string]any)["product_id"] != cola || it["qty"] != "8" || it["in_draft"] != true {
-		t.Fatalf("cola item = %v", it)
-	}
-	if it := item(2); it["state"] != "found" || it["product"].(map[string]any)["product_id"] != zero || it["in_draft"] != false {
-		t.Fatalf("zero by barcode = %v", it)
-	}
-	if it := item(3); it["state"] != "missing" || it["product"] != nil {
-		t.Fatalf("kvass = %v", it)
-	}
-	if it := item(1); it["state"] != "found" || it["product"].(map[string]any)["product_id"] != fanta || it["category_id"] != drinks {
-		t.Fatalf("fanta = %v", it)
-	}
-	if c := ph.Body["counts"].(map[string]any); c["found"] != 3.0 || c["missing"] != 1.0 {
-		t.Fatalf("counts = %v", c)
-	}
-	a.expect(a.do("GET", "/store/start/photos/"+ph.str("id"), otherTok, nil), 404, "foreign photo")
-	// Ошибка модели — можно повторить.
-	fai.set(`{"items":[]}`)
-	bad := a.expect(a.do("POST", "/store/start/photos", ownerTok, map[string]any{"store_id": storeID, "images": []string{upload()}}), 202, "empty photo")
-	if bad.str("status") != "failed" || bad.str("error") == "" {
-		t.Fatalf("failed photo = %v", bad.Body)
-	}
-	fai.set(`{"items":[{"name":"Напиток Coca-Cola Zero 1 л","qty":3}]}`)
-	if rr := a.expect(a.do("POST", "/store/start/photos/"+bad.str("id")+"/retry", ownerTok, nil), 202, "retry"); rr.str("status") != "ready" {
-		t.Fatalf("retry = %v", rr.Body)
-	}
-	// Найденное на фото — одним запросом; то, что уже в списке, пропускается.
+	// Несколько товаров — одним запросом; то, что уже в списке, пропускается.
 	r = a.expect(lines(
 		map[string]any{"product_id": cola, "add": true, "qty": 8, "source": "photo"},
 		map[string]any{"product_id": fanta, "add": true, "qty": 4, "source": "photo"},
@@ -197,7 +126,7 @@ func TestStart(t *testing.T) {
 		t.Fatalf("photo add = %v", r.Body)
 	}
 	a.expect(lines(map[string]any{"product_id": apples, "add": true, "source": "search"}), 200, "apples")
-	// Один товар с фото, который уже в списке, — тоже пропуск, без ошибки.
+	// Один товар (source photo — новый товар по фото), который уже в списке, — тоже пропуск, без ошибки.
 	if r := a.expect(lines(map[string]any{"product_id": fanta, "add": true, "qty": 2, "source": "photo"}), 200, "photo single"); len(r.Body["skipped"].([]any)) != 1 {
 		t.Fatalf("photo single = %v", r.Body)
 	}
@@ -395,9 +324,4 @@ func TestStart(t *testing.T) {
 		t.Fatalf("fill again = %v", c.Body)
 	}
 
-	// Расход ИИ записан как «фото полок».
-	var shelves int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM ai_usage WHERE kind = 'shelf' AND photo_id IS NOT NULL`).Scan(&shelves); err != nil || shelves != 3 {
-		t.Fatalf("ai usage shelves = %d %v", shelves, err)
-	}
 }

@@ -34,7 +34,6 @@ class NewProductScreen extends StatefulWidget {
     this.barcode,
     this.brandId,
     this.categoryId,
-    this.fromPhoto = false,
     this.withLine = true,
     this.review,
   });
@@ -44,14 +43,11 @@ class NewProductScreen extends StatefulWidget {
 
   final StartApi start;
 
-  /// Название по фото полки — в русское поле (так его отдаёт распознавание).
+  /// Название для русского поля (если уже известно).
   final String? name;
   final String? barcode;
   final String? brandId;
   final String? categoryId;
-
-  /// Поля заполнены по фото полки.
-  final bool fromPhoto;
 
   /// Сразу добавить в «Мои товары».
   final bool withLine;
@@ -677,7 +673,7 @@ class _NewProductScreenState extends State<NewProductScreen> {
             ]),
           ),
         ],
-        if (widget.fromPhoto || (_isReview && _res != null)) ...[
+        if (_isReview && _res != null) ...[
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(12),

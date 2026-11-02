@@ -1,7 +1,7 @@
 // «Начало работы» (Figma «Панель магазина · начало работы v2», V1–V4).
 // Черновик общий с «SM Магазин» и идёт в два шага:
 //  1. «Мои товары» — поиск по центральной базе (название, штрихкод, USB-сканер),
-//     фото полок, свой товар. Тот же товар второй раз не добавляется, на
+//     свой товар. Тот же товар второй раз не добавляется, на
 //     похожий — предупреждение (один раз на пару). Штрихкод, который уже
 //     в «Требуют внимания», — подсказка «уже в «Требуют внимания»» вместо
 //     «Создать свой товар» (Figma «без дублей», В1).
@@ -17,7 +17,6 @@ import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-quer
 import { Alert, App, Button, Card, Col, Flex, Input, InputNumber, Modal, Pagination, Result, Row, Segmented, Space, Table, Tag, Tooltip, Typography, type InputRef, type TableColumnsType } from 'antd'
 import {
   ArrowRightOutlined,
-  CameraOutlined,
   CheckCircleFilled,
   CheckCircleOutlined,
   CheckOutlined,
@@ -38,7 +37,7 @@ import { useStore } from '../../ctx'
 import { NeedStore } from '../../ui'
 import { docPaths } from '../StockDocs'
 import { photoPoll, plainNum, pricesMode, useStartApi, useStartRefresh, type Draft, type Line, type LineInput, type LineVariant, type LinesResult, type NewItem, type PostResult, type SearchItem, type Similar, type Totals } from './api'
-import { BarcodeModal, NewProductModal, PhotoModal, SimilarModal, sum } from './Modals'
+import { BarcodeModal, NewProductModal, SimilarModal, sum } from './Modals'
 import { TasnifBlock, TasnifLink } from './Tasnif'
 import { NEW_PAGE, NewByPhotoModal, NewItemsList, ReviewModal, RightTabs, newItemBadge, newItemState, newItemThumb, useNewItems, type RightTab } from './NewItems'
 import { OwnVariantsStart, useOwnGroups } from '../OwnVariants'
@@ -164,7 +163,6 @@ function Steps({ step, go, prices }: { step: 1 | 2; go?: (s: 1 | 2) => void; pri
 function StepGoods({ d, next, onMode }: { d: Draft; next: () => void; onMode: () => void }) {
   const prices = pricesMode(d)
   const { can, storeId } = useStore()
-  const [photoOpen, setPhotoOpen] = useState(false)
   const [newOpen, setNewOpen] = useState(false)
   // «Новый товар»: сначала фото для Super Market, ручная форма — по ссылке.
   const [byPhoto, setByPhoto] = useState(false)
@@ -209,9 +207,6 @@ function StepGoods({ d, next, onMode }: { d: Draft; next: () => void; onMode: ()
         title={tr('Начало работы', 'Ishni boshlash')}
         extra={
           <Space wrap>
-            <Button icon={<CameraOutlined />} onClick={() => setPhotoOpen(true)}>
-              {tr('Фото полок', 'Javon rasmlari')}
-            </Button>
             {can('catalog.manage') && (
               <Button icon={<PlusOutlined />} onClick={() => setByPhoto(true)}>
                 {tr('Новый товар', 'Yangi mahsulot')}
@@ -263,7 +258,6 @@ function StepGoods({ d, next, onMode }: { d: Draft; next: () => void; onMode: ()
           )}
         </Col>
       </Row>
-      <PhotoModal open={photoOpen} onClose={() => setPhotoOpen(false)} />
       <ReviewModal item={review} onClose={() => setReview(null)} />
       <NewProductModal open={newOpen} onClose={() => setNewOpen(false)} />
       <NewByPhotoModal
@@ -604,7 +598,7 @@ function MyGoods({ highlight, title }: { highlight: string | null; title?: React
             : false
         }
         locale={{
-          emptyText: tr('Пока пусто — найдите товары слева, отсканируйте штрихкод или загрузите фото полок', 'Hozircha boʻsh — mahsulotlarni chapda toping, shtrix-kodni skanerlang yoki javon rasmlarini yuklang'),
+          emptyText: tr('Пока пусто — найдите товары слева или отсканируйте штрихкод', 'Hozircha boʻsh — mahsulotlarni chapda toping yoki shtrix-kodni skanerlang'),
         }}
         columns={[
           {

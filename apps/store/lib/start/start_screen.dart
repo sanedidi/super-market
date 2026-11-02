@@ -18,17 +18,16 @@ import 'start_logic.dart';
 import 'tasnif.dart';
 
 /// Способы добавить товары (кнопки на главной и на экране «Начало работы»).
-enum StartMethod { photo, barcode, search }
+enum StartMethod { barcode, search }
 
-/// Открыть камеру (фото полок или штрихкод). Поиск — вкладка самого экрана.
+/// Открыть сканер штрихкодов. Поиск — вкладка самого экрана.
 Future<void> openStartMethod(BuildContext context, StartApi start, StartMethod m) async {
   if (m == StartMethod.search) return;
-  final screen = StartCameraScreen(start: start, mode: m == StartMethod.barcode ? StartMode.barcode : StartMode.photo);
-  await Navigator.of(context).push<Object?>(MaterialPageRoute(builder: (_) => screen));
+  await Navigator.of(context).push<Object?>(MaterialPageRoute(builder: (_) => StartCameraScreen(start: start)));
 }
 
 /// М1/М2 · Начало работы, шаг 1: вкладки «Поиск в базе» (центральная база по
-/// названию и штрихкоду; камера — фото полок и сканер) и «Мои товары» (полные
+/// названию и штрихкоду; камера — сканер штрихкодов) и «Мои товары» (полные
 /// названия, штрихкод, убрать). Тот же товар второй раз не добавляется (М3),
 /// на похожий — вопрос (М4). Нет в базе — варианты из каталога ИКПУ (М-Т1,
 /// М-Т2); нашлось не то — ссылка «Поискать в каталоге ИКПУ».
@@ -285,7 +284,6 @@ class _StartScreenState extends State<StartScreen> {
               style: AppText.small),
         ]),
         actions: [
-          if (!toStore) IconButton(tooltip: tr('Фото полок', 'Javon rasmi'), icon: const Icon(Icons.photo_camera_rounded), onPressed: () => _open(StartMethod.photo)),
           if (st.can('catalog.manage')) IconButton(tooltip: tr('Новый товар', 'Yangi mahsulot'), icon: const Icon(Icons.add_rounded), onPressed: () => _newItem()),
         ],
       ),
@@ -461,7 +459,7 @@ class _StartScreenState extends State<StartScreen> {
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: lines.isEmpty
-                  ? Text(tr('Пока пусто — найдите товары во вкладке «Поиск в базе» или снимите полку.', 'Hozircha boʻsh — mahsulotlarni «Bazadan qidirish» boʻlimida toping yoki javonni rasmga oling.'),
+                  ? Text(tr('Пока пусто — найдите товары во вкладке «Поиск в базе» или отсканируйте штрихкод.', 'Hozircha boʻsh — mahsulotlarni «Bazadan qidirish» boʻlimida toping yoki shtrix-kodni skanerlang.'),
                       style: AppText.small)
                   : Text(tr('Последние добавленные сверху', 'Oxirgi qoʻshilganlar yuqorida'), style: AppText.caption),
             );
@@ -830,8 +828,6 @@ class _StartHomeBlockState extends State<StartHomeBlock> {
             btn(StartMethod.search, Icons.search_rounded, tr('Поиск', 'Qidirish'), primary: true),
             const SizedBox(width: 8),
             btn(StartMethod.barcode, Icons.qr_code_scanner_rounded, tr('Штрихкод', 'Shtrix-kod')),
-            const SizedBox(width: 8),
-            btn(StartMethod.photo, Icons.photo_camera_rounded, tr('Фото полки', 'Javon rasmi')),
           ]),
         ]),
       ),
