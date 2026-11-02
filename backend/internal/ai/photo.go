@@ -48,7 +48,7 @@ const (
 // DefaultPhotoPrompt — стандартная инструкция для Gemini («12 правил»).
 // Фон, дорисовка, товар и поиск добавляются к ней из настроек.
 const DefaultPhotoPrompt = `You edit product photos for an online grocery catalog. Turn the photo into a clean catalog product shot.
-1. Keep exactly the same product: the same package shape, colors, logo, text and label layout. Never invent, translate or change any text on the package.
+1. Keep exactly the same product: the same package shape, colors, logo, text and label layout. Never invent, translate or change any text on the package. Always show the FRONT of the package (the main face with the brand logo and the product name), even if the photo was taken from the back or the side.
 2. Remove the background completely and put the product on a plain solid background of the color given below.
 3. Square 1:1 image, the product centered, level and facing the camera, in its natural orientation: a horizontal package (a butter or cheese brick, a chocolate bar, a flat box) stays horizontal, a tall package (a bottle, a carton) stays vertical. Never rotate the product by 90 degrees to fill the square; empty space above and below is fine.
 4. The product fills about 80% of the frame with even margins on all sides; nothing is cut off.
@@ -60,6 +60,10 @@ const DefaultPhotoPrompt = `You edit product photos for an online grocery catalo
 10. If several identical units are visible, keep only one.
 11. Keep the image sharp and photorealistic; no stylization.
 12. If there is no product package in the photo, return the photo unchanged.`
+
+// frontSideRule — товар всегда лицевой стороной, даже если сняли сзади или сбоку
+// (штрихкод, состав). Добавляется и к своей инструкции супер-админа.
+const frontSideRule = `Front side: the catalog photo must show the front of the package facing the camera, the side with the big brand logo and product name, as on a store shelf. If the photo shows the back or a side of the package (barcode, ingredients, nutrition table, small text), turn the product so that its front faces the camera: rebuild the front from the parts of it visible in the photo (logo, colors, design elements wrapping around a can or a bottle) and from the official packaging of this product. Do not show the barcode, the ingredients or the nutrition table as the main side. Never write garbled or made-up text: if a piece of text cannot be read or found, leave that area plain in the package color. Only if the product and its front cannot be recognized at all, keep the side that is visible in the photo.`
 
 // PhotoSettings — для супер-админа; ключ не отдаётся.
 type PhotoSettings struct {
@@ -609,15 +613,17 @@ func photoPrompt(o photoOpts, product string) string {
 	}
 	// И для своей инструкции: модель любит ставить всё вертикально под квадрат.
 	b.WriteString("\nOrientation: keep the product exactly as it is oriented in reality; the text on the front must read the same way as on the real package. Do not turn a horizontal product into a vertical one.")
+	// И для своей инструкции: магазин часто снимает товар стороной со штрихкодом (сканировал его).
+	b.WriteString("\n" + frontSideRule)
 	if o.Outpaint {
 		b.WriteString("\nIf part of the product is cut off by the edge of the photo (for example the cap, the lid or an edge of the package), complete the missing part realistically so that the whole product is visible.")
 	} else {
-		b.WriteString("\nDo not draw parts of the product that are not visible in the photo.")
+		b.WriteString("\nDo not draw parts of the product that are not visible in the photo, except the front side as described in the front side rule.")
 	}
 	if product != "" {
 		b.WriteString("\nThe product: " + product + ".")
 		if o.WebSearch {
-			b.WriteString(" Use Google Search to find the official packaging of this product and use it only to restore missing or unreadable parts accurately.")
+			b.WriteString(" Use Google Search (by the name, the brand and the barcode) to find the official packaging of this product; use it to rebuild the front side when the photo shows the back or a side, and to restore missing or unreadable parts accurately.")
 		}
 	}
 	b.WriteString("\nReturn only the edited image.")
