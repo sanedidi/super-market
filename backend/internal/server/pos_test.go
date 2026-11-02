@@ -298,7 +298,8 @@ func TestPOS(t *testing.T) {
 		WHERE s.client_uid = 'sale-0002'`).Scan(&short); err != nil || short != "2.000" {
 		t.Fatalf("short_qty = %q, %v", short, err)
 	}
-	if q, _ := stockOf(t, a, tok, wh, cola); q != "0" && q != "0.000" {
+	// Продали на 2 больше, чем было: в остатках — минус (владелец видит недостачу).
+	if q, _ := stockOf(t, a, tok, wh, cola); q != "-2" && q != "-2.000" {
 		t.Fatalf("cola stock = %s", q)
 	}
 
