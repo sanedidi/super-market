@@ -25,6 +25,10 @@ class FakeServer {
   /// Магазин даёт в долг.
   bool debts = false;
 
+  /// Норма размена магазина (сумы строкой) и пересчёт раз в N дней (Figma ЗД6, М6).
+  String? cashFloat;
+  int? recountEveryDays;
+
   /// В каталоге весовая хурма без номера на весах; номера, запомненные кассой.
   bool scales = false;
   final List<Map<String, dynamic>> plus = [];
@@ -90,7 +94,14 @@ class FakeServer {
             {'id': 'cash', 'name': 'Наличные', 'kind': 'cash'},
             {'id': 'card', 'name': 'Терминал', 'kind': 'card'},
           ],
-          'settings': {'device_name': 'Касса 1', 'store_name': 'Чиланзар', 'weight_prefixes': ['22'], 'debt_enabled': debts},
+          'settings': {
+            'device_name': 'Касса 1',
+            'store_name': 'Чиланзар',
+            'weight_prefixes': ['22'],
+            'debt_enabled': debts,
+            'cash_float': cashFloat,
+            'recount_every_days': recountEveryDays,
+          },
           'open_shift_id': null,
         });
       case 'PUT /pos/products/water/price':
@@ -294,6 +305,32 @@ void main() {
     await until(() => pos.queue == 0);
     expect(server.closes.single.containsKey('counted_cash'), isFalse);
     expect(server.closes.single['diff_reason'], '');
+  });
+
+  test('норма размена: в ящике остаётся норма, остальное «К сдаче»; пересчёт раз в 7 дней', () async {
+    server.cashFloat = '20000.00';
+    server.recountEveryDays = 7;
+    await pos.activate('ABCD2345');
+    expect(pos.catalog.settings.cashFloat, 2000000);
+    // Ни одного пересчёта ещё не было — пора пересчитать.
+    expect(pos.recountDue, isTrue);
+    pos.login(pos.catalog.cashiers.firstWhere((c) => c.id == 'e1'), '1234');
+    await pos.openShift(5000000);
+    await until(() => !pos.syncing);
+    await pos.sync();
+    await until(() => pos.queue == 0);
+    // Пересчитали — в ящике 20 000 размена, 30 000 «К сдаче».
+    await pos.closeShift(5000000, '');
+    expect(pos.lastDay!.left, 2000000);
+    expect(pos.lastDay!.toHand, 3000000);
+    expect(pos.recountDue, isFalse);
+    await until(() => !pos.syncing);
+    await pos.sync();
+    await until(() => pos.queue == 0);
+    expect(server.closes.single['leave'], '20000.00');
+    // В ящике меньше нормы — остаётся всё.
+    expect(pos.floatFor(1500000), 1500000);
+    expect(pos.floatFor(9000000), 2000000);
   });
 
   test('товар без цены: окно цены, цена на сервер и в каталог, потом в чек', () async {

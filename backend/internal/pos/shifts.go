@@ -44,9 +44,13 @@ type Shift struct {
 	// при «Начать день», auto — сервер (открыта дольше 20 часов), panel — в панели.
 	ClosedVia *string `json:"closed_via"`
 	// Чеков и выручка смены — для списков («Продажи сегодня» по сменам).
-	SalesCount int     `json:"sales_count"`
-	SalesTotal string  `json:"sales_total"`
-	Report     *Report `json:"report,omitempty"`
+	SalesCount int    `json:"sales_count"`
+	SalesTotal string `json:"sales_total"`
+	// «К сдаче» на закрытии дня: отложено владельцу (null — не откладывали)
+	// и когда владелец принял (null — ещё ждёт).
+	ToHand           *string    `json:"to_hand"`
+	ToHandAcceptedAt *time.Time `json:"to_hand_accepted_at"`
+	Report           *Report    `json:"report,omitempty"`
 }
 
 const shiftSelect = `
@@ -54,8 +58,10 @@ const shiftSelect = `
 	       sh.opening_cash::text, sh.closed_by, ce.full_name, sh.closed_at, sh.expected_cash::text, sh.counted_cash::text,
 	       sh.diff::text, sh.diff_reason, sh.closed_via,
 	       (SELECT count(*) FROM sales WHERE shift_id = sh.id)::int,
-	       (SELECT COALESCE(sum(total), 0) FROM sales WHERE shift_id = sh.id)::numeric(18,2)::text
+	       (SELECT COALESCE(sum(total), 0) FROM sales WHERE shift_id = sh.id)::numeric(18,2)::text,
+	       ph.amount::text, ph.accepted_at
 	FROM pos_shifts sh
+	LEFT JOIN pending_handovers ph ON ph.shift_id = sh.id
 	JOIN stores st ON st.id = sh.store_id
 	JOIN pos_devices d ON d.id = sh.device_id
 	JOIN employees oe ON oe.id = sh.opened_by
@@ -65,7 +71,7 @@ func scanShift(r pgx.CollectableRow) (Shift, error) {
 	var s Shift
 	err := r.Scan(&s.ID, &s.Number, &s.StoreID, &s.StoreName, &s.DeviceID, &s.DeviceName, &s.OpenedBy, &s.OpenedByName,
 		&s.OpenedAt, &s.OpeningCash, &s.ClosedBy, &s.ClosedByName, &s.ClosedAt, &s.ExpectedCash, &s.CountedCash,
-		&s.Diff, &s.DiffReason, &s.ClosedVia, &s.SalesCount, &s.SalesTotal)
+		&s.Diff, &s.DiffReason, &s.ClosedVia, &s.SalesCount, &s.SalesTotal, &s.ToHand, &s.ToHandAcceptedAt)
 	return s, err
 }
 
@@ -318,6 +324,10 @@ type CloseInput struct {
 	// или на сервере осталась открытой): pos_auto. Без counted_cash (кассир не
 	// пересчитывал ящик) сумма в ящике — по расчёту, расхождение 0.
 	Stale bool `json:"stale"`
+	// Сколько оставить в ящике на размен (кассир поменял на этот раз, F3).
+	// Не прислали — норма размена магазина; нормы нет — остаётся всё.
+	// Остальное — «К сдаче» владельцу.
+	Leave *money.Amount `json:"leave"`
 }
 
 // CloseShift закрывает смену («Закрыть день»): пересчёт по желанию — без
@@ -363,6 +373,14 @@ func (s *Service) closeShift(ctx context.Context, p *identity.Principal, shiftID
 	if len([]rune(in.DiffReason)) > 300 {
 		return Shift{}, apperr.Validation("diff_reason: до 300 символов").Uz("diff_reason: 300 belgigacha")
 	}
+	var leave *money.Dec
+	if in.Leave != nil {
+		if !in.Leave.Valid() || money.D(string(*in.Leave)).Sign() < 0 {
+			return Shift{}, apperr.Validation("leave: размен не может быть отрицательным").Uz("leave: maydalik manfiy boʻlishi mumkin emas")
+		}
+		l := money.D(string(*in.Leave))
+		leave = &l
+	}
 	at, err := s.eventTime(in.ClosedAt)
 	if err != nil {
 		return Shift{}, err
@@ -400,7 +418,10 @@ func (s *Service) closeShift(ctx context.Context, p *identity.Principal, shiftID
 			return err
 		}
 		// Пересчитали больше или меньше — касса магазина (ящик) тоже.
-		return toDrawer(ctx, tx, p.NetworkID, sh.StoreID, diff, finance.DocShiftClose, sh.ID)
+		if err := toDrawer(ctx, tx, p.NetworkID, sh.StoreID, diff, finance.DocShiftClose, sh.ID); err != nil {
+			return err
+		}
+		return s.handover(ctx, tx, p.NetworkID, sh, money.D(counted), leave)
 	})
 	if err != nil {
 		return Shift{}, err
@@ -476,12 +497,26 @@ func (s *Service) LeftInDrawer(ctx context.Context, p *identity.Principal) (*str
 	if err != nil || cb == "" {
 		return nil, err
 	}
-	bal, err := finance.CashBalance(ctx, s.pool, cb)
+	// «К сдаче» лежит в конверте, а не в ящике: размен — без него.
+	bal, _, err := finance.DrawerCash(ctx, s.pool, p.NetworkID, storeID, cb)
 	if err != nil || bal.Sign() <= 0 {
 		return nil, err
 	}
 	v := bal.Fixed(0)
 	return &v, nil
+}
+
+// handover — день закрыт: в ящике остаётся размен по норме магазина (или
+// leave с кассы), остальное — «К сдаче» владельцу (Figma ЗД6). Касса в
+// телефоне владельца — нет: деньги и так у него.
+func (s *Service) handover(ctx context.Context, tx pgx.Tx, networkID string, sh Shift, counted money.Dec, leave *money.Dec) error {
+	var owner bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pos_devices d JOIN employees e ON e.id = d.employee_id
+		JOIN roles r ON r.id = e.role_id WHERE d.id = $1 AND r.is_owner)`, sh.DeviceID).Scan(&owner); err != nil || owner {
+		return err
+	}
+	_, err := finance.ShiftClosedHandover(ctx, tx, networkID, sh.StoreID, sh.ID, counted, leave)
+	return err
 }
 
 // AutoCloseAfter — смена, открытая дольше, закрывается сервером сама по
@@ -529,6 +564,13 @@ func (s *Service) autoCloseShifts(ctx context.Context, tx pgx.Tx, where string, 
 		}
 		if _, err := tx.Exec(ctx, `UPDATE pos_shifts SET closed_at = now(), expected_cash = $2::numeric,
 			counted_cash = $2::numeric, diff = 0, diff_reason = '', closed_via = 'auto' WHERE id = $1`, id, r.ExpectedCash); err != nil {
+			return 0, err
+		}
+		var networkID string
+		if err := tx.QueryRow(ctx, `SELECT network_id FROM pos_shifts WHERE id = $1`, id).Scan(&networkID); err != nil {
+			return 0, err
+		}
+		if err := s.handover(ctx, tx, networkID, sh, money.D(r.ExpectedCash), nil); err != nil {
 			return 0, err
 		}
 	}

@@ -71,4 +71,18 @@ void main() {
     expect(subscriptionPaidUntil({...paid, 'paid_until': '2026-12-01'}, today), DateTime(2026, 12, 1));
     expect(subscriptionPaidUntil(paid, DateTime(2026, 12, 15)), DateTime(2027, 1, 1));
   });
+
+  test('«К сдаче»: возраст конверта, недостача при приёме, разница пересчёта', () {
+    final at = DateTime.utc(2026, 11, 2, 7);
+    expect(pendingAge(at.toIso8601String(), at.add(const Duration(minutes: 20))), 'сейчас');
+    expect(pendingAge(at.toIso8601String(), at.add(const Duration(hours: 15))), '15 ч');
+    expect(pendingOld(at.toIso8601String(), at.add(const Duration(hours: 15))), isFalse);
+    expect(pendingAge(at.toIso8601String(), at.add(const Duration(hours: 49))), '2 дня');
+    expect(pendingAge(at.toIso8601String(), at.add(const Duration(days: 5))), '5 дней');
+    expect(pendingAge(at.toIso8601String(), at.add(const Duration(days: 21))), '21 день');
+    expect(pendingOld(at.toIso8601String(), at.add(const Duration(hours: 24))), isTrue);
+    expect(acceptShortage('2914000.00', '2 864 000'), 50000);
+    expect(acceptShortage('2914000.00', '2914000'), 0);
+    expect(recountDiff('21672992.00', '1 340 000'), 20332992);
+  });
 }

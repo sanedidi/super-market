@@ -210,3 +210,90 @@ func (s *Service) SaveSettings(ctx context.Context, p *identity.Principal, in Ne
 	}
 	return s.GetSettings(ctx, p)
 }
+
+// ------------------------------------------- касса магазина: размен и пересчёт
+
+// CashSettings — настройки кассы магазина (Figma М6). Магазин задаёт их сам,
+// значений по умолчанию нет.
+type CashSettings struct {
+	StoreID string `json:"store_id"`
+	// Норма размена: столько остаётся в ящике после «Закрыть день», остальное —
+	// «К сдаче» владельцу. null — не задана: в ящике остаётся всё, как раньше.
+	CashFloat *string `json:"cash_float"`
+	// Пересчёт ящика при «Закрыть день»: null — не требовать, 1 — каждый
+	// день, 7 — раз в 7 дней.
+	RecountEveryDays *int `json:"recount_every_days"`
+	// Уведомление в 21:00, если есть «К сдаче».
+	HandoverRemind bool `json:"handover_remind"`
+}
+
+type CashSettingsInput struct {
+	StoreID          string        `json:"store_id"`
+	CashFloat        *money.Amount `json:"cash_float"`
+	RecountEveryDays *int          `json:"recount_every_days"`
+	// Не прислали — не меняем.
+	HandoverRemind *bool `json:"handover_remind"`
+}
+
+func (s *Service) storeOf(p *identity.Principal, storeID string) error {
+	if !httpx.IsUUID(storeID) || !p.CanAccessStore(storeID) {
+		return apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
+	}
+	return nil
+}
+
+func (s *Service) GetCashSettings(ctx context.Context, p *identity.Principal, storeID string) (CashSettings, error) {
+	out := CashSettings{StoreID: storeID}
+	if err := p.RequireAny(identity.PermFinanceManage, identity.PermStoresManage); err != nil {
+		return out, err
+	}
+	if err := s.storeOf(p, storeID); err != nil {
+		return out, err
+	}
+	err := s.pool.QueryRow(ctx, `SELECT cash_float::text, recount_every_days, handover_remind FROM stores WHERE id = $1 AND network_id = $2`,
+		storeID, p.NetworkID).Scan(&out.CashFloat, &out.RecountEveryDays, &out.HandoverRemind)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return out, apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
+	}
+	return out, err
+}
+
+// SaveCashSettings — магазин задаёт норму размена и пересчёт. Касса узнаёт о
+// них со следующей выгрузкой каталога.
+func (s *Service) SaveCashSettings(ctx context.Context, p *identity.Principal, in CashSettingsInput) (CashSettings, error) {
+	if err := p.RequireAny(identity.PermFinanceManage, identity.PermStoresManage); err != nil {
+		return CashSettings{}, err
+	}
+	if err := s.storeOf(p, in.StoreID); err != nil {
+		return CashSettings{}, err
+	}
+	var float *string
+	if in.CashFloat != nil {
+		d := money.D(string(*in.CashFloat))
+		if !in.CashFloat.Valid() || d.Sign() < 0 {
+			return CashSettings{}, apperr.Validation("cash_float: норма размена — сумма от нуля").Uz("cash_float: maydalik meʼyori — noldan katta summa")
+		}
+		v := d.Money()
+		float = &v
+	}
+	if in.RecountEveryDays != nil && *in.RecountEveryDays != 1 && *in.RecountEveryDays != 7 {
+		return CashSettings{}, apperr.Validation("recount_every_days: 1 — каждый день, 7 — раз в 7 дней, null — не требовать").Uz("recount_every_days: 1 — har kuni, 7 — 7 kunda bir marta, null — talab qilinmaydi")
+	}
+	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `UPDATE stores SET cash_float = $3::numeric, recount_every_days = $4,
+			handover_remind = COALESCE($5, handover_remind) WHERE id = $1 AND network_id = $2`,
+			in.StoreID, p.NetworkID, float, in.RecountEveryDays, in.HandoverRemind)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return apperr.Validation("store_id: магазин не найден").Uz("store_id: doʻkon topilmadi")
+		}
+		_, err = tx.Exec(ctx, `UPDATE networks SET pos_settings_at = now() WHERE id = $1`, p.NetworkID)
+		return err
+	})
+	if err != nil {
+		return CashSettings{}, err
+	}
+	return s.GetCashSettings(ctx, p, in.StoreID)
+}

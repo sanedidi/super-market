@@ -70,6 +70,12 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/transfers", m.createTransfer("transfer"))
 		r.With(fin).Get("/handovers", m.listTransfers("handover"))
 		r.Post("/handovers", m.createTransfer("handover"))
+
+		// «К сдаче» → «Принято» и разовый пересчёт ящика (Figma М1–М5).
+		r.With(fin).Get("/pending-handovers", m.listPending)
+		r.Post("/pending-handovers/{id}/accept", m.acceptPending)
+		r.Post("/pending-handovers/accept-all", m.acceptAllPending)
+		r.Post("/drawer/recount", m.recountDrawer)
 	})
 }
 
@@ -278,5 +284,30 @@ func (m *Module) counterpartyStatement(w http.ResponseWriter, r *http.Request) {
 			return Statement{}, err
 		}
 		return m.svc.CounterpartyStatement(r.Context(), pr(r), id, from, to)
+	})
+}
+
+func (m *Module) listPending(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[PendingHandover], error) {
+		q := r.URL.Query()
+		return list(m.svc.ListPendingHandovers(r.Context(), pr(r), q.Get("store_id"), q.Get("status"), httpx.PageFrom(r)))
+	})
+}
+
+func (m *Module) acceptPending(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in AcceptInput) (PendingHandover, error) {
+		return m.svc.AcceptPendingHandover(r.Context(), pr(r), id, in)
+	})
+}
+
+func (m *Module) acceptAllPending(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in AcceptAllInput) (httpx.List[PendingHandover], error) {
+		return list(m.svc.AcceptAllPendingHandovers(r.Context(), pr(r), in))
+	})
+}
+
+func (m *Module) recountDrawer(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in RecountInput) (RecountResult, error) {
+		return m.svc.RecountDrawer(r.Context(), pr(r), in)
 	})
 }

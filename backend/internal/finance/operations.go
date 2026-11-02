@@ -410,14 +410,8 @@ func (s *Service) CounterpartyEntries(ctx context.Context, p *identity.Principal
 // тем, что осталось в ящике.
 func (s *Service) drawerHandover(ctx context.Context, tx pgx.Tx, p *identity.Principal, cashboxID, transferID string,
 	drawer money.Dec, shifts []OpenShiftCash, take string, shortage money.Dec) error {
-	bal, err := CashBalance(ctx, tx, cashboxID)
-	if err != nil {
+	if err := SyncDrawer(ctx, tx, p.NetworkID, cashboxID, drawer, transferID); err != nil {
 		return err
-	}
-	if d := drawer.Sub(bal); !d.IsZero() {
-		if err := AddCash(ctx, tx, p.NetworkID, cashboxID, d.Money(), DocDrawerSync, transferID); err != nil {
-			return err
-		}
 	}
 	if !shortage.IsZero() {
 		if err := AddCash(ctx, tx, p.NetworkID, cashboxID, shortage.Neg().Money(), DocHandoverShortage, transferID); err != nil {

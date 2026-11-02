@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:sm_core/sm_core.dart';
 
 import 'customers/customer_debts_screen.dart';
+import 'finance/finance_screen.dart';
 import 'firebase_options.dart';
 import 'receipt/review_screen.dart';
 import 'screens/order_screen.dart';
@@ -137,7 +138,10 @@ class Push {
         // Поставщики-агенты: вид уведомления — в data.kind.
         final kind = '${d['kind'] ?? ''}';
         final order = d['supply_order_id'];
-        if (kind.startsWith('supply_order') || kind == 'supply_received_diff') {
+        if (kind == 'cash_handover') {
+          // «К сдаче» не принято (21:00) — Финансы с «Ожидает сдачи».
+          nav.push(MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(), body: const FinanceScreen())));
+        } else if (kind.startsWith('supply_order') || kind == 'supply_received_diff') {
           if (order is String && order.isNotEmpty) nav.push(MaterialPageRoute(builder: (_) => SupplyOrderDetailScreen(id: order)));
         } else if (kind.startsWith('supply_')) {
           nav.push(MaterialPageRoute(builder: (_) => const SuppliersScreen()));

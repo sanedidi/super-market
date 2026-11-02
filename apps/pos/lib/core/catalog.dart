@@ -261,6 +261,9 @@ class PosSettings {
     this.scaleWeightStep = 1,
     this.debtEnabled = false,
     this.requireRecount = false,
+    this.cashFloat,
+    this.recountEveryDays,
+    this.lastRecountAt,
     this.deviceKind = 'pos',
     this.workshopId,
     this.workshopName,
@@ -289,6 +292,15 @@ class PosSettings {
   /// ЗД4): Enter на «Закрыть день» ведёт в пересчёт ящика.
   final bool requireRecount;
 
+  /// Норма размена магазина (Figma ЗД6): столько остаётся в ящике после
+  /// «Закрыть день», остальное — «К сдаче» владельцу. null — не задана.
+  final int? cashFloat;
+
+  /// Пересчёт ящика при «Закрыть день» (настройка магазина): null — не
+  /// требовать, 1 — каждый день, 7 — раз в 7 дней от [lastRecountAt].
+  final int? recountEveryDays;
+  final DateTime? lastRecountAt;
+
   /// Вид устройства: pos — касса, kitchen — экран кухни (workshopId — цех,
   /// null — все цеха), display — экран выдачи для гостей.
   final String deviceKind;
@@ -310,6 +322,9 @@ class PosSettings {
         scaleWeightStep: (j['scale_weight_step'] as num?)?.toInt() ?? 1,
         debtEnabled: j['debt_enabled'] == true,
         requireRecount: j['require_recount'] == true,
+        cashFloat: j['cash_float'] == null ? null : parseMoney(j['cash_float']),
+        recountEveryDays: (j['recount_every_days'] as num?)?.toInt(),
+        lastRecountAt: DateTime.tryParse(j['last_recount_at'] as String? ?? ''),
         deviceKind: j['device_kind'] as String? ?? 'pos',
         workshopId: j['workshop_id'] as String?,
         workshopName: j['workshop_name'] as String?,
@@ -330,6 +345,9 @@ class PosSettings {
         'scale_weight_step': scaleWeightStep,
         'debt_enabled': debtEnabled,
         'require_recount': requireRecount,
+        'cash_float': cashFloat == null ? null : moneyApi(cashFloat!),
+        'recount_every_days': recountEveryDays,
+        'last_recount_at': lastRecountAt?.toUtc().toIso8601String(),
         'device_kind': deviceKind,
         'workshop_id': workshopId,
         'workshop_name': workshopName,

@@ -216,6 +216,7 @@ class PosController extends ChangeNotifier {
       }
       (st['server_numbers'] as Map<String, dynamic>?)?.forEach((k, v) => serverNumbers[k] = v as int);
       if (st['last_day'] is Map) lastDay = ClosedDay.fromJson(st['last_day'] as Map<String, dynamic>);
+      _lastRecountAt = DateTime.tryParse(st['last_recount_at'] as String? ?? '');
     }
     printer = PrinterConfig.fromJson(await store.readJson('printer.json'));
     await outbox.load();
@@ -266,6 +267,7 @@ class PosController extends ChangeNotifier {
         'closed_shifts': _closedServerShifts.toList(),
         'server_numbers': serverNumbers,
         'last_day': lastDay?.toJson(),
+        'last_recount_at': _lastRecountAt?.toUtc().toIso8601String(),
       });
 
   String _journalName(String shiftUid) => 'journal${Platform.pathSeparator}$shiftUid.jsonl';
@@ -621,13 +623,48 @@ class PosController extends ChangeNotifier {
     unawaited(sync());
   }
 
+  /// Сколько оставить в ящике на размен из [inDrawer] (тийины) по норме
+  /// магазина (Figma ЗД6). null — норма не задана: в ящике остаётся всё.
+  int? floatFor(int inDrawer) {
+    final f = catalog.settings.cashFloat;
+    if (f == null) return null;
+    final v = f < inDrawer ? f : inDrawer;
+    return v < 0 ? 0 : v;
+  }
+
+  /// Последний пересчёт ящика на этой кассе (сервер знает про все кассы
+  /// магазина — [PosSettings.lastRecountAt]).
+  DateTime? _lastRecountAt;
+
+  /// Пора пересчитать ящик при «Закрыть день»: владелец сети включил
+  /// обязательный пересчёт или подошёл срок по настройке магазина (каждый
+  /// день / раз в 7 дней).
+  bool get recountDue {
+    final st = catalog.settings;
+    if (st.requireRecount) return true;
+    final every = st.recountEveryDays;
+    if (every == null) return false;
+    DateTime? last = st.lastRecountAt;
+    final local = _lastRecountAt;
+    if (local != null && (last == null || local.isAfter(last))) last = local;
+    if (last == null) return true;
+    if (every <= 1) return true;
+    final l = last.toLocal(), n = _now();
+    final days = DateTime(n.year, n.month, n.day).difference(DateTime(l.year, l.month, l.day)).inDays;
+    return days >= every;
+  }
+
   /// Закрыть день (смену): [counted] — пересчёт кассира, null — не считали,
   /// сумма в ящике по расчёту. Причина расхождения — по желанию. [auto] —
   /// касса закрывает вчерашнюю смену сама при «Начать день» (pos_auto).
-  /// Кассир остаётся на кассе: дальше экран «День закрыт» (Figma ЗД5).
-  Future<void> closeShift(int? counted, String reason, {bool auto = false}) async {
+  /// [leave] — сколько оставить в ящике на размен (F3, Figma ЗД6); null — по
+  /// норме магазина; нормы нет — остаётся всё. Остальное — «К сдаче».
+  /// Кассир остаётся на кассе: дальше экран «День закрыт» (Figma ЗД5/ЗД7).
+  Future<void> closeShift(int? counted, String reason, {bool auto = false, int? leave}) async {
     final s = shift!;
     final now = _now();
+    final inDrawer = counted ?? report.expectedCash;
+    final keep = leave == null ? floatFor(inDrawer) : (leave < inDrawer ? leave : inDrawer);
     FiscalResult? z;
     if (fiscalMode) {
       try {
@@ -644,6 +681,7 @@ class PosController extends ChangeNotifier {
           at: now,
           counted: counted,
           diffReason: reason,
+          leave: keep,
           vat: rep.vat,
           queue: outbox.pending,
           fiscal: z,
@@ -656,7 +694,9 @@ class PosController extends ChangeNotifier {
       'diff_reason': reason,
       'closed_at': now.toUtc().toIso8601String(),
       if (auto) 'stale': true,
+      if (keep != null) 'leave': keep,
     }, cashier!.id, at: now);
+    if (counted != null) _lastRecountAt = now;
     if (s.serverId != null) _closedServerShifts.add(s.serverId!);
     lastDay = ClosedDay(
       number: s.number,
@@ -664,7 +704,8 @@ class PosController extends ChangeNotifier {
       salesTotal: rep.salesTotal,
       closedBy: cashier!.name,
       closedAt: now,
-      left: counted ?? rep.expectedCash,
+      left: keep ?? inDrawer,
+      toHand: keep == null ? 0 : inDrawer - keep,
       printed: printer.enabled,
       auto: auto,
     );
@@ -1299,6 +1340,7 @@ class ClosedDay {
     required this.closedAt,
     required this.left,
     required this.printed,
+    this.toHand = 0,
     this.auto = false,
   });
 
@@ -1310,6 +1352,10 @@ class ClosedDay {
 
   /// Осталось в ящике: пересчитано или по расчёту — размен на завтра.
   final int left;
+
+  /// «К сдаче»: отложить владельцу в конверт (Figma ЗД7). 0 — нормы размена
+  /// нет, в ящике осталось всё.
+  final int toHand;
   final bool printed;
 
   /// Закрыт кассой сам при «Начать день».
@@ -1322,6 +1368,7 @@ class ClosedDay {
         'closed_by': closedBy,
         'closed_at': closedAt.toUtc().toIso8601String(),
         'left': left,
+        'to_hand': toHand,
         'printed': printed,
         'auto': auto,
       };
@@ -1333,6 +1380,7 @@ class ClosedDay {
         closedBy: j['closed_by'] as String? ?? '',
         closedAt: DateTime.tryParse(j['closed_at'] as String? ?? '')?.toLocal() ?? DateTime.now(),
         left: (j['left'] as num?)?.toInt() ?? 0,
+        toHand: (j['to_hand'] as num?)?.toInt() ?? 0,
         printed: j['printed'] == true,
         auto: j['auto'] == true,
       );

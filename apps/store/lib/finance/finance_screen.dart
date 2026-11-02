@@ -6,6 +6,7 @@ import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'balance_screen.dart';
+import 'cash_handover.dart';
 import 'finance_logic.dart';
 import 'handover_sheet.dart';
 import 'no_cost_screen.dart';
@@ -26,6 +27,10 @@ class _FinanceScreenState extends State<FinanceScreen> {
   bool _drawerLoaded = false;
   List<Map<String, dynamic>>? _shifts;
   List<Map<String, dynamic>>? _handovers;
+  // М1 · «Ожидает сдачи» и последние «Принято».
+  List<Map<String, dynamic>> _pending = const [];
+  List<Map<String, dynamic>> _accepted = const [];
+  bool _accepting = false;
   Map<String, dynamic>? _pl;
   Map<String, dynamic>? _balance;
   Map<String, dynamic>? _billing;
@@ -51,14 +56,24 @@ class _FinanceScreenState extends State<FinanceScreen> {
         st.can('payouts.manage') ? api.get('/store/balance') : Future.value(null),
         st.can('payouts.manage') ? api.get('/store/billing') : Future.value(null),
         fin || st.can('reports.view') ? api.list('/store/pos/shifts', {'store_id': storeId, 'limit': 30}) : Future.value(null),
+        fin
+            ? api.list('/store/finance/pending-handovers', {'store_id': storeId, 'status': 'pending', 'limit': 50}).catchError((Object _) => <Map<String, dynamic>>[])
+            : Future.value(null),
+        fin
+            ? api.list('/store/finance/pending-handovers', {'store_id': storeId, 'status': 'accepted', 'limit': 5}).catchError((Object _) => <Map<String, dynamic>>[])
+            : Future.value(null),
       ]);
       if (!mounted) return;
       setState(() {
         _drawer = res[0] as Map<String, dynamic>?;
         _drawerLoaded = true;
+        _pending = (res[6] as List<Map<String, dynamic>>?) ?? const [];
+        _accepted = (res[7] as List<Map<String, dynamic>>?) ?? const [];
+        // Принятые конверты — в «Принято», в «Сдачах кассы» их не повторяем.
+        final fromPending = {for (final a in _accepted) a['transfer_id']};
         _handovers = [
           for (final h in (res[1] as List<Map<String, dynamic>>?) ?? const <Map<String, dynamic>>[])
-            if (h['from_id'] == _drawer?['cashbox_id'] || _drawer == null) h,
+            if ((h['from_id'] == _drawer?['cashbox_id'] || _drawer == null) && !fromPending.contains(h['id'])) h,
         ];
         _shifts = res[5] == null ? null : todayShifts(res[5]! as List<Map<String, dynamic>>, DateTime.now());
         _pl = res[2] as Map<String, dynamic>?;
@@ -72,16 +87,60 @@ class _FinanceScreenState extends State<FinanceScreen> {
   }
 
   Future<void> _handover(Map<String, dynamic> d) async {
-    // Размен по умолчанию — сколько оставили в прошлый раз.
+    // Размен по умолчанию — норма магазина, без неё — сколько оставили в прошлый раз.
     num leave = 0;
-    for (final h in _handovers ?? const <Map<String, dynamic>>[]) {
-      if (h['left_amount'] != null) {
-        leave = n(h['left_amount']);
-        break;
+    if (d['cash_float'] != null) {
+      leave = n(d['cash_float']);
+    } else {
+      for (final h in _handovers ?? const <Map<String, dynamic>>[]) {
+        if (h['left_amount'] != null) {
+          leave = n(h['left_amount']);
+          break;
+        }
       }
     }
     final done = await showHandoverSheet(context, d, leave: leave);
     if (done == true) await _load();
+  }
+
+  /// М2/М3 · нажали строку «Ожидает сдачи».
+  Future<void> _accept(Map<String, dynamic> p) async {
+    final done = await showAcceptSheet(context, p);
+    if (done == true) await _load();
+  }
+
+  /// М1 · «Принял всё» — все конверты магазина полностью.
+  Future<void> _acceptAll() async {
+    if (_pending.length == 1) return _accept(_pending.first);
+    final st = context.read<StoreState>();
+    final api = context.read<Api>();
+    final messenger = ScaffoldMessenger.of(context);
+    num total = 0;
+    for (final p in _pending) {
+      total += n(p['amount']);
+    }
+    setState(() => _accepting = true);
+    try {
+      await api.post('/store/finance/pending-handovers/accept-all', {'store_id': st.storeId});
+      messenger.showSnackBar(SnackBar(content: Text(tr('Принято ${money(total)}', '${money(total)} qabul qilindi'))));
+    } on ApiError catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _accepting = false);
+    }
+    await _load();
+  }
+
+  /// М5 · разовый пересчёт ящика.
+  Future<void> _recount(Map<String, dynamic> d) async {
+    final done = await showRecountSheet(context, d);
+    if (done == true) await _load();
+  }
+
+  /// М6 · норма размена и пересчёт.
+  Future<void> _cashSettings() async {
+    final changed = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => const CashSettingsScreen()));
+    if (changed == true) await _load();
   }
 
   Future<void> _noCost() async {
@@ -146,8 +205,18 @@ class _FinanceScreenState extends State<FinanceScreen> {
       if (d == null)
         AppCard(child: Text(tr('У магазина нет кассы наличных', 'Doʻkonda naqd pul kassasi yoʻq'), style: AppText.small))
       else
-        _DrawerCard(drawer: d, onHandover: n(d['amount']) > 0 ? () => _handover(d) : null),
+        _DrawerCard(
+          drawer: d,
+          onHandover: n(d['amount']) > 0 ? () => _handover(d) : null,
+          onSettings: _cashSettings,
+          onRecount: () => _recount(d),
+        ),
       const SizedBox(height: 12),
+      if (_pending.isNotEmpty) ...[
+        PendingCard(items: _pending, onAccept: _accept, onAcceptAll: _acceptAll, busy: _accepting),
+        const SizedBox(height: 12),
+      ],
+      if (_accepted.isNotEmpty) ...[AcceptedCard(items: _accepted), const SizedBox(height: 12)],
       if (_shifts != null) ...[_TodayCard(shifts: _shifts!), const SizedBox(height: 12)],
       if ((_handovers ?? const []).isNotEmpty) ...[
         AppCard(
@@ -331,10 +400,14 @@ class _Kpi extends StatelessWidget {
 
 /// Ф1 · Касса магазина: наличными в ящике сейчас и откуда эта сумма.
 class _DrawerCard extends StatelessWidget {
-  const _DrawerCard({required this.drawer, required this.onHandover});
+  const _DrawerCard({required this.drawer, required this.onHandover, required this.onSettings, required this.onRecount});
 
   final Map<String, dynamic> drawer;
   final VoidCallback? onHandover;
+
+  /// М6 · норма размена и пересчёт; М5 · разовый пересчёт ящика.
+  final VoidCallback onSettings;
+  final VoidCallback onRecount;
 
   @override
   Widget build(BuildContext context) {
@@ -374,6 +447,11 @@ class _DrawerCard extends StatelessWidget {
                   ),
             ]),
           ),
+          IconButton(
+            tooltip: tr('Касса магазина: норма размена', 'Doʻkon kassasi: maydalik meʼyori'),
+            icon: const Icon(Icons.tune_rounded, color: AppColors.text2),
+            onPressed: onSettings,
+          ),
         ]),
         const SizedBox(height: 14),
         Text(tr('Наличными в ящике сейчас', 'Hozir gʻaladonda naqd'), style: AppText.small),
@@ -381,7 +459,10 @@ class _DrawerCard extends StatelessWidget {
         const SizedBox(height: 8),
         if (one != null) ...[
           _Line(tr('Размен на начало смены', 'Smena boshidagi maydalik'), one['opening_cash'],
-              sub: '${hm(one['opened_at'])} · ${one['opened_by_name'] ?? ''}'),
+              sub: [
+                '${hm(one['opened_at'])} · ${one['opened_by_name'] ?? ''}',
+                if (d['cash_float'] != null) tr('норма ${money(d['cash_float'], suffix: false)}', 'meʼyor ${money(d['cash_float'], suffix: false)}'),
+              ].join(' · ')),
           _Line(tr('Наличные продажи', 'Naqd sotuvlar'), r['cash_sales'], sign: '+', sub: tr('${one['sales_count'] ?? 0} чеков всего', 'jami ${one['sales_count'] ?? 0} ta chek')),
           if (n(r['debt_paid_cash']) > 0) _Line(tr('Погашения долгов наличными', 'Qarzlar naqd toʻlovi'), r['debt_paid_cash'], sign: '+'),
           if (n(r['cash_in']) > 0) _Line(tr('Внесения', 'Kiritishlar'), r['cash_in'], sign: '+'),
@@ -413,8 +494,33 @@ class _DrawerCard extends StatelessWidget {
             ]),
           ),
         ],
+        if (d['float_warning'] == true) ...[
+          const SizedBox(height: 14),
+          FloatWarning(noFloat: d['cash_float'] == null, onSettings: onSettings, onRecount: onRecount),
+        ],
         const SizedBox(height: 14),
-        BigButton(label: tr('Сдать кассу', 'Kassani topshirish'), icon: Icons.outbox_rounded, height: 52, onPressed: onHandover),
+        if (d['float_warning'] == true || n(d['pending_count']) > 0)
+          // Главное действие — «Пересчитать ящик» / «Принял»; сдать днём — по желанию.
+          BigButton(
+            label: tr('Сдать кассу сейчас', 'Kassani hozir topshirish'),
+            icon: Icons.outbox_rounded,
+            height: 52,
+            color: AppColors.soft,
+            foreground: AppColors.ink,
+            onPressed: onHandover,
+          )
+        else
+          BigButton(label: tr('Сдать кассу', 'Kassani topshirish'), icon: Icons.outbox_rounded, height: 52, onPressed: onHandover),
+        if (d['float_warning'] != true && d['cash_float'] == null) ...[
+          const SizedBox(height: 6),
+          Center(
+            child: TextButton.icon(
+              onPressed: onSettings,
+              icon: const Icon(Icons.tune_rounded, size: 18),
+              label: Text(tr('Задать норму размена', 'Maydalik meʼyorini belgilash')),
+            ),
+          ),
+        ],
       ]),
     );
   }

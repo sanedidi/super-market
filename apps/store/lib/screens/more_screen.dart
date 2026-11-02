@@ -10,6 +10,7 @@ import '../control/cashiers_screen.dart';
 import '../crowd/crowd_screen.dart';
 import '../customers/customer_debts_screen.dart';
 import '../debts/debts_screen.dart';
+import '../finance/cash_handover.dart';
 import '../lock/pin_screens.dart';
 import '../main.dart';
 import '../returns/return_screen.dart';
@@ -30,6 +31,8 @@ class MoreScreen extends StatelessWidget {
     final st = context.watch<StoreState>();
     final modules = <(IconData, String, String, Widget)>[
       if (st.can('reports.view')) (Icons.insights_rounded, tr('Итоги дня', 'Kun yakunlari'), tr('Выручка, прибыль, что требует внимания', 'Tushum, foyda, eʼtibor talab qiladigan ishlar'), const SummaryScreen()),
+      if (st.can('finance.manage'))
+        (Icons.tune_rounded, tr('Касса магазина', 'Doʻkon kassasi'), tr('Норма размена, напоминание о сдаче, пересчёт', 'Maydalik meʼyori, topshirish eslatmasi, sanash'), const CashSettingsScreen()),
       if (st.can('reports.view') || st.can('finance.manage'))
         (Icons.point_of_sale_rounded, tr('Контроль кассиров', 'Kassirlar nazorati'), tr('Недостачи, возвраты, скидки', 'Kamomadlar, qaytarishlar, chegirmalar'), const CashiersScreen()),
       if (st.can('inventory.manage'))

@@ -104,6 +104,9 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/store/pos/unknown-goods", m.unknownGoods)
 		r.Post("/store/pos/unknown-goods/adopt", m.adoptUnknown)
 		r.Put("/store/pos/settings", m.saveSettings)
+		// Норма размена и пересчёт ящика — у каждого магазина свои (Figma М6).
+		r.Get("/store/pos/cash-settings", m.getCashSettings)
+		r.Put("/store/pos/cash-settings", m.saveCashSettings)
 	})
 	// Супер-админ: ИКПУ общих товаров платформы.
 	r.With(m.auth.Require(identity.AppAdmin)).Put("/admin/pos/products/{id}/tax", m.setTax)
@@ -419,6 +422,18 @@ func (m *Module) setKind(w http.ResponseWriter, r *http.Request) {
 func (m *Module) getSettings(w http.ResponseWriter, r *http.Request) {
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (NetworkSettings, error) {
 		return m.svc.GetSettings(r.Context(), pr(r))
+	})
+}
+
+func (m *Module) getCashSettings(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (CashSettings, error) {
+		return m.svc.GetCashSettings(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+	})
+}
+
+func (m *Module) saveCashSettings(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in CashSettingsInput) (CashSettings, error) {
+		return m.svc.SaveCashSettings(r.Context(), pr(r), in)
 	})
 }
 

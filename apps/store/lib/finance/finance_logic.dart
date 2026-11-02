@@ -96,3 +96,41 @@ DateTime? subscriptionPaidUntil(Map<String, dynamic> bill, DateTime today) {
   if (from != null && from.isAfter(day)) return DateTime(from.year, from.month, from.day);
   return DateTime(today.year, today.month + 1, 1);
 }
+
+// ------------------------------------------- «К сдаче» → «Принято» (М1–М6)
+
+/// Сколько часов конверт ждёт владельца.
+int pendingHours(Object? createdAt, DateTime now) {
+  final t = DateTime.tryParse('${createdAt ?? ''}');
+  if (t == null) return 0;
+  final h = now.difference(t).inHours;
+  return h < 0 ? 0 : h;
+}
+
+/// Не принято больше суток — строка и сумма красные (М1).
+bool pendingOld(Object? createdAt, DateTime now) => pendingHours(createdAt, now) >= 24;
+
+/// Плашка возраста: «15 ч», «2 дня», «5 дней» (по-узбекски — «15 soat», «2 kun»).
+String pendingAge(Object? createdAt, DateTime now) {
+  final h = pendingHours(createdAt, now);
+  if (h < 1) return tr('сейчас', 'hozir');
+  if (h < 24) return tr('$h ч', '$h soat');
+  final d = h ~/ 24;
+  return tr('$d ${_days(d)}', '$d kun');
+}
+
+String _days(int d) {
+  final m10 = d % 10, m100 = d % 100;
+  if (m10 == 1 && m100 != 11) return 'день';
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return 'дня';
+  return 'дней';
+}
+
+/// Принял меньше (больше) — недостача (излишек) смены: плюс — не хватило.
+num acceptShortage(Object? amount, String received) => n(amount) - n(plainAmount(received));
+
+/// Пересчёт ящика (М5): разница = по расчёту − посчитали; плюс — в ящике меньше.
+num recountDiff(Object? expected, String counted) => n(expected) - n(plainAmount(counted));
+
+/// Быстрые суммы нормы размена (М6) — только подсказки, ничего не выбрано.
+const floatChips = [200000, 300000, 500000, 1000000];

@@ -19,6 +19,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/catalog"
 	"github.com/sanedidi/super-market/backend/internal/debts"
 	"github.com/sanedidi/super-market/backend/internal/family"
+	"github.com/sanedidi/super-market/backend/internal/finance"
 	"github.com/sanedidi/super-market/backend/internal/identity"
 	"github.com/sanedidi/super-market/backend/internal/notify"
 	"github.com/sanedidi/super-market/backend/internal/platform/config"
@@ -132,6 +133,11 @@ func run() error {
 		{Name: "debt_reminders", Run: debts.NewService(pool, nil, "", cfg.JWTSecret, nil, log).Tick},
 		// Смены касс, открытые дольше 20 часов, — закрыть по расчёту (кассир не закрыл день).
 		{Name: "pos_shifts_autoclose", Run: pos.NewService(pool, nil).AutoCloseStale},
+		// «К сдаче» не принято — владельцу напоминание после 21:00 (раз в день).
+		{Name: "cash_handover_remind", Run: func(ctx context.Context) error {
+			_, err := finance.RemindHandovers(ctx, pool, time.Now())
+			return err
+		}},
 	}
 
 	log.Info("worker запущен", "interval", cfg.WorkerInterval, "jobs", len(jobs))

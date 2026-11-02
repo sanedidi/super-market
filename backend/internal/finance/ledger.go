@@ -38,6 +38,8 @@ const (
 	// Сдача кассы: учёт выровнен по ящику смены и недостача при пересчёте.
 	DocDrawerSync       = "drawer_sync"
 	DocHandoverShortage = "handover_shortage"
+	// Разовый пересчёт ящика (М5): недостача или излишек.
+	DocDrawerRecount = "drawer_recount"
 )
 
 // CreateMainCashbox создаёт главную кассу новой сети.
@@ -122,7 +124,7 @@ func OpenShiftsCash(ctx context.Context, q db.Querier, networkID, storeID string
 
 // DrawerCash — сколько наличных должно быть в ящике магазина: идёт смена —
 // по сменам (как «Должно быть» в X-отчёте), нет — остаток кассы по журналу
-// (то, что оставили на размен при сдаче).
+// (то, что оставили на размен при сдаче) без отложенного «К сдаче».
 func DrawerCash(ctx context.Context, q db.Querier, networkID, storeID, cashboxID string) (money.Dec, []OpenShiftCash, error) {
 	shifts, err := OpenShiftsCash(ctx, q, networkID, storeID)
 	if err != nil || len(shifts) > 0 {
@@ -133,7 +135,39 @@ func DrawerCash(ctx context.Context, q db.Querier, networkID, storeID, cashboxID
 		return sum, shifts, err
 	}
 	b, err := CashBalance(ctx, q, cashboxID)
-	return b, nil, err
+	if err != nil {
+		return b, nil, err
+	}
+	pending, err := PendingTotal(ctx, q, cashboxID)
+	return b.Sub(pending), nil, err
+}
+
+// PendingTotal — отложено владельцу и ещё не принято («К сдаче»): по учёту
+// эти деньги ещё в кассе магазина, но не в ящике, а в конверте.
+func PendingTotal(ctx context.Context, q db.Querier, cashboxID string) (money.Dec, error) {
+	var v string
+	if err := q.QueryRow(ctx, `SELECT COALESCE(sum(amount), 0)::text FROM pending_handovers
+		WHERE cashbox_id = $1 AND accepted_at IS NULL`, cashboxID).Scan(&v); err != nil {
+		return money.D("0"), err
+	}
+	return money.D(v), nil
+}
+
+// SyncDrawer выравнивает учёт кассы магазина по ящику: остаток = в ящике +
+// отложенное «К сдаче» (конверты ещё в кассе магазина).
+func SyncDrawer(ctx context.Context, q db.Querier, networkID, cashboxID string, drawer money.Dec, docID string) error {
+	bal, err := CashBalance(ctx, q, cashboxID)
+	if err != nil {
+		return err
+	}
+	pending, err := PendingTotal(ctx, q, cashboxID)
+	if err != nil {
+		return err
+	}
+	if d := drawer.Add(pending).Sub(bal); !d.IsZero() {
+		return AddCash(ctx, q, networkID, cashboxID, d.Money(), DocDrawerSync, docID)
+	}
+	return nil
 }
 
 // CurrentRate — действующий курс (сумов за 1 USD).

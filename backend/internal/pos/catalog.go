@@ -84,8 +84,17 @@ type Settings struct {
 	ScaleWeightStep int    `json:"scale_weight_step"`
 	// «Даёт в долг»: показывать ли кассиру продажу в долг.
 	DebtEnabled bool `json:"debt_enabled"`
-	// «Требовать пересчёт при закрытии дня» (Figma ЗД4).
+	// «Требовать пересчёт при закрытии дня» (Figma ЗД4) — настройка сети.
 	RequireRecount bool `json:"require_recount"`
+	// Норма размена магазина (Figma ЗД6): столько остаётся в ящике после
+	// «Закрыть день», остальное — «К сдаче» владельцу. null — не задана,
+	// в ящике остаётся всё.
+	CashFloat *string `json:"cash_float"`
+	// Пересчёт ящика при «Закрыть день» — настройка магазина: null — не
+	// требовать, 1 — каждый день, 7 — раз в 7 дней (считая от последнего
+	// пересчёта на кассах магазина, last_recount_at).
+	RecountEveryDays *int       `json:"recount_every_days"`
+	LastRecountAt    *time.Time `json:"last_recount_at"`
 	// Вид устройства (pos, kitchen, display) и цех экрана кухни: панель может
 	// поменять цех, устройство узнаёт об этом при синхронизации.
 	DeviceKind   string  `json:"device_kind"`
@@ -241,13 +250,15 @@ func (s *Service) Catalog(ctx context.Context, p *identity.Principal, since *tim
 		       n.scale_item_digits, n.scale_value, n.scale_weight_step,
 		       st.debt_enabled AND network_has_feature(n.id, 'debts'), (SELECT sh.id FROM pos_shifts sh WHERE sh.device_id = d.id AND sh.closed_at IS NULL),
 		       d.kind, d.workshop_id, (SELECT loc(w.name, w.name_uz) FROM workshops w WHERE w.id = d.workshop_id),
-		       n.pos_require_recount
+		       n.pos_require_recount, st.cash_float::text, st.recount_every_days,
+		       (SELECT max(sh.closed_at) FROM pos_shifts sh WHERE sh.store_id = st.id AND sh.closed_via IN ('pos', 'panel'))
 		FROM pos_devices d JOIN stores st ON st.id = d.store_id JOIN networks n ON n.id = d.network_id
 		WHERE d.id = $1`, p.DeviceID).Scan(&out.Settings.DeviceID, &out.Settings.DeviceName, &out.Settings.StoreID,
 		&out.Settings.StoreName, &out.Settings.StoreAddress, &out.Settings.NetworkName, &out.Settings.ReceiptHeader,
 		&out.Settings.ReceiptFooter, &out.Settings.WeightPrefixes,
 		&out.Settings.ScaleItemDigits, &out.Settings.ScaleValue, &out.Settings.ScaleWeightStep, &out.Settings.DebtEnabled, &out.OpenShiftID,
-		&out.Settings.DeviceKind, &out.Settings.WorkshopID, &out.Settings.WorkshopName, &out.Settings.RequireRecount)
+		&out.Settings.DeviceKind, &out.Settings.WorkshopID, &out.Settings.WorkshopName, &out.Settings.RequireRecount,
+		&out.Settings.CashFloat, &out.Settings.RecountEveryDays, &out.Settings.LastRecountAt)
 	if err != nil {
 		return out, err
 	}

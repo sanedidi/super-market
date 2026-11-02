@@ -17,7 +17,10 @@ import 'widgets.dart';
 /// - ЗД2 — F2 «Пересчитать ящик»: слепой ввод суммы, Enter — сверить, потом
 ///   Enter — закрыть; расхождение не блокирует, причина F2/F3/F4 по желанию;
 /// - ЗД4 — владелец включил «Требовать пересчёт»: сразу пересчёт, быстрого
-///   закрытия нет.
+///   закрытия нет; то же, когда подошёл срок пересчёта по настройке магазина
+///   (каждый день / раз в 7 дней);
+/// - ЗД6 — норма размена магазина: в ящике остаётся размен, остальное — «К
+///   сдаче» владельцу; F3 — поменять размен на этот раз.
 class CloseShiftScreen extends StatefulWidget {
   const CloseShiftScreen({super.key});
 
@@ -41,6 +44,12 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
   /// Сверено с расчётом: видно, сколько должно быть.
   bool _revealed = false;
   String? _reason;
+
+  /// F3 — сколько оставить в ящике на размен на этот раз (ЗД6). null — по
+  /// норме магазина.
+  int? _leave;
+  bool _editingLeave = false;
+  String _leaveInput = '';
   bool _busy = false;
   String? _error;
 
@@ -64,12 +73,12 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
 
   int get _counted => parseMoney(_input);
 
-  bool get _required => context.read<PosController>().catalog.settings.requireRecount;
+  bool get _required => context.read<PosController>().recountDue;
 
   @override
   void initState() {
     super.initState();
-    _counting = context.read<PosController>().catalog.settings.requireRecount;
+    _counting = context.read<PosController>().recountDue;
   }
 
   @override
@@ -77,6 +86,36 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
     _scan.dispose();
     super.dispose();
   }
+
+  void _typeLeave(String d) {
+    if (_leaveInput.length + d.length > 11) return;
+    if ((_leaveInput.isEmpty || _leaveInput == '0') && d.startsWith('0')) {
+      if (d == '0' && _leaveInput.isEmpty) setState(() => _leaveInput = '0');
+      return;
+    }
+    setState(() => _leaveInput = _leaveInput == '0' ? d : _leaveInput + d);
+  }
+
+  void _startLeave() => setState(() {
+        _editingLeave = true;
+        _leaveInput = '';
+        _error = null;
+      });
+
+  void _eraseLeave() {
+    if (_leaveInput.isNotEmpty) setState(() => _leaveInput = _leaveInput.substring(0, _leaveInput.length - 1));
+  }
+
+  /// Enter — размен на этот раз записан; Esc — оставить по норме.
+  void _confirmLeave() => setState(() {
+        _leave = parseMoney(_leaveInput);
+        _editingLeave = false;
+      });
+
+  void _cancelLeave() => setState(() {
+        _leave = null;
+        _editingLeave = false;
+      });
 
   void _type(String d) {
     if (_input.length + d.length > 11) return;
@@ -142,7 +181,7 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
     final reason = counted != null && counted != pos.report.expectedCash ? (_reason ?? '') : '';
     setState(() => _busy = true);
     try {
-      await pos.closeShift(counted, reason);
+      await pos.closeShift(counted, reason, leave: _leave);
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -160,6 +199,14 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
     if (_scan.key(e)) return true;
     final k = e.logicalKey;
     final ch = printable(e);
+    if (_editingLeave && k == LogicalKeyboardKey.escape) {
+      _cancelLeave();
+      return true;
+    }
+    if (_editingLeave && isEnter(e)) {
+      if (e is KeyDownEvent) _confirmLeave();
+      return true;
+    }
     if (k == LogicalKeyboardKey.escape) {
       _back();
       return true;
@@ -170,7 +217,19 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
       return true;
     }
     final digit = ch != null && RegExp(r'^[0-9]$').hasMatch(ch);
+    if (_editingLeave) {
+      if (digit) {
+        _typeLeave(ch);
+      } else if (k == LogicalKeyboardKey.backspace) {
+        _eraseLeave();
+      }
+      return true;
+    }
     if (!_counting) {
+      if (k == LogicalKeyboardKey.f3) {
+        _startLeave();
+        return true;
+      }
       if (k == LogicalKeyboardKey.f2) {
         _startCount();
         return true;
@@ -209,7 +268,7 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
     final rep = pos.report;
     final expected = rep.expectedCash;
     final no = shift.number ?? '·';
-    final mustCount = pos.catalog.settings.requireRecount;
+    final mustCount = pos.recountDue;
     final diff = _counted - expected;
     final printed = pos.printer.enabled;
 
@@ -217,12 +276,15 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
     final String subtitle;
     if (!_counting) {
       title = tr('Закрыть день  ·  смена №$no', 'Kunni yopish  ·  smena №$no');
-      subtitle = tr('Enter — день закроется и напечатается отчёт. Считать деньги в ящике не обязательно.',
-          'Enter — kun yopiladi va hisobot chop etiladi. Gʻaladondagi pulni sanash shart emas.');
+      subtitle = pos.catalog.settings.cashFloat == null
+          ? tr('Enter — день закроется и напечатается отчёт. Считать деньги в ящике не обязательно.',
+              'Enter — kun yopiladi va hisobot chop etiladi. Gʻaladondagi pulni sanash shart emas.')
+          : tr('Enter — день закроется, в ящике останется размен по норме магазина, остальное — «К сдаче» владельцу. Считать деньги не обязательно.',
+              'Enter — kun yopiladi, gʻaladonda doʻkon meʼyori boʻyicha maydalik qoladi, qolgani — egasiga «Topshirish». Pulni sanash shart emas.');
     } else if (mustCount) {
       title = tr('Закрыть день  ·  смена №$no', 'Kunni yopish  ·  smena №$no');
-      subtitle = tr('Владелец включил обязательный пересчёт: пересчитайте наличные в ящике и наберите сумму.',
-          'Egasi majburiy sanashni yoqgan: gʻaladondagi naqd pulni sanang va summani tering.');
+      subtitle = tr('Сегодня нужен пересчёт ящика — так настроил владелец: пересчитайте наличные в ящике и наберите сумму.',
+          'Bugun gʻaladonni sanash kerak — egasi shunday sozlagan: gʻaladondagi naqd pulni sanang va summani tering.');
     } else {
       title = tr('Пересчёт ящика  ·  смена №$no', 'Gʻaladonni sanash  ·  smena №$no');
       subtitle = tr('Наберите, сколько наличных в ящике. Сходится или нет — день всё равно закроется.',
@@ -231,8 +293,16 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
 
     // Подпись под «Закрыть день»: с недостачей / с излишком / отчёт.
     final report = printed ? tr('напечатаем отчёт', 'hisobotni chop etamiz') : tr('отчёт — когда подключите принтер', 'hisobot — printer ulanganda');
+    // ЗД6: сколько остаётся на размен и сколько «К сдаче». При слепом
+    // пересчёте не показываем — иначе видно, сколько должно быть.
+    final showHand = !_counting || _revealed;
+    final inDrawer = _counting ? _counted : expected;
+    final keep = _leave == null ? pos.floatFor(inDrawer) : (_leave! < inDrawer ? _leave! : inDrawer);
     final String closeSub;
-    if (_counting && _revealed && diff < 0) {
+    if (showHand && keep != null) {
+      closeSub = tr('в ящике ${fmtMoney(keep)} · к сдаче ${fmtMoney(inDrawer - keep)} · $report',
+          'gʻaladonda ${fmtMoney(keep)} · topshirish ${fmtMoney(inDrawer - keep)} · $report');
+    } else if (_counting && _revealed && diff < 0) {
       closeSub = tr('с недостачей ${fmtMoney(diff)} — $report', 'kamomad ${fmtMoney(diff)} bilan — $report');
     } else if (_counting && _revealed && diff > 0) {
       closeSub = tr('с излишком +${fmtMoney(diff)} — $report', 'ortiqcha +${fmtMoney(diff)} bilan — $report');
@@ -259,9 +329,32 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
         _Result(expected: expected, diff: diff, reason: _reason),
         const SizedBox(height: 12),
       ],
+      if (showHand && keep != null) ...[
+        GestureDetector(
+          onTap: _counting || _editingLeave ? null : _startLeave,
+          child: _HandBox(keep: keep, toHand: inDrawer - keep, changed: _leave != null, editable: !_counting),
+        ),
+        const SizedBox(height: 12),
+      ],
       _QueueNote(queue: pos.queue, failed: pos.failed),
       const Spacer(),
       if (_error != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(_error!, style: t(14, c: C.error))),
+      if (_editingLeave) ...[
+        KeyCard(
+          keyLabel: 'Enter',
+          title: tr('Готово', 'Tayyor'),
+          subtitle: tr('оставить ${fmtMoney(parseMoney(_leaveInput))} на размен', '${fmtMoney(parseMoney(_leaveInput))} maydalikka qoldirish'),
+          style: KeyCardStyle.primary,
+          onTap: _confirmLeave,
+        ),
+        const SizedBox(height: 12),
+        KeyCard(
+          keyLabel: 'Esc',
+          title: tr('По норме', 'Meʼyor boʻyicha'),
+          subtitle: tr('оставить размен по норме магазина', 'doʻkon meʼyori boʻyicha maydalik qoldirish'),
+          onTap: _cancelLeave,
+        ),
+      ] else ...[
       if (_counting && !_revealed)
         KeyCard(
           keyLabel: 'Enter',
@@ -294,6 +387,7 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
         subtitle: tr('день останется открытым', 'kun ochiq qoladi'),
         onTap: _back,
       ),
+      ],
     ];
 
     return Scaffold(
@@ -313,7 +407,12 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
                       const SizedBox(height: 10),
                       Text(subtitle, style: t(14, c: C.ts)),
                       const SizedBox(height: 14),
-                      if (_counting) ..._countBody() else ..._summaryBody(rep, expected),
+                      if (_editingLeave)
+                        ..._leaveBody()
+                      else if (_counting)
+                        ..._countBody()
+                      else
+                        ..._summaryBody(rep, expected),
                     ]),
                   ),
                 ),
@@ -380,6 +479,23 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
     ];
   }
 
+  /// ЗД6, F3: сколько оставить в ящике на размен на этот раз.
+  List<Widget> _leaveBody() => [
+        _AmountBox(
+          label: tr('Оставить на размен', 'Maydalikka qoldirish'),
+          text: _leaveInput.isEmpty ? '0' : fmtMoney(parseMoney(_leaveInput)),
+          empty: _leaveInput.isEmpty,
+          active: true,
+        ),
+        const SizedBox(height: 14),
+        Text(
+            tr('Сколько оставить в ящике на завтра. Остальное — «К сдаче» владельцу. Enter — готово · Esc — по норме',
+                'Ertaga uchun gʻaladonda qancha qoldirish. Qolgani — egasiga «Topshirish». Enter — tayyor · Esc — meʼyor boʻyicha'),
+            style: t(13, c: C.ts)),
+        const SizedBox(height: 14),
+        Center(child: _Keypad(onKey: (k) => k == '⌫' ? _eraseLeave() : _typeLeave(k))),
+      ];
+
   /// ЗД2 / ЗД4: одна сумма и клавиатура.
   List<Widget> _countBody() => [
         _AmountBox(
@@ -398,6 +514,51 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
         const SizedBox(height: 14),
         Center(child: _Keypad(onKey: (k) => k == '⌫' ? _erase() : _type(k))),
       ];
+}
+
+/// ЗД6: «Оставить на размен» (F3 — изменить) и «К сдаче владельцу».
+class _HandBox extends StatelessWidget {
+  const _HandBox({required this.keep, required this.toHand, required this.changed, required this.editable});
+
+  final int keep;
+  final int toHand;
+
+  /// Размен поменяли на этот раз (F3), а не по норме магазина.
+  final bool changed;
+  final bool editable;
+
+  @override
+  Widget build(BuildContext context) => Panel(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(tr('Оставить на размен', 'Maydalikka qoldirish'), style: t(16, w: FontWeight.w600)),
+                Text(
+                    changed
+                        ? (editable ? tr('на этот раз · изменить — F3', 'shu safar · oʻzgartirish — F3') : tr('на этот раз', 'shu safar'))
+                        : (editable ? tr('норма магазина · изменить — F3', 'doʻkon meʼyori · oʻzgartirish — F3') : tr('норма магазина', 'doʻkon meʼyori')),
+                    style: t(12, c: C.ts)),
+              ]),
+            ),
+            if (editable) ...[const KeyBadge('F3', size: 40), const SizedBox(width: 12)],
+            Text(fmtMoney(keep), style: t(20, w: FontWeight.w700)),
+          ]),
+          const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: Divider(height: 1, color: C.border)),
+          Row(children: [
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(tr('К сдаче владельцу', 'Egasiga topshirish'), style: t(16, w: FontWeight.w600)),
+                Text(tr('положите в конверт — владелец примет в SM Магазин', 'konvertga soling — egasi SM Magazinda qabul qiladi'),
+                    style: t(12, c: C.ts)),
+              ]),
+            ),
+            const SizedBox(width: 12),
+            Text(fmtMoney(toHand), style: t(30, w: FontWeight.w800, c: C.brand)),
+          ]),
+        ]),
+      );
 }
 
 /// Рамка с суммой: «В ящике по расчёту» (ЗД1) или «Наличных в ящике» (ЗД2/ЗД4).

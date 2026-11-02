@@ -226,6 +226,8 @@ class Outbox {
           'closed_at': b['closed_at'],
           // Касса закрыла вчерашнюю смену сама при «Начать день» (pos_auto).
           if (b['stale'] == true) 'stale': true,
+          // Сколько оставили в ящике на размен (Figma ЗД6) — остальное «К сдаче».
+          if (b['leave'] != null) 'leave': moneyApi((b['leave'] as num).toInt()),
         }, cashier: item.cashier);
       }
       default: {

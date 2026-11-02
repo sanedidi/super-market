@@ -48,7 +48,8 @@ class _DayClosedScreenState extends State<DayClosedScreen> {
             salesCount: rep.salesCount,
             salesTotal: rep.salesTotal,
             who: local.openedByName,
-            left: rep.expectedCash,
+            left: pos.floatFor(rep.expectedCash) ?? rep.expectedCash,
+            toHand: rep.expectedCash - (pos.floatFor(rep.expectedCash) ?? rep.expectedCash),
           ),
         );
         if (!mounted || choice == null) return;
@@ -81,7 +82,8 @@ class _DayClosedScreenState extends State<DayClosedScreen> {
               salesCount: sh.salesCount,
               salesTotal: sh.salesTotal,
               who: sh.openedByName,
-              left: sh.expectedCash,
+              left: pos.floatFor(sh.expectedCash) ?? sh.expectedCash,
+              toHand: sh.expectedCash - (pos.floatFor(sh.expectedCash) ?? sh.expectedCash),
             ),
           );
           if (!mounted || choice == null) return;
@@ -253,11 +255,18 @@ class _DayClosedScreenState extends State<DayClosedScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                     decoration: BoxDecoration(color: C.successSoft, borderRadius: BorderRadius.circular(12)),
                     child: Text(
-                      day.printed
-                          ? tr('✓ День закрыт — отчёт напечатан. Размен ${fmtMoney(day.left)} оставлен в ящике, завтра он подставится сам.',
-                              '✓ Kun yopildi — hisobot chop etildi. ${fmtMoney(day.left)} maydalik gʻaladonda qoldi, ertaga oʻzi qoʻyiladi.')
-                          : tr('✓ День закрыт. Размен ${fmtMoney(day.left)} оставлен в ящике, завтра он подставится сам.',
-                              '✓ Kun yopildi. ${fmtMoney(day.left)} maydalik gʻaladonda qoldi, ertaga oʻzi qoʻyiladi.'),
+                      day.toHand > 0
+                          // ЗД7: сколько отложить владельцу и сколько оставить.
+                          ? (day.printed
+                              ? tr('✓ День закрыт — отчёт напечатан. Отложите ${fmtMoney(day.toHand)} в конверт для владельца, в ящике оставьте ${fmtMoney(day.left)} на размен. Владелец увидит «К сдаче» в SM Магазин.',
+                                  '✓ Kun yopildi — hisobot chop etildi. ${fmtMoney(day.toHand)} ni egasi uchun konvertga soling, gʻaladonda ${fmtMoney(day.left)} maydalik qoldiring. Egasi «Topshirish»ni SM Magazinda koʻradi.')
+                              : tr('✓ День закрыт. Отложите ${fmtMoney(day.toHand)} в конверт для владельца, в ящике оставьте ${fmtMoney(day.left)} на размен. Владелец увидит «К сдаче» в SM Магазин.',
+                                  '✓ Kun yopildi. ${fmtMoney(day.toHand)} ni egasi uchun konvertga soling, gʻaladonda ${fmtMoney(day.left)} maydalik qoldiring. Egasi «Topshirish»ni SM Magazinda koʻradi.'))
+                          : day.printed
+                              ? tr('✓ День закрыт — отчёт напечатан. Размен ${fmtMoney(day.left)} оставлен в ящике, завтра он подставится сам.',
+                                  '✓ Kun yopildi — hisobot chop etildi. ${fmtMoney(day.left)} maydalik gʻaladonda qoldi, ertaga oʻzi qoʻyiladi.')
+                              : tr('✓ День закрыт. Размен ${fmtMoney(day.left)} оставлен в ящике, завтра он подставится сам.',
+                                  '✓ Kun yopildi. ${fmtMoney(day.left)} maydalik gʻaladonda qoldi, ertaga oʻzi qoʻyiladi.'),
                       style: t(13, w: FontWeight.w500, c: C.success),
                     ),
                   ),
@@ -357,6 +366,7 @@ class StartDayDialog extends StatelessWidget {
     required this.salesTotal,
     required this.who,
     required this.left,
+    this.toHand = 0,
   });
 
   final int? number;
@@ -366,6 +376,9 @@ class StartDayDialog extends StatelessWidget {
 
   /// Наличные по расчёту — останутся в ящике размéном нового дня.
   final int left;
+
+  /// По норме размена магазина — отложить владельцу (Figma ЗД6).
+  final int toHand;
 
   @override
   Widget build(BuildContext context) {
@@ -439,8 +452,11 @@ class StartDayDialog extends StatelessWidget {
               const SizedBox(height: 18),
               option(
                 title: tr('Начать день', 'Kunni boshlash'),
-                sub: tr('Размен в ящике ${fmtMoney(left)} — как оставили вчера. Вчерашняя смена закроется по расчёту, пересчёт не нужен.',
-                    'Gʻaladonda ${fmtMoney(left)} maydalik — kecha qanday qoldirilgan boʻlsa. Kechagi smena hisob boʻyicha yopiladi, sanash shart emas.'),
+                sub: toHand > 0
+                    ? tr('Вчерашняя смена закроется по расчёту: в ящике останется ${fmtMoney(left)} на размен, ${fmtMoney(toHand)} отложите в конверт для владельца.',
+                        'Kechagi smena hisob boʻyicha yopiladi: gʻaladonda ${fmtMoney(left)} maydalik qoladi, ${fmtMoney(toHand)} ni egasi uchun konvertga soling.')
+                    : tr('Размен в ящике ${fmtMoney(left)} — как оставили вчера. Вчерашняя смена закроется по расчёту, пересчёт не нужен.',
+                        'Gʻaladonda ${fmtMoney(left)} maydalik — kecha qanday qoldirilgan boʻlsa. Kechagi smena hisob boʻyicha yopiladi, sanash shart emas.'),
                 keyLabel: 'Enter',
                 main: true,
                 onTap: () => Navigator.of(context).pop('start'),

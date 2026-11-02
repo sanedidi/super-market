@@ -16,6 +16,7 @@ import {
   Modal,
   Popconfirm,
   Row,
+  Segmented,
   Space,
   Switch,
   Table,
@@ -102,7 +103,23 @@ interface Shift {
    * «Начать день», auto — сервер (открыта дольше 20 часов), panel — в панели.
    */
   closed_via: 'pos' | 'pos_quick' | 'pos_auto' | 'auto' | 'panel' | null
+  /**
+   * «К сдаче» на закрытии дня (Figma ЗД6): отложено владельцу по норме размена (null — нормы
+   * нет, в ящике осталось всё) и когда владелец нажал «Принял» в SM Магазин (null — ждёт).
+   */
+  to_hand?: string | null
+  to_hand_accepted_at?: string | null
   report?: ShiftReport
+}
+
+/** Касса магазина (Figma М6): норму размена и пересчёт задаёт сам магазин. */
+interface CashSettings {
+  store_id: string
+  /** null — не задана: «Закрыть день» оставляет в ящике всё. */
+  cash_float: string | null
+  /** null — не требовать, 1 — каждый день, 7 — раз в 7 дней. */
+  recount_every_days: 1 | 7 | null
+  handover_remind: boolean
 }
 
 interface PosSettings {
@@ -468,6 +485,94 @@ function CloseDayCard() {
   )
 }
 
+// Figma «SM Магазин · Касса: норма размена…» (М6): у каждого магазина своя норма
+// размена и пересчёт ящика; значений по умолчанию нет.
+function CashFloatCard() {
+  const { can, storeId } = useStore()
+  const settings = useItem<CashSettings>(storeId ? '/store/pos/cash-settings' : null, { store_id: storeId })
+  const [float, setFloat] = useState<number | null | undefined>(undefined)
+  const save = useAction((v: Omit<CashSettings, 'cash_float'> & { cash_float: number | string | null }) => api.put<CashSettings>('/store/pos/cash-settings', v), {
+    invalidate: [['/store/pos/cash-settings']],
+    success: tr('Сохранено — кассы узнают через минуту', 'Saqlandi — kassalar bir daqiqada bilib oladi'),
+  })
+  if (!settings.data) return settings.error ? <LoadError error={settings.error} retry={() => settings.refetch()} /> : null
+  const s = settings.data
+  const readOnly = !can('finance.manage') && !can('stores.manage')
+  const current = float === undefined ? (s.cash_float === null ? null : Number(s.cash_float)) : float
+  const put = (patch: Partial<Omit<CashSettings, 'cash_float'>> & { cash_float?: number | null }) =>
+    save.mutate({
+      store_id: s.store_id,
+      cash_float: patch.cash_float !== undefined ? patch.cash_float : s.cash_float,
+      recount_every_days: patch.recount_every_days !== undefined ? patch.recount_every_days : s.recount_every_days,
+      handover_remind: patch.handover_remind ?? s.handover_remind,
+    })
+  return (
+    <Card title={tr('Размен и сдача (этот магазин)', 'Maydalik va topshirish (shu doʻkon)')}>
+      <Flex vertical gap={16}>
+        <div>
+          <Typography.Text strong>{tr('Норма размена', 'Maydalik meʼyori')}</Typography.Text>
+          <div>
+            <Typography.Text type="secondary">
+              {tr(
+                'Столько остаётся в ящике после «Закрыть день», остальное — «К сдаче» владельцу (кассир кладёт в конверт, владелец нажимает «Принял» в SM Магазин). Пусто — в ящике остаётся всё, как раньше.',
+                '«Kunni yopish»dan keyin gʻaladonda shuncha qoladi, qolgani — egasiga «Topshirish» (kassir konvertga soladi, egasi SM Magazinda «Qabul qildim»ni bosadi). Boʻsh — gʻaladonda hammasi qoladi, avvalgidek.',
+              )}
+            </Typography.Text>
+          </div>
+          <Space style={{ marginTop: 8 }} wrap>
+            <InputNumber<number>
+              min={0}
+              step={50000}
+              disabled={readOnly}
+              value={current}
+              placeholder={tr('Введите сумму', 'Summani kiriting')}
+              addonAfter={tr('сум', 'soʻm')}
+              style={{ width: 220 }}
+              formatter={(v) => (v === undefined || v === null || `${v}` === '' ? '' : `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ' '))}
+              parser={(v) => Number((v ?? '').replace(/\s/g, '')) as unknown as number}
+              onChange={(v) => setFloat(v ?? null)}
+            />
+            {!readOnly && (
+              <Button type="primary" loading={save.isPending} onClick={() => put({ cash_float: current ?? null })}>
+                {tr('Сохранить', 'Saqlash')}
+              </Button>
+            )}
+          </Space>
+        </div>
+        <div>
+          <Typography.Text strong>{tr('Пересчёт ящика при «Закрыть день»', '«Kunni yopish»da gʻaladonni sanash')}</Typography.Text>
+          <div style={{ marginTop: 8 }}>
+            <Segmented<'0' | '7' | '1'>
+              disabled={readOnly || save.isPending}
+              value={s.recount_every_days === null ? '0' : (`${s.recount_every_days}` as '7' | '1')}
+              options={[
+                { value: '0', label: tr('Не требовать', 'Talab qilinmaydi') },
+                { value: '7', label: tr('Раз в 7 дней', '7 kunda bir') },
+                { value: '1', label: tr('Каждый день', 'Har kuni') },
+              ]}
+              onChange={(v) => put({ recount_every_days: v === '0' ? null : (Number(v) as 1 | 7) })}
+            />
+          </div>
+          <Typography.Text type="secondary">
+            {tr('В день пересчёта Enter на кассе сначала откроет пересчёт ящика.', 'Sanash kuni kassada Enter avval gʻaladonni sanashni ochadi.')}
+          </Typography.Text>
+        </div>
+        <Flex gap={12} align="flex-start">
+          <Switch checked={s.handover_remind} disabled={readOnly} loading={save.isPending} onChange={(v) => put({ handover_remind: v })} />
+          <div>
+            <Typography.Text strong>{tr('Напоминать о сдаче', 'Topshirish haqida eslatish')}</Typography.Text>
+            <div>
+              <Typography.Text type="secondary">
+                {tr('Если есть «К сдаче» — уведомление в SM Магазин в 21:00.', '«Topshirish» boʻlsa — soat 21:00 da SM Magazinga bildirishnoma.')}
+              </Typography.Text>
+            </div>
+          </div>
+        </Flex>
+      </Flex>
+    </Card>
+  )
+}
+
 export function PosDevicesPage() {
   return (
     <NeedStore>
@@ -484,6 +589,7 @@ export function PosDevicesPage() {
           <Flex vertical gap={16}>
             <DevicesCard />
             <SettingsCard />
+            <CashFloatCard />
             <CloseDayCard />
           </Flex>
         </Col>
@@ -837,6 +943,26 @@ export function PosShiftsPage() {
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                       {r.diff_reason}
                     </Typography.Text>
+                  </Space>
+                ),
+            },
+            {
+              title: tr('К сдаче', 'Topshirish'),
+              key: 'hand',
+              align: 'right',
+              render: (_, r) =>
+                !r.to_hand ? (
+                  '—'
+                ) : (
+                  <Space direction="vertical" size={0} style={{ alignItems: 'flex-end' }}>
+                    <Typography.Text strong>{money(r.to_hand)}</Typography.Text>
+                    {r.to_hand_accepted_at ? (
+                      <Tag color="green">{tr('Принято', 'Qabul qilindi')}</Tag>
+                    ) : dayjs().diff(dayjs(r.closed_at), 'hour') >= 24 ? (
+                      <Tag color="red">{tr('Ждёт больше суток', 'Bir kundan ortiq kutmoqda')}</Tag>
+                    ) : (
+                      <Tag color="gold">{tr('Ждёт владельца', 'Egasini kutmoqda')}</Tag>
+                    )}
                   </Space>
                 ),
             },

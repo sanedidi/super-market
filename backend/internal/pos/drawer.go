@@ -25,6 +25,17 @@ type Drawer struct {
 	Card string `json:"card"`
 	// Открытые смены с X-отчётом (расшифровка суммы).
 	Shifts []Shift `json:"shifts"`
+	// «Ожидает сдачи» (Figma М1): сколько отложено владельцу и в скольких
+	// конвертах (закрытых днях).
+	PendingTotal string `json:"pending_total"`
+	PendingCount int    `json:"pending_count"`
+	// Настройки кассы магазина (М6): норма размена (null — не задана) и
+	// пересчёт ящика (null — не требовать).
+	CashFloat        *string `json:"cash_float"`
+	RecountEveryDays *int    `json:"recount_every_days"`
+	// Деньги копятся в ящике (М4): размен больше нормы ×3, а без нормы —
+	// больше выручки последнего закрытого дня. Пора «Пересчитать ящик».
+	FloatWarning bool `json:"float_warning"`
 }
 
 func (s *Service) Drawer(ctx context.Context, p *identity.Principal, storeID string) (Drawer, error) {
@@ -71,5 +82,35 @@ func (s *Service) Drawer(ctx context.Context, p *identity.Principal, storeID str
 		out.Shifts = append(out.Shifts, sh)
 	}
 	out.Card = card.Money()
+	if err := s.pool.QueryRow(ctx, `SELECT COALESCE(sum(amount), 0)::numeric(18,2)::text, count(*)::int FROM pending_handovers
+		WHERE cashbox_id = $1 AND accepted_at IS NULL`, cb).Scan(&out.PendingTotal, &out.PendingCount); err != nil {
+		return out, err
+	}
+	var lastSales *string
+	if err := s.pool.QueryRow(ctx, `
+		SELECT st.cash_float::text, st.recount_every_days,
+		       (SELECT COALESCE(sum(sl.total), 0)::text FROM sales sl WHERE sl.shift_id = (
+		          SELECT sh.id FROM pos_shifts sh WHERE sh.store_id = st.id AND sh.closed_at IS NOT NULL ORDER BY sh.closed_at DESC LIMIT 1))
+		FROM stores st WHERE st.id = $1`, storeID).Scan(&out.CashFloat, &out.RecountEveryDays, &lastSales); err != nil {
+		return out, err
+	}
+	// Размен: у открытых смен — что ввели на начало (но не больше, чем в
+	// ящике сейчас: после пересчёта предупреждение уходит), без смены — что в ящике.
+	base := amount
+	if len(out.Shifts) > 0 {
+		opening := money.D("0")
+		for _, sh := range out.Shifts {
+			opening = opening.Add(money.D(sh.OpeningCash))
+		}
+		base = opening.Min(amount)
+	}
+	switch {
+	case out.CashFloat != nil:
+		f := money.D(*out.CashFloat)
+		out.FloatWarning = f.Sign() > 0 && base.Cmp(f.Mul(money.D("3"))) > 0
+	case lastSales != nil:
+		ls := money.D(*lastSales)
+		out.FloatWarning = ls.Sign() > 0 && base.Cmp(ls) > 0
+	}
 	return out, nil
 }

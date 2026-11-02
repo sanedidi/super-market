@@ -202,6 +202,7 @@ Uint8List shiftReport({
   required DateTime at,
   int? counted,
   String diffReason = '',
+  int? leave,
   int vat = 0,
   int queue = 0,
   FiscalResult? fiscal,
@@ -243,6 +244,12 @@ Uint8List shiftReport({
     final diff = counted - rep.expectedCash;
     p.bold(true).pair(tr('Посчитано', 'Sanaldi'), fmtMoney(counted)).pair(tr('Расхождение', 'Farq'), diff == 0 ? '0' : fmtMoney(diff)).bold(false);
     if (diffReason.isNotEmpty) p.wrapped(tr('Причина: $diffReason', 'Sabab: $diffReason'));
+  }
+  // Норма размена (Figma ЗД6–ЗД7): сколько оставить и сколько отложить владельцу.
+  if (z && leave != null) {
+    final inDrawer = counted ?? rep.expectedCash;
+    p.dashes().pair(tr('Оставить на размен', 'Maydalikka qoldirish'), fmtMoney(leave));
+    p.bold(true).pair(tr('Отложить владельцу', 'Egasiga ajratish'), fmtMoney(inDrawer - leave)).bold(false);
   }
   p.dashes().pair(tr('Ожидают отправки', 'Yuborilishini kutmoqda'), '$queue');
   if (fiscal != null) p.pair(tr('Фиск. признак отчёта', 'Hisobot fiskal belgisi'), fiscal.sign);
