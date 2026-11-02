@@ -15,16 +15,16 @@ import {
   DollarOutlined,
   InboxOutlined,
   LayoutOutlined,
-  NotificationOutlined,
   RocketOutlined,
   SettingOutlined,
-  SafetyCertificateOutlined,
   ShoppingCartOutlined,
   ShoppingOutlined,
   WalletOutlined,
   CoffeeOutlined,
   FireOutlined,
   ShopOutlined,
+  ContainerOutlined,
+  TagsOutlined,
 } from '@ant-design/icons'
 import { Shell, tabLabels, tr, type MenuItem } from '@sm/shared'
 import { useStore } from './ctx'
@@ -75,122 +75,174 @@ import { HallsPage } from './pages/cafe/Halls'
 const TITLE = tr('Панель магазина', 'Doʻkon paneli')
 
 // feature — функция тарифа: без неё у пункта замок, страница — с предложением тарифа.
-type Item = { key: string; label: string; perm?: string | string[]; feature?: string; icon?: ReactNode; children?: Item[] }
+// section — раздел меню с серым заголовком (в нём пункты и пункты с подменю).
+type Item = { key: string; label: string; perm?: string | string[]; feature?: string; icon?: ReactNode; children?: Item[]; section?: boolean }
 
-// Меню как в Dokondor: группы разделов; perm — какое право нужно, чтобы видеть пункт.
-// Права совпадают с правами сервера на чтение раздела (docs/api.md, «Права на чтение»).
+// Меню разделами (Figma «Сайдбар · группировка разделов»): серые заголовки, подменю открывается
+// панелью справа от сайдбара. perm — какое право нужно, чтобы видеть пункт; раздел без
+// доступных пунктов не показывается. Права совпадают с правами сервера на чтение раздела
+// (docs/api.md, «Права на чтение»).
 const MENU: Item[] = [
   { key: '/', label: tr('Главная', 'Bosh sahifa'), icon: <DashboardOutlined /> },
   // Помощник (тест): только владелец — право «owner» есть лишь у него (can() у владельца всегда true).
   { key: '/assistant', label: tr('Помощник · тест', 'Yordamchi · sinov'), icon: <MessageOutlined />, perm: 'owner', feature: 'assistant' },
   { key: '/start', label: tr('Начало работы', 'Ishni boshlash'), icon: <RocketOutlined />, perm: 'inventory.manage' },
-  { key: '/orders', label: tr('Онлайн-заказы', 'Onlayn buyurtmalar'), icon: <ShoppingCartOutlined />, perm: 'orders.manage' },
-  { key: '/couriers', label: tr('Курьеры', 'Kuryerlar'), icon: <CarOutlined />, perm: 'orders.manage' },
-  { key: '/crowd', label: tr('Курьеры по пути', 'Yoʻlakay kuryerlar'), icon: <SafetyCertificateOutlined />, perm: 'orders.manage', feature: 'crowd' },
-  { key: '/showcase', label: tr('Витрина приложения', 'Ilova vitrinasi'), icon: <LayoutOutlined />, perm: 'showcase.manage' },
-  { key: '/brand-ads', label: tr('Реклама брендов', 'Brendlar reklamasi'), icon: <NotificationOutlined />, perm: 'showcase.manage', feature: 'brand_ads' },
   {
-    key: 'sales',
-    label: tr('Продажи', 'Sotuvlar'),
-    icon: <ShoppingOutlined />,
+    key: 'sec-trade',
+    section: true,
+    label: tr('Торговля', 'Savdo'),
     children: [
-      { key: '/sales/pos', label: tr('Продажи POS', 'POS sotuvlari'), perm: ['sales.pos', 'sales.return', 'reports.view'] },
-      { key: '/sales/returns', label: tr('Возвраты', 'Qaytarishlar'), perm: ['sales.pos', 'sales.return', 'reports.view'] },
-      { key: '/sales/prices', label: tr('Установка цен', 'Narxlarni belgilash'), perm: 'prices.manage' },
-      { key: '/sales/promotions', label: tr('Акции в приложении', 'Ilovadagi aksiyalar'), perm: 'prices.manage', feature: 'promotions' },
+      {
+        key: 'sales',
+        label: tr('Продажи', 'Sotuvlar'),
+        icon: <ShoppingOutlined />,
+        children: [
+          { key: '/sales/pos', label: tr('Продажи POS', 'POS sotuvlari'), perm: ['sales.pos', 'sales.return', 'reports.view'] },
+          { key: '/sales/returns', label: tr('Возвраты', 'Qaytarishlar'), perm: ['sales.pos', 'sales.return', 'reports.view'] },
+        ],
+      },
+      {
+        key: 'pos',
+        label: tr('Касса', 'Kassa'),
+        icon: <CalculatorOutlined />,
+        children: [
+          { key: '/pos/devices', label: tr('Кассы и ПИНы', 'Kassalar va PIN-kodlar'), perm: ['stores.manage', 'staff.manage'] },
+          { key: '/pos/shifts', label: tr('Смены', 'Smenalar'), perm: ['reports.view', 'finance.manage'] },
+        ],
+      },
+      { key: '/debts', label: tr('Долги покупателей', 'Xaridorlar qarzlari'), icon: <AuditOutlined />, perm: ['debts.manage', 'debts.give'], feature: 'debts' },
     ],
   },
   {
-    key: 'pos',
-    label: tr('Касса', 'Kassa'),
-    icon: <CalculatorOutlined />,
+    key: 'sec-goods',
+    section: true,
+    label: tr('Товары и склад', 'Mahsulotlar va ombor'),
     children: [
-      { key: '/pos/devices', label: tr('Кассы и ПИНы', 'Kassalar va PIN-kodlar'), perm: ['stores.manage', 'staff.manage'] },
-      { key: '/pos/shifts', label: tr('Смены', 'Smenalar'), perm: ['reports.view', 'finance.manage'] },
-    ],
-  },
-  { key: '/debts', label: tr('Долги покупателей', 'Xaridorlar qarzlari'), icon: <AuditOutlined />, perm: ['debts.manage', 'debts.give'], feature: 'debts' },
-  {
-    key: 'purchases',
-    label: tr('Закупки', 'Xaridlar'),
-    icon: <InboxOutlined />,
-    children: [
-      { key: docPaths.income, label: tr('Приход товара', 'Mahsulot kirimi'), perm: 'inventory.manage' },
-      { key: docPaths.supplier_return, label: tr('Возврат поставщику', 'Yetkazib beruvchiga qaytarish'), perm: 'inventory.manage' },
-    ],
-  },
-  {
-    key: 'stock',
-    label: tr('Склад', 'Ombor'),
-    icon: <AppstoreOutlined />,
-    children: [
-      { key: '/stock/balance', label: tr('Остатки', 'Qoldiqlar') },
-      { key: docPaths.transfer, label: tr('Между складами', 'Omborlar oʻrtasida'), perm: 'inventory.manage' },
-      { key: docPaths.inventory, label: tr('Инвентаризация', 'Inventarizatsiya'), perm: 'inventory.manage' },
-      { key: docPaths.write_off, label: tr('Списание', 'Hisobdan chiqarish'), perm: 'inventory.manage' },
-      { key: docPaths.posting, label: tr('Оприходование', 'Kirim qilish'), perm: 'inventory.manage' },
-      { key: '/stock/movements', label: tr('История движения', 'Harakatlar tarixi') },
-    ],
-  },
-  {
-    key: 'finance',
-    label: tr('Финансы', 'Moliya'),
-    icon: <DollarOutlined />,
-    children: [
-      { key: '/finance/cashboxes', label: tr('Кассы', 'Kassalar'), perm: 'finance.manage' },
-      { key: '/finance/operations', label: tr('Кассовые операции', 'Kassa operatsiyalari'), perm: 'finance.manage' },
-      { key: '/finance/handovers', label: tr('Сдача кассы', 'Kassani topshirish'), perm: 'finance.manage' },
-      { key: '/finance/transfers', label: tr('Из кассы в кассу', 'Kassadan kassaga'), perm: 'finance.manage' },
-      { key: '/finance/rates', label: tr('Курс валюты', 'Valyuta kursi'), perm: 'finance.manage' },
+      { key: '/dirs/products', label: tr('Товары', 'Mahsulotlar'), icon: <ContainerOutlined /> },
+      { key: '/sales/prices', label: tr('Цены', 'Narxlar'), icon: <TagsOutlined />, perm: 'prices.manage' },
+      {
+        key: 'purchases',
+        label: tr('Закупки', 'Xaridlar'),
+        icon: <InboxOutlined />,
+        children: [
+          { key: docPaths.income, label: tr('Приход товара', 'Mahsulot kirimi'), perm: 'inventory.manage' },
+          { key: docPaths.supplier_return, label: tr('Возврат поставщику', 'Yetkazib beruvchiga qaytarish'), perm: 'inventory.manage' },
+        ],
+      },
+      {
+        key: 'stock',
+        label: tr('Склад', 'Ombor'),
+        icon: <AppstoreOutlined />,
+        children: [
+          { key: '/stock/balance', label: tr('Остатки', 'Qoldiqlar') },
+          { key: docPaths.transfer, label: tr('Между складами', 'Omborlar oʻrtasida'), perm: 'inventory.manage' },
+          { key: docPaths.inventory, label: tr('Инвентаризация', 'Inventarizatsiya'), perm: 'inventory.manage' },
+          { key: docPaths.write_off, label: tr('Списание', 'Hisobdan chiqarish'), perm: 'inventory.manage' },
+          { key: docPaths.posting, label: tr('Оприходование', 'Kirim qilish'), perm: 'inventory.manage' },
+          { key: '/stock/movements', label: tr('История движения', 'Harakatlar tarixi') },
+        ],
+      },
     ],
   },
   {
-    key: 'reports',
-    label: tr('Отчёты', 'Hisobotlar'),
-    icon: <BarChartOutlined />,
+    key: 'sec-online',
+    section: true,
+    label: tr('Онлайн-магазин', 'Onlayn doʻkon'),
     children: [
-      { key: '/reports/cash-flow', label: tr('Денежный поток', 'Pul oqimi'), perm: 'reports.view', feature: 'reports_pro' },
-      { key: '/reports/profit-loss', label: tr('Прибыль и убыток', 'Foyda va zarar'), perm: 'reports.view', feature: 'reports_pro' },
-      { key: '/reports/abc-xyz', label: tr('ABC/XYZ-анализ', 'ABC/XYZ tahlili'), perm: 'reports.view', feature: 'abc_xyz' },
+      { key: '/orders', label: tr('Онлайн-заказы', 'Onlayn buyurtmalar'), icon: <ShoppingCartOutlined />, perm: 'orders.manage' },
+      {
+        key: 'delivery',
+        label: tr('Доставка', 'Yetkazib berish'),
+        icon: <CarOutlined />,
+        children: [
+          { key: '/couriers', label: tr('Курьеры', 'Kuryerlar'), perm: 'orders.manage' },
+          { key: '/crowd', label: tr('Курьеры по пути', 'Yoʻlakay kuryerlar'), perm: 'orders.manage', feature: 'crowd' },
+        ],
+      },
+      {
+        key: 'showcase',
+        label: tr('Витрина', 'Vitrina'),
+        icon: <LayoutOutlined />,
+        children: [
+          { key: '/showcase', label: tr('Витрина приложения', 'Ilova vitrinasi'), perm: 'showcase.manage' },
+          { key: '/sales/promotions', label: tr('Акции в приложении', 'Ilovadagi aksiyalar'), perm: 'prices.manage', feature: 'promotions' },
+          { key: '/brand-ads', label: tr('Реклама брендов', 'Brendlar reklamasi'), perm: 'showcase.manage', feature: 'brand_ads' },
+        ],
+      },
     ],
   },
   {
-    key: 'dirs',
-    label: tr('Справочники', 'Maʼlumotnomalar'),
-    icon: <BookOutlined />,
+    key: 'sec-money',
+    section: true,
+    label: tr('Деньги', 'Pul'),
     children: [
-      { key: '/dirs/counterparties', label: tr('Контрагенты', 'Kontragentlar'), perm: ['counterparties.manage', 'inventory.manage', 'finance.manage'] },
-      { key: '/dirs/counterparty-types', label: tr('Типы контрагентов', 'Kontragent turlari'), perm: 'counterparties.manage' },
-      { key: '/dirs/products', label: tr('Товары', 'Mahsulotlar') },
-      { key: '/dirs/brands', label: tr('Бренды', 'Brendlar') },
-      { key: '/dirs/colors', label: tr('Цвета', 'Ranglar') },
-      { key: '/dirs/categories', label: tr('Категории', 'Kategoriyalar') },
-      { key: '/dirs/units', label: tr('Единицы', 'Oʻlchov birliklari') },
-      { key: '/dirs/price-types', label: tr('Типы цен', 'Narx turlari'), perm: ['catalog.manage', 'prices.manage'] },
-      { key: '/dirs/warehouses', label: tr('Склады', 'Omborlar'), perm: ['stores.manage', 'inventory.manage'] },
-      { key: '/dirs/payment-methods', label: tr('Способы оплаты', 'Toʻlov usullari'), perm: 'finance.manage' },
-      { key: '/dirs/reasons', label: tr('Финансовые причины', 'Moliyaviy sabablar'), perm: 'finance.manage' },
+      {
+        key: 'finance',
+        label: tr('Финансы', 'Moliya'),
+        icon: <DollarOutlined />,
+        children: [
+          { key: '/finance/cashboxes', label: tr('Кассы', 'Kassalar'), perm: 'finance.manage' },
+          { key: '/finance/operations', label: tr('Кассовые операции', 'Kassa operatsiyalari'), perm: 'finance.manage' },
+          { key: '/finance/handovers', label: tr('Сдача кассы', 'Kassani topshirish'), perm: 'finance.manage' },
+          { key: '/finance/transfers', label: tr('Из кассы в кассу', 'Kassadan kassaga'), perm: 'finance.manage' },
+          { key: '/finance/rates', label: tr('Курс валюты', 'Valyuta kursi'), perm: 'finance.manage' },
+        ],
+      },
+      {
+        key: 'reports',
+        label: tr('Отчёты', 'Hisobotlar'),
+        icon: <BarChartOutlined />,
+        children: [
+          { key: '/reports/cash-flow', label: tr('Денежный поток', 'Pul oqimi'), perm: 'reports.view', feature: 'reports_pro' },
+          { key: '/reports/profit-loss', label: tr('Прибыль и убыток', 'Foyda va zarar'), perm: 'reports.view', feature: 'reports_pro' },
+          { key: '/reports/abc-xyz', label: tr('ABC/XYZ-анализ', 'ABC/XYZ tahlili'), perm: 'reports.view', feature: 'abc_xyz' },
+        ],
+      },
     ],
   },
   {
-    key: 'settings',
-    label: tr('Настройки', 'Sozlamalar'),
-    icon: <SettingOutlined />,
+    key: 'sec-admin',
+    section: true,
+    label: tr('Управление', 'Boshqaruv'),
     children: [
-      { key: '/settings/stores', label: tr('Магазины', 'Doʻkonlar'), perm: 'stores.manage' },
-      { key: '/settings/delivery', label: tr('Доставка', 'Yetkazib berish'), perm: 'stores.manage' },
-      { key: '/settings/scales', label: tr('Весы', 'Tarozi'), perm: ['stores.manage', 'catalog.manage'] },
-      { key: '/settings/debts', label: tr('Долги покупателей', 'Xaridorlar qarzlari'), perm: ['debts.manage', 'debts.give'], feature: 'debts' },
-      { key: '/settings/roles', label: tr('Роли', 'Rollar'), perm: 'staff.manage' },
-      { key: '/settings/employees', label: tr('Сотрудники', 'Xodimlar'), perm: 'staff.manage' },
+      {
+        key: 'dirs',
+        label: tr('Справочники', 'Maʼlumotnomalar'),
+        icon: <BookOutlined />,
+        children: [
+          { key: '/dirs/counterparties', label: tr('Контрагенты', 'Kontragentlar'), perm: ['counterparties.manage', 'inventory.manage', 'finance.manage'] },
+          { key: '/dirs/counterparty-types', label: tr('Типы контрагентов', 'Kontragent turlari'), perm: 'counterparties.manage' },
+          { key: '/dirs/brands', label: tr('Бренды', 'Brendlar') },
+          { key: '/dirs/colors', label: tr('Цвета', 'Ranglar') },
+          { key: '/dirs/categories', label: tr('Категории', 'Kategoriyalar') },
+          { key: '/dirs/units', label: tr('Единицы', 'Oʻlchov birliklari') },
+          { key: '/dirs/price-types', label: tr('Типы цен', 'Narx turlari'), perm: ['catalog.manage', 'prices.manage'] },
+          { key: '/dirs/warehouses', label: tr('Склады', 'Omborlar'), perm: ['stores.manage', 'inventory.manage'] },
+          { key: '/dirs/payment-methods', label: tr('Способы оплаты', 'Toʻlov usullari'), perm: 'finance.manage' },
+          { key: '/dirs/reasons', label: tr('Финансовые причины', 'Moliyaviy sabablar'), perm: 'finance.manage' },
+        ],
+      },
+      {
+        key: 'settings',
+        label: tr('Настройки', 'Sozlamalar'),
+        icon: <SettingOutlined />,
+        children: [
+          { key: '/settings/stores', label: tr('Магазины', 'Doʻkonlar'), perm: 'stores.manage' },
+          { key: '/settings/delivery', label: tr('Доставка', 'Yetkazib berish'), perm: 'stores.manage' },
+          { key: '/settings/scales', label: tr('Весы', 'Tarozi'), perm: ['stores.manage', 'catalog.manage'] },
+          { key: '/settings/debts', label: tr('Долги покупателей', 'Xaridorlar qarzlari'), perm: ['debts.manage', 'debts.give'], feature: 'debts' },
+          { key: '/settings/roles', label: tr('Роли', 'Rollar'), perm: 'staff.manage' },
+          { key: '/settings/employees', label: tr('Сотрудники', 'Xodimlar'), perm: 'staff.manage' },
+        ],
+      },
+      { key: '/plan', label: tr('Тариф', 'Tarif'), icon: <CrownOutlined /> },
+      { key: '/balance', label: tr('Баланс и подписка', 'Balans va obuna'), icon: <WalletOutlined />, perm: 'payouts.manage' },
     ],
   },
-  { key: '/balance', label: tr('Баланс и подписка', 'Balans va obuna'), icon: <WalletOutlined />, perm: 'payouts.manage' },
-  { key: '/plan', label: tr('Тариф', 'Tarif'), icon: <CrownOutlined /> },
 ]
 
-// Кафе: вместо «Закупок» и «Склада» — «Меню», «Склад продуктов» и «Кухня»
-// (Figma «Веб-панель», Panel/Sidebar · Кафе). Приход, списание и
+// Кафе: вместо раздела «Товары и склад» — «Меню и кухня»: Меню, Склад продуктов, Кухня,
+// а также Товары и Цены (Figma «Сайдбар · группировка», «Новый · кафе»). Приход, списание и
 // инвентаризация открываются со страницы «Склад продуктов».
 const CAFE_ITEMS: Item[] = [
   { key: '/menu', label: tr('Меню', 'Menyu'), icon: <CoffeeOutlined /> },
@@ -210,20 +262,23 @@ Object.assign(tabLabels, {
 
 function menuFor(cafe: boolean): Item[] {
   if (!cafe) return MENU
-  const out: Item[] = []
-  for (const i of MENU) {
-    if (i.key === 'purchases' || i.key === 'stock' || i.key === '/start') continue
-    out.push(i)
-    if (i.key === '/orders') out.push(...CAFE_ITEMS)
-  }
-  // Касса кафе: схема залов (П9) рядом с «Кассы и ПИНы».
-  const pos = out.findIndex((i) => i.key === 'pos')
-  if (pos >= 0) {
-    const ch = [...(out[pos].children ?? [])]
-    ch.splice(1, 0, { key: '/pos/halls', label: tr('Залы и столы', 'Zallar va stollar'), perm: 'stores.manage' })
-    out[pos] = { ...out[pos], children: ch }
-  }
-  return out
+  return MENU.filter((i) => i.key !== '/start').map((i) => {
+    if (i.key === 'sec-goods') {
+      const keep = (i.children ?? []).filter((c) => c.key === '/dirs/products' || c.key === '/sales/prices')
+      return { ...i, label: tr('Меню и кухня', 'Menyu va oshxona'), children: [...CAFE_ITEMS, ...keep] }
+    }
+    if (i.key === 'sec-trade') {
+      // Касса кафе: схема залов (П9) сразу после «Кассы и ПИНы».
+      const children = (i.children ?? []).map((c) => {
+        if (c.key !== 'pos') return c
+        const ch = [...(c.children ?? [])]
+        ch.splice(1, 0, { key: '/pos/halls', label: tr('Залы и столы', 'Zallar va stollar'), perm: 'stores.manage' })
+        return { ...c, children: ch }
+      })
+      return { ...i, children }
+    }
+    return i
+  })
 }
 
 function filterMenu(items: Item[], can: (p: string) => boolean, has: (f: string) => boolean): MenuItem[] {
@@ -231,7 +286,11 @@ function filterMenu(items: Item[], can: (p: string) => boolean, has: (f: string)
   const out: MenuItem[] = []
   for (const i of items) {
     if (!allowed(i)) continue
-    if (i.children) {
+    if (i.section) {
+      // Раздел — заголовок и пункты; без доступных пунктов не показывается.
+      const children = filterMenu(i.children ?? [], can, has)
+      if (children.length) out.push({ type: 'group', key: i.key, label: i.label, children })
+    } else if (i.children) {
       const children = filterMenu(i.children, can, has)
       if (children.length) out.push({ key: i.key, label: i.label, icon: i.icon, children })
     } else {

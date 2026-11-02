@@ -1,8 +1,9 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { BrowserRouter, Outlet, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { App as AntApp, Button, ConfigProvider, Drawer, Grid, type MenuProps } from 'antd'
-import { CloseOutlined, DeleteOutlined, DownOutlined, LogoutOutlined, MenuOutlined, PushpinOutlined, TranslationOutlined } from '@ant-design/icons'
+import { CloseOutlined, DeleteOutlined, DownOutlined, LeftOutlined, LogoutOutlined, MenuOutlined, PushpinOutlined, RightOutlined, TranslationOutlined } from '@ant-design/icons'
 import ruRU from 'antd/locale/ru_RU'
 import uzUZ from 'antd/locale/uz_UZ'
 import dayjs from 'dayjs'
@@ -103,16 +104,27 @@ function Gate({ app, title, children }: { app: AppName; title: string; children:
 export type MenuItem = Required<MenuProps>['items'][number]
 
 // extra — значок справа от пункта (например, замок функции не по тарифу).
-type NavItem = { key: string; label: ReactNode; icon?: ReactNode; extra?: ReactNode; children?: NavItem[] }
+// section — раздел меню: серый заголовок и пункты под ним (в antd-меню — { type: 'group' }).
+type NavItem = { key: string; label: ReactNode; icon?: ReactNode; extra?: ReactNode; children?: NavItem[]; section?: boolean }
 
 function toNav(items: MenuItem[]): NavItem[] {
   return (items ?? [])
     .filter(Boolean)
-    .map((m) => {
-      const i = m as unknown as { key: string; label: ReactNode; icon?: ReactNode; extra?: ReactNode; children?: MenuItem[] }
-      return { key: String(i.key), label: i.label, icon: i.icon, extra: i.extra, children: i.children ? toNav(i.children) : undefined }
+    .map((m, n) => {
+      const i = m as unknown as { key?: string; type?: string; label: ReactNode; icon?: ReactNode; extra?: ReactNode; children?: MenuItem[] }
+      return {
+        key: String(i.key ?? `section-${n}`),
+        label: i.label,
+        icon: i.icon,
+        extra: i.extra,
+        children: i.children ? toNav(i.children) : undefined,
+        section: i.type === 'group' || undefined,
+      }
     })
 }
+
+/** Пункты без разделов: раздел раскрывается в свои пункты. */
+const flat = (items: NavItem[]): NavItem[] => items.flatMap((i) => (i.section ? flat(i.children ?? []) : [i]))
 
 const text = (n: ReactNode) => (typeof n === 'string' || typeof n === 'number' ? String(n) : '')
 
@@ -140,7 +152,7 @@ function labelFor(nav: NavItem[], path: string): string {
         best = { key: i.key, label: parent ? `${parent} / ${text(i.label)}` : text(i.label) }
       }
     })
-  walk(nav)
+  walk(flat(nav))
   if (!best) return tr('Страница', 'Sahifa')
   if (path !== best.key && best.key !== '/') {
     const last = path.slice(best.key.length + 1).split('/').pop() ?? ''
@@ -204,9 +216,13 @@ function Sidebar({
   const { logout } = useAuth()
   const [pinned, setPinned] = useState(readPinned)
   const [hovered, setHovered] = useState(false)
-  const [open, setOpen] = useState<Record<string, boolean>>({})
+  // Открытое подменю — ключ пункта. На компьютере подменю — панель справа от сайдбара,
+  // в шторке на телефоне — список вместо меню с кнопкой «Назад» (Figma «Сайдбар · группировка»).
+  const [fly, setFly] = useState<string | null>(null)
   const [userMenu, setUserMenu] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout>>()
+  const asideRef = useRef<HTMLElement>(null)
+  const flyRef = useRef<HTMLDivElement>(null)
   const expanded = !collapsible || pinned || hovered
 
   const matches = (key: string) => (key === '/' ? pathname === '/' : pathname === key || pathname.startsWith(key + '/'))
@@ -221,7 +237,9 @@ function Sidebar({
     return best
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nav, pathname])
-  const activeParent = nav.find((p) => p.children?.some((c) => c.key === activeKey))?.key
+  const items = useMemo(() => flat(nav), [nav])
+  const activeParent = items.find((p) => p.children?.some((c) => c.key === activeKey))?.key
+  const flyItem = fly ? items.find((i) => i.key === fly && i.children) : undefined
 
   useEffect(() => {
     try {
@@ -231,8 +249,67 @@ function Sidebar({
     }
   }, [pinned])
 
+  // Перешли на другую страницу — подменю закрывается.
+  useEffect(() => setFly(null), [pathname])
+
+  /** Панель подменю — на уровне своего пункта, справа от сайдбара; за край экрана не вылезает. */
+  const place = useCallback(() => {
+    const aside = asideRef.current
+    const el = flyRef.current
+    if (!aside || !el || !fly) return
+    const btn = aside.querySelector<HTMLElement>(`[data-fly="${CSS.escape(fly)}"]`)
+    const a = aside.getBoundingClientRect()
+    const top = (btn?.getBoundingClientRect().top ?? a.top) - 6
+    el.style.left = `${a.right + 8}px`
+    el.style.top = `${Math.max(8, Math.min(top, window.innerHeight - el.offsetHeight - 8))}px`
+  }, [fly])
+
+  useLayoutEffect(() => {
+    if (!fly || !collapsible) return
+    place()
+    const aside = asideRef.current
+    const list = aside?.querySelector('.sm-nav')
+    // Сайдбар раскрывается и сворачивается с анимацией — панель едет вместе с его краем.
+    const ro = new ResizeObserver(place)
+    if (aside) ro.observe(aside)
+    const down = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (!asideRef.current?.contains(t) && !flyRef.current?.contains(t)) setFly(null)
+    }
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFly(null)
+    }
+    window.addEventListener('resize', place)
+    list?.addEventListener('scroll', place)
+    document.addEventListener('mousedown', down)
+    document.addEventListener('keydown', esc)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', place)
+      list?.removeEventListener('scroll', place)
+      document.removeEventListener('mousedown', down)
+      document.removeEventListener('keydown', esc)
+    }
+  }, [fly, collapsible, place])
+
+  // Незакреплённое меню раскрыто, пока мышь над сайдбаром или над панелью подменю.
+  const keep = () => {
+    clearTimeout(timer.current)
+    if (collapsible && !pinned) setHovered(true)
+  }
+  const leave = () => {
+    if (!collapsible || pinned) return
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => {
+      setHovered(false)
+      setUserMenu(false)
+      setFly(null)
+    }, 150)
+  }
+
   const go = (key: string) =>
     guardedNavigate(() => {
+      setFly(null)
       navigate(key)
       onNavigate?.()
     })
@@ -244,22 +321,57 @@ function Sidebar({
     .map((w) => w[0]?.toUpperCase())
     .join('')
 
+  const child = (c: NavItem) => (
+    <button key={c.key} role="menuitem" className={`sm-glass sm-child ${activeKey === c.key ? 'active' : ''}`} onClick={() => go(c.key)}>
+      <span className="sm-child-label">{c.label}</span>
+      {c.extra && <span className="sm-link-extra">{c.extra}</span>}
+    </button>
+  )
+
+  const link = (item: NavItem) => {
+    if (!item.children) {
+      return (
+        <button
+          key={item.key}
+          className={`sm-glass sm-link ${activeKey === item.key ? 'active' : ''}`}
+          onClick={() => go(item.key)}
+          title={expanded ? undefined : text(item.label)}
+        >
+          <span className="sm-link-icon">{item.icon}</span>
+          {expanded && <span className="sm-link-label">{item.label}</span>}
+          {expanded && item.extra && <span className="sm-link-extra">{item.extra}</span>}
+        </button>
+      )
+    }
+    const open = fly === item.key
+    return (
+      <button
+        key={item.key}
+        data-fly={item.key}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={`sm-glass sm-link ${open || activeParent === item.key ? 'active' : ''} ${open ? 'open' : ''}`}
+        onClick={() => setFly(open ? null : item.key)}
+        // Пока одно подменю открыто, наведение на другой такой пункт сразу переключает панель.
+        onMouseEnter={() => {
+          if (collapsible && fly && fly !== item.key) setFly(item.key)
+        }}
+        title={expanded ? undefined : text(item.label)}
+      >
+        <span className="sm-link-icon">{item.icon}</span>
+        {expanded && (
+          <>
+            <span className="sm-link-label">{item.label}</span>
+            <RightOutlined className="sm-chevron" />
+          </>
+        )}
+      </button>
+    )
+  }
+
   return (
-    <aside
-      className={`sm-sidebar ${expanded ? '' : 'collapsed sm-collapsed'}`}
-      onMouseEnter={() => {
-        if (!collapsible || pinned) return
-        clearTimeout(timer.current)
-        setHovered(true)
-      }}
-      onMouseLeave={() => {
-        if (!collapsible || pinned) return
-        timer.current = setTimeout(() => {
-          setHovered(false)
-          setUserMenu(false)
-        }, 150)
-      }}
-    >
+    <>
+    <aside ref={asideRef} className={`sm-sidebar ${expanded ? '' : 'collapsed sm-collapsed'}`} onMouseEnter={keep} onMouseLeave={leave}>
       <div className="sm-sb-head">
         {expanded ? (
           <>
@@ -284,57 +396,29 @@ function Sidebar({
       </div>
 
       <nav className="sm-nav">
-        {nav.map((item) => {
-          if (!item.children) {
-            return (
-              <button
-                key={item.key}
-                className={`sm-glass sm-link ${activeKey === item.key ? 'active' : ''}`}
-                onClick={() => go(item.key)}
-                title={expanded ? undefined : text(item.label)}
-              >
-                <span className="sm-link-icon">{item.icon}</span>
-                {expanded && <span className="sm-link-label">{item.label}</span>}
-                {expanded && item.extra && <span className="sm-link-extra">{item.extra}</span>}
-              </button>
-            )
-          }
-          const isOpen = expanded && (open[item.key] ?? activeParent === item.key)
-          return (
-            <div key={item.key} style={{ width: '100%' }}>
-              <button
-                className={`sm-glass sm-link ${isOpen ? 'open active' : ''} ${!isOpen && activeParent === item.key ? 'active' : ''}`}
-                onClick={() => {
-                  if (!expanded) {
-                    setHovered(true)
-                    setOpen({ [item.key]: true })
-                    return
-                  }
-                  setOpen((o) => ({ [item.key]: !(o[item.key] ?? activeParent === item.key) }))
-                }}
-                title={expanded ? undefined : text(item.label)}
-              >
-                <span className="sm-link-icon">{item.icon}</span>
-                {expanded && (
-                  <>
-                    <span className="sm-link-label">{item.label}</span>
-                    <DownOutlined className="sm-chevron" />
-                  </>
-                )}
-              </button>
-              {isOpen && (
-                <div className="sm-children">
-                  {item.children.map((c) => (
-                    <button key={c.key} className={`sm-glass sm-child ${activeKey === c.key ? 'active' : ''}`} onClick={() => go(c.key)}>
-                      {c.label}
-                      {c.extra && <span className="sm-link-extra">{c.extra}</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+        {!collapsible && flyItem ? (
+          <>
+            <button className="sm-glass sm-link sm-nav-back" onClick={() => setFly(null)}>
+              <span className="sm-link-icon">
+                <LeftOutlined />
+              </span>
+              <span className="sm-link-label">{tr('Назад', 'Orqaga')}</span>
+            </button>
+            <div className="sm-nav-section">{flyItem.label}</div>
+            {flyItem.children?.map(child)}
+          </>
+        ) : (
+          nav.map((item, n) =>
+            item.section ? (
+              <Fragment key={item.key}>
+                {expanded ? <div className="sm-nav-section">{item.label}</div> : n > 0 && <div className="sm-nav-sep" />}
+                {item.children?.map(link)}
+              </Fragment>
+            ) : (
+              link(item)
+            ),
           )
-        })}
+        )}
       </nav>
 
       <div className="sm-user">
@@ -384,6 +468,16 @@ function Sidebar({
         </button>
       </div>
     </aside>
+    {collapsible &&
+      flyItem &&
+      createPortal(
+        <div ref={flyRef} className="sm-flyout" role="menu" onMouseEnter={keep} onMouseLeave={leave}>
+          <div className="sm-flyout-title">{flyItem.label}</div>
+          {flyItem.children?.map(child)}
+        </div>,
+        document.body,
+      )}
+    </>
   )
 }
 
