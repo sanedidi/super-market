@@ -50,7 +50,7 @@ const pct = (v: string) => Number(v).toLocaleString('ru-RU', { maximumFractionDi
 
 function Kpi({ label, value, note, accent }: { label: string; value: string; note: string; accent?: boolean }) {
   return (
-    <div className={`ads-kpi${accent ? ' accent' : ''}`}>
+    <div className={`bpromo-kpi${accent ? ' accent' : ''}`}>
       <span>{label}</span>
       <b>{value}</b>
       <small>{note}</small>
@@ -91,9 +91,9 @@ export function StoreAdsPage() {
           )}
         </Typography.Text>
       </PageTitle>
-      <div className="ads-grid">
-        <div className="ads-col">
-          <div className="ads-kpis">
+      <div className="bpromo-grid">
+        <div className="bpromo-col">
+          <div className="bpromo-kpis">
             <Kpi
               accent
               label={tr(`Ваша доля за ${month}`, `${month} uchun ulushingiz`)}
@@ -117,7 +117,7 @@ export function StoreAdsPage() {
             />
           </div>
 
-          <Card className="ads-card">
+          <Card className="bpromo-card">
             <h3>{tr('Сейчас в ваших магазинах', 'Hozir doʻkonlaringizda')}</h3>
             <Typography.Text type="secondary">
               {d.allow_hide_brands
@@ -134,7 +134,7 @@ export function StoreAdsPage() {
               columns={[
                 {
                   render: (_, c, i) => (
-                    <div className="ads-brand">
+                    <div className="bpromo-brand">
                       <span style={{ background: hidden.has(c.brand_id) ? '#D0D5DD' : TONES[i % TONES.length] }}>{c.brand_name.slice(0, 1)}</span>
                       <div>
                         <b className={hidden.has(c.brand_id) ? 'off' : ''}>{c.brand_name}</b>
@@ -150,7 +150,7 @@ export function StoreAdsPage() {
                         : tr(`до ${dayjs(c.ends_at).subtract(1, 'second').format('D MMM')}`, `${dayjs(c.ends_at).subtract(1, 'second').format('D MMM')} gacha`)}</Typography.Text> },
                 {
                   render: (_, c) => (
-                    <div className="ads-sales">
+                    <div className="bpromo-sales">
                       <b>{Number(c.sales) ? `${money(c.sales)} ${tr('сум', 'soʻm')}` : '—'}</b>
                       <small>{hidden.has(c.brand_id)
                           ? tr('скрыт · доля не начисляется', 'yashirilgan · ulush hisoblanmaydi')
@@ -161,7 +161,7 @@ export function StoreAdsPage() {
                 {
                   align: 'right',
                   render: (_, c) => (
-                    <span className="ads-toggle">
+                    <span className="bpromo-toggle">
                       {hidden.has(c.brand_id) ? tr('Скрыт', 'Yashirilgan') : tr('Показывать', 'Koʻrsatish')}
                       <Switch
                         checked={!hidden.has(c.brand_id)}
@@ -182,7 +182,7 @@ export function StoreAdsPage() {
             />
           </Card>
 
-          <Card className="ads-card">
+          <Card className="bpromo-card">
             <h3>{tr('Не показывать рекламу в категориях', 'Reklamani koʻrsatmaslik kerak boʻlgan kategoriyalar')}</h3>
             <Typography.Text type="secondary">
               {tr(
@@ -206,8 +206,8 @@ export function StoreAdsPage() {
           </Card>
         </div>
 
-        <div className="ads-col ads-side">
-          <Card className="ads-card">
+        <div className="bpromo-col bpromo-side">
+          <Card className="bpromo-card">
             <h3>{tr('Сколько рекламы на главной', 'Bosh sahifada qancha reklama')}</h3>
             <Typography.Text type="secondary">
               {tr(
@@ -215,7 +215,7 @@ export function StoreAdsPage() {
                 'Reklama doim «Reklama» belgisi bilan va Super Market bloklaridan keyin turadi.',
               )}
             </Typography.Text>
-            <div className="ads-options">
+            <div className="bpromo-options">
               {options
                 .filter((o) => o.value <= d.plan.ads_max)
                 .map((o) => {
@@ -225,7 +225,7 @@ export function StoreAdsPage() {
                     <button
                       key={o.value}
                       type="button"
-                      className={`ads-option${on ? ' on' : ''}${locked ? ' locked' : ''}`}
+                      className={`bpromo-option${on ? ' on' : ''}${locked ? ' locked' : ''}`}
                       onClick={() => {
                         if (locked) {
                           message.info(
@@ -254,7 +254,7 @@ export function StoreAdsPage() {
                 })}
             </div>
           </Card>
-          <Card className="ads-card ads-how">
+          <Card className="bpromo-card bpromo-how">
             <h3>
               <BulbFilled /> {tr('Как считается доля', 'Ulush qanday hisoblanadi')}
             </h3>
@@ -275,10 +275,10 @@ export function StoreAdsPage() {
             </ul>
           </Card>
           {d.shares.length > 0 && (
-            <Card className="ads-card">
+            <Card className="bpromo-card">
               <h3>{tr('Начисленная доля', 'Hisoblangan ulush')}</h3>
               {d.shares.map((s) => (
-                <div key={s.period} className="ads-share">
+                <div key={s.period} className="bpromo-share">
                   <span>{s.label}</span>
                   <b>
                     {money(s.amount)} {tr('сум', 'soʻm')}

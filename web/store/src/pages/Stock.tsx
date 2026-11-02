@@ -1,6 +1,6 @@
 // Остатки и история движения товара.
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Alert, Button, Card, Input, Space, Statistic, Table, Typography } from 'antd'
 import { HistoryOutlined } from '@ant-design/icons'
 import { LoadError, PageTitle, RemoteSelect, dateTime, money, qty, tr, useItem, usePaged } from '@sm/shared'
@@ -67,7 +67,19 @@ export function StockPage() {
               title: tr('Остаток', 'Qoldiq'),
               dataIndex: 'qty',
               align: 'right',
-              render: (v, r) => <Typography.Text type={Number(v) <= 0 ? 'danger' : undefined}>{qty(v, r.unit_short)}</Typography.Text>,
+              render: (v, r) => (
+                <>
+                  <Typography.Text type={Number(v) <= 0 ? 'danger' : undefined}>{qty(v, r.unit_short)}</Typography.Text>
+                  {/* Продали больше, чем было посчитано, — ведём туда, где минус исправляют пересчётом. */}
+                  {Number(v) < 0 && (
+                    <div>
+                      <Link to="/start/count?set=negative" style={{ fontSize: 12 }}>
+                        {tr('в минусе — посчитать', 'minusda — sanash')}
+                      </Link>
+                    </div>
+                  )}
+                </>
+              ),
             },
             ...(seesCost
               ? [

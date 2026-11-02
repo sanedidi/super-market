@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { BrowserRouter, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Outlet, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { App as AntApp, Button, ConfigProvider, Drawer, Grid, type MenuProps } from 'antd'
 import { CloseOutlined, DeleteOutlined, DownOutlined, LogoutOutlined, MenuOutlined, PushpinOutlined, TranslationOutlined } from '@ant-design/icons'
@@ -406,17 +406,25 @@ function useOpenTabs(storageKey: string, nav: NavItem[]) {
 
   const current = pathname.replace(/\/$/, '') || '/'
   const base = (p: string) => p.split('?')[0]
+  const navType = useNavigationType()
+  const prev = useRef(current)
 
   useEffect(() => {
     const label = labelFor(nav, current)
+    const was = prev.current
+    prev.current = current
     setTabs((list) => {
       const i = list.findIndex((t) => base(t.path) === current)
       const tab = { path: current + search, label }
       // Подписи остальных вкладок — заново: после смены языка в sessionStorage остались старые.
-      const next = i >= 0 ? list.map((t, j) => (j === i ? tab : { ...t, label: labelFor(nav, base(t.path)) })) : [...list, tab].slice(-12)
-      return next
+      const relabel = (t: OpenTab) => ({ ...t, label: labelFor(nav, base(t.path)) })
+      if (i >= 0) return list.map((t, j) => (j === i ? tab : relabel(t)))
+      // Переход с заменой (документ сохранили: «…/new» → «…/id») — вкладка «Создать» становится вкладкой документа, а не остаётся висеть.
+      const w = navType === 'REPLACE' && was !== current ? list.findIndex((t) => base(t.path) === was) : -1
+      if (w >= 0) return list.map((t, j) => (j === w ? tab : relabel(t)))
+      return [...list, tab].slice(-12)
     })
-  }, [current, search, nav])
+  }, [current, search, nav, navType])
 
   useEffect(() => {
     try {

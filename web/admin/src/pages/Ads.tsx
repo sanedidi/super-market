@@ -326,7 +326,7 @@ function CampaignEditor({ campaign, onSaved }: { campaign: Campaign | null; onSa
             <Switch />
           </Form.Item>
         )}
-        <div className="ads-note">
+        <div className="bpromo-note">
           <WarningFilled /> Показ — только где есть товар, всегда с пометкой «Реклама», не больше двух на главной. Сеть может скрыть бренд или категорию у себя —
           там кампания не показывается и доля сети не начисляется. Оплачиваемый показ — вошедший покупатель, один раз в день.
         </div>

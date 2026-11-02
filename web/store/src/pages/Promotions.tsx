@@ -1,7 +1,7 @@
 // Акции для приложения: на время акции товар продаётся онлайн по акционной цене.
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Alert, App, Button, Card, Col, DatePicker, Form, Input, Row, Segmented, Select, Space, Switch, Table, Tag, Typography } from 'antd'
+import { Alert, App, Button, Card, Col, DatePicker, Form, Input, Row, Segmented, Select, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd'
 import { CloseOutlined, DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import { DeleteButton, LoadError, PageTitle, api, dateTime, errorText, money, tr, useItem, usePaged } from '@sm/shared'
@@ -274,7 +274,15 @@ export function PromotionEditor() {
               align: 'right',
               render: (_, l) => {
                 const r = Number(l.regular), n = Number(l.price)
-                return r > 0 && n > 0 && n < r ? <Tag color="orange">−{Math.round((1 - n / r) * 100)}%</Tag> : null
+                if (r > 0 && n > 0 && n < r) return <Tag color="orange">−{Math.round((1 - n / r) * 100)}%</Tag>
+                // Не ниже обычной — покупатель увидит обычную цену; говорим сразу, а не после сохранения.
+                if (r > 0 && n >= r)
+                  return (
+                    <Tooltip title={tr('Покупатель увидит обычную цену', 'Xaridor oddiy narxni koʻradi')}>
+                      <Tag color="red">{tr('не ниже обычной', 'oddiydan past emas')}</Tag>
+                    </Tooltip>
+                  )
+                return null
               },
             },
             ...(!readOnly

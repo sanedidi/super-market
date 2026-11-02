@@ -1,5 +1,6 @@
 // Настройки: магазины, роли, сотрудники.
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Alert, Button, Card, Checkbox, Form, Input, Modal, Radio, Select, Space, Switch, Table, Tag, Typography } from 'antd'
 import { LockOutlined, PlusOutlined } from '@ant-design/icons'
 import { CrudPage, DeleteButton, ImageUpload, MapPointPicker, PageTitle, PhoneInput, RemoteSelect, StatusTag, api, formatPhone, phoneRule, tr, useAction, useList, type LatLng } from '@sm/shared'
@@ -368,7 +369,17 @@ function EmployeeFields({ editing }: { editing: Employee | null }) {
         <Input />
       </Form.Item>
       <Form.Item name="role_id" label={tr('Роль', 'Rol')} rules={[{ required: true, message: tr('Выберите роль', 'Rolni tanlang') }]}>
-        <RemoteSelect<Role> path="/store/roles" disabled={editing?.is_owner} filter={(r) => !r.is_owner || !!editing?.is_owner} />
+        <RemoteSelect<Role>
+          path="/store/roles"
+          disabled={editing?.is_owner}
+          filter={(r) => !r.is_owner || !!editing?.is_owner}
+          notFoundContent={
+            <Typography.Text type="secondary">
+              {tr('Ролей пока нет — ', 'Hozircha rollar yoʻq — ')}
+              <Link to="/settings/roles">{tr('создайте роль', 'rol yarating')}</Link>
+            </Typography.Text>
+          }
+        />
       </Form.Item>
       <Form.Item name="all_stores" label={tr('Доступ ко всем магазинам', 'Barcha doʻkonlarga ruxsat')} valuePropName="checked" initialValue={false}>
         <Switch disabled={editing?.is_owner || !seesAll} />

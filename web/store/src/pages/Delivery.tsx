@@ -86,6 +86,8 @@ function DeliveryInner() {
   const [etaMin, setEtaMin] = useState<number | null>(null)
   const [etaMax, setEtaMax] = useState<number | null>(null)
   const [days, setDays] = useState<DayRow[]>([])
+  // Пустое расписание на сервере — круглосуточно, без выходных (как «Круглосуточно» в мастере настройки).
+  const [allDay, setAllDay] = useState(false)
   const [rules, setRules] = useState<RuleRow[]>([])
   const [zoneCount, setZoneCount] = useState(0)
   const [slots, setSlots] = useState<SlotSettings>({ enabled: false, slot_minutes: 60, days_ahead: 1, lead_minutes: 60, capacity: 5 })
@@ -98,12 +100,15 @@ function DeliveryInner() {
     setEtaMin(data.eta_min)
     setEtaMax(data.eta_max)
     if (data.slots) setSlots(data.slots)
+    const hours = data.working_hours ?? []
+    setAllDay(hours.length === 0)
     setDays(
       DAYS.map(([wd]) => {
-        const h = (data.working_hours ?? []).find((x) => x.weekday === wd)
+        const h = hours.find((x) => x.weekday === wd)
         return {
           weekday: wd,
-          on: !!h,
+          // Из «круглосуточно» в расписание — по умолчанию все дни рабочие.
+          on: hours.length === 0 || !!h,
           opens: dayjs(h?.opens ?? '09:00', 'HH:mm'),
           closes: dayjs(h?.closes ?? '22:00', 'HH:mm'),
         }
@@ -119,8 +124,17 @@ function DeliveryInner() {
   }, [data])
 
   const save = useAction(
-    () =>
-      api.put(`/store/stores/${storeId}/delivery`, {
+    async () => {
+      const hours = allDay
+        ? []
+        : days
+            .filter((d) => d.on && d.opens && d.closes)
+            .map((d) => ({ weekday: d.weekday, opens: d.opens!.format('HH:mm'), closes: d.closes!.format('HH:mm') }))
+      // Пустое расписание сервер понимает как «круглосуточно» — все выходные так сохранить нельзя.
+      if (!allDay && hours.length === 0) {
+        throw new Error(tr('Отметьте хотя бы один рабочий день или включите «Круглосуточно»', 'Kamida bitta ish kunini belgilang yoki «Kecha-kunduz»ni yoqing'))
+      }
+      return api.put(`/store/stores/${storeId}/delivery`, {
         accepts_online: accepts,
         min_order_amount: minOrder || '0',
         delivery_radius_m: radius ?? 0,
@@ -128,15 +142,14 @@ function DeliveryInner() {
         eta_min: etaMin ?? null,
         eta_max: etaMax ?? null,
         slots,
-        working_hours: days
-          .filter((d) => d.on && d.opens && d.closes)
-          .map((d) => ({ weekday: d.weekday, opens: d.opens!.format('HH:mm'), closes: d.closes!.format('HH:mm') })),
+        working_hours: hours,
         rules: rules.map((r, i) => ({
           type: r.type,
           sort: i + 1,
           params: Object.fromEntries(ruleFields[r.type].map(([k]) => [k, r.params[k] ?? '0'])),
         })),
-      }),
+      })
+    },
     { success: tr('Настройки доставки сохранены', 'Yetkazib berish sozlamalari saqlandi') },
   )
 
@@ -280,8 +293,25 @@ function DeliveryInner() {
               </Typography.Text>
             </Form>
           </Card>
-          <Card title={tr('Часы работы', 'Ish vaqti')} loading={isLoading}>
-            {days.map((d) => (
+          <Card
+            title={tr('Часы работы', 'Ish vaqti')}
+            loading={isLoading}
+            extra={
+              <Space>
+                <Typography.Text>{tr('Круглосуточно', 'Kecha-kunduz')}</Typography.Text>
+                <Switch checked={allDay} onChange={setAllDay} />
+              </Space>
+            }
+          >
+            {allDay && (
+              <Alert
+                type="info"
+                showIcon
+                message={tr('Магазин работает 24 часа без выходных', 'Doʻkon dam olish kunlarisiz 24 soat ishlaydi')}
+                description={tr('Покупатели всегда видят «открыто».', 'Xaridorlar doim «ochiq» ni koʻradi.')}
+              />
+            )}
+            {!allDay && days.map((d) => (
               <Row key={d.weekday} gutter={8} align="middle" style={{ marginBottom: 8 }}>
                 <Col flex="150px">
                   <Checkbox checked={d.on} onChange={(e) => setDay(d.weekday, { on: e.target.checked })}>
@@ -301,9 +331,9 @@ function DeliveryInner() {
                 </Col>
               </Row>
             ))}
-            <Typography.Text type="secondary">
+            {!allDay && <Typography.Text type="secondary">
               {tr('Закрытие раньше открытия — работа после полуночи.', 'Yopilish ochilishdan oldin boʻlsa — yarim tundan keyin ham ishlaydi.')}
-            </Typography.Text>
+            </Typography.Text>}
           </Card>
         </Col>
         <Col xs={24} xl={12}>

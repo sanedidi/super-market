@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Button, Card, Empty, Form, Input, Modal, Popconfirm, Radio, Space, Spin, Tooltip, Typography } from 'antd'
 import { CheckOutlined, CloseOutlined, DeleteOutlined, EditOutlined, FormOutlined, PlusOutlined } from '@ant-design/icons'
-import { api, money, tr, useAction, useFitMap, useList, useYmaps } from '@sm/shared'
+import { api, hasMapsKey, money, tr, useAction, useFitMap, useList, useYmaps } from '@sm/shared'
 import { Num } from '../ui'
 import type { Zone } from '../types'
 
@@ -85,7 +85,7 @@ export function DeliveryZones({ storeId, storeName, lat, lng, radiusM, onZonesCh
   useEffect(() => {
     if (!ymaps || !box.current) return
     const center = lat !== null && lng !== null ? [lat, lng] : [41.311, 69.279]
-    const m = new ymaps.Map(box.current, { center, zoom: 13, controls: ['zoomControl', 'searchControl', 'fullscreenControl'] }, { suppressMapOpenBlock: true })
+    const m = new ymaps.Map(box.current, { center, zoom: 13, controls: ['zoomControl', ...(hasMapsKey ? ['searchControl'] : []), 'fullscreenControl'] }, { suppressMapOpenBlock: true })
     m.controls.get('searchControl')?.options.set({ placeholderContent: tr('Поиск адреса', 'Manzilni qidirish'), size: 'small' })
     const col = new ymaps.GeoObjectCollection()
     m.geoObjects.add(col)

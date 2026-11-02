@@ -850,8 +850,12 @@ type StockFilter struct {
 func (s *Service) Stock(ctx context.Context, p *identity.Principal, f StockFilter) ([]StockRow, error) {
 	args := []any{p.NetworkID, p.SeesAllStores(), p.StoreIDs, f.WarehouseID, f.StoreID, f.ProductID, f.Page.Limit, f.Page.Offset}
 	search := productsearch.Filter("pr", f.Query, &args)
+	// Вторая часть — товары «в минусе»: партий не осталось, а касса после подсчёта продала
+	// больше, чем было (short_qty за 30 дней, как на главной). Без неё такой товар просто
+	// пропадал из остатков, и владелец не видел минус.
 	rows, err := s.pool.Query(ctx, `
-		SELECT w.id, w.name, w.store_id, pr.id, loc(pr.name, pr.name_uz), loc(u.short_name, u.short_name_uz),
+		SELECT * FROM (
+		SELECT w.id, w.name AS wname, w.store_id, pr.id AS pid, loc(pr.name, pr.name_uz) AS pname, loc(u.short_name, u.short_name_uz),
 		       sum(b.qty_remaining)::text,
 		       round(sum(b.qty_remaining * b.unit_cost) / sum(b.qty_remaining), 2)::text,
 		       round(sum(b.qty_remaining * b.unit_cost), 2)::text,
@@ -865,7 +869,27 @@ func (s *Service) Stock(ctx context.Context, p *identity.Principal, f StockFilte
 		  AND ($4 = '' OR w.id::text = $4) AND ($5 = '' OR w.store_id::text = $5) AND ($6 = '' OR pr.id::text = $6)
 		  AND `+search+`
 		GROUP BY w.id, w.name, w.store_id, pr.id, pr.name, pr.name_uz, u.short_name, u.short_name_uz
-		ORDER BY w.name, loc(pr.name, pr.name_uz) LIMIT $7 OFFSET $8`, productsearch.Args(args)...)
+		UNION ALL
+		SELECT w.id, w.name, w.store_id, pr.id, loc(pr.name, pr.name_uz), loc(u.short_name, u.short_name_uz),
+		       trim_scale(-sh.short)::text, '0', '0', '0'
+		FROM (
+			SELECT x.warehouse_id, i.product_id, sum(i.short_qty) AS short
+			FROM sales x
+			JOIN sale_items i ON i.sale_id = x.id
+			JOIN store_products sp ON sp.store_id = x.store_id AND sp.product_id = i.product_id
+			WHERE x.network_id = $1 AND i.short_qty > 0
+			  AND x.sold_at > GREATEST(now() - interval '30 days', COALESCE(sp.counted_at, '-infinity'::timestamptz))
+			GROUP BY x.warehouse_id, i.product_id
+		) sh
+		JOIN warehouses w ON w.id = sh.warehouse_id
+		JOIN products pr  ON pr.id = sh.product_id
+		JOIN units u      ON u.id = pr.unit_id
+		WHERE NOT EXISTS (SELECT 1 FROM batches b WHERE b.warehouse_id = sh.warehouse_id AND b.product_id = sh.product_id AND b.qty_remaining > 0)
+		  AND ($2 OR w.store_id = ANY($3::uuid[]))
+		  AND ($4 = '' OR w.id::text = $4) AND ($5 = '' OR w.store_id::text = $5) AND ($6 = '' OR pr.id::text = $6)
+		  AND `+search+`
+		) t
+		ORDER BY t.wname, t.pname, t.pid LIMIT $7 OFFSET $8`, productsearch.Args(args)...)
 	if err != nil {
 		return nil, err
 	}

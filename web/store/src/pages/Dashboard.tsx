@@ -313,7 +313,7 @@ function StockCountBlock() {
           showIcon
           icon={<ExclamationCircleOutlined />}
           style={{ marginTop: 14 }}
-          message={tr(`${goods(s.negative)} ушли в минус: продали больше, чем было посчитано. Посчитайте их первыми.`, `${goods(s.negative)} minusga ketdi: sanalganidan koʻp sotildi. Ularni birinchi sanang.`)}
+          message={tr(`${goods(s.negative)} ${s.negative === 1 ? 'ушёл' : 'ушли'} в минус: продали больше, чем было посчитано. Посчитайте ${s.negative === 1 ? 'его' : 'их'} первыми.`, `${goods(s.negative)} minusga ketdi: sanalganidan koʻp sotildi. Ularni birinchi sanang.`)}
           action={
             <Button size="small" danger onClick={() => nav('/start/count?set=negative')}>
               {tr(`Посчитать ${s.negative}`, `${s.negative} tasini sanash`)}

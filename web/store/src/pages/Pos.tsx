@@ -820,10 +820,10 @@ function ShiftDrawer({ id, onClose }: { id: string | null; onClose: () => void }
             <Alert
               type={openHours(s) >= 12 ? 'error' : 'info'}
               showIcon
-              message={tr(`Смена открыта ${openHours(s)} ч`, `Smena ${openHours(s)} soatdan beri ochiq`)}
+              message={openHours(s) < 1 ? tr('Смена открыта меньше часа', 'Smena bir soatdan kam vaqtdan beri ochiq') : tr(`Смена открыта ${openHours(s)} ч`, `Smena ${openHours(s)} soatdan beri ochiq`)}
               description={tr(
-                'Пока она открыта, сервер не примет новую смену этой кассы. Если Z-отчёт не дошёл или касса недоступна — закройте смену здесь.',
-                'U ochiq ekan, server bu kassaning yangi smenasini qabul qilmaydi. Z-hisobot yetmagan yoki kassa ishlamasa — smenani shu yerda yoping.',
+                'Пока она открыта, сервер не примет новую смену этой кассы. Если на кассе не нажали «Закрыть день» или касса недоступна — закройте смену здесь.',
+                'U ochiq ekan, server bu kassaning yangi smenasini qabul qilmaydi. Kassada «Kunni yopish» bosilmagan yoki kassa ishlamasa — smenani shu yerda yoping.',
               )}
               action={
                 can('finance.manage') && (

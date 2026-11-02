@@ -9,7 +9,7 @@
 // нет (остаток «не посчитан»), фото — по желанию, только для витрины.
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Alert, App, Button, Card, Drawer, Flex, Input, InputNumber, Space, Typography, type InputRef } from 'antd'
+import { Alert, App, Button, Card, Drawer, Flex, Input, InputNumber, Segmented, Space, Typography, type InputRef } from 'antd'
 import { PlusOutlined, QrcodeOutlined, SearchOutlined, StarFilled } from '@ant-design/icons'
 import { ImageUpload, api, errorText, money, tr, useDebounced } from '@sm/shared'
 import { useStore } from '../../ctx'
@@ -22,7 +22,7 @@ const isBarcode = (s: string) => /^[0-9]{6,14}$/.test(s)
  * Поиск и сканер документа: штрихкод — сразу шторка, название — список строк.
  * USB-сканер «печатает» штрихкод и Enter, поле остаётся в фокусе.
  */
-export function ScanCard({ onFound, prices }: { onFound: (l: Line) => void; prices?: boolean }) {
+export function ScanCard({ onFound, prices, focusKey }: { onFound: (l: Line) => void; prices?: boolean; focusKey?: number }) {
   const { storeId } = useStore()
   const { message, modal } = App.useApp()
   const nav = useNavigate()
@@ -30,6 +30,13 @@ export function ScanCard({ onFound, prices }: { onFound: (l: Line) => void; pric
   const [busy, setBusy] = useState(false)
   const ref = useRef<InputRef>(null)
   const q = useDebounced(text.trim(), 250)
+
+  // Шторка закрылась (сохранили или отменили) — фокус обратно в поле, чтобы следующий скан USB-сканера не потерялся.
+  useEffect(() => {
+    if (!focusKey) return
+    const t = setTimeout(() => ref.current?.focus(), 350)
+    return () => clearTimeout(t)
+  }, [focusKey])
 
   // Поиск по названию — среди товаров документа.
   const [found, setFound] = useState<Line[]>([])
@@ -191,11 +198,17 @@ export function CountDrawer({
   const [busy, setBusy] = useState(false)
   const quota = usePhotoQuota(storeId).data
   const filled = !!line && line.qty !== null
+  // Повторный скан уже посчитанного товара: прибавить к посчитанному (по умолчанию) или заменить.
+  const [mode, setMode] = useState<'add' | 'replace'>('add')
+  const adding = filled && !prices && mode === 'add'
+  const before = filled ? Number(line!.qty) : 0
+  const total = adding && qty !== null && qty !== '' ? Math.round((before + Number(qty)) * 1000) / 1000 : null
 
   useEffect(() => {
     if (!line) return
-    // Товар уже заполняли — в поле то количество, что вводили; его можно исправить.
-    setQty(line.qty !== null ? plainNum(line.qty) : null)
+    setMode('add')
+    // Товар уже заполняли — по умолчанию вводим, сколько прибавить; в режиме «Заменить» — исправляем посчитанное.
+    setQty(null)
     setCost(line.cost)
     setPrice(line.price ?? (Number(line.current_price) > 0 ? line.current_price : null))
     setPhotos([])
@@ -219,7 +232,11 @@ export function CountDrawer({
       }
       await api.post<LinesResult>('/store/start/lines', {
         store_id: storeId,
-        items: [prices ? { product_id: line.product_id, price, cost: cost === '' ? null : cost } : { product_id: line.product_id, qty, price, cost: cost === '' ? null : cost }],
+        items: [
+          prices
+            ? { product_id: line.product_id, price, cost: cost === '' ? null : cost }
+            : { product_id: line.product_id, qty: total !== null ? plainNum(String(total)) : qty, price, cost: cost === '' ? null : cost },
+        ],
       })
       message.success(tr(`${line.name} — записано`, `${line.name} — yozildi`))
       await onSaved()
@@ -260,12 +277,29 @@ export function CountDrawer({
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {tr('Этот товар уже заполняли', 'Bu mahsulot allaqachon toʻldirilgan')}
             </Typography.Text>
+            {!prices && (
+              <div>
+                <Segmented
+                  size="large"
+                  value={mode}
+                  onChange={(v) => {
+                    const m = v as 'add' | 'replace'
+                    setMode(m)
+                    setQty(m === 'replace' ? plainNum(line.qty) : null)
+                  }}
+                  options={[
+                    { value: 'add', label: tr('Прибавить', 'Qoʻshish') },
+                    { value: 'replace', label: tr('Заменить', 'Almashtirish') },
+                  ]}
+                />
+              </div>
+            )}
           </div>
         )}
         {!prices && (
         <div>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {tr('Количество', 'Miqdor')} *
+            {adding ? tr('Сколько прибавить', 'Qancha qoʻshish') : tr('Количество', 'Miqdor')} *
           </Typography.Text>
           <div>
             <InputNumber
@@ -281,6 +315,11 @@ export function CountDrawer({
               onChange={(v) => setQty(v === null ? null : String(v))}
             />
           </div>
+          {total !== null && (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {tr(`Будет: ${plainNum(String(total))} ${line.unit_short}`, `Boʻladi: ${plainNum(String(total))} ${line.unit_short}`)}
+            </Typography.Text>
+          )}
         </div>
         )}
         <div>

@@ -1,5 +1,5 @@
 // Финансы: кассы, кассовые операции, сдача кассы, перемещения, курс.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button, Card, Form, Input, Modal, Radio, Select, Space, Statistic, Table, Tag, Typography } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
 import {
@@ -280,6 +280,10 @@ export function TransfersPage({ kind }: { kind: 'handover' | 'transfer' }) {
   const cashboxes = useList<Cashbox>('/store/finance/cashboxes')
   const fromId = Form.useWatch('from_id', form)
   const from = (cashboxes.data ?? []).find((c) => c.id === fromId)
+  // Сменили кассу «откуда» на ту, что выбрана «куда», — «куда» сбрасываем: из кассы в неё же перевести нельзя.
+  useEffect(() => {
+    if (fromId && form.getFieldValue('to_id') === fromId) form.setFieldValue('to_id', undefined)
+  }, [fromId, form])
   const opts = (f: (c: Cashbox) => boolean) =>
     (cashboxes.data ?? []).filter((c) => c.is_active && f(c)).map((c) => ({ value: c.id, label: `${cashboxLabel(c)} — ${money(c.balance)}` }))
 
@@ -343,9 +347,18 @@ export function TransfersPage({ kind }: { kind: 'handover' | 'transfer' }) {
             </Typography.Paragraph>
           )}
           <Form.Item name="amount" label={tr('Сумма', 'Summa') + (from ? ', ' + from.currency : '')}
-            rules={[{ required: true, message: tr('Укажите сумму', 'Summani kiriting') }]}
+            rules={[
+              { required: true, message: tr('Укажите сумму', 'Summani kiriting') },
+              {
+                // Больше остатка не урезаем молча до остатка — говорим, сколько есть.
+                validator: (_, v) =>
+                  from && v !== undefined && v !== null && v !== '' && Number(v) > Number(from.balance)
+                    ? Promise.reject(new Error(tr(`В кассе только ${money(from.balance)} ${from.currency}`, `Kassada faqat ${money(from.balance)} ${from.currency}`)))
+                    : Promise.resolve(),
+              },
+            ]}
           >
-            <Num min="0.01" max={from?.balance} />
+            <Num min="0.01" />
           </Form.Item>
           <Form.Item name="note" label={tr('Примечание', 'Izoh')}>
             <Input />

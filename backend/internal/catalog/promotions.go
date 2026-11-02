@@ -134,8 +134,22 @@ func getPromotion(ctx context.Context, q db.Querier, networkID, id string) (Prom
 		return p, err
 	}
 	rows, err = q.Query(ctx, `
-		SELECT pi.product_id, loc(p.name, p.name_uz), pi.price::text, p.base_price::text
-		FROM promotion_items pi JOIN products p ON p.id = pi.product_id
+		SELECT pi.product_id, loc(p.name, p.name_uz), pi.price::text,
+		       -- Обычная цена — та же, что видит магазин: цена сети по типу цен по умолчанию,
+		       -- иначе цена магазинов акции (меньшая), иначе базовая цена товара.
+		       COALESCE(
+		         (SELECT np.price FROM prices np
+		          WHERE np.product_id = p.id AND np.store_id IS NULL AND np.network_id = pr.network_id
+		            AND np.price_type_id = dpt.id),
+		         (SELECT min(sp.price) FROM prices sp
+		          WHERE sp.product_id = p.id AND sp.store_id IS NOT NULL AND sp.network_id = pr.network_id
+		            AND sp.price_type_id = dpt.id
+		            AND (cardinality(pr.store_ids) = 0 OR sp.store_id = ANY (pr.store_ids))),
+		         p.base_price)::text
+		FROM promotion_items pi
+		JOIN products p ON p.id = pi.product_id
+		JOIN promotions pr ON pr.id = pi.promotion_id
+		LEFT JOIN price_types dpt ON dpt.network_id = pr.network_id AND dpt.is_default
 		WHERE pi.promotion_id = $1 ORDER BY loc(p.name, p.name_uz)`, id)
 	if err != nil {
 		return p, err

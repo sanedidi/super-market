@@ -70,9 +70,16 @@ export function PhoneInput({ value, onChange, ...rest }: PhoneInputProps) {
 /** Правило формы: номер полностью (9 цифр после +998); пусто — только если не обязателен. */
 export function phoneRule(required = false): Rule {
   return {
+    // required — чтобы у обязательного поля была звёздочка, как у остальных.
+    required,
+    message: tr('Введите номер телефона', 'Telefon raqamini kiriting'),
     validator: (_, v: string | undefined) => {
       if (!v) return required ? Promise.reject(new Error(tr('Введите номер телефона', 'Telefon raqamini kiriting'))) : Promise.resolve()
-      return normalizeUzPhone(v) ? Promise.resolve() : Promise.reject(new Error(tr('Введите номер полностью: 9 цифр после +998', 'Raqamni toʻliq kiriting: +998 dan keyin 9 ta raqam')))
+      const n = normalizeUzPhone(v)
+      if (!n) return Promise.reject(new Error(tr('Введите номер полностью: 9 цифр после +998', 'Raqamni toʻliq kiriting: +998 dan keyin 9 ta raqam')))
+      // Код оператора не начинается с 0 (+998 00 … — опечатка).
+      if (n.charAt(4) === '0') return Promise.reject(new Error(tr('Проверьте код оператора: после +998 не может идти 0', 'Operator kodini tekshiring: +998 dan keyin 0 boʻlishi mumkin emas')))
+      return Promise.resolve()
     },
   }
 }

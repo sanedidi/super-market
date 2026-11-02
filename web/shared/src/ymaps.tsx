@@ -111,7 +111,7 @@ export function MapPointPicker({ value, onChange, onAddress, onCity, height = 28
   useEffect(() => {
     if (!ymaps || !box.current) return
     const start = value ?? TASHKENT
-    const m = new ymaps.Map(box.current, { center: [start.lat, start.lng], zoom: value ? 16 : 12, controls: ['zoomControl', 'geolocationControl', 'searchControl'] }, { suppressMapOpenBlock: true })
+    const m = new ymaps.Map(box.current, { center: [start.lat, start.lng], zoom: value ? 16 : 12, controls: ['zoomControl', 'geolocationControl', ...(hasMapsKey ? ['searchControl'] : [])] }, { suppressMapOpenBlock: true })
     const set = (coords: number[]) => {
       const p = { lat: +coords[0].toFixed(6), lng: +coords[1].toFixed(6) }
       cb.current.onChange?.(p)
@@ -119,7 +119,8 @@ export function MapPointPicker({ value, onChange, onAddress, onCity, height = 28
       if (cb.current.onCity) void cityAt(ymaps, p).then((c) => c && cb.current.onCity?.(c))
     }
     m.events.add('click', (e: any) => set(e.get('coords')))
-    const search = m.controls.get('searchControl')
+    // Без ключа (VITE_YANDEX_MAPS_KEY) Яндекс не ищет адреса — поиск не показываем, чтобы не было «Сервер не смог обработать запрос».
+    const search = hasMapsKey ? m.controls.get('searchControl') : null
     search?.options.set({ noPlacemark: true, placeholderContent: tr('Поиск адреса', 'Manzilni qidirish') })
     search?.events.add('resultselect', (e: any) => {
       const r = search.getResultsArray()[e.get('index')]

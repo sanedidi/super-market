@@ -73,13 +73,30 @@ export function useItem<T>(path: string | null, params?: Params) {
   })
 }
 
+// «6.000» → «6», «1.500» → «1,5»: количества с сервера приходят с тремя знаками.
+function qtyText(v: unknown): string {
+  const n = Number(v)
+  return Number.isFinite(n) ? n.toLocaleString('ru-RU', { maximumFractionDigits: 3 }) : String(v)
+}
+
+// Первая буква — заглавная: сообщения сервера начинаются со строчной.
+function capital(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s
+}
+
 export function errorText(e: unknown): string {
   if (e instanceof ApiError) {
-    const d = e.details
+    const d = e.details ?? {}
     if (e.code === 'insufficient_stock' && d.available !== undefined) {
-      return tr(`${e.message}: доступно ${d.available}, нужно ${d.required}`, `${e.message}: mavjud ${d.available}, kerak ${d.required}`)
+      return capital(
+        tr(
+          `${e.message}: доступно ${qtyText(d.available)}, нужно ${qtyText(d.required)}`,
+          `${e.message}: mavjud ${qtyText(d.available)}, kerak ${qtyText(d.required)}`,
+        ),
+      )
     }
-    return e.message
+    // Ошибки проверки приходят как «qty: товар штучный…» — имя поля (латиница) пользователю не нужно.
+    return capital(e.message.replace(/^[a-z_][a-z0-9_.[\]]*:\s+/, ''))
   }
   return e instanceof Error ? e.message : String(e)
 }

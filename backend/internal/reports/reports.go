@@ -109,6 +109,16 @@ var flowTitles = map[string]i18n.Text{
 	"transfer:handover": {RU: "Сдача кассы", UZ: "Kassani topshirish"},
 	"counterparty":      {RU: "Расчёты с контрагентами", UZ: "Kontragentlar bilan hisob-kitob"},
 	"courier_cash":      {RU: "Наличные от курьеров", UZ: "Kuryerlardan naqd pul"},
+	// Служебные записи кассы — пользователь не должен видеть их коды (drawer_sync и т. п.).
+	"pos_cash_move":      {RU: "Внесения и изъятия на кассе", UZ: "Kassaga kiritish va olish"},
+	"pos_shift_close":    {RU: "Расхождение при закрытии смены", UZ: "Smenani yopishdagi farq"},
+	"drawer_sync":        {RU: "Сверка с ящиком кассы", UZ: "Kassa qutisi bilan solishtirish"},
+	"handover_shortage":  {RU: "Недостача при сдаче кассы", UZ: "Kassani topshirishdagi kamomad"},
+	"drawer_recount":     {RU: "Пересчёт ящика кассы", UZ: "Kassa qutisini qayta sanash"},
+	"payout":             {RU: "Вывод денег с платформы", UZ: "Platformadan pul yechib olish"},
+	"supply_payment":     {RU: "Оплаты агентам", UZ: "Agentlarga toʻlovlar"},
+	"supply_payment_fix": {RU: "Исправления оплат агентам", UZ: "Agentlarga toʻlovlarni tuzatish"},
+	"order":              {RU: "Онлайн-заказы", UZ: "Onlayn buyurtmalar"},
 }
 
 // cashboxesCTE — кассы в области отчёта ($1 — сеть, $2 — магазины или NULL, $3 — касса или ”).

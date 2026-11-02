@@ -646,7 +646,7 @@ function MyGoods({ highlight, title }: { highlight: string | null; title?: React
                     {tr(`Показано ${(page - 1) * PAGE + 1}–${(page - 1) * PAGE + lines.length} из ${total}`, `Koʻrsatilgan: ${(page - 1) * PAGE + 1}–${(page - 1) * PAGE + lines.length} / ${total}`)}
                   </Typography.Text>
                   <Typography.Text type="secondary" strong style={{ fontSize: 12 }}>
-                    {tr('Количество, себестоимость и цены — на шаге 2', 'Miqdor, tannarx va narxlar — 2-qadamda')}
+                    {tr('Количество, цены продажи и закупки — на шаге 2', 'Miqdor, sotish va xarid narxlari — 2-qadamda')}
                   </Typography.Text>
                 </Flex>
               )
@@ -752,6 +752,8 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
   const [page, setPage] = useState(1)
   // Товар, который открыт в шторке ввода (скан или поиск по названию).
   const [sheet, setSheet] = useState<Line | null>(null)
+  // Растёт при закрытии шторки — поле сканера снова получает фокус.
+  const [scanFocus, setScanFocus] = useState(0)
   const [later, setLater] = useState(false)
   useEffect(() => setPage(1), [only, storeId])
   // Сначала группы вариаций (группа → вес → вариант), потом обычные товары.
@@ -896,7 +898,7 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
       </Typography.Paragraph>
       <Steps step={2} go={back} prices={prices} />
       <div style={{ marginBottom: 16 }}>
-        <ScanCard onFound={setSheet} prices={prices} />
+        <ScanCard onFound={setSheet} prices={prices} focusKey={scanFocus} />
       </div>
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Stat title={tr('Товаров', 'Mahsulotlar')} value={String(t.products)} />
@@ -1005,9 +1007,13 @@ function StepCount({ d, back, onPosted }: { d: Draft; back: () => void; onPosted
       <CountDrawer
         line={sheet}
         prices={prices}
-        onClose={() => setSheet(null)}
+        onClose={() => {
+          setSheet(null)
+          setScanFocus((n) => n + 1)
+        }}
         onSaved={async () => {
           setSheet(null)
+          setScanFocus((n) => n + 1)
           await refresh()
           await draft.refetch()
         }}

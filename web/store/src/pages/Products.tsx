@@ -120,9 +120,23 @@ export function ProductsPage() {
     key: 'mod',
     render: (_, r) => (r.kind === 'product' ? <Moderation p={r.product} /> : variantStockCell(r)),
   })
+  // Нажатие на товар: свой товар сети — «Изменить», товар центральной базы — «Как продаётся».
+  const openProduct = (r: Product) => {
+    if (manage && r.network_id) {
+      setEditing(r)
+      setOpen(true)
+    } else if (manage) setSell({ id: r.id, name: r.name, price: r.price ?? undefined })
+  }
+  const nameLink = (r: Product) =>
+    manage ? (
+      <Typography.Link style={{ color: 'inherit' }} onClick={() => openProduct(r)}>
+        {r.name}
+      </Typography.Link>
+    ) : (
+      r.name
+    )
   const editCol: TableColumnType<VRow> = {
     key: 'edit',
-    width: 320,
     align: 'right',
     render: (_, row) => {
       if (row.kind === 'flavor') return prices ? <FlavorMenu r={row} v={variants} /> : null
@@ -137,7 +151,7 @@ export function ProductsPage() {
       )
       if (manage && !r.network_id) return sellBtn
       return manage && r.network_id ? (
-        <Space size={8}>
+        <Space size={8} wrap style={{ justifyContent: 'flex-end' }}>
           {sellBtn}
           <Button
             size="small"
@@ -165,7 +179,7 @@ export function ProductsPage() {
       render: (_, r) =>
         r.kind === 'product' ? (
           <>
-            {r.product.name}
+            {nameLink(r.product)}
             {!r.product.is_active && <Tag style={{ marginLeft: 6 }}>{tr('Отключён', 'Oʻchirilgan')}</Tag>}
           </>
         ) : (
@@ -182,12 +196,14 @@ export function ProductsPage() {
     {
       title: tr('Товар', 'Mahsulot'),
       key: 'name',
+      // Название полностью и не в пять строк: колонке — нормальная ширина.
+      width: 300,
       render: (_, row) => {
         if (row.kind !== 'product') return variantNameCell(row)
         const r = row.product
         return (
           <>
-            {r.name}
+            {nameLink(r)}
             {r.brand_name && <Typography.Text type="secondary"> · {r.brand_name}</Typography.Text>}
             {!r.is_active && <Tag style={{ marginLeft: 6 }}>{tr('Отключён', 'Oʻchirilgan')}</Tag>}
           </>
