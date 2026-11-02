@@ -65,4 +65,16 @@ void main() {
     expect(waitingMinutes({}, now), 0);
     expect(deliveryWhen({'delivery_to': null}), 'как можно скорее');
   });
+
+  test('«Проверка»: что не заполнено перед «Добавить и оприходовать»', () {
+    String? p({num price = 15000, num qty = 24, String? sup = 's1', num cost = 11500, bool fr = false}) =>
+        addProductProblem(price: price, qty: qty, supplierId: sup, cost: cost, fractional: fr);
+    expect(p(), isNull);
+    expect(p(price: 0), 'Введите цену продажи');
+    expect(p(qty: 0), 'Посчитайте, сколько есть');
+    expect(p(qty: 1.5), 'Штучный товар — целое число');
+    expect(p(qty: 1.5, fr: true), isNull);
+    expect(p(sup: null), 'Выберите поставщика');
+    expect(p(cost: 0), 'Введите цену закупки');
+  });
 }

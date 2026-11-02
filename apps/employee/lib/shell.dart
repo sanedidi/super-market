@@ -4,10 +4,10 @@ import 'package:sm_core/sm_core.dart';
 import 'package:sm_store/push.dart';
 import 'package:sm_store/ui/theme.dart';
 
+import 'check.dart';
 import 'home.dart';
 import 'orders.dart';
 import 'profile.dart';
-import 'scanner.dart';
 import 'tasks.dart';
 
 /// Таббар (Figma «SM Сотрудник»): Главная · Заказы · [Сканер] · Задачи · Профиль.
@@ -40,7 +40,7 @@ class _ShellState extends State<Shell> {
   void _go(int i) => setState(() => _tab = i);
 
   Future<void> _scan() async {
-    await openGlanceScanner(context);
+    await openCheckScanner(context);
     refresh.value++;
   }
 

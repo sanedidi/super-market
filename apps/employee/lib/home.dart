@@ -8,10 +8,10 @@ import 'package:sm_store/state.dart';
 import 'package:sm_store/ui/theme.dart';
 import 'package:sm_store/ui/widgets.dart';
 
+import 'check.dart';
 import 'customer_return.dart';
 import 'logic.dart';
 import 'recount.dart';
-import 'scanner.dart';
 import 'tasks.dart';
 import 'ui.dart';
 import 'write_off.dart';
@@ -87,7 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
       case Section.income:
         await openIncomeChooser(context);
       case Section.glance:
-        await openGlanceScanner(context);
+        await openCheckScanner(context);
       case Section.recount:
         await nav.push(MaterialPageRoute<void>(builder: (_) => const RecountScreen()));
       case Section.writeOff:
@@ -223,7 +223,8 @@ class _Tile extends StatelessWidget {
     final (IconData icon, String title, String sub, Color bg, Color fg) = switch (section) {
       Section.sell => (Icons.point_of_sale_rounded, tr('Продать', 'Sotish'), tr('Касса в телефоне', 'Telefondagi kassa'), AppColors.primarySoft, AppColors.primary),
       Section.income => (Icons.move_to_inbox_rounded, tr('Приход', 'Kirim'), tr('Сканер или накладная', 'Skaner yoki nakladnoy'), AppColors.blueSoft, AppColors.blue),
-      Section.glance => (Icons.sell_rounded, tr('Цена и остаток', 'Narx va qoldiq'), tr('Наведите камеру', 'Kamerani qarating'), AppColors.soft, AppColors.ink),
+      // «Проверка»: цена и остаток, новый товар (Figma П1).
+      Section.glance => (Icons.qr_code_scanner_rounded, tr('Проверка', 'Tekshirish'), tr('Цена, новый товар', 'Narx, yangi mahsulot'), AppColors.primarySoft, AppColors.primary),
       Section.recount => (Icons.fact_check_rounded, tr('Пересчёт', 'Qayta sanash'), tr('Полка или товар', 'Javon yoki mahsulot'), AppColors.warningSoft, AppColors.warningInk),
       Section.writeOff => (Icons.delete_sweep_rounded, tr('Списание', 'Hisobdan chiqarish'), tr('Брак, просрочка', 'Nuqson, muddati oʻtgan'), AppColors.soft, AppColors.ink),
       Section.returns => (Icons.assignment_return_rounded, tr('Возврат', 'Qaytarish'), tr('Покупатель вернул', 'Xaridor qaytardi'), AppColors.soft, AppColors.ink),

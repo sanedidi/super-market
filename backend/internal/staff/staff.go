@@ -30,11 +30,12 @@ type Service struct {
 	pool *pgxpool.Pool
 	inv  *inventory.Service
 	rep  *reports.Service
+	cat  *catalog.Service
 	now  func() time.Time
 }
 
-func NewService(pool *pgxpool.Pool, inv *inventory.Service, rep *reports.Service) *Service {
-	return &Service{pool: pool, inv: inv, rep: rep, now: time.Now}
+func NewService(pool *pgxpool.Pool, inv *inventory.Service, rep *reports.Service, cat *catalog.Service) *Service {
+	return &Service{pool: pool, inv: inv, rep: rep, cat: cat, now: time.Now}
 }
 
 // store — магазин сотрудника: основной склад и тип цены кассы.

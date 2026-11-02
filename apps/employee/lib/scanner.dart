@@ -176,19 +176,6 @@ Future<Map<String, dynamic>?> fetchGlance(BuildContext context, {String? code, S
   return null;
 }
 
-/// С5 · Сканер (центральная кнопка таббара) → шторка «Цена и остаток».
-Future<void> openGlanceScanner(BuildContext context) {
-  return Navigator.of(context).push(MaterialPageRoute<void>(
-    builder: (_) => CodeScanner(
-      title: tr('Цена и остаток · наведите на штрихкод', 'Narx va qoldiq · shtrix-kodga qarating'),
-      onCode: (ctx, code) async {
-        final g = await fetchGlance(ctx, code: code);
-        if (g != null && ctx.mounted) await showGlance(ctx, g);
-      },
-    ),
-  ));
-}
-
 /// Шторка товара: цена продажи, остаток, продано за 7 дней, на сколько хватит;
 /// кнопки Цена / Пересчитать / Списать / Ценник. Цену закупки сотрудник не видит —
 /// кладовщик видит только «не задана» и может её поставить (С5б).

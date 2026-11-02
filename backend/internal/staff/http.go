@@ -30,6 +30,8 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/price-tags", m.markTags)
 		r.Post("/write-off", m.writeOff)
 		r.Post("/cost", m.setCost)
+		// «Проверка»: товар в магазин — цена, сколько есть, поставщик → приход.
+		r.Post("/add-product", m.addProduct)
 		r.Get("/day", m.day)
 	})
 }
@@ -77,5 +79,11 @@ func (m *Module) day(w http.ResponseWriter, r *http.Request) {
 func (m *Module) setCost(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in reports.CostInput) (reports.CostResult, error) {
 		return m.svc.SetCost(r.Context(), pr(r), in)
+	})
+}
+
+func (m *Module) addProduct(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusCreated, "", func(_ string, in AddInput) (AddResult, error) {
+		return m.svc.AddToStore(r.Context(), pr(r), in)
 	})
 }

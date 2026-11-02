@@ -194,7 +194,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		account.NewModule(account.NewService(pool, idSvc, notify.New(pool, tg, log), log), auth, log),
 		invest.NewModule(invest.NewService(pool), auth, log),
 		appversions.NewModule(appversions.NewService(pool), auth, log),
-		staff.NewModule(staff.NewService(pool, invSvc, repSvc), auth, log),
+		staff.NewModule(staff.NewService(pool, invSvc, repSvc, catSvc), auth, log),
 	)
 	// Агент помощника ходит в API панели внутренним запросом — ему нужен весь сервер.
 	assistSvc.SetHandler(h)

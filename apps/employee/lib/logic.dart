@@ -167,3 +167,13 @@ num? parseInput(String s) {
   if (t.isEmpty) return null;
   return num.tryParse(t);
 }
+
+/// «Проверка» (П3 / П4в): что не заполнено; null — можно «Добавить и оприходовать».
+String? addProductProblem({required num price, required num qty, required String? supplierId, required num cost, bool fractional = false}) {
+  if (price <= 0) return tr('Введите цену продажи', 'Sotish narxini kiriting');
+  if (qty <= 0) return tr('Посчитайте, сколько есть', 'Qancha borligini sanang');
+  if (!fractional && qty != qty.roundToDouble()) return tr('Штучный товар — целое число', 'Donali mahsulot — butun son');
+  if (supplierId == null || supplierId.isEmpty) return tr('Выберите поставщика', 'Yetkazib beruvchini tanlang');
+  if (cost <= 0) return tr('Введите цену закупки', 'Xarid narxini kiriting');
+  return null;
+}
