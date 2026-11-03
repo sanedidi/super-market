@@ -63,6 +63,9 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/pos/products/lookup", m.lookup)
 		// Весы: кассир выбрал товар к незнакомому номеру на наклейке (Figma К2).
 		r.Post("/pos/scales/plu", m.rememberPLU)
+		// Отправка товаров в весы: касса забирает задания и сообщает итог.
+		r.Get("/pos/scales/jobs", m.takeScaleJobs)
+		r.Post("/pos/scales/jobs/{id}", m.scaleJobDone)
 		r.Post("/pos/products/found/preview", m.foundPreview)
 		r.Post("/pos/products/found", m.foundAdd)
 		m.kitchenRoutes(r)
@@ -94,6 +97,16 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/store/scales/products", m.scaleProducts)
 		r.Get("/store/scales/counts", m.scaleCounts)
 		r.Post("/store/scales/entered", m.scaleEntered)
+		// Весы магазина и отправка в них товаров (Н1–Н5).
+		r.Get("/store/scales/devices", m.listScales)
+		r.Post("/store/scales/devices", m.createScale)
+		r.Put("/store/scales/devices/{id}", m.updateScale)
+		r.Delete("/store/scales/devices/{id}", m.deleteScale)
+		r.Post("/store/scales/devices/{id}/check", m.checkScale)
+		r.Get("/store/scales/devices/{id}/file", m.scaleFile)
+		r.Post("/store/scales/devices/{id}/loaded", m.scaleLoaded)
+		r.Post("/store/scales/send", m.sendToScales)
+		r.Get("/store/scales/jobs", m.scaleJobs)
 		r.Get("/store/products/{id}/sell-mode", m.getSellMode)
 		r.Put("/store/products/{id}/sell-mode", m.setSellMode)
 		r.Get("/store/scales/no-barcode", m.noBarcode)
@@ -562,6 +575,83 @@ func (m *Module) scaleCounts(w http.ResponseWriter, r *http.Request) {
 func (m *Module) scaleEntered(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in ScaleEnteredInput) (map[string]any, error) {
 		return m.svc.MarkScaleEntered(r.Context(), pr(r), in)
+	})
+}
+
+func (m *Module) listScales(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[ScaleDevice], error) {
+		items, err := m.svc.ListScales(r.Context(), pr(r), r.URL.Query().Get("store_id"))
+		return httpx.List[ScaleDevice]{Items: items}, err
+	})
+}
+
+func (m *Module) createScale(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusCreated, "", func(_ string, in ScaleDeviceInput) (ScaleDevice, error) {
+		return m.svc.CreateScale(r.Context(), pr(r), in)
+	})
+}
+
+func (m *Module) updateScale(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in ScaleDeviceInput) (ScaleDevice, error) {
+		return m.svc.UpdateScale(r.Context(), pr(r), id, in)
+	})
+}
+
+func (m *Module) deleteScale(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (map[string]any, error) {
+		return m.svc.DeleteScale(r.Context(), pr(r), id)
+	})
+}
+
+func (m *Module) checkScale(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (ScaleJob, error) {
+		return m.svc.CheckScale(r.Context(), pr(r), id)
+	})
+}
+
+func (m *Module) scaleFile(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (httpx.List[ScaleFileRow], error) {
+		items, err := m.svc.ScaleFile(r.Context(), pr(r), id, r.URL.Query().Get("mode"))
+		return httpx.List[ScaleFileRow]{Items: items}, err
+	})
+}
+
+func (m *Module) scaleLoaded(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in ScaleLoadedInput) (map[string]any, error) {
+		return m.svc.ScaleLoaded(r.Context(), pr(r), id, in)
+	})
+}
+
+func (m *Module) sendToScales(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in ScaleSendInput) (httpx.List[ScaleJob], error) {
+		items, err := m.svc.SendToScales(r.Context(), pr(r), in)
+		return httpx.List[ScaleJob]{Items: items}, err
+	})
+}
+
+func (m *Module) scaleJobs(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[ScaleJob], error) {
+		var ids []string
+		for _, id := range strings.Split(r.URL.Query().Get("ids"), ",") {
+			if id = strings.TrimSpace(id); id != "" {
+				ids = append(ids, id)
+			}
+		}
+		items, err := m.svc.ScaleJobs(r.Context(), pr(r), r.URL.Query().Get("store_id"), ids)
+		return httpx.List[ScaleJob]{Items: items}, err
+	})
+}
+
+func (m *Module) takeScaleJobs(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (httpx.List[PosScaleJob], error) {
+		items, err := m.svc.TakeScaleJobs(r.Context(), pr(r))
+		return httpx.List[PosScaleJob]{Items: items}, err
+	})
+}
+
+func (m *Module) scaleJobDone(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in ScaleJobResult) (map[string]any, error) {
+		return m.svc.ScaleJobDone(r.Context(), pr(r), id, in)
 	})
 }
 

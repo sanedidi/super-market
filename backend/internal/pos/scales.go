@@ -38,13 +38,15 @@ type ScaleSettings struct {
 	Value string `json:"value"`
 	// Шаг веса в штрихкоде, г: 1 (01234 = 1,234 кг) или 10.
 	WeightStep int `json:"weight_step"`
+	// Названия в весах: uz — узбекские, ru — русские (латиницей).
+	NameLang string `json:"name_lang"`
 }
 
 func (s *Service) GetScaleSettings(ctx context.Context, p *identity.Principal) (ScaleSettings, error) {
 	var out ScaleSettings
 	var prefixes []string
-	err := s.pool.QueryRow(ctx, `SELECT scales_enabled, pos_weight_prefixes, scale_item_digits, scale_value, scale_weight_step
-		FROM networks WHERE id = $1`, p.NetworkID).Scan(&out.Enabled, &prefixes, &out.ItemDigits, &out.Value, &out.WeightStep)
+	err := s.pool.QueryRow(ctx, `SELECT scales_enabled, pos_weight_prefixes, scale_item_digits, scale_value, scale_weight_step, scale_name_lang
+		FROM networks WHERE id = $1`, p.NetworkID).Scan(&out.Enabled, &prefixes, &out.ItemDigits, &out.Value, &out.WeightStep, &out.NameLang)
 	out.Prefix = "22"
 	if len(prefixes) > 0 {
 		out.Prefix = prefixes[0]
@@ -69,6 +71,12 @@ func (s *Service) SaveScaleSettings(ctx context.Context, p *identity.Principal, 
 	if in.WeightStep != 1 && in.WeightStep != 10 {
 		return ScaleSettings{}, apperr.Validation("weight_step: 1 или 10 граммов").Uz("weight_step: 1 yoki 10 gramm")
 	}
+	if in.NameLang == "" {
+		in.NameLang = "uz"
+	}
+	if in.NameLang != "uz" && in.NameLang != "ru" {
+		return ScaleSettings{}, apperr.Validation("name_lang: uz или ru").Uz("name_lang: uz yoki ru")
+	}
 	var maxPLU int
 	if err := s.pool.QueryRow(ctx, `SELECT COALESCE(max(plu), 0) FROM pos_plu WHERE network_id = $1`, p.NetworkID).Scan(&maxPLU); err != nil {
 		return ScaleSettings{}, err
@@ -81,8 +89,8 @@ func (s *Service) SaveScaleSettings(ctx context.Context, p *identity.Principal, 
 	_, err := s.pool.Exec(ctx, `
 		UPDATE networks SET scales_enabled = $2,
 		       pos_weight_prefixes = ARRAY[$3::text] || array_remove(pos_weight_prefixes, $3::text),
-		       scale_item_digits = $4, scale_value = $5, scale_weight_step = $6, pos_settings_at = now()
-		WHERE id = $1`, p.NetworkID, in.Enabled, in.Prefix, in.ItemDigits, in.Value, in.WeightStep)
+		       scale_item_digits = $4, scale_value = $5, scale_weight_step = $6, scale_name_lang = $7, pos_settings_at = now()
+		WHERE id = $1`, p.NetworkID, in.Enabled, in.Prefix, in.ItemDigits, in.Value, in.WeightStep, in.NameLang)
 	if err != nil {
 		return ScaleSettings{}, err
 	}
@@ -181,6 +189,10 @@ func (s *Service) ScaleProducts(ctx context.Context, p *identity.Principal, stor
 	if err != nil {
 		return ScaleList{}, err
 	}
+	// Весы магазина в списке (Настройки → Весы) — «введено» по ним.
+	if err := s.applyScaleStatus(ctx, storeID, items); err != nil {
+		return ScaleList{}, err
+	}
 	next, err := nextPLU(ctx, s.pool, p.NetworkID)
 	return ScaleList{Items: items, NextPLU: next}, err
 }
@@ -265,7 +277,14 @@ func (s *Service) MarkScaleEntered(ctx context.Context, p *identity.Principal, i
 			return nil, apperr.Validation("product_ids: id товара").Uz("product_ids: mahsulot id")
 		}
 	}
-	n, err := s.enterScale(ctx, s.pool, p.NetworkID, in.StoreID, in.ProductIDs)
+	var n int64
+	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		var err error
+		if n, err = s.enterScale(ctx, tx, p.NetworkID, in.StoreID, in.ProductIDs); err != nil {
+			return err
+		}
+		return enteredToScales(ctx, tx, in.StoreID, in.ProductIDs)
+	})
 	if err != nil {
 		return nil, err
 	}

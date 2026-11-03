@@ -22,6 +22,7 @@ import '../cafe/kitchen_printing.dart';
 import '../cafe/tickets.dart';
 import '../printer/receipts.dart';
 import '../printer/transport.dart';
+import '../scales/scale_jobs.dart';
 
 /// Где сейчас касса.
 /// kitchen — экран кухни, display — экран выдачи для гостей (кафе): без
@@ -141,6 +142,9 @@ class PosController extends ChangeNotifier {
 
   /// Кафе: бегунки на принтеры цехов, очередь непечатанных, тесты печати.
   late final KitchenPrinting kitchen = KitchenPrinting(api: api, store: store, catalog: () => catalog, printer: () => printer);
+
+  /// Отправка товаров в весы магазина по заданиям из панели.
+  late final ScaleJobs scales = ScaleJobs(api);
 
   /// Экран по виду устройства: касса — вход кассира, экраны кафе — сразу работа.
   Stage _deviceStage() => switch (catalog.settings.deviceKind) {
@@ -380,6 +384,8 @@ class PosController extends ChangeNotifier {
       final due = _lastCatalog == null || _now().difference(_lastCatalog!) > const Duration(minutes: 1);
       if (catalog || due || _catalogLang != Lang.instance.code || await _catalogChanged()) await syncCatalog();
       if (this.catalog.cafe != null) await kitchen.tick();
+      // Весы: не задерживаем синхронизацию — задание идёт параллельно.
+      if (this.catalog.settings.deviceKind == 'pos' && online) unawaited(scales.tick());
     } finally {
       syncing = false;
       notifyListeners();

@@ -8,14 +8,15 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Alert, App, Button, Card, Checkbox, Col, Form, Input, InputNumber, Modal, Radio, Row, Select, Space, Switch, Table, Tag, Typography } from 'antd'
-import { BarcodeOutlined, CheckCircleFilled, PlusOutlined, PrinterOutlined, SettingOutlined } from '@ant-design/icons'
+import { BarcodeOutlined, CheckCircleFilled, PlusOutlined, PrinterOutlined, SettingOutlined, UploadOutlined } from '@ant-design/icons'
 import { LoadError, PageTitle, RemoteSelect, api, errorText, money, qty as fmtQty, tr, useAction, useItem, useList } from '@sm/shared'
 import { useStore } from '../ctx'
 import type { Product } from '../types'
+import { ScaleDevicesCard, ScaleFileModal, SendToScalesModal, useScaleDevices, type ScaleDevice } from './ScaleDevices'
 
 // ------------------------------------------------------------------ типы
 
-export type ScaleSettings = { enabled: boolean; prefix: string; item_digits: number; value: 'weight' | 'sum'; weight_step: 1 | 10 }
+export type ScaleSettings = { enabled: boolean; prefix: string; item_digits: number; value: 'weight' | 'sum'; weight_step: 1 | 10; name_lang: 'uz' | 'ru' }
 
 export type ScaleItem = {
   product_id: string
@@ -137,7 +138,7 @@ export function detectSticker(code: string, known: (plu: number) => boolean, fal
 
 // =================================================== В1 · «На весах»
 
-const statusCell = (r: ScaleItem, onEntered: (id: string) => void, onPLU: (r: ScaleItem) => void, can: boolean) => {
+const statusCell = (r: ScaleItem, onEntered: (id: string) => void, onPLU: (r: ScaleItem) => void, can: boolean, viaScales = false) => {
   switch (r.status) {
     case 'entered':
       return (
@@ -157,10 +158,10 @@ const statusCell = (r: ScaleItem, onEntered: (id: string) => void, onPLU: (r: Sc
               {r.status === 'new' ? tr('новый', 'yangi') : r.price_at ? tr(`цена изменена ${short(r.price_at)}`, `narx oʻzgardi ${short(r.price_at)}`) : tr('изменён', 'oʻzgargan')}
             </Tag>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {r.status === 'new' ? tr('введите в весы', 'taroziga kiriting') : tr('обновите в весах', 'tarozida yangilang')}
+              {viaScales ? tr('ждёт отправки в весы', 'taroziga yuborilishini kutmoqda') : r.status === 'new' ? tr('введите в весы', 'taroziga kiriting') : tr('обновите в весах', 'tarozida yangilang')}
             </Typography.Text>
           </Space>
-          {can && (
+          {can && !viaScales && (
             <Button size="small" onClick={() => onEntered(r.product_id)}>
               {tr('Введено', 'Kiritildi')}
             </Button>
@@ -185,6 +186,10 @@ export function ScalesTab({ onOpen }: { onOpen: (t: SellTarget) => void }) {
   const manage = can('catalog.manage')
   const canEnter = manage || can('prices.manage')
   const [adding, setAdding] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [file, setFile] = useState<ScaleDevice | null>(null)
+  const devices = useScaleDevices(storeId)
+  const viaScales = (devices.data?.length ?? 0) > 0
   const entered = useAction((ids: string[]) => api.post('/store/scales/entered', { store_id: storeId, product_ids: ids }), {
     invalidate: [[SCALES], [COUNTS]],
     success: tr('Отмечено: введено в весы', 'Belgilandi: taroziga kiritildi'),
@@ -224,6 +229,14 @@ th{background:#f2f2f2}.n{width:70px;font-weight:700;text-align:center}.p{width:1
         <Button icon={<PrinterOutlined />} onClick={printList} disabled={!items.some((r) => r.plu !== null)}>
           {tr('Список для весов', 'Tarozi uchun roʻyxat')}
         </Button>
+        {canEnter && (
+          <Button type="primary" style={{ background: '#0F1729' }} icon={<UploadOutlined />} onClick={() => setSending(true)}>
+            {tr('Отправить в весы', 'Taroziga yuborish')}
+            {todo.length > 0 && (
+              <span style={{ marginLeft: 6, background: '#E11D2A', color: '#fff', borderRadius: 999, padding: '0 7px', fontSize: 12, fontWeight: 800 }}>{todo.length}</span>
+            )}
+          </Button>
+        )}
         {manage && (
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setAdding(true)}>
             {tr('Добавить', 'Qoʻshish')}
@@ -249,12 +262,15 @@ th{background:#f2f2f2}.n{width:70px;font-weight:700;text-align:center}.p{width:1
         showIcon
         style={{ marginBottom: 12 }}
         message={tr('Номер здесь = номер товара в весах (PLU)', 'Bu yerdagi raqam = tarozidagi mahsulot raqami (PLU)')}
-        description={tr(
+        description={viaScales ? tr(
+          'Изменили цену или добавили товар — нажмите «Отправить в весы». Весы печатают на наклейке номер и вес, касса по номеру находит товар и берёт цену отсюда.',
+          'Narxni oʻzgartirdingiz yoki mahsulot qoʻshdingiz — «Taroziga yuborish» ni bosing. Tarozi yorliqqa raqam va vaznni chop etadi, kassa raqam boʻyicha mahsulotni topadi va narxni shu yerdan oladi.',
+        ) : tr(
           'Введите список в весы один раз: номер → название → цена за кг. Весы печатают на наклейке номер и вес, касса по номеру находит товар и берёт цену отсюда — даже если в весах цена старая.',
           'Roʻyxatni taroziga bir marta kiriting: raqam → nom → 1 kg narxi. Tarozi yorliqqa raqam va vaznni chop etadi, kassa raqam boʻyicha mahsulotni topadi va narxni shu yerdan oladi — tarozidagi narx eski boʻlsa ham.',
         )}
       />
-      {todo.length > 1 && canEnter && (
+      {todo.length > 1 && canEnter && !viaScales && (
         <Alert
           type="warning"
           showIcon
@@ -301,7 +317,7 @@ th{background:#f2f2f2}.n{width:70px;font-weight:700;text-align:center}.p{width:1
             {
               title: tr('В весах', 'Tarozida'),
               key: 'status',
-              render: (_, r) => statusCell(r, (id) => entered.mutate([id]), (x) => givePLU.mutate(x.product_id), canEnter && (r.status !== 'no_plu' || manage)),
+              render: (_, r) => statusCell(r, (id) => entered.mutate([id]), (x) => givePLU.mutate(x.product_id), canEnter && (r.status !== 'no_plu' || manage), viaScales),
             },
           ]}
         />
@@ -312,6 +328,8 @@ th{background:#f2f2f2}.n{width:70px;font-weight:700;text-align:center}.p{width:1
         </Typography.Paragraph>
       )}
       <AddToScales open={adding} onClose={() => setAdding(false)} onPick={(t) => onOpen({ ...t, mode: 'weight' })} />
+      <SendToScalesModal open={sending} onClose={() => setSending(false)} onFile={setFile} />
+      <ScaleFileModal scale={file} onClose={() => setFile(null)} />
     </>
   )
 }
@@ -806,6 +824,8 @@ export function ScaleSettingsPage() {
   const value = Form.useWatch('value', form) ?? 'weight'
   const step = Form.useWatch('weight_step', form) ?? 1
   const digits = Form.useWatch('item_digits', form) ?? 5
+  const prefixNow = Form.useWatch('prefix', form) ?? settings.data?.prefix ?? '22'
+  const [formatOpen, setFormatOpen] = useState<boolean | null>(null)
 
   const onScan = (raw: string) => {
     const c = raw.trim()
@@ -851,6 +871,8 @@ export function ScaleSettingsPage() {
     </div>
   )
   const f = parsed ? formatted(parsed) : null
+  // Формат уже настроен — показываем одной строкой (Figma Н1), первый раз — целиком.
+  const showFormat = formatOpen ?? !settings.data.enabled
   const valueNote = parsed
     ? value === 'sum'
       ? money(parsed.raw)
@@ -864,13 +886,13 @@ export function ScaleSettingsPage() {
         {tr('Настройка для всей сети: как касса читает наклейку с весов. Номера товаров — в ', 'Butun tarmoq uchun sozlama: kassa tarozi yorligʻini qanday oʻqiydi. Mahsulot raqamlari — ')}
         <Link to="/dirs/products?tab=scales">{tr('Товары → На весах', 'Mahsulotlar → Tarozida')}</Link>.
       </Typography.Paragraph>
-      <Form form={form} layout="vertical" disabled={readOnly} initialValues={settings.data} onFinish={(v) => save.mutate({ ...settings.data, ...v })} style={{ maxWidth: 820 }}>
+      <Form form={form} layout="vertical" disabled={readOnly} initialValues={settings.data} onFinish={(v) => save.mutate({ ...settings.data, ...v })} style={{ maxWidth: 1080 }}>
         <Card style={{ marginBottom: 16 }}>
           <Space align="start" style={{ width: '100%', justifyContent: 'space-between' }}>
             <div>
               <Typography.Text strong>{tr('В магазине есть весы, которые печатают наклейки', 'Doʻkonda yorliq chop etadigan tarozi bor')}</Typography.Text>
               <div>
-                <Typography.Text type="secondary">{tr('Подойдут любые: Kuanyi, CAS, Штрих-Принт, Масса-К… Касса будет понимать штрихкод с наклейки.', 'Har qandayi mos: Kuanyi, CAS, Shtrix-Print, Massa-K… Kassa yorliqdagi shtrix-kodni tushunadi.')}</Typography.Text>
+                <Typography.Text type="secondary">{tr('Подойдут любые: Rongta, Kuanyi, CAS, Штрих-Принт, Масса-К… Касса понимает наклейку, а товары можно отправить в весы отсюда.', 'Har qandayi mos: Rongta, Kuanyi, CAS, Shtrix-Print, Massa-K… Kassa yorliqni tushunadi, mahsulotlarni esa taroziga shu yerdan yuborish mumkin.')}</Typography.Text>
               </div>
             </div>
             <Form.Item name="enabled" valuePropName="checked" noStyle>
@@ -878,8 +900,22 @@ export function ScaleSettingsPage() {
             </Form.Item>
           </Space>
         </Card>
-        {enabled && (
+        {enabled && <ScaleDevicesCard readOnly={readOnly} />}
+        {enabled && !showFormat && (
           <Card style={{ marginBottom: 16 }}>
+            <Typography.Text strong>{tr('Формат штрихкода', 'Shtrix-kod formati')}</Typography.Text>
+            <div style={{ margin: '8px 0' }}>
+              <Tag color="green" icon={<CheckCircleFilled />} style={{ fontSize: 14, padding: '4px 10px', borderRadius: 10 }}>
+                {`${prefixNow} · ${tr(`номер ${digits} цифр`, `raqam ${digits} xona`)} · ${value === 'sum' ? tr('сумма', 'summa') : step === 10 ? tr('вес по 10 г', 'vazn 10 g dan') : tr('вес в граммах', 'vazn grammda')}`}
+              </Tag>
+            </div>
+            <Button type="link" style={{ padding: 0 }} disabled={false} onClick={() => setFormatOpen(true)}>
+              {tr('Изменить или сканировать наклейку', 'Oʻzgartirish yoki yorliqni skanerlash')}
+            </Button>
+          </Card>
+        )}
+        {enabled && (
+          <Card style={{ marginBottom: 16, display: showFormat ? undefined : 'none' }}>
             <Space align="start" style={{ width: '100%', justifyContent: 'space-between' }} wrap>
               <div>
                 <Typography.Text strong>{tr('Формат штрихкода на наклейке', 'Yorliqdagi shtrix-kod formati')}</Typography.Text>
@@ -952,6 +988,20 @@ export function ScaleSettingsPage() {
                 'Tarozi menyusida «vazn bilan» shtrix-kodni tanlang. Shunda narxni doim Super Market oladi: tarozida narx eski boʻlsa ham, chekka toʻgʻrisi tushadi.',
               )}
             />
+          </Card>
+        )}
+        {enabled && (
+          <Card style={{ marginBottom: 16 }}>
+            <Typography.Text strong>{tr('Названия в весах', 'Tarozidagi nomlar')}</Typography.Text>
+            <Form.Item name="name_lang" style={{ margin: '8px 0 4px' }}>
+              <Radio.Group optionType="button" options={[{ value: 'uz', label: 'Oʻzbekcha (lotin)' }, { value: 'ru', label: 'Русский' }]} />
+            </Form.Item>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {tr(
+                'Многие весы не печатают кириллицу — русские названия Super Market отправит латиницей. Длинное название сократит до 36 символов.',
+                'Koʻp tarozilar kirill harflarini chop etmaydi — ruscha nomlarni Super Market lotin harflarida yuboradi. Uzun nomni 36 belgigacha qisqartiradi.',
+              )}
+            </Typography.Text>
           </Card>
         )}
         {!readOnly && (
