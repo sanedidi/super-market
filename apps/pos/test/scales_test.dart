@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -34,7 +33,7 @@ Future<(ServerSocket, List<String>)> fakeScale({Set<int> reject = const {}}) asy
 void main() {
   test('название: латиница в коды GB2312, пробел — 0101', () {
     expect(dahuaName('TEST'), '0352033703510352');
-    expect(dahuaName("O'rik 1"), '0347' '0307' '0382' '0373' '0375' '0107' '0101' '0317');
+    expect(dahuaName("O'rik 1"), '0347' '0307' '0382' '0373' '0375' '0101' '0317');
   });
 
   test('команда товара — как проверено на Rongta RLS1000C', () {
