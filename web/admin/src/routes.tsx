@@ -22,6 +22,7 @@ import {
   ShopOutlined,
   ShoppingCartOutlined,
   TranslationOutlined,
+  UserAddOutlined,
   UserOutlined,
 } from '@ant-design/icons'
 import { Dashboard } from './pages/Dashboard'
@@ -48,6 +49,7 @@ import { Translations } from './pages/Translations'
 import { Notifications, PushCampaign, PushNew } from './pages/Push'
 import { InvestNowBadge, InvestVisitors } from './pages/InvestVisitors'
 import { AppVersions } from './pages/AppVersions'
+import { AgentRewards, StoreLeads, StoreLeadsBadge } from './pages/StoreLeads'
 
 // Разделы меню (Figma «Сайдбар · группировка разделов»): серые заголовки, подменю — панелью справа.
 const menu: MenuItem[] = [
@@ -58,6 +60,7 @@ const menu: MenuItem[] = [
     label: 'Магазины',
     children: [
       { key: '/networks', icon: <ShopOutlined />, label: 'Сети и магазины' },
+      { key: '/store-leads', icon: <UserAddOutlined />, label: 'Заявки агентов', extra: <StoreLeadsBadge /> },
       {
         key: 'billing',
         icon: <DollarOutlined />,
@@ -66,6 +69,7 @@ const menu: MenuItem[] = [
           { key: '/billing/tariffs', label: 'Тарифы' },
           { key: '/billing/networks', label: 'Сети и оплата' },
           { key: '/billing/invoices', label: 'Счета' },
+          { key: '/billing/agent-rewards', label: 'Агентам' },
           { key: '/billing/settings', label: 'Настройки' },
         ],
       },
@@ -157,6 +161,7 @@ export function AdminRoutes() {
       <Route element={<Shell title="Супер-админ" menu={menu} user={{ name: 'Супер-админ', subtitle: 'Платформа Super Market' }} />}>
         <Route index element={<Dashboard />} />
         <Route path="networks" element={<Networks />} />
+        <Route path="store-leads" element={<StoreLeads />} />
         <Route path="products" element={<Products key="products" />} />
         <Route path="products/:id" element={<ProductPage />} />
         <Route path="moderation" element={<Products key="moderation" moderation />} />
@@ -172,6 +177,7 @@ export function AdminRoutes() {
         <Route path="payments" element={<Payments />} />
         <Route path="billing/networks" element={<BillingNetworks />} />
         <Route path="billing/invoices" element={<Invoices />} />
+        <Route path="billing/agent-rewards" element={<AgentRewards />} />
         <Route path="billing/tariffs" element={<Plans />} />
         <Route path="billing/showcase" element={<Navigate to="/billing/tariffs" replace />} />
         <Route path="billing/settings" element={<BillingSettings />} />

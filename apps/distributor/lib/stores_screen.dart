@@ -10,6 +10,7 @@ import 'package:sm_store/state.dart';
 import 'package:sm_store/ui/theme.dart';
 import 'package:sm_store/ui/widgets.dart';
 
+import 'leads.dart';
 import 'logic.dart';
 import 'store_screen.dart';
 import 'ui.dart';
@@ -104,6 +105,8 @@ class _StoresScreenState extends State<StoresScreen> {
             ),
           ]),
           const SizedBox(height: 12),
+          // АМ1: магазина нет в Super Market — агент добавляет его сам.
+          if (!_searching) ...[const AddStoreBanner(), const SizedBox(height: 12)],
           if (items != null) _StoresMap(items: items, onTap: _open),
           const SizedBox(height: 12),
           SingleChildScrollView(

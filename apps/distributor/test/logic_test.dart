@@ -39,4 +39,27 @@ void main() {
     expect(changePct('97', '100'), '▼ 3%');
     expect(changePct('100', '0'), '');
   });
+
+  test('заявки агента на магазины: статусы, сумма только после оплаты', () {
+    expect(leadStatus('pending'), LeadStatus.pending);
+    expect(leadStatus('connected'), LeadStatus.connected);
+    expect(leadStatus('paid'), LeadStatus.paid);
+    expect(leadStatus('rejected'), LeadStatus.rejected);
+    expect(leadStatus('expired'), LeadStatus.expired);
+    expect(leadStatus(null), LeadStatus.pending);
+    expect(leadLabel(LeadStatus.connected), 'Toʻlov kutilmoqda'); // язык по умолчанию — узбекский
+    expect(leadLabel(LeadStatus.paid, reward: '162000.00'), allOf(startsWith('+162'), endsWith('000')));
+    expect(leadFilterCount({'all': 6, 'paid': 2}, ''), 6);
+    expect(leadFilterCount({'all': 6, 'paid': 2}, 'paid'), 2);
+    expect(leadFilterCount(null, 'closed'), 0);
+  });
+
+  test('сколько дней магазин закреплён за агентом', () {
+    final now = DateTime.utc(2026, 11, 5, 12);
+    expect(leadDaysLeft('2026-12-05T12:00:00Z', now), 30);
+    expect(leadDaysLeft('2026-11-05T13:00:00Z', now), 1);
+    expect(leadDaysLeft('2026-11-01T00:00:00Z', now), 0);
+    expect(leadDaysLeft(null, now), 0);
+    expect(daysWord(30), '30 kun');
+  });
 }

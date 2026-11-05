@@ -32,7 +32,7 @@ const BUSINESS_SWITCH: Record<Business, string> = {
 }
 
 /** Карточки выбора типа бизнеса в окне «Новая сеть». */
-function BusinessTypeCards({ value = 'store', onChange }: { value?: string; onChange?: (v: string) => void }) {
+export function BusinessTypeCards({ value = 'store', onChange }: { value?: string; onChange?: (v: string) => void }) {
   const cards = [
     { key: 'store', icon: <ShopOutlined />, title: 'Магазин', text: 'товары со штрихкодом, остатки, приходы' },
     { key: 'cafe', icon: <CoffeeOutlined />, title: 'Кафе', text: 'меню, техкарты, кухня, номер заказа' },
@@ -228,7 +228,7 @@ interface Store {
 }
 
 /** Тариф новой сети: пусто — по умолчанию (одиночному «Бесплатный» с пробным, сети — «Сеть»). */
-function PlanField() {
+export function PlanField() {
   const plans = useList<Plan>('/admin/plans')
   return (
     <Form.Item name="plan_key" label="Тариф" extra="Пусто — одиночный магазин начнёт с первого действующего тарифа и пробного периода, сеть магазинов — с «Сети». Поменять можно потом.">

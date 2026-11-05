@@ -94,84 +94,94 @@ type CreateNetworkInput struct {
 
 // CreateNetwork создаёт сеть и её владельца (супер-админ).
 func (s *Service) CreateNetwork(ctx context.Context, in CreateNetworkInput) (Network, error) {
-	name := strings.TrimSpace(in.Name)
-	if name == "" {
-		return Network{}, apperr.Validation("name: обязательное поле").Uz("name: majburiy maydon")
-	}
-	if in.Kind != "chain" && in.Kind != "single" && in.Kind != "distributor" {
-		return Network{}, apperr.Validation("kind: ожидается chain, single или distributor").Uz("kind: chain, single yoki distributor boʻlishi kerak")
-	}
-	if in.BusinessType == "" {
-		in.BusinessType = cafe.BusinessStore
-	}
-	if err := checkBusinessType(in.Kind, in.BusinessType); err != nil {
-		return Network{}, err
-	}
-	login, hash, err := identity.PrepareOwnerLogin(identity.LoginInput{Login: in.OwnerLogin, Password: in.OwnerPassword})
-	if err != nil {
-		return Network{}, err
-	}
 	var out Network
-	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		var id string
-		planKey := strings.TrimSpace(in.PlanKey)
-		if planKey == "" && in.Kind == "distributor" {
-			// Агенту — тариф новых агентов из настроек биллинга.
-			if err := tx.QueryRow(ctx, `SELECT agent_plan FROM billing_settings WHERE id = 1`).Scan(&planKey); err != nil {
-				return err
-			}
-		}
-		if planKey == "" {
-			planKey = map[string]string{"single": "free", "chain": "network"}[in.Kind]
-			// Тариф по умолчанию супер-админ мог выключить (так было с «Бесплатным»)
-			// — тогда первый действующий тариф для такой сети.
-			if p, err := plans.Get(ctx, tx, planKey); err != nil || !p.IsActive {
-				minStores := map[string]int{"single": 1, "chain": 2}[in.Kind]
-				if err := tx.QueryRow(ctx, `
-					SELECT key FROM plans
-					WHERE is_active AND audience = $1 AND min_stores <= GREATEST($2, 1)
-					ORDER BY sort, key LIMIT 1`, plans.AudienceOf(in.Kind), minStores).Scan(&planKey); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-					return err
-				}
-			}
-		}
-		if p, err := plans.Get(ctx, tx, planKey); err != nil || !p.IsActive {
-			return apperr.Validation("plan_key: тариф не найден").Uz("plan_key: tarif topilmadi")
-		} else if p.Audience != plans.AudienceOf(in.Kind) {
-			return apperr.Validation("plan_key: тариф для другого вида сетей (магазины / агенты)").Uz("plan_key: tarif boshqa turdagi tarmoqlar uchun (doʻkonlar / agentlar)")
-		}
-		bt, mode := businessOf(in.BusinessType)
-		if err := tx.QueryRow(ctx, `INSERT INTO networks (name, kind, plan_key, business_type, cafe_mode) VALUES ($1, $2, $3, $4, COALESCE(NULLIF($5, ''), 'counter')) RETURNING id`,
-			name, in.Kind, planKey, bt, mode).Scan(&id); err != nil {
-			return err
-		}
-		if bt == cafe.BusinessCafe {
-			// Новое кафе сразу получает цех «Кухня».
-			if err := cafe.EnsureDefaults(ctx, tx, id); err != nil {
-				return err
-			}
-		}
-		ownerID, err := identity.CreateOwner(ctx, tx, id, in.OwnerPhone, in.OwnerName)
+	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		id, err := CreateNetworkTx(ctx, tx, in)
 		if err != nil {
-			return err
-		}
-		if err := identity.CreateOwnerLogin(ctx, tx, ownerID, id, login, hash); err != nil {
-			return err
-		}
-		if err := catalog.CreateDefaultPriceType(ctx, tx, id); err != nil {
-			return err
-		}
-		if err := finance.CreateMainCashbox(ctx, tx, id); err != nil {
-			return err
-		}
-		// Новая сеть начинает с пробного периода (тариф и срок — в настройках биллинга).
-		if err := plans.StartTrial(ctx, tx, id); err != nil {
 			return err
 		}
 		out, err = getNetwork(ctx, tx, id)
 		return err
 	})
 	return out, err
+}
+
+// CreateNetworkTx создаёт сеть и владельца внутри транзакции tx — для
+// подключения магазина по заявке агента. Возвращает id сети.
+func CreateNetworkTx(ctx context.Context, tx pgx.Tx, in CreateNetworkInput) (string, error) {
+	name := strings.TrimSpace(in.Name)
+	if name == "" {
+		return "", apperr.Validation("name: обязательное поле").Uz("name: majburiy maydon")
+	}
+	if in.Kind != "chain" && in.Kind != "single" && in.Kind != "distributor" {
+		return "", apperr.Validation("kind: ожидается chain, single или distributor").Uz("kind: chain, single yoki distributor boʻlishi kerak")
+	}
+	if in.BusinessType == "" {
+		in.BusinessType = cafe.BusinessStore
+	}
+	if err := checkBusinessType(in.Kind, in.BusinessType); err != nil {
+		return "", err
+	}
+	login, hash, err := identity.PrepareOwnerLogin(identity.LoginInput{Login: in.OwnerLogin, Password: in.OwnerPassword})
+	if err != nil {
+		return "", err
+	}
+	var id string
+	planKey := strings.TrimSpace(in.PlanKey)
+	if planKey == "" && in.Kind == "distributor" {
+		// Агенту — тариф новых агентов из настроек биллинга.
+		if err := tx.QueryRow(ctx, `SELECT agent_plan FROM billing_settings WHERE id = 1`).Scan(&planKey); err != nil {
+			return "", err
+		}
+	}
+	if planKey == "" {
+		planKey = map[string]string{"single": "free", "chain": "network"}[in.Kind]
+		// Тариф по умолчанию супер-админ мог выключить (так было с «Бесплатным»)
+		// — тогда первый действующий тариф для такой сети.
+		if p, err := plans.Get(ctx, tx, planKey); err != nil || !p.IsActive {
+			minStores := map[string]int{"single": 1, "chain": 2}[in.Kind]
+			if err := tx.QueryRow(ctx, `
+				SELECT key FROM plans
+				WHERE is_active AND audience = $1 AND min_stores <= GREATEST($2, 1)
+				ORDER BY sort, key LIMIT 1`, plans.AudienceOf(in.Kind), minStores).Scan(&planKey); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return "", err
+			}
+		}
+	}
+	if p, err := plans.Get(ctx, tx, planKey); err != nil || !p.IsActive {
+		return "", apperr.Validation("plan_key: тариф не найден").Uz("plan_key: tarif topilmadi")
+	} else if p.Audience != plans.AudienceOf(in.Kind) {
+		return "", apperr.Validation("plan_key: тариф для другого вида сетей (магазины / агенты)").Uz("plan_key: tarif boshqa turdagi tarmoqlar uchun (doʻkonlar / agentlar)")
+	}
+	bt, mode := businessOf(in.BusinessType)
+	if err := tx.QueryRow(ctx, `INSERT INTO networks (name, kind, plan_key, business_type, cafe_mode) VALUES ($1, $2, $3, $4, COALESCE(NULLIF($5, ''), 'counter')) RETURNING id`,
+		name, in.Kind, planKey, bt, mode).Scan(&id); err != nil {
+		return "", err
+	}
+	if bt == cafe.BusinessCafe {
+		// Новое кафе сразу получает цех «Кухня».
+		if err := cafe.EnsureDefaults(ctx, tx, id); err != nil {
+			return "", err
+		}
+	}
+	ownerID, err := identity.CreateOwner(ctx, tx, id, in.OwnerPhone, in.OwnerName)
+	if err != nil {
+		return "", err
+	}
+	if err := identity.CreateOwnerLogin(ctx, tx, ownerID, id, login, hash); err != nil {
+		return "", err
+	}
+	if err := catalog.CreateDefaultPriceType(ctx, tx, id); err != nil {
+		return "", err
+	}
+	if err := finance.CreateMainCashbox(ctx, tx, id); err != nil {
+		return "", err
+	}
+	// Новая сеть начинает с пробного периода (тариф и срок — в настройках биллинга).
+	if err := plans.StartTrial(ctx, tx, id); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 // UpdateOwner — супер-админ меняет имя или телефон владельца сети.
@@ -442,63 +452,72 @@ func (s *Service) CreateStore(ctx context.Context, p *identity.Principal, in Sto
 
 	var out Store
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		// Блокируем сеть, чтобы два параллельных запроса не создали
-		// второй магазин у одиночной сети.
-		var kind string
-		if err := tx.QueryRow(ctx, `SELECT kind FROM networks WHERE id = $1 FOR UPDATE`, p.NetworkID).Scan(&kind); err != nil {
+		id, err := CreateStoreTx(ctx, tx, p.NetworkID, in)
+		if err != nil {
 			return err
 		}
-		// У дистрибьютора, как у одиночного магазина, одна точка (его склад).
-		if kind == "single" || kind == "distributor" {
-			var n int
-			if err := tx.QueryRow(ctx, `SELECT count(*) FROM stores WHERE network_id = $1`, p.NetworkID).Scan(&n); err != nil {
-				return err
-			}
-			if n > 0 {
-				return apperr.Conflict("store_limit", "у одиночного магазина может быть только один магазин").Uz("yakka doʻkonda faqat bitta doʻkon boʻlishi mumkin")
-			}
-		}
-		// Сколько магазинов можно — по тарифу сети.
-		if err := plans.CheckAdd(ctx, tx, p.NetworkID, plans.LimitStores); err != nil {
-			return err
-		}
-
-		var id string
-		if err := tx.QueryRow(ctx, `
-			INSERT INTO stores (network_id, name, address, phone, location, city)
-			VALUES ($1, $2, COALESCE($3, ''), COALESCE($4, ''),
-			        CASE WHEN $5::float8 IS NULL THEN NULL
-			             ELSE ST_SetSRID(ST_MakePoint($6::float8, $5::float8), 4326)::geography END, COALESCE($7, ''))
-			RETURNING id`,
-			p.NetworkID, strings.TrimSpace(*in.Name), trimPtr(in.Address), trimPtr(in.Phone), in.Lat, in.Lng, trimPtr(in.City)).Scan(&id); err != nil {
-			return err
-		}
-		// Склад по умолчанию; у кафе — «Кухня» (склад продуктов).
-		whName := defaultWarehouseName
-		var bt string
-		if err := tx.QueryRow(ctx, `SELECT business_type FROM networks WHERE id = $1`, p.NetworkID).Scan(&bt); err != nil {
-			return err
-		}
-		if bt == cafe.BusinessCafe {
-			whName = cafeWarehouseName
-		}
-		var whID string
-		if err := tx.QueryRow(ctx, `
-			INSERT INTO warehouses (network_id, store_id, name) VALUES ($1, $2, $3) RETURNING id`,
-			p.NetworkID, id, whName.Ctx(ctx)).Scan(&whID); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE stores SET default_warehouse_id = $2 WHERE id = $1`, id, whID); err != nil {
-			return err
-		}
-		if err := finance.CreateStoreCashbox(ctx, tx, p.NetworkID, id, strings.TrimSpace(*in.Name)); err != nil {
-			return err
-		}
-		var err error
 		out, err = getStore(ctx, tx, p.NetworkID, id)
 		return err
 	})
 	return out, err
+}
+
+// CreateStoreTx создаёт магазин сети, его основной склад и кассу внутри tx
+// (без проверки прав: in.Name задан и проверен вызывающим). Возвращает id.
+func CreateStoreTx(ctx context.Context, tx pgx.Tx, networkID string, in StoreInput) (string, error) {
+	// Блокируем сеть, чтобы два параллельных запроса не создали
+	// второй магазин у одиночной сети.
+	var kind string
+	if err := tx.QueryRow(ctx, `SELECT kind FROM networks WHERE id = $1 FOR UPDATE`, networkID).Scan(&kind); err != nil {
+		return "", err
+	}
+	// У дистрибьютора, как у одиночного магазина, одна точка (его склад).
+	if kind == "single" || kind == "distributor" {
+		var n int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM stores WHERE network_id = $1`, networkID).Scan(&n); err != nil {
+			return "", err
+		}
+		if n > 0 {
+			return "", apperr.Conflict("store_limit", "у одиночного магазина может быть только один магазин").Uz("yakka doʻkonda faqat bitta doʻkon boʻlishi mumkin")
+		}
+	}
+	// Сколько магазинов можно — по тарифу сети.
+	if err := plans.CheckAdd(ctx, tx, networkID, plans.LimitStores); err != nil {
+		return "", err
+	}
+
+	var id string
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO stores (network_id, name, address, phone, location, city)
+		VALUES ($1, $2, COALESCE($3, ''), COALESCE($4, ''),
+		        CASE WHEN $5::float8 IS NULL THEN NULL
+		             ELSE ST_SetSRID(ST_MakePoint($6::float8, $5::float8), 4326)::geography END, COALESCE($7, ''))
+		RETURNING id`,
+		networkID, strings.TrimSpace(*in.Name), trimPtr(in.Address), trimPtr(in.Phone), in.Lat, in.Lng, trimPtr(in.City)).Scan(&id); err != nil {
+		return "", err
+	}
+	// Склад по умолчанию; у кафе — «Кухня» (склад продуктов).
+	whName := defaultWarehouseName
+	var bt string
+	if err := tx.QueryRow(ctx, `SELECT business_type FROM networks WHERE id = $1`, networkID).Scan(&bt); err != nil {
+		return "", err
+	}
+	if bt == cafe.BusinessCafe {
+		whName = cafeWarehouseName
+	}
+	var whID string
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO warehouses (network_id, store_id, name) VALUES ($1, $2, $3) RETURNING id`,
+		networkID, id, whName.Ctx(ctx)).Scan(&whID); err != nil {
+		return "", err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE stores SET default_warehouse_id = $2 WHERE id = $1`, id, whID); err != nil {
+		return "", err
+	}
+	if err := finance.CreateStoreCashbox(ctx, tx, networkID, id, strings.TrimSpace(*in.Name)); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 func (s *Service) UpdateStore(ctx context.Context, p *identity.Principal, id string, in StoreInput) (Store, error) {

@@ -43,6 +43,15 @@ func (m *Module) Routes(r chi.Router) {
 		r.Post("/{id}/link", m.adminLink)
 		r.Post("/{id}/reject", m.adminReject)
 	})
+	// Супер-админ: заявки агентов на магазины и начисления агентам.
+	r.Route("/admin/store-leads", func(r chi.Router) {
+		r.Use(m.auth.Require(identity.AppAdmin))
+		r.Get("/", m.adminLeads)
+		r.Get("/rewards", m.adminRewards)
+		r.Get("/{id}", m.adminLead)
+		r.Post("/{id}/connect", m.adminConnectLead)
+		r.Post("/{id}/reject", m.adminRejectLead)
+	})
 	// Дистрибьютор / агент («SM Агент»).
 	r.Route("/store/supply", func(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppStore))
@@ -59,6 +68,10 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/categories", m.categories)
 		r.Post("/brand-requests", m.createBrandRequest)
 		r.Put("/brand-requests/{id}", m.updateBrandRequest)
+		// Агент добавляет магазин, которого ещё нет в Super Market.
+		r.Get("/leads", m.agentLeads)
+		r.Post("/leads", m.createLead)
+		r.Get("/leads/{id}", m.agentLead)
 		r.Get("/payments", m.agentPayments)
 		r.Get("/debtors", m.agentDebtors)
 		r.Post("/payments/{id}/confirm", m.confirmPayment)
@@ -567,5 +580,56 @@ type rejectBrandInput struct {
 func (m *Module) adminReject(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in rejectBrandInput) (BrandRequest, error) {
 		return m.svc.RejectBrandRequest(r.Context(), pr(r), id, in.Reason)
+	})
+}
+
+// ------------------------------------------------- заявки на магазины
+
+func (m *Module) agentLeads(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (AgentLeads, error) {
+		return m.svc.AgentLeads(r.Context(), pr(r), r.URL.Query().Get("status"), httpx.PageFrom(r))
+	})
+}
+
+func (m *Module) agentLead(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (StoreLead, error) {
+		return m.svc.AgentLead(r.Context(), pr(r), id)
+	})
+}
+
+func (m *Module) createLead(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusCreated, "", func(_ string, in LeadInput) (StoreLead, error) {
+		return m.svc.CreateLead(r.Context(), pr(r), in)
+	})
+}
+
+func (m *Module) adminLeads(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (AdminLeads, error) {
+		return m.svc.AdminLeads(r.Context(), pr(r), q.Get("status"), q.Get("q"), httpx.PageFrom(r))
+	})
+}
+
+func (m *Module) adminLead(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (StoreLead, error) {
+		return m.svc.AdminLead(r.Context(), pr(r), id)
+	})
+}
+
+func (m *Module) adminConnectLead(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in ConnectLeadInput) (StoreLead, error) {
+		return m.svc.ConnectLead(r.Context(), pr(r), id, in)
+	})
+}
+
+func (m *Module) adminRejectLead(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in rejectBrandInput) (StoreLead, error) {
+		return m.svc.RejectLead(r.Context(), pr(r), id, in.Reason)
+	})
+}
+
+func (m *Module) adminRewards(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (AgentRewards, error) {
+		return m.svc.AgentRewards(r.Context(), pr(r), httpx.PageFrom(r))
 	})
 }

@@ -457,6 +457,14 @@ func (s *Service) Tick(ctx context.Context) error {
 	if _, err := s.GenerateInvoices(ctx, s.now()); err != nil {
 		return err
 	}
+	if err := s.AutoCharge(ctx); err != nil {
+		return err
+	}
+	// Агентам — их доля с первых оплат магазинов (и тех, что оплатились выше).
+	if err := s.SettleAgentRewards(ctx); err != nil {
+		return err
+	}
+	// Начисления агентам сразу гасят их неоплаченную подписку.
 	return s.AutoCharge(ctx)
 }
 
@@ -519,12 +527,17 @@ func (s *Service) PayInvoice(ctx context.Context, p *identity.Principal, id stri
 	if err := s.payFromBalance(ctx, id); err != nil {
 		return Invoice{}, err
 	}
+	s.settleAgentRewards(ctx)
 	return s.getInvoice(ctx, s.pool, id)
 }
 
 // MarkInvoicePaid — супер-админ отмечает оплату (перевод, наличные).
 func (s *Service) MarkInvoicePaid(ctx context.Context, id, note string) (Invoice, error) {
-	return s.setInvoiceStatus(ctx, id, "paid", note)
+	inv, err := s.setInvoiceStatus(ctx, id, "paid", note)
+	if err == nil {
+		s.settleAgentRewards(ctx)
+	}
+	return inv, err
 }
 
 // CancelInvoice — супер-админ списывает счёт (например, выставлен по ошибке).

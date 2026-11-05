@@ -74,6 +74,8 @@ String balanceKindTitle(String? kind) => switch (kind) {
       'payout' => tr('Вывод', 'Pul yechib olish'),
       'subscription' => tr('Подписка', 'Obuna'),
       'adjustment' => tr('Корректировка', 'Tuzatish'),
+      'ad_share' => tr('Доля с рекламы брендов', 'Brendlar reklamasidan ulush'),
+      'agent_reward' => tr('50% за подключённый магазин', 'Ulangan doʻkon uchun 50%'),
       _ => kind ?? '',
     };
 

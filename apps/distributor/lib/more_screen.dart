@@ -9,6 +9,7 @@ import 'package:sm_store/ui/theme.dart';
 import 'package:sm_store/ui/widgets.dart';
 
 import 'brands.dart';
+import 'leads.dart';
 import 'main.dart' show appVersion;
 import 'payments.dart';
 import 'requests_screen.dart';
@@ -53,6 +54,10 @@ class MoreScreen extends StatelessWidget {
                 sub: tr('Подтвердите, что получили деньги', 'Pulni olganingizni tasdiqlang'), onTap: () => open(const PaymentsScreen())),
             const Divider(height: 1),
             _Item(icon: Icons.person_add_alt_rounded, title: tr('Запросы от магазинов', 'Doʻkonlardan soʻrovlar'), onTap: () => open(const RequestsScreen())),
+            const Divider(height: 1),
+            _Item(icon: Icons.add_business_rounded, title: tr('Добавленные мной', 'Men qoʻshganlar'),
+                sub: tr('Магазины, которые вы добавили в Super Market, и 50% от их первой оплаты', 'Super Market’ga siz qoʻshgan doʻkonlar va birinchi toʻlovining 50%'),
+                onTap: () => open(const LeadsScreen())),
             if (st.me?['is_owner'] == true) ...[
               const Divider(height: 1),
               _Item(icon: Icons.handshake_rounded, title: tr('Условия для магазинов', 'Doʻkonlar uchun shartlar'),

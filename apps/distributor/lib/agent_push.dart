@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 
 import 'brands.dart';
+import 'leads.dart';
 import 'orders_screen.dart';
 import 'payments.dart';
 import 'requests_screen.dart';
@@ -28,6 +29,11 @@ bool openAgentPush(NavigatorState nav, Map<String, dynamic> d) {
     case 'supply_received_diff':
       final id = s('supply_order_id');
       if (id != null) go(OrderScreen(id: id));
+      return true;
+    case 'lead_connected':
+    case 'lead_rejected':
+      final lead = s('lead_id');
+      go(lead != null ? LeadScreen(id: lead) : const LeadsScreen());
       return true;
     case 'supply_link_request':
       go(const RequestsScreen());

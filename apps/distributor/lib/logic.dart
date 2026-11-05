@@ -115,3 +115,61 @@ String _dayWord(int n) {
   if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return 'дня';
   return 'дней';
 }
+
+// ------------------------------------------- агент добавляет магазин
+
+/// Статус заявки агента на магазин (АМ5, АМ6).
+enum LeadStatus { pending, connected, paid, rejected, expired }
+
+LeadStatus leadStatus(Object? s) => switch ('$s') {
+      'connected' => LeadStatus.connected,
+      'paid' => LeadStatus.paid,
+      'rejected' => LeadStatus.rejected,
+      'expired' => LeadStatus.expired,
+      _ => LeadStatus.pending,
+    };
+
+/// Подпись плашки. У оплатившего — начисленная сумма («+162 000»): до оплаты
+/// сумму не показываем — она зависит от тарифа, который выберет магазин.
+String leadLabel(LeadStatus s, {Object? reward}) => switch (s) {
+      LeadStatus.pending => tr('На рассмотрении', 'Koʻrib chiqilmoqda'),
+      LeadStatus.connected => tr('Ждём оплату', 'Toʻlov kutilmoqda'),
+      LeadStatus.paid => '+${money(reward, suffix: false)}',
+      LeadStatus.rejected => tr('Отклонена', 'Rad etildi'),
+      LeadStatus.expired => tr('Срок истёк', 'Muddati tugadi'),
+    };
+
+/// Фильтры «Добавленные мной»: значение ?status= и подпись.
+const leadFilters = ['', 'pending', 'connected', 'paid', 'closed'];
+
+String leadFilterLabel(String f) => switch (f) {
+      'pending' => tr('На рассмотрении', 'Koʻrib chiqilmoqda'),
+      'connected' => tr('Ждём оплату', 'Toʻlov kutilmoqda'),
+      'paid' => tr('Оплатили', 'Toʻladi'),
+      'closed' => tr('Закрыты', 'Yopilgan'),
+      _ => tr('Все', 'Hammasi'),
+    };
+
+/// Счётчик фильтра из ответа сервера (counts: all, pending, connected, paid, closed).
+int leadFilterCount(Map<String, dynamic>? counts, String f) => ((counts?[f.isEmpty ? 'all' : f] as num?) ?? 0).toInt();
+
+/// Сколько дней магазин ещё закреплён за агентом (0 — сегодня последний).
+int leadDaysLeft(Object? until, DateTime now) {
+  final d = DateTime.tryParse('${until ?? ''}');
+  if (d == null) return 0;
+  final left = d.difference(now);
+  if (left.isNegative) return 0;
+  return (left.inHours / 24).ceil();
+}
+
+/// «5 дек» / «5 dek».
+String dayMonth(Object? v) {
+  final d = (v is DateTime ? v : DateTime.tryParse('${v ?? ''}'))?.toLocal();
+  if (d == null) return '—';
+  const ru = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+  const uz = ['yan', 'fev', 'mar', 'apr', 'may', 'iyn', 'iyl', 'avg', 'sen', 'okt', 'noy', 'dek'];
+  return '${d.day} ${tr(ru[d.month - 1], uz[d.month - 1])}';
+}
+
+/// «N дней» с правильным окончанием (по-узбекски — «N kun»).
+String daysWord(int n) => tr('$n ${_dayWord(n)}', '$n kun');

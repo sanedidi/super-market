@@ -16,6 +16,7 @@ const entryKinds: Record<string, string> = {
   adjustment: tr('Корректировка', 'Tuzatish'),
   ad_share: tr('Доля с рекламы брендов', 'Brendlar reklamasidan ulush'),
   commission: tr('Комиссия Super Market', 'Super Market komissiyasi'),
+  agent_reward: tr('50% за подключённый магазин', 'Ulangan doʻkon uchun 50%'),
 }
 
 export function BalancePage() {
