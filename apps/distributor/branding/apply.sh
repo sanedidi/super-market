@@ -64,7 +64,7 @@ d['CFBundleDisplayName'] = sys.argv[1]
 d['NSCameraUsageDescription'] = 'Сканировать штрихкоды и фотографировать товары'
 d['NSPhotoLibraryUsageDescription'] = 'Выбрать фото товара из галереи'
 d['NSFaceIDUsageDescription'] = 'Входить в приложение по Face ID вместо кода'
-d['NSLocationWhenInUseUsageDescription'] = 'Поставить метку склада на карте там, где вы сейчас'
+d['NSLocationWhenInUseUsageDescription'] = 'Поставить на карте склад или новый магазин там, где вы сейчас'
 schemes = set(d.get('LSApplicationQueriesSchemes', []))
 schemes.update(['https', 'tg', 'tel'])
 d['LSApplicationQueriesSchemes'] = sorted(schemes)

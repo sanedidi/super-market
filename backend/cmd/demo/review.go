@@ -51,6 +51,8 @@ type reviewCreds struct {
 	courierLogin, courierPwd string
 	storeLogin, storePwd     string // пусто — номер проверки сам владелец сети
 	crowdCode                string
+	// «SM Агент»: номер и код из REVIEW_AGENT_LOGIN (пусто — не задан).
+	agentPhone, agentCode, agentNetwork string
 }
 
 // reviewPassword — пароль курьера магазина, постоянный для данного JWT_SECRET.
@@ -84,6 +86,10 @@ func review(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) (reviewC
 	}
 	if rph == "" {
 		return reviewCreds{}, errors.New("REVIEW_LOGIN не задан — укажите в .env «+998XXXXXXXXX:123456» и запустите снова")
+	}
+	aph, acode, err := cfg.ReviewAgent()
+	if err != nil {
+		return reviewCreds{}, err
 	}
 	nw := demoNetworks[0]
 	var networkID string
@@ -120,8 +126,8 @@ func review(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) (reviewC
 
 	s := &seeder{ctx: ctx, pool: pool, start: time.Now(), existed: map[string]bool{}}
 	s.phones = []string{demoAdminPhone, ownerPhone}
-	for _, ph := range []string{rph, reviewCourierPhone} {
-		if !slices.Contains(s.phones, ph) {
+	for _, ph := range []string{rph, reviewCourierPhone, aph} {
+		if ph != "" && !slices.Contains(s.phones, ph) {
 			s.phones = append(s.phones, ph)
 		}
 	}
@@ -149,7 +155,7 @@ func review(ctx context.Context, cfg config.Config, pool *pgxpool.Pool) (reviewC
 	s.c = client{h: app.Handler, code: code, reviewPhone: rph, reviewCode: rcode, pool: pool, secret: cfg.JWTSecret}
 	defer s.finish()
 
-	r := &reviewer{seeder: s, networkID: networkID, phone: rph, ownerPhone: ownerPhone}
+	r := &reviewer{seeder: s, networkID: networkID, phone: rph, ownerPhone: ownerPhone, agentPhone: aph, agentCode: acode}
 	creds := reviewCreds{phone: rph, code: rcode, network: nw.name, courierLogin: reviewCourierLogin, courierPwd: reviewPassword(cfg.JWTSecret),
 		storeLogin: reviewStoreLogin, storePwd: reviewStorePassword(cfg.JWTSecret)}
 	if err := r.run(&creds); err != nil {
@@ -163,6 +169,7 @@ type reviewer struct {
 	*seeder
 	networkID, phone, ownerPhone string
 	owner                        string // токен владельца в приложении магазина
+	agentPhone, agentCode        string // REVIEW_AGENT_LOGIN
 	stores                       []demoPoint
 }
 
@@ -219,6 +226,13 @@ func (r *reviewer) run(creds *reviewCreds) error {
 	}
 	if err := r.customer(); err != nil {
 		return fmt.Errorf("покупатель: %w", err)
+	}
+	if r.agentPhone != "" {
+		if err := r.agent(creds, r.agentPhone, r.agentCode); err != nil {
+			return fmt.Errorf("агент: %w", err)
+		}
+	} else {
+		fmt.Println("агент: REVIEW_AGENT_LOGIN не задан — демо-агент не настроен")
 	}
 	// Итоговая проверка: проверяющий входит в приложение магазина.
 	if creds.storeLogin != "" {
@@ -303,7 +317,7 @@ func (r *reviewer) staff(creds *reviewCreds) error {
 			}
 		}
 		fmt.Printf("магазин: %s уже сотрудник сети, оставлен как есть\n", r.phone)
-		return r.storeLogin(e.id, creds)
+		return r.ownerLogin(creds)
 	}
 	all := make([]string, 0, len(identity.Permissions))
 	for _, p := range identity.Permissions {
@@ -323,7 +337,33 @@ func (r *reviewer) staff(creds *reviewCreds) error {
 	if err := r.record("review_employee", str(out, "id")); err != nil {
 		return err
 	}
-	return r.storeLogin(str(out, "id"), creds)
+	return r.ownerLogin(creds)
+}
+
+// ownerLogin — логин review.store выдаётся владельцу демо-сети: «SM Магазин»
+// пускает только владельца (сотрудникам — «SM Сотрудник»), а «SM Сотрудник»
+// пускает и владельца — один логин для проверки обоих приложений. Свой логин
+// владельца, выданный в панели, review не трогает.
+func (r *reviewer) ownerLogin(creds *reviewCreds) error {
+	var ownerEmp, login string
+	err := r.pool.QueryRow(r.ctx, `
+		SELECT e.id::text, COALESCE(el.login, '') FROM employees e
+		JOIN roles ro ON ro.id = e.role_id AND ro.is_owner
+		LEFT JOIN employee_logins el ON el.employee_id = e.id
+		WHERE e.network_id::text = $1 ORDER BY e.created_at LIMIT 1`, r.networkID).Scan(&ownerEmp, &login)
+	if err != nil {
+		return fmt.Errorf("владелец демо-сети: %w", err)
+	}
+	if login != "" && login != creds.storeLogin {
+		return fmt.Errorf("у владельца демо-сети уже свой логин %q — review его не меняет; для проверки «SM Магазин» и «SM Сотрудник» "+
+			"освободите логин (панель супер-админа → сеть → «Владелец и вход») и запустите снова", login)
+	}
+	// Логин review.store мог остаться у сотрудника проверки (старые запуски).
+	if _, err := r.pool.Exec(r.ctx, `DELETE FROM employee_logins WHERE login = $1 AND employee_id::text <> $2 AND network_id::text = $3`,
+		creds.storeLogin, ownerEmp, r.networkID); err != nil {
+		return err
+	}
+	return r.storeLogin(ownerEmp, creds)
 }
 
 // storeLogin — логин сотрудника для проверки в «SM Магазин». Пароль
@@ -568,7 +608,7 @@ Super Market (покупатель)
   Телефон: %[1]s
   Код из SMS/Telegram: %[2]s (код не приходит — всегда вводите этот)
 
-SM Магазин (сотрудник сети «%[3]s», все права)
+SM Магазин и SM Сотрудник (владелец демо-сети «%[3]s»)
   %[7]s
 
 SM Курьер — «Курьер по пути» (личность подтверждена, код курьера %[6]s)
@@ -578,8 +618,13 @@ SM Курьер — «Курьер по пути» (личность подтв�
 SM Курьер — «Курьер магазина» (вход по логину)
   Логин: %[4]s
   Пароль: %[5]s
+
+
+
+SM Агент
+  %[8]s
 =====================================================================
-`, c.phone, c.code, c.network, c.courierLogin, c.courierPwd, c.crowdCode, storeNote(c))
+`, c.phone, c.code, c.network, c.courierLogin, c.courierPwd, c.crowdCode, storeNote(c), agentNote(c))
 }
 
 func storeNote(c reviewCreds) string {
@@ -587,4 +632,11 @@ func storeNote(c reviewCreds) string {
 		return "Логин и пароль владельца сети (номер проверки — владелец)"
 	}
 	return fmt.Sprintf("Логин: %s\n  Пароль: %s", c.storeLogin, c.storePwd)
+}
+
+func agentNote(c reviewCreds) string {
+	if c.agentPhone == "" {
+		return "REVIEW_AGENT_LOGIN не задан — демо-агента нет"
+	}
+	return fmt.Sprintf("Дистрибьютор «%s»\n  Телефон: %s\n  Код: %s (SMS не приходит — всегда вводите этот)", c.agentNetwork, c.agentPhone, c.agentCode)
 }

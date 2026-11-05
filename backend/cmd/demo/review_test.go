@@ -67,6 +67,8 @@ func freshDB(t *testing.T) *pgxpool.Pool {
 const (
 	testReviewPhone = "+998900000077"
 	testReviewCode  = "343549"
+	testAgentPhone  = "+998900000079"
+	testAgentCode   = "571826"
 )
 
 func testConfig() config.Config {
@@ -77,6 +79,8 @@ func testConfig() config.Config {
 		RefreshTTL:  24 * time.Hour,
 		OTPTTL:      5 * time.Minute,
 		ReviewLogin: testReviewPhone + ":" + testReviewCode,
+		// Демо-агент «SM Агент».
+		ReviewAgentLogin: testAgentPhone + ":" + testAgentCode,
 	}
 }
 
@@ -167,6 +171,10 @@ func TestReviewFlow(t *testing.T) {
 		t.Fatalf("вход в магазин: %v %v", st, err)
 	}
 	store := str(st, "access_token")
+	// «SM Магазин» пускает только владельца — логин проверки у владельца демо-сети.
+	if me, err := c.call("GET", "/store/me", store, nil, http.StatusOK); err != nil || me["is_owner"] != true {
+		t.Fatalf("логин проверки не у владельца: %v %v", me, err)
+	}
 	emps, err := c.call("GET", "/store/employees", store, nil, http.StatusOK)
 	if err != nil || len(items(emps)) < 3 {
 		t.Fatalf("сотрудники сети: %v %v", emps, err)
@@ -189,6 +197,45 @@ func TestReviewFlow(t *testing.T) {
 	if _, err := c.call("POST", "/auth/courier/login", "", obj{"login": reviewCourierLogin, "password": first.courierPwd}, http.StatusOK); err != nil {
 		t.Fatalf("вход курьера магазина: %v", err)
 	}
+	// «SM Агент»: вход по номеру и постоянному коду, магазины открыты,
+	// склад с товаром, два магазина подключены, новый заказ ждёт.
+	if first.agentPhone != testAgentPhone || first.agentCode != testAgentCode || first.agentNetwork != reviewAgentName {
+		t.Fatalf("агент: %+v", first)
+	}
+	if _, err := c.call("POST", "/auth/agent/otp/request", "", obj{"phone": testAgentPhone}, http.StatusOK); err != nil {
+		t.Fatal(err)
+	}
+	av, err := c.call("POST", "/auth/agent/otp/verify", "", obj{"phone": testAgentPhone, "code": testAgentCode}, http.StatusOK)
+	if err != nil || str(av, "status") != "login" {
+		t.Fatalf("вход агента: %v %v", av, err)
+	}
+	agentTok := str(av["tokens"].(obj), "access_token")
+	if sum, err := c.call("GET", "/store/supply/summary", agentTok, nil, http.StatusOK); err != nil || sum["verified"] != true {
+		t.Fatalf("сводка агента: %v %v", sum, err)
+	}
+	stores, err := c.call("GET", "/store/supply/stores", agentTok, nil, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	linked := 0
+	for _, x := range items(stores) {
+		if str(x, "link_status") == "active" {
+			linked++
+		}
+	}
+	if linked != reviewAgentLinks {
+		t.Fatalf("подключённых магазинов: %d (%v)", linked, stores)
+	}
+	if o, err := c.call("GET", "/store/supply/orders?status=new", agentTok, nil, http.StatusOK); err != nil || len(items(o)) != 1 {
+		t.Fatalf("заказы агента: %v %v", o, err)
+	}
+	if n := count(t, pool, `SELECT count(*) FROM networks WHERE name = $1`, reviewAgentName); n != 1 {
+		t.Fatalf("демо-агентов: %d", n)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM auth_codes`); err != nil {
+		t.Fatal(err)
+	}
+
 	// Код для админ-панели номер проверки не открывает.
 	if _, err := c.login(testReviewPhone, identity.AppAdmin); err == nil {
 		t.Fatal("номер проверки вошёл в панель супер-админа")
@@ -207,6 +254,8 @@ func TestReviewFlow(t *testing.T) {
 		`SELECT count(*) FROM customers c JOIN users u ON u.id = c.user_id WHERE u.phone = '` + testReviewPhone + `'`,
 		`SELECT count(*) FROM employee_logins WHERE login IN ('review', 'review.store')`,
 		`SELECT count(*) FROM users WHERE phone = '` + reviewCourierPhone + `'`,
+		`SELECT count(*) FROM users WHERE phone = '` + testAgentPhone + `'`,
+		`SELECT count(*) FROM networks WHERE name = '` + reviewAgentName + `'`,
 		`SELECT count(*) FROM demo_seed`,
 	} {
 		if n := count(t, pool, q); n != 0 {
