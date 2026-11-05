@@ -87,6 +87,7 @@ jobs:
           FCM_CREDENTIALS: ${{ secrets.FCM_CREDENTIALS }}
           # Демо-аккаунт покупателя для проверки Apple / Google (номер:код), только приложение покупателя.
           REVIEW_LOGIN: ${{ secrets.REVIEW_LOGIN || '+998900000077:343549' }}
+          REVIEW_AGENT_LOGIN: ${{ secrets.REVIEW_AGENT_LOGIN || '+998900000079:571826' }}
           # SMS с кодами входа (Eskiz): email кабинета и секретный ключ из «СМС шлюз». Пусто — только Telegram.
           ESKIZ_EMAIL: ${{ secrets.ESKIZ_EMAIL }}
           ESKIZ_PASSWORD: ${{ secrets.ESKIZ_PASSWORD }}
@@ -96,6 +97,7 @@ jobs:
             printf '%s\n' "$PROD_ENV"
             if [ -n "$FCM_CREDENTIALS" ]; then printf 'FCM_CREDENTIALS=%s\n' "$(printf '%s' "$FCM_CREDENTIALS" | tr -d '\n\r ')"; fi
             printf 'REVIEW_LOGIN=%s\n' "$REVIEW_LOGIN"
+            printf '%s\n' "$PROD_ENV" | grep -q '^REVIEW_AGENT_LOGIN=.' || printf 'REVIEW_AGENT_LOGIN=%s\n' "$REVIEW_AGENT_LOGIN"
             # Публичные ссылки для приложений (политика, поддержка, оферта на экране входа):
             # значения из PROD_ENV главнее, если их там нет — берутся отсюда (это не секреты).
             for kv in "PRIVACY_URL=https://super-market.uz/privacy" \
