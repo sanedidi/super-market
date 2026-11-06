@@ -8,6 +8,7 @@ import 'package:sm_core/sm_core.dart';
 import '../finance/finance_logic.dart' show n, plainAmount;
 import '../kassa/widgets.dart' show PickChip, ProductThumb, QtyStepper;
 import '../main.dart' show showMessage;
+import '../plan/plan_ui.dart';
 import '../start/stock_count.dart' show askShelfCounts;
 import '../state.dart';
 import '../ui/theme.dart';
@@ -194,7 +195,7 @@ class _SupplyIncomeScreenState extends State<SupplyIncomeScreen> {
           ? Center(
               child: _error == null
                   ? const CircularProgressIndicator()
-                  : EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load),
+                  : ErrorView(error: _error, onRetry: _load),
             )
           : ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
               if (draft)

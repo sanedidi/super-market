@@ -5,6 +5,7 @@ import 'package:sm_core/sm_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../finance/finance_logic.dart' show n, plainAmount;
+import '../plan/plan_ui.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -181,7 +182,7 @@ class _DebtorScreenState extends State<DebtorScreen> {
         appBar: AppBar(title: Text(tr('Покупатель', 'Xaridor'))),
         body: _error == null
             ? const Center(child: CircularProgressIndicator())
-            : EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load),
+            : ErrorView(error: _error, onRetry: _load),
       );
     }
     final b = _bal;

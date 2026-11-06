@@ -6,6 +6,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import '../plan/plan_ui.dart';
 import '../start/scanner.dart';
 import '../state.dart';
 import '../ui/theme.dart';
@@ -253,6 +254,8 @@ class _KassaScreenState extends State<KassaScreen> {
           if (cash == null) return;
           pays = [Pay(kassa.method('cash')!, cash), Pay(kassa.method('card')!, total - cash)];
         case 'debt':
+          // Долгов нет в тарифе — кнопка видна, но вместо камеры шторка «Нет на вашем тарифе».
+          if (!planAllows(context, 'debts')) return;
           debt = await Navigator.of(context).push<DebtPay>(MaterialPageRoute(builder: (_) => DebtQrScreen(kassa: kassa, qr: debtQr)));
           if (debt == null) return;
         default:

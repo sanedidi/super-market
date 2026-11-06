@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../plan/plan_ui.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -90,7 +91,7 @@ class _StaffScreenState extends State<StaffScreen> {
           ]),
           const SizedBox(height: 12),
           if (_error != null && _staff == null)
-            EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load)
+            ErrorView(error: _error, onRetry: _load)
           else if (_staff == null)
             const Padding(padding: EdgeInsets.only(top: 40), child: Center(child: CircularProgressIndicator()))
           else if (list.isEmpty)

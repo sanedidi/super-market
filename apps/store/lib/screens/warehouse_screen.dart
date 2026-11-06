@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../income/income_entry.dart';
+import '../plan/plan_ui.dart';
 import '../receipt/capture_screen.dart';
 import '../receipt/receipt_logic.dart';
 import '../receipt/review_screen.dart';
@@ -27,6 +28,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   List<Map<String, dynamic>>? _scans;
   Map<String, dynamic>? _draft;
   Object? _error;
+  ApiError? _scansLocked;
   String? _loadedFor;
 
   Future<void> _load() async {
@@ -36,12 +38,15 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     if (storeId == null || !st.can('inventory.manage')) return;
     _loadedFor = storeId;
     try {
-      final scans = await api.list('/store/invoice-scans', {'store_id': storeId, 'limit': 30});
+      // Накладных по фото нет в тарифе — остальной склад работает, вместо списка замок.
+      ApiError? locked;
+      final scans = await unlessPlan(api.list('/store/invoice-scans', {'store_id': storeId, 'limit': 30}), (e) => locked = e);
       if (!mounted) return;
       final draft = await incomeDraft(context);
       if (!mounted) return;
       setState(() {
-        _scans = scans;
+        _scans = scans ?? const [];
+        _scansLocked = locked;
         _draft = draft;
         _error = null;
       });
@@ -94,7 +99,9 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
             icon: Icons.document_scanner_rounded,
             title: tr('Приход по фото накладной', 'Yuk xati rasmi orqali kirim'),
             text: tr('Super Market прочитает накладную', 'Super Market yuk xatini oʻqiydi'),
+            badge: const PlanLockChip('invoice_scans'),
             onTap: () async {
+              if (!planAllows(context, 'invoice_scans')) return;
               await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CaptureScreen()));
               if (mounted) _load();
             },
@@ -153,8 +160,16 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
           const SizedBox(height: 24),
           Text(tr('Накладные', 'Yuk xatlari'), style: AppText.h3),
           const SizedBox(height: 12),
-          if (_error != null)
-            EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: _error.toString(), action: tr('Повторить', 'Qayta urinish'), onAction: _load)
+          if (_scansLocked != null)
+            AppCard(
+              child: PlanLockedBox(
+                feature: 'invoice_scans',
+                text: tr('Сфотографируйте накладную поставщика — Super Market сам заполнит приход: поставщика, товары и цены.',
+                    'Yetkazib beruvchi yuk xatini suratga oling — Super Market kirimni oʻzi toʻldiradi: yetkazib beruvchi, mahsulotlar va narxlar.'),
+              ),
+            )
+          else if (_error != null)
+            ErrorView(error: _error, onRetry: _load)
           else if (_scans == null)
             const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()))
           else if (_scans!.isEmpty)

@@ -7,6 +7,7 @@ import 'package:sm_core/sm_core.dart';
 
 import '../kassa/widgets.dart' show Keypad;
 import '../main.dart' show showMessage;
+import '../plan/plan_ui.dart';
 import '../start/scanner.dart';
 import '../state.dart';
 import '../ui/theme.dart';
@@ -98,7 +99,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
           ]),
           const SizedBox(height: 16),
           if (_error != null && items == null)
-            EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load)
+            ErrorView(error: _error, onRetry: _load)
           else if (items == null)
             const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
           else ...[
@@ -455,7 +456,7 @@ class _FindSupplierScreenState extends State<FindSupplierScreen> {
         ),
         const SizedBox(height: 14),
         if (_error != null && items == null)
-          EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _search)
+          ErrorView(error: _error, onRetry: _search)
         else if (items == null)
           const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
         else if (items.isEmpty)

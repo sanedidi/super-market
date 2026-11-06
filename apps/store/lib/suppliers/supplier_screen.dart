@@ -13,6 +13,7 @@ import '../finance/finance_logic.dart' show n, plainAmount;
 import '../kassa/widgets.dart' show PickChip;
 import '../lock/app_lock.dart';
 import '../main.dart' show showMessage;
+import '../plan/plan_ui.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -148,7 +149,7 @@ class _DistSupplierScreenState extends State<DistSupplierScreen> {
           ? Center(
               child: _error == null
                   ? const CircularProgressIndicator()
-                  : EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load),
+                  : ErrorView(error: _error, onRetry: _load),
             )
           : RefreshIndicator(onRefresh: _load, child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: _body(s))),
     );

@@ -7,6 +7,7 @@ import '../debts/supplier_screen.dart';
 import '../finance/balance_screen.dart';
 import '../finance/finance_logic.dart';
 import '../main.dart';
+import '../plan/plan_ui.dart';
 import '../screens/orders_screen.dart';
 import '../screens/warehouse_screen.dart';
 import '../state.dart';
@@ -160,7 +161,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
           ? Center(
               child: _error == null
                   ? const CircularProgressIndicator()
-                  : EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load),
+                  : ErrorView(error: _error, onRetry: _load),
             )
           : RefreshIndicator(onRefresh: _load, child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: _body(s))),
     );

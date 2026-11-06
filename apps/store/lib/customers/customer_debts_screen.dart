@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../control/cashiers_screen.dart' show initials, plural;
+import '../plan/plan_ui.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -227,7 +228,7 @@ class _CustomerDebtsScreenState extends State<CustomerDebtsScreen> {
           if (items == null)
             _error == null
                 ? const Padding(padding: EdgeInsets.only(top: 40), child: Center(child: CircularProgressIndicator()))
-                : EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load)
+                : ErrorView(error: _error, onRetry: _load)
           else if (items.isEmpty)
             EmptyState(
               icon: Icons.handshake_outlined,

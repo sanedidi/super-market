@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../main.dart';
+import '../plan/plan_ui.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'finance_logic.dart';
@@ -103,7 +104,7 @@ class _BalanceScreenState extends State<BalanceScreen> {
           ? Center(
               child: _error == null
                   ? const CircularProgressIndicator()
-                  : EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load),
+                  : ErrorView(error: _error, onRetry: _load),
             )
           : RefreshIndicator(
               onRefresh: _load,

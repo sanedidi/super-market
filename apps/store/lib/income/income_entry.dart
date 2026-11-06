@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import '../plan/plan_ui.dart';
 import '../receipt/capture_screen.dart';
 import '../state.dart';
 import '../ui/theme.dart';
@@ -48,6 +49,7 @@ Future<void> openIncomeChooser(BuildContext context) async {
         icon: Icons.document_scanner_rounded,
         title: tr('По фото накладной', 'Yuk xati rasmi orqali'),
         text: tr('Super Market прочитает поставщика и товары', 'Super Market yetkazib beruvchi va mahsulotlarni oʻqiydi'),
+        badge: const PlanLockChip('invoice_scans'),
         onTap: () => Navigator.pop(ctx, 'photo'),
       ),
       if (draft != null) ...[
@@ -63,14 +65,17 @@ Future<void> openIncomeChooser(BuildContext context) async {
     case 'draft':
       await openIncome(context, id: '${draft!['id']}');
     case 'photo':
+      if (!planAllows(context, 'invoice_scans')) return;
       await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CaptureScreen()));
   }
 }
 
 /// Карточка способа прихода (Р1 на складе, Р2 на главной).
 class IncomeWayCard extends StatelessWidget {
-  const IncomeWayCard({super.key, required this.icon, required this.title, required this.text, required this.onTap, this.dark = false});
+  const IncomeWayCard({super.key, required this.icon, required this.title, required this.text, required this.onTap, this.dark = false, this.badge});
 
+  /// Плашка справа — например, замок «на тарифе …».
+  final Widget? badge;
   final IconData icon;
   final String title;
   final String text;
@@ -92,6 +97,7 @@ class IncomeWayCard extends StatelessWidget {
             Text(text, style: AppText.small.copyWith(color: dark ? AppColors.muted : AppColors.text2)),
           ]),
         ),
+        if (badge != null) ...[const SizedBox(width: 8), badge!],
         Icon(Icons.chevron_right_rounded, color: dark ? AppColors.white : AppColors.muted),
       ]),
     );

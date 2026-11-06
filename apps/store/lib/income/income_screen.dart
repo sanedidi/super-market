@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../main.dart';
+import '../plan/plan_ui.dart';
 import '../start/sheets.dart' show ProductThumb;
 import '../start/start_api.dart';
 import '../start/start_logic.dart';
@@ -431,7 +432,7 @@ class _IncomeScreenState extends State<IncomeScreen> {
         ],
       ),
       body: _error != null
-          ? EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load)
+          ? ErrorView(error: _error, onRetry: _load)
           : _loading
               ? const Center(child: CircularProgressIndicator())
               : _body(),

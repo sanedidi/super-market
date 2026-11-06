@@ -13,6 +13,7 @@ import '../debts/debts_screen.dart';
 import '../finance/cash_handover.dart';
 import '../lock/pin_screens.dart';
 import '../main.dart';
+import '../plan/plan_ui.dart';
 import '../returns/return_screen.dart';
 import '../staff/staff_screen.dart';
 import '../summary/summary_screen.dart';
@@ -29,23 +30,24 @@ class MoreScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final st = context.watch<StoreState>();
-    final modules = <(IconData, String, String, Widget)>[
-      if (st.can('reports.view')) (Icons.insights_rounded, tr('Итоги дня', 'Kun yakunlari'), tr('Выручка, прибыль, что требует внимания', 'Tushum, foyda, eʼtibor talab qiladigan ishlar'), const SummaryScreen()),
+    // Последнее — функция тарифа: нет в тарифе — замок «на тарифе …» и шторка.
+    final modules = <(IconData, String, String, Widget, String?)>[
+      if (st.can('reports.view')) (Icons.insights_rounded, tr('Итоги дня', 'Kun yakunlari'), tr('Выручка, прибыль, что требует внимания', 'Tushum, foyda, eʼtibor talab qiladigan ishlar'), const SummaryScreen(), null),
       if (st.can('finance.manage'))
-        (Icons.tune_rounded, tr('Касса магазина', 'Doʻkon kassasi'), tr('Норма размена, напоминание о сдаче, пересчёт', 'Maydalik meʼyori, topshirish eslatmasi, sanash'), const CashSettingsScreen()),
+        (Icons.tune_rounded, tr('Касса магазина', 'Doʻkon kassasi'), tr('Норма размена, напоминание о сдаче, пересчёт', 'Maydalik meʼyori, topshirish eslatmasi, sanash'), const CashSettingsScreen(), null),
       if (st.can('reports.view') || st.can('finance.manage'))
-        (Icons.point_of_sale_rounded, tr('Контроль кассиров', 'Kassirlar nazorati'), tr('Недостачи, возвраты, скидки', 'Kamomadlar, qaytarishlar, chegirmalar'), const CashiersScreen()),
+        (Icons.point_of_sale_rounded, tr('Контроль кассиров', 'Kassirlar nazorati'), tr('Недостачи, возвраты, скидки', 'Kamomadlar, qaytarishlar, chegirmalar'), const CashiersScreen(), null),
       if (st.can('inventory.manage'))
-        (Icons.handshake_outlined, tr('Поставщики', 'Yetkazib beruvchilar'), tr('Агенты: подключить, заказать, оплатить', 'Agentlar: ulash, buyurtma, toʻlov'), const SuppliersScreen()),
+        (Icons.handshake_outlined, tr('Поставщики', 'Yetkazib beruvchilar'), tr('Агенты: подключить, заказать, оплатить', 'Agentlar: ulash, buyurtma, toʻlov'), const SuppliersScreen(), null),
       if (st.can('counterparties.manage') || st.can('inventory.manage') || st.can('finance.manage'))
-        (Icons.local_shipping_outlined, tr('Долги поставщикам', 'Yetkazib beruvchilarga qarzlar'), tr('Кому должны, акт сверки, оплата', 'Kimga qarzmiz, solishtirma dalolatnoma, toʻlov'), const DebtsScreen()),
+        (Icons.local_shipping_outlined, tr('Долги поставщикам', 'Yetkazib beruvchilarga qarzlar'), tr('Кому должны, акт сверки, оплата', 'Kimga qarzmiz, solishtirma dalolatnoma, toʻlov'), const DebtsScreen(), null),
       if (st.can('debts.manage'))
-        (Icons.receipt_long_rounded, tr('Долги покупателей', 'Xaridorlar qarzlari'), tr('Кто должен, напоминания, оплата', 'Kim qarzdor, eslatmalar, toʻlov'), const CustomerDebtsScreen()),
-      if (st.can('staff.manage')) (Icons.people_alt_outlined, tr('Сотрудники', 'Xodimlar'), tr('Кто работает, роли, добавить', 'Kim ishlaydi, rollar, qoʻshish'), const StaffScreen()),
+        (Icons.receipt_long_rounded, tr('Долги покупателей', 'Xaridorlar qarzlari'), tr('Кто должен, напоминания, оплата', 'Kim qarzdor, eslatmalar, toʻlov'), const CustomerDebtsScreen(), 'debts'),
+      if (st.can('staff.manage')) (Icons.people_alt_outlined, tr('Сотрудники', 'Xodimlar'), tr('Кто работает, роли, добавить', 'Kim ishlaydi, rollar, qoʻshish'), const StaffScreen(), null),
       if (st.can('inventory.manage'))
-        (Icons.assignment_return_outlined, tr('Возврат поставщику', 'Yetkazib beruvchiga qaytarish'), tr('Брак, просрочка, пересорт', 'Yaroqsiz, muddati oʻtgan, aralash tovar'), const SupplierReturnsScreen()),
-      if (st.can('orders.manage')) (Icons.directions_walk_rounded, tr('Курьеры по пути', 'Yoʻlakay kuryerlar'), tr('Проверка курьера, бонусы', 'Kuryerni tekshirish, bonuslar'), const CrowdScreen()),
-      if (st.can('showcase.manage')) (Icons.campaign_outlined, tr('Реклама брендов', 'Brendlar reklamasi'), tr('Доля с рекламы, скрыть бренд', 'Reklamadan ulush, brendni yashirish'), const AdsScreen()),
+        (Icons.assignment_return_outlined, tr('Возврат поставщику', 'Yetkazib beruvchiga qaytarish'), tr('Брак, просрочка, пересорт', 'Yaroqsiz, muddati oʻtgan, aralash tovar'), const SupplierReturnsScreen(), null),
+      if (st.can('orders.manage')) (Icons.directions_walk_rounded, tr('Курьеры по пути', 'Yoʻlakay kuryerlar'), tr('Проверка курьера, бонусы', 'Kuryerni tekshirish, bonuslar'), const CrowdScreen(), 'crowd'),
+      if (st.can('showcase.manage')) (Icons.campaign_outlined, tr('Реклама брендов', 'Brendlar reklamasi'), tr('Доля с рекламы, скрыть бренд', 'Reklamadan ulush, brendni yashirish'), const AdsScreen(), 'brand_ads'),
     ];
     return SafeArea(
       child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
@@ -81,13 +83,19 @@ class MoreScreen extends StatelessWidget {
           AppCard(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Column(children: [
-              for (final (icon, title, sub, page) in modules)
+              for (final (icon, title, sub, page, feature) in modules)
                 ListTile(
                   leading: Icon(icon),
                   title: Text(title, style: AppText.bodyStrong),
                   subtitle: Text(sub, style: AppText.small),
-                  trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
-                  onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => page)),
+                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                    if (feature != null) PlanLockChip(feature),
+                    const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
+                  ]),
+                  onTap: () {
+                    if (feature != null && !planAllows(context, feature)) return;
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+                  },
                 ),
             ]),
           ),
@@ -96,6 +104,13 @@ class MoreScreen extends StatelessWidget {
         AppCard(
           padding: const EdgeInsets.symmetric(horizontal: 4),
           child: Column(children: [
+            ListTile(
+              leading: const Icon(Icons.workspace_premium_outlined),
+              title: Text(tr('Тариф', 'Tarif'), style: AppText.bodyStrong),
+              subtitle: Text(st.planName ?? tr('Функции и лимиты', 'Funksiyalar va limitlar'), style: AppText.small),
+              trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
+              onTap: () => openPlan(context),
+            ),
             ListTile(
               leading: const Icon(Icons.storefront_outlined),
               title: Text(tr('Магазин', 'Doʻkon'), style: AppText.bodyStrong),

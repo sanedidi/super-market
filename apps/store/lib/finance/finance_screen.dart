@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import '../plan/plan_ui.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -32,6 +33,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
   List<Map<String, dynamic>> _accepted = const [];
   bool _accepting = false;
   Map<String, dynamic>? _pl;
+  ApiError? _plLocked;
   Map<String, dynamic>? _balance;
   Map<String, dynamic>? _billing;
   Period _period = Period.today;
@@ -46,13 +48,15 @@ class _FinanceScreenState extends State<FinanceScreen> {
     if (storeId == null) return;
     _loadedFor = storeId;
     final q = periodQuery(_period, DateTime.now());
+    ApiError? plLocked;
     try {
       final fin = st.can('finance.manage');
       final res = await Future.wait<Object?>([
         // Кассы наличных у магазина может не быть — тогда блок «Касса» пустой.
         fin ? api.get('/store/pos/drawer', {'store_id': storeId}).catchError((Object _) => null) : Future.value(null),
         fin ? api.list('/store/finance/handovers', {'limit': 5}) : Future.value(null),
-        st.can('reports.view') ? api.get('/store/reports/profit-loss', {...q, 'store_id': storeId}) : Future.value(null),
+        // Отчёта о прибыли нет в тарифе — остальные финансы грузятся, вместо отчёта замок.
+        st.can('reports.view') ? unlessPlan(api.get('/store/reports/profit-loss', {...q, 'store_id': storeId}), (e) => plLocked = e) : Future.value(null),
         st.can('payouts.manage') ? api.get('/store/balance') : Future.value(null),
         st.can('payouts.manage') ? api.get('/store/billing') : Future.value(null),
         fin || st.can('reports.view') ? api.list('/store/pos/shifts', {'store_id': storeId, 'limit': 30}) : Future.value(null),
@@ -77,6 +81,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
         ];
         _shifts = res[5] == null ? null : todayShifts(res[5]! as List<Map<String, dynamic>>, DateTime.now());
         _pl = res[2] as Map<String, dynamic>?;
+        _plLocked = plLocked;
         _balance = res[3] as Map<String, dynamic>?;
         _billing = res[4] as Map<String, dynamic>?;
         _error = null;
@@ -288,7 +293,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
           ),
       ]),
       const SizedBox(height: 10),
-      if (pl == null)
+      if (_plLocked != null)
+        AppCard(child: PlanLockedView(error: _plLocked))
+      else if (pl == null)
         const _Loading()
       else if (!profitKnown(pl))
         _UnknownProfit(pl: pl, onFix: _noCost)

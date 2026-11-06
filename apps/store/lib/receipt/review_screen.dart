@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../main.dart';
+import '../plan/plan_ui.dart';
 import '../start/stock_count.dart' show askShelfCounts, receivedOf;
 import '../state.dart';
 import '../ui/theme.dart';
@@ -158,7 +159,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
         ],
       ),
       body: _error != null
-          ? EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: _error.toString(), action: tr('Повторить', 'Qayta urinish'), onAction: _load)
+          ? ErrorView(error: _error, onRetry: _load)
           : s == null
               ? const Center(child: CircularProgressIndicator())
               : RefreshIndicator(onRefresh: _load, child: _body(s)),

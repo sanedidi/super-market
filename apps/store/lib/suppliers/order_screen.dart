@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../finance/finance_logic.dart' show n;
 import '../kassa/widgets.dart' show ProductThumb, QtyStepper;
 import '../main.dart' show showMessage;
+import '../plan/plan_ui.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -232,7 +233,7 @@ class _SupplierOrderScreenState extends State<SupplierOrderScreen> {
         ),
         Expanded(
           child: _error != null && items == null
-              ? EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load)
+              ? ErrorView(error: _error, onRetry: _load)
               : items == null
                   ? const Center(child: CircularProgressIndicator())
                   : RefreshIndicator(onRefresh: _load, child: _tab == 2 ? _ordersList() : _priceList(_tab == 0 ? due : items)),
@@ -417,7 +418,7 @@ class _SupplyOrderDetailScreenState extends State<SupplyOrderDetailScreen> {
           ? Center(
               child: _error == null
                   ? const CircularProgressIndicator()
-                  : EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load),
+                  : ErrorView(error: _error, onRetry: _load),
             )
           : ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
               Row(children: [

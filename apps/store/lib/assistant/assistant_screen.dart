@@ -16,6 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../lock/app_lock.dart';
+import '../plan/plan_ui.dart';
 import '../screens/orders_screen.dart';
 import '../screens/warehouse_screen.dart';
 import '../state.dart';
@@ -418,6 +419,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
   }
 
   Widget _body() {
+    if (_locked != null && _locked!.isPlan) return Center(child: SingleChildScrollView(child: PlanLockedView(error: _locked)));
     if (_locked != null) {
       return EmptyState(
         icon: Icons.lock_outline_rounded,

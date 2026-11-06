@@ -7,6 +7,7 @@ import 'package:sm_core/sm_core.dart';
 
 import '../finance/finance_logic.dart';
 import '../main.dart';
+import '../plan/plan_ui.dart';
 import '../state.dart';
 import '../suppliers/new_supplier.dart';
 import '../ui/theme.dart';
@@ -66,7 +67,7 @@ class _SupplierReturnsScreenState extends State<SupplierReturnsScreen> {
         onRefresh: _load,
         child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 96), children: [
           if (_error != null && docs == null)
-            EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load)
+            ErrorView(error: _error, onRetry: _load)
           else if (docs == null)
             const Padding(padding: EdgeInsets.only(top: 40), child: Center(child: CircularProgressIndicator()))
           else if (docs.isEmpty)

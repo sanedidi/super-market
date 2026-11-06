@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import '../main.dart' show showMessage;
+import '../plan/plan_ui.dart';
 import '../receipt/receipt_logic.dart' show parseNum;
 import '../start/scanner.dart';
 import '../start/sheets.dart' show ProductThumb, fieldNum, fillSheet;
@@ -396,7 +397,7 @@ class _MyProductsScreenState extends State<MyProductsScreen> {
             ]),
             const SizedBox(height: 12),
             if (_error != null && d == null)
-              EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: _error.toString(), action: tr('Повторить', 'Qayta urinish'), onAction: _load)
+              ErrorView(error: _error, onRetry: _load)
             else if (d == null)
               const Padding(padding: EdgeInsets.all(32), child: Center(child: CircularProgressIndicator()))
             else if (_items.isEmpty)

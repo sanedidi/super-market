@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import '../plan/plan_ui.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -73,12 +74,7 @@ class _ProfitScreenState extends State<ProfitScreen> {
           if (pl == null)
             _error == null
                 ? const Padding(padding: EdgeInsets.only(top: 40), child: Center(child: CircularProgressIndicator()))
-                : EmptyState(
-                    icon: Icons.wifi_off_rounded,
-                    title: tr('Не удалось загрузить отчёт', 'Hisobotni yuklab boʻlmadi'),
-                    text: '$_error',
-                    action: tr('Повторить', 'Qayta urinish'),
-                    onAction: _load)
+                : ErrorView(error: _error, onRetry: _load, title: tr('Не удалось загрузить отчёт', 'Hisobotni yuklab boʻlmadi'))
           else
             ..._report(pl),
         ]),

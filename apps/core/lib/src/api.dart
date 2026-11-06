@@ -18,6 +18,10 @@ class ApiError implements Exception {
 
   bool get isNetwork => status == 0;
 
+  /// Ошибка тарифа: функции нет в тарифе (plan_feature), упёрлись в лимит
+  /// (tariff_limit) или тариф только для сетей побольше (plan_min_stores).
+  bool get isPlan => code == 'plan_feature' || code == 'tariff_limit' || code == 'plan_min_stores';
+
   @override
   String toString() => message;
 }
@@ -31,6 +35,11 @@ class Api extends ChangeNotifier {
   /// Например, `https://api.super-market.uz/api/v1`.
   final String baseUrl;
   final String app;
+
+  /// Ошибки тарифа из действий (POST/PATCH/DELETE): приложение показывает по
+  /// ним шторку «Нет на вашем тарифе» с переходом в «Тариф». Загрузки (GET)
+  /// сюда не попадают — экран сам показывает замок вместо содержимого.
+  static void Function(ApiError error)? onPlanError;
   final http.Client _http;
 
   String? _access;
@@ -143,10 +152,10 @@ class Api extends ChangeNotifier {
       if (await _refreshing!) return _send(method, path, query: query, body: body, retry: false);
       await _save(null);
     }
-    return _decode(res);
+    return _decode(res, method);
   }
 
-  dynamic _decode(http.Response res) {
+  dynamic _decode(http.Response res, [String method = 'POST']) {
     if (res.statusCode == 204) return null;
     dynamic data;
     if (res.bodyBytes.isNotEmpty) {
@@ -158,12 +167,14 @@ class Api extends ChangeNotifier {
     }
     if (res.statusCode >= 400) {
       final err = data is Map ? data['error'] as Map<String, dynamic>? : null;
-      throw ApiError(
+      final e = ApiError(
         res.statusCode,
         err?['code'] as String? ?? 'http_${res.statusCode}',
         err?['message'] as String? ?? tr('Ошибка ${res.statusCode}', 'Xatolik ${res.statusCode}'),
         (err?['details'] as Map<String, dynamic>?) ?? const {},
       );
+      if (e.isPlan && method != 'GET') onPlanError?.call(e);
+      throw e;
     }
     return data;
   }

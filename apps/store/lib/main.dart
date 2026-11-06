@@ -8,6 +8,7 @@ import 'lock/app_lock.dart';
 import 'lock/pin_screens.dart';
 import 'login/employee_app.dart';
 import 'login/password_login.dart';
+import 'plan/plan_ui.dart';
 import 'push.dart';
 import 'screens/shell.dart';
 import 'setup/setup_screens.dart';
@@ -31,6 +32,11 @@ Future<void> main() async {
   await Push.init();
   final api = Api(baseUrl: apiUrl, app: 'store');
   await api.init();
+  // Действие упёрлось в тариф — шторка «Нет на вашем тарифе» с переходом в «Тариф».
+  Api.onPlanError = (e) {
+    final ctx = navigatorKey.currentContext;
+    if (ctx != null && ctx.mounted) showPlanSheet(ctx, error: e);
+  };
   final lock = AppLock();
   await lock.init();
   // Вышли из аккаунта (сами или сессия истекла) — код этого входа больше не нужен.

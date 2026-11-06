@@ -32,6 +32,10 @@ class StoreState extends ChangeNotifier {
   /// Режим «Официант» (кафе): столы и заказы вместо магазина.
   bool waiterMode = false;
 
+  /// Тариф сети (GET /store/plan): действующий тариф, его функции и лимиты,
+  /// другие тарифы. null — ещё не загрузили или сервер не ответил.
+  Map<String, dynamic>? plan;
+
   void _onAuth() {
     if (api.loggedIn && !_wasIn) {
       _wasIn = true;
@@ -42,6 +46,7 @@ class StoreState extends ChangeNotifier {
       stores = const [];
       storeId = null;
       setup = null;
+      plan = null;
       waiterMode = false;
       mustChangePassword = false;
       notifyListeners();
@@ -74,12 +79,58 @@ class StoreState extends ChangeNotifier {
       waiterMode = canWaiter && (savedMode ?? onlyWaiter);
       final saved = prefs.getString(_storeKey);
       storeId = stores.any((s) => s['id'] == saved) ? saved : (stores.isEmpty ? null : stores.first['id'] as String);
+      // Тариф — не мешает входу: не загрузился — функции не закрываем заранее,
+      // сервер всё равно ответит «нет на тарифе».
+      loadPlan();
     } catch (e) {
       error = e;
     } finally {
       loading = false;
       notifyListeners();
     }
+  }
+
+  /// Обновить тариф (после входа и после смены тарифа).
+  Future<void> loadPlan() async {
+    try {
+      plan = await api.get('/store/plan') as Map<String, dynamic>;
+      notifyListeners();
+    } catch (_) {
+      // остаётся прежний
+    }
+  }
+
+  List<Map<String, dynamic>> _features(Map<String, dynamic>? view) =>
+      [for (final f in (view?['features'] as List?) ?? const []) Map<String, dynamic>.from(f as Map)];
+
+  /// Есть ли функция в действующем тарифе; null — тариф неизвестен.
+  bool? hasFeature(String key) {
+    final cur = plan?['current'] as Map<String, dynamic>?;
+    if (cur == null) return null;
+    for (final f in _features(cur)) {
+      if (f['key'] == key) return f['included'] == true;
+    }
+    return null;
+  }
+
+  /// Название функции из тарифа («Долги покупателей»).
+  String? featureName(String key) {
+    for (final f in _features(plan?['current'] as Map<String, dynamic>?)) {
+      if (f['key'] == key) return '${f['name']}';
+    }
+    return null;
+  }
+
+  /// Название действующего тарифа.
+  String? get planName => (plan?['current'] as Map<String, dynamic>?)?['name'] as String?;
+
+  /// Первый по порядку тариф, где функция есть («доступно на тарифе …»).
+  String? planWith(String key) {
+    for (final p in (plan?['plans'] as List?) ?? const []) {
+      final m = Map<String, dynamic>.from(p as Map);
+      if (_features(m).any((f) => f['key'] == key && f['included'] == true)) return '${m['name']}';
+    }
+    return null;
   }
 
   Future<void> setStore(String id) async {

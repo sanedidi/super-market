@@ -5,6 +5,7 @@ import 'package:sm_core/sm_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../finance/finance_logic.dart';
+import '../plan/plan_ui.dart';
 import '../returns/return_screen.dart';
 import '../state.dart';
 import '../ui/theme.dart';
@@ -113,7 +114,7 @@ class _SupplierScreenState extends State<SupplierScreen> {
           ? Center(
               child: _error == null
                   ? const CircularProgressIndicator()
-                  : EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load),
+                  : ErrorView(error: _error, onRetry: _load),
             )
           : RefreshIndicator(onRefresh: _load, child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: _body(st, cp))),
     );

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import '../plan/plan_ui.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -132,7 +133,7 @@ class _AbcScreenState extends State<AbcScreen> {
             ]),
             const SizedBox(height: 14),
             if (_error != null && d == null)
-              EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load)
+              ErrorView(error: _error, onRetry: _load)
             else if (d == null)
               const Padding(padding: EdgeInsets.only(top: 80), child: Center(child: CircularProgressIndicator()))
             else

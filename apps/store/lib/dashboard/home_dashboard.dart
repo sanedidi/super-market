@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import '../plan/plan_ui.dart';
+import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
 import 'abc_screen.dart';
@@ -212,7 +214,11 @@ class _HomeDashboardState extends State<HomeDashboard> {
       const SizedBox(height: 12),
       _trendGrid(),
       if (_month != null) ...[const SizedBox(height: 16), _monthCard()],
-      if (_abc != null) ...[const SizedBox(height: 16), AbcHomeCard(data: _abc!)],
+      if (_abc != null)
+        ...[const SizedBox(height: 16), AbcHomeCard(data: _abc!)]
+      // ABC/XYZ нет в тарифе — блок не прячем: карточка с замком и переходом в «Тариф».
+      else if (context.watch<StoreState>().hasFeature('abc_xyz') == false)
+        ...[const SizedBox(height: 16), const AbcLockedCard()],
       if (_pays != null && ((_pays!['items'] as List?) ?? const []).isNotEmpty) ...[const SizedBox(height: 16), _paymentsCard()],
       if (_cats != null && ((_cats!['items'] as List?) ?? const []).isNotEmpty) ...[const SizedBox(height: 16), _categoriesCard()],
       if (_heat != null && ((_heat!['heatmap'] as List?) ?? const []).isNotEmpty) ...[const SizedBox(height: 16), _heatCard()],
@@ -623,6 +629,36 @@ class _TrendTile extends StatelessWidget {
 // ---------------------------------------------------------------- ABC/XYZ на главной
 
 /// Блок ABC/XYZ на главной (Д1) и состояние «мало данных» (Д3).
+/// Д1 · ABC/XYZ на главной, когда его нет в тарифе: тот же заголовок, замок
+/// «на тарифе …» и что даёт анализ. Нажали — шторка «Нет на вашем тарифе».
+class AbcLockedCard extends StatelessWidget {
+  const AbcLockedCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      onTap: () => showPlanSheet(context, feature: 'abc_xyz'),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(tr('ABC/XYZ-анализ', 'ABC/XYZ tahlili'), style: AppText.title),
+              Text(tr('какие товары главные и как ровно продаются', 'asosiy mahsulotlar va sotuv barqarorligi'), style: AppText.small),
+            ]),
+          ),
+          const PlanLockChip('abc_xyz'),
+        ]),
+        const SizedBox(height: 12),
+        PlanLockedBox(
+          feature: 'abc_xyz',
+          text: tr('Super Market сам покажет, какие товары приносят деньги, какие продаются неровно и что лежит без движения.',
+              'Super Market qaysi mahsulotlar pul keltirishini, qaysilari notekis sotilishini va nimalar harakatsiz turganini oʻzi koʻrsatadi.'),
+        ),
+      ]),
+    );
+  }
+}
+
 class AbcHomeCard extends StatelessWidget {
   const AbcHomeCard({super.key, required this.data});
   final Map<String, dynamic> data;

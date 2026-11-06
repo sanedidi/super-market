@@ -5,6 +5,7 @@ import 'package:sm_core/sm_core.dart';
 
 import '../control/cashiers_screen.dart' show plural;
 import '../finance/finance_logic.dart' show plainAmount;
+import '../plan/plan_ui.dart';
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -117,7 +118,7 @@ class _DebtSettingsScreenState extends State<DebtSettingsScreen> {
       body: s == null
           ? (_error == null
               ? const Center(child: CircularProgressIndicator())
-              : EmptyState(icon: Icons.wifi_off_rounded, title: tr('Не удалось загрузить', 'Yuklab boʻlmadi'), text: '$_error', action: tr('Повторить', 'Qayta urinish'), onAction: _load))
+              : ErrorView(error: _error, onRetry: _load))
           : ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
               Text(tr('ЭТОТ МАГАЗИН', 'USHBU DOʻKON'), style: AppText.caption),
               const SizedBox(height: 8),
