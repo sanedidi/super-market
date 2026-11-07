@@ -264,9 +264,14 @@ String flagWhen(Map<String, dynamic> f, {DateTime? now}) {
   };
 }
 
-/// Флажок «зайти потом» в списке: «Вы · сегодня, 11:05», «Шерзод · 3 ноя · давно · фото».
+/// Флажок «зайти потом» в списке: «Вы · сегодня, 11:05», «Шерзод · 3 ноя · давно · фото»;
+/// флажок с карты OpenStreetMap — «с карты · 7 ноя».
 String flagSubtitle(Map<String, dynamic> f, {DateTime? now}) => [
-      f['mine'] == true ? tr('Вы', 'Siz') : '${f['rep_name'] ?? ''}'.split(' ').first,
+      f['source'] == 'osm'
+          ? tr('с карты', 'xaritadan')
+          : f['mine'] == true
+              ? tr('Вы', 'Siz')
+              : '${f['rep_name'] ?? ''}'.split(' ').first,
       flagWhen(f, now: now),
       if (f['old'] == true) tr('давно', 'ancha oldin'),
       if ('${f['photo_url'] ?? ''}'.isNotEmpty) tr('фото', 'rasm'),

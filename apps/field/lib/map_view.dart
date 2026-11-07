@@ -211,7 +211,7 @@ class CoverageMapState extends State<CoverageMap> {
           height: 32,
           child: GestureDetector(
             onTap: widget.onFlagTap == null ? null : () => widget.onFlagTap!(f),
-            child: Center(child: FlagDot(old: f['old'] == true)),
+            child: Center(child: FlagDot(old: f['old'] == true, fromMap: f['source'] == 'osm')),
           ),
         ));
       }
@@ -442,6 +442,7 @@ class MapLegend extends StatelessWidget {
         ),
         row(const SizedBox(width: 14, height: 14, child: FittedBox(child: SmStoreDot())), tr('уже в Super Market', 'Super Market’da')),
         row(const SizedBox(width: 14, height: 14, child: FittedBox(child: FlagDot())), tr('зайти потом', 'keyin kirish')),
+        row(const SizedBox(width: 14, height: 14, child: FittedBox(child: FlagDot(fromMap: true))), tr('магазин с карты', 'xaritadagi doʻkon')),
         if (hasDistrict) row(Container(width: 14, height: 3, color: AppColors.primary.withValues(alpha: 0.75)), tr('граница моего района', 'tumanim chegarasi')),
         const SizedBox(height: 2),
         Text('© OpenStreetMap', style: AppText.small.copyWith(fontSize: 9, color: AppColors.muted)),

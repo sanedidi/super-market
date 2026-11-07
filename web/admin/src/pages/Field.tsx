@@ -141,6 +141,8 @@ interface Flag {
   rep_name: string
   created_at: string
   old: boolean
+  /** rep — поставил продажник; osm — продуктовый магазин с карты OpenStreetMap. */
+  source: 'rep' | 'osm'
 }
 
 type Result = 'lead' | 'refused' | 'closed' | 'later' | 'ours'
@@ -421,7 +423,8 @@ function CoverageLayers({ ymaps, map, colors, reload, onPlace }: { ymaps: any; m
     flags.current?.removeAll()
     // Флажки «зайти потом» — магазины, куда продажник вернётся.
     for (const f of data.flags ?? []) {
-      const who = `${f.rep_name} · ${dateTime(f.created_at)}${f.old ? ' · давно' : ''}`
+      const osm = f.source === 'osm'
+      const who = osm ? 'с карты OpenStreetMap' : `${f.rep_name} · ${dateTime(f.created_at)}${f.old ? ' · давно' : ''}`
       const photo = f.photo_url ? `<br><img src="${encodeURI(f.photo_url)}" style="width:220px;border-radius:8px;margin-top:6px">` : ''
       flags.current?.add(
         new ymaps.Placemark(
@@ -431,7 +434,9 @@ function CoverageLayers({ ymaps, map, colors, reload, onPlace }: { ymaps: any; m
             balloonContentHeader: `Зайти потом${f.name ? ` · ${escapeHtml(f.name)}` : ''}`,
             balloonContentBody: `${escapeHtml(who)}${photo}`,
           },
-          { preset: 'islands#glyphIcon', iconGlyph: 'flag', iconGlyphColor: '#F59E0B', iconColor: '#F59E0B', iconOpacity: f.old ? 0.6 : 1 },
+          osm
+            ? { preset: 'islands#circleDotIcon', iconColor: '#F59E0B' }
+            : { preset: 'islands#glyphIcon', iconGlyph: 'flag', iconGlyphColor: '#F59E0B', iconColor: '#F59E0B', iconOpacity: f.old ? 0.6 : 1 },
         ),
       )
     }
@@ -620,6 +625,9 @@ function Now({ onDay }: { onDay: (repId: string) => void }) {
             </span>
             <span>
               <span style={{ color: '#F59E0B' }}>⚑</span> зайти потом
+            </span>
+            <span>
+              <span style={{ color: '#F59E0B' }}>◉</span> магазин с карты (OpenStreetMap)
             </span>
             <span>Цвет точки — продажник, линия — путь сегодня</span>
             <span style={{ color: '#A1A1AA' }}>━ прошлые обходы</span>

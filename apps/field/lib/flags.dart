@@ -23,26 +23,29 @@ class FlagColors {
 
 /// Жёлтый флажок на карте.
 class FlagDot extends StatelessWidget {
-  const FlagDot({super.key, this.size = 26, this.old = false});
+  const FlagDot({super.key, this.size = 26, this.old = false, this.fromMap = false});
 
   final double size;
 
   /// Старше 14 дней — бледнее.
   final bool old;
 
+  /// Магазин с карты OpenStreetMap (никто ещё не был) — белый с жёлтой рамкой.
+  final bool fromMap;
+
   @override
   Widget build(BuildContext context) => Opacity(
-        opacity: old ? 0.6 : 1,
+        opacity: old && !fromMap ? 0.6 : 1,
         child: Container(
           width: size,
           height: size,
           decoration: BoxDecoration(
-            color: FlagColors.amber,
+            color: fromMap ? AppColors.white : FlagColors.amber,
             borderRadius: BorderRadius.circular(size * 0.32),
-            border: Border.all(color: AppColors.white, width: 2),
+            border: Border.all(color: fromMap ? FlagColors.amber : AppColors.white, width: 2),
             boxShadow: shadow,
           ),
-          child: Icon(Icons.flag_rounded, size: size * 0.58, color: AppColors.white),
+          child: Icon(fromMap ? Icons.outlined_flag : Icons.flag_rounded, size: size * 0.58, color: fromMap ? FlagColors.amber : AppColors.white),
         ),
       );
 }
@@ -273,7 +276,10 @@ class _FlagSheetState extends State<_FlagSheet> {
             const SizedBox(height: 2),
             Text(
               [
-                _mine ? tr('Вы поставили', 'Siz qoʻydingiz') : tr('Поставил ${_f['rep_name']}', '${_f['rep_name']} qoʻydi'),
+                if (_f['source'] == 'osm')
+                  tr('С карты OpenStreetMap', 'OpenStreetMap xaritasidan')
+                else
+                  _mine ? tr('Вы поставили', 'Siz qoʻydingiz') : tr('Поставил ${_f['rep_name']}', '${_f['rep_name']} qoʻydi'),
                 flagWhen(_f),
                 if (_f['old'] == true) tr('давно', 'ancha oldin'),
                 if (dist != null) tr('$dist м от вас', 'sizdan $dist m'),

@@ -54,25 +54,30 @@ type Flag struct {
 	CloseReason string     `json:"close_reason"`
 	ClosedAt    *time.Time `json:"closed_at"`
 	ClosedBy    string     `json:"closed_by"`
-	DistanceM   *int       `json:"distance_m,omitempty"`
+	// rep — поставил продажник; osm — продуктовый магазин с карты OpenStreetMap (автора нет).
+	Source string `json:"source"`
+	// Тип магазина на карте OSM: convenience, supermarket, greengrocer …
+	Shop      string `json:"shop"`
+	DistanceM *int   `json:"distance_m,omitempty"`
 }
 
 // flagCols — колонки Flag; $me — продажник (пустая строка — супер-админ).
 func flagCols(me int) string {
 	return `f.id, ST_Y(f.location::geometry), ST_X(f.location::geometry), f.name, f.photo_url, f.status,
-	       f.rep_id::text, fr.full_name, f.rep_id::text = $` + itoa(me) + `, f.created_at,
-	       f.created_at < now() - interval '` + itoa(flagOldDays) + ` days', f.close_reason, f.closed_at, COALESCE(cb.full_name, '')`
+	       COALESCE(f.rep_id::text, ''), COALESCE(fr.full_name, ''), COALESCE(f.rep_id::text = $` + itoa(me) + `, false), f.created_at,
+	       f.created_at < now() - interval '` + itoa(flagOldDays) + ` days', f.close_reason, f.closed_at, COALESCE(cb.full_name, ''),
+	       f.source, f.shop`
 }
 
 const flagJoins = `
 	FROM field_flags f
-	JOIN field_reps fr      ON fr.id = f.rep_id
+	LEFT JOIN field_reps fr ON fr.id = f.rep_id
 	LEFT JOIN field_reps cb ON cb.id = f.closed_by`
 
 func scanFlag(row pgx.CollectableRow) (Flag, error) {
 	var f Flag
 	err := row.Scan(&f.ID, &f.Lat, &f.Lng, &f.Name, &f.PhotoURL, &f.Status, &f.RepID, &f.RepName, &f.Mine, &f.CreatedAt,
-		&f.Old, &f.CloseReason, &f.ClosedAt, &f.ClosedBy)
+		&f.Old, &f.CloseReason, &f.ClosedAt, &f.ClosedBy, &f.Source, &f.Shop)
 	return f, err
 }
 
@@ -82,7 +87,7 @@ func scanFlagDist(row pgx.CollectableRow) (Flag, error) {
 		d int
 	)
 	err := row.Scan(&f.ID, &f.Lat, &f.Lng, &f.Name, &f.PhotoURL, &f.Status, &f.RepID, &f.RepName, &f.Mine, &f.CreatedAt,
-		&f.Old, &f.CloseReason, &f.ClosedAt, &f.ClosedBy, &d)
+		&f.Old, &f.CloseReason, &f.ClosedAt, &f.ClosedBy, &f.Source, &f.Shop, &d)
 	f.DistanceM = &d
 	return f, err
 }
@@ -172,8 +177,11 @@ func (s *Service) CreateFlag(ctx context.Context, p *identity.Principal, in Flag
 		if len(near) > 0 {
 			f := near[0]
 			who := f.RepName
-			if f.Mine {
+			switch {
+			case f.Mine:
 				who = "ваш"
+			case f.Source == "osm":
+				who = "с карты"
 			}
 			return apperr.Conflict("flag_near", "здесь уже стоит флажок ("+who+") — можно добавить к нему фото").
 				Uz("bu yerda allaqachon bayroqcha bor (" + f.RepName + ") — unga rasm qoʻshish mumkin").

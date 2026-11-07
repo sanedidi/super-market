@@ -57,6 +57,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/reps/{id}/day", m.repDay)
 		r.Get("/places/{id}", m.adminPlace)
 		r.Get("/flags/{id}", m.getFlag)
+		r.Post("/flags/import", m.importOSMFlags)
 		r.Get("/districts", m.districts)
 		r.Put("/districts/{id}/boundary", m.setBoundary)
 		r.Post("/districts/{id}/reset", m.resetCoverage)
@@ -262,4 +263,10 @@ func (m *Module) deleteFlag(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) notStore(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (Flag, error) { return m.svc.NotStore(r.Context(), pr(r), id) })
+}
+
+func (m *Module) importOSMFlags(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "", func(_ string, in OSMImportInput) (OSMImportResult, error) {
+		return m.svc.ImportOSMFlags(r.Context(), pr(r), in)
+	})
 }

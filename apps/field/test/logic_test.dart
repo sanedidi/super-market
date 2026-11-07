@@ -95,5 +95,9 @@ void main() {
       'Азиз · 3 окт · давно',
     );
     expect(flagWhen({'created_at': null}), '');
+    expect(
+      flagSubtitle({'source': 'osm', 'rep_name': '', 'created_at': DateTime(2026, 11, 7, 9, 0).toIso8601String()}, now: now),
+      'с карты · сегодня, 9:00',
+    );
   });
 }

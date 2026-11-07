@@ -462,4 +462,42 @@ func TestFieldFlags(t *testing.T) {
 		t.Fatalf("open flags left = %v", l.Body)
 	}
 	a.expect(a.do("GET", "/field/flags/not-a-uuid", tok1, nil), 404, "bad id")
+
+	// Импорт продуктовых магазинов из OpenStreetMap: без сетей, только в районах,
+	// не рядом с отмеченными магазинами; повторный импорт не дублирует.
+	osmItems := []map[string]any{
+		{"id": "n1", "lat": 41.2738, "lng": 69.2048, "shop": "convenience", "name": "Жасур диёр"},
+		{"id": "n2", "lat": 41.2740, "lng": 69.2050, "shop": "supermarket", "name": "Korzinka Chilonzor"},
+		{"id": "n3", "lat": 41.2745, "lng": 69.2055, "shop": "supermarket", "name": "Shop", "brand": "Havas"},
+		{"id": "n4", "lat": 41.2750, "lng": 69.2060, "shop": "clothes", "name": "Одежда"},
+		{"id": "n5", "lat": 41.6000, "lng": 69.0000, "shop": "convenience", "name": "За городом"},
+		{"id": "n6", "lat": 41.3604, "lng": 69.2800, "shop": "convenience", "name": "Рядом с отметкой"},
+		{"id": "w7", "lat": 41.2900, "lng": 69.2300, "shop": "greengrocer", "name": "Камила барака"},
+		{"id": "n1", "lat": 41.2738, "lng": 69.2048, "shop": "convenience", "name": "Жасур диёр"},
+	}
+	a.expect(a.do("POST", "/admin/field/flags/import", tok1, map[string]any{"items": osmItems}), 403, "import by rep")
+	dry := a.expect(a.do("POST", "/admin/field/flags/import", adminTok, map[string]any{"items": osmItems, "dry_run": true}), 200, "import dry")
+	if dry.Body["created"].(float64) != 2 || dry.Body["chains"].(float64) != 2 || dry.Body["not_food"].(float64) != 1 ||
+		dry.Body["outside"].(float64) != 1 || dry.Body["near_place"].(float64) != 1 {
+		t.Fatalf("dry = %v", dry.Body)
+	}
+	if l := a.expect(a.do("GET", "/field/flags", tok1, nil), 200, "after dry"); l.Body["all"].(float64) != 0 {
+		t.Fatalf("dry run created flags: %v", l.Body)
+	}
+	imp := a.expect(a.do("POST", "/admin/field/flags/import", adminTok, map[string]any{"items": osmItems}), 200, "import")
+	if imp.Body["created"].(float64) != 2 || imp.Body["received"].(float64) != 8 {
+		t.Fatalf("import = %v", imp.Body)
+	}
+	if again := a.expect(a.do("POST", "/admin/field/flags/import", adminTok, map[string]any{"items": osmItems}), 200, "import again"); again.Body["created"].(float64) != 0 || again.Body["existing"].(float64) != 2 {
+		t.Fatalf("import again = %v", again.Body)
+	}
+	near := a.expect(a.do("GET", "/field/flags?lat=41.2738&lng=69.2048", tok1, nil), 200, "osm flags")
+	first := near.Body["items"].([]any)[0].(map[string]any)
+	if near.Body["all"].(float64) != 2 || first["source"] != "osm" || first["rep_name"] != "" || first["shop"] != "convenience" || first["mine"] != false {
+		t.Fatalf("osm flags = %v", near.Body)
+	}
+	// Флажок с карты: удалить нельзя (автора нет), «Не магазин» — можно.
+	a.expect(a.do("DELETE", "/field/flags/"+first["id"].(string), tok1, nil), 403, "delete osm flag")
+	a.expect(a.do("POST", "/field/flags/"+first["id"].(string)+"/not-store", tok1, nil), 200, "osm not store")
+	a.expect(a.do("POST", "/admin/field/flags/import", adminTok, map[string]any{"items": []any{}}), 400, "empty import")
 }
