@@ -271,17 +271,23 @@ function stateTag(r: LiveRep): ReactNode {
 function useYMap(box: React.RefObject<HTMLDivElement | null>, center: [number, number], zoom: number) {
   const { ymaps, error } = useYmaps()
   const [map, setMap] = useState<any>(null)
+  // Контейнер карты может появиться позже (после выбора продажника, в открытом окне) —
+  // следим за ним после каждой отрисовки, иначе карта так и не создастся.
+  const [el, setEl] = useState<HTMLDivElement | null>(null)
   useEffect(() => {
-    if (!ymaps || !box.current) return
-    const m = new ymaps.Map(box.current, { center, zoom, controls: ['zoomControl', 'geolocationControl'] }, { suppressMapOpenBlock: true })
+    if (box.current !== el) setEl(box.current)
+  })
+  useEffect(() => {
+    if (!ymaps || !el) return
+    const m = new ymaps.Map(el, { center, zoom, controls: ['zoomControl', 'geolocationControl'] }, { suppressMapOpenBlock: true })
     setMap(m)
     return () => {
       m.destroy()
       setMap(null)
     }
-    // Карта создаётся один раз.
+    // Карта создаётся один раз на контейнер.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ymaps])
+  }, [ymaps, el])
   useFitMap(box, map)
   return { ymaps, map, error }
 }
@@ -703,16 +709,15 @@ function DayRoute({ repId, setRepId }: { repId: string | undefined; setRepId: (v
 
 // ------------------------------------------------- С3 «Покрытие районов»
 
-function BoundaryModal({ district, onClose }: { district: District | null; onClose: () => void }) {
-  const { message } = App.useApp()
-  const qc = useQueryClient()
+// Карта — отдельным компонентом внутри окна: он появляется, когда окно открыто и контейнер
+// карты уже в DOM. Если создавать карту в самом окне, хук срабатывает, пока окно закрыто
+// (контейнера нет), и больше не перезапускается — карта остаётся пустой.
+function BoundaryMap({ district, poly }: { district: District; poly: React.MutableRefObject<any> }) {
   const box = useRef<HTMLDivElement>(null)
   const { ymaps, map, error } = useYMap(box, [TASHKENT.lat, TASHKENT.lng], 12)
-  const poly = useRef<any>(null)
-  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    if (!ymaps || !map || !district) return
+    if (!ymaps || !map) return
     const coords = district.boundary.length ? [district.boundary] : [[]]
     const p = new ymaps.Polygon(coords, {}, { editorDrawingCursor: 'crosshair', fillColor: '#E11D2A', fillOpacity: 0.12, strokeColor: '#E11D2A', strokeWidth: 3 })
     map.geoObjects.add(p)
@@ -727,7 +732,22 @@ function BoundaryModal({ district, onClose }: { district: District | null; onClo
       map.geoObjects.remove(p)
       poly.current = null
     }
-  }, [ymaps, map, district])
+  }, [ymaps, map, district, poly])
+
+  if (error) return <Alert type="error" showIcon message={error} />
+  return (
+    <div className="sm-map" style={{ height: 520 }}>
+      <div ref={box} style={{ position: 'absolute', inset: 0 }} />
+      {!ymaps && <Spin style={{ position: 'absolute', inset: 0, margin: 'auto', height: 32 }} />}
+    </div>
+  )
+}
+
+function BoundaryModal({ district, onClose }: { district: District | null; onClose: () => void }) {
+  const { message } = App.useApp()
+  const qc = useQueryClient()
+  const poly = useRef<any>(null)
+  const [busy, setBusy] = useState(false)
 
   const save = async (clear = false) => {
     if (!district) return
@@ -781,14 +801,7 @@ function BoundaryModal({ district, onClose }: { district: District | null; onClo
         Кликайте по карте — точки границы. Точки можно двигать, правой кнопкой — удалить. Клетки 100×100 м, у которых середина внутри границы, и есть
         район.
       </Typography.Paragraph>
-      {error ? (
-        <Alert type="error" showIcon message={error} />
-      ) : (
-        <div className="sm-map" style={{ height: 520 }}>
-          <div ref={box} style={{ position: 'absolute', inset: 0 }} />
-          {!ymaps && <Spin style={{ position: 'absolute', inset: 0, margin: 'auto', height: 32 }} />}
-        </div>
-      )}
+      {district && <BoundaryMap key={district.id} district={district} poly={poly} />}
     </Modal>
   )
 }
