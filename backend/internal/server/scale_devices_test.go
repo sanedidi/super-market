@@ -108,7 +108,7 @@ func TestScaleDevices(t *testing.T) {
 	// Цена сахара поменялась — «изменён», в следующей отправке только он и хурма.
 	a.expect(a.do("POST", "/store/scales/send", tok, map[string]any{"store_id": store, "scale_ids": []string{rid}, "mode": "all"}), 200, "send all")
 	all := a.expect(posDo(a, "GET", "/pos/scales/jobs", posTok, "", nil), 200, "take all").items()
-	if len(all) != 1 || len(all[0]["items"].([]any)) != 2 {
+	if len(all) != 1 || len(all[0]["items"].([]any)) != 2 || all[0]["mode"] != "all" {
 		t.Fatalf("all mode = %v", all)
 	}
 
@@ -131,7 +131,12 @@ func TestScaleDevices(t *testing.T) {
 
 	// Проверка связи: касса не достучалась — весы «нет связи».
 	chk := a.expect(a.do("POST", "/store/scales/devices/"+rid+"/check", tok, nil), 200, "check")
-	a.expect(posDo(a, "POST", "/pos/scales/jobs/"+all[0]["id"].(string), posTok, "", map[string]any{"done_ids": []string{}, "error": "нет связи"}), 200, "all failed")
+	// «Все весовые»: касса очистила весы и записала только сахар — в весах один товар.
+	a.expect(a.do("POST", "/store/scales/devices/"+rid+"/loaded", tok, map[string]any{"product_ids": []string{persimmon}}), 200, "persimmon by hand")
+	a.expect(posDo(a, "POST", "/pos/scales/jobs/"+all[0]["id"].(string), posTok, "", map[string]any{"done_ids": []string{sugar}, "cleared": true}), 200, "all done")
+	if n := a.expect(a.do("GET", "/store/scales/devices?store_id="+store, tok, nil), 200, "after clear").items()[0]["items"].(float64); n != 1 {
+		t.Fatalf("items after clear = %v", n)
+	}
 	took := a.expect(posDo(a, "GET", "/pos/scales/jobs", posTok, "", nil), 200, "take check").items()
 	if len(took) != 1 || took[0]["kind"] != "check" || took[0]["id"] != chk.str("id") {
 		t.Fatalf("check job = %v", took)

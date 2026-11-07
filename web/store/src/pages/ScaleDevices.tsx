@@ -650,7 +650,7 @@ export function SendToScalesModal({
         </Radio.Button>
         <Radio.Button value="all" style={{ height: 'auto', padding: '10px 14px', borderRadius: 12, lineHeight: 1.4 }}>
           <div style={{ fontWeight: 700 }}>{tr(`Все весовые · ${allCount ?? '…'}`, `Barcha tortiladigan · ${allCount ?? '…'}`)}</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>{tr('Весы заполнятся заново — так же, как в Super Market', 'Tarozi qaytadan toʻldiriladi — Super Marketdagidek')}</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>{tr('Весы очистятся и заполнятся заново — так же, как в Super Market', 'Tarozi tozalanadi va qaytadan toʻldiriladi — Super Marketdagidek')}</div>
         </Radio.Button>
       </Radio.Group>
     </Modal>

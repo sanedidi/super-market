@@ -18,6 +18,10 @@ Future<(ServerSocket, List<String>)> fakeScale({Set<int> reject = const {}}) asy
           final line = ascii.decode(buf).trim();
           buf.clear();
           got.add(line);
+          if (line == '!0IA') {
+            c.add([...ascii.encode('0ia'), 0x0D, 0x0A, 0x03]);
+            continue;
+          }
           final plu = line.substring(3, 7);
           final ok = !reject.contains(int.parse(plu));
           c.add([...ascii.encode(ok ? '0v${plu}a' : '0e${plu}x'), 0x0D, 0x0A, 0x03]);
@@ -58,6 +62,16 @@ void main() {
     expect((res['failures'] as List).single['product_id'], 'b');
     expect(got.length, 2);
     expect(got.first, startsWith('!0V0001A0000001014000'));
+  });
+
+  test('«Все весовые»: сначала очистка весов, потом товары', () async {
+    final (server, got) = await fakeScale();
+    addTearDown(server.close);
+    final res = await sendGoods('127.0.0.1', server.port, [ScaleGood(productId: 'a', plu: 1, name: 'Shakar', price: 14000)], clear: true);
+    expect(res['error'], '');
+    expect(res['cleared'], isTrue);
+    expect(got, hasLength(2));
+    expect(got.first, '!0IA');
   });
 
   test('весы не в сети — ошибка, ничего не отправлено', () async {

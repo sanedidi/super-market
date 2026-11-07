@@ -44,7 +44,7 @@ class ScaleJobs {
     } else if (job['kind'] == 'check') {
       result = await _check(host, port);
     } else {
-      result = await sendGoods(host, port, goods);
+      result = await sendGoods(host, port, goods, clear: job['mode'] == 'all');
     }
     try {
       await api.post('/pos/scales/jobs/$id', result);
@@ -70,8 +70,11 @@ class ScaleJobs {
 }
 
 /// Записать товары в весы по одному; оборвалось соединение — переподключиться
-/// и продолжить. Возвращает итог для сервера: принятые, не принятые, ошибку.
-Future<Map<String, dynamic>> sendGoods(String host, int port, List<ScaleGood> goods, {Duration timeout = const Duration(seconds: 5)}) async {
+/// и продолжить. [clear] — сначала очистить весы («Все весовые»: в весах
+/// останется только то, что есть в Super Market). Возвращает итог для сервера:
+/// принятые, не принятые, очищены ли весы, ошибку.
+Future<Map<String, dynamic>> sendGoods(String host, int port, List<ScaleGood> goods,
+    {bool clear = false, Duration timeout = const Duration(seconds: 5)}) async {
   final done = <String>[];
   final failures = <Map<String, dynamic>>[];
   var s = DahuaScale(host, port, timeout: timeout);
@@ -85,6 +88,17 @@ Future<Map<String, dynamic>> sendGoods(String host, int port, List<ScaleGood> go
     };
   }
   var reconnects = 0;
+  var cleared = false;
+  if (clear) {
+    try {
+      final reply = await s.command(dahuaClear);
+      if (!reply.toLowerCase().contains('0ia')) throw ScaleError(tr('весы не ответили на очистку', 'tarozi tozalashga javob bermadi'));
+      cleared = true;
+    } on ScaleError catch (e) {
+      await s.close();
+      return {'done_ids': done, 'error': tr('Не удалось очистить весы: ${e.message}', 'Tarozini tozalab boʻlmadi: ${e.message}')};
+    }
+  }
   try {
     for (var i = 0; i < goods.length; i++) {
       final g = goods[i];
@@ -99,14 +113,14 @@ Future<Map<String, dynamic>> sendGoods(String host, int port, List<ScaleGood> go
         // Соединение оборвалось — переподключаемся и повторяем этот товар.
         await s.close();
         if (reconnects >= 3) {
-          return {'done_ids': done, 'failures': failures, 'error': tr('Связь с весами оборвалась: ${e.message}', 'Tarozi bilan aloqa uzildi: ${e.message}')};
+          return {'done_ids': done, 'failures': failures, 'cleared': cleared, 'error': tr('Связь с весами оборвалась: ${e.message}', 'Tarozi bilan aloqa uzildi: ${e.message}')};
         }
         reconnects++;
         s = DahuaScale(host, port, timeout: timeout);
         try {
           await s.open();
         } on ScaleError catch (e2) {
-          return {'done_ids': done, 'failures': failures, 'error': tr('Связь с весами оборвалась: ${e2.message}', 'Tarozi bilan aloqa uzildi: ${e2.message}')};
+          return {'done_ids': done, 'failures': failures, 'cleared': cleared, 'error': tr('Связь с весами оборвалась: ${e2.message}', 'Tarozi bilan aloqa uzildi: ${e2.message}')};
         }
         i--;
       }
@@ -114,5 +128,5 @@ Future<Map<String, dynamic>> sendGoods(String host, int port, List<ScaleGood> go
   } finally {
     await s.close();
   }
-  return {'done_ids': done, 'failures': failures, 'error': ''};
+  return {'done_ids': done, 'failures': failures, 'cleared': cleared, 'error': ''};
 }

@@ -667,8 +667,10 @@ func putScaleItem(ctx context.Context, q db.Querier, scaleID string, g scaleGood
 
 // PosScaleJob — задание кассе: весы и товары (уже в виде для весов).
 type PosScaleJob struct {
-	ID    string      `json:"id"`
-	Kind  string      `json:"kind"`
+	ID   string `json:"id"`
+	Kind string `json:"kind"`
+	// all — сначала очистить весы, потом записать все товары.
+	Mode  string      `json:"mode"`
 	Scale PosScale    `json:"scale"`
 	Items []scaleGood `json:"items"`
 }
@@ -700,14 +702,14 @@ func (s *Service) TakeScaleJobs(ctx context.Context, p *identity.Principal) ([]P
 			WHERE j2.store_id = $1 AND (s2.device_id IS NULL OR s2.device_id = $2)
 			  AND (j2.status = 'pending' OR (j2.status = 'running' AND (j2.taken_by = $2 OR j2.taken_at < now() - interval '3 minutes')))
 			ORDER BY j2.created_at LIMIT 5 FOR UPDATE OF j2 SKIP LOCKED)
-		RETURNING j.id, j.kind, j.items, s.id, s.name, s.brand, s.host, s.port`, storeID, p.DeviceID)
+		RETURNING j.id, j.kind, j.mode, j.items, s.id, s.name, s.brand, s.host, s.port`, storeID, p.DeviceID)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (PosScaleJob, error) {
 		var j PosScaleJob
 		var raw []byte
-		err := r.Scan(&j.ID, &j.Kind, &raw, &j.Scale.ID, &j.Scale.Name, &j.Scale.Brand, &j.Scale.Host, &j.Scale.Port)
+		err := r.Scan(&j.ID, &j.Kind, &j.Mode, &raw, &j.Scale.ID, &j.Scale.Name, &j.Scale.Brand, &j.Scale.Host, &j.Scale.Port)
 		if err == nil {
 			err = json.Unmarshal(raw, &j.Items)
 		}
@@ -724,6 +726,8 @@ type ScaleJobResult struct {
 	Failures []ScaleFailure `json:"failures"`
 	// Не удалось вообще (нет связи с весами и т. п.); пусто — всё прошло.
 	Error string `json:"error"`
+	// Касса очистила весы перед записью («Все весовые»).
+	Cleared bool `json:"cleared"`
 }
 
 // ScaleJobDone — касса сообщает итог: что весы приняли, что нет, связь.
@@ -737,10 +741,10 @@ func (s *Service) ScaleJobDone(ctx context.Context, p *identity.Principal, id st
 		return nil, apperr.Validation("слишком много товаров").Uz("mahsulotlar juda koʻp")
 	}
 	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		var scaleID, kind, status string
+		var scaleID, kind, mode, status string
 		var raw, fail []byte
-		err := tx.QueryRow(ctx, `SELECT scale_id, kind, status, items, failures FROM scale_jobs WHERE id = $1 AND store_id = $2 FOR UPDATE`,
-			id, storeID).Scan(&scaleID, &kind, &status, &raw, &fail)
+		err := tx.QueryRow(ctx, `SELECT scale_id, kind, mode, status, items, failures FROM scale_jobs WHERE id = $1 AND store_id = $2 FOR UPDATE`,
+			id, storeID).Scan(&scaleID, &kind, &mode, &status, &raw, &fail)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return apperr.NotFound("задание не найдено").Uz("topshiriq topilmadi")
 		}
@@ -757,6 +761,12 @@ func (s *Service) ScaleJobDone(ctx context.Context, p *identity.Principal, id st
 		done := map[string]bool{}
 		for _, pid := range in.DoneIDs {
 			done[pid] = true
+		}
+		// «Все весовые»: касса очистила весы — в них только то, что записалось сейчас.
+		if kind == "send" && mode == "all" && in.Cleared {
+			if _, err := tx.Exec(ctx, `DELETE FROM scale_items WHERE scale_id = $1`, scaleID); err != nil {
+				return err
+			}
 		}
 		sent := 0
 		for _, g := range items {

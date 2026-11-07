@@ -84,6 +84,13 @@ String dahuaPlu(ScaleGood g) {
       'B${dahuaName(g.name)}CDE';
 }
 
+/// Очистить все товары (PLU) в весах. Настройки весов (IP, формат штрихкода,
+/// шаблон наклейки) остаются — проверено на Rongta RLS1000C. Ответ «0ia».
+///
+/// Быстрые клавиши «!0L<страница>A + 36 номеров + B» (Dahua TM) Rongta
+/// RLS1000C принимает, но не применяет — клавиши привязываются в весах.
+const dahuaClear = '!0IA';
+
 /// Подтверждение весов на команду записи товара [plu].
 bool dahuaAck(String reply, int plu) => reply.toLowerCase().contains('0v${plu.toString().padLeft(4, '0')}a');
 
