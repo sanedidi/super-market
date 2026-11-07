@@ -79,4 +79,21 @@ void main() {
     expect(showOtherBanner(null, dismissed: false), isFalse);
     expect(cellKey(here), '1:2');
   });
+
+  test('флажок «зайти потом»: кто и когда', () {
+    final now = DateTime(2026, 11, 7, 17, 30);
+    expect(
+      flagSubtitle({'mine': true, 'created_at': DateTime(2026, 11, 7, 11, 5).toIso8601String()}, now: now),
+      'Вы · сегодня, 11:05',
+    );
+    expect(
+      flagSubtitle({'rep_name': 'Шерзод Алиев', 'created_at': DateTime(2026, 11, 6, 16, 40).toIso8601String(), 'photo_url': 'https://x/f.jpg'}, now: now),
+      'Шерзод · вчера, 16:40 · фото',
+    );
+    expect(
+      flagSubtitle({'rep_name': 'Азиз', 'created_at': DateTime(2026, 10, 3, 9, 0).toIso8601String(), 'old': true}, now: now),
+      'Азиз · 3 окт · давно',
+    );
+    expect(flagWhen({'created_at': null}), '');
+  });
 }

@@ -71,6 +71,9 @@ class Tracker extends ChangeNotifier {
   /// Клетка, где сейчас продажник: state new / mine / other (П3).
   Map<String, dynamic>? here;
 
+  /// Открытый флажок «зайти потом» ближе 100 м (из ответа на точки) или null.
+  Map<String, dynamic>? nearFlag;
+
   /// Последняя геопозиция.
   Position? position;
 
@@ -161,6 +164,7 @@ class Tracker extends ChangeNotifier {
     if (walkId != id) {
       trail.clear();
       here = null;
+      nearFlag = null;
     }
     walkId = id;
     setWalk(w);
@@ -206,6 +210,8 @@ class Tracker extends ChangeNotifier {
       }
       final h = res['here'];
       if (h is Map<String, dynamic>) here = h;
+      final fl = res['flag'];
+      nearFlag = fl is Map<String, dynamic> ? fl : null;
       sentAt = DateTime.now();
       error = null;
       await _save();
@@ -248,6 +254,7 @@ class Tracker extends ChangeNotifier {
     walkId = null;
     walk = null;
     here = null;
+    nearFlag = null;
     trail.clear();
     _queue = PointQueue();
     await _save();

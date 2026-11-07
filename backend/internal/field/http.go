@@ -39,6 +39,12 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/places/near", m.nearPlaces)
 		r.Get("/places/{id}", m.place)
 		r.Post("/visits", m.addVisit)
+		r.Get("/flags", m.flags)
+		r.Post("/flags", m.createFlag)
+		r.Get("/flags/{id}", m.getFlag)
+		r.Patch("/flags/{id}", m.updateFlag)
+		r.Delete("/flags/{id}", m.deleteFlag)
+		r.Post("/flags/{id}/not-store", m.notStore)
 	})
 	// Супер-админ: «Продажники».
 	r.Route("/admin/field", func(r chi.Router) {
@@ -50,6 +56,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Patch("/reps/{id}", m.updateRep)
 		r.Get("/reps/{id}/day", m.repDay)
 		r.Get("/places/{id}", m.adminPlace)
+		r.Get("/flags/{id}", m.getFlag)
 		r.Get("/districts", m.districts)
 		r.Put("/districts/{id}/boundary", m.setBoundary)
 		r.Post("/districts/{id}/reset", m.resetCoverage)
@@ -215,4 +222,44 @@ func (m *Module) resetCoverage(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (District, error) {
 		return m.svc.ResetCoverage(r.Context(), pr(r), id)
 	})
+}
+
+func (m *Module) flags(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (FlagList, error) {
+		q := r.URL.Query()
+		var lat, lng *float64
+		if q.Get("lat") != "" || q.Get("lng") != "" {
+			la, ln, err := latLng(r)
+			if err != nil {
+				return FlagList{}, err
+			}
+			lat, lng = &la, &ln
+		}
+		limit, _ := strconv.Atoi(q.Get("limit"))
+		return m.svc.Flags(r.Context(), pr(r), lat, lng, q.Get("mine") == "1" || q.Get("mine") == "true", limit)
+	})
+}
+
+func (m *Module) createFlag(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusCreated, "", func(_ string, in FlagInput) (Flag, error) {
+		return m.svc.CreateFlag(r.Context(), pr(r), in)
+	})
+}
+
+func (m *Module) getFlag(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (Flag, error) { return m.svc.GetFlag(r.Context(), pr(r), id) })
+}
+
+func (m *Module) updateFlag(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondBody(w, r, m.log, http.StatusOK, "id", func(id string, in FlagPatch) (Flag, error) {
+		return m.svc.UpdateFlag(r.Context(), pr(r), id, in)
+	})
+}
+
+func (m *Module) deleteFlag(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (Flag, error) { return m.svc.DeleteFlag(r.Context(), pr(r), id) })
+}
+
+func (m *Module) notStore(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (Flag, error) { return m.svc.NotStore(r.Context(), pr(r), id) })
 }

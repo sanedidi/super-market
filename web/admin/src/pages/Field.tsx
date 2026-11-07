@@ -127,7 +127,20 @@ interface MapData {
   tracks: { walk_id: string; rep_id: string; color: string; today: boolean; pts: [number, number][] }[]
   places: Place[]
   stores: { id: string; name: string; network: string; address: string; lat: number; lng: number }[]
+  flags: Flag[]
   truncated: boolean
+}
+
+/** Флажок «зайти потом»: продажник увидел магазин по дороге и пошёл дальше. */
+interface Flag {
+  id: string
+  lat: number
+  lng: number
+  name: string
+  photo_url: string
+  rep_name: string
+  created_at: string
+  old: boolean
 }
 
 type Result = 'lead' | 'refused' | 'closed' | 'later' | 'ours'
@@ -179,6 +192,7 @@ interface District {
   reps: string[]
   places: number
   connected: number
+  flags: number
   last_walk_at: string | null
   walking: boolean
 }
@@ -323,6 +337,11 @@ function placeMark(ymaps: any, p: { lat: number; lng: number; result: Result }, 
   return pm
 }
 
+/** Текст для балуна Яндекс-карты (HTML). */
+function escapeHtml(v: string): string {
+  return v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c)
+}
+
 /** Цвета районов на карте — у каждого свой. */
 const DISTRICT_COLORS = ['#2563EB', '#16A34A', '#D97706', '#7C3AED', '#0891B2', '#DB2777', '#65A30D', '#EA580C', '#4F46E5', '#0D9488', '#9333EA', '#B45309']
 
@@ -361,6 +380,7 @@ function CoverageLayers({ ymaps, map, colors, reload, onPlace }: { ymaps: any; m
   const lines = useLayer(ymaps, map)
   const places = useLayer(ymaps, map)
   const stores = useLayer(ymaps, map)
+  const flags = useLayer(ymaps, map)
   const [bounds, setBounds] = useState<number[][] | null>(null)
   const [data, setData] = useState<MapData | null>(null)
 
@@ -398,6 +418,23 @@ function CoverageLayers({ ymaps, map, colors, reload, onPlace }: { ymaps: any; m
     lines.current?.removeAll()
     places.current?.removeAll()
     stores.current?.removeAll()
+    flags.current?.removeAll()
+    // Флажки «зайти потом» — магазины, куда продажник вернётся.
+    for (const f of data.flags ?? []) {
+      const who = `${f.rep_name} · ${dateTime(f.created_at)}${f.old ? ' · давно' : ''}`
+      const photo = f.photo_url ? `<br><img src="${encodeURI(f.photo_url)}" style="width:220px;border-radius:8px;margin-top:6px">` : ''
+      flags.current?.add(
+        new ymaps.Placemark(
+          [f.lat, f.lng],
+          {
+            hintContent: escapeHtml(`Зайти потом · ${f.name || 'без названия'} · ${who}`),
+            balloonContentHeader: `Зайти потом${f.name ? ` · ${escapeHtml(f.name)}` : ''}`,
+            balloonContentBody: `${escapeHtml(who)}${photo}`,
+          },
+          { preset: 'islands#glyphIcon', iconGlyph: 'flag', iconGlyphColor: '#F59E0B', iconColor: '#F59E0B', iconOpacity: f.old ? 0.6 : 1 },
+        ),
+      )
+    }
     // Магазины, которые уже работают в Super Market.
     for (const st of data.stores ?? []) {
       stores.current?.add(
@@ -580,6 +617,9 @@ function Now({ onDay }: { onDay: (repId: string) => void }) {
             <span>Районы — разными цветами</span>
             <span>
               <span style={{ color: '#E11D2A' }}>🛒</span> уже в Super Market
+            </span>
+            <span>
+              <span style={{ color: '#F59E0B' }}>⚑</span> зайти потом
             </span>
             <span>Цвет точки — продажник, линия — путь сегодня</span>
             <span style={{ color: '#A1A1AA' }}>━ прошлые обходы</span>
@@ -910,6 +950,11 @@ function Coverage() {
           },
           { title: 'Отмечено магазинов', dataIndex: 'places' },
           { title: 'Подключено', dataIndex: 'connected' },
+          {
+            title: 'Зайти потом',
+            dataIndex: 'flags',
+            render: (v: number) => (v ? <Tag color="gold">⚑ {v}</Tag> : <span style={{ color: '#98a2b3' }}>—</span>),
+          },
           {
             title: 'Последний обход',
             render: (_, d) =>

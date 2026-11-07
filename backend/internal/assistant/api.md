@@ -1456,15 +1456,20 @@ lead_id, lead_status, distance_m?, history? [Visit]}`.
 | GET | `/field/me` | П1: `{rep, district (покрытие района: total_cells, covered_cells, coverage_pct — null без границы), today {distance_m, active_sec, places, leads, other_m}, week_m, places, leads, walk (открытый обход или null), recent [Walk], reminders [Place] («прийти позже» на сегодня и завтра), grid}` |
 | POST | `/field/walks` | «Начать обход» `{lat?, lng?}` → Walk. Открытый обход уже есть — он же |
 | GET | `/field/walks/{id}` | обход |
-| POST | `/field/walks/{id}/points` | `{points: [{at, lat, lng, accuracy, mocked}]}` (до 1000, раз в 30 с; без интернета копятся в телефоне) → `{walk, accepted, here}`. `here {state: new\|mine\|other, cx, cy, rep_name?, first_at?, places}` — П3 «Здесь уже прошёл …». На ручной паузе точки не пишутся; закончен — 409 `walk_ended` |
+| POST | `/field/walks/{id}/points` | `{points: [{at, lat, lng, accuracy, mocked}]}` (до 1000, раз в 30 с; без интернета копятся в телефоне) → `{walk, accepted, here, flag}`. `here {state: new\|mine\|other, cx, cy, rep_name?, first_at?, places}` — П3 «Здесь уже прошёл …»; `flag` — открытый флажок «зайти потом» ближе 100 м (Flag + `distance_m`) или null. На ручной паузе точки не пишутся; закончен — 409 `walk_ended` |
 | POST | `/field/walks/{id}/pause`, `/resume` | пауза / продолжить |
 | POST | `/field/walks/{id}/finish` | П6 → `Walk + {other_pct, district, coverage_before, coverage_after}` |
-| GET | `/field/map?min_lat=&min_lng=&max_lat=&max_lng=` | `{grid, cells [[cx, cy, 1 — был сам / 0 — другие]], tracks [{walk_id, rep_id, color, mine, today, pts [[lat, lng]]}], places [Place], stores [{id, name, network, address, lat, lng}], truncated}`. Область больше ≈8 км обрезается до середины; `stores` — магазины Super Market (активные, без дистрибьюторов, до 3000) во всей присланной области |
+| GET | `/field/map?min_lat=&min_lng=&max_lat=&max_lng=` | `{grid, cells [[cx, cy, 1 — был сам / 0 — другие]], tracks [{walk_id, rep_id, color, mine, today, pts [[lat, lng]]}], places [Place], stores [{id, name, network, address, lat, lng}], flags [Flag], truncated}`. Область больше ≈8 км обрезается до середины; `stores` — магазины Super Market (активные, без дистрибьюторов, до 3000) во всей присланной области |
 | GET | `/field/white-zone?lat=&lng=` | ближайшая белая зона (до ≈2 км): `{hint: {lat, lng, distance_m, direction: n\|ne\|e\|se\|s\|sw\|w\|nw} \| null}` |
 | GET | `/field/places/near?lat=&lng=` | П4 «Это он?»: отмеченные магазины ближе 50 м (`distance_m`) |
 | GET | `/field/places?result=` | «Мои магазины»: где был продажник (последние сверху) |
 | GET | `/field/places/{id}` | карточка магазина с историей визитов |
-| POST | `/field/visits` | отметка → 201 Place: `{place_id? («Это он — обновить»; дальше 150 м — 400), result: lead\|refused\|closed\|later\|ours, lat, lng, accuracy, name, comment, photo_url, reason, program, remind_on, lead}`. `refused` — `photo_url` и `reason: expensive\|has_program\|not_interested\|no_trust\|owner_against\|other` обязательны (`program: billz\|regos\|1c\|notebook\|other` — при `has_program`); `later` — `remind_on` (сегодня … +60 дней); `lead` — `{name, owner_name, owner_phone, address}`: заявка в «Заявки агентов» (те же дубли — 409 `store_exists`, закрепление 30 дней), без начисления 50% |
+| POST | `/field/visits` | отметка → 201 Place: `{place_id? («Это он — обновить»; дальше 150 м — 400), result: lead\|refused\|closed\|later\|ours, lat, lng, accuracy, name, comment, photo_url, reason, program, remind_on, lead}`. `refused` — `photo_url` и `reason: expensive\|has_program\|not_interested\|no_trust\|owner_against\|other` обязательны (`program: billz\|regos\|1c\|notebook\|other` — при `has_program`); `later` — `remind_on` (сегодня … +60 дней); `lead` — `{name, owner_name, owner_phone, address}`: заявка в «Заявки агентов» (те же дубли — 409 `store_exists`, закрепление 30 дней), без начисления 50%. Открытые флажки «зайти потом» ближе 50 м закрываются (`visited`) |
+| POST | `/field/flags` | П8 «Потом» → 201 Flag: `{lat, lng, accuracy, name?, photo_url?}` — только во время обхода (иначе 409 `no_walk`); точность хуже 30 м — 409 `low_accuracy`; ближе 30 м открытый флажок — 409 `flag_near` (`details.flag`); ближе 50 м отмеченный магазин — 409 `place_near` (`details.place`). Flag: `{id, lat, lng, name, photo_url, status: open\|visited\|removed, rep_id, rep_name, mine, created_at, old (старше 14 дней), close_reason: visited\|not_store\|deleted, closed_at, closed_by}` |
+| GET | `/field/flags?lat=&lng=&mine=1&limit=` | П11 «Зайти потом рядом»: открытые флажки по расстоянию (`distance_m`; без lat/lng — новые сверху) → `{items, all, mine}` |
+| GET / PATCH | `/field/flags/{id}` | флажок / П9 фото и название `{name?, photo_url?}` — любой продажник, только открытый (иначе 409 `flag_closed`) |
+| DELETE | `/field/flags/{id}` | автор удаляет свой («Отменить», «Удалить флажок»); чужой — 403 |
+| POST | `/field/flags/{id}/not-store` | П10 «Не магазин» — убрать у всех (закрыт — 409 `flag_closed`) |
 
 Супер-админ (`/admin/field/*`):
 
@@ -1476,7 +1481,8 @@ lead_id, lead_status, distance_m?, history? [Visit]}`.
 | PATCH | `/admin/field/reps/{id}` | любые поля из создания + `status: active\|blocked`; `district_id: null` — без района; пустой `password` — не менять. Блокировка заканчивает открытый обход |
 | GET | `/admin/field/reps/{id}/day?date=YYYY-MM-DD` | С2 «Маршрут за день»: `{rep, date, walks [Walk + pts], events [{at, kind: start\|pause\|resume\|auto_pause\|finish\|auto_finish\|other\|visit, lat, lng, data?, visit?}], totals, other_pct, new_cells, mock_points, gaps, grid}` |
 | GET | `/admin/field/places/{id}` | карточка магазина с историей |
-| GET | `/admin/field/districts` | С3: 12 районов Ташкента `{id, name, name_uz, boundary [[lat, lng]], total_cells, covered_cells, coverage_pct, reps, places, connected, last_walk_at, walking}` + итог по городу |
+| GET | `/admin/field/flags/{id}` | флажок «зайти потом» |
+| GET | `/admin/field/districts` | С3: 12 районов Ташкента `{id, name, name_uz, boundary [[lat, lng]], total_cells, covered_cells, coverage_pct, reps, places, connected, flags (открытых флажков «зайти потом»), last_walk_at, walking}` + итог по городу |
 | PUT | `/admin/field/districts/{id}/boundary` | `{boundary: [[lat, lng], …]}` (3–500 точек в Ташкенте; `[]` — убрать) — граница, число клеток пересчитывается |
 | POST | `/admin/field/districts/{id}/reset` | «Сбросить покрытие района»: клетки района снова белые (путь и отметки остаются) |
 

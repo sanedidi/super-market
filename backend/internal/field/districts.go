@@ -31,9 +31,11 @@ type District struct {
 	// Продажники района.
 	Reps []string `json:"reps"`
 	// Отмечено магазинов в районе и сколько из них подключено.
-	Places    int        `json:"places"`
-	Connected int        `json:"connected"`
-	LastWalk  *time.Time `json:"last_walk_at"`
+	Places    int `json:"places"`
+	Connected int `json:"connected"`
+	// Открытых флажков «зайти потом» в районе.
+	Flags    int        `json:"flags"`
+	LastWalk *time.Time `json:"last_walk_at"`
 	// Кто-то из продажников района сейчас в обходе.
 	Walking bool `json:"walking"`
 
@@ -153,7 +155,27 @@ func (s *Service) fill(ctx context.Context, d *District) error {
 			}
 		}
 	}
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	rows.Close()
+	frows, err := s.pool.Query(ctx, `
+		SELECT ST_Y(location::geometry), ST_X(location::geometry) FROM field_flags
+		WHERE status = 'open' AND ST_Intersects(location, ST_MakeEnvelope($1, $2, $3, $4, 4326)::geography)`, minLng, minLat, maxLng, maxLat)
+	if err != nil {
+		return err
+	}
+	defer frows.Close()
+	for frows.Next() {
+		var lat, lng float64
+		if err := frows.Scan(&lat, &lng); err != nil {
+			return err
+		}
+		if d.poly.contains(lat, lng) {
+			d.Flags++
+		}
+	}
+	return frows.Err()
 }
 
 // Districts — С3 «Покрытие районов» (и районы для выбора у продажника).

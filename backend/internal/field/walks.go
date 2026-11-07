@@ -268,6 +268,8 @@ type PointsResult struct {
 	Walk     Walk  `json:"walk"`
 	Accepted int   `json:"accepted"`
 	Here     *Here `json:"here"`
+	// Flag — открытый флажок «зайти потом» ближе 100 м (баннер «Рядом флажок — 60 м»).
+	Flag *Flag `json:"flag"`
 }
 
 type segment struct {
@@ -454,6 +456,11 @@ func (s *Service) AddPoints(ctx context.Context, p *identity.Principal, id strin
 				}
 			}
 			out.Here = h
+			fl, err := nearestFlagTx(ctx, tx, p.RepID, *hereLat, *hereLng)
+			if err != nil {
+				return err
+			}
+			out.Flag = fl
 		}
 		var newCells int64
 		if len(xs) > 0 {

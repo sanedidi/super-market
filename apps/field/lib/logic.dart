@@ -250,3 +250,24 @@ bool showOtherBanner(Map<String, dynamic>? here, {required bool dismissed}) => h
 
 /// Ключ клетки «cx:cy» из ответа сервера (here).
 String cellKey(Map<String, dynamic> here) => '${here['cx']}:${here['cy']}';
+
+/// Когда поставлен флажок: «сегодня, 11:05», «вчера, 16:40», «3 ноя».
+String flagWhen(Map<String, dynamic> f, {DateTime? now}) {
+  final at = DateTime.tryParse('${f['created_at'] ?? ''}')?.toLocal();
+  if (at == null) return '';
+  final n = (now ?? DateTime.now()).toLocal();
+  final days = DateTime.utc(n.year, n.month, n.day).difference(DateTime.utc(at.year, at.month, at.day)).inDays;
+  return switch (days) {
+    0 => '${tr('сегодня', 'bugun')}, ${hm(at)}',
+    1 => '${tr('вчера', 'kecha')}, ${hm(at)}',
+    _ => shortDate(at),
+  };
+}
+
+/// Флажок «зайти потом» в списке: «Вы · сегодня, 11:05», «Шерзод · 3 ноя · давно · фото».
+String flagSubtitle(Map<String, dynamic> f, {DateTime? now}) => [
+      f['mine'] == true ? tr('Вы', 'Siz') : '${f['rep_name'] ?? ''}'.split(' ').first,
+      flagWhen(f, now: now),
+      if (f['old'] == true) tr('давно', 'ancha oldin'),
+      if ('${f['photo_url'] ?? ''}'.isNotEmpty) tr('фото', 'rasm'),
+    ].where((s) => s.isNotEmpty).join(' · ');

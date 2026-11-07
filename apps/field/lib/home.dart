@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import 'flags.dart';
 import 'logic.dart';
 import 'permission.dart';
 import 'places.dart';
@@ -45,6 +48,7 @@ class HomeTab extends StatefulWidget {
 
 class _HomeTabState extends State<HomeTab> {
   bool _busy = false;
+  final _flags = GlobalKey<FlagsNearbyState>();
 
   Future<void> _start() async {
     setState(() => _busy = true);
@@ -54,6 +58,8 @@ class _HomeTabState extends State<HomeTab> {
       if (mounted) showSnack(context, e.message);
     } finally {
       if (mounted) setState(() => _busy = false);
+      // Вернулись с обхода — флажки могли появиться или закрыться.
+      unawaited(_flags.currentState?.reload());
     }
   }
 
@@ -88,7 +94,7 @@ class _HomeTabState extends State<HomeTab> {
         child: Column(children: [
           Expanded(
             child: RefreshIndicator(
-              onRefresh: st.load,
+              onRefresh: () => Future.wait([st.load(), _flags.currentState?.reload() ?? Future<void>.value()]),
               child: ListView(padding: const EdgeInsets.fromLTRB(20, 12, 20, 20), children: [
                 Text(tr('Обход', 'Aylanish'), style: AppText.h1),
                 const SizedBox(height: 2),
@@ -116,6 +122,7 @@ class _HomeTabState extends State<HomeTab> {
                   const SizedBox(height: 8),
                   for (final p in reminders) Padding(padding: const EdgeInsets.only(bottom: 8), child: PlaceTile(place: p)),
                 ],
+                FlagsNearby(key: _flags, onOpenMap: (at) => context.read<FieldState>().openMap(at)),
                 const SizedBox(height: 18),
                 Text(tr('Последние обходы', 'Oxirgi aylanishlar'), style: AppText.title.copyWith(fontSize: 15)),
                 const SizedBox(height: 8),

@@ -185,7 +185,11 @@ func (s *Service) AddVisit(ctx context.Context, p *identity.Principal, in VisitI
 			INSERT INTO field_visits (place_id, rep_id, walk_id, result, location, accuracy, name, reason, program, comment, photo_url, remind_on, lead_id)
 			VALUES ($1, $2, $3, $4, ST_SetSRID(ST_MakePoint($6::float8, $5::float8), 4326)::geography, $7, $8, $9, $10, $11, $12, $13::date, $14)`,
 			placeID, p.RepID, walkID, in.Result, *in.Lat, *in.Lng, acc, in.Name, in.Reason, in.Program, in.Comment, in.PhotoURL, remind, leadID)
-		return err
+		if err != nil {
+			return err
+		}
+		// Флажки «зайти потом» рядом: магазин отметили — флажок закрыт.
+		return closeFlagsNearTx(ctx, tx, p.RepID, placeID, *in.Lat, *in.Lng)
 	})
 	if err != nil {
 		return Place{}, err

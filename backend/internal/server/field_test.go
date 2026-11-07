@@ -354,3 +354,112 @@ func TestFieldAutoEnd(t *testing.T) {
 		t.Fatal("old walk reopened")
 	}
 }
+
+// «Зайти потом»: флажок одним нажатием во время обхода, не дублируется,
+// виден всем, закрывается отметкой магазина рядом, «Не магазин», удаление автором.
+func TestFieldFlags(t *testing.T) {
+	pool := freshDB(t)
+	ctx := context.Background()
+	cfg := testConfig()
+	cfg.DevOTPCode = "111111"
+	app, err := server.Build(ctx, cfg, pool, &fakeTelegram{}, quietLog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(app.Handler)
+	t.Cleanup(srv.Close)
+	a := api{t: t, srv: srv, pool: pool}
+	adminTok, _ := a.login("+998900000001", identity.AppAdmin)
+	for _, r := range []map[string]any{
+		{"full_name": "Азиз Каримов", "phone": "+998901112233", "login": "aziz", "password": "secret-123"},
+		{"full_name": "Шерзод Алиев", "phone": "+998901112244", "login": "sherzod", "password": "secret-456"},
+	} {
+		a.expect(a.do("POST", "/admin/field/reps", adminTok, r), 201, "rep")
+	}
+	tok1 := a.expect(a.do("POST", "/auth/field/login", "", map[string]string{"login": "aziz", "password": "secret-123"}), 200, "login 1").str("access_token")
+	tok2 := a.expect(a.do("POST", "/auth/field/login", "", map[string]string{"login": "sherzod", "password": "secret-456"}), 200, "login 2").str("access_token")
+	flag := func(tok string, lat, lng, acc float64) resp {
+		return a.do("POST", "/field/flags", tok, map[string]any{"lat": lat, "lng": lng, "accuracy": acc})
+	}
+
+	// Только во время обхода.
+	a.expect(flag(tok1, 41.36, 69.28, 8), 409, "flag without walk")
+	w1 := a.expect(a.do("POST", "/field/walks", tok1, map[string]any{"lat": 41.36, "lng": 69.28}), 200, "start 1").str("id")
+	a.expect(flag(tok1, 41.36, 69.28, 45), 409, "low accuracy")
+	a.expect(a.do("POST", "/field/flags", tok1, map[string]any{"accuracy": 5}), 400, "no position")
+	f1 := a.expect(flag(tok1, 41.36, 69.28, 8), 201, "flag 1")
+	if f1.str("status") != "open" || f1.Body["mine"] != true || f1.str("rep_name") != "Азиз Каримов" || f1.Body["old"] != false {
+		t.Fatalf("flag = %v", f1.Body)
+	}
+	f1ID := f1.str("id")
+
+	// Рядом (≈ 11 м) второй флажок не ставится — отдаём существующий.
+	a.expect(a.do("POST", "/field/walks", tok2, map[string]any{"lat": 41.36, "lng": 69.28}), 200, "start 2")
+	dup := a.expect(flag(tok2, 41.3601, 69.28, 8), 409, "flag near")
+	if dup.str("error", "code") != "flag_near" || dup.Body["error"].(map[string]any)["details"].(map[string]any)["flag"].(map[string]any)["id"] != f1ID {
+		t.Fatalf("dup = %v", dup.Body)
+	}
+	// Фото и название — любой продажник; удалить чужой — нельзя.
+	up := a.expect(a.do("PATCH", "/field/flags/"+f1ID, tok2, map[string]any{"photo_url": "https://x/f.jpg", "name": " Магазин у остановки "}), 200, "photo")
+	if up.str("photo_url") != "https://x/f.jpg" || up.str("name") != "Магазин у остановки" || up.Body["mine"] != false {
+		t.Fatalf("patched = %v", up.Body)
+	}
+	a.expect(a.do("DELETE", "/field/flags/"+f1ID, tok2, nil), 403, "delete someone else's")
+
+	// Второй флажок Азиза в ~110 м и третий — Шерзода.
+	f2 := a.expect(flag(tok1, 41.361, 69.28, 8), 201, "flag 2").str("id")
+	f3 := a.expect(flag(tok2, 41.365, 69.28, 8), 201, "flag 3").str("id")
+
+	// П11: по расстоянию от меня; «Мои».
+	l := a.expect(a.do("GET", "/field/flags?lat=41.3612&lng=69.28", tok2, nil), 200, "list")
+	items := l.Body["items"].([]any)
+	if l.Body["all"].(float64) != 3 || l.Body["mine"].(float64) != 1 || len(items) != 3 || items[0].(map[string]any)["id"] != f2 ||
+		items[0].(map[string]any)["distance_m"].(float64) > 30 {
+		t.Fatalf("list = %v", l.Body)
+	}
+	if m := a.expect(a.do("GET", "/field/flags?mine=1", tok2, nil), 200, "mine").Body["items"].([]any); len(m) != 1 || m[0].(map[string]any)["id"] != f3 {
+		t.Fatalf("mine = %v", m)
+	}
+	a.expect(a.do("GET", "/field/flags?lat=41.36", tok2, nil), 400, "lat without lng")
+
+	// На карте — у продажника и у супер-админа.
+	mp := a.expect(a.do("GET", "/field/map?min_lat=41.355&min_lng=69.27&max_lat=41.37&max_lng=69.29", tok1, nil), 200, "map")
+	if len(mp.Body["flags"].([]any)) != 3 {
+		t.Fatalf("map flags = %v", mp.Body["flags"])
+	}
+	if a.expect(a.do("GET", "/admin/field/flags/"+f3, adminTok, nil), 200, "admin flag").str("rep_name") != "Шерзод Алиев" {
+		t.Fatal("admin flag")
+	}
+
+	// Подошёл ближе 100 м к флажку — в ответе на точки.
+	pts := a.expect(a.do("POST", "/field/walks/"+w1+"/points", tok1, map[string]any{"points": []any{
+		map[string]any{"at": time.Now().Add(-5 * time.Second), "lat": 41.3645, "lng": 69.28, "accuracy": 6},
+	}}), 200, "points")
+	if pts.str("flag", "id") != f3 || pts.Body["flag"].(map[string]any)["distance_m"].(float64) > 60 {
+		t.Fatalf("near flag = %v", pts.Body["flag"])
+	}
+
+	// Отметка магазина в 50 м закрывает флажок; рядом с отметкой флажок не ставится.
+	a.expect(a.do("POST", "/field/visits", tok1, map[string]any{"result": "closed", "lat": 41.3603, "lng": 69.28}), 201, "visit near flag 1")
+	if g := a.expect(a.do("GET", "/field/flags/"+f1ID, tok1, nil), 200, "flag 1 closed"); g.str("status") != "visited" || g.str("closed_by") != "Азиз Каримов" {
+		t.Fatalf("flag 1 = %v", g.Body)
+	}
+	if pn := a.expect(flag(tok1, 41.3601, 69.28, 8), 409, "place near"); pn.str("error", "code") != "place_near" {
+		t.Fatalf("place near = %v", pn.Body)
+	}
+	a.expect(a.do("PATCH", "/field/flags/"+f1ID, tok1, map[string]any{"name": "x"}), 409, "patch closed flag")
+
+	// «Не магазин» — любой; удаление — только автор, повтор не ломается.
+	if ns := a.expect(a.do("POST", "/field/flags/"+f3+"/not-store", tok1, nil), 200, "not store"); ns.str("status") != "removed" || ns.str("close_reason") != "not_store" {
+		t.Fatalf("not store = %v", ns.Body)
+	}
+	a.expect(a.do("POST", "/field/flags/"+f3+"/not-store", tok1, nil), 409, "not store twice")
+	if d := a.expect(a.do("DELETE", "/field/flags/"+f2, tok1, nil), 200, "delete own"); d.str("close_reason") != "deleted" {
+		t.Fatalf("delete = %v", d.Body)
+	}
+	a.expect(a.do("DELETE", "/field/flags/"+f2, tok1, nil), 200, "delete again")
+	if l := a.expect(a.do("GET", "/field/flags", tok1, nil), 200, "list after"); l.Body["all"].(float64) != 0 {
+		t.Fatalf("open flags left = %v", l.Body)
+	}
+	a.expect(a.do("GET", "/field/flags/not-a-uuid", tok1, nil), 404, "bad id")
+}

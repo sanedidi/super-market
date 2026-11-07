@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:sm_core/sm_core.dart';
 
 import 'logic.dart';
@@ -16,6 +17,11 @@ class FieldState extends ChangeNotifier {
   Object? error;
   bool loading = false;
   bool _wasLoggedIn = false;
+
+  /// «На карте» из «Зайти потом рядом»: Shell открывает «Карту», она едет к точке.
+  final mapRequest = ValueNotifier<MapRequest?>(null);
+
+  void openMap([LatLng? at]) => mapRequest.value = MapRequest(at);
 
   Grid get grid => Grid.from(me?['grid']);
   Map<String, dynamic>? get rep => me?['rep'] as Map<String, dynamic>?;
@@ -52,7 +58,16 @@ class FieldState extends ChangeNotifier {
 
   @override
   void dispose() {
+    mapRequest.dispose();
     api.removeListener(_onAuth);
     super.dispose();
   }
+}
+
+/// Просьба открыть «Карту» (каждый раз новый объект — слушатели срабатывают и на ту же точку).
+class MapRequest {
+  MapRequest(this.at);
+
+  /// Куда подвинуть карту; null — просто открыть.
+  final LatLng? at;
 }

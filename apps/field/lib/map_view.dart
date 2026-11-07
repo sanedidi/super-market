@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import 'flags.dart';
 import 'logic.dart';
 import 'state.dart';
 import 'tracker.dart';
@@ -41,6 +42,7 @@ class CoverageMap extends StatefulWidget {
     this.onReady,
     this.onGesture,
     this.emptyHintTop = 0,
+    this.onFlagTap,
   });
 
   final MapController controller;
@@ -51,6 +53,9 @@ class CoverageMap extends StatefulWidget {
   /// Ближайшая белая зона (П3 «Показать путь»): пунктир от меня до неё.
   final LatLng? hint;
   final ValueChanged<Map<String, dynamic>>? onPlaceTap;
+
+  /// Нажали на флажок «зайти потом».
+  final ValueChanged<Map<String, dynamic>>? onFlagTap;
   final VoidCallback? onReady;
 
   /// Карту подвинули рукой (перестать следовать за мной).
@@ -69,6 +74,7 @@ class CoverageMapState extends State<CoverageMap> {
   List<Map<String, dynamic>> _tracks = const [];
   List<Map<String, dynamic>> _places = const [];
   List<Map<String, dynamic>> _stores = const [];
+  List<Map<String, dynamic>> _flags = const [];
   bool _loaded = false;
   Timer? _debounce;
   bool _ready = false;
@@ -108,6 +114,7 @@ class CoverageMapState extends State<CoverageMap> {
         _tracks = ((d['tracks'] as List?) ?? const []).cast<Map<String, dynamic>>();
         _places = ((d['places'] as List?) ?? const []).cast<Map<String, dynamic>>();
         _stores = ((d['stores'] as List?) ?? const []).cast<Map<String, dynamic>>();
+        _flags = ((d['flags'] as List?) ?? const []).cast<Map<String, dynamic>>();
         _loaded = true;
       });
     } catch (_) {
@@ -193,6 +200,22 @@ class CoverageMapState extends State<CoverageMap> {
         ));
       }
     }
+    if (layers.places) {
+      // Флажки «зайти потом» — поверх отметок.
+      for (final f in _flags) {
+        final pt = flagPoint(f);
+        if (pt == null) continue;
+        markers.add(Marker(
+          point: pt,
+          width: 32,
+          height: 32,
+          child: GestureDetector(
+            onTap: widget.onFlagTap == null ? null : () => widget.onFlagTap!(f),
+            child: Center(child: FlagDot(old: f['old'] == true)),
+          ),
+        ));
+      }
+    }
     if (widget.hint != null) {
       markers.add(Marker(
         point: widget.hint!,
@@ -257,7 +280,7 @@ class CoverageMapState extends State<CoverageMap> {
         if (lines.isNotEmpty) PolylineLayer(polylines: lines),
         MarkerLayer(markers: markers),
         // Подпись «© OpenStreetMap» — в легенде (MapLegend): здесь её закрывали кнопки.
-        if (_loaded && _cells.isEmpty && _tracks.isEmpty && _places.isEmpty && tracker.trail.length < 2)
+        if (_loaded && _cells.isEmpty && _tracks.isEmpty && _places.isEmpty && _flags.isEmpty && tracker.trail.length < 2)
           Align(
             alignment: Alignment.topCenter,
             child: Padding(
@@ -418,6 +441,7 @@ class MapLegend extends StatelessWidget {
           tr('белая клетка — никто не был', 'oq katak — hech kim boʻlmagan'),
         ),
         row(const SizedBox(width: 14, height: 14, child: FittedBox(child: SmStoreDot())), tr('уже в Super Market', 'Super Market’da')),
+        row(const SizedBox(width: 14, height: 14, child: FittedBox(child: FlagDot())), tr('зайти потом', 'keyin kirish')),
         if (hasDistrict) row(Container(width: 14, height: 3, color: AppColors.primary.withValues(alpha: 0.75)), tr('граница моего района', 'tumanim chegarasi')),
         const SizedBox(height: 2),
         Text('© OpenStreetMap', style: AppText.small.copyWith(fontSize: 9, color: AppColors.muted)),

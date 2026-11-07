@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import 'flags.dart';
 import 'logic.dart';
 import 'map_view.dart';
 import 'mark.dart';
@@ -41,6 +42,10 @@ class _WalkScreenState extends State<WalkScreen> {
   DateTime? _sentAt;
   LatLng? _hint;
   String? _hintText;
+  // Флажки «зайти потом», про которые уже вибрировали и баннер которых закрыли.
+  bool _flagging = false;
+  final _buzzed = <String>{};
+  final _hiddenFlags = <String>{};
 
   @override
   void initState() {
@@ -77,6 +82,12 @@ class _WalkScreenState extends State<WalkScreen> {
       _hint = null;
       HapticFeedback.heavyImpact();
       Future.delayed(const Duration(milliseconds: 300), HapticFeedback.heavyImpact);
+    }
+    final fl = _tracker.nearFlag;
+    final flID = fl == null ? null : '${fl['id']}';
+    if (flID != null && _buzzed.add(flID) && !_hiddenFlags.contains(flID)) {
+      // Подошёл к флажку «зайти потом» — короткая вибрация.
+      HapticFeedback.mediumImpact();
     }
     final p = _tracker.position;
     if (_ready && _follow && p != null) {
@@ -117,7 +128,8 @@ class _WalkScreenState extends State<WalkScreen> {
       final to = LatLng((h['lat'] as num).toDouble(), (h['lng'] as num).toDouble());
       setState(() {
         _hint = to;
-        _hintText = '${formatDistance(h['distance_m'])} ${directionLabel('${h['direction']}')}';
+        final way = '${formatDistance(h['distance_m'])} ${directionLabel('${h['direction']}')}';
+        _hintText = tr('Белая зона — $way', 'Oq hudud — $way');
         _follow = false;
         _dismissed = true;
       });
@@ -132,6 +144,54 @@ class _WalkScreenState extends State<WalkScreen> {
     final ok = await markStore(context);
     if (ok) _mapKey.currentState?.reload();
     unawaited(_tracker.flush());
+  }
+
+  /// П8 «Потом»: флажок там, где стою; обход идёт дальше.
+  Future<void> _later() async {
+    if (_flagging) return;
+    setState(() => _flagging = true);
+    Map<String, dynamic>? f;
+    try {
+      f = await placeFlag(context, onChanged: () => _mapKey.currentState?.reload(), onMark: _mark, onRoute: _routeTo);
+    } finally {
+      if (mounted) setState(() => _flagging = false);
+    }
+    if (f != null) {
+      // Свой только что поставленный флажок — без баннера «Рядом флажок».
+      _buzzed.add('${f['id']}');
+      _hiddenFlags.add('${f['id']}');
+    }
+  }
+
+  /// «Маршрут» к флажку: пунктир от меня до него.
+  void _routeTo(LatLng to) {
+    final p = _tracker.position;
+    final d = p == null ? null : distanceM(p.latitude, p.longitude, to.latitude, to.longitude);
+    setState(() {
+      _hint = to;
+      _hintText = d == null ? tr('Флажок «зайти потом»', '«Keyin kirish» bayroqchasi') : tr('Флажок — ${formatDistance(d)}', 'Bayroqcha — ${formatDistance(d)}');
+      _follow = false;
+    });
+    if (!_ready || p == null) return;
+    _map.fitCamera(CameraFit.coordinates(coordinates: [LatLng(p.latitude, p.longitude), to], padding: const EdgeInsets.fromLTRB(60, 220, 60, 240)));
+  }
+
+  void _openFlag(Map<String, dynamic> f) {
+    final id = '${f['id']}';
+    showFlagSheet(
+      context,
+      f,
+      onRoute: _routeTo,
+      onMark: () {
+        // Отметили магазин у флажка — баннер «Рядом флажок» больше не нужен.
+        setState(() => _hiddenFlags.add(id));
+        _mark();
+      },
+      onChanged: () {
+        if (mounted) setState(() => _hiddenFlags.add(id));
+        _mapKey.currentState?.reload();
+      },
+    );
   }
 
   Future<void> _pause() async {
@@ -191,6 +251,8 @@ class _WalkScreenState extends State<WalkScreen> {
     final paused = t.paused;
     final here = t.here;
     final banner = showOtherBanner(here, dismissed: _dismissed);
+    final fl = t.nearFlag;
+    final nearFlag = fl != null && !banner && !_hiddenFlags.contains('${fl['id']}') ? fl : null;
     final pos = t.position;
     return Scaffold(
       body: Stack(children: [
@@ -208,6 +270,7 @@ class _WalkScreenState extends State<WalkScreen> {
               if (_follow) setState(() => _follow = false);
             },
             onPlaceTap: (p) => showPlaceSheet(context, '${p['id']}'),
+            onFlagTap: _openFlag,
           ),
         ),
         Positioned(
@@ -282,7 +345,7 @@ class _WalkScreenState extends State<WalkScreen> {
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   const Icon(Icons.flag_rounded, color: AppColors.primary, size: 18),
                   const SizedBox(width: 6),
-                  Text(tr('Белая зона — $_hintText', 'Oq hudud — $_hintText'), style: AppText.caption.copyWith(color: AppColors.primary, fontSize: 13)),
+                  Text(_hintText!, style: AppText.caption.copyWith(color: AppColors.primary, fontSize: 13)),
                   IconButton(
                     visualDensity: VisualDensity.compact,
                     icon: const Icon(Icons.close_rounded, size: 18),
@@ -292,6 +355,14 @@ class _WalkScreenState extends State<WalkScreen> {
                     }),
                   ),
                 ]),
+              ),
+            ],
+            if (nearFlag != null) ...[
+              const SizedBox(height: 8),
+              FlagNearBanner(
+                flag: nearFlag,
+                onOpen: () => _openFlag(nearFlag),
+                onClose: () => setState(() => _hiddenFlags.add('${nearFlag['id']}')),
               ),
             ],
           ]),
@@ -324,7 +395,11 @@ class _WalkScreenState extends State<WalkScreen> {
                 boxShadow: [BoxShadow(color: Color(0x1A000000), blurRadius: 16, offset: Offset(0, -2))],
               ),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                BigButton(label: tr('Отметить магазин', 'Doʻkonni belgilash'), icon: Icons.add_location_alt_rounded, onPressed: _busy ? null : _mark),
+                Row(children: [
+                  Expanded(child: BigButton(label: tr('Отметить магазин', 'Doʻkonni belgilash'), icon: Icons.add_location_alt_rounded, onPressed: _busy ? null : _mark)),
+                  const SizedBox(width: 10),
+                  _LaterButton(onPressed: _busy || paused || _flagging ? null : _later),
+                ]),
                 const SizedBox(height: 10),
                 Row(children: [
                   Expanded(
@@ -386,6 +461,38 @@ class _OtherBanner extends StatelessWidget {
           Expanded(child: GrayButton(label: tr('Понятно', 'Tushunarli'), height: 42, onPressed: onClose)),
         ]),
       ]),
+    );
+  }
+}
+
+/// П8 «Потом» — флажок «зайти потом» одним нажатием.
+class _LaterButton extends StatelessWidget {
+  const _LaterButton({required this.onPressed});
+
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final on = onPressed != null;
+    return SizedBox(
+      width: 124,
+      height: 52,
+      child: Material(
+        color: on ? FlagColors.soft : AppColors.soft,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: on ? FlagColors.amber : AppColors.line, width: 1.5),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onPressed,
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(Icons.flag_rounded, size: 20, color: on ? FlagColors.amber : AppColors.muted),
+            const SizedBox(width: 6),
+            Text(tr('Потом', 'Keyin'), style: AppText.bodyStrong.copyWith(color: on ? FlagColors.ink : AppColors.muted, fontSize: 16)),
+          ]),
+        ),
+      ),
     );
   }
 }

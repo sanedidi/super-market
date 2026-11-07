@@ -28,13 +28,19 @@ class _ShellState extends State<Shell> {
     super.initState();
     _state = context.read<FieldState>();
     _state.addListener(_resume);
+    _state.mapRequest.addListener(_openMap);
     WidgetsBinding.instance.addPostFrameCallback((_) => _resume());
   }
 
   @override
   void dispose() {
     _state.removeListener(_resume);
+    _state.mapRequest.removeListener(_openMap);
     super.dispose();
+  }
+
+  void _openMap() {
+    if (mounted && _state.mapRequest.value != null) setState(() => _tab = 1);
   }
 
   /// Открыли приложение посреди обхода — продолжить запись пути; обход на

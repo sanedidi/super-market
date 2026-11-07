@@ -4,8 +4,10 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import 'flags.dart';
 import 'map_view.dart';
 import 'places.dart';
+import 'state.dart';
 import 'tracker.dart';
 import 'ui.dart';
 
@@ -23,11 +25,33 @@ class _MapTabState extends State<MapTab> {
   MapLayers _layers = const MapLayers();
   bool _ready = false;
   LatLng? _me;
+  final _mapKey = GlobalKey<CoverageMapState>();
+  late final FieldState _state;
+
+  @override
+  void initState() {
+    super.initState();
+    _state = context.read<FieldState>();
+    _state.mapRequest.addListener(_onRequest);
+  }
 
   @override
   void dispose() {
+    _state.mapRequest.removeListener(_onRequest);
     _map.dispose();
     super.dispose();
+  }
+
+  /// «Все на карте» / «Маршрут» из «Зайти потом рядом».
+  void _onRequest() {
+    final at = _state.mapRequest.value?.at;
+    if (!_ready) return;
+    _mapKey.currentState?.reload();
+    if (at != null) {
+      _map.move(at, 17);
+    } else if (_me != null) {
+      _map.move(_me!, 15);
+    }
   }
 
   Future<void> _locate() async {
@@ -49,15 +73,29 @@ class _MapTabState extends State<MapTab> {
       body: Stack(children: [
         Positioned.fill(
           child: CoverageMap(
+            key: _mapKey,
             controller: _map,
             initialCenter: _me,
             initialZoom: 15,
             layers: _layers,
             onReady: () {
               _ready = true;
-              _locate();
+              final at = _state.mapRequest.value?.at;
+              if (at != null) {
+                _map.move(at, 17);
+              } else {
+                _locate();
+              }
             },
             onPlaceTap: (p) => showPlaceSheet(context, '${p['id']}'),
+            onFlagTap: (f) => showFlagSheet(
+              context,
+              f,
+              onChanged: () => _mapKey.currentState?.reload(),
+              onRoute: (to) {
+                if (_ready) _map.move(to, 17.5);
+              },
+            ),
           ),
         ),
         Positioned(

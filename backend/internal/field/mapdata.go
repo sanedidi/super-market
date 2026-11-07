@@ -83,8 +83,10 @@ type MapData struct {
 	Tracks []Track  `json:"tracks"`
 	Places []Place  `json:"places"`
 	// Stores — магазины, которые уже работают в Super Market (туда не ходить).
-	Stores    []SMStore `json:"stores"`
-	Truncated bool      `json:"truncated"`
+	Stores []SMStore `json:"stores"`
+	// Flags — открытые флажки «зайти потом».
+	Flags     []Flag `json:"flags"`
+	Truncated bool   `json:"truncated"`
 }
 
 // SMStore — точка магазина Super Market на карте.
@@ -114,7 +116,7 @@ func (s *Service) AdminMap(ctx context.Context, p *identity.Principal, b BBox) (
 }
 
 func (s *Service) mapData(ctx context.Context, me string, b BBox) (MapData, error) {
-	out := MapData{Grid: grid(), Cells: [][3]int{}, Tracks: []Track{}, Places: []Place{}, Stores: []SMStore{}}
+	out := MapData{Grid: grid(), Cells: [][3]int{}, Tracks: []Track{}, Places: []Place{}, Stores: []SMStore{}, Flags: []Flag{}}
 	lo, hi := cellOf(b.MinLat, b.MinLng), cellOf(b.MaxLat, b.MaxLng)
 	rows, err := s.pool.Query(ctx, `
 		SELECT c.cx, c.cy, (c.rep_id::text = $5 OR EXISTS (
@@ -219,6 +221,9 @@ func (s *Service) mapData(ctx context.Context, me string, b BBox) (MapData, erro
 	}
 	if out.Places == nil {
 		out.Places = []Place{}
+	}
+	if out.Flags, err = s.flagsIn(ctx, me, b); err != nil {
+		return out, err
 	}
 
 	// Магазины Super Market (активные, не склады дистрибьюторов) во всей видимой области.
