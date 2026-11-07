@@ -8,9 +8,9 @@ name: apps
 #   • при пуше — метка в сообщении коммита:
 #       [build: windows]                 касса для Windows
 #       [build: windows, store]          несколько через запятую
-#       [build: android]                 все APK (касса, магазин, курьер, дистрибьютор, сотрудник)
+#       [build: android]                 все APK (касса, магазин, курьер, дистрибьютор, сотрудник, продажник)
 #       [build: all]                     всё
-#     Имена: windows, pos-android, store, courier, distributor, employee, android, all, none.
+#     Имена: windows, pos-android, store, courier, distributor, employee, field, android, all, none.
 #     Метка работает в любом коммите пуша, даже если приложения не менялись.
 #   • вручную — Actions → apps → Run workflow → «Что собрать».
 # Сборки для Google Play (AAB) — workflow release.
@@ -33,6 +33,7 @@ on:
           - courier
           - distributor
           - employee
+          - field
           - android
           - all
 
@@ -65,12 +66,14 @@ jobs:
       build-courier: ${{ steps.p.outputs.courier }}
       build-distributor: ${{ steps.p.outputs.distributor }}
       build-employee: ${{ steps.p.outputs.employee }}
+      build-field: ${{ steps.p.outputs.field }}
       client: ${{ github.event_name == 'workflow_dispatch' && inputs.build == 'none' || steps.f.outputs.client == 'true' }}
       store: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'none' || steps.p.outputs.store == 'true') || steps.f.outputs.store == 'true' }}
       courier: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'none' || steps.p.outputs.courier == 'true') || steps.f.outputs.courier == 'true' }}
       pos: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'none' || steps.p.outputs.windows == 'true' || steps.p.outputs.pos-android == 'true') || steps.f.outputs.pos == 'true' }}
       distributor: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'none' || steps.p.outputs.distributor == 'true') || steps.f.outputs.distributor == 'true' }}
       employee: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'none' || steps.p.outputs.employee == 'true') || steps.f.outputs.employee == 'true' }}
+      field: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'none' || steps.p.outputs.field == 'true') || steps.f.outputs.field == 'true' }}
     steps:
       - id: p
         env:
@@ -85,7 +88,7 @@ jobs:
           else
             want=""
           fi
-          windows=false; posa=false; store=false; courier=false; distributor=false; employee=false
+          windows=false; posa=false; store=false; courier=false; distributor=false; employee=false; field=false
           for w in $want; do
             case "$w" in
               windows|win|pos-windows) windows=true ;;
@@ -94,10 +97,11 @@ jobs:
               courier) courier=true ;;
               distributor) distributor=true ;;
               employee) employee=true ;;
-              android|apk) posa=true; store=true; courier=true; distributor=true; employee=true ;;
-              all) windows=true; posa=true; store=true; courier=true; distributor=true; employee=true ;;
+              field) field=true ;;
+              android|apk) posa=true; store=true; courier=true; distributor=true; employee=true; field=true ;;
+              all) windows=true; posa=true; store=true; courier=true; distributor=true; employee=true; field=true ;;
               none|"") ;;
-              *) echo "::warning title=Неизвестная сборка::«$w» — допустимо: windows, pos-android, store, courier, distributor, employee, android, all, none" ;;
+              *) echo "::warning title=Неизвестная сборка::«$w» — допустимо: windows, pos-android, store, courier, distributor, employee, field, android, all, none" ;;
             esac
           done
           {
@@ -107,8 +111,9 @@ jobs:
             echo "courier=$courier"
             echo "distributor=$distributor"
             echo "employee=$employee"
+            echo "field=$field"
           } >> "$GITHUB_OUTPUT"
-          echo "### Сборки: windows=$windows, pos-android=$posa, store=$store, courier=$courier, distributor=$distributor, employee=$employee" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Сборки: windows=$windows, pos-android=$posa, store=$store, courier=$courier, distributor=$distributor, employee=$employee, field=$field" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/checkout@v4
         if: github.event_name != 'workflow_dispatch'
       - uses: dorny/paths-filter@v3
@@ -128,10 +133,12 @@ jobs:
             distributor: [*shared, "apps/store/**", "apps/distributor/**"]
             # «SM Сотрудник» берёт кассу, приход, вход и сканер из apps/store.
             employee: [*shared, "apps/store/**", "apps/employee/**"]
+            # «SM Продажник» — только общий код.
+            field: [*shared, "apps/field/**"]
 
   analyze:
     needs: changes
-    if: needs.changes.outputs.client == 'true' || needs.changes.outputs.store == 'true' || needs.changes.outputs.courier == 'true' || needs.changes.outputs.pos == 'true' || needs.changes.outputs.distributor == 'true' || needs.changes.outputs.employee == 'true'
+    if: needs.changes.outputs.client == 'true' || needs.changes.outputs.store == 'true' || needs.changes.outputs.courier == 'true' || needs.changes.outputs.pos == 'true' || needs.changes.outputs.distributor == 'true' || needs.changes.outputs.employee == 'true' || needs.changes.outputs.field == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -192,6 +199,13 @@ jobs:
       - name: Employee
         if: ${{ !cancelled() && needs.changes.outputs.employee == 'true' }}
         working-directory: apps/employee
+        run: |
+          flutter pub get
+          flutter analyze --no-fatal-infos
+          flutter test
+      - name: Field
+        if: ${{ !cancelled() && needs.changes.outputs.field == 'true' }}
+        working-directory: apps/field
         run: |
           flutter pub get
           flutter analyze --no-fatal-infos
@@ -386,3 +400,35 @@ jobs:
           # Хранить неделю: место под артефакты на тарифе Free — 500 МБ.
           retention-days: 7
           path: apps/employee/build/app/outputs/flutter-apk/app-release.apk
+
+  # «SM Продажник» для Android: APK — в артефакте field-android.
+  field-android:
+    needs: [changes, analyze]
+    # Сборка идёт, даже если проверка пропущена (приложение не менялось), но не после её ошибки.
+    if: ${{ !cancelled() && needs.changes.outputs.build-field == 'true' && needs.analyze.result != 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Build
+        working-directory: apps/field
+        run: |
+          flutter create --platforms=android --org uz.supermarket --project-name sm_field .
+          rm -f test/widget_test.dart
+          bash branding/apply.sh
+          flutter pub get
+          flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: field-android
+          # Хранить неделю: место под артефакты на тарифе Free — 500 МБ.
+          retention-days: 7
+          path: apps/field/build/app/outputs/flutter-apk/app-release.apk

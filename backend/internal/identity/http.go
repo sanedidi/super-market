@@ -33,8 +33,11 @@ func (m *Module) Routes(r chi.Router) {
 	r.Post("/auth/courier/login", m.courierLogin)
 	r.With(m.auth.Require(AppCourier)).Post("/auth/courier/logout", m.logout)
 	r.With(m.auth.Require(AppCrowd)).Post("/auth/crowd/logout", m.logout)
+	// «SM Продажник»: логин и пароль от супер-админа.
+	r.Post("/auth/field/login", m.fieldLogin)
+	r.With(m.auth.Require(AppField)).Post("/auth/field/logout", m.logout)
 	// Язык уведомлений сотрудника и курьера (язык приложения).
-	r.With(m.auth.Require(AppStore, AppCourier, AppCrowd)).Put("/me/language", m.setLanguage)
+	r.With(m.auth.Require(AppStore, AppCourier, AppCrowd, AppField)).Put("/me/language", m.setLanguage)
 
 	r.Group(func(r chi.Router) {
 		r.Use(m.auth.Require(AppStore))
@@ -340,4 +343,23 @@ func (m *Module) deleteEmployeeLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ------------------------------------------------------------ продажник
+
+func (m *Module) fieldLogin(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Login    string `json:"login"`
+		Password string `json:"password"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		m.fail(w, r, err)
+		return
+	}
+	t, err := m.svc.FieldLogin(r.Context(), in.Login, in.Password, r.UserAgent())
+	if err != nil {
+		m.fail(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, t)
 }

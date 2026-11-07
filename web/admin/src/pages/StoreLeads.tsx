@@ -3,6 +3,8 @@
 // «Подключить» — обычное создание сети, поля уже из заявки, сеть навсегда
 // привязана к агенту; «Отклонить» — только с причиной (её увидит агент).
 // С первого оплаченного счёта подписки магазина агенту начисляется 50%.
+// Заявки продажников Super Market («SM Продажник», source: rep) — в той же
+// очереди, но без начисления: продажник на окладе.
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Alert, App, Avatar, Button, Card, Empty, Flex, Form, Input, Modal, Segmented, Space, Spin, Statistic, Table, Tabs, Tag, Typography } from 'antd'
@@ -46,6 +48,8 @@ export interface StoreLead {
   paid_at: string | null
   reward_amount: string | null
   rewarded_at: string | null
+  /** agent — агент «SM Агент» (50% первой оплаты), rep — продажник Super Market (без начисления). */
+  source: 'agent' | 'rep'
   agent_network_id: string
   agent_network_name: string
   agent_name: string
@@ -205,7 +209,7 @@ export function StoreLeads() {
                         </Typography.Text>
                       </div>
                       <div style={{ fontSize: 12 }}>
-                        Агент: {l.agent_name} · {l.agent_network_name}
+                        {l.source === 'rep' ? `Продажник: ${l.agent_name}` : `Агент: ${l.agent_name} · ${l.agent_network_name}`}
                       </div>
                     </div>
                     <Flex vertical align="flex-end" gap={4}>
@@ -330,14 +334,12 @@ function LeadCard({ id }: { id: string }) {
 
       <Card size="small" style={{ background: '#f8fafc', marginBottom: 12 }}>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          Агент
+          {l.source === 'rep' ? 'Продажник Super Market' : 'Агент'}
         </Typography.Text>
         <Flex gap={12} align="center">
           <Avatar style={{ background: '#e11d2a', fontWeight: 800 }}>{initials(l.agent_name || '?')}</Avatar>
           <div style={{ flex: 1 }}>
-            <Typography.Text strong>
-              {l.agent_name} · {l.agent_network_name}
-            </Typography.Text>
+            <Typography.Text strong>{l.source === 'rep' ? l.agent_name : `${l.agent_name} · ${l.agent_network_name}`}</Typography.Text>
             <div style={{ fontSize: 12, color: '#667085' }}>
               {formatPhone(l.agent_phone)} · подключил {(l.agent_connected ?? 0) + (l.agent_paid ?? 0)} маг., {l.agent_paid ?? 0} оплатили
             </div>
@@ -364,12 +366,16 @@ function LeadCard({ id }: { id: string }) {
 
       {pending ? (
         <Flex vertical gap={10}>
-          <Alert
-            type="success"
-            showIcon
-            message="Агенту — 50% первого оплаченного счёта"
-            description="Сумма зависит от тарифа, который выберет магазин. Начислится на баланс агента автоматически, когда магазин оплатит первый счёт."
-          />
+          {l.source === 'rep' ? (
+            <Alert type="info" showIcon message="Заявка продажника Super Market" description="Продажник на окладе — 50% от первой оплаты не начисляется." />
+          ) : (
+            <Alert
+              type="success"
+              showIcon
+              message="Агенту — 50% первого оплаченного счёта"
+              description="Сумма зависит от тарифа, который выберет магазин. Начислится на баланс агента автоматически, когда магазин оплатит первый счёт."
+            />
+          )}
           <Button type="primary" size="large" icon={<CheckCircleOutlined />} onClick={() => setConnectOpen(true)} block>
             Подключить — создать сеть с этими данными
           </Button>
@@ -511,10 +517,12 @@ function ConnectModal({ lead, onClose, onDone }: { lead: StoreLead | null; onClo
                   {initials(lead.agent_name || '?')}
                 </Avatar>
                 <div style={{ flex: 1, color: '#067647' }}>
-                  <b>
-                    Агент: {lead.agent_name} · {lead.agent_network_name}
-                  </b>
-                  <div style={{ fontSize: 12 }}>Сеть закрепится за агентом. С первого оплаченного счёта — 50% ему на баланс.</div>
+                  <b>{lead.source === 'rep' ? `Продажник: ${lead.agent_name}` : `Агент: ${lead.agent_name} · ${lead.agent_network_name}`}</b>
+                  <div style={{ fontSize: 12 }}>
+                    {lead.source === 'rep'
+                      ? 'Магазин подключил продажник Super Market — начисления нет.'
+                      : 'Сеть закрепится за агентом. С первого оплаченного счёта — 50% ему на баланс.'}
+                  </div>
                 </div>
                 <LockOutlined style={{ color: '#067647' }} />
               </Flex>

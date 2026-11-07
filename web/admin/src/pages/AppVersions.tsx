@@ -9,7 +9,7 @@ import { EditOutlined } from '@ant-design/icons'
 import { FormTranslate, LoadError, api, useAction, useList } from '@sm/shared'
 
 interface AppVersion {
-  app: 'client' | 'store' | 'courier' | 'agent' | 'employee'
+  app: 'client' | 'store' | 'courier' | 'agent' | 'employee' | 'field'
   platform: 'ios' | 'android'
   latest: string
   store_url: string
@@ -24,6 +24,7 @@ const APPS: Record<AppVersion['app'], { title: string; who: string }> = {
   courier: { title: 'SM Курьер', who: 'курьер' },
   agent: { title: 'SM Агент', who: 'агент' },
   employee: { title: 'SM Сотрудник', who: 'сотрудник магазина' },
+  field: { title: 'SM Продажник', who: 'продажник Super Market' },
 }
 
 const PLATFORM: Record<AppVersion['platform'], string> = { ios: 'iOS', android: 'Android' }

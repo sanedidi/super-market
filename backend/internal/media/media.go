@@ -174,7 +174,7 @@ func NewModule(svc *Service, auth *identity.Authenticator, log *slog.Logger) *Mo
 
 func (m *Module) Routes(r chi.Router) {
 	r.Get("/media/*", m.get)
-	for _, app := range []string{identity.AppStore, identity.AppAdmin} {
+	for _, app := range []string{identity.AppStore, identity.AppAdmin, identity.AppField} {
 		r.With(m.auth.Require(app)).Post("/"+app+"/uploads", m.upload)
 	}
 }

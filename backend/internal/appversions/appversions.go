@@ -24,8 +24,9 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/platform/i18n"
 )
 
-// Приложения в сторах: покупатель, магазин, курьер, агент (дистрибьютор), сотрудник магазина.
-var Apps = []string{"client", "store", "courier", "agent", "employee"}
+// Приложения в сторах: покупатель, магазин, курьер, агент (дистрибьютор),
+// сотрудник магазина, продажник Super Market.
+var Apps = []string{"client", "store", "courier", "agent", "employee", "field"}
 
 // Platforms — iOS и Android выходят в сторы в разное время, поэтому отдельно.
 var Platforms = []string{"ios", "android"}

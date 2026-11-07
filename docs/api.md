@@ -1429,3 +1429,56 @@ Figma «Super Market · SM Сотрудник» (С1–С13). Вход — `/aut
 | GET | `/store/staff/day?store_id=` | любое из прав выше | «Мой день» (С13): `{sales, receipts, average, orders_picked, write_offs, counted}` за сегодня (Ташкент) |
 
 Складские документы: поле `photos` (до 6 ссылок) в `POST/PATCH /store/inventory/documents` и в ответе.
+
+## «SM Продажник» — обход с записью пути
+
+Figma «SM Продажник · Обход с записью пути» (П1–П7) и «Супер-админ · Продажники» (С1–С3). Продажники Super Market
+ходят по районам и отмечают магазины. Вход — `POST /auth/field/login {login, password}` (логин и пароль выдаёт
+супер-админ; 5 неверных паролей подряд — вход закрыт на 15 минут), токен `app=field`, выход —
+`POST /auth/field/logout`. Заблокировали продажника или сменили ему пароль — его сессии закрываются сразу.
+Версия приложения — `app=field`. Фото витрины — `POST /field/uploads` (как `/store/uploads`).
+
+Путь пишется только во время обхода. Город поделён на клетки ≈100×100 м: `cy = floor(lat / grid.lat)`,
+`cx = floor(lng / grid.lng)` (размеры — в `grid` ответов). Клетка, через которую прошёл любой продажник
+(±30 м — обе стороны улицы), обойдена навсегда (`field_cells`). Точки с точностью хуже 30 м и «прыжки» быстрее
+150 км/ч отбрасываются; `mocked: true` (поддельный GPS) сохраняется с пометкой, но в путь и клетки не идёт.
+Стоит на месте 30 минут — обход на паузе (`auto_paused`), пошёл — пауза снимается; в 21:00 по Ташкенту и
+для обходов прошлых дней — обход закрывается (`end_reason: auto`).
+
+Обход `Walk`: `{id, rep_id, status: active|paused|ended, started_at, ended_at, end_reason, paused_at, auto_paused,
+active_sec (без пауз), distance_m, other_m (по клеткам, которые первым обошёл другой), new_cells, points,
+mock_points, gaps, last_lat, last_lng, last_at, results {lead, refused, closed, later, ours, total}}`.
+Магазин `Place`: `{id, lat, lng, name, result, last_visit_at, rep_id, rep_name, mine, remind_on, photo_url, visits,
+lead_id, lead_status, distance_m?, history? [Visit]}`.
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET | `/field/me` | П1: `{rep, district (покрытие района: total_cells, covered_cells, coverage_pct — null без границы), today {distance_m, active_sec, places, leads, other_m}, week_m, places, leads, walk (открытый обход или null), recent [Walk], reminders [Place] («прийти позже» на сегодня и завтра), grid}` |
+| POST | `/field/walks` | «Начать обход» `{lat?, lng?}` → Walk. Открытый обход уже есть — он же |
+| GET | `/field/walks/{id}` | обход |
+| POST | `/field/walks/{id}/points` | `{points: [{at, lat, lng, accuracy, mocked}]}` (до 1000, раз в 30 с; без интернета копятся в телефоне) → `{walk, accepted, here}`. `here {state: new\|mine\|other, cx, cy, rep_name?, first_at?, places}` — П3 «Здесь уже прошёл …». На ручной паузе точки не пишутся; закончен — 409 `walk_ended` |
+| POST | `/field/walks/{id}/pause`, `/resume` | пауза / продолжить |
+| POST | `/field/walks/{id}/finish` | П6 → `Walk + {other_pct, district, coverage_before, coverage_after}` |
+| GET | `/field/map?min_lat=&min_lng=&max_lat=&max_lng=` | `{grid, cells [[cx, cy, 1 — был сам / 0 — другие]], tracks [{walk_id, rep_id, color, mine, today, pts [[lat, lng]]}], places [Place], truncated}`. Область больше ≈8 км обрезается до середины |
+| GET | `/field/white-zone?lat=&lng=` | ближайшая белая зона (до ≈2 км): `{hint: {lat, lng, distance_m, direction: n\|ne\|e\|se\|s\|sw\|w\|nw} \| null}` |
+| GET | `/field/places/near?lat=&lng=` | П4 «Это он?»: отмеченные магазины ближе 50 м (`distance_m`) |
+| GET | `/field/places?result=` | «Мои магазины»: где был продажник (последние сверху) |
+| GET | `/field/places/{id}` | карточка магазина с историей визитов |
+| POST | `/field/visits` | отметка → 201 Place: `{place_id? («Это он — обновить»; дальше 150 м — 400), result: lead\|refused\|closed\|later\|ours, lat, lng, accuracy, name, comment, photo_url, reason, program, remind_on, lead}`. `refused` — `photo_url` и `reason: expensive\|has_program\|not_interested\|no_trust\|owner_against\|other` обязательны (`program: billz\|regos\|1c\|notebook\|other` — при `has_program`); `later` — `remind_on` (сегодня … +60 дней); `lead` — `{name, owner_name, owner_phone, address}`: заявка в «Заявки агентов» (те же дубли — 409 `store_exists`, закрепление 30 дней), без начисления 50% |
+
+Супер-админ (`/admin/field/*`):
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| GET | `/admin/field/live` | С1 «Сейчас»: `{reps [Rep + {state: walking\|paused\|no_signal\|off, walk, today, ended_at}], walking, total, today, other_pct, grid}`; «нет сигнала» — в обходе, но точек нет дольше 5 минут |
+| GET | `/admin/field/map?…` | карта как у продажника (`mine` — false; у линий — цвет продажника) |
+| GET / POST | `/admin/field/reps` | продажники / «Добавить»: `{full_name, phone, district_id, login, password (≥ 8), color?}`. Логин занят — 409 `login_taken`, номер — `phone_taken` |
+| PATCH | `/admin/field/reps/{id}` | любые поля из создания + `status: active\|blocked`; `district_id: null` — без района; пустой `password` — не менять. Блокировка заканчивает открытый обход |
+| GET | `/admin/field/reps/{id}/day?date=YYYY-MM-DD` | С2 «Маршрут за день»: `{rep, date, walks [Walk + pts], events [{at, kind: start\|pause\|resume\|auto_pause\|finish\|auto_finish\|other\|visit, lat, lng, data?, visit?}], totals, other_pct, new_cells, mock_points, gaps, grid}` |
+| GET | `/admin/field/places/{id}` | карточка магазина с историей |
+| GET | `/admin/field/districts` | С3: 12 районов Ташкента `{id, name, name_uz, boundary [[lat, lng]], total_cells, covered_cells, coverage_pct, reps, places, connected, last_walk_at, walking}` + итог по городу |
+| PUT | `/admin/field/districts/{id}/boundary` | `{boundary: [[lat, lng], …]}` (3–500 точек в Ташкенте; `[]` — убрать) — граница, число клеток пересчитывается |
+| POST | `/admin/field/districts/{id}/reset` | «Сбросить покрытие района»: клетки района снова белые (путь и отметки остаются) |
+
+Заявка продажника в `/admin/store-leads`: `source: rep`, `rep_id`, `agent_network_id: ""`, `agent_name`/`agent_phone` —
+продажника; «Подключить» и «Отклонить» — как у агента, пуша агенту и начисления 50% нет (в «Агентам» её нет).

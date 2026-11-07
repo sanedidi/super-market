@@ -22,6 +22,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/debts"
 	"github.com/sanedidi/super-market/backend/internal/delivery"
 	"github.com/sanedidi/super-market/backend/internal/family"
+	"github.com/sanedidi/super-market/backend/internal/field"
 	"github.com/sanedidi/super-market/backend/internal/finance"
 	"github.com/sanedidi/super-market/backend/internal/i18nadmin"
 	"github.com/sanedidi/super-market/backend/internal/identity"
@@ -198,6 +199,8 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		invest.NewModule(invest.NewService(pool), auth, log),
 		appversions.NewModule(appversions.NewService(pool), auth, log),
 		staff.NewModule(staff.NewService(pool, invSvc, repSvc, catSvc), auth, log),
+		// «SM Продажник»: обход с записью пути, отметки магазинов.
+		field.NewModule(field.NewService(pool, supplySvc, log), auth, log),
 	)
 	// Агент помощника ходит в API панели внутренним запросом — ему нужен весь сервер.
 	assistSvc.SetHandler(h)

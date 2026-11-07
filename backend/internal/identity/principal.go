@@ -24,6 +24,10 @@ const (
 	// AppCrowd — то же приложение курьера в режиме «по пути»: вход по
 	// телефону и коду, доступны только маршруты /crowd/*.
 	AppCrowd = "crowd"
+	// AppField — «SM Продажник»: продажники Super Market ходят по районам и
+	// отмечают магазины; вход по логину и паролю от супер-админа, доступны
+	// только маршруты /field/*.
+	AppField = "field"
 )
 
 // Права сотрудников. Роль — это набор прав; у владельца есть все.
@@ -109,6 +113,9 @@ type Principal struct {
 	StoreIDs    []string
 	// MustChangePassword — сотрудник вошёл в панель по временному паролю.
 	MustChangePassword bool
+
+	// Продажник «SM Продажник» (только App == AppField).
+	RepID string
 
 	// Касса, с которой пришёл запрос (только App == AppPOS).
 	DeviceID string

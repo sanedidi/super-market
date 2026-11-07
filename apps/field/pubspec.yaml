@@ -1,0 +1,49 @@
+name: sm_field
+description: Super Market Продажник — обход районов с записью пути, карта обойдённых улиц и белых зон, отметки магазинов и заявки на подключение.
+publish_to: none
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  sm_core:
+    path: ../core
+  provider: ^6.1.2
+  shared_preferences: ^2.3.2
+  url_launcher: ^6.3.0
+  # Карта — OpenStreetMap, как в «SM Магазин»: без ключей и нативной настройки.
+  flutter_map: ^8.1.1
+  latlong2: ^0.9.1
+  # Путь во время обхода: фоновая геопозиция (Android — служба с уведомлением,
+  # iOS — фоновый режим location).
+  geolocator: ^13.0.1
+  # Фото витрины при отказе.
+  image_picker: ^1.1.2
+
+# Как в apps/store: latlong2 и flutter_localizations должны сойтись на intl из Flutter SDK.
+dependency_overrides:
+  intl: any
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+        - asset: assets/fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700

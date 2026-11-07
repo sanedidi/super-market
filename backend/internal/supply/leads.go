@@ -85,7 +85,12 @@ type StoreLead struct {
 	PaidAt       *time.Time `json:"paid_at"`
 	RewardAmount *string    `json:"reward_amount"`
 	RewardedAt   *time.Time `json:"rewarded_at"`
-	// Агент (для супер-админа).
+	// Кто добавил: agent — агент «SM Агент» (50% первой оплаты), rep —
+	// продажник Super Market («SM Продажник», на окладе — без начисления).
+	Source string  `json:"source"`
+	RepID  *string `json:"rep_id,omitempty"`
+	// Агент (для супер-админа). У заявки продажника сети агента нет:
+	// agent_network_id пустой, agent_name и agent_phone — продажника.
 	AgentNetworkID   string `json:"agent_network_id"`
 	AgentNetworkName string `json:"agent_network_name"`
 	AgentName        string `json:"agent_name"`
@@ -114,9 +119,13 @@ const leadSelect = `
 	       ` + leadStatusSQL + `, l.reason, l.expires_at, l.created_at, l.decided_at,
 	       l.network_id, COALESCE(sn.name, ''), COALESCE(pl.name, ''),
 	       fi.due, fi.amount, fp.amount, fp.paid_at, l.reward_amount::text, l.rewarded_at,
-	       an.id, an.name, COALESCE(ow.full_name, ''), COALESCE(ow.phone, '')
+	       CASE WHEN l.rep_id IS NOT NULL THEN 'rep' ELSE 'agent' END, l.rep_id::text,
+	       COALESCE(an.id::text, ''), COALESCE(an.name, 'Продажник Super Market'),
+	       COALESCE(ow.full_name, fr.full_name, ''), COALESCE(ow.phone, fru.phone, '')
 	FROM store_leads l
-	JOIN networks an       ON an.id = l.agent_network_id
+	LEFT JOIN networks an  ON an.id = l.agent_network_id
+	LEFT JOIN field_reps fr ON fr.id = l.rep_id
+	LEFT JOIN users fru    ON fru.id = fr.user_id
 	LEFT JOIN networks sn  ON sn.id = l.network_id
 	LEFT JOIN plans pl     ON pl.key = sn.plan_key
 	LEFT JOIN LATERAL (
@@ -139,7 +148,7 @@ func scanLead(row pgx.CollectableRow) (StoreLead, error) {
 		&l.Status, &l.Reason, &l.ExpiresAt, &l.CreatedAt, &l.DecidedAt,
 		&l.NetworkID, &l.NetworkName, &l.PlanName,
 		&l.InvoiceDue, &l.InvoiceAmount, &l.PaidAmount, &l.PaidAt, &l.RewardAmount, &l.RewardedAt,
-		&l.AgentNetworkID, &l.AgentNetworkName, &l.AgentName, &l.AgentPhone)
+		&l.Source, &l.RepID, &l.AgentNetworkID, &l.AgentNetworkName, &l.AgentName, &l.AgentPhone)
 	return l, err
 }
 
@@ -311,9 +320,17 @@ func errLeadDuplicate(reason, kind, name string, distance int, mine bool, until 
 	return apperr.Conflict("store_exists", "этот магазин уже в Super Market").Uz("bu doʻkon allaqachon Super Market’da").WithDetails(d)
 }
 
+// leadOwner — кто добавляет: сеть агента или продажник (одно из двух).
+type leadOwner struct{ networkID, repID string }
+
+// mineSQL — заявка l добавлена этим же агентом или продажником ($a — сеть, $r — продажник).
+func mineSQL(a, r int) string {
+	return fmt.Sprintf(`COALESCE(l.agent_network_id::text = $%d, false) OR COALESCE(l.rep_id::text = $%d, false)`, a, r)
+}
+
 // checkLeadDuplicate — такой номер уже есть у магазина или активной заявки,
 // или ближе leadDuplicateM м уже есть магазин или активная заявка.
-func checkLeadDuplicate(ctx context.Context, q db.Querier, agentNetworkID, ownerPhone string, lat, lng float64, exceptID string) error {
+func checkLeadDuplicate(ctx context.Context, q db.Querier, who leadOwner, ownerPhone string, lat, lng float64, exceptID string) error {
 	var (
 		kind, name string
 		mine       bool
@@ -330,9 +347,9 @@ func checkLeadDuplicate(ctx context.Context, q db.Querier, agentNetworkID, owner
 		JOIN networks n ON n.id = s.network_id AND n.kind <> 'distributor'
 		WHERE s.phone = $1
 		UNION ALL
-		SELECT 'lead', l.name, l.agent_network_id = $2, l.expires_at FROM store_leads l
+		SELECT 'lead', l.name, `+mineSQL(2, 4)+`, l.expires_at FROM store_leads l
 		WHERE l.owner_phone = $1 AND `+activeLeadSQL+` AND l.id::text <> $3
-		LIMIT 1`, ownerPhone, agentNetworkID, exceptID).Scan(&kind, &name, &mine, &until)
+		LIMIT 1`, ownerPhone, who.networkID, exceptID, who.repID).Scan(&kind, &name, &mine, &until)
 	if err == nil {
 		return errLeadDuplicate("phone", kind, name, 0, mine, until)
 	}
@@ -347,10 +364,10 @@ func checkLeadDuplicate(ctx context.Context, q db.Querier, agentNetworkID, owner
 			FROM stores s JOIN networks n ON n.id = s.network_id AND n.kind <> 'distributor', pt
 			WHERE s.location IS NOT NULL AND ST_DWithin(s.location, pt.g, $5)
 			UNION ALL
-			SELECT 'lead', l.name, l.agent_network_id = $1, l.expires_at, ST_Distance(l.location, pt.g)
+			SELECT 'lead', l.name, `+mineSQL(1, 6)+`, l.expires_at, ST_Distance(l.location, pt.g)
 			FROM store_leads l, pt
 			WHERE `+activeLeadSQL+` AND l.id::text <> $2 AND ST_DWithin(l.location, pt.g, $5)
-		) x ORDER BY d LIMIT 1`, agentNetworkID, exceptID, lat, lng, leadDuplicateM).Scan(&kind, &name, &mine, &until, &dist)
+		) x ORDER BY d LIMIT 1`, who.networkID, exceptID, lat, lng, leadDuplicateM, who.repID).Scan(&kind, &name, &mine, &until, &dist)
 	if err == nil {
 		return errLeadDuplicate("nearby", kind, name, int(dist+0.5), mine, until)
 	}
@@ -384,7 +401,7 @@ func (s *Service) CreateLead(ctx context.Context, p *identity.Principal, in Lead
 			return apperr.Conflict("too_many_leads", fmt.Sprintf("уже %d заявок ждут решения — дождитесь подключения", pending)).
 				Uz(fmt.Sprintf("%d ta ariza qarorni kutmoqda — ulanishini kuting", pending))
 		}
-		if err := checkLeadDuplicate(ctx, tx, p.NetworkID, in.OwnerPhone, *in.Lat, *in.Lng, ""); err != nil {
+		if err := checkLeadDuplicate(ctx, tx, leadOwner{networkID: p.NetworkID}, in.OwnerPhone, *in.Lat, *in.Lng, ""); err != nil {
 			return err
 		}
 		var emp *string
@@ -438,7 +455,8 @@ func (s *Service) AdminLeads(ctx context.Context, p *identity.Principal, status,
 	rows, err := s.pool.Query(ctx, leadSelect+`
 		WHERE `+where+` AND ($1 = '' OR l.name ILIKE '%' || $1 || '%' OR l.owner_name ILIKE '%' || $1 || '%'
 		      OR l.owner_phone LIKE '%' || $1 || '%' OR an.name ILIKE '%' || $1 || '%'
-		      OR ow.full_name ILIKE '%' || $1 || '%' OR ow.phone LIKE '%' || $1 || '%')
+		      OR ow.full_name ILIKE '%' || $1 || '%' OR ow.phone LIKE '%' || $1 || '%'
+		      OR fr.full_name ILIKE '%' || $1 || '%' OR fru.phone LIKE '%' || $1 || '%')
 		ORDER BY `+order+` LIMIT $2 OFFSET $3`, likeArg(q), page.Limit, page.Offset)
 	if err != nil {
 		return out, err
@@ -463,9 +481,13 @@ func (s *Service) AdminLead(ctx context.Context, p *identity.Principal, id strin
 		return l, err
 	}
 	var connected, paid int
+	who, arg := "agent_network_id", l.AgentNetworkID
+	if l.RepID != nil {
+		who, arg = "rep_id", *l.RepID
+	}
 	if err := s.pool.QueryRow(ctx, `
 		SELECT count(*) FILTER (WHERE status = 'connected')::int, count(*) FILTER (WHERE rewarded_at IS NOT NULL)::int
-		FROM store_leads WHERE agent_network_id = $1`, l.AgentNetworkID).Scan(&connected, &paid); err != nil {
+		FROM store_leads WHERE `+who+` = $1`, arg).Scan(&connected, &paid); err != nil {
 		return l, err
 	}
 	l.AgentConnected, l.AgentPaid = &connected, &paid
@@ -554,11 +576,15 @@ func (s *Service) ConnectLead(ctx context.Context, p *identity.Principal, id str
 			WHERE id = $1`, id, netID, p.UserID); err != nil {
 			return err
 		}
-		var agent string
+		var agent *string
 		if err := tx.QueryRow(ctx, `SELECT agent_network_id FROM store_leads WHERE id = $1`, id).Scan(&agent); err != nil {
 			return err
 		}
-		return s.pushAgent(ctx, tx, agent, "lead_connected",
+		if agent == nil {
+			// Заявка продажника: сети агента и начисления нет.
+			return nil
+		}
+		return s.pushAgent(ctx, tx, *agent, "lead_connected",
 			i18n.Text{RU: fmt.Sprintf("«%s» подключён к Super Market", storeName), UZ: fmt.Sprintf("«%s» Super Market’ga ulandi", storeName)},
 			i18n.Text{RU: "Когда магазин оплатит первый счёт, 50% от оплаты придут на ваш баланс.",
 				UZ: "Doʻkon birinchi hisobni toʻlaganda, toʻlovning 50% balansingizga tushadi."},
@@ -586,7 +612,10 @@ func (s *Service) RejectLead(ctx context.Context, p *identity.Principal, id, rea
 		return StoreLead{}, errLeadNotFound()
 	}
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		var agent, name string
+		var (
+			agent *string
+			name  string
+		)
 		err := tx.QueryRow(ctx, `
 			UPDATE store_leads SET status = 'rejected', reason = $2, decided_at = now(), decided_by = $3
 			WHERE id = $1 AND status = 'pending' RETURNING agent_network_id, name`, id, reason, p.UserID).Scan(&agent, &name)
@@ -596,7 +625,10 @@ func (s *Service) RejectLead(ctx context.Context, p *identity.Principal, id, rea
 		if err != nil {
 			return err
 		}
-		return s.pushAgent(ctx, tx, agent, "lead_rejected",
+		if agent == nil {
+			return nil
+		}
+		return s.pushAgent(ctx, tx, *agent, "lead_rejected",
 			i18n.Text{RU: fmt.Sprintf("Заявка на «%s» отклонена", name), UZ: fmt.Sprintf("«%s» arizasi rad etildi", name)},
 			i18n.Text{RU: "Причина: " + reason, UZ: "Sabab: " + reason},
 			map[string]string{"lead_id": id})
@@ -625,11 +657,11 @@ func (s *Service) AgentRewards(ctx context.Context, p *identity.Principal, page 
 	if err := s.pool.QueryRow(ctx, `
 		SELECT COALESCE(sum(reward_amount) FILTER (WHERE rewarded_at >= date_trunc('month', now() AT TIME ZONE 'Asia/Tashkent') AT TIME ZONE 'Asia/Tashkent'), 0)::numeric(18,2)::text,
 		       count(*) FILTER (WHERE status = 'connected' AND rewarded_at IS NULL)::int
-		FROM store_leads`).Scan(&out.EarnedMonth, &out.Waiting); err != nil {
+		FROM store_leads WHERE agent_network_id IS NOT NULL`).Scan(&out.EarnedMonth, &out.Waiting); err != nil {
 		return out, err
 	}
 	rows, err := s.pool.Query(ctx, leadSelect+`
-		WHERE l.status = 'connected'
+		WHERE l.status = 'connected' AND l.agent_network_id IS NOT NULL
 		ORDER BY l.rewarded_at DESC NULLS FIRST, l.decided_at DESC LIMIT $1 OFFSET $2`, page.Limit, page.Offset)
 	if err != nil {
 		return out, err
@@ -639,4 +671,47 @@ func (s *Service) AgentRewards(ctx context.Context, p *identity.Principal, page 
 		out.Items = []StoreLead{}
 	}
 	return out, err
+}
+
+// ------------------------------------------------------- продажник
+
+// CreateRepLeadTx — продажник «SM Продажник» отмечает магазин «Подключить»:
+// та же заявка, что у агента (дубли по тем же правилам), но без сети агента
+// и без начисления 50%. Вызывается в транзакции отметки визита.
+func CreateRepLeadTx(ctx context.Context, tx pgx.Tx, repID string, in LeadInput) (string, error) {
+	if err := in.clean(); err != nil {
+		return "", err
+	}
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('store_leads'))`); err != nil {
+		return "", err
+	}
+	var pending int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM store_leads l WHERE l.rep_id = $1 AND `+activeLeadSQL,
+		repID).Scan(&pending); err != nil {
+		return "", err
+	}
+	if pending >= maxPendingLeads {
+		return "", apperr.Conflict("too_many_leads", fmt.Sprintf("уже %d заявок ждут решения — дождитесь подключения", pending)).
+			Uz(fmt.Sprintf("%d ta ariza qarorni kutmoqda — ulanishini kuting", pending))
+	}
+	if err := checkLeadDuplicate(ctx, tx, leadOwner{repID: repID}, in.OwnerPhone, *in.Lat, *in.Lng, ""); err != nil {
+		return "", err
+	}
+	var id string
+	err := tx.QueryRow(ctx, `
+		INSERT INTO store_leads (rep_id, name, owner_name, owner_phone, address, location, expires_at)
+		VALUES ($1, $2, $3, $4, $5, `+pointSQL(6, 7)+`, now() + make_interval(days => $8))
+		RETURNING id`,
+		repID, in.Name, in.OwnerName, in.OwnerPhone, in.Address, *in.Lat, *in.Lng, leadHoldDays).Scan(&id)
+	return id, err
+}
+
+// NotifyRepLead — супер-админам: продажник добавил магазин (после коммита).
+func (s *Service) NotifyRepLead(ctx context.Context, id string) {
+	l, err := getLead(ctx, s.pool, id)
+	if err != nil {
+		return
+	}
+	s.notifyAdmins(fmt.Sprintf("Продажник добавил магазин «%s»\nВладелец: %s, %s\nПродажник: %s, %s\nПодключите в панели супер-админа: Магазины → Заявки агентов.",
+		l.Name, l.OwnerName, l.OwnerPhone, l.AgentName, l.AgentPhone))
 }

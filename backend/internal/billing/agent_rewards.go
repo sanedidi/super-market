@@ -34,7 +34,7 @@ func (s *Service) SettleAgentRewards(ctx context.Context) error {
 				SELECT id, amount_uzs FROM subscription_invoices
 				WHERE network_id = l.network_id AND status = 'paid' AND amount_uzs > 0
 				ORDER BY paid_at, period LIMIT 1) i ON true
-			WHERE l.status = 'connected' AND l.rewarded_at IS NULL
+			WHERE l.status = 'connected' AND l.rewarded_at IS NULL AND l.agent_network_id IS NOT NULL
 			ORDER BY l.agent_network_id
 			FOR UPDATE OF l SKIP LOCKED`, AgentRewardPercent)
 		if err != nil {

@@ -24,6 +24,7 @@ import {
   TranslationOutlined,
   UserAddOutlined,
   UserOutlined,
+  NodeIndexOutlined,
 } from '@ant-design/icons'
 import { Dashboard } from './pages/Dashboard'
 import { Networks } from './pages/Networks'
@@ -50,6 +51,7 @@ import { Notifications, PushCampaign, PushNew } from './pages/Push'
 import { InvestNowBadge, InvestVisitors } from './pages/InvestVisitors'
 import { AppVersions } from './pages/AppVersions'
 import { AgentRewards, StoreLeads, StoreLeadsBadge } from './pages/StoreLeads'
+import { Field, FieldBadge } from './pages/Field'
 
 // Разделы меню (Figma «Сайдбар · группировка разделов»): серые заголовки, подменю — панелью справа.
 const menu: MenuItem[] = [
@@ -61,6 +63,7 @@ const menu: MenuItem[] = [
     children: [
       { key: '/networks', icon: <ShopOutlined />, label: 'Сети и магазины' },
       { key: '/store-leads', icon: <UserAddOutlined />, label: 'Заявки агентов', extra: <StoreLeadsBadge /> },
+      { key: '/field', icon: <NodeIndexOutlined />, label: 'Продажники', extra: <FieldBadge /> },
       {
         key: 'billing',
         icon: <DollarOutlined />,
@@ -162,6 +165,7 @@ export function AdminRoutes() {
         <Route index element={<Dashboard />} />
         <Route path="networks" element={<Networks />} />
         <Route path="store-leads" element={<StoreLeads />} />
+        <Route path="field" element={<Field />} />
         <Route path="products" element={<Products key="products" />} />
         <Route path="products/:id" element={<ProductPage />} />
         <Route path="moderation" element={<Products key="moderation" moderation />} />
