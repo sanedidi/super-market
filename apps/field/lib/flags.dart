@@ -5,8 +5,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
+import 'flag_picker.dart';
 import 'logic.dart';
-import 'places.dart';
 import 'tracker.dart';
 import 'ui.dart';
 
@@ -55,13 +55,14 @@ LatLng? flagPoint(Map<String, dynamic> f) {
   return lat == null || lng == null ? null : LatLng(lat, lng);
 }
 
-/// П8 «Потом»: флажок там, где стоит продажник. Потом — подсказка
-/// «Флажок поставлен · + Фото · Отменить» (10 с). Вернёт флажок или null.
-/// onMark — «Я здесь — отметить магазин» в шторке флажка, если рядом уже был флажок.
+/// П8 «Потом» → П12 «Где магазин?»: продажник двигает карту к магазину и ставит
+/// флажок. Потом — подсказка «Флажок поставлен · + Фото · Отменить» (10 с).
+/// Вернёт флажок или null. onMark / onRoute — для шторки уже стоящего флажка (П13 «Да, это он»).
 Future<Map<String, dynamic>?> placeFlag(BuildContext context, {VoidCallback? onChanged, VoidCallback? onMark, ValueChanged<LatLng>? onRoute}) async {
   final api = context.read<Api>();
   final tracker = context.read<Tracker>();
   final messenger = ScaffoldMessenger.of(context);
+  final nav = Navigator.of(context);
   var pos = tracker.position;
   if (pos == null || DateTime.now().difference(pos.timestamp).inSeconds > 30) {
     pos = await currentPosition();
@@ -71,64 +72,51 @@ Future<Map<String, dynamic>?> placeFlag(BuildContext context, {VoidCallback? onC
     showSnack(context, tr('Нет геопозиции — включите GPS', 'Geojoylashuv yoʻq — GPS ni yoqing'));
     return null;
   }
-  try {
-    final f = await api.post('/field/flags', {'lat': pos.latitude, 'lng': pos.longitude, 'accuracy': pos.accuracy}) as Map<String, dynamic>;
-    HapticFeedback.mediumImpact();
-    onChanged?.call();
-    if (!context.mounted) return f;
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(SnackBar(
-      duration: const Duration(seconds: 10),
-      behavior: SnackBarBehavior.floating,
-      backgroundColor: AppColors.ink,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      content: Row(children: [
-        const Icon(Icons.flag_rounded, color: FlagColors.amber, size: 20),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-            Text(tr('Флажок поставлен', 'Bayroqcha qoʻyildi'), style: AppText.bodyStrong.copyWith(color: AppColors.white, fontSize: 14)),
-            Text(tr('Его видят все продажники', 'Uni barcha savdo agentlari koʻradi'), style: AppText.small.copyWith(color: AppColors.muted, fontSize: 12)),
-          ]),
-        ),
-        TextButton(
-          onPressed: () {
-            messenger.hideCurrentSnackBar();
-            if (context.mounted) showFlagSheet(context, f, justPlaced: true, onChanged: onChanged);
-          },
-          child: Text(tr('+ Фото', '+ Rasm'), style: AppText.bodyStrong.copyWith(color: FlagColors.amber, fontSize: 14)),
-        ),
-        TextButton(
-          onPressed: () async {
-            messenger.hideCurrentSnackBar();
-            try {
-              await api.delete('/field/flags/${f['id']}');
-              onChanged?.call();
-            } on ApiError catch (e) {
-              messenger.showSnackBar(SnackBar(content: Text(e.message)));
-            }
-          },
-          child: Text(tr('Отменить', 'Bekor qilish'), style: AppText.bodyStrong.copyWith(color: AppColors.white, fontSize: 14)),
-        ),
-      ]),
-    ));
-    return f;
-  } on ApiError catch (e) {
-    if (!context.mounted) return null;
-    final flag = e.details['flag'];
-    final place = e.details['place'];
-    if (e.code == 'flag_near' && flag is Map<String, dynamic>) {
-      // Рядом уже стоит флажок — показать его: можно добавить фото.
-      showSnack(context, e.message);
-      await showFlagSheet(context, flag, onChanged: onChanged, onMark: onMark, onRoute: onRoute);
-    } else if (e.code == 'place_near' && place is Map<String, dynamic>) {
-      showSnack(context, e.message);
-      await showPlaceSheet(context, '${place['id']}');
-    } else {
-      showSnack(context, e.message);
-    }
-    return null;
-  }
+  final start = LatLng(pos.latitude, pos.longitude);
+  final f = await nav.push<Map<String, dynamic>>(MaterialPageRoute(
+    builder: (_) => FlagPickerScreen(start: start, onMark: onMark, onRoute: onRoute, onChanged: onChanged),
+  ));
+  if (f == null) return null;
+  HapticFeedback.mediumImpact();
+  onChanged?.call();
+  if (!context.mounted) return f;
+  messenger.hideCurrentSnackBar();
+  messenger.showSnackBar(SnackBar(
+    duration: const Duration(seconds: 10),
+    behavior: SnackBarBehavior.floating,
+    backgroundColor: AppColors.ink,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    content: Row(children: [
+      const Icon(Icons.flag_rounded, color: FlagColors.amber, size: 20),
+      const SizedBox(width: 10),
+      Expanded(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Text(tr('Флажок поставлен', 'Bayroqcha qoʻyildi'), style: AppText.bodyStrong.copyWith(color: AppColors.white, fontSize: 14)),
+          Text(tr('Его видят все продажники', 'Uni barcha savdo agentlari koʻradi'), style: AppText.small.copyWith(color: AppColors.muted, fontSize: 12)),
+        ]),
+      ),
+      TextButton(
+        onPressed: () {
+          messenger.hideCurrentSnackBar();
+          if (context.mounted) showFlagSheet(context, f, justPlaced: true, onChanged: onChanged);
+        },
+        child: Text(tr('+ Фото', '+ Rasm'), style: AppText.bodyStrong.copyWith(color: FlagColors.amber, fontSize: 14)),
+      ),
+      TextButton(
+        onPressed: () async {
+          messenger.hideCurrentSnackBar();
+          try {
+            await api.delete('/field/flags/${f['id']}');
+            onChanged?.call();
+          } on ApiError catch (e) {
+            messenger.showSnackBar(SnackBar(content: Text(e.message)));
+          }
+        },
+        child: Text(tr('Отменить', 'Bekor qilish'), style: AppText.bodyStrong.copyWith(color: AppColors.white, fontSize: 14)),
+      ),
+    ]),
+  ));
+  return f;
 }
 
 /// П9 (свой, только что поставлен) и П10 (чужой) — шторка флажка.

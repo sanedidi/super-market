@@ -13,7 +13,11 @@ import (
 // Ташкента с открытой карты (© участники OpenStreetMap, ODbL). Данные
 // скачивает браузер супер-админа (Overpass API), сервер решает, что ставить:
 // только продуктовые, без сетей, внутри 12 районов, не рядом с уже
-// отмеченными магазинами, магазинами Super Market и флажками продажников.
+// отмеченными магазинами, магазинами Super Market и флажками продажников (15 м).
+
+// osmNearM — ближе к отметке, магазину Super Market или флажку продажника — это та же
+// точка (соседние магазины в одном доме ставим: они дальше).
+const osmNearM = 15
 
 // maxOSMImport — сколько объектов карты за один запрос.
 const maxOSMImport = 5000
@@ -192,7 +196,7 @@ func (s *Service) ImportOSMFlags(ctx context.Context, p *identity.Principal, in 
 		       count(*) FILTER (WHERE NOT existing AND NOT near_place AND NOT near_store AND near_flag)::int,
 		       CASE WHEN $8 THEN count(*) FILTER (WHERE NOT (existing OR near_place OR near_store OR near_flag))::int
 		            ELSE (SELECT count(*)::int FROM ins) END
-		FROM c`, ids, names, shops, lats, lngs, flagPlaceM, flagDupM, in.DryRun).
+		FROM c`, ids, names, shops, lats, lngs, osmNearM, osmNearM, in.DryRun).
 		Scan(&out.Existing, &out.NearPlace, &out.NearStore, &out.NearFlag, &out.Created)
 	return out, err
 }

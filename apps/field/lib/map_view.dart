@@ -43,6 +43,8 @@ class CoverageMap extends StatefulWidget {
     this.onGesture,
     this.emptyHintTop = 0,
     this.onFlagTap,
+    this.onMove,
+    this.onLoaded,
   });
 
   final MapController controller;
@@ -56,6 +58,12 @@ class CoverageMap extends StatefulWidget {
 
   /// Нажали на флажок «зайти потом».
   final ValueChanged<Map<String, dynamic>>? onFlagTap;
+
+  /// Карта сдвинулась — новая середина (П12 «Где магазин?»: флажок в центре).
+  final ValueChanged<LatLng>? onMove;
+
+  /// Пришли данные с сервера (флажки, магазины) — чтобы экран сверху пересчитал «рядом».
+  final VoidCallback? onLoaded;
   final VoidCallback? onReady;
 
   /// Карту подвинули рукой (перестать следовать за мной).
@@ -91,6 +99,26 @@ class CoverageMapState extends State<CoverageMap> {
     if (_ready) _load();
   }
 
+  /// Ближайший к точке открытый флажок или отмеченный магазин не дальше maxM
+  /// (П13 «Это тот же магазин?»). null — рядом никого.
+  ({Map<String, dynamic> item, bool isFlag, double distanceM})? nearest(LatLng p, double maxM) {
+    ({Map<String, dynamic> item, bool isFlag, double distanceM})? best;
+    void check(Map<String, dynamic> it, bool isFlag) {
+      final lat = (it['lat'] as num?)?.toDouble(), lng = (it['lng'] as num?)?.toDouble();
+      if (lat == null || lng == null) return;
+      final d = distanceM(p.latitude, p.longitude, lat, lng);
+      if (d <= maxM && (best == null || d < best!.distanceM)) best = (item: it, isFlag: isFlag, distanceM: d);
+    }
+
+    for (final f in _flags) {
+      check(f, true);
+    }
+    for (final pl in _places) {
+      check(pl, false);
+    }
+    return best;
+  }
+
   void _schedule() {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 450), _load);
@@ -117,6 +145,7 @@ class CoverageMapState extends State<CoverageMap> {
         _flags = ((d['flags'] as List?) ?? const []).cast<Map<String, dynamic>>();
         _loaded = true;
       });
+      widget.onLoaded?.call();
     } catch (_) {
       // Нет сети — остаётся то, что уже показано.
     }
@@ -261,6 +290,7 @@ class CoverageMapState extends State<CoverageMap> {
         },
         onPositionChanged: (camera, hasGesture) {
           if (hasGesture) widget.onGesture?.call();
+          widget.onMove?.call(camera.center);
           _schedule();
         },
       ),

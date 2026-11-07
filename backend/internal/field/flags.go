@@ -21,10 +21,13 @@ import (
 const (
 	// flagMaxAccuracyM — точность хуже — «подождите, уточняем место».
 	flagMaxAccuracyM = 30.0
-	// flagDupM — ближе уже стоит открытый флажок — второй не ставим.
+	// flagDupM — ближе уже стоит открытый флажок — «Это тот же магазин?» (force — «Нет, другой»).
 	flagDupM = 30
-	// flagPlaceM — ближе уже отмечен магазин с результатом — флажок не нужен.
-	flagPlaceM = 50
+	// flagPlaceM — ближе уже отмечен магазин с результатом — «Это тот же магазин?».
+	flagPlaceM = 30
+	// flagMaxFromRepM — флажок не дальше от последней точки обхода (в приложении — 300 м,
+	// здесь с запасом на неточность GPS и задержку точек).
+	flagMaxFromRepM = 500
 	// flagCloseM — отметка магазина ближе этого закрывает флажок.
 	flagCloseM = 50
 	// flagNearM — во время обхода ближе этого: «Рядом флажок — 60 м».
@@ -110,6 +113,8 @@ type FlagInput struct {
 	Accuracy *float64 `json:"accuracy"`
 	Name     string   `json:"name"`
 	PhotoURL string   `json:"photo_url"`
+	// Force — «Нет, другой магазин»: рядом флажок или отметка, но это соседний магазин.
+	Force bool `json:"force"`
 }
 
 // FlagPatch — фото и название (по желанию; null — не менять).
@@ -134,8 +139,10 @@ func cleanFlagText(name, photo *string) error {
 	return nil
 }
 
-// CreateFlag — «Потом» (П8): флажок там, где стоит продажник, только во время обхода.
-// Рядом уже флажок — 409 flag_near (details.flag); рядом уже отмечен магазин — 409 place_near (details.place).
+// CreateFlag — «Потом» → «Где магазин?» (П12): флажок там, куда продажник навёл карту,
+// только во время обхода и не дальше 500 м от последней точки пути (409 too_far).
+// Ближе 30 м флажок — 409 flag_near (details.flag), отмеченный магазин — 409 place_near
+// (details.place): П13 «Это тот же магазин?»; force — «Нет, другой» — ставим всё равно.
 func (s *Service) CreateFlag(ctx context.Context, p *identity.Principal, in FlagInput) (Flag, error) {
 	if err := requireRep(p); err != nil {
 		return Flag{}, err
@@ -152,56 +159,65 @@ func (s *Service) CreateFlag(ctx context.Context, p *identity.Principal, in Flag
 	}
 	var id string
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		var walkID string
-		err := tx.QueryRow(ctx, `SELECT id FROM field_walks WHERE rep_id = $1 AND status <> 'ended'`, p.RepID).Scan(&walkID)
+		var (
+			walkID  string
+			lastLat *float64
+			lastLng *float64
+		)
+		err := tx.QueryRow(ctx, `SELECT id, last_lat, last_lng FROM field_walks WHERE rep_id = $1 AND status <> 'ended'`, p.RepID).Scan(&walkID, &lastLat, &lastLng)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return apperr.Conflict("no_walk", "флажок ставится во время обхода — начните обход").Uz("bayroqcha aylanish vaqtida qoʻyiladi — aylanishni boshlang")
 		}
 		if err != nil {
 			return err
 		}
+		if lastLat != nil && lastLng != nil && distM(*lastLat, *lastLng, *in.Lat, *in.Lng) > flagMaxFromRepM {
+			return apperr.Conflict("too_far", "флажок далеко от вас — подойдите ближе к магазину").Uz("bayroqcha sizdan uzoqda — doʻkonga yaqinroq boring")
+		}
 		// Два продажника у одного магазина одновременно — по очереди.
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('field_flags'))`); err != nil {
 			return err
 		}
-		rows, err := tx.Query(ctx, `SELECT `+flagCols(1)+`, ST_Distance(f.location, `+ptSQL+`)::int`+flagJoins+`
-			WHERE f.status = 'open' AND ST_DWithin(f.location, `+ptSQL+`, $4)
-			ORDER BY f.location <-> `+ptSQL+` LIMIT 1`, p.RepID, *in.Lat, *in.Lng, flagDupM)
-		if err != nil {
-			return err
-		}
-		near, err := pgx.CollectRows(rows, scanFlagDist)
-		if err != nil {
-			return err
-		}
-		if len(near) > 0 {
-			f := near[0]
-			who := f.RepName
-			switch {
-			case f.Mine:
-				who = "ваш"
-			case f.Source == "osm":
-				who = "с карты"
+		if !in.Force {
+			rows, err := tx.Query(ctx, `SELECT `+flagCols(1)+`, ST_Distance(f.location, `+ptSQL+`)::int`+flagJoins+`
+				WHERE f.status = 'open' AND ST_DWithin(f.location, `+ptSQL+`, $4)
+				ORDER BY f.location <-> `+ptSQL+` LIMIT 1`, p.RepID, *in.Lat, *in.Lng, flagDupM)
+			if err != nil {
+				return err
 			}
-			return apperr.Conflict("flag_near", "здесь уже стоит флажок ("+who+") — можно добавить к нему фото").
-				Uz("bu yerda allaqachon bayroqcha bor (" + f.RepName + ") — unga rasm qoʻshish mumkin").
-				WithDetails(map[string]any{"flag": f})
-		}
-		rows, err = tx.Query(ctx, `SELECT `+placeCols(1)+`, ST_Distance(p.location, `+ptSQL+`)::int`+placeJoins+`
-			WHERE ST_DWithin(p.location, `+ptSQL+`, $4)
-			ORDER BY p.location <-> `+ptSQL+` LIMIT 1`, p.RepID, *in.Lat, *in.Lng, flagPlaceM)
-		if err != nil {
-			return err
-		}
-		places, err := pgx.CollectRows(rows, scanPlaceDist)
-		if err != nil {
-			return err
-		}
-		if len(places) > 0 {
-			pl := places[0]
-			return apperr.Conflict("place_near", "здесь уже отмечен магазин — откройте его отметку").
-				Uz("bu yerda doʻkon allaqachon belgilangan — belgini oching").
-				WithDetails(map[string]any{"place": pl})
+			near, err := pgx.CollectRows(rows, scanFlagDist)
+			if err != nil {
+				return err
+			}
+			if len(near) > 0 {
+				f := near[0]
+				who := f.RepName
+				switch {
+				case f.Mine:
+					who = "ваш"
+				case f.Source == "osm":
+					who = "с карты"
+				}
+				return apperr.Conflict("flag_near", "здесь уже стоит флажок ("+who+") — можно добавить к нему фото").
+					Uz("bu yerda allaqachon bayroqcha bor (" + f.RepName + ") — unga rasm qoʻshish mumkin").
+					WithDetails(map[string]any{"flag": f})
+			}
+			rows, err = tx.Query(ctx, `SELECT `+placeCols(1)+`, ST_Distance(p.location, `+ptSQL+`)::int`+placeJoins+`
+				WHERE ST_DWithin(p.location, `+ptSQL+`, $4)
+				ORDER BY p.location <-> `+ptSQL+` LIMIT 1`, p.RepID, *in.Lat, *in.Lng, flagPlaceM)
+			if err != nil {
+				return err
+			}
+			places, err := pgx.CollectRows(rows, scanPlaceDist)
+			if err != nil {
+				return err
+			}
+			if len(places) > 0 {
+				pl := places[0]
+				return apperr.Conflict("place_near", "здесь уже отмечен магазин — откройте его отметку").
+					Uz("bu yerda doʻkon allaqachon belgilangan — belgini oching").
+					WithDetails(map[string]any{"place": pl})
+			}
 		}
 		var acc *float32
 		if in.Accuracy != nil {

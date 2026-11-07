@@ -463,6 +463,20 @@ func TestFieldFlags(t *testing.T) {
 	}
 	a.expect(a.do("GET", "/field/flags/not-a-uuid", tok1, nil), 404, "bad id")
 
+	// П12/П13: соседние магазины — «Нет, другой» (force); дальше 500 м от пути — нельзя.
+	fa := a.expect(flag(tok1, 41.3646, 69.2801, 0), 201, "flag A").str("id")
+	a.expect(flag(tok1, 41.3647, 69.2801, 0), 409, "neighbour without force")
+	fb := a.expect(a.do("POST", "/field/flags", tok1, map[string]any{"lat": 41.3647, "lng": 69.2801, "force": true}), 201, "neighbour force").str("id")
+	if pn := a.expect(a.do("POST", "/field/flags", tok1, map[string]any{"lat": 41.3605, "lng": 69.28}), 409, "near place"); pn.str("error", "code") != "place_near" {
+		t.Fatalf("near place = %v", pn.Body)
+	}
+	if tf := a.expect(a.do("POST", "/field/flags", tok1, map[string]any{"lat": 41.375, "lng": 69.28, "force": true}), 409, "too far"); tf.str("error", "code") != "too_far" {
+		t.Fatalf("too far = %v", tf.Body)
+	}
+	for _, id := range []string{fa, fb} {
+		a.expect(a.do("DELETE", "/field/flags/"+id, tok1, nil), 200, "delete neighbour")
+	}
+
 	// Импорт продуктовых магазинов из OpenStreetMap: без сетей, только в районах,
 	// не рядом с отмеченными магазинами; повторный импорт не дублирует.
 	osmItems := []map[string]any{
