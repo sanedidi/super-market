@@ -22,6 +22,8 @@ const (
 	maxCells    = 25000
 	maxTrackPts = 25000
 	maxPlaces   = 2000
+	// maxStores — магазины Super Market на карте (их немного — берём всю видимую область).
+	maxStores = 3000
 	// trackStepM — линия пути прорежена: точки не чаще чем через столько метров.
 	trackStepM = 12.0
 	// trackBreakSec — между соседними точками дольше: линия рвётся (вышли из области).
@@ -31,6 +33,8 @@ const (
 // BBox — видимая область карты.
 type BBox struct {
 	MinLat, MinLng, MaxLat, MaxLng float64
+	// Outer — область как её прислали, без обрезки до maxSpanDeg (для магазинов Super Market).
+	Outer [4]float64
 }
 
 // ParseBBox — ?min_lat=&min_lng=&max_lat=&max_lng=.
@@ -47,6 +51,7 @@ func ParseBBox(get func(string) string) (BBox, error) {
 	if b.MinLat > b.MaxLat || b.MinLng > b.MaxLng {
 		return b, apperr.Validation("область карты: min больше max").Uz("xarita hududi: min max dan katta")
 	}
+	b.Outer = [4]float64{b.MinLat, b.MinLng, b.MaxLat, b.MaxLng}
 	// Слишком большая область — берём середину.
 	if b.MaxLat-b.MinLat > maxSpanDeg {
 		c := (b.MinLat + b.MaxLat) / 2
@@ -74,10 +79,22 @@ type Track struct {
 type MapData struct {
 	Grid Grid `json:"grid"`
 	// Обойдённые клетки: [cx, cy, 1 — был сам / 0 — другие].
-	Cells     [][3]int `json:"cells"`
-	Tracks    []Track  `json:"tracks"`
-	Places    []Place  `json:"places"`
-	Truncated bool     `json:"truncated"`
+	Cells  [][3]int `json:"cells"`
+	Tracks []Track  `json:"tracks"`
+	Places []Place  `json:"places"`
+	// Stores — магазины, которые уже работают в Super Market (туда не ходить).
+	Stores    []SMStore `json:"stores"`
+	Truncated bool      `json:"truncated"`
+}
+
+// SMStore — точка магазина Super Market на карте.
+type SMStore struct {
+	ID      string  `json:"id"`
+	Name    string  `json:"name"`
+	Network string  `json:"network"`
+	Address string  `json:"address"`
+	Lat     float64 `json:"lat"`
+	Lng     float64 `json:"lng"`
 }
 
 // RepMap — карта продажника.
@@ -97,7 +114,7 @@ func (s *Service) AdminMap(ctx context.Context, p *identity.Principal, b BBox) (
 }
 
 func (s *Service) mapData(ctx context.Context, me string, b BBox) (MapData, error) {
-	out := MapData{Grid: grid(), Cells: [][3]int{}, Tracks: []Track{}, Places: []Place{}}
+	out := MapData{Grid: grid(), Cells: [][3]int{}, Tracks: []Track{}, Places: []Place{}, Stores: []SMStore{}}
 	lo, hi := cellOf(b.MinLat, b.MinLng), cellOf(b.MaxLat, b.MaxLng)
 	rows, err := s.pool.Query(ctx, `
 		SELECT c.cx, c.cy, (c.rep_id::text = $5 OR EXISTS (
@@ -197,8 +214,36 @@ func (s *Service) mapData(ctx context.Context, me string, b BBox) (MapData, erro
 		return out, err
 	}
 	out.Places, err = pgx.CollectRows(rows, scanPlace)
+	if err != nil {
+		return out, err
+	}
 	if out.Places == nil {
 		out.Places = []Place{}
+	}
+
+	// Магазины Super Market (активные, не склады дистрибьюторов) во всей видимой области.
+	o := b.Outer
+	if o == ([4]float64{}) {
+		o = [4]float64{b.MinLat, b.MinLng, b.MaxLat, b.MaxLng}
+	}
+	rows, err = s.pool.Query(ctx, `
+		SELECT st.id::text, st.name, n.name, st.address, ST_Y(st.location::geometry), ST_X(st.location::geometry)
+		FROM stores st
+		JOIN networks n ON n.id = st.network_id
+		WHERE st.location IS NOT NULL AND st.status = 'active' AND n.status = 'active' AND n.kind <> 'distributor'
+		  AND ST_Intersects(st.location, ST_MakeEnvelope($1, $2, $3, $4, 4326)::geography)
+		ORDER BY st.name LIMIT $5`, o[1], o[0], o[3], o[2], maxStores)
+	if err != nil {
+		return out, err
+	}
+	out.Stores, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (SMStore, error) {
+		var x SMStore
+		err := r.Scan(&x.ID, &x.Name, &x.Network, &x.Address, &x.Lat, &x.Lng)
+		x.Lat, x.Lng = round6(x.Lat), round6(x.Lng)
+		return x, err
+	})
+	if out.Stores == nil {
+		out.Stores = []SMStore{}
 	}
 	return out, err
 }

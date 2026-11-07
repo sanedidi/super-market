@@ -160,6 +160,17 @@ func TestFieldWalks(t *testing.T) {
 	if h == nil || h["distance_m"].(float64) <= 0 || h["direction"] == "" {
 		t.Fatalf("hint = %v", hz.Body)
 	}
+	// Магазины Super Market на карте: активный — виден, склад дистрибьютора — нет.
+	for _, q := range []string{
+		`INSERT INTO networks (id, name, kind) VALUES ('11111111-0000-0000-0000-000000000001', 'Сеть на карте', 'single'), ('11111111-0000-0000-0000-000000000002', 'Дистрибьютор', 'distributor')`,
+		`INSERT INTO stores (network_id, name, location) VALUES
+		   ('11111111-0000-0000-0000-000000000001', 'Магазин SM', ST_SetSRID(ST_MakePoint(69.28, 41.36), 4326)::geography),
+		   ('11111111-0000-0000-0000-000000000002', 'Склад', ST_SetSRID(ST_MakePoint(69.281, 41.361), 4326)::geography)`,
+	} {
+		if _, err := pool.Exec(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
 	// Карта: свои и чужие клетки, линии, магазины.
 	mp := a.expect(a.do("GET", "/field/map?min_lat=41.355&min_lng=69.27&max_lat=41.37&max_lng=69.29", tok2, nil), 200, "map")
 	cells := mp.Body["cells"].([]any)
@@ -173,6 +184,14 @@ func TestFieldWalks(t *testing.T) {
 	}
 	if mine == 0 || other == 0 || len(mp.Body["tracks"].([]any)) != 2 || len(mp.Body["places"].([]any)) != 2 {
 		t.Fatalf("map: mine=%d other=%d tracks=%d places=%d", mine, other, len(mp.Body["tracks"].([]any)), len(mp.Body["places"].([]any)))
+	}
+	if st := mp.Body["stores"].([]any); len(st) != 1 || st[0].(map[string]any)["name"] != "Магазин SM" {
+		t.Fatalf("map stores = %v", mp.Body["stores"])
+	}
+	// Вся область города (больше 8 км): магазины — во всей области, клетки — в середине.
+	wide := a.expect(a.do("GET", "/admin/field/map?min_lat=41.1&min_lng=69.0&max_lat=41.5&max_lng=69.5", adminTok, nil), 200, "admin map wide")
+	if len(wide.Body["stores"].([]any)) != 1 {
+		t.Fatalf("admin wide stores = %v", wide.Body["stores"])
 	}
 	a.expect(a.do("GET", "/field/map?min_lat=41.355", tok2, nil), 400, "map without bbox")
 

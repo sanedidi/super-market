@@ -1459,7 +1459,7 @@ lead_id, lead_status, distance_m?, history? [Visit]}`.
 | POST | `/field/walks/{id}/points` | `{points: [{at, lat, lng, accuracy, mocked}]}` (до 1000, раз в 30 с; без интернета копятся в телефоне) → `{walk, accepted, here}`. `here {state: new\|mine\|other, cx, cy, rep_name?, first_at?, places}` — П3 «Здесь уже прошёл …». На ручной паузе точки не пишутся; закончен — 409 `walk_ended` |
 | POST | `/field/walks/{id}/pause`, `/resume` | пауза / продолжить |
 | POST | `/field/walks/{id}/finish` | П6 → `Walk + {other_pct, district, coverage_before, coverage_after}` |
-| GET | `/field/map?min_lat=&min_lng=&max_lat=&max_lng=` | `{grid, cells [[cx, cy, 1 — был сам / 0 — другие]], tracks [{walk_id, rep_id, color, mine, today, pts [[lat, lng]]}], places [Place], truncated}`. Область больше ≈8 км обрезается до середины |
+| GET | `/field/map?min_lat=&min_lng=&max_lat=&max_lng=` | `{grid, cells [[cx, cy, 1 — был сам / 0 — другие]], tracks [{walk_id, rep_id, color, mine, today, pts [[lat, lng]]}], places [Place], stores [{id, name, network, address, lat, lng}], truncated}`. Область больше ≈8 км обрезается до середины; `stores` — магазины Super Market (активные, без дистрибьюторов, до 3000) во всей присланной области |
 | GET | `/field/white-zone?lat=&lng=` | ближайшая белая зона (до ≈2 км): `{hint: {lat, lng, distance_m, direction: n\|ne\|e\|se\|s\|sw\|w\|nw} \| null}` |
 | GET | `/field/places/near?lat=&lng=` | П4 «Это он?»: отмеченные магазины ближе 50 м (`distance_m`) |
 | GET | `/field/places?result=` | «Мои магазины»: где был продажник (последние сверху) |

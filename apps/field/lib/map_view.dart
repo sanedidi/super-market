@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import 'logic.dart';
+import 'state.dart';
 import 'tracker.dart';
 import 'ui.dart';
 
@@ -39,6 +40,7 @@ class CoverageMap extends StatefulWidget {
     this.onPlaceTap,
     this.onReady,
     this.onGesture,
+    this.emptyHintTop = 0,
   });
 
   final MapController controller;
@@ -54,6 +56,9 @@ class CoverageMap extends StatefulWidget {
   /// Карту подвинули рукой (перестать следовать за мной).
   final VoidCallback? onGesture;
 
+  /// Насколько ниже чипов показать подсказку «здесь никто не обходил» (под шапкой обхода).
+  final double emptyHintTop;
+
   @override
   State<CoverageMap> createState() => CoverageMapState();
 }
@@ -63,6 +68,8 @@ class CoverageMapState extends State<CoverageMap> {
   List<List<int>> _cells = const [];
   List<Map<String, dynamic>> _tracks = const [];
   List<Map<String, dynamic>> _places = const [];
+  List<Map<String, dynamic>> _stores = const [];
+  bool _loaded = false;
   Timer? _debounce;
   bool _ready = false;
   int _seq = 0;
@@ -100,6 +107,8 @@ class CoverageMapState extends State<CoverageMap> {
         _cells = ((d['cells'] as List?) ?? const []).map((c) => (c as List).map((v) => (v as num).toInt()).toList()).toList();
         _tracks = ((d['tracks'] as List?) ?? const []).cast<Map<String, dynamic>>();
         _places = ((d['places'] as List?) ?? const []).cast<Map<String, dynamic>>();
+        _stores = ((d['stores'] as List?) ?? const []).cast<Map<String, dynamic>>();
+        _loaded = true;
       });
     } catch (_) {
       // Нет сети — остаётся то, что уже показано.
@@ -116,6 +125,8 @@ class CoverageMapState extends State<CoverageMap> {
     final pos = tracker.position;
     final me = pos == null ? null : LatLng(pos.latitude, pos.longitude);
     final layers = widget.layers;
+    // Граница моего района (если супер-админ назначил район).
+    final district = _pts(context.select<FieldState, Object?>((s) => s.district?['boundary']));
     final polygons = <Polygon>[];
     if (layers.grid) {
       for (final c in _cells) {
@@ -154,6 +165,20 @@ class CoverageMapState extends State<CoverageMap> {
     }
     final markers = <Marker>[];
     if (layers.places) {
+      // Магазины, которые уже работают в Super Market, — туда не ходить.
+      for (final st in _stores) {
+        final lat = (st['lat'] as num?)?.toDouble(), lng = (st['lng'] as num?)?.toDouble();
+        if (lat == null || lng == null) continue;
+        markers.add(Marker(
+          point: LatLng(lat, lng),
+          width: 30,
+          height: 30,
+          child: GestureDetector(
+            onTap: () => showSnack(context, '${st['name']} · ${tr('уже в Super Market', 'Super Market’da ishlaydi')}'),
+            child: const Center(child: SmStoreDot()),
+          ),
+        ));
+      }
       for (final p in _places) {
         final lat = (p['lat'] as num?)?.toDouble(), lng = (p['lng'] as num?)?.toDouble();
         if (lat == null || lng == null) continue;
@@ -217,14 +242,84 @@ class CoverageMapState extends State<CoverageMap> {
         },
       ),
       children: [
-        TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: _agent),
+        // Подложка — светло-серая: на цветной карте OSM не видно ни путей, ни клеток.
+        TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: _agent,
+          tileBuilder: (_, tile, __) => ColorFiltered(colorFilter: _lightGrey, child: tile),
+        ),
+        if (layers.grid) _GridLines(grid: _grid),
         if (polygons.isNotEmpty) PolygonLayer(polygons: polygons),
+        if (district.length > 2)
+          PolylineLayer(polylines: [
+            Polyline(points: [...district, district.first], strokeWidth: 3, color: AppColors.primary.withValues(alpha: 0.75)),
+          ]),
         if (lines.isNotEmpty) PolylineLayer(polylines: lines),
         MarkerLayer(markers: markers),
-        const SimpleAttributionWidget(source: Text('OpenStreetMap')),
+        // Подпись «© OpenStreetMap» — в легенде (MapLegend): здесь её закрывали кнопки.
+        if (_loaded && _cells.isEmpty && _tracks.isEmpty && _places.isEmpty && tracker.trail.length < 2)
+          Align(
+            alignment: Alignment.topCenter,
+            child: Padding(
+              padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top + 60 + widget.emptyHintTop),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: BoxDecoration(color: AppColors.ink.withValues(alpha: 0.82), borderRadius: BorderRadius.circular(14)),
+                child: Text(
+                  tr('Здесь ещё никто не обходил — все клетки белые', 'Bu yerda hali hech kim aylanmagan — barcha kataklar oq'),
+                  style: AppText.small.copyWith(color: AppColors.white, fontSize: 12),
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
+}
+
+/// Светло-серая подложка: яркость карты × 0,6 + 40% белого.
+const _lightGrey = ColorFilter.matrix(<double>[
+  0.1276, 0.4291, 0.0433, 0, 102, //
+  0.1276, 0.4291, 0.0433, 0, 102, //
+  0.1276, 0.4291, 0.0433, 0, 102, //
+  0, 0, 0, 1, 0,
+]);
+
+/// Тонкая сетка клеток 100×100 м в видимой области — видно, какие клетки
+/// белые (никто не был). Мельче 15-го масштаба клетки слишком малы — не рисуем.
+class _GridLines extends StatelessWidget {
+  const _GridLines({required this.grid});
+
+  final Grid grid;
+
+  @override
+  Widget build(BuildContext context) {
+    final camera = MapCamera.of(context);
+    if (camera.zoom < 15) return const SizedBox.shrink();
+    final b = camera.visibleBounds;
+    final x0 = (b.west / grid.lng).floor(), x1 = (b.east / grid.lng).ceil();
+    final y0 = (b.south / grid.lat).floor(), y1 = (b.north / grid.lat).ceil();
+    if ((x1 - x0) + (y1 - y0) > 240) return const SizedBox.shrink();
+    final s = y0 * grid.lat, n = y1 * grid.lat, w = x0 * grid.lng, e = x1 * grid.lng;
+    const c = Color(0x1F000000);
+    return PolylineLayer(polylines: [
+      for (var x = x0; x <= x1; x++) Polyline(points: [LatLng(s, x * grid.lng), LatLng(n, x * grid.lng)], strokeWidth: 1, color: c),
+      for (var y = y0; y <= y1; y++) Polyline(points: [LatLng(y * grid.lat, w), LatLng(y * grid.lat, e)], strokeWidth: 1, color: c),
+    ]);
+  }
+}
+
+/// Магазин Super Market на карте: красный кружок с витриной.
+class SmStoreDot extends StatelessWidget {
+  const SmStoreDot({super.key});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(color: AppColors.primary, shape: BoxShape.circle, border: Border.all(color: AppColors.white, width: 2), boxShadow: shadow),
+        child: const Icon(Icons.storefront_rounded, size: 13, color: AppColors.white),
+      );
 }
 
 /// Круглая кнопка поверх карты.
@@ -254,7 +349,7 @@ class MapButton extends StatelessWidget {
   }
 }
 
-/// Чипы слоёв карты: «Улицы · Сетка · Магазины».
+/// Чипы слоёв карты: «Улицы · Сетка · Магазины». Включён — тёмный, выключен — белый с перечёркнутым глазом.
 class LayerChips extends StatelessWidget {
   const LayerChips({super.key, required this.layers, required this.onChanged});
 
@@ -276,9 +371,9 @@ class LayerChips extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(12, 8, 14, 8),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(icon, size: 16, color: on ? AppColors.white : AppColors.ink),
+                    Icon(on ? icon : Icons.visibility_off_outlined, size: 16, color: on ? AppColors.white : AppColors.muted),
                     const SizedBox(width: 6),
-                    Text(label, style: AppText.caption.copyWith(color: on ? AppColors.white : AppColors.ink, fontSize: 13)),
+                    Text(label, style: AppText.caption.copyWith(color: on ? AppColors.white : AppColors.muted, fontSize: 13)),
                   ]),
                 ),
               ),
@@ -296,12 +391,13 @@ class LayerChips extends StatelessWidget {
   }
 }
 
-/// Легенда: мой путь, другие продажники, белая зона.
+/// Легенда: мой путь, другие продажники, белая клетка, граница района; подпись OpenStreetMap.
 class MapLegend extends StatelessWidget {
   const MapLegend({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final hasDistrict = ((context.select<FieldState, Object?>((s) => s.district?['boundary']) as List?)?.length ?? 0) > 2;
     Widget row(Widget swatch, String label) => Padding(
           padding: const EdgeInsets.symmetric(vertical: 2),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -316,11 +412,15 @@ class MapLegend extends StatelessWidget {
       decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(14), boxShadow: shadow),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
         row(line(AppColors.primary), tr('мой путь', 'mening yoʻlim')),
-        row(line(AppColors.otherPath), tr('другие продажники', 'boshqa agentlar')),
+        row(line(AppColors.otherPath), tr('другие продажники', 'boshqa savdo agentlari')),
         row(
-          Container(width: 11, height: 11, decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(3), border: Border.all(color: AppColors.line))),
-          tr('белая зона — не были', 'oq hudud — hech kim boʻlmagan'),
+          Container(width: 11, height: 11, decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(3), border: Border.all(color: AppColors.muted))),
+          tr('белая клетка — никто не был', 'oq katak — hech kim boʻlmagan'),
         ),
+        row(const SizedBox(width: 14, height: 14, child: FittedBox(child: SmStoreDot())), tr('уже в Super Market', 'Super Market’da')),
+        if (hasDistrict) row(Container(width: 14, height: 3, color: AppColors.primary.withValues(alpha: 0.75)), tr('граница моего района', 'tumanim chegarasi')),
+        const SizedBox(height: 2),
+        Text('© OpenStreetMap', style: AppText.small.copyWith(fontSize: 9, color: AppColors.muted)),
       ]),
     );
   }

@@ -126,6 +126,7 @@ interface MapData {
   cells: [number, number, number][]
   tracks: { walk_id: string; rep_id: string; color: string; today: boolean; pts: [number, number][] }[]
   places: Place[]
+  stores: { id: string; name: string; network: string; address: string; lat: number; lng: number }[]
   truncated: boolean
 }
 
@@ -322,11 +323,44 @@ function placeMark(ymaps: any, p: { lat: number; lng: number; result: Result }, 
   return pm
 }
 
+/** Цвета районов на карте — у каждого свой. */
+const DISTRICT_COLORS = ['#2563EB', '#16A34A', '#D97706', '#7C3AED', '#0891B2', '#DB2777', '#65A30D', '#EA580C', '#4F46E5', '#0D9488', '#9333EA', '#B45309']
+
+/** Районы Ташкента разными цветами с подписью «район · обойдено %»; fit — показать весь город. */
+function DistrictLayers({ ymaps, map, fit }: { ymaps: any; map: any; fit?: boolean }) {
+  const q = useQuery({ queryKey: ['field-districts'], queryFn: () => api.get<Districts>('/admin/field/districts') })
+  const layer = useLayer(ymaps, map)
+  const fitted = useRef(false)
+  useEffect(() => {
+    if (!ymaps || !layer.current || !q.data) return
+    layer.current.removeAll()
+    const all: number[][] = []
+    q.data.items.forEach((d, i) => {
+      if (d.boundary.length < 3) return
+      const color = DISTRICT_COLORS[i % DISTRICT_COLORS.length]
+      const share = d.coverage_pct === null ? '' : ` · ${pct(d.coverage_pct)}`
+      layer.current.add(
+        new ymaps.Polygon([d.boundary], { hintContent: `${d.name}${share}` }, { fillColor: color, fillOpacity: 0.08, strokeColor: color, strokeWidth: 2, strokeOpacity: 0.9, interactivityModel: 'default#transparent' }),
+      )
+      const c = d.boundary.reduce((a, [la, ln]) => [a[0] + la / d.boundary.length, a[1] + ln / d.boundary.length], [0, 0])
+      layer.current.add(new ymaps.Placemark(c, { iconCaption: `${d.name}${share}` }, { preset: 'islands#dotIcon', iconColor: color, interactivityModel: 'default#transparent' }))
+      all.push(...d.boundary)
+    })
+    if (fit && !fitted.current && all.length) {
+      fitted.current = true
+      map.setBounds(ymaps.util.bounds.fromPoints(all), { checkZoomRange: true, zoomMargin: 20 })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ymaps, q.data])
+  return null
+}
+
 /** Обойдённые клетки, линии пути и магазины видимой области (GET /admin/field/map). */
 function CoverageLayers({ ymaps, map, colors, reload, onPlace }: { ymaps: any; map: any; colors: boolean; reload: number; onPlace: (id: string) => void }) {
   const cells = useLayer(ymaps, map)
   const lines = useLayer(ymaps, map)
   const places = useLayer(ymaps, map)
+  const stores = useLayer(ymaps, map)
   const [bounds, setBounds] = useState<number[][] | null>(null)
   const [data, setData] = useState<MapData | null>(null)
 
@@ -363,6 +397,13 @@ function CoverageLayers({ ymaps, map, colors, reload, onPlace }: { ymaps: any; m
     cells.current?.removeAll()
     lines.current?.removeAll()
     places.current?.removeAll()
+    stores.current?.removeAll()
+    // Магазины, которые уже работают в Super Market.
+    for (const st of data.stores ?? []) {
+      stores.current?.add(
+        new ymaps.Placemark([st.lat, st.lng], { hintContent: `${st.name} · ${st.network} — уже в Super Market` }, { preset: 'islands#redShoppingCircleIcon' }),
+      )
+    }
     // Клетки рисуем только вблизи (иначе их слишком много).
     if (map.getZoom() >= 14) {
       for (const [cx, cy] of data.cells) cells.current?.add(cellPolygon(ymaps, data.grid, cx, cy, '#3F3F46', 0.12))
@@ -531,11 +572,16 @@ function Now({ onDay }: { onDay: (repId: string) => void }) {
             <div className="sm-map" style={{ height: 640, borderRadius: 16, overflow: 'hidden' }}>
               <div ref={box} style={{ position: 'absolute', inset: 0 }} />
               {!ymaps && <Spin style={{ position: 'absolute', inset: 0, margin: 'auto', height: 32 }} />}
+              {ymaps && map && <DistrictLayers ymaps={ymaps} map={map} fit={!reps.some((r) => r.walk?.last_lat != null)} />}
               {ymaps && map && <CoverageLayers ymaps={ymaps} map={map} colors reload={reload} onPlace={setPlace} />}
             </div>
           )}
           <Space size={16} wrap style={{ marginTop: 8, fontSize: 12, color: '#667085' }}>
-            <span>Цвет — продажник, линия — путь сегодня</span>
+            <span>Районы — разными цветами</span>
+            <span>
+              <span style={{ color: '#E11D2A' }}>🛒</span> уже в Super Market
+            </span>
+            <span>Цвет точки — продажник, линия — путь сегодня</span>
             <span style={{ color: '#A1A1AA' }}>━ прошлые обходы</span>
             <span>▦ затемнённые клетки — обойдено навсегда, белые — никто не был</span>
             {Object.entries(RESULTS).map(([k, r]) => (

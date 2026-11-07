@@ -202,6 +202,7 @@ class _WalkScreenState extends State<WalkScreen> {
             initialZoom: 17,
             layers: _layers,
             hint: _hint,
+            emptyHintTop: 92,
             onReady: () => _ready = true,
             onGesture: () {
               if (_follow) setState(() => _follow = false);
