@@ -100,4 +100,18 @@ void main() {
       'с карты · сегодня, 9:00',
     );
   });
+
+  test('логин владельца из названия — как на сервере', () {
+    expect(loginFromName('Baraka Market'), 'baraka.market');
+    expect(loginFromName('Дилноза Юсупова'), 'dilnoza.yusupova');
+    expect(loginFromName('«Ўзбегим» Шоҳ маркет 2'), 'ozbegim.shoh');
+    expect(loginFromName('Oʻzbekiston-24'), 'ozbekiston.24');
+    expect(loginFromName('Ёқут'), 'yoqut');
+    expect(loginFromName('  '), 'shop');
+    expect(validLogin('baraka.market'), isTrue);
+    expect(validLogin('Bad Login!'), isFalse);
+    expect(validLogin('ab'), isFalse);
+    expect(spacedPassword('48271593'), '4827 1593');
+    expect(ownerMessage('Baraka', 'baraka', '48271593'), contains('Логин: baraka'));
+  });
 }

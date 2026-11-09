@@ -44,12 +44,16 @@ type LoginInfo struct {
 	PasswordChangedAt  time.Time  `json:"password_changed_at"`
 	LastLoginAt        *time.Time `json:"last_login_at"`
 	Locked             bool       `json:"locked"`
+	// Временный пароль — пока им ни разу не вошли (тому, кто его выдал).
+	TempPassword string `json:"temp_password,omitempty"`
 }
 
 // LoginInput — логин и пароль. Пустой пароль — оставить прежний (только смена логина).
 type LoginInput struct {
 	Login    string `json:"login"`
 	Password string `json:"password"`
+	// Пароль придумывает сервер (8 цифр) — «SM Магазин» и «SM Продажник».
+	GeneratePassword bool `json:"generate_password"`
 }
 
 // validTempPassword — пароль, который задаёт супер-админ или магазин.
@@ -90,8 +94,9 @@ func validLogin(raw string) (string, error) {
 
 // upsertLogin создаёт или меняет логин сотрудника. hash == nil — пароль не
 // меняется (только логин). Новый пароль сбрасывает счётчик ошибок и
-// блокировку; mustChange — временный ли он.
-func upsertLogin(ctx context.Context, q db.Querier, employeeID, networkID, login string, hash *string, mustChange bool) error {
+// блокировку; mustChange — временный ли он. Временный пароль (plain)
+// запоминается, чтобы выдавший мог показать его ещё раз до первого входа.
+func upsertLogin(ctx context.Context, q db.Querier, employeeID, networkID, login string, hash *string, plain string, mustChange bool) error {
 	var err error
 	if hash == nil {
 		tag, e := q.Exec(ctx, `UPDATE employee_logins SET login = $2 WHERE employee_id = $1`, employeeID, login)
@@ -100,13 +105,13 @@ func upsertLogin(ctx context.Context, q db.Querier, employeeID, networkID, login
 		}
 	} else {
 		_, err = q.Exec(ctx, `
-			INSERT INTO employee_logins (employee_id, network_id, login, password_hash, must_change_password)
-			VALUES ($1, $2, $3, $4, $5)
+			INSERT INTO employee_logins (employee_id, network_id, login, password_hash, must_change_password, temp_password)
+			VALUES ($1, $2, $3, $4, $5, CASE WHEN $5 AND $6 <> '' THEN $6 END)
 			ON CONFLICT (employee_id) DO UPDATE SET
 				login = EXCLUDED.login, password_hash = EXCLUDED.password_hash,
-				must_change_password = EXCLUDED.must_change_password,
+				must_change_password = EXCLUDED.must_change_password, temp_password = EXCLUDED.temp_password,
 				password_changed_at = now(), failed_attempts = 0, locked_until = NULL`,
-			employeeID, networkID, login, *hash, mustChange)
+			employeeID, networkID, login, *hash, mustChange, plain)
 	}
 	if db.IsUniqueViolation(err, "employee_logins_login_key") {
 		return apperr.Conflict("login_taken", "логин уже занят — придумайте другой").Uz("login band — boshqasini oʻylab toping")
@@ -147,9 +152,10 @@ func revokeSessions(ctx context.Context, q db.Querier, userID, except string) er
 func loginOf(ctx context.Context, q db.Querier, employeeID string) (LoginInfo, error) {
 	i := LoginInfo{EmployeeID: employeeID}
 	err := q.QueryRow(ctx, `
-		SELECT login, must_change_password, password_changed_at, last_login_at, COALESCE(locked_until > now(), false)
+		SELECT login, must_change_password, password_changed_at, last_login_at, COALESCE(locked_until > now(), false),
+		       COALESCE(CASE WHEN must_change_password THEN temp_password END, '')
 		FROM employee_logins WHERE employee_id = $1`, employeeID).Scan(
-		&i.Login, &i.MustChangePassword, &i.PasswordChangedAt, &i.LastLoginAt, &i.Locked)
+		&i.Login, &i.MustChangePassword, &i.PasswordChangedAt, &i.LastLoginAt, &i.Locked, &i.TempPassword)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return i, apperr.NotFound("у сотрудника нет логина").Uz("xodimning logini yoʻq")
 	}
@@ -284,7 +290,7 @@ func (s *Service) ChangePassword(ctx context.Context, p *Principal, current, nex
 			return apperr.Validation("new_password: совпадает с прежним — придумайте другой").Uz("new_password: avvalgisi bilan bir xil — boshqasini oʻylab toping")
 		}
 		if _, err := tx.Exec(ctx, `
-			UPDATE employee_logins SET password_hash = $2, must_change_password = false,
+			UPDATE employee_logins SET password_hash = $2, must_change_password = false, temp_password = NULL,
 			       password_changed_at = now(), failed_attempts = 0, locked_until = NULL
 			WHERE employee_id = $1`, p.EmployeeID, newHash); err != nil {
 			return err
@@ -366,10 +372,24 @@ func (s *Service) EmployeeLogin(ctx context.Context, p *Principal, employeeID st
 
 // SetEmployeeLogin задаёт сотруднику логин и временный пароль: при первом
 // входе в панель он придумает свой. Старые сессии сотрудника закрываются.
+// Пустой логин — придумать из имени сотрудника (или оставить прежний).
 func (s *Service) SetEmployeeLogin(ctx context.Context, p *Principal, employeeID string, in LoginInput) (LoginInfo, error) {
 	userID, err := s.staffEmployee(ctx, p, employeeID)
 	if err != nil {
 		return LoginInfo{}, err
+	}
+	if strings.TrimSpace(in.Login) == "" {
+		var current, name string
+		if err := s.pool.QueryRow(ctx, `
+			SELECT COALESCE(el.login, ''), e.full_name FROM employees e
+			LEFT JOIN employee_logins el ON el.employee_id = e.id WHERE e.id = $1`, employeeID).Scan(&current, &name); err != nil {
+			return LoginInfo{}, err
+		}
+		if in.Login = current; current == "" {
+			if in.Login, err = SuggestLogin(ctx, s.pool, name); err != nil {
+				return LoginInfo{}, err
+			}
+		}
 	}
 	return s.setLogin(ctx, employeeID, p.NetworkID, userID, in, true)
 }
@@ -405,6 +425,11 @@ func setLogin(ctx context.Context, pool *pgxpool.Pool, employeeID, networkID, us
 	if err != nil {
 		return LoginInfo{}, err
 	}
+	if in.GeneratePassword {
+		if in.Password, err = GenerateTempPassword(); err != nil {
+			return LoginInfo{}, err
+		}
+	}
 	var exists bool
 	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM employee_logins WHERE employee_id = $1)`, employeeID).Scan(&exists); err != nil {
 		return LoginInfo{}, err
@@ -414,7 +439,7 @@ func setLogin(ctx context.Context, pool *pgxpool.Pool, employeeID, networkID, us
 		return LoginInfo{}, err
 	}
 	err = db.InTx(ctx, pool, func(tx pgx.Tx) error {
-		if err := upsertLogin(ctx, tx, employeeID, networkID, login, hash, mustChange); err != nil {
+		if err := upsertLogin(ctx, tx, employeeID, networkID, login, hash, in.Password, mustChange); err != nil {
 			return err
 		}
 		if hash != nil {
@@ -451,12 +476,12 @@ func PrepareOwnerLogin(in LoginInput) (login string, hash *string, err error) {
 }
 
 // CreateOwnerLogin сохраняет логин и временный пароль владельца
-// (в транзакции создания сети).
-func CreateOwnerLogin(ctx context.Context, q db.Querier, employeeID, networkID, login string, hash *string) error {
+// (в транзакции создания сети); plain — сам пароль, его видно до первого входа.
+func CreateOwnerLogin(ctx context.Context, q db.Querier, employeeID, networkID, login string, hash *string, plain string) error {
 	if hash == nil {
 		return nil
 	}
-	return upsertLogin(ctx, q, employeeID, networkID, login, hash, true)
+	return upsertLogin(ctx, q, employeeID, networkID, login, hash, plain, true)
 }
 
 func ownerOf(ctx context.Context, q db.Querier, networkID string) (employeeID, userID string, err error) {

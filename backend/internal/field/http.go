@@ -39,6 +39,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Get("/places/near", m.nearPlaces)
 		r.Get("/places/{id}", m.place)
 		r.Post("/visits", m.addVisit)
+		r.Post("/places/{id}/owner-password", m.newOwnerPassword)
 		r.Get("/flags", m.flags)
 		r.Post("/flags", m.createFlag)
 		r.Get("/flags/{id}", m.getFlag)
@@ -168,6 +169,10 @@ func (m *Module) myPlaces(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) place(w http.ResponseWriter, r *http.Request) {
 	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (Place, error) { return m.svc.Place(r.Context(), pr(r), id) })
+}
+
+func (m *Module) newOwnerPassword(w http.ResponseWriter, r *http.Request) {
+	httpx.RespondID(w, r, m.log, http.StatusOK, "id", func(id string) (Place, error) { return m.svc.NewOwnerPassword(r.Context(), pr(r), id) })
 }
 
 func (m *Module) addVisit(w http.ResponseWriter, r *http.Request) {

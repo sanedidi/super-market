@@ -168,7 +168,7 @@ func CreateNetworkTx(ctx context.Context, tx pgx.Tx, in CreateNetworkInput) (str
 	if err != nil {
 		return "", err
 	}
-	if err := identity.CreateOwnerLogin(ctx, tx, ownerID, id, login, hash); err != nil {
+	if err := identity.CreateOwnerLogin(ctx, tx, ownerID, id, login, hash, in.OwnerPassword); err != nil {
 		return "", err
 	}
 	if err := catalog.CreateDefaultPriceType(ctx, tx, id); err != nil {

@@ -41,16 +41,18 @@ type VisitInput struct {
 	PhotoURL string   `json:"photo_url"`
 	// «Прийти позже»: день (YYYY-MM-DD).
 	RemindOn string `json:"remind_on"`
-	// «Подключить»: заявка супер-админу.
+	// «Подключить»: магазин подключается сразу, владелец получает логин и пароль.
 	Lead *LeadFields `json:"lead"`
 }
 
-// LeadFields — «Новый магазин»: название, владелец, телефон (точка — где стоит продажник).
+// LeadFields — «Новый магазин» (П14): название, владелец, телефон (точка — где
+// стоит продажник) и логин владельца; пустой логин придумывается из названия.
 type LeadFields struct {
 	Name       string `json:"name"`
 	OwnerName  string `json:"owner_name"`
 	OwnerPhone string `json:"owner_phone"`
 	Address    string `json:"address"`
+	OwnerLogin string `json:"owner_login"`
 }
 
 func (in *VisitInput) clean(today time.Time) error {
@@ -124,9 +126,23 @@ func (s *Service) AddVisit(ctx context.Context, p *identity.Principal, in VisitI
 		return Place{}, err
 	}
 	var (
-		placeID string
-		leadID  *string
+		placeID         string
+		leadID          *string
+		ownerLogin, pwd string
 	)
+	if in.Result == ResultLead {
+		// Логин и временный пароль владельца (П14–П15): логин можно задать
+		// самому, пароль — всегда 8 цифр от сервера.
+		var err error
+		if ownerLogin = identity.NormalizeLogin(in.Lead.OwnerLogin); ownerLogin == "" {
+			if ownerLogin, err = identity.SuggestLogin(ctx, s.pool, in.Lead.Name); err != nil {
+				return Place{}, err
+			}
+		}
+		if pwd, err = identity.GenerateTempPassword(); err != nil {
+			return Place{}, err
+		}
+	}
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		var walkID *string
 		if err := tx.QueryRow(ctx, `SELECT id FROM field_walks WHERE rep_id = $1 AND status <> 'ended'`, p.RepID).Scan(&walkID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -141,6 +157,13 @@ func (s *Service) AddVisit(ctx context.Context, p *identity.Principal, in VisitI
 				return err
 			}
 			leadID = &id
+			// Магазин подключается сразу: сеть, магазин в точке, логин владельца.
+			if _, err := supply.ConnectRepLeadTx(ctx, tx, id, p.UserID, supply.ConnectLeadInput{
+				Name: in.Lead.Name, OwnerName: in.Lead.OwnerName, OwnerPhone: in.Lead.OwnerPhone,
+				OwnerLogin: ownerLogin, OwnerPassword: pwd,
+			}); err != nil {
+				return err
+			}
 		}
 		var remind *string
 		if in.Result == ResultLater {
@@ -225,7 +248,60 @@ func (s *Service) place(ctx context.Context, me, id string, history bool) (Place
 	if pl.History == nil {
 		pl.History = []Visit{}
 	}
-	return pl, err
+	if err != nil || me == "" {
+		return pl, err
+	}
+	if netID, err := s.myConnectedNetwork(ctx, me, id); err != nil || netID == "" {
+		return pl, err
+	} else if pl.Owner, err = identity.GetOwnerLogin(ctx, s.pool, netID); err != nil {
+		return pl, err
+	}
+	return pl, nil
+}
+
+// myConnectedNetwork — сеть магазина, который подключил продажник me
+// (пусто — магазин не подключён или его подключил не он).
+func (s *Service) myConnectedNetwork(ctx context.Context, me, placeID string) (string, error) {
+	var netID string
+	err := s.pool.QueryRow(ctx, `
+		SELECT sl.network_id::text FROM field_places p
+		JOIN store_leads sl ON sl.id = p.lead_id
+		WHERE p.id = $1 AND sl.rep_id::text = $2 AND sl.status = 'connected' AND sl.network_id IS NOT NULL`,
+		placeID, me).Scan(&netID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return netID, err
+}
+
+// NewOwnerPassword — «Новый пароль» / «Сбросить пароль» (П16–П17): новый
+// временный пароль владельцу магазина, который подключил этот продажник.
+// Старый пароль перестаёт работать, все входы владельца закрываются.
+func (s *Service) NewOwnerPassword(ctx context.Context, p *identity.Principal, placeID string) (Place, error) {
+	if err := requireRep(p); err != nil {
+		return Place{}, err
+	}
+	if !httpx.IsUUID(placeID) {
+		return Place{}, errPlaceNotFound()
+	}
+	netID, err := s.myConnectedNetwork(ctx, p.RepID, placeID)
+	if err != nil {
+		return Place{}, err
+	}
+	if netID == "" {
+		return Place{}, apperr.Forbidden("пароль меняет продажник, который подключил этот магазин").Uz("parolni shu doʻkonni ulagan agent oʻzgartiradi")
+	}
+	owner, err := identity.GetOwnerLogin(ctx, s.pool, netID)
+	if err != nil {
+		return Place{}, err
+	}
+	if owner == nil {
+		return Place{}, apperr.NotFound("у владельца нет логина — напишите в поддержку").Uz("egasining logini yoʻq — qoʻllab-quvvatlash xizmatiga yozing")
+	}
+	if _, err := identity.SetOwnerLogin(ctx, s.pool, netID, identity.LoginInput{Login: owner.Login, GeneratePassword: true}); err != nil {
+		return Place{}, err
+	}
+	return s.place(ctx, p.RepID, placeID, true)
 }
 
 // Place — карточка магазина с историей визитов.

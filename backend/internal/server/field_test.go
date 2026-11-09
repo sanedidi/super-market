@@ -130,13 +130,41 @@ func TestFieldWalks(t *testing.T) {
 	a.expect(visit(tok1, map[string]any{"result": "later", "lat": 41.362, "lng": 69.2802, "remind_on": "2001-01-01"}), 400, "later in the past")
 	a.expect(visit(tok1, map[string]any{"result": "ours", "lat": 41.362, "lng": 69.2802, "place_id": placeID + "x"}), 404, "bad place id")
 
-	// Заявка «Подключить» от продажника — в «Заявки агентов», без начисления.
+	// «Подключить» (П14–П15): магазин подключается сразу, владельцу — логин
+	// из названия и временный пароль из 8 цифр.
+	a.expect(visit(tok1, map[string]any{
+		"result": "lead", "lat": 41.3630, "lng": 69.2805,
+		"lead": map[string]any{"name": "Zamon Market", "owner_name": "Шерзод", "owner_phone": "90 777 66 55", "owner_login": "Bad Login!"},
+	}), 400, "bad owner login")
 	leadPl := a.expect(visit(tok1, map[string]any{
 		"result": "lead", "lat": 41.3630, "lng": 69.2805,
 		"lead": map[string]any{"name": "Zamon Market", "owner_name": "Шерзод", "owner_phone": "90 777 66 55", "address": "Юнусабад-4"},
 	}), 201, "lead")
-	if leadPl.str("lead_status") != "pending" || leadPl.str("name") != "Zamon Market" {
+	if leadPl.str("lead_status") != "connected" || leadPl.str("name") != "Zamon Market" || leadPl.str("owner", "login") != "zamon.market" ||
+		len(leadPl.str("owner", "temp_password")) != 8 || leadPl.Body["owner"].(map[string]any)["last_login_at"] != nil {
 		t.Fatalf("lead place = %v", leadPl.Body)
+	}
+	ownerPass := leadPl.str("owner", "temp_password")
+	// Чужой продажник пароль не видит и не меняет.
+	if o := a.expect(a.do("GET", "/field/places/"+leadPl.str("id"), tok2, nil), 200, "other rep card"); o.Body["owner"] != nil {
+		t.Fatalf("owner visible to other rep: %v", o.Body)
+	}
+	a.expect(a.do("POST", "/field/places/"+leadPl.str("id")+"/owner-password", tok2, nil), 403, "other rep new password")
+	// «Новый пароль»: старый перестаёт работать.
+	np := a.expect(a.do("POST", "/field/places/"+leadPl.str("id")+"/owner-password", tok1, nil), 200, "new owner password")
+	if np.str("owner", "temp_password") == ownerPass || len(np.str("owner", "temp_password")) != 8 {
+		t.Fatalf("new password = %v", np.Body)
+	}
+	a.expect(a.do("POST", "/auth/store/login", "", map[string]any{"login": "zamon.market", "password": ownerPass}), 401, "old owner password")
+	ownerPass = np.str("owner", "temp_password")
+	ol := a.expect(a.do("POST", "/auth/store/login", "", map[string]any{"login": "zamon.market", "password": ownerPass}), 200, "owner signs in")
+	if ol.Body["password_change_required"] != true {
+		t.Fatalf("owner login = %v", ol.Body)
+	}
+	a.expect(a.do("POST", "/auth/store/password", ol.str("access_token"), map[string]any{"new_password": "Zamon2026"}), 204, "owner own password")
+	if pc := a.expect(a.do("GET", "/field/places/"+leadPl.str("id"), tok1, nil), 200, "card after owner login"); pc.str("owner", "temp_password") != "" ||
+		pc.Body["owner"].(map[string]any)["last_login_at"] == nil || pc.str("owner", "login") != "zamon.market" {
+		t.Fatalf("card after owner login = %v", pc.Body)
 	}
 
 	// Обход 2: Бахтиёр идёт по тому же пути — «Здесь уже прошёл Азиз».
@@ -185,12 +213,13 @@ func TestFieldWalks(t *testing.T) {
 	if mine == 0 || other == 0 || len(mp.Body["tracks"].([]any)) != 2 || len(mp.Body["places"].([]any)) != 2 {
 		t.Fatalf("map: mine=%d other=%d tracks=%d places=%d", mine, other, len(mp.Body["tracks"].([]any)), len(mp.Body["places"].([]any)))
 	}
-	if st := mp.Body["stores"].([]any); len(st) != 1 || st[0].(map[string]any)["name"] != "Магазин SM" {
+	// Магазины Super Market: «Магазин SM» и подключённый продажником «Zamon Market».
+	if st := mp.Body["stores"].([]any); len(st) != 2 {
 		t.Fatalf("map stores = %v", mp.Body["stores"])
 	}
 	// Вся область города (больше 8 км): магазины — во всей области, клетки — в середине.
 	wide := a.expect(a.do("GET", "/admin/field/map?min_lat=41.1&min_lng=69.0&max_lat=41.5&max_lng=69.5", adminTok, nil), 200, "admin map wide")
-	if len(wide.Body["stores"].([]any)) != 1 {
+	if len(wide.Body["stores"].([]any)) != 2 {
 		t.Fatalf("admin wide stores = %v", wide.Body["stores"])
 	}
 	a.expect(a.do("GET", "/field/map?min_lat=41.355", tok2, nil), 400, "map without bbox")
@@ -223,21 +252,20 @@ func TestFieldWalks(t *testing.T) {
 		t.Fatalf("my places = %v", myPl.Body)
 	}
 
-	// Супер-админ: заявка продажника — в общей очереди, без агента и 50%.
-	leads := a.expect(a.do("GET", "/admin/store-leads?status=pending", adminTok, nil), 200, "admin leads")
-	if len(leads.items()) != 1 || leads.items()[0]["source"] != "rep" || leads.items()[0]["agent_name"] != "Азиз Каримов" || leads.items()[0]["agent_network_id"] != "" {
+	// Супер-админ: магазин продажника уже подключён — в «Заявках агентов»
+	// со статусом «Подключён», без агента и 50%.
+	if pend := a.expect(a.do("GET", "/admin/store-leads?status=pending", adminTok, nil), 200, "admin pending"); len(pend.items()) != 0 {
+		t.Fatalf("pending = %v", pend.Body)
+	}
+	leads := a.expect(a.do("GET", "/admin/store-leads?status=connected", adminTok, nil), 200, "admin leads")
+	if len(leads.items()) != 1 || leads.items()[0]["source"] != "rep" || leads.items()[0]["agent_name"] != "Азиз Каримов" || leads.items()[0]["agent_network_id"] != "" ||
+		leads.items()[0]["network_id"] == "" {
 		t.Fatalf("leads = %v", leads.Body)
 	}
 	leadID := leads.items()[0]["id"].(string)
-	if c := a.expect(a.do("GET", "/admin/store-leads/"+leadID, adminTok, nil), 200, "admin lead"); c.Body["agent_connected"].(float64) != 0 {
-		t.Fatalf("lead card = %v", c.Body)
-	}
-	a.expect(a.do("POST", "/admin/store-leads/"+leadID+"/connect", adminTok, map[string]any{"kind": "single"}), 200, "connect rep lead")
+	a.expect(a.do("POST", "/admin/store-leads/"+leadID+"/connect", adminTok, map[string]any{"kind": "single"}), 409, "connect twice")
 	if rw := a.expect(a.do("GET", "/admin/store-leads/rewards", adminTok, nil), 200, "rewards"); len(rw.items()) != 0 {
 		t.Fatalf("rep lead in agent rewards: %v", rw.Body)
-	}
-	if pc := a.expect(a.do("GET", "/field/places/"+leadPl.str("id"), tok1, nil), 200, "lead place"); pc.str("lead_status") != "connected" {
-		t.Fatalf("lead place = %v", pc.Body)
 	}
 
 	// Итог обхода Азиза: покрытие района до и после.

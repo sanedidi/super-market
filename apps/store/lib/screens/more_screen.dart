@@ -15,6 +15,7 @@ import '../lock/pin_screens.dart';
 import '../main.dart';
 import '../plan/plan_ui.dart';
 import '../returns/return_screen.dart';
+import '../staff/registers_screen.dart';
 import '../staff/staff_screen.dart';
 import '../summary/summary_screen.dart';
 import '../suppliers/suppliers_screen.dart';
@@ -43,7 +44,8 @@ class MoreScreen extends StatelessWidget {
         (Icons.local_shipping_outlined, tr('Долги поставщикам', 'Yetkazib beruvchilarga qarzlar'), tr('Кому должны, акт сверки, оплата', 'Kimga qarzmiz, solishtirma dalolatnoma, toʻlov'), const DebtsScreen(), null),
       if (st.can('debts.manage'))
         (Icons.receipt_long_rounded, tr('Долги покупателей', 'Xaridorlar qarzlari'), tr('Кто должен, напоминания, оплата', 'Kim qarzdor, eslatmalar, toʻlov'), const CustomerDebtsScreen(), 'debts'),
-      if (st.can('staff.manage')) (Icons.people_alt_outlined, tr('Сотрудники', 'Xodimlar'), tr('Кто работает, роли, добавить', 'Kim ishlaydi, rollar, qoʻshish'), const StaffScreen(), null),
+      if (st.can('staff.manage')) (Icons.people_alt_outlined, tr('Сотрудники', 'Xodimlar'), tr('Кто работает, ПИН, вход, роли', 'Kim ishlaydi, PIN, kirish, rollar'), const StaffScreen(), null),
+      if (st.can('stores.manage')) (Icons.point_of_sale_rounded, tr('Кассы', 'Kassalar'), tr('Подключить кассу, коды', 'Kassani ulash, kodlar'), const RegistersScreen(), null),
       if (st.can('inventory.manage'))
         (Icons.assignment_return_outlined, tr('Возврат поставщику', 'Yetkazib beruvchiga qaytarish'), tr('Брак, просрочка, пересорт', 'Yaroqsiz, muddati oʻtgan, aralash tovar'), const SupplierReturnsScreen(), null),
       if (st.can('orders.manage')) (Icons.directions_walk_rounded, tr('Курьеры по пути', 'Yoʻlakay kuryerlar'), tr('Проверка курьера, бонусы', 'Kuryerni tekshirish, bonuslar'), const CrowdScreen(), 'crowd'),

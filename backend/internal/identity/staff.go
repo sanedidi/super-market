@@ -43,6 +43,8 @@ type Employee struct {
 	Login        string     `json:"login"`
 	TempPassword bool       `json:"temp_password"`
 	LastLoginAt  *time.Time `json:"last_login_at"`
+	// Сам временный пароль — пока им ни разу не вошли («SM Магазин» С2, С5).
+	InitialPassword string `json:"initial_password,omitempty"`
 }
 
 // ownerRoleName — название роли создаётся на языке того, кто создаёт сеть.
@@ -199,7 +201,8 @@ const employeeSelect = `
 	       COALESCE((SELECT array_agg(es.store_id::text ORDER BY es.store_id) FROM employee_stores es
 	                 WHERE es.employee_id = e.id), '{}'),
 	       e.created_at,
-	       COALESCE(el.login, ''), COALESCE(el.must_change_password, false), el.last_login_at
+	       COALESCE(el.login, ''), COALESCE(el.must_change_password, false), el.last_login_at,
+	       COALESCE(CASE WHEN el.must_change_password THEN el.temp_password END, '')
 	FROM employees e
 	JOIN users u ON u.id = e.user_id
 	JOIN roles r ON r.id = e.role_id

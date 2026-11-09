@@ -106,8 +106,33 @@ func TestStoreLoginByPassword(t *testing.T) {
 	a.expect(a.do("GET", "/store/employees/"+mgr+"/login", tok, nil), 404, "no login yet")
 	a.expect(a.do("PUT", "/store/employees/"+mgr+"/login", tok, map[string]any{"login": "olma", "password": "Pass-1234"}), 409, "taken")
 	info := a.expect(a.do("PUT", "/store/employees/"+mgr+"/login", tok, map[string]any{"login": "olma.manager", "password": "Pass-1234"}), 200, "manager login")
-	if info.Body["must_change_password"] != true {
+	if info.Body["must_change_password"] != true || info.str("temp_password") != "Pass-1234" {
 		t.Fatalf("manager login = %v", info.Body)
+	}
+	// Временный пароль виден в списке сотрудников, пока им не вошли (SM Магазин С2, С5).
+	initial := func() string {
+		for _, e := range a.expect(a.do("GET", "/store/employees", tok, nil), 200, "employees").items() {
+			if e["id"] == mgr {
+				s, _ := e["initial_password"].(string)
+				return s
+			}
+		}
+		return "?"
+	}
+	if initial() != "Pass-1234" {
+		t.Fatalf("initial password not shown")
+	}
+	// Логин и пароль придумывает сервер: логин из имени, пароль — 8 цифр.
+	dil := a.expect(a.do("POST", "/store/employees", tok, map[string]any{
+		"phone": "+998900000006", "full_name": "Дилноза Юсупова", "role_id": role,
+	}), 201, "dilnoza").str("id")
+	gen := a.expect(a.do("PUT", "/store/employees/"+dil+"/login", tok, map[string]any{"generate_password": true}), 200, "generated login")
+	if gen.str("login") != "dilnoza.yusupova" || len(gen.str("temp_password")) != 8 {
+		t.Fatalf("generated = %v", gen.Body)
+	}
+	again := a.expect(a.do("PUT", "/store/employees/"+dil+"/login", tok, map[string]any{"generate_password": true}), 200, "new password")
+	if again.str("login") != "dilnoza.yusupova" || again.str("temp_password") == gen.str("temp_password") {
+		t.Fatalf("new password = %v", again.Body)
 	}
 	mr := a.expect(login("olma.manager", "Pass-1234"), 200, "manager signs in")
 	if mr.Body["password_change_required"] != true {
@@ -115,6 +140,9 @@ func TestStoreLoginByPassword(t *testing.T) {
 	}
 	mTok := mr.str("access_token")
 	a.expect(change(mTok, "", "Manager2026"), 204, "manager own password")
+	if initial() != "" {
+		t.Fatalf("initial password kept after own password")
+	}
 	// Менеджер с правом заказов не трогает вход владельца и сотрудников с доступом к панели.
 	a.expect(a.do("PUT", "/store/couriers/"+ownerID+"/login", mTok, map[string]any{"login": "boss", "password": "Pass-1234"}), 403, "manager vs owner")
 	a.expect(a.do("PUT", "/store/couriers/"+mgr+"/login", mTok, map[string]any{"login": "x.y.z", "password": "Pass-1234"}), 403, "manager vs panel staff")

@@ -135,6 +135,7 @@ Future<String?> promptSheet(
   bool requireValue = true,
   TextInputType keyboardType = TextInputType.text,
   int? maxLength,
+  String? initial,
 }) {
   return showSheet<String>(
     context,
@@ -148,6 +149,7 @@ Future<String?> promptSheet(
       requireValue: requireValue,
       keyboardType: keyboardType,
       maxLength: maxLength,
+      initial: initial,
     ),
   );
 }
@@ -163,6 +165,7 @@ class _Prompt extends StatefulWidget {
     required this.requireValue,
     required this.keyboardType,
     required this.maxLength,
+    this.initial,
   });
 
   final String title;
@@ -174,13 +177,15 @@ class _Prompt extends StatefulWidget {
   final bool requireValue;
   final TextInputType keyboardType;
   final int? maxLength;
+  // Текст поля по умолчанию (например, текущий логин).
+  final String? initial;
 
   @override
   State<_Prompt> createState() => _PromptState();
 }
 
 class _PromptState extends State<_Prompt> {
-  final _ctrl = TextEditingController();
+  late final _ctrl = TextEditingController(text: widget.initial ?? '');
   String? _option;
 
   @override

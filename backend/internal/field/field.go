@@ -203,6 +203,9 @@ type Place struct {
 	DistanceM  *int   `json:"distance_m,omitempty"`
 	// История визитов — только в карточке магазина.
 	History []Visit `json:"history,omitempty"`
+	// Вход владельца магазина, который подключил этот продажник (П15–П17):
+	// логин и временный пароль, пока владелец ни разу не вошёл.
+	Owner *identity.OwnerLogin `json:"owner,omitempty"`
 }
 
 // placeCols — колонки Place; $me — продажник (пустая строка — супер-админ).

@@ -529,60 +529,10 @@ func (s *Service) ConnectLead(ctx context.Context, p *identity.Principal, id str
 		return StoreLead{}, apperr.Validation("kind: магазин по заявке — одиночный магазин или сеть").Uz("kind: ariza boʻyicha doʻkon — yakka doʻkon yoki tarmoq")
 	}
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		var (
-			status, name, ownerName, ownerPhone, address string
-			expired                                      bool
-			lat, lng                                     float64
-		)
-		err := tx.QueryRow(ctx, `
-			SELECT status, expires_at <= now(), name, owner_name, owner_phone, address,
-			       ST_Y(location::geometry), ST_X(location::geometry)
-			FROM store_leads WHERE id = $1 FOR UPDATE`, id).
-			Scan(&status, &expired, &name, &ownerName, &ownerPhone, &address, &lat, &lng)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return errLeadNotFound()
-		}
-		if err != nil {
-			return err
-		}
-		if status != LeadPending {
-			return apperr.Conflict("request_closed", "по заявке уже есть решение").Uz("ariza boʻyicha qaror allaqachon bor")
-		}
-		if expired {
-			return apperr.Conflict("lead_expired", "срок заявки истёк — магазин снова свободен, агент может добавить его заново").
-				Uz("ariza muddati tugagan — doʻkon yana boʻsh, agent uni qayta qoʻshishi mumkin")
-		}
-		if strings.TrimSpace(in.Name) == "" {
-			in.Name = name
-		}
-		if strings.TrimSpace(in.OwnerName) == "" {
-			in.OwnerName = ownerName
-		}
-		if strings.TrimSpace(in.OwnerPhone) == "" {
-			in.OwnerPhone = ownerPhone
-		}
-		netID, err := tenant.CreateNetworkTx(ctx, tx, in)
-		if err != nil {
-			return err
-		}
-		storeName := strings.TrimSpace(in.Name)
-		if _, err := tenant.CreateStoreTx(ctx, tx, netID, tenant.StoreInput{
-			Name: &storeName, Address: &address, Phone: &ownerPhone, Lat: &lat, Lng: &lng,
-		}); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `
-			UPDATE store_leads SET status = 'connected', network_id = $2, reason = '', decided_at = now(), decided_by = $3
-			WHERE id = $1`, id, netID, p.UserID); err != nil {
-			return err
-		}
-		var agent *string
-		if err := tx.QueryRow(ctx, `SELECT agent_network_id FROM store_leads WHERE id = $1`, id).Scan(&agent); err != nil {
-			return err
-		}
-		if agent == nil {
+		_, storeName, agent, err := connectLeadTx(ctx, tx, id, in, p.UserID)
+		if err != nil || agent == nil {
 			// Заявка продажника: сети агента и начисления нет.
-			return nil
+			return err
 		}
 		return s.pushAgent(ctx, tx, *agent, "lead_connected",
 			i18n.Text{RU: fmt.Sprintf("«%s» подключён к Super Market", storeName), UZ: fmt.Sprintf("«%s» Super Market’ga ulandi", storeName)},
@@ -594,6 +544,72 @@ func (s *Service) ConnectLead(ctx context.Context, p *identity.Principal, id str
 		return StoreLead{}, err
 	}
 	return s.AdminLead(ctx, p, id)
+}
+
+// connectLeadTx создаёт сеть по заявке и первый магазин в точке заявки и
+// помечает заявку подключённой. Пустые название, владелец и телефон — из
+// заявки. Возвращает сеть, название магазина и сеть агента (nil — заявка
+// продажника).
+func connectLeadTx(ctx context.Context, tx pgx.Tx, id string, in ConnectLeadInput, decidedBy string) (netID, storeName string, agent *string, err error) {
+	var (
+		status, name, ownerName, ownerPhone, address string
+		expired                                      bool
+		lat, lng                                     float64
+	)
+	err = tx.QueryRow(ctx, `
+		SELECT status, expires_at <= now(), name, owner_name, owner_phone, address,
+		       ST_Y(location::geometry), ST_X(location::geometry), agent_network_id
+		FROM store_leads WHERE id = $1 FOR UPDATE`, id).
+		Scan(&status, &expired, &name, &ownerName, &ownerPhone, &address, &lat, &lng, &agent)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", nil, errLeadNotFound()
+	}
+	if err != nil {
+		return "", "", nil, err
+	}
+	if status != LeadPending {
+		return "", "", nil, apperr.Conflict("request_closed", "по заявке уже есть решение").Uz("ariza boʻyicha qaror allaqachon bor")
+	}
+	if expired {
+		return "", "", nil, apperr.Conflict("lead_expired", "срок заявки истёк — магазин снова свободен, агент может добавить его заново").
+			Uz("ariza muddati tugagan — doʻkon yana boʻsh, agent uni qayta qoʻshishi mumkin")
+	}
+	if strings.TrimSpace(in.Name) == "" {
+		in.Name = name
+	}
+	if strings.TrimSpace(in.OwnerName) == "" {
+		in.OwnerName = ownerName
+	}
+	if strings.TrimSpace(in.OwnerPhone) == "" {
+		in.OwnerPhone = ownerPhone
+	}
+	if netID, err = tenant.CreateNetworkTx(ctx, tx, in); err != nil {
+		return "", "", nil, err
+	}
+	storeName = strings.TrimSpace(in.Name)
+	if _, err = tenant.CreateStoreTx(ctx, tx, netID, tenant.StoreInput{
+		Name: &storeName, Address: &address, Phone: &ownerPhone, Lat: &lat, Lng: &lng,
+	}); err != nil {
+		return "", "", nil, err
+	}
+	var by *string
+	if decidedBy != "" {
+		by = &decidedBy
+	}
+	_, err = tx.Exec(ctx, `
+		UPDATE store_leads SET status = 'connected', network_id = $2, reason = '', decided_at = now(), decided_by = $3
+		WHERE id = $1`, id, netID, by)
+	return netID, storeName, agent, err
+}
+
+// ConnectRepLeadTx — продажник «SM Продажник» сам подключает магазин по
+// своей заявке (в той же транзакции, что и отметка визита): одиночный
+// магазин, тариф по умолчанию с пробным периодом, логин и временный пароль
+// владельца — из in. Возвращает сеть.
+func ConnectRepLeadTx(ctx context.Context, tx pgx.Tx, leadID, repUserID string, in ConnectLeadInput) (string, error) {
+	in.Kind, in.PlanKey, in.BusinessType = "single", "", ""
+	netID, _, _, err := connectLeadTx(ctx, tx, leadID, in, repUserID)
+	return netID, err
 }
 
 // RejectLead — «Отклонить» с причиной (её увидит агент); магазин сразу свободен.
@@ -706,12 +722,13 @@ func CreateRepLeadTx(ctx context.Context, tx pgx.Tx, repID string, in LeadInput)
 	return id, err
 }
 
-// NotifyRepLead — супер-админам: продажник добавил магазин (после коммита).
+// NotifyRepLead — супер-админам: продажник подключил магазин и выдал
+// владельцу логин (после коммита).
 func (s *Service) NotifyRepLead(ctx context.Context, id string) {
 	l, err := getLead(ctx, s.pool, id)
 	if err != nil {
 		return
 	}
-	s.notifyAdmins(fmt.Sprintf("Продажник добавил магазин «%s»\nВладелец: %s, %s\nПродажник: %s, %s\nПодключите в панели супер-админа: Магазины → Заявки агентов.",
+	s.notifyAdmins(fmt.Sprintf("Продажник подключил магазин «%s»\nВладелец: %s, %s\nПродажник: %s, %s\nЛогин владельцу выдан на месте. Магазин — в Магазины → Заявки агентов.",
 		l.Name, l.OwnerName, l.OwnerPhone, l.AgentName, l.AgentPhone))
 }

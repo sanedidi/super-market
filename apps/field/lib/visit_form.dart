@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import 'logic.dart';
+import 'owner_login.dart';
 import 'ui.dart';
 
 /// Где продажник отмечает магазин.
@@ -40,6 +41,8 @@ class _VisitFormScreenState extends State<VisitFormScreen> {
   String _reason = '';
   String _program = '';
   DateTime? _remind;
+  // Логин владельца (П14): сам из названия, пока продажник его не изменил.
+  String? _login;
   bool _busy = false;
   String? _error;
 
@@ -50,6 +53,32 @@ class _VisitFormScreenState extends State<VisitFormScreen> {
     super.initState();
     final n = '${widget.place?['name'] ?? ''}'.trim();
     if (n.isNotEmpty) _name.text = n;
+    _name.addListener(() {
+      if (_result == 'lead' && _login == null) setState(() {});
+    });
+  }
+
+  String get _ownerLogin => _login ?? loginFromName(_name.text);
+
+  Future<void> _editLogin() async {
+    final v = await promptSheet(
+      context,
+      title: tr('Логин владельца', 'Egasining logini'),
+      text: tr('Латиница, цифры, точка, дефис или _ — от 3 до 32 символов', 'Lotin harflari, raqamlar, nuqta, defis yoki _ — 3 dan 32 tagacha belgi'),
+      initial: _ownerLogin,
+      hint: 'baraka.market',
+      confirm: tr('Сохранить', 'Saqlash'),
+    );
+    if (v == null || !mounted) return;
+    final login = v.trim().toLowerCase();
+    if (!validLogin(login)) {
+      setState(() => _error = tr('Логин: латиница, цифры, точка, дефис или _ — от 3 до 32 символов', 'Login: lotin harflari, raqamlar, nuqta, defis yoki _ — 3 dan 32 tagacha belgi'));
+      return;
+    }
+    setState(() {
+      _login = login;
+      _error = null;
+    });
   }
 
   @override
@@ -144,16 +173,28 @@ class _VisitFormScreenState extends State<VisitFormScreen> {
           'owner_name': _owner.text.trim(),
           'owner_phone': normalizeUzPhone(_phone.text),
           'address': _address.text.trim(),
+          if (_login != null) 'owner_login': _login,
         },
     };
     try {
-      await context.read<Api>().post('/field/visits', body);
+      final res = await context.read<Api>().post('/field/visits', body);
       if (!mounted) return;
-      showSnack(context, _result == 'lead' ? tr('Заявка отправлена — магазин закреплён за вами на 30 дней', 'Ariza yuborildi — doʻkon 30 kunga sizga biriktirildi') : tr('Отмечено', 'Belgilandi'));
+      if (_result == 'lead' && res is Map<String, dynamic> && res['owner'] != null) {
+        // П15: логин и пароль владельцу — прямо сейчас.
+        await Navigator.of(context).push(MaterialPageRoute<bool>(builder: (_) => OwnerLoginScreen(place: res)));
+        if (mounted) Navigator.of(context).pop(true);
+        return;
+      }
+      showSnack(context, tr('Отмечено', 'Belgilandi'));
       Navigator.of(context).pop(true);
     } on ApiError catch (e) {
       if (!mounted) return;
-      if (e.code == 'store_exists') {
+      if (e.code == 'login_taken') {
+        setState(() => _error = tr('Логин «$_ownerLogin» уже занят — нажмите «Изменить» и придумайте другой', '«$_ownerLogin» logini band — «Oʻzgartirish»ni bosing va boshqasini oʻylab toping'));
+      } else if (e.code == 'employee_exists') {
+        setState(() => _error = tr('Этот номер уже работает в другом магазине Super Market — проверьте телефон владельца',
+            'Bu raqam Super Market’ning boshqa doʻkonida ishlaydi — egasining telefonini tekshiring'));
+      } else if (e.code == 'store_exists') {
         final d = e.details;
         final name = '${d['name'] ?? ''}';
         final mine = d['mine'] == true;
@@ -171,6 +212,51 @@ class _VisitFormScreenState extends State<VisitFormScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// П14 — «Вход для владельца в «SM Магазин»»: логин из названия, «Изменить».
+  Widget _loginCard() {
+    final login = _ownerLogin;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: AppColors.primarySoft, borderRadius: BorderRadius.circular(14)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.key_rounded, size: 20, color: AppColors.primary),
+          const SizedBox(width: 8),
+          Expanded(child: Text(tr('Вход для владельца в «SM Магазин»', 'Egasi uchun «SM Magazin»ga kirish'), style: AppText.bodyStrong)),
+        ]),
+        const SizedBox(height: 10),
+        Material(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(10),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: _editLogin,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              child: Row(children: [
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(tr('Логин', 'Login'), style: AppText.small.copyWith(fontSize: 12)),
+                    Text(_name.text.trim().isEmpty && _login == null ? '—' : login, style: AppText.title),
+                  ]),
+                ),
+                const Icon(Icons.edit_rounded, size: 16, color: AppColors.primary),
+                const SizedBox(width: 4),
+                Text(tr('Изменить', 'Oʻzgartirish'), style: AppText.bodyStrong.copyWith(color: AppColors.primary, fontSize: 14)),
+              ]),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          tr('${_login == null ? 'Придуман из названия магазина. ' : ''}Пароль Super Market придумает сам и покажет после подключения — владелец сменит его при первом входе.',
+              '${_login == null ? 'Doʻkon nomidan olingan. ' : ''}Parolni Super Market oʻzi oʻylab topadi va ulangandan keyin koʻrsatadi — egasi uni birinchi kirishda almashtiradi.'),
+          style: AppText.small,
+        ),
+      ]),
+    );
   }
 
   Widget _label(String t) => Padding(padding: const EdgeInsets.only(top: 14, bottom: 6), child: Text(t, style: AppText.caption.copyWith(fontSize: 13)));
@@ -258,25 +344,15 @@ class _VisitFormScreenState extends State<VisitFormScreen> {
                 TextField(controller: _owner, textCapitalization: TextCapitalization.words, decoration: InputDecoration(hintText: tr('например, Азиз Каримов', 'masalan, Aziz Karimov'))),
                 _label(tr('Телефон владельца *', 'Egasining telefoni *')),
                 PhoneField(controller: _phone),
-                const SizedBox(height: 4),
-                Text(tr('На этот номер супер-админ позвонит владельцу и выдаст логин', 'Bu raqamga super-admin egasiga qoʻngʻiroq qilib, login beradi'), style: AppText.small),
                 _label(tr('Адрес', 'Manzil')),
                 TextField(controller: _address, decoration: InputDecoration(hintText: tr('улица, дом, ориентир', 'koʻcha, uy, moʻljal'))),
                 const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: AppColors.primarySoft, borderRadius: BorderRadius.circular(14)),
-                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Icon(Icons.handshake_rounded, size: 20, color: AppColors.primary),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        tr('Точка магазина — где вы сейчас стоите. Магазин закрепится за вами на 30 дней, заявка уйдёт супер-админу.',
-                            'Doʻkon nuqtasi — siz hozir turgan joy. Doʻkon 30 kunga sizga biriktiriladi, ariza super-adminga yuboriladi.'),
-                        style: AppText.small.copyWith(color: AppColors.errorInk),
-                      ),
-                    ),
-                  ]),
+                _loginCard(),
+                const SizedBox(height: 10),
+                Text(
+                  tr('Магазин сразу появится в Super Market с пробным периодом и закрепится за вами. Супер-админ получит уведомление.',
+                      'Doʻkon darhol Super Market’da sinov davri bilan paydo boʻladi va sizga biriktiriladi. Super-admin xabar oladi.'),
+                  style: AppText.small.copyWith(fontSize: 12),
                 ),
               ],
               if (_result == 'refused') ...[
@@ -338,11 +414,11 @@ class _VisitFormScreenState extends State<VisitFormScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: BigButton(
               label: switch (_result) {
-                'lead' => tr('Отправить заявку', 'Arizani yuborish'),
+                'lead' => tr('Подключить и выдать логин', 'Ulash va login berish'),
                 'refused' => tr('Сохранить отказ', 'Rad etishni saqlash'),
                 _ => tr('Сохранить', 'Saqlash'),
               },
-              icon: _result == 'lead' ? Icons.send_rounded : Icons.check_rounded,
+              icon: _result == 'lead' ? Icons.vpn_key_rounded : Icons.check_rounded,
               busy: _busy,
               onPressed: _uploading ? null : _save,
             ),

@@ -276,3 +276,65 @@ String flagSubtitle(Map<String, dynamic> f, {DateTime? now}) => [
       if (f['old'] == true) tr('давно', 'ancha oldin'),
       if ('${f['photo_url'] ?? ''}'.isNotEmpty) tr('фото', 'rasm'),
     ].where((s) => s.isNotEmpty).join(' · ');
+
+// ------------------------------------------- логин владельца (П14–П17)
+
+const _translit = {
+  'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo', 'ж': 'j', 'з': 'z',
+  'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r',
+  'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'x', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'sh',
+  'ъ': '', 'ы': 'i', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+  'ў': 'o', 'қ': 'q', 'ғ': 'g', 'ҳ': 'h',
+};
+
+/// Логин владельца из названия магазина — как на сервере (identity.LoginBase):
+/// «Baraka Market» → baraka.market. Если занят, сервер добавит цифру.
+String loginFromName(String name) {
+  final words = <String>[];
+  final cur = StringBuffer();
+  void flush() {
+    if (cur.isNotEmpty) {
+      words.add(cur.toString());
+      cur.clear();
+    }
+  }
+
+  for (final r in name.toLowerCase().runes) {
+    final ch = String.fromCharCode(r);
+    if (RegExp(r'[a-z0-9]').hasMatch(ch)) {
+      cur.write(ch);
+    } else if (_translit.containsKey(ch)) {
+      cur.write(_translit[ch]);
+    } else if ("'ʻʼ`‘’".contains(ch)) {
+      // oʻzbek → ozbek: апостроф внутри слова не разрывает его.
+    } else if (RegExp(r'\p{L}|\p{N}', unicode: true).hasMatch(ch)) {
+      // Прочие буквы пропускаем.
+    } else {
+      flush();
+    }
+  }
+  flush();
+  var base = words.take(2).join('.');
+  if (base.length > 28) base = base.substring(0, 28).replaceAll(RegExp(r'\.+$'), '');
+  if (base.length < 3) base = 'shop$base';
+  return base;
+}
+
+/// Логин, который можно ввести самому: латиница, цифры, точка, дефис или _,
+/// 3–32 символа, начинается с буквы или цифры (как на сервере).
+bool validLogin(String login) => RegExp(r'^[a-z0-9][a-z0-9._-]{2,31}$').hasMatch(login.trim().toLowerCase());
+
+/// «4827 1593» — пароль из 8 цифр парами по 4, чтобы легче продиктовать.
+String spacedPassword(String p) => p.length == 8 ? '${p.substring(0, 4)} ${p.substring(4)}' : p;
+
+/// Текст владельцу: где скачать «SM Магазин», логин и пароль (Telegram, SMS).
+String ownerMessage(String store, String login, String password) => tr(
+      'Здравствуйте! «$store» подключён к Super Market.\n'
+          'Скачайте приложение «SM Магазин» (App Store или Google Play): https://super-market.uz\n'
+          'Логин: $login\nВременный пароль: $password\n'
+          'При первом входе придумайте свой пароль.',
+      'Assalomu alaykum! «$store» Super Market’ga ulandi.\n'
+          '«SM Magazin» ilovasini yuklab oling (App Store yoki Google Play): https://super-market.uz\n'
+          'Login: $login\nVaqtinchalik parol: $password\n'
+          'Birinchi kirishda oʻz parolingizni oʻylab toping.',
+    );

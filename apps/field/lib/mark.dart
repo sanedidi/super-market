@@ -64,7 +64,7 @@ class _MarkSheetState extends State<_MarkSheet> {
     final acc = widget.point.accuracy;
     final options = [
       ('lead', Icons.add_business_rounded, tr('Подключить — новый магазин', 'Ulash — yangi doʻkon'),
-          tr('Заявка супер-админу: название, владелец, телефон', 'Super-adminga ariza: nomi, egasi, telefoni')),
+          tr('Сразу выдать владельцу логин и пароль', 'Egasiga darhol login va parol berish')),
       ('refused', Icons.block_rounded, tr('Отказ', 'Rad etdi'), tr('Не хотят — фото витрины и причина', 'Xohlamaydi — vitrina surati va sabab')),
       ('closed', Icons.do_not_disturb_on_rounded, tr('Закрыт / не работает', 'Yopiq / ishlamaydi'),
           tr('Пустое помещение или закрыт навсегда', 'Boʻsh joy yoki butunlay yopilgan')),

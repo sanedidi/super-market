@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:sm_core/sm_core.dart';
 
 import 'logic.dart';
+import 'owner_login.dart';
 import 'ui.dart';
 
 /// Карточка отмеченного магазина: фото витрины, последний результат и
@@ -71,6 +72,10 @@ class _PlaceCardState extends State<_PlaceCard> {
           ]),
         ),
       ]),
+      if (p['owner'] is Map) ...[
+        const SizedBox(height: 14),
+        OwnerLoginCard(place: p, onChanged: (np) => setState(() => _p = np)),
+      ],
       if (photo.isNotEmpty) ...[
         const SizedBox(height: 14),
         ClipRRect(
