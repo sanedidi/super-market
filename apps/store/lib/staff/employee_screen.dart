@@ -302,7 +302,7 @@ class _EmployeeScreenState extends State<EmployeeScreen> {
                 ? null
                 : temp.isNotEmpty
                     ? StatusChip(tr('не входил(а)', 'kirmagan'), tone: ChipTone.amber)
-                    : (login?['last_login_at'] != null ? StatusChip(tr('входил(а)', 'kirgan'), tone: ChipTone.green) : null),
+                    : (login['last_login_at'] != null ? StatusChip(tr('входил(а)', 'kirgan'), tone: ChipTone.green) : null),
           ),
           const SizedBox(height: 10),
           if (login == null)

@@ -56,7 +56,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
         fin ? api.get('/store/pos/drawer', {'store_id': storeId}).catchError((Object _) => null) : Future.value(null),
         fin ? api.list('/store/finance/handovers', {'limit': 5}) : Future.value(null),
         // Отчёта о прибыли нет в тарифе — остальные финансы грузятся, вместо отчёта замок.
-        st.can('reports.view') ? unlessPlan(api.get('/store/reports/profit-loss', {...q, 'store_id': storeId}), (e) => plLocked = e) : Future.value(null),
+        st.can('reports.view') ? unlessPlan<dynamic>(api.get('/store/reports/profit-loss', {...q, 'store_id': storeId}), (e) => plLocked = e) : Future.value(null),
         st.can('payouts.manage') ? api.get('/store/balance') : Future.value(null),
         st.can('payouts.manage') ? api.get('/store/billing') : Future.value(null),
         fin || st.can('reports.view') ? api.list('/store/pos/shifts', {'store_id': storeId, 'limit': 30}) : Future.value(null),
