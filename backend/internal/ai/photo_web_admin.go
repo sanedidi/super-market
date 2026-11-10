@@ -432,9 +432,12 @@ type RetryNotFoundResult struct {
 }
 
 // RetryNotFound — «Повторить «Не нашли»»: все, сразу (и после 3 попыток).
+// Порядок очереди сохраняется: вне очереди — только товары магазинов,
+// остальной каталог ждёт одобрения, как и раньше.
 func (s *PhotoService) RetryNotFound(ctx context.Context) (RetryNotFoundResult, error) {
-	tag, err := s.ai.pool.Exec(ctx, `UPDATE photo_web_jobs SET status = 'queued', manual = true, attempts = 0, errors = 0, error = '',
-		next_at = now(), updated_at = now() WHERE status IN ('not_found', 'failed')`)
+	tag, err := s.ai.pool.Exec(ctx, `UPDATE photo_web_jobs SET status = 'queued',
+		manual = EXISTS (SELECT 1 FROM store_products sp WHERE sp.product_id = photo_web_jobs.product_id),
+		attempts = 0, errors = 0, error = '', next_at = now(), updated_at = now() WHERE status IN ('not_found', 'failed')`)
 	if err != nil {
 		return RetryNotFoundResult{}, err
 	}

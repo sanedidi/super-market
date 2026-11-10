@@ -402,6 +402,15 @@ func TestPhotoWeb(t *testing.T) {
 	if w := a.expect(a.do("GET", "/admin/ai-photo/web/jobs/"+water, tok, nil), 200, "water").Body; w["status"] != "replaced" {
 		t.Fatalf("water retry = %v", w)
 	}
+	// Повтор не обходит порядок: товар не из магазина ждёт одобрения остального каталога.
+	a.expect(a.do("PUT", "/admin/ai-photo/web", tok, map[string]any{"rest": false}), 200, "rest off")
+	if _, err := pool.Exec(ctx, `UPDATE photo_web_jobs SET status = 'not_found' WHERE id = $1`, byName["Сок Rich яблочный 1 л"]["id"]); err != nil {
+		t.Fatal(err)
+	}
+	a.expect(a.do("POST", "/admin/ai-photo/web/retry-not-found", tok, nil), 200, "retry rest")
+	if w := a.expect(a.do("GET", "/admin/ai-photo/web/jobs/"+byName["Сок Rich яблочный 1 л"]["id"].(string), tok, nil), 200, "juice").Body; w["status"] != "queued" {
+		t.Fatalf("juice retry = %v", w)
+	}
 
 	// «Ставить сразу» выключено — найденное ждёт решения.
 	a.expect(a.do("PUT", "/admin/ai-photo/web", tok, map[string]any{"auto": false}), 200, "auto off")
