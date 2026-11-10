@@ -281,6 +281,8 @@ type PayInput struct {
 	Note      string       `json:"note"`
 	PhotoURL  string       `json:"photo_url"`
 	StoreID   string       `json:"store_id"`
+	// OwnerFunds — «Свои деньги (владелец)»: contribution | loan (см. finance).
+	OwnerFunds string `json:"owner_funds"`
 }
 
 // PaySupplier — магазин отдал деньги агенту: расход из кассы контрагенту,
@@ -322,7 +324,7 @@ func (s *Service) PaySupplier(ctx context.Context, p *identity.Principal, distri
 	}
 	ctx = context.WithValue(ctx, payMetaKey{}, payMeta{method: in.Method, photo: in.PhotoURL, storeID: in.StoreID})
 	op, err := s.fin.CreateCashOperation(ctx, p, finance.CashOperationInput{
-		Kind: "expense", CashboxID: in.CashboxID, Amount: in.Amount, CounterpartyID: &cp, Note: in.Note,
+		Kind: "expense", CashboxID: in.CashboxID, Amount: in.Amount, CounterpartyID: &cp, Note: in.Note, OwnerFunds: in.OwnerFunds,
 	})
 	if err != nil {
 		return Payment{}, err

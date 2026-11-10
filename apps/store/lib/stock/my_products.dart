@@ -600,7 +600,7 @@ class _ProductStockScreenState extends State<ProductStockScreen> {
         price: it['price']?.toString(),
         // Остаток показываем и «не посчитанный» — он пришёл приходом.
         qty: it['qty']?.toString(),
-        cost: it['avg_cost']?.toString());
+        cost: (it['avg_cost'] ?? it['last_cost'])?.toString());
     if (mounted) _load();
   }
 
@@ -683,9 +683,10 @@ class _ProductStockScreenState extends State<ProductStockScreen> {
           const SizedBox(height: 12),
           Row(children: [
             price(tr('Цена продажи', 'Sotish narxi'), it['price']),
-            if (it['avg_cost'] != null || it['stock_cost'] != null) ...[
+            // Остатка нет (всё продали) — цена последнего прихода, а не «—».
+            if (it['avg_cost'] != null || it['last_cost'] != null || it['stock_cost'] != null) ...[
               const SizedBox(width: 8),
-              price(tr('Цена закупки', 'Xarid narxi'), it['avg_cost']),
+              price(tr('Цена закупки', 'Xarid narxi'), it['avg_cost'] ?? it['last_cost']),
               const SizedBox(width: 8),
               price(tr('На сумму', 'Summasi'), it['stock_cost']),
             ],

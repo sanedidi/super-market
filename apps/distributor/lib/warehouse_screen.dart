@@ -8,6 +8,7 @@ import 'package:sm_store/ui/widgets.dart';
 
 import 'document_screen.dart';
 import 'logic.dart';
+import 'stock_screen.dart';
 import 'ui.dart';
 import 'warehouses.dart';
 
@@ -101,6 +102,12 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     );
   }
 
+  /// Б2 · «Товары на складе» выбранного склада.
+  void _openStock({String status = ''}) {
+    final w = _current;
+    _open(AgentStockScreen(warehouseId: w?['id'] as String?, warehouseName: w == null ? '' : '${w['name']}', status: status));
+  }
+
   Future<void> _open(Widget screen) async {
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
     if (mounted) _load();
@@ -121,23 +128,8 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
           else if (s == null)
             const Padding(padding: EdgeInsets.only(top: 40), child: Center(child: CircularProgressIndicator()))
           else ...[
-            AppCard(
-              child: Row(children: [
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(tr('Товаров на складе', 'Ombordagi mahsulotlar'), style: AppText.small),
-                    Text(tr('${s['products']} позиций', '${s['products']} ta'), style: AppText.title),
-                  ]),
-                ),
-                if (s['cost_value'] != null)
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(tr('По цене закупки', 'Xarid narxida'), style: AppText.small),
-                      Text(money(s['cost_value']), style: AppText.title),
-                    ]),
-                  ),
-              ]),
-            ),
+            // Б1 · карточка открывает «Товары на складе» (Figma «Правки 10 нояб»).
+            StockSummaryCard(summary: s, onOpen: () => _openStock()),
             const SizedBox(height: 12),
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               _Action(icon: Icons.move_to_inbox_rounded, bg: AppColors.primarySoft, fg: AppColors.primary, label: tr('Приход', 'Kirim'), onTap: () => _open(const DocumentScreen.create(type: 'income'))),
@@ -149,19 +141,26 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
               const SizedBox(height: 12),
               AppCard(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  SectionTitle(tr('Заканчиваются', 'Tugayapti'), count: _low!.length),
+                  Row(children: [
+                    Expanded(child: SectionTitle(tr('Заканчиваются', 'Tugayapti'), count: _low!.length)),
+                    TextButton(onPressed: () => _openStock(status: 'low'), child: Text(tr('Все товары', 'Barchasi'))),
+                  ]),
                   for (final r in _low!) ...[
                     const Divider(height: 20),
-                    Row(children: [
-                      const ProductThumb(null),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text('${r['product_name']}', style: AppText.bodyStrong),
-                          Text(tr('Осталось ${qty(r['qty'], '${r['unit_short'] ?? ''}')}', 'Qoldi ${qty(r['qty'], '${r['unit_short'] ?? ''}')}'), style: AppText.small.copyWith(color: AppColors.primary)),
-                        ]),
-                      ),
-                    ]),
+                    InkWell(
+                      onTap: () => _open(AgentProductScreen(warehouseId: '${_current?['id'] ?? ''}', item: {...r, 'name': r['product_name']})),
+                      child: Row(children: [
+                        const ProductThumb(null),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text('${r['product_name']}', style: AppText.bodyStrong),
+                            Text(tr('Осталось ${qty(r['qty'], '${r['unit_short'] ?? ''}')}', 'Qoldi ${qty(r['qty'], '${r['unit_short'] ?? ''}')}'), style: AppText.small.copyWith(color: AppColors.primary)),
+                          ]),
+                        ),
+                        const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
+                      ]),
+                    ),
                   ],
                 ]),
               ),

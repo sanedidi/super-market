@@ -57,7 +57,7 @@ func (m *Module) myProducts(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	httpx.Respond(w, r, m.log, http.StatusOK, func() (MyProducts, error) {
 		return m.svc.MyProducts(r.Context(), pr(r), MyProductsFilter{
-			StoreID: q.Get("store_id"), Status: q.Get("status"), CategoryID: q.Get("category_id"), ProductID: q.Get("product_id"),
+			StoreID: q.Get("store_id"), WarehouseID: q.Get("warehouse_id"), Status: q.Get("status"), CategoryID: q.Get("category_id"), ProductID: q.Get("product_id"),
 			Query: q.Get("q"), Order: q.Get("order"), Page: httpx.PageFrom(r),
 		})
 	})

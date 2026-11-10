@@ -348,4 +348,19 @@ func TestAgentPayments(t *testing.T) {
 	if b := sqlStr(t, pool, `SELECT sum(amount)::numeric(18,2)::text FROM counterparty_entries WHERE counterparty_id = '`+cp+`'`); b != "-165000.00" {
 		t.Fatalf("store debt = %s", b)
 	}
+
+	// 5) Свои деньги владельца (правки 10 нояб): касса магазина не меняется,
+	// оплата так же ждёт подтверждения агента.
+	p5 := a.expect(a.do("POST", "/store/suppliers/"+distID+"/pay", storeTok, map[string]any{
+		"amount": 2000000, "owner_funds": "loan", "store_id": store1,
+	}), 201, "pay from owner").Body
+	if p5["status"] != "pending" || p5["amount"] != "2000000.00" {
+		t.Fatalf("owner pay = %v", p5)
+	}
+	if b := sqlStr(t, pool, `SELECT sum(amount)::numeric(18,2)::text FROM cash_entries WHERE cashbox_id = '`+box+`'`); b != "835000.00" {
+		t.Fatalf("store cash after owner pay = %s", b)
+	}
+	if b := sqlStr(t, pool, `SELECT sum(e.amount)::numeric(18,2)::text FROM counterparty_entries e JOIN counterparties c ON c.id = e.counterparty_id WHERE c.is_owner`); b != "2000000.00" {
+		t.Fatalf("owed to owner = %s", b)
+	}
 }

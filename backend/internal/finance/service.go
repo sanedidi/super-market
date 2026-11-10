@@ -389,6 +389,8 @@ type PaymentMethod struct {
 	CashboxName string  `json:"cashbox_name"`
 	StoreID     *string `json:"store_id"`
 	IsActive    bool    `json:"is_active"`
+	// Kind — cash / card / qr / other: по нему приложения находят «Наличные» и «Терминал».
+	Kind string `json:"kind"`
 }
 
 type PaymentMethodInput struct {
@@ -398,7 +400,7 @@ type PaymentMethodInput struct {
 }
 
 const paymentMethodSelect = `
-	SELECT m.id, m.name, m.cashbox_id, c.name, c.store_id, m.is_active
+	SELECT m.id, m.name, m.cashbox_id, c.name, c.store_id, m.is_active, COALESCE(m.kind, 'other')
 	FROM payment_methods m JOIN cashboxes c ON c.id = m.cashbox_id`
 
 func (s *Service) ListPaymentMethods(ctx context.Context, p *identity.Principal, storeID string) ([]PaymentMethod, error) {

@@ -73,11 +73,13 @@ type LastSupplier struct {
 }
 
 type MyProductsFilter struct {
-	StoreID    string
-	Status     string // "", ok, low, out, unknown
-	CategoryID string
-	ProductID  string
-	Query      string
+	StoreID string
+	// WarehouseID — какой склад смотрим (у агента складов несколько); "" — основной склад магазина.
+	WarehouseID string
+	Status      string // "", ok, low, out, unknown
+	CategoryID  string
+	ProductID   string
+	Query       string
 	// Order — attention (по умолчанию: закончились, мало, хватает, не посчитан) или name.
 	Order string
 	Page  httpx.Page
@@ -134,6 +136,19 @@ func (s *Service) MyProducts(ctx context.Context, p *identity.Principal, f MyPro
 	if wh == nil {
 		return out, apperr.Conflict("no_warehouse", "у магазина нет основного склада — выберите его в настройках магазина").Uz("doʻkonda asosiy ombor yoʻq — uni doʻkon sozlamalarida tanlang")
 	}
+	if f.WarehouseID != "" {
+		var ok bool
+		if httpx.IsUUID(f.WarehouseID) {
+			if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM warehouses WHERE id = $1 AND store_id = $2 AND network_id = $3)`,
+				f.WarehouseID, f.StoreID, p.NetworkID).Scan(&ok); err != nil {
+				return out, err
+			}
+		}
+		if !ok {
+			return out, apperr.Validation("warehouse_id: склад не найден").Uz("warehouse_id: ombor topilmadi")
+		}
+		wh = &f.WarehouseID
+	}
 	out.WarehouseID = *wh
 	priceType := ""
 	if pt != nil {
@@ -171,7 +186,9 @@ func (s *Service) MyProducts(ctx context.Context, p *identity.Principal, f MyPro
 			       COALESCE((SELECT sum(b.qty_remaining) FROM batches b WHERE b.warehouse_id = $2 AND b.product_id = pr.id AND b.qty_remaining > 0), 0) AS qty,
 			       COALESCE((SELECT sum(b.qty_remaining * b.unit_cost) FROM batches b WHERE b.warehouse_id = $2 AND b.product_id = pr.id AND b.qty_remaining > 0), 0) AS cost,
 			       COALESCE((SELECT -sum(m.qty) FROM stock_movements m WHERE m.warehouse_id = $2 AND m.product_id = pr.id
-			                 AND m.doc_type IN ('sale', 'order') AND m.qty < 0 AND m.created_at > now() - interval '28 days'), 0) / 28.0 AS per_day
+			                 AND m.qty < 0 AND m.created_at > now() - interval '28 days'
+			                 AND (m.doc_type IN ('sale', 'order') OR (m.doc_type = 'stock_document'
+			                      AND EXISTS (SELECT 1 FROM stock_documents sd WHERE sd.id = m.doc_id AND sd.type = 'shipment')))), 0) / 28.0 AS per_day
 			FROM store_products sp
 			JOIN products pr  ON pr.id = sp.product_id
 			JOIN units u      ON u.id = pr.unit_id
@@ -241,8 +258,8 @@ func (s *Service) MyProducts(ctx context.Context, p *identity.Principal, f MyPro
 		       CASE WHEN qty > 0 THEN round(cost / qty, 2)::text END, round(cost, 2)::text,
 		       (SELECT trim_scale(i.price)::text FROM stock_document_items i JOIN stock_documents d ON d.id = i.document_id
 		         WHERE d.network_id = $%d AND d.type = 'income' AND d.status = 'posted' AND d.currency = 'UZS'
-		           AND i.product_id = y.id AND i.price IS NOT NULL
-		         ORDER BY d.posted_at DESC LIMIT 1),
+		           AND i.product_id = y.id AND i.price > 0
+		         ORDER BY d.posted_at DESC, i.line LIMIT 1),
 		       (SELECT trim_scale(pk.pack)::text FROM network_product_packs pk WHERE pk.network_id = $%d AND pk.product_id = y.id),
 		       (SELECT c.id::text || '|' || c.name FROM stock_document_items i JOIN stock_documents d ON d.id = i.document_id
 		         JOIN counterparties c ON c.id = d.counterparty_id

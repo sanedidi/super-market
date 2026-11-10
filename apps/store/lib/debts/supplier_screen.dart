@@ -5,6 +5,7 @@ import 'package:sm_core/sm_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../finance/finance_logic.dart';
+import '../finance/owner_funds.dart';
 import '../plan/plan_ui.dart';
 import '../returns/return_screen.dart';
 import '../state.dart';
@@ -271,13 +272,21 @@ class _PaySheetState extends State<_PaySheet> {
   final _note = TextEditingController();
   List<Map<String, dynamic>>? _boxes;
   String? _boxId;
+  // «Свои деньги (владелец)»: null — платим из кассы; иначе contribution / loan.
+  String? _owner;
+  String _ownerMode = ownerLoan;
   String? _error;
   bool _busy = false;
 
   @override
   void initState() {
     super.initState();
+    _amount.addListener(_onAmount);
     _loadBoxes();
+  }
+
+  void _onAmount() {
+    if (_owner != null) setState(() {});
   }
 
   @override
@@ -320,6 +329,8 @@ class _PaySheetState extends State<_PaySheet> {
     String? err;
     if (v == null || v <= 0) {
       err = tr('Введите сумму больше нуля', 'Noldan katta summani kiriting');
+    } else if (_owner != null) {
+      // Свои деньги владельца — касса не нужна.
     } else if (box == null) {
       err = tr('Выберите кассу', 'Kassani tanlang');
     } else if (v > n(box['balance'])) {
@@ -337,7 +348,7 @@ class _PaySheetState extends State<_PaySheet> {
     try {
       await api.post('/store/finance/operations', {
         'kind': 'expense',
-        'cashbox_id': _boxId,
+        if (_owner == null) 'cashbox_id': _boxId else 'owner_funds': _owner,
         'amount': plainAmount(_amount.text),
         'counterparty_id': widget.supplier['id'],
         'note': _note.text.trim(),
@@ -358,6 +369,7 @@ class _PaySheetState extends State<_PaySheet> {
     final bal = n(widget.supplier['balance']);
     final last = _lastIncome();
     final boxes = _boxes;
+    final isOwner = context.read<StoreState>().me?['is_owner'] == true;
     return Padding(
       padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
       child: SafeArea(
@@ -380,7 +392,7 @@ class _PaySheetState extends State<_PaySheet> {
               if (last != null && last < bal) ActionChip(label: Text(tr('Последний приход', 'Oxirgi kirim')), onPressed: () => _quick(last)),
             ]),
             const SizedBox(height: 16),
-            Text(tr('ИЗ КАКОЙ КАССЫ', 'QAYSI KASSADAN'), style: AppText.caption),
+            Text(isOwner ? tr('ОТКУДА ДЕНЬГИ', 'PUL QAYERDAN') : tr('ИЗ КАКОЙ КАССЫ', 'QAYSI KASSADAN'), style: AppText.caption),
             const SizedBox(height: 8),
             if (boxes == null)
               const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()))
@@ -390,8 +402,11 @@ class _PaySheetState extends State<_PaySheet> {
                   padding: const EdgeInsets.only(bottom: 8),
                   child: AppCard(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    border: _boxId == b['id'] ? AppColors.primary : AppColors.line,
-                    onTap: () => setState(() => _boxId = b['id'] as String),
+                    border: _owner == null && _boxId == b['id'] ? AppColors.primary : AppColors.line,
+                    onTap: () => setState(() {
+                      _boxId = b['id'] as String;
+                      _owner = null;
+                    }),
                     child: Row(children: [
                       IconBox(
                         b['is_main'] == true ? Icons.account_balance_rounded : Icons.payments_rounded,
@@ -410,11 +425,22 @@ class _PaySheetState extends State<_PaySheet> {
                       ),
                       Text(money(b['balance'], suffix: false), style: AppText.bodyStrong),
                       const SizedBox(width: 8),
-                      Icon(_boxId == b['id'] ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
-                          color: _boxId == b['id'] ? AppColors.primary : AppColors.muted),
+                      Icon(_owner == null && _boxId == b['id'] ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
+                          color: _owner == null && _boxId == b['id'] ? AppColors.primary : AppColors.muted),
                     ]),
                   ),
                 ),
+            if (isOwner && boxes != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: OwnerFundsOption(
+                  selected: _owner != null,
+                  mode: _ownerMode,
+                  amount: num.tryParse(plainAmount(_amount.text)),
+                  onSelect: () => setState(() => _owner = _ownerMode),
+                  onMode: (m) => setState(() => _owner = _ownerMode = m),
+                ),
+              ),
             const SizedBox(height: 4),
             TextField(controller: _note, decoration: InputDecoration(labelText: tr('Комментарий: № платёжки, кто передал…', 'Izoh: toʻlov hujjati №, kim topshirdi…'))),
             if (_error != null) ...[

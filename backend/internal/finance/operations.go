@@ -70,7 +70,18 @@ type CashOperationInput struct {
 	CounterpartyID *string      `json:"counterparty_id"`
 	ReasonID       *string      `json:"reason_id"`
 	Note           string       `json:"note"`
+	// OwnerFunds — оплата поставщику своими деньгами владельца (только
+	// владелец, только расход контрагенту): "contribution" — вклад в бизнес,
+	// "loan" — «Вернуть мне позже» (магазин должен владельцу). Деньги
+	// проходят через главную кассу: приход и сразу расход, остаток не меняется.
+	OwnerFunds string `json:"owner_funds"`
 }
+
+// Источники «Свои деньги (владелец)».
+const (
+	OwnerContribution = "contribution"
+	OwnerLoan         = "loan"
+)
 
 // CreateCashOperation — приход или расход по кассе. С контрагентом —
 // оплата поставщику (расход) или деньги от контрагента (приход); без
@@ -81,6 +92,25 @@ func (s *Service) CreateCashOperation(ctx context.Context, p *identity.Principal
 	}
 	if in.Kind != "income" && in.Kind != "expense" {
 		return CashOperation{}, apperr.Validation("kind: ожидается income или expense").Uz("kind: income yoki expense boʻlishi kerak")
+	}
+	if in.OwnerFunds != "" {
+		if in.OwnerFunds != OwnerContribution && in.OwnerFunds != OwnerLoan {
+			return CashOperation{}, apperr.Validation("owner_funds: contribution или loan").Uz("owner_funds: contribution yoki loan")
+		}
+		if !p.IsOwner {
+			return CashOperation{}, apperr.Forbidden("своими деньгами платит только владелец").Uz("oʻz pulidan faqat egasi toʻlaydi")
+		}
+		if in.Kind != "expense" || in.CounterpartyID == nil {
+			return CashOperation{}, apperr.Validation("owner_funds: только для оплаты контрагенту").Uz("owner_funds: faqat kontragentga toʻlov uchun")
+		}
+		// Касса выбирается сама — главная касса сети в сумах.
+		if err := s.pool.QueryRow(ctx, `SELECT id FROM cashboxes WHERE network_id = $1 AND is_main AND currency = 'UZS' ORDER BY is_active DESC LIMIT 1`,
+			p.NetworkID).Scan(&in.CashboxID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return CashOperation{}, apperr.Validation("в сети нет главной кассы").Uz("tarmoqda asosiy kassa yoʻq")
+			}
+			return CashOperation{}, err
+		}
 	}
 	if !httpx.IsUUID(in.CashboxID) {
 		return CashOperation{}, apperr.Validation("cashbox_id: касса не найдена").Uz("cashbox_id: kassa topilmadi")
@@ -103,7 +133,7 @@ func (s *Service) CreateCashOperation(ctx context.Context, p *identity.Principal
 		if err != nil {
 			return err
 		}
-		if !cb.IsActive || !canUseCashbox(p, cb) {
+		if in.OwnerFunds == "" && (!cb.IsActive || !canUseCashbox(p, cb)) {
 			return apperr.Validation("cashbox_id: касса не найдена или отключена").Uz("cashbox_id: kassa topilmadi yoki oʻchirilgan")
 		}
 		if in.CounterpartyID != nil {
@@ -138,16 +168,13 @@ func (s *Service) CreateCashOperation(ctx context.Context, p *identity.Principal
 			}
 		}
 
-		n, err := db.NextNumber(ctx, tx, "cash_operations", p.NetworkID, "")
-		if err != nil {
-			return err
+		if in.OwnerFunds != "" {
+			if err := ownerFundsIn(ctx, tx, p, cb.ID, in); err != nil {
+				return err
+			}
 		}
-		if err := tx.QueryRow(ctx, `
-			INSERT INTO cash_operations (network_id, number, kind, cashbox_id, amount, amount_uzs, rate,
-			                             counterparty_id, reason_id, note, created_by)
-			VALUES ($1, $2, $3, $4, $5::numeric, $6::numeric, $7::numeric, $8, $9, $10, $11) RETURNING id`,
-			p.NetworkID, n, in.Kind, cb.ID, string(in.Amount), amountUZS, rate,
-			in.CounterpartyID, in.ReasonID, strings.TrimSpace(in.Note), p.EmployeeID).Scan(&id); err != nil {
+		id, err = insertCashOp(ctx, tx, p, in.Kind, cb.ID, string(in.Amount), amountUZS, rate, in.CounterpartyID, in.ReasonID, in.Note)
+		if err != nil {
 			return err
 		}
 
@@ -182,6 +209,82 @@ func (s *Service) CreateCashOperation(ctx context.Context, p *identity.Principal
 	}
 	rows, err := s.pool.Query(ctx, cashOpSelect+` WHERE o.id = $1`, id)
 	return one[CashOperation](rows, err, i18n.Text{RU: "операция не найдена", UZ: "operatsiya topilmadi"})
+}
+
+func insertCashOp(ctx context.Context, tx pgx.Tx, p *identity.Principal, kind, cashboxID, amount, amountUZS string, rate, counterpartyID, reasonID *string, note string) (string, error) {
+	n, err := db.NextNumber(ctx, tx, "cash_operations", p.NetworkID, "")
+	if err != nil {
+		return "", err
+	}
+	var id string
+	err = tx.QueryRow(ctx, `
+		INSERT INTO cash_operations (network_id, number, kind, cashbox_id, amount, amount_uzs, rate,
+		                             counterparty_id, reason_id, note, created_by)
+		VALUES ($1, $2, $3, $4, $5::numeric, $6::numeric, $7::numeric, $8, $9, $10, $11) RETURNING id`,
+		p.NetworkID, n, kind, cashboxID, amount, amountUZS, rate,
+		counterpartyID, reasonID, strings.TrimSpace(note), p.EmployeeID).Scan(&id)
+	return id, err
+}
+
+// ownerFundsIn — деньги владельца пришли в главную кассу: вклад (по причине
+// «Вклад владельца») или в долг (контрагент-владелец — магазин должен ему).
+// Следом идёт расход поставщику на ту же сумму — остаток кассы не меняется.
+func ownerFundsIn(ctx context.Context, tx pgx.Tx, p *identity.Principal, cashboxID string, in CashOperationInput) error {
+	var cp, reason *string
+	if in.OwnerFunds == OwnerLoan {
+		id, err := OwnerCounterparty(ctx, tx, p.NetworkID)
+		if err != nil {
+			return err
+		}
+		cp = &id
+	} else {
+		var id string
+		name := i18n.T(ctx, "Вклад владельца", "Egasining hissasi")
+		if err := tx.QueryRow(ctx, `
+			WITH ins AS (
+				INSERT INTO financial_reasons (network_id, name, kind) VALUES ($1, $2, 'income')
+				ON CONFLICT (network_id, kind, name) DO NOTHING RETURNING id)
+			SELECT id FROM ins UNION ALL
+			SELECT id FROM financial_reasons WHERE network_id = $1 AND kind = 'income' AND name = $2
+			LIMIT 1`, p.NetworkID, name).Scan(&id); err != nil {
+			return err
+		}
+		reason = &id
+	}
+	note := i18n.T(ctx, "Свои деньги владельца на оплату поставщику", "Egasining oʻz puli — yetkazib beruvchiga toʻlov uchun")
+	if in.OwnerFunds == OwnerLoan {
+		note += i18n.T(ctx, " · вернуть владельцу", " · egasiga qaytarish")
+	}
+	id, err := insertCashOp(ctx, tx, p, "income", cashboxID, string(in.Amount), string(in.Amount), nil, cp, reason, note)
+	if err != nil {
+		return err
+	}
+	if err := AddCash(ctx, tx, p.NetworkID, cashboxID, string(in.Amount), DocCashOperation, id); err != nil {
+		return err
+	}
+	if cp != nil {
+		// Получили от владельца — магазин ему должен.
+		return AddCounterparty(ctx, tx, p.NetworkID, *cp, string(in.Amount), DocCashOperation, id)
+	}
+	return nil
+}
+
+// OwnerCounterparty — контрагент «Владелец · вернуть себе» сети (создаётся при
+// первой оплате «в долг»): его баланс — сколько магазин должен владельцу.
+func OwnerCounterparty(ctx context.Context, q db.Querier, networkID string) (string, error) {
+	var id string
+	err := q.QueryRow(ctx, `
+		WITH ins AS (
+			INSERT INTO counterparties (network_id, name, note, is_owner) VALUES ($1, $2, $3, true)
+			ON CONFLICT (network_id) WHERE is_owner DO NOTHING RETURNING id)
+		SELECT id FROM ins UNION ALL
+		SELECT id FROM counterparties WHERE network_id = $1 AND is_owner
+		LIMIT 1`, networkID, i18n.T(ctx, "Владелец · вернуть себе", "Egasi · oʻziga qaytarish"),
+		i18n.T(ctx, "Свои деньги владельца, потраченные на поставщиков", "Egasining yetkazib beruvchilarga sarflangan oʻz puli")).Scan(&id)
+	if err == nil {
+		_, err = q.Exec(ctx, `UPDATE counterparties SET is_active = true WHERE id = $1 AND NOT is_active`, id)
+	}
+	return id, err
 }
 
 func canUseCashbox(p *identity.Principal, cb cashboxRef) bool {

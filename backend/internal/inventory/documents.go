@@ -394,6 +394,18 @@ func (s *Service) checkHeader(ctx context.Context, tx pgx.Tx, p *identity.Princi
 	return nil
 }
 
+// priceKey — цена для сравнения строк: «20850», «20850.00» и «20 850» — одна цена.
+func priceKey(v *money.Price) string {
+	if v == nil {
+		return ""
+	}
+	f, err := strconv.ParseFloat(strings.ReplaceAll(string(*v), " ", ""), 64)
+	if err != nil {
+		return string(*v)
+	}
+	return strconv.FormatFloat(f, 'f', -1, 64)
+}
+
 func (s *Service) checkWarehouse(ctx context.Context, q db.Querier, p *identity.Principal, id string, needAccess bool) error {
 	var storeID string
 	var active bool
@@ -418,10 +430,17 @@ func (s *Service) replaceItems(ctx context.Context, tx pgx.Tx, p *identity.Princ
 		if !httpx.IsUUID(it.ProductID) {
 			return apperr.Validation("items: неверный product_id в строке " + line).Uz("items: " + line + "-qatorda product_id notoʻgʻri")
 		}
-		if seen[it.ProductID] {
+		// В приходе один товар может идти несколькими строками, если строки
+		// отличаются ценой или скидкой (бонус поставщика со скидкой 100% —
+		// отдельной строкой). Остаток — сумма строк, закупка — средняя.
+		key := it.ProductID
+		if docType == TypeIncome {
+			key += "|" + priceKey(it.Price) + "|" + priceKey(it.ListPrice)
+		}
+		if seen[key] {
 			return apperr.Validation("items: товар повторяется в строке " + line).Uz("items: " + line + "-qatorda mahsulot takrorlanadi")
 		}
-		seen[it.ProductID] = true
+		seen[key] = true
 		if !it.Qty.Valid() {
 			return apperr.Validation("items: не указано количество в строке " + line).Uz("items: " + line + "-qatorda miqdor koʻrsatilmagan")
 		}

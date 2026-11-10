@@ -10,10 +10,12 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../debts/supplier_screen.dart' show SupplierScreen;
 import '../finance/finance_logic.dart' show n, plainAmount;
+import '../finance/owner_funds.dart';
 import '../kassa/widgets.dart' show PickChip;
 import '../lock/app_lock.dart';
 import '../main.dart' show showMessage;
 import '../plan/plan_ui.dart';
+import '../start/start_logic.dart' show plural;
 import '../state.dart';
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
@@ -184,25 +186,6 @@ class _DistSupplierScreenState extends State<DistSupplierScreen> {
             ]),
           ),
         ),
-      for (final d in draft) ...[
-        AppCard(
-          color: AppColors.blueSoft,
-          onTap: () => _push(SupplyIncomeScreen(id: '${d['id']}', supplier: s)),
-          child: Row(children: [
-            const IconBox(Icons.move_to_inbox_rounded, bg: AppColors.white, fg: AppColors.blue, size: 40, iconSize: 20, radius: 12),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(tr('Товар привезли · приход № ${d['number']}', 'Tovar keldi · № ${d['number']} kirim'), style: AppText.bodyStrong),
-                Text(tr('Проверьте и нажмите «Принять товар» · ${money(d['total'])}', 'Tekshiring va «Tovarni qabul qilish»ni bosing · ${money(d['total'])}'),
-                    style: AppText.small),
-              ]),
-            ),
-            const Icon(Icons.chevron_right_rounded, color: AppColors.blue),
-          ]),
-        ),
-        const SizedBox(height: 12),
-      ],
       AppCard(
         padding: const EdgeInsets.all(18),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -236,6 +219,11 @@ class _DistSupplierScreenState extends State<DistSupplierScreen> {
           ]),
         ]),
       ),
+      // «Товар привезли» — под «Мы должны», крупно (Figma «Правки 10 нояб» Б3).
+      for (final d in draft) ...[
+        const SizedBox(height: 12),
+        _IncomeBanner(d: d, onOpen: () => _push(SupplyIncomeScreen(id: '${d['id']}', supplier: s))),
+      ],
       if (terms.isNotEmpty) ...[
         const SizedBox(height: 12),
         AppCard(
@@ -353,6 +341,9 @@ class _PaySupplierSheetState extends State<PaySupplierSheet> {
   String _method = 'cash';
   List<Map<String, dynamic>>? _boxes;
   String? _boxId;
+  // «Свои деньги (владелец)»: null — из кассы; иначе contribution / loan.
+  String? _owner;
+  String _ownerMode = ownerLoan;
   List<int>? _photo;
   String? _error;
   bool _busy = false;
@@ -408,7 +399,12 @@ class _PaySupplierSheetState extends State<PaySupplierSheet> {
           ),
       ]),
     );
-    if (id != null && mounted) setState(() => _boxId = id);
+    if (id != null && mounted) {
+      setState(() {
+        _boxId = id;
+        _owner = null;
+      });
+    }
   }
 
   Future<void> _takePhoto() async {
@@ -431,6 +427,8 @@ class _PaySupplierSheetState extends State<PaySupplierSheet> {
     String? err;
     if (v == null || v <= 0) {
       err = tr('Введите сумму больше нуля', 'Noldan katta summani kiriting');
+    } else if (_owner != null) {
+      // Свои деньги владельца — касса не нужна.
     } else if (box == null) {
       err = tr('Выберите кассу', 'Kassani tanlang');
     } else if (v > n(box['balance'])) {
@@ -455,7 +453,7 @@ class _PaySupplierSheetState extends State<PaySupplierSheet> {
       }
       await api.post('/store/suppliers/${widget.supplier['id']}/pay', {
         'amount': plainAmount(_amount.text),
-        'cashbox_id': _boxId,
+        if (_owner == null) 'cashbox_id': _boxId else 'owner_funds': _owner,
         'method': _method,
         'photo_url': photoUrl,
         'store_id': st.storeId,
@@ -478,6 +476,7 @@ class _PaySupplierSheetState extends State<PaySupplierSheet> {
     final box = _boxes?.where((b) => b['id'] == _boxId).firstOrNull;
     final agent = '${s['agent_name'] ?? ''}';
     final v = num.tryParse(plainAmount(_amount.text)) ?? 0;
+    final isOwner = context.read<StoreState>().me?['is_owner'] == true;
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Text(widget.title ?? tr('Оплата поставщику', 'Yetkazib beruvchiga toʻlov'), style: AppText.h3),
       Text(
@@ -518,12 +517,16 @@ class _PaySupplierSheetState extends State<PaySupplierSheet> {
         ],
       ]),
       const SizedBox(height: 16),
-      Text(tr('ИЗ КАССЫ', 'KASSADAN'), style: AppText.caption),
+      Text(isOwner ? tr('ОТКУДА ДЕНЬГИ', 'PUL QAYERDAN') : tr('ИЗ КАССЫ', 'KASSADAN'), style: AppText.caption),
       const SizedBox(height: 8),
       AppCard(
         color: AppColors.soft,
+        border: isOwner && _owner == null ? AppColors.primary : null,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        onTap: _pickBox,
+        onTap: () {
+          if (_owner != null) setState(() => _owner = null);
+          _pickBox();
+        },
         child: Row(children: [
           const Icon(Icons.point_of_sale_rounded, color: AppColors.text2),
           const SizedBox(width: 10),
@@ -535,6 +538,16 @@ class _PaySupplierSheetState extends State<PaySupplierSheet> {
           const Icon(Icons.expand_more_rounded, color: AppColors.muted),
         ]),
       ),
+      if (isOwner) ...[
+        const SizedBox(height: 8),
+        OwnerFundsOption(
+          selected: _owner != null,
+          mode: _ownerMode,
+          amount: v,
+          onSelect: () => setState(() => _owner = _ownerMode),
+          onMode: (m) => setState(() => _owner = _ownerMode = m),
+        ),
+      ],
       const SizedBox(height: 10),
       AppCard(
         color: AppColors.soft,
@@ -693,6 +706,50 @@ class _DisputeScreenState extends State<DisputeScreen> {
                 : tr('Согласились — оплата становится ${money(received)} и сразу «Получено», разница возвращается в долг. Исправили — агент снова подтверждает.',
                     'Rozi boʻlsangiz — toʻlov ${money(received)} boʻladi va darhol «Olindi», farq qarzga qaytadi. Tuzatsangiz — agent yana tasdiqlaydi.'),
             style: AppText.small),
+      ]),
+    );
+  }
+}
+
+/// Приход от агента ждёт приёмки: красная рамка, «Новое», кнопка «Проверить и принять».
+class _IncomeBanner extends StatelessWidget {
+  const _IncomeBanner({required this.d, required this.onOpen});
+
+  final Map<String, dynamic> d;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final count = (d['items_count'] as num?)?.toInt() ?? 0;
+    final sub = [
+      if (count > 0) tr('$count ${plural(count, 'позиция', 'позиции', 'позиций')}', '$count ta mahsulot'),
+      money(d['total']),
+      if (d['created_at'] != null) dateTime(d['created_at']),
+    ].join(' · ');
+    return AppCard(
+      color: AppColors.primarySoft,
+      border: AppColors.primary,
+      onTap: onOpen,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const IconBox(Icons.move_to_inbox_rounded, bg: AppColors.primary, fg: AppColors.white, size: 44, iconSize: 24, radius: 14),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(tr('Товар привезли · приход № ${d['number']}', 'Tovar keldi · № ${d['number']} kirim'), style: AppText.title),
+              const SizedBox(height: 2),
+              Text(sub, style: AppText.small),
+            ]),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(999)),
+            child: Text(tr('Новое', 'Yangi'), style: AppText.small.copyWith(color: AppColors.white, fontWeight: FontWeight.w600, fontSize: 12)),
+          ),
+        ]),
+        const SizedBox(height: 12),
+        BigButton(label: tr('Проверить и принять товар', 'Tekshirib qabul qilish'), icon: Icons.fact_check_rounded, height: 48, onPressed: onOpen),
       ]),
     );
   }
