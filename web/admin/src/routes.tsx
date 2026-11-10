@@ -25,12 +25,14 @@ import {
   UserAddOutlined,
   UserOutlined,
   NodeIndexOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons'
 import { Dashboard } from './pages/Dashboard'
 import { Networks } from './pages/Networks'
 import { Products, Dictionary } from './pages/Catalog'
 import { ProductPage } from './pages/Product'
 import { Variants } from './pages/Variants'
+import { CatalogNorm, CatalogNormRun } from './pages/CatalogNorm'
 import { BrandRequests } from './pages/BrandRequests'
 import { ProductSuggestions } from './pages/ProductSuggestions'
 import { Banners } from './pages/Banners'
@@ -87,6 +89,7 @@ const menu: MenuItem[] = [
       { key: '/products', icon: <AppstoreOutlined />, label: 'Товары' },
       { key: '/moderation', icon: <AuditOutlined />, label: 'Модерация' },
       { key: '/catalog/variants', icon: <BlockOutlined />, label: 'Вариации' },
+      { key: '/catalog/norm', icon: <ThunderboltOutlined />, label: 'Автонормализация' },
       {
         key: 'dicts',
         icon: <BookOutlined />,
@@ -157,6 +160,7 @@ const menu: MenuItem[] = [
 // Подстраницы, которых нет в меню, — подписи вкладок.
 tabLabels['/ai-photo/store'] = 'Фото магазинов'
 tabLabels['/ai-photo/web'] = 'Фото из сети'
+tabLabels['/catalog/norm/*'] = 'Автонормализация / Прогон'
 
 export function AdminRoutes() {
   return (
@@ -170,6 +174,8 @@ export function AdminRoutes() {
         <Route path="products/:id" element={<ProductPage />} />
         <Route path="moderation" element={<Products key="moderation" moderation />} />
         <Route path="catalog/variants" element={<Variants />} />
+        <Route path="catalog/norm" element={<CatalogNorm />} />
+        <Route path="catalog/norm/:id" element={<CatalogNormRun />} />
         <Route path="catalog/brand-requests" element={<BrandRequests />} />
         <Route path="catalog/product-suggestions" element={<ProductSuggestions />} />
         <Route path="catalog/:kind" element={<Dictionary />} />

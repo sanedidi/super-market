@@ -1092,14 +1092,15 @@ Super Market сам приводит общий каталог в порядок
 Товар, у которого название или категорию поменял человек (панель, магазин, принятое исправление), получает
 `norm_locked` и больше не трогается. Каждое изменение — строка журнала «было → стало»; прогон можно откатить.
 Режим `auto`: каждые 10 минут обрабатываются новые товары (`norm_at IS NULL`, до 3000 за прогон) и исправления от магазинов.
-Расход ИИ — `ai_usage.kind = catalog_norm`.
+Расход ИИ — `ai_usage.kind = catalog_norm`. Страница супер-админа — «Каталог → Автонормализация» (`/catalog/norm`, прогон — `/catalog/norm/{id}`).
 
 | Метод | Путь | Описание |
 |---|---|---|
-| GET | `/admin/catalog-norm/settings` | `{auto, concurrency, batch_size, pending, suggestions}` — `pending`: товаров ещё не прошли, `suggestions`: исправлений ждут решения |
+| GET | `/admin/catalog-norm/settings` | `{auto, concurrency, batch_size, pending, suggestions, products, totals}` — `pending`: товаров ещё не прошли, `suggestions`: исправлений ждут решения, `products`: товаров в автонормализации; `totals` — за всё время без откаченного: `{names, categories, moves, moves_kept, groups, in_groups, approved, rejected, duplicates, suggestions_approved, suggestions_rejected, ai_requests, ai_cost_usd, ai_cost_uzs}` |
+| GET | `/admin/catalog-norm/sections` | `{items: [{id, name, products}]}` — разделы (корневые категории) и сколько их товаров пройдут автонормализацию (окно «Запустить вручную») |
 | PUT | `/admin/catalog-norm/settings` | `{auto?, concurrency? (1–16), batch_size? (5–100)}` |
 | POST | `/admin/catalog-norm/runs` | `{section_ids?: [uuid разделов], dry_run?: bool, only_new?: bool}` → 202 `Run`. Пусто — весь каталог. `dry_run` — только журнал, товары не меняются. Прогон идёт в фоне; один за раз (409 `norm_running`) |
-| GET | `/admin/catalog-norm/runs?limit=&offset=` | `{items: [Run], total}`, новые сверху; пустые автоматические не показываются |
+| GET | `/admin/catalog-norm/runs?trigger=&limit=&offset=` | `{items: [Run], total}`, новые сверху; `trigger`: `manual` \| `auto`; пустые автоматические не показываются |
 | GET | `/admin/catalog-norm/runs/{id}` | `Run` |
 | GET | `/admin/catalog-norm/runs/{id}/changes?kind=&q=&limit=&offset=` | журнал: `{items: [{id, product_id, product_name, image, kind, old, new, detail, applied, reverted}], total, counts {kind: n}}`. `kind`: `name`, `name_uz`, `category` (old/new — «Раздел / Подкатегория»), `variant_group` (`detail: {action: create\|join, group_id, name, items [{product_id, weight, flavor…}], skipped?}`), `moderation` (new: `approved`\|`rejected`, `detail.reason`, `duplicate_name`), `suggestion` |
 | POST | `/admin/catalog-norm/runs/{id}/apply` | применить завершённый прогон `dry_run` (в фоне, статус `applying` → `done`, `applied: true`). Товар, который за это время изменили, пропускается (`detail.skipped`) |

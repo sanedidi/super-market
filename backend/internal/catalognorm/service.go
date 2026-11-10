@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -60,6 +61,28 @@ type Settings struct {
 	// Suggestions — исправлений от магазинов ждут решения.
 	Pending     int `json:"pending"`
 	Suggestions int `json:"suggestions"`
+	// Products — товаров, которые проходят автонормализацию.
+	Products int `json:"products"`
+	// Totals — что сделано за всё время (без откаченного).
+	Totals Totals `json:"totals"`
+}
+
+// Totals — итоги применённых изменений за всё время.
+type Totals struct {
+	Names               int     `json:"names"`
+	Categories          int     `json:"categories"`
+	Moves               int     `json:"moves"`
+	MovesKept           int     `json:"moves_kept"`
+	Groups              int     `json:"groups"`
+	InGroups            int     `json:"in_groups"`
+	Approved            int     `json:"approved"`
+	Rejected            int     `json:"rejected"`
+	Duplicates          int     `json:"duplicates"`
+	SuggestionsApproved int     `json:"suggestions_approved"`
+	SuggestionsRejected int     `json:"suggestions_rejected"`
+	AIRequests          int     `json:"ai_requests"`
+	AICostUSD           float64 `json:"ai_cost_usd"`
+	AICostUZS           float64 `json:"ai_cost_uzs"`
 }
 
 type SettingsInput struct {
@@ -82,8 +105,66 @@ func (s *Service) Settings(ctx context.Context) (Settings, error) {
 	if err = s.pool.QueryRow(ctx, `SELECT count(*)::int FROM products p WHERE `+todoWhere).Scan(&st.Pending); err != nil {
 		return st, err
 	}
-	st.Suggestions, err = s.pendingSuggestions(ctx)
+	if st.Suggestions, err = s.pendingSuggestions(ctx); err != nil {
+		return st, err
+	}
+	if err = s.pool.QueryRow(ctx, `SELECT count(*)::int FROM products p WHERE `+scopeWhere).Scan(&st.Products); err != nil {
+		return st, err
+	}
+	t := &st.Totals
+	if err = s.pool.QueryRow(ctx, `
+		SELECT count(*) FILTER (WHERE kind = 'name')::int,
+		       count(*) FILTER (WHERE kind = 'category')::int,
+		       count(*) FILTER (WHERE kind = 'variant_group' AND detail ->> 'action' = 'create')::int,
+		       COALESCE(sum(jsonb_array_length(detail -> 'items')) FILTER (WHERE kind = 'variant_group' AND detail ->> 'action' = 'create'), 0)::int,
+		       count(*) FILTER (WHERE kind = 'moderation' AND new_value = 'approved')::int,
+		       count(*) FILTER (WHERE kind = 'moderation' AND new_value = 'rejected' AND COALESCE(detail ->> 'duplicate_of', '') = '')::int,
+		       count(*) FILTER (WHERE kind = 'moderation' AND COALESCE(detail ->> 'duplicate_of', '') <> '')::int,
+		       count(*) FILTER (WHERE kind = 'suggestion' AND new_value = 'approved')::int,
+		       count(*) FILTER (WHERE kind = 'suggestion' AND new_value = 'rejected')::int
+		FROM catalog_norm_changes WHERE applied AND NOT reverted AND kind <> 'norm'`).
+		Scan(&t.Names, &t.Categories, &t.Groups, &t.InGroups, &t.Approved, &t.Rejected, &t.Duplicates, &t.SuggestionsApproved, &t.SuggestionsRejected); err != nil {
+		return st, err
+	}
+	if err = s.pool.QueryRow(ctx, `
+		SELECT COALESCE(sum((stats ->> 'moves')::int), 0)::int, COALESCE(sum((stats ->> 'moves_kept')::int), 0)::int
+		FROM catalog_norm_runs WHERE applied AND status <> 'rolled_back'`).Scan(&t.Moves, &t.MovesKept); err != nil {
+		return st, err
+	}
+	err = s.pool.QueryRow(ctx, `
+		SELECT count(*)::int, COALESCE(sum(cost) FILTER (WHERE currency = 'USD'), 0)::float8, COALESCE(sum(cost_uzs), 0)::float8
+		FROM ai_usage WHERE kind = 'catalog_norm'`).Scan(&t.AIRequests, &t.AICostUSD, &t.AICostUZS)
 	return st, err
+}
+
+// Section — раздел каталога для ручного запуска: сколько товаров пройдут.
+type Section struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Products int    `json:"products"`
+}
+
+// Sections — разделы (корневые категории), где есть товары для автонормализации.
+func (s *Service) Sections(ctx context.Context) ([]Section, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT r.id::text, loc(r.name, r.name_uz), count(p.id)::int
+		FROM categories r
+		JOIN categories c ON c.id = r.id OR c.parent_id = r.id
+		JOIN products p ON p.category_id = c.id AND `+scopeWhere+`
+		WHERE r.parent_id IS NULL AND r.is_active
+		GROUP BY r.id, r.name, r.name_uz, r.sort
+		ORDER BY r.sort, r.name`)
+	if err != nil {
+		return nil, err
+	}
+	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Section, error) {
+		var x Section
+		return x, r.Scan(&x.ID, &x.Name, &x.Products)
+	})
+	if out == nil {
+		out = []Section{}
+	}
+	return out, err
 }
 
 func (s *Service) SaveSettings(ctx context.Context, in SettingsInput) (Settings, error) {
@@ -172,14 +253,17 @@ type RunList struct {
 
 // Runs — прогоны, новые сверху. Пустые автоматические (ничего не изменили)
 // не показываются.
-func (s *Service) Runs(ctx context.Context, page httpx.Page) (RunList, error) {
-	const where = ` WHERE NOT (r.trigger = 'auto' AND r.status = 'done' AND COALESCE((r.stats ->> 'processed')::int, 0) = 0
+func (s *Service) Runs(ctx context.Context, trigger string, page httpx.Page) (RunList, error) {
+	if trigger != "" && trigger != "manual" && trigger != "auto" {
+		return RunList{}, apperr.Validation("trigger: manual или auto").Uz("trigger: manual yoki auto")
+	}
+	where := ` WHERE ($3 = '' OR r.trigger = $3) AND NOT (r.trigger = 'auto' AND r.status = 'done' AND COALESCE((r.stats ->> 'processed')::int, 0) = 0
 		AND COALESCE((r.stats ->> 'suggestions_approved')::int, 0) + COALESCE((r.stats ->> 'suggestions_rejected')::int, 0) = 0)`
 	var out RunList
-	if err := s.pool.QueryRow(ctx, `SELECT count(*)::int FROM catalog_norm_runs r`+where).Scan(&out.Total); err != nil {
+	if err := s.pool.QueryRow(ctx, `SELECT count(*)::int FROM catalog_norm_runs r`+strings.ReplaceAll(where, "$3", "$1"), trigger).Scan(&out.Total); err != nil {
 		return out, err
 	}
-	rows, err := s.pool.Query(ctx, runSelect+where+` ORDER BY r.started_at DESC LIMIT $1 OFFSET $2`, page.Limit, page.Offset)
+	rows, err := s.pool.Query(ctx, runSelect+where+` ORDER BY r.started_at DESC LIMIT $1 OFFSET $2`, page.Limit, page.Offset, trigger)
 	if err != nil {
 		return out, err
 	}

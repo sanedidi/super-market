@@ -307,7 +307,8 @@ func TestCatalogNorm(t *testing.T) {
 	a.expect(a.do("POST", "/store/products/"+berry+"/suggestion", ownerTok, map[string]any{"store_id": storeID,
 		"name": "Мороженое пломбир, 80 г"}), 201, "suggest bad")
 	set := a.expect(a.do("GET", "/admin/catalog-norm/settings", adminTok, nil), 200, "settings")
-	if set.Body["pending"] != float64(1) || set.Body["suggestions"] != float64(2) {
+	tot, _ := set.Body["totals"].(map[string]any)
+	if set.Body["pending"] != float64(1) || set.Body["suggestions"] != float64(2) || tot["groups"] != float64(1) || tot["names"] == float64(0) || tot["ai_requests"] == float64(0) {
 		t.Fatalf("pending = %v", set.Body)
 	}
 	if err := app.CatalogNorm.AutoOnce(ctx); err != nil {
@@ -323,6 +324,13 @@ func TestCatalogNorm(t *testing.T) {
 	var left int
 	if err := pool.QueryRow(ctx, `SELECT count(*)::int FROM product_suggestions WHERE status = 'pending'`).Scan(&left); err != nil || left != 0 {
 		t.Fatalf("pending suggestions = %d %v", left, err)
+	}
+	secs := a.expect(a.do("GET", "/admin/catalog-norm/sections", adminTok, nil), 200, "sections").items()
+	if len(secs) < 3 {
+		t.Fatalf("sections = %v", secs)
+	}
+	if auto := a.expect(a.do("GET", "/admin/catalog-norm/runs?trigger=auto", adminTok, nil), 200, "auto runs").items(); len(auto) != 1 {
+		t.Fatalf("auto runs = %v", auto)
 	}
 	runs := a.expect(a.do("GET", "/admin/catalog-norm/runs", adminTok, nil), 200, "runs").items()
 	if len(runs) != 3 || runs[0]["trigger"] != "auto" {

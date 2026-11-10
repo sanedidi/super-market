@@ -70,7 +70,7 @@ interface Group {
   category_id: string | null
   category_name: string | null
   status: Status
-  source: 'ai' | 'manual'
+  source: 'ai' | 'manual' | 'auto'
   confidence: 'high' | 'check'
   note: string
   decided_at: string | null
@@ -400,6 +400,7 @@ function ConfidenceChip({ g }: { g: Group }) {
     )
   }
   if (g.source === 'manual') return <span style={{ ...base, background: '#f2f4f7', color: '#475467' }}>Собрана вручную</span>
+  if (g.source === 'auto') return <span style={{ ...base, background: '#ecfdf3', color: '#067647' }}><SafetyCertificateFilled /> Собрана автонормализацией</span>
   return (
     <span style={{ ...base, background: '#ecfdf3', color: '#067647' }}>
       <SafetyCertificateFilled /> Уверенность высокая

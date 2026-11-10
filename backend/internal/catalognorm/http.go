@@ -25,6 +25,7 @@ func (m *Module) Routes(r chi.Router) {
 		r.Use(m.auth.Require(identity.AppAdmin))
 		r.Get("/admin/catalog-norm/settings", m.settings)
 		r.Put("/admin/catalog-norm/settings", m.saveSettings)
+		r.Get("/admin/catalog-norm/sections", m.sections)
 		r.Get("/admin/catalog-norm/runs", m.runs)
 		r.Post("/admin/catalog-norm/runs", m.start)
 		r.Get("/admin/catalog-norm/runs/{id}", m.run)
@@ -45,7 +46,16 @@ func (m *Module) saveSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) runs(w http.ResponseWriter, r *http.Request) {
-	httpx.Respond(w, r, m.log, http.StatusOK, func() (RunList, error) { return m.svc.Runs(r.Context(), httpx.PageFrom(r)) })
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (RunList, error) {
+		return m.svc.Runs(r.Context(), r.URL.Query().Get("trigger"), httpx.PageFrom(r))
+	})
+}
+
+func (m *Module) sections(w http.ResponseWriter, r *http.Request) {
+	httpx.Respond(w, r, m.log, http.StatusOK, func() (map[string][]Section, error) {
+		s, err := m.svc.Sections(r.Context())
+		return map[string][]Section{"items": s}, err
+	})
 }
 
 func (m *Module) start(w http.ResponseWriter, r *http.Request) {
