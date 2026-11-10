@@ -605,7 +605,7 @@ func (s *PhotoService) storePhoto(ctx context.Context, r photoRow, j storeJob) (
 		prompt += fmt.Sprintf("\nThese %d photos show the same product from different sides (for example the front and the label). Use them together and return ONE photo of the front side of the product.", len(images))
 	}
 	actx, cancel := context.WithTimeout(ctx, photoTimeout)
-	img, u, err := c.GenerateImage(actx, ImageAsk{Prompt: prompt, Images: images, Aspect: "1:1", Size: size, Search: o.WebSearch && product != ""})
+	img, u, err := c.GenerateImage(actx, ImageAsk{Prompt: prompt, Images: images, Aspect: "1:1", Size: size, Search: o.WebSearch && product != "", Quality: o.Quality})
 	cancel()
 	if u.Input+u.Output > 0 || err == nil {
 		cost := ImageCostUSD(c.Model, u, err == nil)

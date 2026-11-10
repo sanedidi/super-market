@@ -542,7 +542,7 @@ func (s *PhotoService) webFinal(ctx context.Context, c Conn, o photoOpts, w webR
 		prompt += "\nThe photo was found on the internet: remove any text overlays, watermarks, price tags, other products and the background; keep only the product itself."
 	}
 	actx, cancel := context.WithTimeout(ctx, photoTimeout)
-	img, u, err := c.GenerateImage(actx, ImageAsk{Prompt: prompt, Images: []Image{in}, Aspect: "1:1", Size: size, Search: o.WebSearch && p.Name != ""})
+	img, u, err := c.GenerateImage(actx, ImageAsk{Prompt: prompt, Images: []Image{in}, Aspect: "1:1", Size: size, Search: o.WebSearch && p.Name != "", Quality: o.Quality})
 	cancel()
 	if u.Input+u.Output > 0 || err == nil {
 		record("photo_web", c.Provider, c.Model, u, err == nil, ImageCostUSD(c.Model, u, err == nil))
@@ -690,9 +690,19 @@ func (s *PhotoService) webCheckConn(ctx context.Context, c Conn, w webRow) Conn 
 		return tc
 	}
 	m := ""
-	if c.Provider == ProviderVertex {
+	switch c.Provider {
+	case ProviderVertex:
 		m = "gemini-2.5-flash"
-	} else {
+	case ProviderOpenAI:
+		ids, err := c.openaiModelIDs(ctx)
+		if err != nil {
+			s.log.Warn("фото из сети: список моделей", "err", err)
+		}
+		m = pickOpenAICheckModel(ids)
+		if m == "" {
+			m = "gpt-4o-mini"
+		}
+	default:
 		ids, err := c.geminiModelIDs(ctx)
 		if err != nil {
 			s.log.Warn("фото из сети: список моделей", "err", err)
@@ -772,6 +782,10 @@ var textPrices = []struct {
 	match   string
 	in, out float64
 }{
+	// OpenAI (проверка фото при способе openai).
+	{"gpt-4o-mini", 0.15, 0.6},
+	{"nano", 0.05, 0.4},
+	{"-mini", 0.25, 2},
 	{"2.5-flash-lite", 0.1, 0.4},
 	{"2.5-flash", 0.3, 2.5},
 	{"flash", 0.5, 3},

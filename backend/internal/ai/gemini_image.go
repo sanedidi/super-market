@@ -1,6 +1,7 @@
 package ai
 
 // Картинки от Gemini («ИИ для фото», photo.go): generateContent с ответом IMAGE.
+// OpenAI (GPT Image) — openai_image.go.
 //
 //	Gemini API: POST {base}/models/{model}:generateContent — ключ Google AI Studio в x-goog-api-key,
 //	            base — https://generativelanguage.googleapis.com/v1beta
@@ -53,6 +54,9 @@ const imageTokensGuess = 1120
 
 // ImageCostUSD — цена запроса по прайсу картинок Google.
 func ImageCostUSD(model string, u Usage, ok bool) float64 {
+	if isOpenAIImageModel(model) {
+		return openaiImageCostUSD(model, u, ok)
+	}
 	m := strings.ToLower(model)
 	in, out := 0.5, 60.0 // незнакомая модель — как 3.1 Flash Image
 	for _, p := range imagePrices {
@@ -68,10 +72,10 @@ func ImageCostUSD(model string, u Usage, ok bool) float64 {
 	return (float64(max(u.Input, 0))*in + float64(max(o, 0))*out) / 1e6
 }
 
-// IsImageModel — по названию: модель Gemini, которая возвращает картинку.
+// IsImageModel — по названию: модель Gemini или OpenAI, которая возвращает картинку.
 func IsImageModel(id string) bool {
 	s := strings.ToLower(id)
-	return strings.Contains(s, "gemini") && (strings.Contains(s, "image") || strings.Contains(s, "nano-banana"))
+	return isOpenAIImageModel(id) || strings.Contains(s, "gemini") && (strings.Contains(s, "image") || strings.Contains(s, "nano-banana"))
 }
 
 // imageSearchOK — умеет ли модель искать в Google (у Lite и 2.5 Flash Image поиска нет).
@@ -87,10 +91,15 @@ type ImageAsk struct {
 	Aspect string // "1:1"
 	Size   string // "" — по умолчанию (1K), "2K"
 	Search bool
+	// Quality — только OpenAI: low | medium | high (пусто — medium).
+	Quality string
 }
 
 // ImageModels — модели ключа, которые рисуют картинки.
 func (c Conn) ImageModels(ctx context.Context) ([]Model, error) {
+	if c.Provider == ProviderOpenAI {
+		return c.openaiImageModels(ctx)
+	}
 	if c.Provider == ProviderVertex {
 		if isJSONKey(c.Key) {
 			if _, err := googleToken(ctx, c.Key); err != nil {
@@ -143,6 +152,9 @@ func (c Conn) ImageModels(ctx context.Context) ([]Model, error) {
 func (c Conn) GenerateImage(ctx context.Context, ask ImageAsk) (Image, Usage, error) {
 	if c.Model == "" {
 		return Image{}, Usage{}, &ErrService{Msg: "не выбрана модель", MsgUz: "model tanlanmagan"}
+	}
+	if c.Provider == ProviderOpenAI {
+		return c.openaiGenerateImage(ctx, ask)
 	}
 	search := ask.Search && imageSearchOK(c.Model)
 	img, u, err := c.generateImage(ctx, ask, search)

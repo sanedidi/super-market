@@ -68,16 +68,18 @@ const frontSideRule = `Front side: the catalog photo must show the front of the 
 
 // PhotoSettings — для супер-админа; ключ не отдаётся.
 type PhotoSettings struct {
-	Mode          string     `json:"mode"` // gemini | vertex
-	BaseURL       string     `json:"base_url"`
-	Model         string     `json:"model"`
-	HasKey        bool       `json:"has_key"`
-	KeyLast4      string     `json:"key_last4"`
-	Configured    bool       `json:"configured"`
-	Background    string     `json:"background"` // white | light | transparent
-	Size          int        `json:"size"`       // 1000 | 1500 | 2000
-	Outpaint      bool       `json:"outpaint"`
-	WebSearch     bool       `json:"web_search"`
+	Mode       string `json:"mode"` // gemini | vertex | openai
+	BaseURL    string `json:"base_url"`
+	Model      string `json:"model"`
+	HasKey     bool   `json:"has_key"`
+	KeyLast4   string `json:"key_last4"`
+	Configured bool   `json:"configured"`
+	Background string `json:"background"` // white | light | transparent
+	Size       int    `json:"size"`       // 1000 | 1500 | 2000
+	Outpaint   bool   `json:"outpaint"`
+	WebSearch  bool   `json:"web_search"`
+	// Quality — качество картинки OpenAI: low | medium | high (у Gemini не используется).
+	Quality       string     `json:"quality"`
 	BeforeAfter   bool       `json:"before_after"`
 	Prompt        string     `json:"prompt"` // своя инструкция; пусто — стандартная
 	DefaultPrompt string     `json:"default_prompt"`
@@ -149,10 +151,10 @@ func (s *PhotoService) loadQ(ctx context.Context, q db.Querier) (photoRow, error
 	var r photoRow
 	err := q.QueryRow(ctx, `
 		SELECT mode, base_url, model, api_key_enc, key_last4, background, size, outpaint, web_search, before_after, prompt,
-		       checked_at, check_ok, check_message, updated_at, store_enabled, store_new_items, store_lines, store_model
+		       checked_at, check_ok, check_message, updated_at, store_enabled, store_new_items, store_lines, store_model, quality
 		FROM ai_photo_settings`).Scan(&r.Mode, &r.BaseURL, &r.Model, &r.keyEnc, &r.KeyLast4, &r.Background, &r.Size,
 		&r.Outpaint, &r.WebSearch, &r.BeforeAfter, &r.Prompt, &r.CheckedAt, &r.CheckOK, &r.CheckMessage, &r.UpdatedAt,
-		&r.StoreEnabled, &r.StoreNewItems, &r.StoreLines, &r.StoreModel)
+		&r.StoreEnabled, &r.StoreNewItems, &r.StoreLines, &r.StoreModel, &r.Quality)
 	r.HasKey = len(r.keyEnc) > 0
 	r.Configured = r.HasKey && r.Model != "" && r.BaseURL != ""
 	r.DefaultPrompt = DefaultPhotoPrompt
@@ -182,10 +184,13 @@ func (s *PhotoService) Get(ctx context.Context) (PhotoSettings, error) {
 	return r.PhotoSettings, err
 }
 
-// photoProvider — подключение Gemini по способу.
+// photoProvider — подключение по способу: Gemini API, Vertex AI или OpenAI.
 func photoProvider(mode string) string {
-	if mode == "vertex" {
+	switch mode {
+	case "vertex":
 		return ProviderVertex
+	case "openai":
+		return ProviderOpenAI
 	}
 	return ProviderGemini
 }
@@ -209,6 +214,7 @@ type PhotoInput struct {
 	WebSearch   *bool   `json:"web_search"`
 	BeforeAfter *bool   `json:"before_after"`
 	Prompt      *string `json:"prompt"`
+	Quality     *string `json:"quality"`
 	// Только проверка: своё фото (ссылка из хранилища); пусто — стандартное.
 	Image string `json:"image"`
 }
@@ -220,6 +226,7 @@ type photoOpts struct {
 	Outpaint   bool
 	WebSearch  bool
 	Prompt     string
+	Quality    string
 }
 
 // conn — подключение из ввода; недостающее — из сохранённого. Ключ берётся
@@ -233,14 +240,16 @@ func (s *PhotoService) conn(ctx context.Context, in PhotoInput) (Conn, photoOpts
 	if mode == "" {
 		mode = r.Mode
 	}
-	if mode != "gemini" && mode != "vertex" {
-		return Conn{}, photoOpts{}, r, apperr.Validation("mode: gemini или vertex").Uz("mode: gemini yoki vertex")
+	if mode != "gemini" && mode != "vertex" && mode != "openai" {
+		return Conn{}, photoOpts{}, r, apperr.Validation("mode: gemini, vertex или openai").Uz("mode: gemini, vertex yoki openai")
 	}
 	c := Conn{Provider: photoProvider(mode), BaseURL: strings.TrimSpace(in.BaseURL), Key: strings.TrimSpace(in.APIKey), Model: strings.TrimSpace(in.Model)}
 	if c.BaseURL == "" {
 		switch {
 		case mode == r.Mode:
 			c.BaseURL = r.BaseURL
+		case mode == "openai":
+			c.BaseURL = DefaultOpenAIURL
 		case mode == "vertex":
 			if p := vertexProject(c.Key); p != "" {
 				c.BaseURL = VertexURL(p, "global")
@@ -252,14 +261,19 @@ func (s *PhotoService) conn(ctx context.Context, in PhotoInput) (Conn, photoOpts
 		}
 	}
 	if c.BaseURL, err = checkURL(c.BaseURL); err != nil {
-		return c, photoOpts{}, r, apperr.Validation("base_url: адрес вида " + DefaultGeminiURL).Uz("base_url: " + DefaultGeminiURL + " koʻrinishidagi manzil")
+		example := DefaultGeminiURL
+		if mode == "openai" {
+			example = DefaultOpenAIURL
+		}
+		return c, photoOpts{}, r, apperr.Validation("base_url: адрес вида " + example).Uz("base_url: " + example + " koʻrinishidagi manzil")
 	}
 	if c.Key == "" {
 		same := c.BaseURL == r.BaseURL ||
 			(mode == "vertex" && isGoogleVertexURL(c.BaseURL) && isGoogleVertexURL(r.BaseURL)) ||
 			(mode == "gemini" && isGoogleGeminiURL(c.BaseURL) && isGoogleGeminiURL(r.BaseURL))
 		if !r.HasKey || mode != r.Mode || !same {
-			return c, photoOpts{}, r, apperr.Validation("api_key: вставьте ключ Gemini").Uz("api_key: Gemini kalitini qoʻying")
+			name := ServiceName(c.Provider)
+			return c, photoOpts{}, r, apperr.Validation("api_key: вставьте ключ " + name).Uz("api_key: " + name + " kalitini qoʻying")
 		}
 		if c.Key, err = s.ai.open(r.keyEnc); err != nil {
 			msg := keyErrText(err)
@@ -275,6 +289,9 @@ func (s *PhotoService) conn(ctx context.Context, in PhotoInput) (Conn, photoOpts
 			msg := keyErrText(err)
 			return c, photoOpts{}, r, apperr.Validation("api_key: " + msg.RU).Uz("api_key: " + msg.UZ)
 		}
+	case mode == "openai" && isJSONKey(c.Key):
+		return c, photoOpts{}, r, apperr.Validation("api_key: это JSON-ключ Google — для OpenAI нужен ключ sk-… из platform.openai.com").
+			Uz("api_key: bu Google JSON kaliti — OpenAI uchun platform.openai.com dan sk-… kalit kerak")
 	case mode == "gemini" && isJSONKey(c.Key):
 		return c, photoOpts{}, r, apperr.Validation("api_key: JSON-ключ сервисного аккаунта — это способ «Vertex AI»; для Gemini API нужен ключ из Google AI Studio").
 			Uz("api_key: servis akkaunti JSON kaliti — bu «Vertex AI» usuli; Gemini API uchun Google AI Studio kaliti kerak")
@@ -287,7 +304,10 @@ func (s *PhotoService) conn(ctx context.Context, in PhotoInput) (Conn, photoOpts
 	if len(c.Model) > 200 {
 		return c, photoOpts{}, r, apperr.Validation("model: слишком длинное название").Uz("model: nomi juda uzun")
 	}
-	o := photoOpts{Background: r.Background, Size: r.Size, Outpaint: r.Outpaint, WebSearch: r.WebSearch, Prompt: r.Prompt}
+	o := photoOpts{Background: r.Background, Size: r.Size, Outpaint: r.Outpaint, WebSearch: r.WebSearch, Prompt: r.Prompt, Quality: r.Quality}
+	if in.Quality != nil {
+		o.Quality = strings.TrimSpace(*in.Quality)
+	}
 	if in.Background != nil {
 		o.Background = *in.Background
 	}
@@ -306,10 +326,16 @@ func (s *PhotoService) conn(ctx context.Context, in PhotoInput) (Conn, photoOpts
 	switch {
 	case o.Background != "white" && o.Background != "light" && o.Background != "transparent":
 		return c, o, r, apperr.Validation("background: white, light или transparent").Uz("background: white, light yoki transparent")
+	case o.Quality != QualityLow && o.Quality != QualityMedium && o.Quality != QualityHigh:
+		return c, o, r, apperr.Validation("quality: low, medium или high").Uz("quality: low, medium yoki high")
 	case o.Size != 1000 && o.Size != 1500 && o.Size != 2000:
 		return c, o, r, apperr.Validation("size: 1000, 1500 или 2000").Uz("size: 1000, 1500 yoki 2000")
 	case len([]rune(o.Prompt)) > maxPhotoPrompt:
 		return c, o, r, apperr.Validation(fmt.Sprintf("prompt: не больше %d символов", maxPhotoPrompt)).Uz(fmt.Sprintf("prompt: %d belgidan oshmasin", maxPhotoPrompt))
+	}
+	// У OpenAI поиска при рисовании нет.
+	if mode == "openai" {
+		o.WebSearch = false
 	}
 	// Стандартная инструкция, присланная как есть, — это «стандартная».
 	if o.Prompt == strings.TrimSpace(DefaultPhotoPrompt) {
@@ -338,13 +364,13 @@ func (s *PhotoService) Save(ctx context.Context, adminID string, in PhotoInput) 
 	changed := mode != r.Mode || c.BaseURL != r.BaseURL || c.Model != r.Model || strings.TrimSpace(in.APIKey) != ""
 	_, err = s.ai.pool.Exec(ctx, `
 		UPDATE ai_photo_settings SET mode = $1, base_url = $2, model = $3, api_key_enc = $4, key_last4 = $5,
-		       background = $6, size = $7, outpaint = $8, web_search = $9, before_after = $10, prompt = $11,
+		       background = $6, size = $7, outpaint = $8, web_search = $9, before_after = $10, prompt = $11, quality = $14,
 		       checked_at = CASE WHEN $12 THEN NULL ELSE checked_at END,
 		       check_ok = CASE WHEN $12 THEN NULL ELSE check_ok END,
 		       check_message = CASE WHEN $12 THEN '' ELSE check_message END,
 		       updated_by = $13, updated_at = now()`,
 		mode, c.BaseURL, c.Model, s.ai.seal(c.Key), keyHint(c.Key), o.Background, o.Size, o.Outpaint, o.WebSearch, beforeAfter, o.Prompt,
-		changed, adminID)
+		changed, adminID, o.Quality)
 	if err != nil {
 		return PhotoSettings{}, err
 	}
@@ -503,8 +529,9 @@ func (s *PhotoService) run(ctx context.Context, j *photoJob, t photoTask) {
 		it := j.job.Items[0]
 		j.job.OK = it.Error == ""
 		if j.job.OK {
-			j.job.Message = i18n.Pick(t.lang, fmt.Sprintf("Gemini работает: фото готово за %.1f с", float64(it.Ms)/1000),
-				fmt.Sprintf("Gemini ishlayapti: rasm %.1f soniyada tayyor", float64(it.Ms)/1000))
+			name := ServiceName(t.conn.Provider)
+			j.job.Message = i18n.Pick(t.lang, fmt.Sprintf("%s работает: фото готово за %.1f с", name, float64(it.Ms)/1000),
+				fmt.Sprintf("%s ishlayapti: rasm %.1f soniyada tayyor", name, float64(it.Ms)/1000))
 		} else {
 			j.job.Message = it.Error
 		}
@@ -563,7 +590,8 @@ func (s *PhotoService) one(ctx context.Context, t photoTask, i int) (string, flo
 		size = "2K"
 	}
 	actx, cancel := context.WithTimeout(ctx, photoTimeout)
-	img, u, err := t.conn.GenerateImage(actx, ImageAsk{Prompt: photoPrompt(t.opts, t.product), Images: []Image{in}, Aspect: "1:1", Size: size, Search: t.opts.WebSearch && t.product != ""})
+	img, u, err := t.conn.GenerateImage(actx, ImageAsk{Prompt: photoPrompt(t.opts, t.product), Images: []Image{in}, Aspect: "1:1", Size: size, Search: t.opts.WebSearch && t.product != "",
+		Quality: t.opts.Quality})
 	cancel()
 	cost := 0.0
 	if u.Input+u.Output > 0 || err == nil {
@@ -582,7 +610,7 @@ func (s *PhotoService) one(ctx context.Context, t photoTask, i int) (string, flo
 	}
 	out, outMime, err := render(img.Data, t.opts)
 	if err != nil {
-		return "", cost, &ErrService{Msg: err.Error(), MsgUz: "Gemini yuborgan rasmni oʻqib boʻlmadi"}
+		return "", cost, &ErrService{Msg: err.Error(), MsgUz: ServiceName(t.conn.Provider) + " yuborgan rasmni oʻqib boʻlmadi"}
 	}
 	if t.test {
 		return "data:" + outMime + ";base64," + base64.StdEncoding.EncodeToString(out), cost, nil

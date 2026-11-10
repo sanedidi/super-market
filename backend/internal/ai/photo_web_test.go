@@ -31,3 +31,15 @@ func TestWebQueryAndCost(t *testing.T) {
 		t.Fatalf("cost = %v", c)
 	}
 }
+
+func TestPickOpenAICheckModel(t *testing.T) {
+	if got := pickOpenAICheckModel([]string{"gpt-image-2", "gpt-4o-mini", "gpt-5-mini", "gpt-5", "gpt-4.1-mini", "gpt-5-mini-2025-08-07"}); got != "gpt-5-mini" {
+		t.Errorf("pick = %q", got)
+	}
+	if got := pickOpenAICheckModel([]string{"gpt-image-2"}); got != "" {
+		t.Errorf("no mini = %q", got)
+	}
+	if !IsImageModel("gpt-image-2") || IsImageModel("gpt-5-mini") {
+		t.Error("IsImageModel")
+	}
+}

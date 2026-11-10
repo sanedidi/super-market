@@ -1,6 +1,7 @@
-// «ИИ для фото» (Figma «Супер-админ · ИИ для фото товаров», Ф1–Ф2): своё
-// подключение к Google Gemini — отдельно от «ИИ-сервиса» накладных. Gemini
-// генерирует и редактирует фото товаров («Нормализовать фото» на странице товара).
+// «ИИ для фото» (Figma «Супер-админ · ИИ для фото товаров», Ф1–Ф3): своё
+// подключение к Google Gemini (Gemini API или Vertex AI) или OpenAI (GPT Image) —
+// отдельно от «ИИ-сервиса» накладных. ИИ генерирует и редактирует фото товаров
+// («Нормализовать фото» на странице товара).
 // Ключ хранится на сервере зашифрованным и обратно не показывается.
 import { useEffect, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -28,7 +29,8 @@ import { usePhotoJob, usd } from '../photoJob'
 import { REASONS, type StoreSummary } from './StorePhotos'
 import { PhotoTabs } from './WebPhotos'
 
-type Mode = 'gemini' | 'vertex'
+type Mode = 'gemini' | 'vertex' | 'openai'
+type Quality = 'low' | 'medium' | 'high'
 type Background = 'white' | 'light' | 'transparent'
 
 interface PhotoSettings {
@@ -42,6 +44,7 @@ interface PhotoSettings {
   size: 1000 | 1500 | 2000
   outpaint: boolean
   web_search: boolean
+  quality: Quality
   before_after: boolean
   prompt: string
   default_prompt: string
@@ -75,12 +78,22 @@ interface Model {
 
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta'
 const VERTEX_URL = 'https://aiplatform.googleapis.com/v1'
-const DEFAULT_URL: Record<Mode, string> = { gemini: GEMINI_URL, vertex: VERTEX_URL }
+const OPENAI_URL = 'https://api.openai.com/v1'
+const DEFAULT_URL: Record<Mode, string> = { gemini: GEMINI_URL, vertex: VERTEX_URL, openai: OPENAI_URL }
+
+/** Как называть сервис фото: «Gemini» или «OpenAI». */
+const svc = (m: Mode | undefined) => (m === 'openai' ? 'OpenAI' : 'Gemini')
 
 // Цена одного фото 1K по прайсу Google (Standard), для карточки «Цена за фото».
 const PRICES: [string, number][] = [
   ['gemini-3-pro-image', 0.134],
   ['gemini-nano-banana-2.1', 0.034],
+]
+// OpenAI — квадрат 1024 px по качеству (точный расход — по токенам из ответа).
+const OPENAI_PRICES: [string, number][] = [
+  ['gpt-image-2 · низкое', 0.006],
+  ['gpt-image-2 · среднее', 0.05],
+  ['gpt-image-2 · высокое', 0.21],
 ]
 
 const isGoogleGeminiURL = (url: string) => {
@@ -163,11 +176,11 @@ function BeforeAfter({ before, after, busy }: { before?: string; after?: string;
           />
         ) : (
           <Flex align="center" justify="center" style={{ ...tile, background: '#fff', border: '1px dashed #D0D5DD', color: '#98A2B3' }}>
-            {busy ? <LoadingOutlined style={{ fontSize: 28 }} /> : 'Фото от Gemini'}
+            {busy ? <LoadingOutlined style={{ fontSize: 28 }} /> : 'Фото от ИИ'}
           </Flex>
         )}
         <Typography.Text strong style={{ fontSize: 12 }}>
-          После Gemini
+          После ИИ
         </Typography.Text>
       </Flex>
     </Flex>
@@ -300,7 +313,7 @@ function StorePhotosCard({ s, models, onSaved }: { s: PhotoSettings; models: Mod
           </div>
           <Switch checked={enabled} onChange={setEnabled} />
         </Flex>
-        {!s.configured && <Alert type="warning" showIcon message="Сначала подключите Gemini выше — без него фото магазинам не делаются." />}
+        {!s.configured && <Alert type="warning" showIcon message="Сначала подключите ИИ для фото выше — без него фото магазинам не делаются." />}
 
         <Space direction="vertical" size={10}>
           <Typography.Text strong>Когда запускать</Typography.Text>
@@ -429,10 +442,10 @@ function WebPhotosCard({ s, onSaved }: { s: PhotoSettings; onSaved: () => void }
             Открыть «Фото из сети» →
           </Link>
         </Flex>
-        {!s.configured && <Alert style={{ marginBottom: 12 }} type="warning" showIcon message="Сначала подключите Gemini выше — без него фото каталога не проверяются." />}
+        {!s.configured && <Alert style={{ marginBottom: 12 }} type="warning" showIcon message="Сначала подключите ИИ для фото выше — без него фото каталога не проверяются." />}
         <SettingRow
           title="Проверять фото каталога"
-          text="Gemini проверяет, тот ли товар на фото и лицевая ли сторона. Новые товары из каталога ИКПУ — сразу при импорте, вся база — один раз в фоне. В лимит фото магазинов не входит."
+          text="ИИ проверяет, тот ли товар на фото и лицевая ли сторона. Новые товары из каталога ИКПУ — сразу при импорте, вся база — один раз в фоне. В лимит фото магазинов не входит."
         >
           <Switch checked={check} onChange={setCheck} />
         </SettingRow>
@@ -472,11 +485,11 @@ function WebPhotosCard({ s, onSaved }: { s: PhotoSettings; onSaved: () => void }
         </SettingRow>
         <SettingRow
           title="Ставить найденное фото сразу"
-          text="Если Gemini подтвердил название, бренд и штрихкод. Выключите — найденные фото будут ждать вашего решения в «Фото из сети»."
+          text="Если ИИ подтвердил название, бренд и штрихкод. Выключите — найденные фото будут ждать вашего решения в «Фото из сети»."
         >
           <Switch checked={auto} onChange={setAuto} />
         </SettingRow>
-        <SettingRow title="Лимит расходов" text="Поиск + Gemini для фото из сети. Дошли до лимита — проверка встаёт на паузу до следующего месяца.">
+        <SettingRow title="Лимит расходов" text="Поиск + ИИ для фото из сети. Дошли до лимита — проверка встаёт на паузу до следующего месяца.">
           <InputNumber style={{ width: 160 }} min={0} max={100000} value={limit} onChange={(v) => setLimit(v === null ? null : Number(v))} addonAfter="$ в месяц" />
         </SettingRow>
         <Flex justify="flex-end" style={{ borderTop: '1px solid #EAECF0', paddingTop: 16 }}>
@@ -504,6 +517,7 @@ function PhotoConnection() {
   const [size, setSize] = useState<1000 | 1500 | 2000>(1000)
   const [outpaint, setOutpaint] = useState(true)
   const [webSearch, setWebSearch] = useState(true)
+  const [quality, setQuality] = useState<Quality>('medium')
   const [beforeAfter, setBeforeAfter] = useState(true)
   const [prompt, setPrompt] = useState('')
   const [promptDraft, setPromptDraft] = useState<string | null>(null)
@@ -523,6 +537,7 @@ function PhotoConnection() {
     setSize(s.size)
     setOutpaint(s.outpaint)
     setWebSearch(s.web_search)
+    setQuality(s.quality ?? 'medium')
     setBeforeAfter(s.before_after)
     setPrompt(s.prompt)
     setKey('')
@@ -538,7 +553,8 @@ function PhotoConnection() {
       (mode === 'gemini' && isGoogleGeminiURL(s.base_url) && isGoogleGeminiURL(cleanURL)))
   const showSavedKey = savedKeyUsable && !replacing
   const conn = () => ({ mode, base_url: baseURL.trim(), api_key: showSavedKey ? '' : key.trim(), model: model.trim() })
-  const body = () => ({ ...conn(), background, size, outpaint, web_search: webSearch, before_after: beforeAfter, prompt })
+  const openai = mode === 'openai'
+  const body = () => ({ ...conn(), background, size, outpaint, web_search: openai ? false : webSearch, quality, before_after: beforeAfter, prompt })
   const connDirty = !!s && (s.mode !== mode || s.base_url !== cleanURL || s.model !== model.trim() || !showSavedKey)
   const dirty =
     !!s &&
@@ -546,7 +562,8 @@ function PhotoConnection() {
       s.background !== background ||
       s.size !== size ||
       s.outpaint !== outpaint ||
-      s.web_search !== webSearch ||
+      (!openai && s.web_search !== webSearch) ||
+      s.quality !== quality ||
       s.before_after !== beforeAfter ||
       s.prompt !== prompt)
 
@@ -592,7 +609,7 @@ function PhotoConnection() {
   const save = () =>
     run('save', async () => {
       await api.put<PhotoSettings>('/admin/ai-photo', body())
-      message.success(s?.configured ? 'Сохранено' : 'Gemini подключён')
+      message.success(s?.configured && s.mode === mode ? 'Сохранено' : `${svc(mode)} подключён`)
       test.reset()
       await refetch()
     })
@@ -637,35 +654,43 @@ function PhotoConnection() {
                 <GeminiLogo />
                 <div style={{ flex: 1 }}>
                   <Typography.Text strong style={{ fontSize: 17 }}>
-                    Google Gemini
+                    Google Gemini или OpenAI
                   </Typography.Text>
                   <div>
                     <Typography.Text style={{ fontSize: 13, color: '#344054' }}>
-                      Генерирует и редактирует фото товаров: убирает фон, выравнивает, дорисовывает то, что не попало в кадр
+                      Генерирует и редактирует фото товаров: убирает фон, выравнивает, дорисовывает то, что не попало в кадр. Сервис — на выбор
                     </Typography.Text>
                   </div>
                 </div>
                 <Tag color="geekblue" style={{ marginInlineEnd: 0 }}>
-                  Только Gemini
+                  Gemini · OpenAI
                 </Tag>
               </Flex>
 
-              <Step n={1} title="Как подключить Gemini">
+              <Step n={1} title="Как подключить ИИ для фото">
                 <Row gutter={[12, 12]}>
-                  <Col xs={24} md={12}>
+                  <Col xs={24} md={8}>
                     <ProviderCard
                       active={mode === 'gemini'}
                       title="Gemini API"
-                      text="Ключ из Google AI Studio — самый простой способ, хватает одного ключа"
+                      text="Ключ из Google AI Studio — самый простой способ"
                       onClick={() => switchMode('gemini')}
                     />
                   </Col>
-                  <Col xs={24} md={12}>
+                  <Col xs={24} md={8}>
                     <ProviderCard
                       active={mode === 'vertex'}
                       title="Vertex AI"
-                      text="Через Google Cloud: проект и ключ сервисного аккаунта (JSON). Тот же Gemini"
+                      text="Через Google Cloud: проект и ключ сервисного аккаунта"
                       onClick={() => switchMode('vertex')}
+                    />
+                  </Col>
+                  <Col xs={24} md={8}>
+                    <ProviderCard
+                      active={mode === 'openai'}
+                      title="OpenAI"
+                      text="Ключ OpenAI и модель GPT Image — рисует по тому же фото и тем же правилам"
+                      onClick={() => switchMode('openai')}
                     />
                   </Col>
                 </Row>
@@ -702,7 +727,7 @@ function PhotoConnection() {
                 </Step>
               )}
 
-              <Step n={mode === 'vertex' ? 3 : 2} title={mode === 'vertex' ? 'Ключ сервисного аккаунта' : 'Ключ Gemini API'}>
+              <Step n={mode === 'vertex' ? 3 : 2} title={mode === 'vertex' ? 'Ключ сервисного аккаунта' : openai ? 'Ключ OpenAI' : 'Ключ Gemini API'}>
                 {showSavedKey ? (
                   <Input
                     size="large"
@@ -738,10 +763,19 @@ function PhotoConnection() {
                     style={{ fontFamily: 'monospace', fontSize: 12 }}
                   />
                 ) : (
-                  <Input.Password size="large" prefix={<KeyOutlined />} value={key} onChange={(e) => setKey(e.target.value)} placeholder="AQ.… (или старый AIza…)" autoComplete="off" />
+                  <Input.Password
+                    size="large"
+                    prefix={<KeyOutlined />}
+                    value={key}
+                    onChange={(e) => setKey(e.target.value)}
+                    placeholder={openai ? 'sk-proj-…' : 'AQ.… (или старый AIza…)'}
+                    autoComplete="off"
+                  />
                 )}
                 <Hint>
-                  {mode === 'vertex'
+                  {openai
+                    ? 'platform.openai.com → API keys → Create new secret key. Для моделей GPT Image OpenAI может попросить подтвердить организацию: Settings → Organization → Verify.'
+                    : mode === 'vertex'
                     ? 'IAM → Сервисные аккаунты: роль «Vertex AI User», Ключи → Добавить ключ → JSON. В проекте включите Vertex AI API.'
                     : 'Google AI Studio → Get API key. Можно ключ того же Google-проекта, что и в «ИИ-сервис», — расход на фото всё равно считается отдельно.'}{' '}
                   Ключ хранится зашифрованным и обратно не показывается.
@@ -760,15 +794,24 @@ function PhotoConnection() {
                     onDropdownVisibleChange={(open) => open && setSearch('')}
                     options={options}
                     filterOption={false}
-                    placeholder="Выберите модель"
+                    placeholder={openai ? 'gpt-image-2' : 'Выберите модель'}
                   />
                   <Button size="large" icon={<ReloadOutlined />} loading={busy === 'models'} onClick={loadModels}>
                     Показать доступные
                   </Button>
                 </Flex>
                 <Hint>
+                  {openai ? (
+                    <>
+                      В списке — модели OpenAI вашего ключа, которые рисуют картинки (gpt-image-…). Фото товара уходит в OpenAI Images → edits. Проверка «Фото из
+                      сети» — самой дешёвой моделью GPT-…-mini по тому же ключу.
+                    </>
+                  ) : (
+                    <>
                   В списке — только модели Gemini, которые возвращают картинку. Pro Image точнее рисует надписи на упаковке и умеет искать товар в
                   интернете, Nano Banana и Flash Image — быстрее и дешевле.
+                    </>
+                  )}
                   {models && ` Моделей вашего ключа: ${models.length}.`}
                 </Hint>
               </Step>
@@ -796,19 +839,33 @@ function PhotoConnection() {
                       options={[1000, 1500, 2000].map((v) => ({ value: v, label: `${v} px` }))}
                     />
                   </SettingRow>
+                  <SettingRow title="Качество" text="Только OpenAI: выше — точнее надписи на упаковке, но дороже">
+                    <Segmented
+                      value={quality}
+                      disabled={!openai}
+                      onChange={(v) => setQuality(v as Quality)}
+                      options={[
+                        { value: 'low', label: 'Низкое' },
+                        { value: 'medium', label: 'Среднее' },
+                        { value: 'high', label: 'Высокое' },
+                      ]}
+                    />
+                  </SettingRow>
                   <SettingRow title="Дорисовывать то, что не попало в кадр" text="Крышку, край упаковки, обрезанную этикетку">
                     <Switch checked={outpaint} onChange={setOutpaint} />
                   </SettingRow>
+                  <div style={{ opacity: openai ? 0.45 : 1 }}>
                   <SettingRow
                     title="Искать товар в интернете"
-                    text={`По названию и штрихкоду находит упаковку и дорисовывает точно${searchModel ? '' : ' — выбранная модель поиска не умеет'}`}
+                    text={openai ? 'Только у Gemini Pro Image — у OpenAI поиска при рисовании нет' : `По названию и штрихкоду находит упаковку и дорисовывает точно${searchModel ? '' : ' — выбранная модель поиска не умеет'}`}
                   >
-                    <Switch checked={webSearch} onChange={setWebSearch} />
+                    <Switch checked={!openai && webSearch} disabled={openai} onChange={setWebSearch} />
                   </SettingRow>
-                  <SettingRow title="Показывать «до / после» перед сохранением" text="Фото от Gemini ставится, только когда его выбрали">
+                  </div>
+                  <SettingRow title="Показывать «до / после» перед сохранением" text={`Фото от ${svc(mode)} ставится, только когда его выбрали`}>
                     <Switch checked={beforeAfter} onChange={setBeforeAfter} />
                   </SettingRow>
-                  <SettingRow title="Инструкция для Gemini" text="Что делать с фото: не менять надписи и цвета упаковки, не добавлять лишнего">
+                  <SettingRow title="Инструкция для ИИ" text="Что делать с фото: не менять надписи и цвета упаковки, не добавлять лишнего">
                     <Space size={8}>
                       <Typography.Text type="secondary" style={{ fontSize: 13 }}>
                         {prompt ? 'Своя' : 'Стандартная · 12 правил'}
@@ -858,7 +915,7 @@ function PhotoConnection() {
                   Проверить на фото
                 </Button>
                 <Button size="large" type="primary" loading={busy === 'save'} onClick={save} disabled={!dirty || !model.trim() || !baseURL.trim()}>
-                  {s?.configured ? 'Сохранить' : 'Подключить Gemini'}
+                  {s?.configured && s.mode === mode ? 'Сохранить' : `Подключить ${svc(mode)}`}
                 </Button>
               </Flex>
             </Space>
@@ -875,8 +932,8 @@ function PhotoConnection() {
                   text={
                     <Typography.Text strong style={{ fontSize: 15 }}>
                       {!s?.configured
-                        ? 'Gemini не подключён'
-                        : `${s.check_ok === false ? 'Ошибка' : s.check_ok ? 'Подключено' : 'Не проверено'} · ${s.mode === 'vertex' ? 'Vertex AI' : 'Gemini API'}`}
+                        ? `${svc(mode)} не подключён`
+                        : `${s.check_ok === false ? 'Ошибка' : s.check_ok ? 'Подключено' : 'Не проверено'} · ${s.mode === 'vertex' ? 'Vertex AI' : s.mode === 'openai' ? 'OpenAI' : 'Gemini API'}`}
                     </Typography.Text>
                   }
                 />
@@ -885,7 +942,7 @@ function PhotoConnection() {
                     ? 'Пока фото товаров обрабатываются без ИИ: только уменьшаются до 1000 px и кладутся на белый фон.'
                     : tested
                       ? `Проверено ${dateTime(s.checked_at!)}: ${s.check_message}`
-                      : 'Нажмите «Проверить на фото», чтобы убедиться, что Gemini рисует фото.'}
+                      : `Нажмите «Проверить на фото», чтобы убедиться, что ${svc(s.mode)} рисует фото.`}
                 </Hint>
                 {s?.configured && (
                   <Row gutter={12}>
@@ -905,7 +962,7 @@ function PhotoConnection() {
             </Card>
             <Card title="Цена за фото">
               <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                {PRICES.map(([m, p]) => (
+                {(openai ? OPENAI_PRICES : PRICES).map(([m, p]) => (
                   <Flex key={m} justify="space-between" gap={8}>
                     <Typography.Text style={{ color: '#344054' }}>{m}</Typography.Text>
                     <Typography.Text strong>{usd(p)}</Typography.Text>
@@ -918,7 +975,7 @@ function PhotoConnection() {
                   </Flex>
                 )}
                 <Hint>
-                  По прайсу Google, фото 1K. Платите вы — по своему ключу. Подробный расход — <Link to="/ai?tab=usage">«ИИ-сервис» → Расход</Link>.
+                  {openai ? 'Квадрат 1024 px по прайсу OpenAI; точный расход считаем по токенам из ответа.' : 'По прайсу Google, фото 1K.'} Платите вы — по своему ключу. Подробный расход — <Link to="/ai?tab=usage">«ИИ-сервис» → Расход</Link>.
                 </Hint>
               </Space>
             </Card>
@@ -969,7 +1026,7 @@ function PhotoConnection() {
               type="info"
               icon={<LockOutlined />}
               showIcon
-              message="Фото уходят только в Google Gemini по вашему ключу. Если Gemini не ответил — фото остаётся как было."
+              message="Фото уходят только в выбранный сервис — Google или OpenAI — по вашему ключу. Если сервис не ответил — фото остаётся как было."
             />
             {mode === 'vertex' && (
               <Alert type="info" icon={<CloudOutlined />} showIcon message="Vertex AI: модели для картинок — в регионе global." />
@@ -979,7 +1036,7 @@ function PhotoConnection() {
       </Row>
       <Modal
         open={promptDraft !== null}
-        title="Инструкция для Gemini"
+        title="Инструкция для ИИ"
         width={720}
         okText="Готово"
         onCancel={() => setPromptDraft(null)}
@@ -1017,7 +1074,7 @@ function PhotoConnection() {
   )
 }
 
-/** «ИИ для фото»: подключение Gemini (Figma Ф1–Ф2). */
+/** «ИИ для фото»: подключение Gemini или OpenAI (Figma Ф1–Ф3). */
 export function AIPhoto() {
   return (
     <>
@@ -1026,7 +1083,7 @@ export function AIPhoto() {
         tabs={
           <>
             <Typography.Text type="secondary" style={{ display: 'block', padding: '0 16px 8px' }}>
-              Gemini генерирует и редактирует фото товаров. Приход по фото накладной и сопоставление с каталогом остаются на «ИИ-сервис»
+              Gemini или OpenAI генерирует и редактирует фото товаров. Приход по фото накладной и сопоставление с каталогом остаются на «ИИ-сервис»
             </Typography.Text>
             <PhotoTabs active="settings" />
           </>
