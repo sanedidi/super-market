@@ -47,6 +47,15 @@ type WebSummary struct {
 	LimitUSD       float64 `json:"limit_usd"`
 	// Paused — дошли до лимита месяца.
 	Paused bool `json:"paused"`
+	// Сначала — товары, которые есть в магазинах: всего с фото, проверено, ещё в очереди.
+	StoresTotal   int `json:"stores_total"`
+	StoresChecked int `json:"stores_checked"`
+	StoresQueued  int `json:"stores_queued"`
+	// Остальной каталог: одобрен ли и сколько в нём ещё не проверено.
+	Rest       bool `json:"rest"`
+	RestQueued int  `json:"rest_queued"`
+	// AvgCostUSD — средний расход на одно проверенное фото (для оценки остального каталога).
+	AvgCostUSD float64 `json:"avg_cost_usd"`
 }
 
 // WebSummary — счётчики страницы «Фото из сети».
@@ -80,6 +89,28 @@ func (s *PhotoService) WebSummary(ctx context.Context) (WebSummary, error) {
 		return out, err
 	}
 	out.Queued = max(out.Total-out.Checked, 0)
+	out.Rest = w.Rest
+	var costSum float64
+	err = s.ai.pool.QueryRow(ctx, `
+		WITH st AS (SELECT DISTINCT product_id FROM store_products)
+		SELECT count(*)::int,
+		       count(*) FILTER (WHERE j.reason <> '')::int,
+		       COALESCE((SELECT sum(cost_usd) FROM photo_web_jobs WHERE reason <> ''), 0)::float8
+		FROM products p JOIN st ON st.product_id = p.id
+		LEFT JOIN photo_web_jobs j ON j.product_id = p.id
+		WHERE p.network_id IS NULL AND p.is_active AND cardinality(p.images) > 0`).Scan(&out.StoresTotal, &out.StoresChecked, &costSum)
+	if err != nil {
+		return out, err
+	}
+	out.StoresQueued = max(out.StoresTotal-out.StoresChecked, 0)
+	out.RestQueued = max(out.Queued-out.StoresQueued, 0)
+	if out.Checked > 0 {
+		out.AvgCostUSD = costSum / float64(out.Checked)
+	}
+	// Пока остальной каталог не одобрен, ждать осталось только товары магазинов.
+	if !out.Rest {
+		out.Queued = out.StoresQueued
+	}
 	if out.Queued == 0 {
 		z := 0.0
 		out.EtaHours = &z

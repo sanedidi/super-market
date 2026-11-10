@@ -230,15 +230,33 @@ func TestPhotoWeb(t *testing.T) {
 		t.Fatalf("limit 0, but Gemini called %d", len(gem.text))
 	}
 	sum = a.expect(a.do("GET", "/admin/ai-photo/web/summary", tok, nil), 200, "summary")
-	if sum.Body["total"] != 5.0 || sum.Body["checked"] != 0.0 || sum.Body["queued"] != 5.0 || sum.Body["paused"] != true {
+	// Остальной каталог не одобрен, а в магазинах товаров нет — ждать нечего.
+	if sum.Body["total"] != 5.0 || sum.Body["checked"] != 0.0 || sum.Body["queued"] != 0.0 || sum.Body["rest_queued"] != 5.0 ||
+		sum.Body["rest"] != false || sum.Body["paused"] != true {
 		t.Fatalf("summary limit = %v", sum.Body)
 	}
 	if r := a.do("PUT", "/admin/ai-photo/web", tok, map[string]any{"limit_usd": -1}); r.Status != 400 {
 		t.Fatalf("limit -1 = %d", r.Status)
 	}
 
-	// Лимит 100 $ — проверка всей базы.
+	// Сначала — товары, которые есть в магазинах: Coca-Cola и вода в магазине.
+	_, storeID := setupNetwork(t, a, tok, "+998900000002")
+	if _, err := pool.Exec(ctx, `INSERT INTO store_products (network_id, store_id, product_id)
+		SELECT s.network_id, s.id, p FROM stores s, unnest($2::uuid[]) p WHERE s.id = $1`,
+		storeID, []string{prods["Coca-Cola 0,33 л ж/б"], prods["Вода Wellness 0,5 л"]}); err != nil {
+		t.Fatal(err)
+	}
 	a.expect(a.do("PUT", "/admin/ai-photo/web", tok, map[string]any{"limit_usd": 100}), 200, "web settings")
+	sum = a.expect(a.do("GET", "/admin/ai-photo/web/summary", tok, nil), 200, "summary stores")
+	if sum.Body["stores_total"] != 2.0 || sum.Body["stores_checked"] != 2.0 || sum.Body["stores_queued"] != 0.0 || sum.Body["checked"] != 2.0 ||
+		sum.Body["rest_queued"] != 3.0 || sum.Body["queued"] != 0.0 {
+		t.Fatalf("summary stores = %v", sum.Body)
+	}
+	// Остальной каталог — после одобрения.
+	s = a.expect(a.do("PUT", "/admin/ai-photo/web", tok, map[string]any{"rest": true}), 200, "rest")
+	if s.Body["web"].(map[string]any)["rest"] != true {
+		t.Fatalf("rest = %v", s.Body["web"])
+	}
 	jobs := a.expect(a.do("GET", "/admin/ai-photo/web/jobs?status=all", tok, nil), 200, "jobs").items()
 	byName := map[string]map[string]any{}
 	for _, j := range jobs {

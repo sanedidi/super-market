@@ -9,11 +9,15 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Alert, App, Button, Card, Drawer, Empty, Flex, Image, Input, Popconfirm, Progress, Segmented, Space, Table, Typography, Upload } from 'antd'
 import {
   ArrowRightOutlined,
+  CaretRightOutlined,
   CheckCircleFilled,
+  CheckOutlined,
   CloseCircleFilled,
   ExportOutlined,
   FileSearchOutlined,
   LoadingOutlined,
+  LockOutlined,
+  PauseOutlined,
   QuestionCircleFilled,
   ReloadOutlined,
   RollbackOutlined,
@@ -93,6 +97,13 @@ interface Summary {
   month_gemini_usd: number
   limit_usd: number
   paused: boolean
+  // Сначала — товары, которые есть в магазинах; остальной каталог — после одобрения.
+  stores_total: number
+  stores_checked: number
+  stores_queued: number
+  rest: boolean
+  rest_queued: number
+  avg_cost_usd: number
 }
 
 interface Page {
@@ -272,6 +283,142 @@ export function PhotoTabs({ active }: { active: 'settings' | 'store' | 'web' }) 
       {tab('store', '/ai-photo/store', 'Фото магазинов')}
       {tab('web', '/ai-photo/web', 'Фото из сети')}
     </Flex>
+  )
+}
+
+// ─── Порядок проверки (ФС4) ───────────────────────────────────────────────
+
+function StepDot({ n, state, label }: { n: number; state: 'done' | 'active' | 'wait'; label: string }) {
+  return (
+    <Flex gap={8} align="center">
+      <Flex
+        align="center"
+        justify="center"
+        style={{
+          minWidth: 22,
+          height: 22,
+          padding: '0 6px',
+          borderRadius: 999,
+          fontSize: 12,
+          fontWeight: 800,
+          background: state === 'done' ? C.green : state === 'active' ? C.red : C.grayBg,
+          color: state === 'wait' ? C.mute : '#fff',
+        }}
+      >
+        {state === 'done' ? <CheckOutlined /> : n}
+      </Flex>
+      <Typography.Text style={{ fontWeight: state === 'wait' ? 600 : 700, color: state === 'wait' ? C.mute : C.ink }}>{label}</Typography.Text>
+    </Flex>
+  )
+}
+
+/** Карточка над таблицей: сначала товары магазинов, остальной каталог — после одобрения (Figma ФС4). */
+function QueueOrder({ s, live, busy, onRest }: { s: Summary; live: boolean; busy: boolean; onRest: (v: boolean) => void }) {
+  const storesDone = s.stores_queued === 0
+  const restCount = s.rest_queued
+  const eta = (h: number | null | undefined) => (h == null ? '' : h < 1 ? ' · меньше часа' : ` · ещё ≈ ${Math.ceil(h)} ч`)
+  const restHours = s.per_hour > 0 ? restCount / s.per_hour : null
+  const steps = (
+    <Flex gap={16} align="center" wrap>
+      <StepDot n={1} state={storesDone ? 'done' : 'active'} label="Товары, которые есть в магазинах" />
+      <ArrowRightOutlined style={{ color: C.faint }} />
+      <StepDot n={2} state={s.rest ? (restCount > 0 ? 'active' : 'done') : 'wait'} label="Остальной каталог" />
+    </Flex>
+  )
+  const pct = (done: number, total: number) => (total > 0 ? Math.round((done / total) * 100) : 100)
+  const pause = s.paused ? (
+    <Typography.Text style={{ color: C.redInk, fontSize: 12 }}>
+      Пауза: дошли до лимита {usd(s.limit_usd)} в месяц — проверка продолжится в следующем месяце или после увеличения лимита.
+    </Typography.Text>
+  ) : null
+
+  let body: ReactNode
+  if (!storesDone) {
+    // А · идут товары магазинов.
+    body = (
+      <>
+        <Flex gap={8} align="center" wrap>
+          <SyncOutlined spin={live} style={{ color: C.red }} />
+          <Typography.Text strong style={{ color: C.text, flex: 1 }}>
+            Товары магазинов: {n(s.stores_checked)} из {n(s.stores_total)} фото проверено{eta(s.eta_hours)}
+          </Typography.Text>
+          {!s.rest && <Pill label="остальной каталог — после одобрения" bg="#FFFAEB" fg="#B54708" icon={<LockOutlined />} />}
+        </Flex>
+        <Progress percent={pct(s.stores_checked, s.stores_total)} showInfo={false} strokeColor={C.red} trailColor={C.grayBg} size="small" style={{ margin: 0 }} />
+        <Typography.Text style={{ color: C.mute, fontSize: 12 }}>
+          Сначала проверяем фото товаров, которые уже продаются в магазинах, — их видят покупатели. Новый товар магазина встаёт в начало очереди.
+          {!s.rest && restCount > 0 ? ` Остальной каталог (${n(restCount)} фото) ждёт вашего одобрения.` : ''}
+        </Typography.Text>
+      </>
+    )
+  } else if (!s.rest) {
+    // Б · товары магазинов готовы — ждём одобрения.
+    const cost = s.avg_cost_usd > 0 ? `≈ ${usd(s.avg_cost_usd * restCount)} по среднему расходу (${usd(s.avg_cost_usd)} за фото) · ` : ''
+    body = (
+      <>
+        <Flex gap={8} align="center">
+          <CheckCircleFilled style={{ color: C.green }} />
+          <Typography.Text strong style={{ color: C.text }}>
+            Товары магазинов готовы: {n(s.stores_checked)} фото проверено
+          </Typography.Text>
+        </Flex>
+        {restCount > 0 ? (
+          <Flex gap={16} align="center" wrap style={{ background: C.soft, borderRadius: 10, padding: '14px 16px' }}>
+            <div style={{ flex: 1, minWidth: 280 }}>
+              <Typography.Text strong>Остальной каталог: {n(restCount)} фото — товары, которых пока нет ни в одном магазине</Typography.Text>
+              <div style={{ color: C.mute, fontSize: 12 }}>
+                {cost}
+                {restHours !== null ? `≈ ${Math.ceil(restHours)} ч · ` : ''}лимит в месяц {usd(s.limit_usd)} — дойдёт до лимита, встанет на паузу до следующего месяца
+              </div>
+            </div>
+            <Popconfirm
+              title="Начать остальной каталог?"
+              description={`${n(restCount)} фото. Новые товары магазинов всё равно пойдут первыми.`}
+              okText="Начать"
+              cancelText="Нет"
+              onConfirm={() => onRest(true)}
+            >
+              <Button type="primary" icon={<CaretRightOutlined />} loading={busy}>
+                Начать остальной каталог
+              </Button>
+            </Popconfirm>
+          </Flex>
+        ) : (
+          <Typography.Text style={{ color: C.mute, fontSize: 12 }}>Остального каталога нет — все фото с товарами магазинов.</Typography.Text>
+        )}
+      </>
+    )
+  } else {
+    // В · остальной каталог одобрен и идёт.
+    const checkedRest = Math.max(s.checked - s.stores_checked, 0)
+    const totalRest = checkedRest + restCount
+    body = (
+      <>
+        <Flex gap={8} align="center" wrap>
+          {restCount > 0 ? <SyncOutlined spin={live} style={{ color: C.red }} /> : <CheckCircleFilled style={{ color: C.green }} />}
+          <Typography.Text strong style={{ color: C.text, flex: 1 }}>
+            {restCount > 0
+              ? `Остальной каталог: ${n(checkedRest)} из ${n(totalRest)} фото${eta(s.eta_hours)}. Новые товары магазинов — всё равно первыми`
+              : `Вся база проверена: ${n(s.checked)} фото. Новые товары проверяются сразу — товары магазинов первыми.`}
+          </Typography.Text>
+          {restCount > 0 && (
+            <Button icon={<PauseOutlined />} loading={busy} onClick={() => onRest(false)}>
+              Остановить
+            </Button>
+          )}
+        </Flex>
+        {restCount > 0 && <Progress percent={pct(checkedRest, totalRest)} showInfo={false} strokeColor={C.red} trailColor={C.grayBg} size="small" style={{ margin: 0 }} />}
+      </>
+    )
+  }
+  return (
+    <Card style={{ borderRadius: 12, marginBottom: 16 }} styles={{ body: { padding: '16px 20px' } }}>
+      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        {steps}
+        {body}
+        {pause}
+      </Space>
+    </Card>
   )
 }
 
@@ -518,8 +665,18 @@ export function WebPhotos() {
   }
 
   const seg = (v: string, label: string, count?: number) => ({ value: v, label: count === undefined ? label : `${label} · ${n(count)}` })
-  const progress = s && s.total > 0 ? Math.round((s.checked / s.total) * 100) : 0
-  const eta = s?.eta_hours == null ? '' : s.eta_hours < 1 ? ' · меньше часа' : ` · ещё ≈ ${Math.ceil(s.eta_hours)} ч`
+  const setRest = async (v: boolean) => {
+    setBusy('rest')
+    try {
+      await api.put('/admin/ai-photo/web', { rest: v })
+      message.success(v ? 'Остальной каталог — в работе' : 'Остальной каталог остановлен: снова только товары магазинов')
+      await refresh()
+    } catch (e) {
+      message.error(errorText(e))
+    } finally {
+      setBusy(null)
+    }
+  }
 
   const columns = [
     {
@@ -674,21 +831,7 @@ export function WebPhotos() {
         />
       </Flex>
 
-      {s && s.total > 0 && (
-        <Card style={{ borderRadius: 12, marginBottom: 16 }} styles={{ body: { padding: '12px 16px' } }}>
-          <Flex gap={8} align="center">
-            {s.paused ? <CloseCircleFilled style={{ color: C.red }} /> : <SyncOutlined spin={live} style={{ color: C.red }} />}
-            <Typography.Text strong style={{ color: C.text }}>
-              {s.paused
-                ? `Пауза: дошли до лимита ${usd(s.limit_usd)} в месяц — проверка продолжится в следующем месяце или после увеличения лимита.`
-                : s.queued === 0
-                  ? `Вся база проверена: ${n(s.checked)} фото. Новые товары проверяются сразу при импорте.`
-                  : `Первый проход по всей базе: ${n(s.checked)} из ${n(s.total)} фото${eta}. Новые товары из каталога ИКПУ проверяются сразу при импорте.`}
-            </Typography.Text>
-          </Flex>
-          <Progress percent={progress} showInfo={false} strokeColor={C.red} trailColor={C.grayBg} size="small" style={{ margin: '6px 0 0' }} />
-        </Card>
-      )}
+      {s && s.total > 0 && <QueueOrder s={s} live={live} busy={busy === 'rest'} onRest={setRest} />}
 
       <Card style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
         <Flex gap={8} wrap align="center" style={{ padding: '12px 16px' }}>

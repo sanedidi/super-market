@@ -106,6 +106,9 @@ type WebSettings struct {
 	SerperLast4 string  `json:"serper_last4"`
 	// CheckModel — модель для проверки, если задана вручную; пусто — подбирается.
 	CheckModel string `json:"check_model"`
+	// Rest — остальной каталог (товары, которых нет ни в одном магазине) одобрен;
+	// пока false — проверяются только товары магазинов.
+	Rest bool `json:"rest"`
 }
 
 // WebSettingsInput — PUT /admin/ai-photo/web; nil — не менять.
@@ -116,6 +119,7 @@ type WebSettingsInput struct {
 	LimitUSD   *float64 `json:"limit_usd"`
 	SerperKey  *string  `json:"serper_key"`
 	CheckModel *string  `json:"check_model"`
+	Rest       *bool    `json:"rest"`
 }
 
 // webWorker — состояние воркера «Фото из сети» (в PhotoService).
@@ -138,8 +142,8 @@ type webRow struct {
 func (s *PhotoService) webLoad(ctx context.Context) (webRow, error) {
 	var r webRow
 	err := s.ai.pool.QueryRow(ctx, `
-		SELECT web_check, web_auto, web_limit_usd::float8, serper_key_enc, serper_last4, web_check_model FROM ai_photo_settings`).
-		Scan(&r.Check, &r.Auto, &r.LimitUSD, &r.serperEnc, &r.SerperLast4, &r.CheckModel)
+		SELECT web_check, web_auto, web_limit_usd::float8, serper_key_enc, serper_last4, web_check_model, web_rest FROM ai_photo_settings`).
+		Scan(&r.Check, &r.Auto, &r.LimitUSD, &r.serperEnc, &r.SerperLast4, &r.CheckModel, &r.Rest)
 	r.HasSerper = len(r.serperEnc) > 0
 	return r, err
 }
@@ -162,6 +166,9 @@ func (s *PhotoService) SaveWeb(ctx context.Context, adminID string, in WebSettin
 		}
 		r.LimitUSD = *in.LimitUSD
 	}
+	if in.Rest != nil {
+		r.Rest = *in.Rest
+	}
 	if in.CheckModel != nil {
 		m := strings.TrimSpace(*in.CheckModel)
 		if len(m) > 200 {
@@ -182,8 +189,8 @@ func (s *PhotoService) SaveWeb(ctx context.Context, adminID string, in WebSettin
 	}
 	_, err = s.ai.pool.Exec(ctx, `
 		UPDATE ai_photo_settings SET web_check = $1, web_auto = $2, web_limit_usd = $3, serper_key_enc = $4, serper_last4 = $5,
-		       web_check_model = $6, updated_by = $7, updated_at = now()`,
-		r.Check, r.Auto, r.LimitUSD, r.serperEnc, r.SerperLast4, r.CheckModel, adminID)
+		       web_check_model = $6, web_rest = $8, updated_by = $7, updated_at = now()`,
+		r.Check, r.Auto, r.LimitUSD, r.serperEnc, r.SerperLast4, r.CheckModel, adminID, r.Rest)
 	if err != nil {
 		return PhotoSettings{}, err
 	}
@@ -259,7 +266,7 @@ func (s *PhotoService) RunWeb(ctx context.Context) {
 			if spent, err := s.webMonthCost(ctx); err != nil || spent >= w.LimitUSD {
 				break
 			}
-			j, ok, err := s.webClaim(ctx, w.Check)
+			j, ok, err := s.webClaim(ctx, w.Check, w.Rest)
 			if err != nil {
 				s.log.Error("фото из сети: очередь", "err", err)
 				break
@@ -289,14 +296,14 @@ func (s *PhotoService) RunWeb(ctx context.Context) {
 }
 
 // webBackfill — товары общего каталога с фото, которых ещё не проверяли:
-// новые первыми.
+// сначала те, что есть в магазинах, среди них — новые первыми.
 func (s *PhotoService) webBackfill(ctx context.Context) error {
 	_, err := s.ai.pool.Exec(ctx, `
 		INSERT INTO photo_web_jobs (product_id, old_image)
 		SELECT p.id, p.images[1] FROM products p
 		WHERE p.network_id IS NULL AND p.is_active AND cardinality(p.images) > 0
 		  AND NOT EXISTS (SELECT 1 FROM photo_web_jobs j WHERE j.product_id = p.id)
-		ORDER BY p.created_at DESC, p.id
+		ORDER BY EXISTS (SELECT 1 FROM store_products sp WHERE sp.product_id = p.id) DESC, p.created_at DESC, p.id
 		LIMIT $1
 		ON CONFLICT (product_id) DO NOTHING`, webBackfillBatch)
 	return err
@@ -326,7 +333,9 @@ type webJob struct {
 
 // webClaim — взять одно задание. Выключенная проверка — только то, что
 // поставил супер-админ. «Не нашли» — снова, когда подошло время.
-func (s *PhotoService) webClaim(ctx context.Context, check bool) (webJob, bool, error) {
+// Порядок: что поставил супер-админ, потом товары, которые есть в магазинах;
+// остальной каталог — только когда он одобрен (rest).
+func (s *PhotoService) webClaim(ctx context.Context, check, rest bool) (webJob, bool, error) {
 	var j webJob
 	err := s.ai.pool.QueryRow(ctx, `
 		UPDATE photo_web_jobs SET status = 'processing', started_at = now(), updated_at = now()
@@ -336,10 +345,12 @@ func (s *PhotoService) webClaim(ctx context.Context, check bool) (webJob, bool, 
 			  AND (status = 'queued'
 			       OR (status = 'not_found' AND attempts < $3)
 			       OR (status = 'processing' AND started_at < now() - $1::interval))
-			ORDER BY manual DESC, (status = 'queued') DESC, created_at DESC, id
+			  AND ($4 OR manual OR EXISTS (SELECT 1 FROM store_products sp WHERE sp.product_id = photo_web_jobs.product_id))
+			ORDER BY manual DESC, EXISTS (SELECT 1 FROM store_products sp WHERE sp.product_id = photo_web_jobs.product_id) DESC,
+			         (status = 'queued') DESC, created_at DESC, id
 			LIMIT 1 FOR UPDATE SKIP LOCKED)
 		RETURNING id::text, product_id::text, reason, reason_text, old_image, pick_key, pick_source, search_page, attempts, errors`,
-		webStale.String(), check, WebMaxAttempts).
+		webStale.String(), check, WebMaxAttempts, rest).
 		Scan(&j.ID, &j.ProductID, &j.Reason, &j.ReasonText, &j.OldImage, &j.PickKey, &j.PickSource, &j.SearchPage, &j.Attempts, &j.Errors)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return j, false, nil
