@@ -34,7 +34,8 @@ for r in df.itertuples():
     if brand and attr:
         a2 = attr[:1].lower()+attr[1:] if attr[:2].isalpha() and not attr[:2].isupper() else attr
         if attr.lower().startswith(brand.lower()): name=attr
-        elif not has_type and typ: name=f'{typ} {brand}, {a2}'
+        # У еды и напитков (группы ИКПУ 001–022) тип не пишем — он есть в категории.
+        elif not has_type and typ and not (1 <= int(r.mxik[:3]) <= 22): name=f'{typ} {brand}, {a2}'
         else: name=f'{brand}, {a2}'
     elif brand:
         name=f'{sub}, {brand}'

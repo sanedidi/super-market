@@ -19,6 +19,7 @@ import (
 	"github.com/sanedidi/super-market/backend/internal/billing"
 	"github.com/sanedidi/super-market/backend/internal/cafe"
 	"github.com/sanedidi/super-market/backend/internal/catalog"
+	"github.com/sanedidi/super-market/backend/internal/catalognorm"
 	"github.com/sanedidi/super-market/backend/internal/debts"
 	"github.com/sanedidi/super-market/backend/internal/delivery"
 	"github.com/sanedidi/super-market/backend/internal/family"
@@ -63,6 +64,8 @@ type App struct {
 	Payments *payments.Service
 	Billing  *billing.Service
 	Start    *start.Service
+	// CatalogNorm — автонормализация каталога (тесты запускают автоматический прогон).
+	CatalogNorm *catalognorm.Service
 }
 
 // New создаёт обработчик API. tg — отправитель кодов; nil — взять из
@@ -131,6 +134,8 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 	tenantSvc := tenant.NewService(pool)
 	startSvc := start.NewService(pool, aiSvc, mediaSvc, invSvc, catSvc, log)
 	varSvc := variants.NewService(pool, catSvc, aiSvc, log)
+	// Автонормализация каталога: названия, категории, вариации, модерация.
+	normSvc := catalognorm.NewService(pool, aiSvc, catSvc, varSvc, log)
 	// Нормализация фото для магазина: очередь photo_jobs, лимит — по тарифу.
 	startSvc.Photos = aiPhoto
 	aiPhoto.OnStoreDone = startSvc.ApplyStorePhoto
@@ -155,6 +160,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		startSvc.SweepNewItems()
 		// Группы вариаций своих товаров: раз в день и после «Провести все».
 		varSvc.StartDaily()
+		normSvc.StartWorker()
 		aiPhoto.StartWorker(context.Background())
 		// Фото из сети: «чужие» фото каталога — настоящими.
 		aiPhoto.StartWebWorker(context.Background())
@@ -168,6 +174,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 		setup.NewModule(setup.NewService(pool, tenantSvc, dlv), auth, log),
 		catalog.NewModule(catSvc, auth, log),
 		variants.NewModule(varSvc, auth, log),
+		catalognorm.NewModule(normSvc, auth, log),
 		finance.NewModule(finSvc, auth, log),
 		inventory.NewModule(invSvc, auth, log),
 		supply.NewModule(supplySvc, idSvc, auth, log),
@@ -204,7 +211,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, tg identi
 	)
 	// Агент помощника ходит в API панели внутренним запросом — ему нужен весь сервер.
 	assistSvc.SetHandler(h)
-	return &App{Handler: h, Orders: ord, Payments: pay, Billing: bill, Start: startSvc}, nil
+	return &App{Handler: h, Orders: ord, Payments: pay, Billing: bill, Start: startSvc, CatalogNorm: normSvc}, nil
 }
 
 // MediaService — фото в MinIO; без S3_ENDPOINT загрузка выключена.

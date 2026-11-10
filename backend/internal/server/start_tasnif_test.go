@@ -63,16 +63,18 @@ func TestTasnifName(t *testing.T) {
 		it   catalog.TasnifItem
 		want string
 	}{
-		{catalog.TasnifItem{BrandName: "COCA-COLA", AttributeName: "сладкий, стеклянная бутылка 0,25 л", SubPositionName: "Безалкогольные напитки (газированные и негазированные)"},
-			"Безалкогольные напитки Coca-Cola, сладкий, стеклянная бутылка 0,25 л"},
-		{catalog.TasnifItem{BrandName: "Hochland", AttributeName: "55% сливочный 200г", SubPositionName: "Сыры (всех видов)"},
-			"Сыры Hochland, 55% сливочный 200г"},
+		// Еда и напитки (группы ИКПУ 001–022): без вида товара и упаковки, вес в конце.
+		{catalog.TasnifItem{MxikCode: "02202002001010021", BrandName: "COCA-COLA", AttributeName: "сладкий, стеклянная бутылка 0,25 л", SubPositionName: "Безалкогольные напитки (газированные и негазированные)"},
+			"Coca-Cola, сладкий, 0,25 л"},
+		{catalog.TasnifItem{MxikCode: "00406001001202011", BrandName: "Hochland", AttributeName: "55% сливочный 200г", SubPositionName: "Сыры (всех видов)"},
+			"Hochland, 55% сливочный, 200 г"},
+		// Непищевое (или код неизвестен): вид товара остаётся.
 		{catalog.TasnifItem{BrandName: "Pampers", AttributeName: "Active Baby Dry, размер 3, 14 шт", SubPositionName: "Подгузники"},
 			"Подгузники Pampers, Active Baby Dry, размер 3, 14 шт"},
 		{catalog.TasnifItem{BrandName: "Nutella", AttributeName: "Nutella паста ореховая 350 г", SubPositionName: "Пасты шоколадные"},
-			"Nutella паста ореховая 350 г"},
+			"Nutella паста ореховая, 350 г"},
 		{catalog.TasnifItem{BrandName: "Musaffo", AttributeName: "МОЛОКО ПАСТЕРИЗОВАННОЕ 3,2% 1 Л", SubPositionName: "Молоко"},
-			"Musaffo, молоко пастеризованное 3,2% 1 л"},
+			"Musaffo, молоко пастеризованное 3,2%, 1 л"},
 		{catalog.TasnifItem{MxikName: "Хлеб пшеничный", SubPositionName: "Хлеб"}, "Хлеб пшеничный"},
 	}
 	for _, c := range cases {
@@ -124,7 +126,7 @@ func TestStartTasnif(t *testing.T) {
 	// Варианты: алкоголь отброшен, уже имеющийся в базе — с product_id.
 	pv := a.expect(a.do("POST", "/store/start/tasnif/preview", ownerTok, map[string]any{"store_id": storeID,
 		"items": []any{cheese, vodka, known}}), 200, "preview").items()
-	if len(pv) != 2 || pv[0]["index"] != float64(0) || pv[0]["product_id"] != nil || pv[0]["name"] != "Сыры Hochland, 55% сливочный 200г" ||
+	if len(pv) != 2 || pv[0]["index"] != float64(0) || pv[0]["product_id"] != nil || pv[0]["name"] != "Hochland, 55% сливочный, 200 г" ||
 		pv[1]["index"] != float64(2) || pv[1]["product_id"] == nil || pv[1]["added"] != false {
 		t.Fatalf("preview = %v", pv)
 	}

@@ -318,6 +318,11 @@ func (s *Service) updateProduct(ctx context.Context, id string, in ProductInput,
 				attributes  = COALESCE($14, attributes),
 				name_uz        = COALESCE($15, name_uz),
 				description_uz = COALESCE($16, description_uz),
+				-- Название или категорию поменял человек — автонормализация каталога
+				-- этот товар больше не трогает.
+				norm_locked = norm_locked OR ($2::text IS NOT NULL AND $2::text <> name)
+				              OR ($6::uuid IS NOT NULL AND $6::uuid <> category_id)
+				              OR ($15::text IS NOT NULL AND $15::text <> name_uz),
 				moderation_status = CASE WHEN $13 THEN 'pending' ELSE moderation_status END,
 				rejection_reason  = CASE WHEN $13 THEN '' ELSE rejection_reason END
 			WHERE id = $1`,

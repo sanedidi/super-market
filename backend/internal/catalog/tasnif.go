@@ -198,9 +198,13 @@ func runePrefix(s string, n int) string {
 	return string(r)
 }
 
-// Name — название для каталога: «Бренд, характеристика» (с видом товара,
-// если его нет в характеристике), иначе — вид товара и бренд или название ИКПУ.
+// Name — название для каталога: «Бренд, характеристика». У непищевых товаров
+// впереди вид товара, если его нет в характеристике («Телевизор Samsung, …»);
+// у еды и напитков (группы ИКПУ 001–022) вида нет — он есть в категории.
+// Без бренда — вид товара и характеристика или название ИКПУ. Упаковка из ИКПУ
+// убирается, вес в конце — в одном виде (CleanName).
 func (t TasnifItem) Name() string {
+	food, _ := FoodIkpu(t.Ikpu())
 	brand := prettyBrand(tasnifStrip(t.BrandName))
 	attr := fixCase(tasnifClean(t.AttributeName))
 	sub := tasnifStrip(t.SubPositionName)
@@ -233,7 +237,7 @@ func (t TasnifItem) Name() string {
 		switch {
 		case strings.HasPrefix(strings.ToLower(attr), strings.ToLower(brand)):
 			name = attr
-		case !hasType && typ != "":
+		case !hasType && typ != "" && !food:
 			name = typ + " " + brand + ", " + a2
 		default:
 			name = brand + ", " + a2
@@ -250,7 +254,7 @@ func (t TasnifItem) Name() string {
 		name = tasnifClean(t.MxikName)
 	}
 	name = strings.Trim(strings.TrimSpace(spacesRe.ReplaceAllString(name, " ")), " ,.")
-	return runePrefix(name, 300)
+	return runePrefix(CleanName(name, brand, food), 300)
 }
 
 // Brand — бренд для справочника брендов.

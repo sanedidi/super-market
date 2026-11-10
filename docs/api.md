@@ -1072,6 +1072,45 @@ options: [{product_id, weight, flavor, image, price, old_price, discount_percent
 источника — `none`; ошибка сети — повтор через 10, 20, … минут, после 5 попыток — `failed`. Источник —
 `TASNIF_URL` (по умолчанию https://tasnif.soliq.uz).
 
+## Автонормализация каталога (супер-админ)
+
+Super Market сам приводит общий каталог в порядок — очереди на ручную проверку нет:
+
+- **названия** (ru и uz): у еды и напитков (группы ИКПУ 001–022) без типа из классификатора перед брендом
+  («Безалкогольные напитки Coca-Cola, 0.15 л» → «Coca-Cola, 0,15 л»), у непищевых — короткий тип
+  («Телевизор Samsung UE55AU7100, 55\"»); упаковка из ИКПУ убирается, вес в конце в одном виде («150 г», «0,5 л»).
+  Название от ИИ берётся, только если бренд и все числа исходного названия на месте, иначе — очищенное без ИИ
+  (`catalog.CleanName`);
+- **категория**: в пределах раздела — сразу; перенос в другой раздел — только если второй запрос к ИИ подтверждает
+  («чипсы в «Замороженных овощах»» → «Снеки / Картофельные чипсы»);
+- **группы вариаций**: товары одной марки, категории и линейки с разными «вес + вкус» собираются в группу и сразу
+  подтверждаются (`variant_groups.source = auto`); новый товар линейки встаёт в уже подтверждённую группу;
+- **товары магазинов на модерации**: одобрить / дубль (отклонить с причиной «Такой товар уже есть в общей базе: «…»») /
+  отклонить (бессмысленная карточка, алкоголь, нет ни фото, ни штрихкода);
+- **исправления карточек от магазинов** («Предложить исправление»): принять или отклонить — тем же путём, что супер-админ.
+
+Товар, у которого название или категорию поменял человек (панель, магазин, принятое исправление), получает
+`norm_locked` и больше не трогается. Каждое изменение — строка журнала «было → стало»; прогон можно откатить.
+Режим `auto`: каждые 10 минут обрабатываются новые товары (`norm_at IS NULL`, до 3000 за прогон) и исправления от магазинов.
+Расход ИИ — `ai_usage.kind = catalog_norm`.
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/admin/catalog-norm/settings` | `{auto, concurrency, batch_size, pending, suggestions}` — `pending`: товаров ещё не прошли, `suggestions`: исправлений ждут решения |
+| PUT | `/admin/catalog-norm/settings` | `{auto?, concurrency? (1–16), batch_size? (5–100)}` |
+| POST | `/admin/catalog-norm/runs` | `{section_ids?: [uuid разделов], dry_run?: bool, only_new?: bool}` → 202 `Run`. Пусто — весь каталог. `dry_run` — только журнал, товары не меняются. Прогон идёт в фоне; один за раз (409 `norm_running`) |
+| GET | `/admin/catalog-norm/runs?limit=&offset=` | `{items: [Run], total}`, новые сверху; пустые автоматические не показываются |
+| GET | `/admin/catalog-norm/runs/{id}` | `Run` |
+| GET | `/admin/catalog-norm/runs/{id}/changes?kind=&q=&limit=&offset=` | журнал: `{items: [{id, product_id, product_name, image, kind, old, new, detail, applied, reverted}], total, counts {kind: n}}`. `kind`: `name`, `name_uz`, `category` (old/new — «Раздел / Подкатегория»), `variant_group` (`detail: {action: create\|join, group_id, name, items [{product_id, weight, flavor…}], skipped?}`), `moderation` (new: `approved`\|`rejected`, `detail.reason`, `duplicate_name`), `suggestion` |
+| POST | `/admin/catalog-norm/runs/{id}/apply` | применить завершённый прогон `dry_run` (в фоне, статус `applying` → `done`, `applied: true`). Товар, который за это время изменили, пропускается (`detail.skipped`) |
+| POST | `/admin/catalog-norm/runs/{id}/rollback` | откатить применённый прогон: названия и категории (если их с тех пор не меняли), решения модерации, группы вариаций. Принятые исправления от магазинов не откатываются |
+
+`Run`: `{id, trigger: manual|auto, section_ids, sections, only_new, dry_run, status: running|done|failed|interrupted|applying|rolled_back,
+applied, stats {total, processed, names, names_uz, categories, moves, moves_kept, groups, in_groups, joined, approved, rejected,
+duplicates, suggestions_approved, suggestions_rejected, failed, input_tokens, output_tokens}, error, started_at, finished_at,
+applied_at, rolled_back_at}`. `failed` — пачки, на которых ИИ ответил ошибкой (их товары остаются как были и войдут в
+следующий прогон). Прогон, оборванный перезапуском сервера, — `interrupted`; продолжить — `only_new: true`.
+
 ## Долги покупателей
 
 Магазин продаёт «в долг» покупателю по номеру телефона. Долг считается по журналу `debt_entries`
